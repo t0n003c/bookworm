@@ -193,6 +193,15 @@
                 d="M3 10h18M3 6h18M3 14h18M3 18h18M9 6v12M15 6v12"/>
             </svg>
           </button>
+          <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 mx-0.5"></span>
+          <!-- Sort lines -->
+          <button type="button" id="sort-lines-btn" onclick="toggleLineSorter()"
+            title="Drag to reorder lines" class="toolbar-btn" aria-label="Sort lines" aria-pressed="false">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+            </svg>
+          </button>
           {% if is_edit and note %}
           <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 mx-0.5"></span>
           <!-- Insert image from attachments -->
@@ -246,6 +255,13 @@
             class="flex-1 min-h-[26rem] border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue resize-none bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400 font-mono leading-relaxed"
             aria-label="Note content"
           >{{ note.content if is_edit else '' }}</textarea>
+
+          <!-- ── Line Sorter overlay (hidden until Sort button is toggled) ── -->
+          <div id="line-sorter"
+            class="hidden flex-col flex-1 min-h-[26rem] border border-wblue rounded-lg
+                   bg-white dark:bg-zinc-800 overflow-y-auto select-none"
+            aria-label="Drag to reorder lines" role="list"
+          ></div>
         </div>
 
         <!-- Live preview -->
@@ -427,6 +443,24 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); mdFmt('bold'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); mdFmt('italic'); }
 
+    /* ── Auto-bullet: typing `- ` at line start → `• ` ── */
+    if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const ta  = e.target;
+      const pos = ta.selectionStart;
+      if (ta.selectionEnd === pos) {                    // no selection
+        const val       = ta.value;
+        const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+        const lineText  = val.substring(lineStart, pos);
+        if (lineText === '-') {                         // exactly a dash, nothing else
+          e.preventDefault();
+          ta.value = val.slice(0, lineStart) + '• ' + val.slice(pos);
+          const cur = lineStart + 2;
+          ta.setSelectionRange(cur, cur);
+          ta.dispatchEvent(new Event('input'));
+        }
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       const ta  = e.target;
       const pos = ta.selectionStart;
@@ -439,8 +473,8 @@
 
       // Match todo first: `- [ ] ` or `- [x] ` (must be before bullet check)
       const todoMatch    = lineText.match(/^(\s*)-\s\[([ x])\] /);
-      // Match bullet: optional leading spaces, then `- ` or `* ` (skip if todo)
-      const bulletMatch  = !todoMatch && lineText.match(/^(\s*)([-*]) /);
+      // Match bullet: `- `, `* `, or visual `• ` (skip if todo)
+      const bulletMatch  = !todoMatch && lineText.match(/^(\s*)([-*•]) /);
       // Match ordered: optional leading spaces, then `<number>. `
       const orderedMatch = lineText.match(/^(\s*)(\d+)\. /);
 
@@ -725,8 +759,10 @@
     /* MD → Preview (never resets cursor in contenteditable) */
     function renderPreview() {
       const raw = ta.value.trim();
+      // Normalize visual bullet chars (• ) back to markdown (- ) before parsing
+      const md  = raw.replace(/^• /gm, '- ');
       preview.innerHTML = raw
-        ? DOMPurify.sanitize(marked.parse(raw), PURIFY_CFG)
+        ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
       _enablePreviewTodoCbs();
     }
@@ -1674,6 +1710,217 @@
         parent.removeChild(el);
       }
     });
+  }
+})();
+</script>
+
+<!-- ===== Line Sorter ===== -->
+<script>
+(function initLineSorter() {
+  /* ── state ── */
+  let _dragging  = null;   // the row element being dragged
+  let _ghost     = null;   // floating clone following the mouse
+  let _indicator = null;   // blue line showing drop position
+  let _insertBefore = null; // reference row to insert before (null = append)
+  let _startY    = 0;
+  let _didDrag   = false;
+
+  /* ── toggle between textarea and sorter ── */
+  window.toggleLineSorter = function () {
+    const sorter = document.getElementById('line-sorter');
+    const open   = !sorter.classList.contains('hidden');
+    open ? closeLineSorter() : openLineSorter();
+  };
+
+  function openLineSorter() {
+    const ta     = document.getElementById('note-content');
+    const sorter = document.getElementById('line-sorter');
+    const btn    = document.getElementById('sort-lines-btn');
+
+    // Build one draggable row per non-empty line
+    const lines = ta.value.split('\n');
+    sorter.innerHTML = '';
+    lines.forEach((line, idx) => {
+      sorter.appendChild(makeRow(line, idx));
+    });
+
+    // Create the drop-indicator line
+    _indicator = document.createElement('div');
+    _indicator.style.cssText =
+      'height:2px;background:#0053e2;margin:0;pointer-events:none;display:none;';
+    sorter.appendChild(_indicator);
+
+    // Swap visibility
+    ta.classList.add('hidden');
+    sorter.classList.remove('hidden');
+    sorter.classList.add('flex');
+    btn.style.background = '#dbeafe';
+    btn.setAttribute('aria-pressed', 'true');
+  }
+
+  function closeLineSorter() {
+    const ta     = document.getElementById('note-content');
+    const sorter = document.getElementById('line-sorter');
+    const btn    = document.getElementById('sort-lines-btn');
+
+    // Read the current row order back into the textarea
+    const rows = sorter.querySelectorAll('[data-line-row]');
+    ta.value   = Array.from(rows).map(r => r.dataset.lineText).join('\n');
+    ta.dispatchEvent(new Event('input'));
+
+    // Swap visibility
+    sorter.classList.add('hidden');
+    sorter.classList.remove('flex');
+    ta.classList.remove('hidden');
+    ta.focus();
+    btn.style.background = '';
+    btn.setAttribute('aria-pressed', 'false');
+
+    // Cleanup indicator
+    _indicator = null;
+    sorter.innerHTML = '';
+  }
+
+  /* ── build one draggable row ── */
+  function makeRow(text, idx) {
+    const row = document.createElement('div');
+    row.setAttribute('data-line-row', idx);
+    row.setAttribute('data-line-text', text);
+    row.setAttribute('role', 'listitem');
+    row.style.cssText =
+      'display:flex;align-items:center;gap:6px;padding:4px 8px;'
+      + 'min-height:28px;border-bottom:1px solid #f3f4f6;cursor:default;';
+
+    // Grip handle
+    const grip = document.createElement('span');
+    grip.textContent  = '⠿';
+    grip.style.cssText =
+      'cursor:grab;color:#9ca3af;flex-shrink:0;font-size:14px;user-select:none;';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.addEventListener('mousedown', onGripDown);
+
+    // Line text label
+    const label = document.createElement('span');
+    label.textContent  = text || '\u00a0';  // nbsp so empty lines have height
+    label.style.cssText =
+      'flex:1;font-family:monospace;font-size:0.8rem;'
+      + 'white-space:pre;overflow:hidden;text-overflow:ellipsis;'
+      + 'color:var(--tw-prose-body,#374151);';
+
+    row.appendChild(grip);
+    row.appendChild(label);
+    return row;
+  }
+
+  /* ── drag start ── */
+  function onGripDown(e) {
+    if (e.button !== 0) return;
+    _dragging  = e.currentTarget.closest('[data-line-row]');
+    _startY    = e.clientY;
+    _didDrag   = false;
+    _insertBefore = null;
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup',   onMouseUp);
+    e.preventDefault();
+  }
+
+  /* ── drag move ── */
+  function onMouseMove(e) {
+    if (!_dragging) return;
+
+    if (!_didDrag && Math.abs(e.clientY - _startY) > 3) {
+      _didDrag = true;
+      // Create ghost
+      _ghost = _dragging.cloneNode(true);
+      _ghost.style.cssText =
+        'position:fixed;z-index:9999;pointer-events:none;opacity:0.85;'
+        + 'background:#eff6ff;border:1px solid #0053e2;border-radius:4px;'
+        + 'padding:4px 8px;font-family:monospace;font-size:0.8rem;'
+        + 'white-space:pre;box-shadow:0 4px 12px rgba(0,0,0,.15);'
+        + 'min-width:120px;max-width:400px;overflow:hidden;';
+      document.body.appendChild(_ghost);
+      _dragging.style.opacity = '0.3';
+    }
+
+    if (!_didDrag) return;
+
+    // Move ghost
+    _ghost.style.left = (e.clientX + 12) + 'px';
+    _ghost.style.top  = (e.clientY - 14) + 'px';
+
+    // Find the row under the cursor (excluding the dragged one)
+    const sorter = document.getElementById('line-sorter');
+    const rows   = Array.from(sorter.querySelectorAll('[data-line-row]'))
+                        .filter(r => r !== _dragging);
+
+    let insertBefore = null;
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height / 2) {
+        insertBefore = row;
+        break;
+      }
+    }
+    _insertBefore = insertBefore;
+
+    // Position the indicator line
+    if (_indicator) {
+      const ref = insertBefore || null;
+      if (ref) {
+        const rr = ref.getBoundingClientRect();
+        const sr = sorter.getBoundingClientRect();
+        _indicator.style.display = 'block';
+        // position above the reference row
+        _indicator.style.position = 'absolute';
+        _indicator.style.left     = '0';
+        _indicator.style.right    = '0';
+        _indicator.style.top      = (rr.top - sr.top + sorter.scrollTop - 1) + 'px';
+        sorter.style.position     = 'relative';
+      } else {
+        // Append at the end — show line at bottom of last row
+        const last = rows[rows.length - 1];
+        if (last) {
+          const lr = last.getBoundingClientRect();
+          const sr = sorter.getBoundingClientRect();
+          _indicator.style.display  = 'block';
+          _indicator.style.position = 'absolute';
+          _indicator.style.left     = '0';
+          _indicator.style.right    = '0';
+          _indicator.style.top      = (lr.bottom - sr.top + sorter.scrollTop - 1) + 'px';
+          sorter.style.position     = 'relative';
+        } else {
+          _indicator.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  /* ── drag end ── */
+  function onMouseUp() {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup',   onMouseUp);
+
+    if (_ghost)  { _ghost.remove(); _ghost = null; }
+    if (_indicator) _indicator.style.display = 'none';
+
+    if (_dragging && _didDrag) {
+      // Re-insert the row at its new position
+      const sorter = document.getElementById('line-sorter');
+      _dragging.style.opacity = '';
+      if (_insertBefore) {
+        sorter.insertBefore(_dragging, _insertBefore);
+      } else {
+        // Append before the indicator element
+        sorter.insertBefore(_dragging, _indicator);
+      }
+      // Keep data-line-text in sync (it was set at creation, still valid)
+    } else if (_dragging) {
+      _dragging.style.opacity = '';
+    }
+
+    _dragging = null;
+    _didDrag  = false;
   }
 })();
 </script>
