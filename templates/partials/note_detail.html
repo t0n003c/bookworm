@@ -67,7 +67,7 @@
         // ADD_ATTR style: lets color/highlight/font-size spans pass through
         el.innerHTML = DOMPurify.sanitize(marked.parse(md), {
           ADD_TAGS: ['mark'],
-          ADD_ATTR: ['style'],
+          ADD_ATTR: ['style', 'target', 'rel'],
           FORCE_BODY: true,
         });
 

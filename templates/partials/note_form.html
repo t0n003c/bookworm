@@ -682,47 +682,65 @@
   }
 
   /* ── Link modal ──────────────────────────────────────────────────────── */
-  // Saved CE selection so we can restore it after the modal steals focus
+  // CE selection snapshot (saved before modal steals focus)
   let _savedLinkRange = null;
+  // The <a> element we are editing (null → insert mode)
+  let _editingLinkEl  = null;
 
-  function showLinkModal() {
+  /**
+   * showLinkModal(anchorEl)
+   *   anchorEl — existing <a> DOM node to edit; omit/null for insert mode.
+   */
+  function showLinkModal(anchorEl) {
     const preview = document.getElementById('md-live-preview');
     const ta      = document.getElementById('note-content');
-    let   prefill = '';
+    _editingLinkEl = anchorEl || null;
 
-    if (window._bwActiveEditor === preview) {
-      // Save the current contenteditable selection before focus leaves
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount) {
-        _savedLinkRange = sel.getRangeAt(0).cloneRange();
-        prefill = sel.toString();
-      }
+    const title = document.getElementById('link-modal-title');
+    title.textContent = _editingLinkEl ? 'Edit Link' : 'Insert Link';
+
+    if (_editingLinkEl) {
+      // ── Edit mode: pre-fill from the existing <a> ──
+      document.getElementById('link-text').value    = _editingLinkEl.textContent.trim();
+      document.getElementById('link-url').value     = _editingLinkEl.getAttribute('href') || '';
+      document.getElementById('link-newtab').checked = _editingLinkEl.getAttribute('target') === '_blank';
+      _savedLinkRange = null; // not needed for edit mode
     } else {
-      _savedLinkRange = null;
-      const start = ta.selectionStart;
-      const end   = ta.selectionEnd;
-      if (start !== end) prefill = ta.value.substring(start, end);
+      // ── Insert mode: snapshot selection for CE; pre-fill selected text ──
+      let prefill = '';
+      if (window._bwActiveEditor === preview) {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount) {
+          _savedLinkRange = sel.getRangeAt(0).cloneRange();
+          prefill = sel.toString();
+        }
+      } else {
+        _savedLinkRange = null;
+        const start = ta.selectionStart;
+        const end   = ta.selectionEnd;
+        if (start !== end) prefill = ta.value.substring(start, end);
+      }
+      document.getElementById('link-text').value    = prefill;
+      document.getElementById('link-url').value     = '';
+      document.getElementById('link-newtab').checked = false;
     }
 
-    document.getElementById('link-text').value   = prefill;
-    document.getElementById('link-url').value    = '';
-    document.getElementById('link-newtab').checked = false;
     document.getElementById('link-modal').classList.remove('hidden');
-
-    // Focus URL if we already have display text, otherwise focus text first
-    const focusEl = prefill ? 'link-url' : 'link-text';
-    document.getElementById(focusEl).focus();
+    // Focus URL when we already have display text, otherwise text field first
+    const focusId = document.getElementById('link-text').value ? 'link-url' : 'link-text';
+    document.getElementById(focusId).focus();
   }
 
   function hideLinkModal() {
     document.getElementById('link-modal').classList.add('hidden');
     _savedLinkRange = null;
+    _editingLinkEl  = null;
   }
 
   function insertLink() {
-    const text    = document.getElementById('link-text').value.trim();
-    const url     = document.getElementById('link-url').value.trim();
-    const newTab  = document.getElementById('link-newtab').checked;
+    const text   = document.getElementById('link-text').value.trim();
+    const url    = document.getElementById('link-url').value.trim();
+    const newTab = document.getElementById('link-newtab').checked;
 
     if (!url) { document.getElementById('link-url').focus(); return; }
 
@@ -730,38 +748,44 @@
     const preview     = document.getElementById('md-live-preview');
     const ta          = document.getElementById('note-content');
 
+    /* ── Edit-existing-link path (CE only) ─────────────────────────────── */
+    if (_editingLinkEl) {
+      _editingLinkEl.textContent = displayText;
+      _editingLinkEl.setAttribute('href', url);
+      if (newTab) {
+        _editingLinkEl.setAttribute('target', '_blank');
+        _editingLinkEl.setAttribute('rel', 'noopener noreferrer');
+      } else {
+        _editingLinkEl.removeAttribute('target');
+        _editingLinkEl.removeAttribute('rel');
+      }
+      preview.dispatchEvent(new Event('input'));
+      hideLinkModal();
+      return;
+    }
+
+    /* ── Insert-new-link: CE path ───────────────────────────────────────── */
     if (window._bwActiveEditor === preview) {
-      // ── ContentEditable path ──
       preview.focus();
       const sel = window.getSelection();
       sel.removeAllRanges();
-      // Restore the selection we saved when the modal opened
       if (_savedLinkRange) sel.addRange(_savedLinkRange);
-
-      if (newTab) {
-        // execCommand createLink then patch target/rel on the resulting <a>
-        document.execCommand('insertHTML', false,
-          `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`);
-      } else {
-        if (!sel.isCollapsed) document.execCommand('insertHTML', false,
-          `<a href="${url}">${displayText}</a>`);
-        else document.execCommand('insertHTML', false,
-          `<a href="${url}">${displayText}</a>`);
-      }
+      const html = newTab
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`
+        : `<a href="${url}">${displayText}</a>`;
+      document.execCommand('insertHTML', false, html);
       preview.dispatchEvent(new Event('input'));
+
+    /* ── Insert-new-link: textarea (markdown) path ─────────────────────── */
     } else {
-      // ── Markdown textarea path ──
       const start  = ta.selectionStart;
       const end    = ta.selectionEnd;
       const before = ta.value.slice(0, start);
       const after  = ta.value.slice(end);
-      let   md;
-      if (newTab) {
-        // Markdown has no native new-tab support; emit raw HTML anchor
-        md = `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
-      } else {
-        md = `[${displayText}](${url})`;
-      }
+      // new-tab links have no markdown syntax — emit raw HTML anchor
+      const md = newTab
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`
+        : `[${displayText}](${url})`;
       ta.value = before + md + after;
       const cur = start + md.length;
       ta.setSelectionRange(cur, cur);
@@ -888,6 +912,19 @@
       },
     });
 
+    // Keep <a target="_blank"> links as raw HTML so the new-tab attribute
+    // survives the round-trip through Turndown → marked → DOMPurify.
+    turndown.addRule('newTabLink', {
+      filter: (node) =>
+        node.nodeName === 'A' &&
+        node.getAttribute('target') === '_blank',
+      replacement: (content, node) => {
+        const href = node.getAttribute('href') || '';
+        const rel  = node.getAttribute('rel') || 'noopener noreferrer';
+        return `<a href="${href}" target="_blank" rel="${rel}">${content}</a>`;
+      },
+    });
+
     window._bwTurndown = turndown; // exposed so slash_commands.js can add keep-rules
     // Exposed for preview DnD (initPreviewDnD runs outside this IIFE)
     window._bwSyncPreviewToMd = () => syncPreviewToMd();
@@ -896,7 +933,7 @@
        which are stripped by default because DOMPurify blocks all <input> tags. */
     const PURIFY_CFG = {
       ADD_TAGS:  ['input'],
-      ADD_ATTR:  ['type', 'checked', 'disabled', 'class', 'style'],
+      ADD_ATTR:  ['type', 'checked', 'disabled', 'class', 'style', 'target', 'rel'],
     };
 
     /* MD → Preview (never resets cursor in contenteditable) */
@@ -950,6 +987,22 @@
         cb.style.cursor        = 'pointer';
         cb.style.pointerEvents = 'auto';
       });
+    }
+
+    /* ── Click on <a> inside the live preview → edit-link modal ────────── */
+    // Registered once; handler checks the actual target each time.
+    if (!preview._linkClickHandler) {
+      preview._linkClickHandler = (e) => {
+        const anchor = e.target.closest('a[href]');
+        if (!anchor) return;
+        // Don't intercept clicks on the grip/drag handles
+        if (anchor.closest('[data-preview-grip]')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        showLinkModal(anchor);
+      };
+      // Use capture so we fire before contenteditable's own click handling
+      preview.addEventListener('click', preview._linkClickHandler, true);
     }
 
     /* Preview → MD (runs after user edits contenteditable) */

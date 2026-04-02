@@ -94,6 +94,16 @@ const SLASH_COMMANDS = [
     snippet: '---\n', cursorOffset: 4,
     ceExec: { cmd: 'insertHorizontalRule' },
   },
+  {
+    id: 'link', label: 'Link', desc: 'Insert a hyperlink (Ctrl+K)',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+             <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101
+                      m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                   stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>`,
+    // action: erase the /query text, then open the link modal
+    action: () => { if (typeof showLinkModal === 'function') showLinkModal(); },
+  },
 
   // ── Toggle Headings ────────────────────────────────────────────────────
   {
@@ -438,6 +448,17 @@ function _applyTextarea(cmd) {
   const end = _sc.caretEnd ?? ta.selectionStart;
   const before = ta.value.slice(0, start);
   const after  = ta.value.slice(end);
+
+  // action commands: erase the /query text then delegate to the callback
+  if (cmd.action) {
+    ta.value = before + after;
+    ta.setSelectionRange(start, start);
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+    cmd.action();
+    return;
+  }
+
   ta.value = before + cmd.snippet + after;
   let cursor;
   if (cmd.cursorFromStart != null) {
@@ -546,6 +567,13 @@ function _applyCE(cmd) {
       }
     }
     document.execCommand('delete');
+
+    // action commands: /query text is gone — fire the callback and done
+    if (cmd.action) {
+      ce.dispatchEvent(new Event('input'));
+      cmd.action();
+      return;
+    }
 
     // Apply — priority: ceHtml > ceExec > ceInsert / snippet
     if (cmd.ceHtml) {
