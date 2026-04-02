@@ -362,6 +362,20 @@
   .toolbar-btn:hover { background: #e5e7eb; }
   .dark .toolbar-btn { color: #a1a1aa; }
   .dark .toolbar-btn:hover { background: #3f3f46; }
+
+  /* ── Preview block drag-and-drop ── */
+  #md-live-preview { padding-left: 1.5rem !important; }
+  [data-preview-grip] {
+    position: absolute; left: -1.2rem; top: 2px;
+    cursor: grab; color: transparent;
+    font-size: 13px; user-select: none; padding: 0 2px;
+    transition: color .12s; line-height: 1.5;
+    /* keep it out of text flow */
+    pointer-events: all;
+  }
+  #md-live-preview > *:hover > [data-preview-grip] { color: #9ca3af; }
+  [data-preview-grip]:hover  { color: #0053e2 !important; }
+  [data-preview-grip]:active { cursor: grabbing; color: #0053e2 !important; }
 </style>
 
 <script>
@@ -748,6 +762,8 @@
     });
 
     window._bwTurndown = turndown; // exposed so slash_commands.js can add keep-rules
+    // Exposed for preview DnD (initPreviewDnD runs outside this IIFE)
+    window._bwSyncPreviewToMd = () => syncPreviewToMd();
 
     /* DOMPurify config: allow GFM task-list checkboxes (<input type="checkbox">)
        which are stripped by default because DOMPurify blocks all <input> tags. */
@@ -765,6 +781,10 @@
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
       _enablePreviewTodoCbs();
+      // Inject drag grips into every top-level block after each render
+      if (typeof window._injectPreviewGrips === 'function') {
+        window._injectPreviewGrips(preview);
+      }
     }
 
     /* Make todo checkboxes in the live preview clickable.
@@ -807,7 +827,10 @@
 
     /* Preview → MD (runs after user edits contenteditable) */
     function syncPreviewToMd() {
-      ta.value = turndown.turndown(preview.innerHTML);
+      // Clone so we can strip grip handles without mutating the live DOM
+      const clone = preview.cloneNode(true);
+      clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+      ta.value = turndown.turndown(clone.innerHTML);
     }
 
     /* ── Enter key inside contenteditable task-list items ──────────────────
@@ -1710,6 +1733,157 @@
         parent.removeChild(el);
       }
     });
+  }
+})();
+</script>
+
+<!-- ===== Preview Block Drag-and-Drop ===== -->
+<script>
+(function initPreviewDnD() {
+  /* ── state ── */
+  let _preview      = null;
+  let _dragging     = null;
+  let _ghost        = null;
+  let _indicator    = null;
+  let _insertBefore = null;
+  let _startY       = 0;
+  let _didDrag      = false;
+
+  /* Called by renderPreview() every time the preview re-renders */
+  window._injectPreviewGrips = function (previewEl) {
+    _preview = previewEl;
+
+    // Remove stale grips from previous render
+    previewEl.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+
+    // Give the preview relative positioning so grips can anchor to it
+    previewEl.style.position = 'relative';
+
+    // One grip per direct-child block element
+    Array.from(previewEl.children).forEach(el => {
+      el.style.position = 'relative';
+      const grip = document.createElement('span');
+      grip.setAttribute('data-preview-grip', '');
+      grip.setAttribute('contenteditable', 'false');
+      grip.setAttribute('aria-hidden', 'true');
+      grip.textContent = '⠿';
+      el.insertBefore(grip, el.firstChild);
+      grip.addEventListener('mousedown', _onGripDown, { capture: true });
+    });
+
+    // Lazily create the drop-indicator line inside the preview
+    if (!_indicator || !previewEl.contains(_indicator)) {
+      _indicator = document.createElement('div');
+      _indicator.setAttribute('data-preview-grip', '');
+      _indicator.style.cssText =
+        'position:absolute;height:2px;background:#0053e2;'
+        + 'left:0;right:0;pointer-events:none;display:none;z-index:50;';
+      previewEl.appendChild(_indicator);
+    }
+  };
+
+  /* mousedown on grip ────────────────────────────────────────────────── */
+  function _onGripDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();   // critical: blocks contenteditable caret placement
+    e.stopPropagation();
+
+    _dragging = e.currentTarget.parentElement;
+    if (!_dragging || _dragging === _preview) return;
+
+    _startY  = e.clientY;
+    _didDrag = false;
+
+    document.addEventListener('mousemove', _onMouseMove);
+    document.addEventListener('mouseup',   _onMouseUp);
+  }
+
+  /* mousemove ────────────────────────────────────────────────────────── */
+  function _onMouseMove(e) {
+    if (!_dragging) return;
+
+    if (!_didDrag && Math.abs(e.clientY - _startY) > 4) {
+      _didDrag = true;
+      // Ghost: a compact label following the cursor
+      _ghost = document.createElement('div');
+      _ghost.textContent =
+        (_dragging.textContent || '').trim().slice(0, 80) || '(empty)';
+      _ghost.style.cssText =
+        'position:fixed;z-index:9999;pointer-events:none;opacity:.9;'
+        + 'background:#eff6ff;border:1px solid #0053e2;border-radius:4px;'
+        + 'padding:3px 10px;font-size:.8rem;white-space:nowrap;overflow:hidden;'
+        + 'text-overflow:ellipsis;max-width:360px;'
+        + 'box-shadow:0 4px 12px rgba(0,83,226,.2);';
+      document.body.appendChild(_ghost);
+      _dragging.style.opacity = '0.3';
+    }
+
+    if (!_didDrag) return;
+
+    // Move ghost
+    _ghost.style.left = (e.clientX + 14) + 'px';
+    _ghost.style.top  = (e.clientY - 14) + 'px';
+
+    // Find the sibling we'd insert before (skip grips & indicator)
+    const siblings = Array.from(_preview.children).filter(el =>
+      el !== _dragging && !el.hasAttribute('data-preview-grip')
+    );
+    _insertBefore = null;
+    for (const sib of siblings) {
+      const r = sib.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { _insertBefore = sib; break; }
+    }
+
+    // Position the blue indicator line
+    if (_indicator) {
+      const pr = _preview.getBoundingClientRect();
+      const ref = _insertBefore || siblings[siblings.length - 1];
+      if (ref) {
+        const rr = ref.getBoundingClientRect();
+        _indicator.style.top =
+          (_insertBefore
+            ? rr.top  - pr.top + _preview.scrollTop - 1
+            : rr.bottom - pr.top + _preview.scrollTop - 1) + 'px';
+        _indicator.style.display = 'block';
+      }
+    }
+  }
+
+  /* mouseup ──────────────────────────────────────────────────────────── */
+  function _onMouseUp() {
+    document.removeEventListener('mousemove', _onMouseMove);
+    document.removeEventListener('mouseup',   _onMouseUp);
+
+    if (_ghost)     { _ghost.remove(); _ghost = null; }
+    if (_indicator) _indicator.style.display = 'none';
+
+    if (_dragging && _didDrag) {
+      _dragging.style.opacity = '';
+
+      // Re-home the block element in the DOM
+      if (_insertBefore) {
+        _preview.insertBefore(_dragging, _insertBefore);
+      } else {
+        // Append at end, just before the indicator
+        _preview.insertBefore(_dragging, _indicator);
+      }
+
+      // Sync the reordered preview back to the markdown textarea
+      if (typeof window._bwSyncPreviewToMd === 'function') {
+        window._bwSyncPreviewToMd();
+        const ta = document.getElementById('note-content');
+        if (ta) ta.dispatchEvent(new Event('input'));
+      }
+
+      // Re-inject grips after the DOM mutation
+      if (_preview) window._injectPreviewGrips(_preview);
+
+    } else if (_dragging) {
+      _dragging.style.opacity = '';
+    }
+
+    _dragging = null;
+    _didDrag  = false;
   }
 })();
 </script>
