@@ -193,15 +193,6 @@
                 d="M3 10h18M3 6h18M3 14h18M3 18h18M9 6v12M15 6v12"/>
             </svg>
           </button>
-          <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 mx-0.5"></span>
-          <!-- Sort lines -->
-          <button type="button" id="sort-lines-btn" onclick="toggleLineSorter()"
-            title="Drag to reorder lines" class="toolbar-btn" aria-label="Sort lines" aria-pressed="false">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-            </svg>
-          </button>
           {% if is_edit and note %}
           <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 mx-0.5"></span>
           <!-- Insert image from attachments -->
@@ -256,12 +247,6 @@
             aria-label="Note content"
           >{{ note.content if is_edit else '' }}</textarea>
 
-          <!-- ── Line Sorter overlay (hidden until Sort button is toggled) ── -->
-          <div id="line-sorter"
-            class="hidden flex-col flex-1 min-h-[26rem] border border-wblue rounded-lg
-                   bg-white dark:bg-zinc-800 overflow-y-auto select-none"
-            aria-label="Drag to reorder lines" role="list"
-          ></div>
         </div>
 
         <!-- Live preview -->
@@ -373,7 +358,8 @@
     /* keep it out of text flow */
     pointer-events: all;
   }
-  #md-live-preview > *:hover > [data-preview-grip] { color: #9ca3af; }
+  #md-live-preview > *:hover       > [data-preview-grip],
+  #md-live-preview li:hover         > [data-preview-grip] { color: #9ca3af; }
   [data-preview-grip]:hover  { color: #0053e2 !important; }
   [data-preview-grip]:active { cursor: grabbing; color: #0053e2 !important; }
 </style>
@@ -1743,71 +1729,69 @@
   /* ── state ── */
   let _preview      = null;
   let _dragging     = null;
+  let _container    = null;   // immediate parent of the dragged element
   let _ghost        = null;
-  let _indicator    = null;
+  let _indicator    = null;   // created fresh each drag, lives in _container
   let _insertBefore = null;
   let _startY       = 0;
   let _didDrag      = false;
 
-  /* Called by renderPreview() every time the preview re-renders */
+  /* ── helpers ── */
+  function _addGrip(el) {
+    el.style.position = 'relative';
+    const grip = document.createElement('span');
+    grip.setAttribute('data-preview-grip', '');
+    grip.setAttribute('contenteditable', 'false');
+    grip.setAttribute('aria-hidden', 'true');
+    grip.textContent = '⠿';
+    el.insertBefore(grip, el.firstChild);
+    grip.addEventListener('mousedown', _onGripDown, { capture: true });
+  }
+
+  /* Called by renderPreview() after every re-render */
   window._injectPreviewGrips = function (previewEl) {
     _preview = previewEl;
-
-    // Remove stale grips from previous render
+    // Remove stale grips from the previous render
     previewEl.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
-
-    // Give the preview relative positioning so grips can anchor to it
     previewEl.style.position = 'relative';
 
-    // One grip per direct-child block element
-    Array.from(previewEl.children).forEach(el => {
-      el.style.position = 'relative';
-      const grip = document.createElement('span');
-      grip.setAttribute('data-preview-grip', '');
-      grip.setAttribute('contenteditable', 'false');
-      grip.setAttribute('aria-hidden', 'true');
-      grip.textContent = '⠿';
-      el.insertBefore(grip, el.firstChild);
-      grip.addEventListener('mousedown', _onGripDown, { capture: true });
-    });
+    // Grip every top-level block element
+    Array.from(previewEl.children).forEach(el => _addGrip(el));
 
-    // Lazily create the drop-indicator line inside the preview
-    if (!_indicator || !previewEl.contains(_indicator)) {
-      _indicator = document.createElement('div');
-      _indicator.setAttribute('data-preview-grip', '');
-      _indicator.style.cssText =
-        'position:absolute;height:2px;background:#0053e2;'
-        + 'left:0;right:0;pointer-events:none;display:none;z-index:50;';
-      previewEl.appendChild(_indicator);
-    }
+    // Grip every list item so bullets/numbers can be reordered individually
+    previewEl.querySelectorAll('li').forEach(li => _addGrip(li));
   };
 
-  /* mousedown on grip ────────────────────────────────────────────────── */
+  /* ── drag start ── */
   function _onGripDown(e) {
     if (e.button !== 0) return;
-    e.preventDefault();   // critical: blocks contenteditable caret placement
+    e.preventDefault();   // stops contenteditable caret placement
     e.stopPropagation();
-
-    _dragging = e.currentTarget.parentElement;
-    if (!_dragging || _dragging === _preview) return;
-
+    _dragging  = e.currentTarget.parentElement;
+    _container = _dragging?.parentElement;
+    if (!_dragging || !_container) return;
     _startY  = e.clientY;
     _didDrag = false;
-
     document.addEventListener('mousemove', _onMouseMove);
     document.addEventListener('mouseup',   _onMouseUp);
   }
 
-  /* mousemove ────────────────────────────────────────────────────────── */
+  /* Siblings inside the active container (excluding the dragged el + grips) */
+  function _getSiblings() {
+    return Array.from(_container.children).filter(
+      el => el !== _dragging && !el.hasAttribute('data-preview-grip')
+    );
+  }
+
+  /* ── drag move ── */
   function _onMouseMove(e) {
     if (!_dragging) return;
 
     if (!_didDrag && Math.abs(e.clientY - _startY) > 4) {
       _didDrag = true;
-      // Ghost: a compact label following the cursor
+      // Ghost label following the cursor
       _ghost = document.createElement('div');
-      _ghost.textContent =
-        (_dragging.textContent || '').trim().slice(0, 80) || '(empty)';
+      _ghost.textContent = (_dragging.textContent || '').trim().slice(0, 80) || '(empty)';
       _ghost.style.cssText =
         'position:fixed;z-index:9999;pointer-events:none;opacity:.9;'
         + 'background:#eff6ff;border:1px solid #0053e2;border-radius:4px;'
@@ -1816,284 +1800,73 @@
         + 'box-shadow:0 4px 12px rgba(0,83,226,.2);';
       document.body.appendChild(_ghost);
       _dragging.style.opacity = '0.3';
+      // Indicator — injected into the container so it scrolls with the content
+      _indicator = document.createElement('div');
+      _indicator.setAttribute('data-preview-grip', '');
+      _indicator.style.cssText =
+        'position:absolute;height:2px;background:#0053e2;'
+        + 'left:0;right:0;pointer-events:none;display:none;z-index:50;';
+      _container.style.position = 'relative';
+      _container.appendChild(_indicator);
     }
 
     if (!_didDrag) return;
 
-    // Move ghost
     _ghost.style.left = (e.clientX + 14) + 'px';
     _ghost.style.top  = (e.clientY - 14) + 'px';
 
-    // Find the sibling we'd insert before (skip grips & indicator)
-    const siblings = Array.from(_preview.children).filter(el =>
-      el !== _dragging && !el.hasAttribute('data-preview-grip')
-    );
+    // Find which sibling to insert before
+    const sibs = _getSiblings();
     _insertBefore = null;
-    for (const sib of siblings) {
+    for (const sib of sibs) {
       const r = sib.getBoundingClientRect();
       if (e.clientY < r.top + r.height / 2) { _insertBefore = sib; break; }
     }
 
-    // Position the blue indicator line
+    // Position the blue indicator line relative to the container
     if (_indicator) {
-      const pr = _preview.getBoundingClientRect();
-      const ref = _insertBefore || siblings[siblings.length - 1];
+      const cr  = _container.getBoundingClientRect();
+      const ref = _insertBefore || sibs[sibs.length - 1];
       if (ref) {
         const rr = ref.getBoundingClientRect();
-        _indicator.style.top =
-          (_insertBefore
-            ? rr.top  - pr.top + _preview.scrollTop - 1
-            : rr.bottom - pr.top + _preview.scrollTop - 1) + 'px';
+        _indicator.style.top = (
+          _insertBefore
+            ? rr.top    - cr.top + _container.scrollTop - 1
+            : rr.bottom - cr.top + _container.scrollTop - 1
+        ) + 'px';
         _indicator.style.display = 'block';
-      }
-    }
-  }
-
-  /* mouseup ──────────────────────────────────────────────────────────── */
-  function _onMouseUp() {
-    document.removeEventListener('mousemove', _onMouseMove);
-    document.removeEventListener('mouseup',   _onMouseUp);
-
-    if (_ghost)     { _ghost.remove(); _ghost = null; }
-    if (_indicator) _indicator.style.display = 'none';
-
-    if (_dragging && _didDrag) {
-      _dragging.style.opacity = '';
-
-      // Re-home the block element in the DOM
-      if (_insertBefore) {
-        _preview.insertBefore(_dragging, _insertBefore);
-      } else {
-        // Append at end, just before the indicator
-        _preview.insertBefore(_dragging, _indicator);
-      }
-
-      // Sync the reordered preview back to the markdown textarea
-      if (typeof window._bwSyncPreviewToMd === 'function') {
-        window._bwSyncPreviewToMd();
-        const ta = document.getElementById('note-content');
-        if (ta) ta.dispatchEvent(new Event('input'));
-      }
-
-      // Re-inject grips after the DOM mutation
-      if (_preview) window._injectPreviewGrips(_preview);
-
-    } else if (_dragging) {
-      _dragging.style.opacity = '';
-    }
-
-    _dragging = null;
-    _didDrag  = false;
-  }
-})();
-</script>
-
-<!-- ===== Line Sorter ===== -->
-<script>
-(function initLineSorter() {
-  /* ── state ── */
-  let _dragging  = null;   // the row element being dragged
-  let _ghost     = null;   // floating clone following the mouse
-  let _indicator = null;   // blue line showing drop position
-  let _insertBefore = null; // reference row to insert before (null = append)
-  let _startY    = 0;
-  let _didDrag   = false;
-
-  /* ── toggle between textarea and sorter ── */
-  window.toggleLineSorter = function () {
-    const sorter = document.getElementById('line-sorter');
-    const open   = !sorter.classList.contains('hidden');
-    open ? closeLineSorter() : openLineSorter();
-  };
-
-  function openLineSorter() {
-    const ta     = document.getElementById('note-content');
-    const sorter = document.getElementById('line-sorter');
-    const btn    = document.getElementById('sort-lines-btn');
-
-    // Build one draggable row per non-empty line
-    const lines = ta.value.split('\n');
-    sorter.innerHTML = '';
-    lines.forEach((line, idx) => {
-      sorter.appendChild(makeRow(line, idx));
-    });
-
-    // Create the drop-indicator line
-    _indicator = document.createElement('div');
-    _indicator.style.cssText =
-      'height:2px;background:#0053e2;margin:0;pointer-events:none;display:none;';
-    sorter.appendChild(_indicator);
-
-    // Swap visibility
-    ta.classList.add('hidden');
-    sorter.classList.remove('hidden');
-    sorter.classList.add('flex');
-    btn.style.background = '#dbeafe';
-    btn.setAttribute('aria-pressed', 'true');
-  }
-
-  function closeLineSorter() {
-    const ta     = document.getElementById('note-content');
-    const sorter = document.getElementById('line-sorter');
-    const btn    = document.getElementById('sort-lines-btn');
-
-    // Read the current row order back into the textarea
-    const rows = sorter.querySelectorAll('[data-line-row]');
-    ta.value   = Array.from(rows).map(r => r.dataset.lineText).join('\n');
-    ta.dispatchEvent(new Event('input'));
-
-    // Swap visibility
-    sorter.classList.add('hidden');
-    sorter.classList.remove('flex');
-    ta.classList.remove('hidden');
-    ta.focus();
-    btn.style.background = '';
-    btn.setAttribute('aria-pressed', 'false');
-
-    // Cleanup indicator
-    _indicator = null;
-    sorter.innerHTML = '';
-  }
-
-  /* ── build one draggable row ── */
-  function makeRow(text, idx) {
-    const row = document.createElement('div');
-    row.setAttribute('data-line-row', idx);
-    row.setAttribute('data-line-text', text);
-    row.setAttribute('role', 'listitem');
-    row.style.cssText =
-      'display:flex;align-items:center;gap:6px;padding:4px 8px;'
-      + 'min-height:28px;border-bottom:1px solid #f3f4f6;cursor:default;';
-
-    // Grip handle
-    const grip = document.createElement('span');
-    grip.textContent  = '⠿';
-    grip.style.cssText =
-      'cursor:grab;color:#9ca3af;flex-shrink:0;font-size:14px;user-select:none;';
-    grip.setAttribute('aria-hidden', 'true');
-    grip.addEventListener('mousedown', onGripDown);
-
-    // Line text label
-    const label = document.createElement('span');
-    label.textContent  = text || '\u00a0';  // nbsp so empty lines have height
-    label.style.cssText =
-      'flex:1;font-family:monospace;font-size:0.8rem;'
-      + 'white-space:pre;overflow:hidden;text-overflow:ellipsis;'
-      + 'color:var(--tw-prose-body,#374151);';
-
-    row.appendChild(grip);
-    row.appendChild(label);
-    return row;
-  }
-
-  /* ── drag start ── */
-  function onGripDown(e) {
-    if (e.button !== 0) return;
-    _dragging  = e.currentTarget.closest('[data-line-row]');
-    _startY    = e.clientY;
-    _didDrag   = false;
-    _insertBefore = null;
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup',   onMouseUp);
-    e.preventDefault();
-  }
-
-  /* ── drag move ── */
-  function onMouseMove(e) {
-    if (!_dragging) return;
-
-    if (!_didDrag && Math.abs(e.clientY - _startY) > 3) {
-      _didDrag = true;
-      // Create ghost
-      _ghost = _dragging.cloneNode(true);
-      _ghost.style.cssText =
-        'position:fixed;z-index:9999;pointer-events:none;opacity:0.85;'
-        + 'background:#eff6ff;border:1px solid #0053e2;border-radius:4px;'
-        + 'padding:4px 8px;font-family:monospace;font-size:0.8rem;'
-        + 'white-space:pre;box-shadow:0 4px 12px rgba(0,0,0,.15);'
-        + 'min-width:120px;max-width:400px;overflow:hidden;';
-      document.body.appendChild(_ghost);
-      _dragging.style.opacity = '0.3';
-    }
-
-    if (!_didDrag) return;
-
-    // Move ghost
-    _ghost.style.left = (e.clientX + 12) + 'px';
-    _ghost.style.top  = (e.clientY - 14) + 'px';
-
-    // Find the row under the cursor (excluding the dragged one)
-    const sorter = document.getElementById('line-sorter');
-    const rows   = Array.from(sorter.querySelectorAll('[data-line-row]'))
-                        .filter(r => r !== _dragging);
-
-    let insertBefore = null;
-    for (const row of rows) {
-      const rect = row.getBoundingClientRect();
-      if (e.clientY < rect.top + rect.height / 2) {
-        insertBefore = row;
-        break;
-      }
-    }
-    _insertBefore = insertBefore;
-
-    // Position the indicator line
-    if (_indicator) {
-      const ref = insertBefore || null;
-      if (ref) {
-        const rr = ref.getBoundingClientRect();
-        const sr = sorter.getBoundingClientRect();
-        _indicator.style.display = 'block';
-        // position above the reference row
-        _indicator.style.position = 'absolute';
-        _indicator.style.left     = '0';
-        _indicator.style.right    = '0';
-        _indicator.style.top      = (rr.top - sr.top + sorter.scrollTop - 1) + 'px';
-        sorter.style.position     = 'relative';
-      } else {
-        // Append at the end — show line at bottom of last row
-        const last = rows[rows.length - 1];
-        if (last) {
-          const lr = last.getBoundingClientRect();
-          const sr = sorter.getBoundingClientRect();
-          _indicator.style.display  = 'block';
-          _indicator.style.position = 'absolute';
-          _indicator.style.left     = '0';
-          _indicator.style.right    = '0';
-          _indicator.style.top      = (lr.bottom - sr.top + sorter.scrollTop - 1) + 'px';
-          sorter.style.position     = 'relative';
-        } else {
-          _indicator.style.display = 'none';
-        }
       }
     }
   }
 
   /* ── drag end ── */
-  function onMouseUp() {
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup',   onMouseUp);
+  function _onMouseUp() {
+    document.removeEventListener('mousemove', _onMouseMove);
+    document.removeEventListener('mouseup',   _onMouseUp);
 
-    if (_ghost)  { _ghost.remove(); _ghost = null; }
-    if (_indicator) _indicator.style.display = 'none';
+    if (_ghost)     { _ghost.remove();     _ghost = null; }
+    if (_indicator) { _indicator.remove(); _indicator = null; }
 
     if (_dragging && _didDrag) {
-      // Re-insert the row at its new position
-      const sorter = document.getElementById('line-sorter');
       _dragging.style.opacity = '';
       if (_insertBefore) {
-        sorter.insertBefore(_dragging, _insertBefore);
+        _container.insertBefore(_dragging, _insertBefore);
       } else {
-        // Append before the indicator element
-        sorter.insertBefore(_dragging, _indicator);
+        _container.appendChild(_dragging);
       }
-      // Keep data-line-text in sync (it was set at creation, still valid)
+      // Sync reordered DOM back to the markdown textarea
+      if (typeof window._bwSyncPreviewToMd === 'function') {
+        window._bwSyncPreviewToMd();
+        const ta = document.getElementById('note-content');
+        if (ta) ta.dispatchEvent(new Event('input'));
+      }
+      // Re-inject grips so the next drag works
+      if (_preview) window._injectPreviewGrips(_preview);
     } else if (_dragging) {
       _dragging.style.opacity = '';
     }
 
-    _dragging = null;
+    _dragging = _container = null;
     _didDrag  = false;
   }
 })();
