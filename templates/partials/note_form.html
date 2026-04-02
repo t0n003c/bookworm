@@ -193,6 +193,15 @@
                 d="M3 10h18M3 6h18M3 14h18M3 18h18M9 6v12M15 6v12"/>
             </svg>
           </button>
+          <!-- Link -->
+          <button type="button" onclick="showLinkModal()" title="Insert link (Ctrl+K)"
+            class="toolbar-btn" aria-label="Insert link">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101
+                   m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+          </button>
           {% if is_edit and note %}
           <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 mx-0.5"></span>
           <!-- Insert image from attachments -->
@@ -442,6 +451,7 @@
   document.getElementById('note-content')?.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); mdFmt('bold'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); mdFmt('italic'); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); }
 
     /* ── Auto-bullet: typing `- ` at line start → `• ` ── */
     if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -620,6 +630,46 @@
   </div>
 </div>
 
+<!-- ===== Link Modal ===== -->
+<div id="link-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+  role="dialog" aria-modal="true" aria-labelledby="link-modal-title"
+>
+  <div class="absolute inset-0 bg-black/50" onclick="hideLinkModal()"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-200 dark:border-zinc-700">
+    <h3 id="link-modal-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">Insert Link</h3>
+
+    <div class="space-y-3 mb-5">
+      <div>
+        <label for="link-text" class="block text-xs font-semibold text-gray-600 dark:text-zinc-400 mb-1">Link Text</label>
+        <input id="link-text" type="text" placeholder="Display text"
+          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
+          aria-label="Link display text"/>
+      </div>
+      <div>
+        <label for="link-url" class="block text-xs font-semibold text-gray-600 dark:text-zinc-400 mb-1">URL</label>
+        <input id="link-url" type="url" placeholder="https://"
+          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
+          aria-label="Link URL"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();insertLink();}"/>
+      </div>
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <input id="link-newtab" type="checkbox" class="accent-wblue" aria-label="Open in new tab"/>
+        <span class="text-sm text-gray-700 dark:text-zinc-300">Open in new tab</span>
+      </label>
+    </div>
+
+    <div class="flex gap-3">
+      <button type="button" onclick="insertLink()"
+        class="flex-1 bg-wblue text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue"
+      >Insert</button>
+      <button type="button" onclick="hideLinkModal()"
+        class="px-4 py-2 border border-gray-300 dark:border-zinc-600 rounded-lg text-sm text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition"
+      >Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
   /* ===== Table modal ===== */
   function showTableModal() {
@@ -631,9 +681,100 @@
     document.getElementById('table-modal').classList.add('hidden');
   }
 
-  // Close on Escape
+  /* ── Link modal ──────────────────────────────────────────────────────── */
+  // Saved CE selection so we can restore it after the modal steals focus
+  let _savedLinkRange = null;
+
+  function showLinkModal() {
+    const preview = document.getElementById('md-live-preview');
+    const ta      = document.getElementById('note-content');
+    let   prefill = '';
+
+    if (window._bwActiveEditor === preview) {
+      // Save the current contenteditable selection before focus leaves
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        _savedLinkRange = sel.getRangeAt(0).cloneRange();
+        prefill = sel.toString();
+      }
+    } else {
+      _savedLinkRange = null;
+      const start = ta.selectionStart;
+      const end   = ta.selectionEnd;
+      if (start !== end) prefill = ta.value.substring(start, end);
+    }
+
+    document.getElementById('link-text').value   = prefill;
+    document.getElementById('link-url').value    = '';
+    document.getElementById('link-newtab').checked = false;
+    document.getElementById('link-modal').classList.remove('hidden');
+
+    // Focus URL if we already have display text, otherwise focus text first
+    const focusEl = prefill ? 'link-url' : 'link-text';
+    document.getElementById(focusEl).focus();
+  }
+
+  function hideLinkModal() {
+    document.getElementById('link-modal').classList.add('hidden');
+    _savedLinkRange = null;
+  }
+
+  function insertLink() {
+    const text    = document.getElementById('link-text').value.trim();
+    const url     = document.getElementById('link-url').value.trim();
+    const newTab  = document.getElementById('link-newtab').checked;
+
+    if (!url) { document.getElementById('link-url').focus(); return; }
+
+    const displayText = text || url;
+    const preview     = document.getElementById('md-live-preview');
+    const ta          = document.getElementById('note-content');
+
+    if (window._bwActiveEditor === preview) {
+      // ── ContentEditable path ──
+      preview.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      // Restore the selection we saved when the modal opened
+      if (_savedLinkRange) sel.addRange(_savedLinkRange);
+
+      if (newTab) {
+        // execCommand createLink then patch target/rel on the resulting <a>
+        document.execCommand('insertHTML', false,
+          `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`);
+      } else {
+        if (!sel.isCollapsed) document.execCommand('insertHTML', false,
+          `<a href="${url}">${displayText}</a>`);
+        else document.execCommand('insertHTML', false,
+          `<a href="${url}">${displayText}</a>`);
+      }
+      preview.dispatchEvent(new Event('input'));
+    } else {
+      // ── Markdown textarea path ──
+      const start  = ta.selectionStart;
+      const end    = ta.selectionEnd;
+      const before = ta.value.slice(0, start);
+      const after  = ta.value.slice(end);
+      let   md;
+      if (newTab) {
+        // Markdown has no native new-tab support; emit raw HTML anchor
+        md = `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`;
+      } else {
+        md = `[${displayText}](${url})`;
+      }
+      ta.value = before + md + after;
+      const cur = start + md.length;
+      ta.setSelectionRange(cur, cur);
+      ta.focus();
+      ta.dispatchEvent(new Event('input'));
+    }
+
+    hideLinkModal();
+  }
+
+  // Close both modals on Escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hideTableModal();
+    if (e.key === 'Escape') { hideTableModal(); hideLinkModal(); }
   });
 
   function insertTable() {
@@ -826,6 +967,8 @@
              raw text — the 400ms debounce hasn’t rendered it yet.
        Both cases use execCommand so the browser’s own undo stack stays intact. */
     preview.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd+K → link modal (must intercept before the early-return below)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
       if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
       if (typeof scIsOpen === 'function' && scIsOpen()) return;
 
