@@ -1,0 +1,7 @@
+{# Primary target: #category-list (manage list after add/delete) #}
+{# Also swaps the filter checkboxes OOB so they stay in sync #}
+{% include "partials/category_list.html" %}
+
+<div hx-swap-oob="innerHTML:#cat-filter-list">
+  {% include "partials/cat_filter.html" %}
+</div>

@@ -1,0 +1,213 @@
+{# note_attachments.html
+   Context vars:
+     attachments  — list of attachment dicts
+     note_id      — int
+     editable     — bool (shows upload zone + delete buttons)
+#}
+<div id="attachments-panel">
+
+  {# ── Upload zone (edit mode only) ────────────────────── #}
+  {% if editable %}
+  <div
+    id="att-drop-zone"
+    class="relative flex flex-col items-center justify-center gap-1
+           border-2 border-dashed border-gray-300 dark:border-zinc-600
+           rounded-xl p-4 cursor-pointer transition
+           hover:border-wblue hover:bg-blue-50 dark:hover:bg-zinc-800/60"
+    aria-label="Upload attachment"
+  >
+    <input
+      id="att-file-input"
+      type="file"
+      class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+      aria-label="Choose file to attach"
+    />
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-gray-400 dark:text-zinc-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
+           a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+    </svg>
+    <p class="text-xs text-gray-500 dark:text-zinc-400 pointer-events-none text-center">
+      <span class="font-semibold text-wblue">Click to attach</span> or drag &amp; drop
+      <br><span class="text-gray-400 dark:text-zinc-500">Any file · Max 20 MB</span>
+    </p>
+    {# Upload progress bar — hidden by default #}
+    <div id="att-progress-wrap" class="hidden w-full mt-1">
+      <div class="h-1.5 w-full bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+        <div id="att-progress-bar" class="h-full bg-wblue rounded-full transition-all" style="width:0%"></div>
+      </div>
+      <p id="att-progress-label" class="text-[10px] text-gray-400 text-center mt-0.5">Uploading…</p>
+    </div>
+    <p id="att-error" class="hidden text-xs text-wred mt-1 pointer-events-none"></p>
+  </div>
+  {% endif %}
+
+  {# ── Attachment list ─────────────────────────────────── #}
+  {% if attachments %}
+  <ul class="mt-3 space-y-2" aria-label="Attachments">
+    {% for att in attachments %}
+    {% set is_image = att.mime_type and att.mime_type.startswith('image/') %}
+    <li class="flex items-center gap-3 p-2 rounded-lg border border-gray-100
+               dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50 group">
+
+      {# Thumbnail or file-type icon #}
+      {% if is_image %}
+      <a href="/uploads/{{ att.filename }}" target="_blank" rel="noopener"
+         class="flex-shrink-0" aria-label="Open {{ att.original_name }}">
+        <img src="/uploads/{{ att.filename }}"
+             alt="{{ att.original_name }}"
+             class="w-12 h-12 object-cover rounded-lg border border-gray-200 dark:border-zinc-700"
+             loading="lazy" />
+      </a>
+      {% else %}
+      <div class="flex-shrink-0 w-12 h-12 rounded-lg border border-gray-200 dark:border-zinc-700
+                  bg-white dark:bg-zinc-900 flex items-center justify-center">
+        {# Pick icon by mime type #}
+        {% if 'pdf' in att.mime_type %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-wred" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+        </svg>
+        {% elif 'spreadsheet' in att.mime_type or 'excel' in att.mime_type or att.original_name.endswith(('.xlsx','.xls','.csv')) %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-wgreen" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M3 10h18M3 14h18M10 3v18M14 3v18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+        </svg>
+        {% elif 'word' in att.mime_type or 'document' in att.mime_type or att.original_name.endswith(('.docx','.doc')) %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-wblue" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0121 9.414V19a2 2 0 01-2 2z"/>
+        </svg>
+        {% else %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
+               a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+        </svg>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# File info #}
+      <div class="flex-1 min-w-0">
+        <a href="/uploads/{{ att.filename }}" download="{{ att.original_name }}"
+           class="block text-sm font-medium text-gray-800 dark:text-zinc-100 truncate
+                  hover:text-wblue dark:hover:text-blue-400 transition"
+           title="{{ att.original_name }}">
+          {{ att.original_name }}
+        </a>
+        <p class="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">
+          {{ att.size | fmt_bytes }}
+          · <time datetime="{{ att.created_at }}">{{ att.created_at[:10] }}</time>
+        </p>
+      </div>
+
+      {# Delete button (edit mode only) #}
+      {% if editable %}
+      <button
+        hx-delete="/notes/attachments/{{ att.id }}"
+        hx-target="#attachments-panel"
+        hx-swap="outerHTML"
+        hx-confirm="Remove this attachment?"
+        class="flex-shrink-0 p-1.5 rounded-lg text-gray-300 dark:text-zinc-600
+               hover:text-wred hover:bg-red-50 dark:hover:bg-zinc-900
+               transition opacity-0 group-hover:opacity-100 focus:opacity-100"
+        aria-label="Delete {{ att.original_name }}"
+        title="Delete"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </button>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif not editable %}
+  <p class="text-sm text-gray-400 dark:text-zinc-500 italic">No attachments.</p>
+  {% endif %}
+
+</div>
+
+{% if editable %}
+<script>
+(function initAttachmentZone() {
+  const zone   = document.getElementById('att-drop-zone');
+  const input  = document.getElementById('att-file-input');
+  const errEl  = document.getElementById('att-error');
+  const wrap   = document.getElementById('att-progress-wrap');
+  const bar    = document.getElementById('att-progress-bar');
+  const label  = document.getElementById('att-progress-label');
+  if (!zone || !input) return;
+
+  const NOTE_ID = {{ note_id }};
+  const MAX_MB  = 20;
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.classList.remove('hidden');
+    wrap.classList.add('hidden');
+    setTimeout(() => errEl.classList.add('hidden'), 4000);
+  }
+
+  function setProgress(pct) {
+    wrap.classList.remove('hidden');
+    bar.style.width = pct + '%';
+    label.textContent = pct < 100 ? `Uploading… ${pct}%` : 'Done!';
+  }
+
+  async function uploadFile(file) {
+    if (file.size > MAX_MB * 1024 * 1024) {
+      showError(`File too large — max ${MAX_MB} MB`);
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+
+    // XHR so we get progress events
+    await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/notes/${NOTE_ID}/attachments`);
+      xhr.setRequestHeader('HX-Request', 'true');
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) setProgress(Math.round(e.loaded / e.total * 100));
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setProgress(100);
+          // Swap the response HTML into #attachments-panel
+          const panel = document.getElementById('attachments-panel');
+          if (panel) {
+            panel.outerHTML = xhr.responseText;
+            htmx.process(document.getElementById('attachments-panel') || document.body);
+          }
+        } else {
+          showError('Upload failed — ' + xhr.statusText);
+        }
+        resolve();
+      });
+      xhr.addEventListener('error', () => { showError('Network error'); resolve(); });
+      xhr.send(fd);
+    });
+  }
+
+  // File-input change (click to browse)
+  input.addEventListener('change', async () => {
+    for (const file of Array.from(input.files || [])) await uploadFile(file);
+    input.value = '';
+  });
+
+  // Drag-and-drop
+  zone.addEventListener('dragover',  (e) => { e.preventDefault(); zone.classList.add('border-wblue','bg-blue-50','dark:bg-zinc-800/60'); });
+  zone.addEventListener('dragleave', ()  => { zone.classList.remove('border-wblue','bg-blue-50','dark:bg-zinc-800/60'); });
+  zone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    zone.classList.remove('border-wblue','bg-blue-50','dark:bg-zinc-800/60');
+    for (const file of Array.from(e.dataTransfer.files)) await uploadFile(file);
+  });
+})();
+</script>
+{% endif %}

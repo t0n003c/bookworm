@@ -1,0 +1,133 @@
+<div>
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-4">
+    <div class="flex-1 min-w-0">
+      <h2 class="text-xl font-bold text-gray-900 dark:text-zinc-100 break-words">
+        {%- if note.icon %}<span aria-hidden="true" class="mr-1">{{ note.icon }}</span>{%- endif -%}
+        {{ note.title }}
+      </h2>
+      <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-zinc-400">
+        <time datetime="{{ note.meeting_date }}">&#128197; Date: <strong>{{ note.meeting_date }}</strong></time>
+        <span>·</span>
+        <time datetime="{{ note.updated_at }}">Updated {{ note.updated_at[:10] }}</time>
+      </div>
+    </div>
+    <button onclick="closePanel()" class="text-gray-400 hover:text-gray-700 transition ml-3 flex-shrink-0" aria-label="Close panel">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Categories -->
+  {% if note.categories %}
+  <div class="flex flex-wrap gap-1.5 mb-4">
+    {% for cat in note.categories %}
+    <span
+      class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium"
+      style="background: {{ cat.color }}22; color: {{ cat.color }}; border: 1px solid {{ cat.color }}55"
+    >
+      <span class="w-1.5 h-1.5 rounded-full" style="background: {{ cat.color }}"></span>
+      {{ cat.name }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Attributes -->
+  {% if note.attributes %}
+  <div class="bg-gray-50 dark:bg-zinc-900/50 rounded-lg border border-gray-200 dark:border-zinc-700 p-3 mb-4">
+    <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Attributes</h3>
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+      {% for attr in note.attributes %}
+      <div>
+        <dt class="text-xs font-medium text-gray-500 dark:text-zinc-400">{{ attr.key }}</dt>
+        <dd class="text-sm text-gray-900 dark:text-zinc-100 font-semibold">{{ attr.value or '—' }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </div>
+  {% endif %}
+
+  <!-- Content -->
+  <div class="mb-6">
+    <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Notes</h3>
+    {% if note.content %}
+    <div id="md-render-target"
+      class="md-body text-sm text-gray-800 dark:text-zinc-200 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg p-4 min-h-[20rem] leading-relaxed"
+      data-raw="{{ note.content | e }}"
+    ></div>
+    <script>
+      (function() {
+        const el = document.getElementById('md-render-target');
+        const raw = el.getAttribute('data-raw');
+        marked.use({ gfm: true, breaks: true });
+        // ADD_ATTR style: lets color/highlight/font-size spans pass through
+        el.innerHTML = DOMPurify.sanitize(marked.parse(raw), {
+          ADD_TAGS: ['mark'],
+          ADD_ATTR: ['style'],
+          FORCE_BODY: true,
+        });
+
+        // Make every todo checkbox clickable — POSTs to the toggle endpoint
+        el.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
+          cb.removeAttribute('disabled');
+          cb.style.cursor = 'pointer';
+          cb.addEventListener('change', (e) => {
+            e.preventDefault();
+            cb.disabled = true; // prevent double-click while in flight
+            htmx.ajax('POST', '/notes/{{ note.id }}/toggle-todo', {
+              target: '#detail-panel',
+              swap: 'innerHTML',
+              values: { index: idx },
+            });
+          });
+        });
+      })();
+    </script>
+    {% else %}
+    <p class="text-sm text-gray-400 dark:text-zinc-500 italic">No content written yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Attachments -->
+  {% if note.attachments %}
+  <div class="mb-6">
+    <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Attachments</h3>
+    {% with attachments = note.attachments, note_id = note.id, editable = false %}
+      {% include 'partials/note_attachments.html' %}
+    {% endwith %}
+  </div>
+  {% endif %}
+
+  <!-- Actions -->
+  <div class="flex gap-3">
+    <button
+      hx-get="/notes/{{ note.id }}/form"
+      hx-target="#detail-panel"
+      hx-swap="innerHTML"
+      class="flex-1 flex items-center justify-center gap-2 bg-wblue text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue"
+      aria-label="Edit this note"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+      </svg>
+      Edit
+    </button>
+    <button
+      hx-delete="/notes/{{ note.id }}"
+      hx-target="#note-list"
+      hx-swap="innerHTML"
+      hx-confirm="Delete this note? This cannot be undone."
+      hx-include="#active-workspace"
+      hx-on::after-request="closePanel()"
+      class="flex items-center gap-2 border border-wred text-wred font-semibold px-4 py-2.5 rounded-lg hover:bg-red-50 transition text-sm focus:outline-none focus:ring-2 focus:ring-wred"
+      aria-label="Delete this note"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+      </svg>
+      Delete
+    </button>
+  </div>
+</div>

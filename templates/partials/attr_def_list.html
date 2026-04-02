@@ -1,0 +1,26 @@
+{% if attr_defs %}
+<ul class="space-y-1" role="list" aria-label="Attribute definitions">
+  {% for attr in attr_defs %}
+  <li class="flex items-center justify-between gap-2 text-sm py-0.5">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="text-xs bg-blue-50 dark:bg-blue-900/30 text-wblue px-1.5 py-0.5 rounded font-mono flex-shrink-0">{{ attr.field_type }}</span>
+      <span class="truncate text-gray-700 dark:text-zinc-300">{{ attr.name }}</span>
+    </div>
+    <button
+      hx-delete="/attr-defs/{{ attr.id }}"
+      hx-target="#attr-def-list"
+      hx-swap="innerHTML"
+      hx-confirm="Delete attribute definition '{{ attr.name }}'?"
+      class="text-gray-300 hover:text-wred transition flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-wred rounded"
+      aria-label="Delete attribute {{ attr.name }}"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-xs text-gray-400 italic">No custom attributes defined.</p>
+{% endif %}

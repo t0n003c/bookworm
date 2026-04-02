@@ -1,0 +1,39 @@
+{#
+  Workspace breadcrumb — shown above the note list only for sub-workspaces.
+  Requires: active_ws_id, breadcrumbs (dict: ws_id -> list of ancestor dicts)
+#}
+{% if active_ws_id is not none %}
+  {% set crumbs = breadcrumbs.get(active_ws_id, []) %}
+  {% if crumbs | length > 1 %}
+  <nav aria-label="Workspace breadcrumb"
+       class="flex items-center gap-1.5 flex-wrap text-sm mb-5 text-gray-500 dark:text-zinc-400">
+    {% for crumb in crumbs %}
+      {% set is_last = loop.last %}
+
+      {% if is_last %}
+        {# Active leaf — not clickable, full colour #}
+        <span class="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-zinc-100">
+          <span aria-hidden="true">{{ crumb.emoji }}</span>
+          <span>{{ crumb.name }}</span>
+        </span>
+      {% else %}
+        {# Ancestor — clickable, switches workspace #}
+        <button
+          type="button"
+          onclick="wsSingleClick({{ crumb.id }})"
+          class="flex items-center gap-1.5 hover:text-wblue transition"
+          aria-label="Go to workspace {{ crumb.name }}"
+        >
+          <span aria-hidden="true">{{ crumb.emoji }}</span>
+          <span>{{ crumb.name }}</span>
+        </button>
+        {# separator #}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 flex-shrink-0 text-gray-300 dark:text-zinc-600"
+             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+        </svg>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  {% endif %}
+{% endif %}

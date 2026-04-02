@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+
+# Database (may contain PII)
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (user files)
+uploads/
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db

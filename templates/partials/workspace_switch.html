@@ -1,0 +1,40 @@
+{# OOB response: note list (primary target) + top-bar tabs + sidebar list + breadcrumb + hidden ws input #}
+
+{# ---- primary swap: note list ---- #}
+{% include "partials/note_list.html" %}
+
+{# ---- OOB: top-bar workspace tab strip ---- #}
+<div hx-swap-oob="innerHTML:#workspace-tabs">
+  {% include "partials/workspace_tabs.html" %}
+</div>
+
+{# ---- OOB: sidebar workspace list ---- #}
+<div hx-swap-oob="innerHTML:#sidebar-workspace-list">
+  {% include "partials/sidebar_workspace_list.html" %}
+</div>
+
+{# ---- OOB: sidebar trash (pinned bottom of sidebar) ---- #}
+<div hx-swap-oob="innerHTML:#sidebar-trash">
+  {% include "partials/sidebar_trash.html" %}
+</div>
+
+{# ---- OOB: workspace breadcrumb above note list ---- #}
+<div hx-swap-oob="innerHTML:#ws-breadcrumb">
+  {% include "partials/workspace_breadcrumb.html" %}
+</div>
+
+{# ---- OOB: hidden active workspace input (keeps filters in sync) ---- #}
+<input id="active-workspace" name="workspace_id" type="hidden"
+  value="{{ active_ws_id if active_ws_id is not none else '' }}" hx-swap-oob="true" />
+
+{# ---- OOB: category manage list (scoped to new active workspace) ---- #}
+{# NOTE: #cat-filter-list is self-refreshing via workspaceChanged event — no OOB needed #}
+<div hx-swap-oob="innerHTML:#category-list">
+  {% include "partials/category_list.html" %}
+</div>
+
+{# ---- OOB: hidden workspace_id inside the category add form ---- #}
+<input id="cat-ws-id" name="workspace_id" type="hidden"
+  value="{{ active_ws_id if active_ws_id is not none else '' }}"
+  form="cat-add-form"
+  hx-swap-oob="true" />

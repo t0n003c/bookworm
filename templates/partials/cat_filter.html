@@ -1,0 +1,16 @@
+{# Workspace-scoped category filter checkboxes — swapped OOB on workspace switch #}
+{% if categories %}
+  {% for cat in categories %}
+  <label class="flex items-center gap-2 text-sm cursor-pointer text-gray-700 dark:text-zinc-300">
+    <input type="checkbox" name="category_ids" value="{{ cat.id }}"
+      hx-get="/notes" hx-target="#note-list" hx-swap="innerHTML"
+      hx-include="#filter-form" hx-trigger="change"
+      class="accent-wblue rounded"
+    />
+    <span class="inline-block w-3 h-3 rounded-full" style="background:{{ cat.color }}"></span>
+    {{ cat.name }}
+  </label>
+  {% endfor %}
+{% else %}
+  <p class="text-xs text-gray-400 italic">No categories for this workspace.</p>
+{% endif %}

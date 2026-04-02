@@ -1,0 +1,96 @@
+{% if active_ws_id is none %}
+{# ===== Welcome / no-workspace state ===== #}
+<div class="flex flex-col items-center justify-center h-full py-32 select-none" aria-label="No workspace selected">
+  <div class="text-8xl mb-6" aria-hidden="true">🪱</div>
+  <h1 class="text-3xl font-bold text-gray-800 dark:text-zinc-100 mb-2 tracking-tight">BookWorm</h1>
+  <p class="text-sm text-gray-400 dark:text-zinc-500 text-center max-w-xs leading-relaxed">
+    Your team’s cosy corner for meeting notes.<br>
+    Double-click a workspace in the sidebar to dive in! 📚
+  </p>
+</div>
+
+{% elif notes %}
+<div class="grid gap-4">
+  {% for note in notes %}
+  <article
+    class="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-800 p-5 hover:shadow-md hover:border-wblue dark:hover:border-wblue transition cursor-pointer group"
+    hx-get="/notes/{{ note.id }}"
+    hx-target="#detail-panel"
+    hx-swap="innerHTML"
+    role="button"
+    tabindex="0"
+    aria-label="Open note: {{ note.title }}"
+    onkeydown="if(event.key==='Enter'||event.key===' '){this.click()}"
+  >
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex-1 min-w-0">
+        <h2 class="font-semibold text-gray-900 dark:text-zinc-100 text-base truncate group-hover:text-wblue transition">
+          {%- if note.icon %}<span aria-hidden="true">{{ note.icon }} </span>{%- endif -%}
+          {{ note.title }}
+        </h2>
+        <time class="text-xs text-gray-400 dark:text-zinc-500 mt-0.5 block" datetime="{{ note.meeting_date }}">
+          📅 Date: {{ note.meeting_date }}
+        </time>
+      </div>
+      <time class="text-xs text-gray-400 dark:text-zinc-500 whitespace-nowrap flex-shrink-0" datetime="{{ note.updated_at }}">
+        Updated {{ note.updated_at[:10] }}
+      </time>
+    </div>
+
+    {% if note.categories %}
+    <div class="flex flex-wrap gap-1.5 mt-3">
+      {% for cat in note.categories %}
+      <span
+        class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+        style="background: {{ cat.color }}22; color: {{ cat.color }}; border: 1px solid {{ cat.color }}55"
+      >
+        <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {{ cat.color }}"></span>
+        {{ cat.name }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if note.content %}
+    <div class="relative mt-3 h-16 overflow-hidden">
+      <div
+        class="md-body md-card text-sm text-gray-600 dark:text-zinc-400"
+        data-md="{{ note.content[:400] | e }}"
+      ></div>
+      <div class="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white dark:from-zinc-900 to-transparent pointer-events-none"></div>
+    </div>
+    {% endif %}
+
+    {% if note.attributes %}
+    <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+      {% for attr in note.attributes %}
+      <span class="text-xs text-gray-500 dark:text-zinc-400">
+        <span class="font-medium text-gray-700 dark:text-zinc-300">{{ attr.key }}:</span> {{ attr.value or '—' }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+<script>
+  (function renderCardPreviews() {
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') return;
+    marked.use({ gfm: true, breaks: true });
+    document.querySelectorAll('[data-md]').forEach(function(el) {
+      var raw = el.getAttribute('data-md');
+      el.innerHTML = raw ? DOMPurify.sanitize(marked.parse(raw)) : '';
+      el.removeAttribute('data-md'); // prevent double-render on re-query
+    });
+  })();
+</script>
+
+{% else %}
+<div class="flex flex-col items-center justify-center py-24 text-gray-400 dark:text-zinc-600">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+  <p class="text-lg font-medium text-gray-500 dark:text-zinc-400">No notes found</p>
+  <p class="text-sm mt-1 text-gray-400 dark:text-zinc-500">Try adjusting your filters or create a new note!</p>
+</div>
+{% endif %}

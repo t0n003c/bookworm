@@ -1,0 +1,26 @@
+{% if categories %}
+<ul class="space-y-1" role="list" aria-label="Category list">
+  {% for cat in categories %}
+  <li class="flex items-center justify-between gap-2 text-sm py-0.5">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:{{ cat.color }}"></span>
+      <span class="truncate text-gray-700 dark:text-zinc-300">{{ cat.name }}</span>
+    </div>
+    <button
+      hx-delete="/categories/{{ cat.id }}{% if workspace_id %}?workspace_id={{ workspace_id }}{% endif %}"
+      hx-target="#category-list"
+      hx-swap="innerHTML"
+      hx-confirm="Remove '{{ cat.name }}' from this workspace?"
+      class="text-gray-300 hover:text-wred transition flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-wred rounded"
+      aria-label="Remove category {{ cat.name }} from workspace"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-xs text-gray-400 italic">No categories yet.</p>
+{% endif %}

@@ -1,0 +1,1262 @@
+{% extends "base.html" %}
+{% block body %}
+
+<!-- ===== TOP NAV ===== -->
+<header class="h-16 bg-wblue flex items-center px-4 shadow-md fixed top-0 left-0 right-0 z-30 gap-3">
+
+  <!-- Sidebar toggle -->
+  <button
+    id="sidebar-toggle"
+    onclick="toggleSidebar()"
+    class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50 flex-shrink-0"
+    aria-label="Toggle sidebar"
+    aria-expanded="true"
+    aria-controls="sidebar"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+    </svg>
+  </button>
+
+  <span class="text-2xl font-bold text-white tracking-tight flex-shrink-0">🪱 BookWorm</span>
+
+  <!-- Workspace tab strip -->
+  <div id="workspace-tabs"
+    class="flex flex-row flex-nowrap items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide px-1"
+    role="tablist" aria-label="Workspaces"
+  >
+    {% include "partials/workspace_tabs.html" %}
+  </div>
+
+  <div class="ml-auto flex items-center gap-2">
+
+    <!-- Dark / Light toggle -->
+    <button
+      id="theme-toggle"
+      onclick="toggleTheme()"
+      class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+      aria-label="Toggle dark/light mode"
+    >
+      <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 5a7 7 0 100 14A7 7 0 0012 5z"/>
+      </svg>
+      <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/>
+      </svg>
+    </button>
+
+    <!-- Settings dropdown -->
+    <div class="relative" id="settings-container">
+      <button
+        onclick="toggleSettings()"
+        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        aria-label="Settings"
+        aria-haspopup="true"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
+      <!-- Dropdown panel -->
+      <div
+        id="settings-menu"
+        class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-xl shadow-xl z-50 p-4"
+        role="menu"
+      >
+        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-3">Note View Mode</p>
+        <label class="flex items-center gap-3 cursor-pointer mb-2">
+          <input type="radio" name="view-mode" value="panel" onchange="setViewMode('panel')"
+            class="accent-wblue" aria-label="Panel mode"/>
+          <div>
+            <span class="text-sm font-medium text-gray-800 dark:text-zinc-200">Side Panel</span>
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Opens note in right panel</p>
+          </div>
+        </label>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="radio" name="view-mode" value="fullscreen" onchange="setViewMode('fullscreen')"
+            class="accent-wblue" aria-label="Fullscreen mode"/>
+          <div>
+            <span class="text-sm font-medium text-gray-800 dark:text-zinc-200">Full Screen</span>
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Opens note full screen</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- New Note button -->
+    <button
+      hx-get="/notes/form/new"
+      hx-target="#detail-panel"
+      hx-swap="innerHTML"
+      hx-include="#active-workspace"
+      class="flex items-center gap-2 bg-wspark text-gray-900 font-semibold px-4 py-2 rounded-lg hover:bg-yellow-300 transition text-sm focus:outline-none focus:ring-2 focus:ring-wspark focus:ring-offset-2 flex-shrink-0"
+      aria-label="Create new note"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      New Note
+    </button>
+  </div>
+</header>
+
+<!-- ===== MAIN LAYOUT ===== -->
+<div class="flex pt-16 h-screen">
+
+  <!-- LEFT SIDEBAR -->
+  <aside
+    id="sidebar"
+    class="w-72 flex-shrink-0 bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 sidebar-scroll transition-all duration-300 overflow-hidden flex flex-col"
+  >
+    <!-- Tab Headers -->
+    <div class="flex border-b border-gray-200 dark:border-zinc-800 flex-shrink-0">
+      <button
+        id="sb-tab-workspaces"
+        onclick="switchSidebarTab('workspaces')"
+        class="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition border-b-2"
+        aria-label="Workspaces tab"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h18M3 12h18M3 17h18"/></svg>
+        Workspaces
+      </button>
+      <button
+        id="sb-tab-search"
+        onclick="switchSidebarTab('search')"
+        class="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold transition border-b-2"
+        aria-label="Search tab"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/></svg>
+        Search
+      </button>
+    </div>
+
+    <!-- Tab: Search -->
+    <div id="sb-panel-search" class="flex-1 overflow-y-auto py-5 px-4">
+      <form
+        hx-get="/notes"
+        hx-target="#note-list"
+        hx-swap="innerHTML"
+        hx-trigger="input changed delay:350ms from:#search-input, submit"
+        id="filter-form"
+      >
+        <input id="active-workspace" name="workspace_id" type="hidden" value="{{ active_ws_id if active_ws_id is not none else '' }}">
+        <label for="search-input" class="block text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-1">Search</label>
+        <div class="relative">
+          <svg class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/></svg>
+          <input
+            id="search-input" name="q" type="search" placeholder="Search notes…"
+            class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+            aria-label="Search notes"
+          />
+        </div>
+
+        <!-- Date range -->
+        <div class="mt-4">
+          <span class="block text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Date</span>
+          <label for="date-from" class="sr-only">From date</label>
+          <input id="date-from" name="date_from" type="date"
+            class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
+            hx-get="/notes" hx-target="#note-list" hx-swap="innerHTML"
+            hx-include="#filter-form" hx-trigger="change"
+            aria-label="Filter from date"
+          />
+          <label for="date-to" class="sr-only">To date</label>
+          <input id="date-to" name="date_to" type="date"
+            class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
+            hx-get="/notes" hx-target="#note-list" hx-swap="innerHTML"
+            hx-include="#filter-form" hx-trigger="change"
+            aria-label="Filter to date"
+          />
+        </div>
+
+        <!-- Category filter -->
+        <div class="mt-4">
+          <span class="block text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Filter by Category</span>
+          <div class="space-y-1" id="cat-filter-list">
+            {% include "partials/cat_filter.html" %}
+          </div>
+        </div>
+
+        <!-- Multi-criteria Sort builder
+             Hidden inputs (name="sort_by") live in #sort-hiddens so HTMX
+             picks them up automatically via hx-include="#filter-form". -->
+        <div class="mt-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400">Sort</span>
+            <button type="button" onclick="_addSortRow()"
+              class="flex items-center gap-0.5 text-xs font-medium text-wblue hover:underline"
+              aria-label="Add sort criterion">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14"/>
+              </svg>
+              Add
+            </button>
+          </div>
+          <!-- hidden inputs included in every HTMX filter request -->
+          <div id="sort-hiddens"></div>
+          <!-- visible sort rows (no name attrs — managed by JS) -->
+          <div id="sort-rows" class="space-y-1.5"></div>
+        </div>
+      </form>
+
+      <hr class="my-5 border-gray-200 dark:border-zinc-800" />
+
+      <!-- Manage Categories -->
+      <details class="group">
+        <summary class="cursor-pointer text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 hover:text-wblue flex items-center gap-1 select-none">
+          <svg class="h-3 w-3 group-open:rotate-90 transition-transform" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l5 5-5 5V5z"/></svg>
+          Manage Categories
+        </summary>
+        <div class="mt-3" id="cat-manager">
+          <div id="category-list">
+            {% include "partials/category_list.html" %}
+          </div>
+          <form id="cat-add-form" hx-post="/categories" hx-target="#category-list" hx-swap="innerHTML"
+            class="mt-3 space-y-2"
+            hx-on::after-request="this.querySelector('[name=name]').value=''">
+            <input id="cat-ws-id" name="workspace_id" type="hidden"
+              value="{{ active_ws_id if active_ws_id is not none else '' }}" />
+            <input name="name" type="text" placeholder="Category name"
+              class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+              required aria-label="New category name"/>
+            <div class="flex gap-2 items-center">
+              <label for="cat-color" class="sr-only">Category color</label>
+              <input id="cat-color" name="color" type="color" value="#0053e2"
+                class="h-8 w-8 rounded cursor-pointer border border-gray-300 dark:border-zinc-700"
+                aria-label="Pick category color"/>
+              <button type="submit"
+                class="flex-1 bg-wblue text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue"
+              >+ Add</button>
+            </div>
+          </form>
+        </div>
+      </details>
+
+      <hr class="my-5 border-gray-200 dark:border-zinc-800" />
+
+      <!-- Manage Attribute Definitions -->
+      <details class="group">
+        <summary class="cursor-pointer text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 hover:text-wblue flex items-center gap-1 select-none">
+          <svg class="h-3 w-3 group-open:rotate-90 transition-transform" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l5 5-5 5V5z"/></svg>
+          Custom Attributes
+        </summary>
+        <div class="mt-3">
+          <div id="attr-def-list">
+            {% include "partials/attr_def_list.html" %}
+          </div>
+          <form hx-post="/attr-defs" hx-target="#attr-def-list" hx-swap="innerHTML"
+            class="mt-3 space-y-2" hx-on::after-request="this.reset()">
+            <input name="name" type="text" placeholder="Attribute name (e.g. Project)"
+              class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+              required aria-label="New attribute name"/>
+            <select name="field_type"
+              class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
+              aria-label="Attribute type">
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="select">Select (define options)</option>
+            </select>
+            <button type="submit"
+              class="w-full bg-wblue text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue"
+            >+ Add Attribute</button>
+          </form>
+        </div>
+      </details>
+    </div>
+
+    <!-- Tab: Workspaces -->
+    <div id="sb-panel-workspaces" class="flex-1 flex flex-col min-h-0 hidden">
+
+      <!-- Scrollable workspace list (favorites + tree + new button) -->
+      <div class="flex-1 overflow-y-auto scrollbar-hide py-5 px-4">
+        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-3">Workspaces</p>
+        <div id="sidebar-workspace-list">
+          {% include "partials/sidebar_workspace_list.html" %}
+        </div>
+      </div>
+
+      <!-- Trash — pinned to the bottom of the sidebar, never scrolls away -->
+      <div id="sidebar-trash"
+           class="flex-shrink-0 border-t border-gray-200 dark:border-zinc-800 py-3 px-4">
+        {% include "partials/sidebar_trash.html" %}
+      </div>
+
+    </div>
+
+  </aside>
+
+  <!-- MAIN NOTE LIST -->
+  <main class="flex-1 main-scroll bg-gray-50 dark:bg-zinc-950 px-6 py-6" id="main-content" aria-label="Note list">
+
+    <!-- workspace breadcrumb (only visible for sub-workspaces) -->
+    <div id="ws-breadcrumb">
+      {% include "partials/workspace_breadcrumb.html" %}
+    </div>
+
+    <div id="note-list">
+      {% include "partials/note_list.html" %}
+    </div>
+  </main>
+
+  <!-- RIGHT DETAIL PANEL (panel OR fullscreen depending on mode) -->
+  <aside
+    id="panel"
+    class="w-0 overflow-hidden transition-all duration-300 bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-800 panel-scroll"
+    aria-live="polite"
+    aria-label="Note detail panel"
+  >
+    <div id="detail-panel" class="p-6"></div>
+  </aside>
+
+</div>
+
+<!-- ===== HIDDEN CLOSE-WORKSPACE FORM (submitted by wsCloseTab) ===== -->
+<form
+  id="close-ws-form"
+  style="display:none"
+  hx-target="#note-list"
+  hx-swap="innerHTML"
+  hx-encoding="application/x-www-form-urlencoded"
+>
+  <input type="hidden" name="active_ws_id" id="close-ws-active-id" value="" />
+</form>
+
+<!-- ===== NEW WORKSPACE MODAL ===== -->
+<div
+  id="new-ws-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="new-ws-title"
+>
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+    onclick="document.getElementById('new-ws-modal').classList.add('hidden')"
+    aria-hidden="true"></div>
+
+  <!-- Card -->
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <h2 id="new-ws-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">New Workspace</h2>
+    <!-- parent badge: shown when creating a sub-workspace -->
+    <p id="new-ws-parent-badge"
+       class="hidden text-xs text-gray-400 dark:text-zinc-500 mb-4">
+      Inside: <span id="new-ws-parent-name" class="font-semibold text-wblue"></span>
+    </p>
+    <div id="new-ws-no-parent-spacer" class="mb-4"></div>
+
+    <form
+      hx-post="/workspaces"
+      hx-target="#note-list"
+      hx-swap="innerHTML"
+      onsubmit="document.getElementById('new-ws-modal').classList.add('hidden')"
+    >
+      <input type="hidden" id="new-ws-parent-id" name="parent_id" value="" />
+      <div class="flex gap-2 mb-4">
+        <!-- Emoji picker -->
+        <div class="flex-shrink-0">
+          <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Icon</label>
+          <input id="ws-emoji" name="emoji" type="hidden" value="📁" />
+          <button type="button" id="ws-emoji-btn"
+            onclick="openEmojiPicker('ws-emoji', 'ws-emoji-btn')"
+            class="w-14 h-10 text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg hover:border-wblue focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 transition"
+            aria-label="Choose workspace icon" aria-haspopup="true"
+          >📁</button>
+        </div>
+        <div class="flex-1">
+          <label for="ws-name" class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Name</label>
+          <input id="ws-name" name="name" type="text" placeholder="e.g. Produce Team" required
+            class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+            aria-label="Workspace name"
+          />
+        </div>
+      </div>
+
+      <div class="flex gap-2 justify-end">
+        <button type="button"
+          onclick="document.getElementById('new-ws-modal').classList.add('hidden')"
+          class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition"
+        >Cancel</button>
+        <button type="submit"
+          class="px-4 py-2 text-sm rounded-lg bg-wblue text-white font-semibold hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue"
+        >Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== EDIT WORKSPACE MODAL ===== -->
+<div
+  id="edit-ws-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="edit-ws-title"
+>
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+    onclick="closeEditWsModal()"
+    aria-hidden="true"></div>
+
+  <!-- Card -->
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <h2 id="edit-ws-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">Edit Workspace</h2>
+
+    <form
+      id="edit-ws-form"
+      hx-target="#note-list"
+      hx-swap="innerHTML"
+      hx-encoding="application/x-www-form-urlencoded"
+      onsubmit="closeEditWsModal()"
+    >
+      <input type="hidden" id="edit-ws-parent-id" name="parent_id" value="" />
+      <div class="flex gap-2 mb-4">
+        <!-- Emoji picker -->
+        <div class="flex-shrink-0">
+          <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Icon</label>
+          <input id="edit-ws-emoji" name="emoji" type="hidden" value="" />
+          <button type="button" id="edit-ws-emoji-btn"
+            onclick="openEmojiPicker('edit-ws-emoji', 'edit-ws-emoji-btn')"
+            class="w-14 h-10 text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg hover:border-wblue focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 transition"
+            aria-label="Choose workspace icon" aria-haspopup="true"
+          ></button>
+        </div>
+        <!-- Name -->
+        <div class="flex-1">
+          <label for="edit-ws-name" class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Name</label>
+          <input id="edit-ws-name" name="name" type="text" required maxlength="80"
+            class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+            aria-label="Workspace name"
+          />
+        </div>
+      </div>
+
+      <div class="flex gap-2 justify-end">
+        <button type="button"
+          onclick="closeEditWsModal()"
+          class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition"
+        >Cancel</button>
+        <button type="submit"
+          class="px-4 py-2 text-sm rounded-lg bg-wblue text-white font-semibold hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue"
+        >Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== DELETE WORKSPACE MODAL ===== -->
+<div
+  id="delete-ws-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="delete-ws-title"
+  onkeydown="if(event.key==='Escape') closeDeleteWsModal()"
+>
+  {# backdrop #}
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDeleteWsModal()"></div>
+
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      {# warning icon #}
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-wred" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                   a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+      </span>
+      <h2 id="delete-ws-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Delete workspace?
+      </h2>
+    </div>
+
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+      You're about to move
+      <strong id="delete-ws-label" class="text-gray-900 dark:text-zinc-100"></strong>
+      to the <strong class="text-gray-900 dark:text-zinc-100">Trash</strong>.
+    </p>
+    <p class="text-sm text-gray-500 dark:text-zinc-400 mb-5">
+      Any nested workspaces inside it will also be moved to Trash.
+      Notes are kept — you can restore everything from the Trash later.
+    </p>
+
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="closeDeleteWsModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+      >Cancel</button>
+      <button id="delete-ws-confirm-btn" type="button" onclick="_confirmDeleteWs()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Move to Trash</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ---- Edit Workspace Modal ---- */
+  function openEditWsModal(btn) {
+    const id       = btn.dataset.wsId;
+    const emoji    = btn.dataset.wsEmoji;
+    const name     = btn.dataset.wsName;
+    const parentId = btn.dataset.wsParent || '';
+    document.getElementById('edit-ws-emoji').value            = emoji;
+    document.getElementById('edit-ws-emoji-btn').textContent  = emoji;
+    document.getElementById('edit-ws-name').value             = name;
+    document.getElementById('edit-ws-parent-id').value        = parentId;
+    const form = document.getElementById('edit-ws-form');
+    form.setAttribute('hx-patch', '/workspaces/' + id);
+    htmx.process(form);
+    document.getElementById('edit-ws-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('edit-ws-name').focus(), 50);
+  }
+  function closeEditWsModal() {
+    closeEmojiPicker();
+    document.getElementById('edit-ws-modal').classList.add('hidden');
+  }
+
+  /* ---- Delete Workspace Modal ---- */
+  let _deleteWsPendingId = null;  // the workspace ID waiting for confirmation
+
+  function openDeleteWsModal(wsId, wsName, wsEmoji) {
+    _deleteWsPendingId = wsId;
+    document.getElementById('delete-ws-label').textContent = wsEmoji + ' ' + wsName;
+    document.getElementById('delete-ws-modal').classList.remove('hidden');
+    // Focus the confirm button for keyboard accessibility
+    setTimeout(() => document.getElementById('delete-ws-confirm-btn').focus(), 50);
+  }
+  function closeDeleteWsModal() {
+    document.getElementById('delete-ws-modal').classList.add('hidden');
+    _deleteWsPendingId = null;
+  }
+  function _confirmDeleteWs() {
+    if (!_deleteWsPendingId) return;
+    const wsId    = _deleteWsPendingId;
+    const activeId = document.getElementById('active-workspace').value || '';
+    closeDeleteWsModal();
+    htmx.ajax('POST', '/workspaces/' + wsId + '/delete', {
+      target:  '#note-list',
+      swap:    'innerHTML',
+      values:  { active_ws_id: activeId },
+    });
+  }
+
+  /* ---- New Workspace Modal (with optional parent) ---- */
+  function openNewWsModal(parentId, parentName) {
+    const badge   = document.getElementById('new-ws-parent-badge');
+    const spacer  = document.getElementById('new-ws-no-parent-spacer');
+    const pidEl   = document.getElementById('new-ws-parent-id');
+    const nameEl  = document.getElementById('new-ws-parent-name');
+    if (parentId) {
+      pidEl.value   = parentId;
+      nameEl.textContent = parentName;
+      badge.classList.remove('hidden');
+      spacer.classList.add('hidden');
+    } else {
+      pidEl.value = '';
+      badge.classList.add('hidden');
+      spacer.classList.remove('hidden');
+    }
+    // Reset emoji + name fields
+    document.getElementById('ws-emoji').value           = '📁';
+    document.getElementById('ws-emoji-btn').textContent = '📁';
+    document.getElementById('ws-name').value            = '';
+    document.getElementById('new-ws-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('ws-name').focus(), 50);
+  }
+
+  /* ---- Sidebar collapse / expand ---- */
+  const WS_COLLAPSE_KEY = 'bw-ws-collapsed';
+
+  function _getCollapsed() {
+    try { return new Set(JSON.parse(localStorage.getItem(WS_COLLAPSE_KEY) || '[]')); }
+    catch { return new Set(); }
+  }
+  function _saveCollapsed(set) {
+    localStorage.setItem(WS_COLLAPSE_KEY, JSON.stringify([...set]));
+  }
+
+  function wsToggleCollapse(wsId, btn) {
+    const children = document.getElementById('ws-children-' + wsId);
+    const chevron  = document.getElementById('chevron-' + wsId);
+    if (!children) return;
+    const collapsed = _getCollapsed();
+    const isHidden  = children.classList.toggle('hidden');
+    if (isHidden) {
+      collapsed.add(wsId);
+      chevron && chevron.classList.remove('rotate-90');
+    } else {
+      collapsed.delete(wsId);
+      chevron && chevron.classList.add('rotate-90');
+    }
+    _saveCollapsed(collapsed);
+  }
+
+  function wsInitCollapse() {
+    const collapsed = _getCollapsed();
+    document.querySelectorAll('.ws-children').forEach(el => {
+      const wsId = parseInt(el.id.replace('ws-children-', ''));
+      if (collapsed.has(wsId)) {
+        el.classList.add('hidden');
+      } else {
+        el.classList.remove('hidden');
+        const chevron = document.getElementById('chevron-' + wsId);
+        chevron && chevron.classList.add('rotate-90');
+      }
+    });
+  }
+  // Run on first load; HTMX re-runs it after OOB swaps
+  wsInitCollapse();
+  document.addEventListener('htmx:afterSettle', wsInitCollapse);
+
+  /* ---- Sidebar tabs ---- */
+  const SB_TAB_ACTIVE   = ['border-wblue', 'text-wblue'];
+  const SB_TAB_INACTIVE = ['border-transparent', 'text-gray-500', 'dark:text-zinc-400'];
+
+  function switchSidebarTab(tab) {
+    ['search', 'workspaces'].forEach(t => {
+      const btn   = document.getElementById('sb-tab-' + t);
+      const panel = document.getElementById('sb-panel-' + t);
+      const isActive = t === tab;
+      btn.classList.toggle('border-wblue',    isActive);
+      btn.classList.toggle('text-wblue',      isActive);
+      btn.classList.toggle('border-transparent', !isActive);
+      btn.classList.toggle('text-gray-500',    !isActive);
+      btn.classList.toggle('dark:text-zinc-400', !isActive);
+      panel.classList.toggle('hidden', !isActive);
+    });
+    localStorage.setItem('bw-sidebar-tab', tab);
+  }
+
+  // Restore saved tab or default to 'workspaces'
+  (function initSidebarTab() {
+    const saved = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
+    switchSidebarTab(saved);
+  })();
+
+  /* ---- Sidebar open/close ---- */
+  let sidebarOpen = true;
+  function toggleSidebar() {
+    const sb  = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebar-toggle');
+    sidebarOpen = !sidebarOpen;
+    sb.classList.toggle('w-72', sidebarOpen);
+    sb.classList.toggle('w-0',  !sidebarOpen);
+    btn.setAttribute('aria-expanded', String(sidebarOpen));
+  }
+
+  /* ---- Panel / Fullscreen ---- */
+  function openPanel(wide = false) {
+    const panel = document.getElementById('panel');
+    const dp    = document.getElementById('detail-panel');
+
+    panel.classList.remove('overflow-hidden');
+
+    if (localStorage.getItem('bw-view-mode') === 'fullscreen') {
+      // Fullscreen: clear inline width, let fixed+inset-0+w-full take over
+      panel.style.width = '';
+      panel.classList.add('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
+      dp.style.minWidth = '';
+      dp.classList.add('max-w-4xl', 'mx-auto');
+    } else {
+      // Side panel: inline width bypasses Tailwind CDN arbitrary-class limitation
+      const w = wide ? '56rem' : '28rem';
+      panel.style.width = w;
+      dp.style.minWidth  = w;
+      panel.classList.remove('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
+      dp.classList.remove('max-w-4xl', 'mx-auto');
+    }
+  }
+
+  function closePanel() {
+    const panel = document.getElementById('panel');
+    const dp    = document.getElementById('detail-panel');
+    // Clear inline width so the w-0 base class takes over
+    panel.style.width = '';
+    dp.style.minWidth  = '';
+    panel.classList.add('overflow-hidden');
+    panel.classList.remove('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
+    dp.classList.remove('max-w-4xl', 'mx-auto');
+    dp.innerHTML = '';
+  }
+
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanel(); });
+
+  /* ---- Auto open/resize panel after every HTMX swap into #detail-panel ---- */
+  document.addEventListener('htmx:afterSwap', (e) => {
+    if (e.detail.target.id !== 'detail-panel') return;
+    // If a form landed in the panel → wide; if it's a view → normal
+    const isForm = !!e.detail.target.querySelector('#note-form');
+    openPanel(isForm);
+  });
+
+
+
+  /* ---- Theme ---- */
+  function toggleTheme() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('bw-theme', isDark ? 'dark' : 'light');
+    syncThemeIcon();
+  }
+  function syncThemeIcon() {
+    const isDark = document.documentElement.classList.contains('dark');
+    document.getElementById('icon-sun').classList.toggle('hidden', !isDark);
+    document.getElementById('icon-moon').classList.toggle('hidden', isDark);
+  }
+  syncThemeIcon();
+
+  /* ---- Settings ---- */
+  function toggleSettings() {
+    document.getElementById('settings-menu').classList.toggle('hidden');
+  }
+  function setViewMode(mode) {
+    localStorage.setItem('bw-view-mode', mode);
+    // Close any open panel so next open uses new mode
+    closePanel();
+  }
+  // Sync radio on load
+  (function syncSettings() {
+    const mode = localStorage.getItem('bw-view-mode') || 'panel';
+    const radio = document.querySelector(`input[name="view-mode"][value="${mode}"]`);
+    if (radio) radio.checked = true;
+  })();
+  // Close settings when clicking outside
+  document.addEventListener('click', (e) => {
+    const container = document.getElementById('settings-container');
+    if (container && !container.contains(e.target)) {
+      document.getElementById('settings-menu').classList.add('hidden');
+    }
+  });
+  /* ---- Sidebar workspace click vs double-click ---- */
+  let _wsClickTimer = null;
+
+  /* =========================================================
+   * Multi-criteria Sort Builder
+   * State: _sortState = [{field, dir}, ...]  (max 4 entries)
+   * Hidden <input name="sort_by"> elements live inside
+   * #filter-form so hx-include="#filter-form" picks them up.
+   * ======================================================= */
+  const _SORT_FIELDS = [
+    { value: 'date',    label: '\uD83D\uDCC5 Meeting Date' },
+    { value: 'title',   label: '\uD83D\uDD24 Title' },
+    { value: 'created', label: '\uD83C\uDD95 Created' },
+    { value: 'updated', label: '\u270F\uFE0F Updated' },
+  ];
+  let _sortState = [{ field: 'date', dir: 'desc' }];
+
+  function _renderSort() {
+    const rows    = document.getElementById('sort-rows');
+    const hiddens = document.getElementById('sort-hiddens');
+    if (!rows || !hiddens) return;
+
+    const canAdd    = _sortState.length < _SORT_FIELDS.length;
+    const canRemove = _sortState.length > 1;
+
+    rows.innerHTML = _sortState.map((s, i) => {
+      const opts = _SORT_FIELDS.map(f =>
+        `<option value="${f.value}"${f.value === s.field ? ' selected' : ''}>${f.label}</option>`
+      ).join('');
+      const dirLabel = s.dir === 'asc' ? '\u2191 Asc' : '\u2193 Desc';
+      const dirTitle = s.dir === 'asc' ? 'Ascending — click to flip' : 'Descending — click to flip';
+      const removeBtn = canRemove
+        ? `<button type="button" onclick="_removeSortRow(${i})"
+             title="Remove" aria-label="Remove sort criterion"
+             class="flex-shrink-0 text-gray-400 hover:text-red-500 transition">
+             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+             </svg></button>`
+        : `<span class="w-3.5 flex-shrink-0"></span>`;
+      return `
+      <div class="flex items-center gap-1">
+        <select aria-label="Sort field ${i+1}"
+          class="flex-1 min-w-0 text-xs border border-gray-300 dark:border-zinc-700 rounded-lg
+                 pl-2 pr-1 py-1.5 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                 focus:outline-none focus:ring-1 focus:ring-wblue cursor-pointer"
+          onchange="_onSortField(${i}, this.value)">${opts}</select>
+        <button type="button" title="${dirTitle}" aria-label="Toggle direction"
+          onclick="_onSortDir(${i})"
+          class="flex-shrink-0 text-xs px-1.5 py-1.5 rounded-lg border border-gray-300
+                 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-600
+                 dark:text-zinc-300 hover:border-wblue hover:text-wblue transition
+                 font-mono whitespace-nowrap w-14 text-center">${dirLabel}</button>
+        ${removeBtn}
+      </div>`;
+    }).join('');
+
+    // Sync hidden inputs that HTMX includes in every filter request
+    hiddens.innerHTML = _sortState.map(s =>
+      `<input type="hidden" name="sort_by" value="${s.field}:${s.dir}">`
+    ).join('');
+
+    // Grey-out the Add button when all fields are in use
+    const addBtn = document.querySelector('button[onclick="_addSortRow()"]');
+    if (addBtn) {
+      addBtn.disabled = !canAdd;
+      addBtn.classList.toggle('opacity-40', !canAdd);
+      addBtn.classList.toggle('cursor-not-allowed', !canAdd);
+    }
+  }
+
+  function _onSortField(idx, field) {
+    if (_sortState.some((s, i) => i !== idx && s.field === field)) return; // duplicate
+    _sortState[idx].field = field;
+    _renderSort();
+    _sortRefreshNotes();
+  }
+
+  function _onSortDir(idx) {
+    _sortState[idx].dir = _sortState[idx].dir === 'asc' ? 'desc' : 'asc';
+    _renderSort();
+    _sortRefreshNotes();
+  }
+
+  function _removeSortRow(idx) {
+    if (_sortState.length <= 1) return;
+    _sortState.splice(idx, 1);
+    _renderSort();
+    _sortRefreshNotes();
+  }
+
+  function _addSortRow() {
+    if (_sortState.length >= _SORT_FIELDS.length) return;
+    const used = new Set(_sortState.map(s => s.field));
+    const next = _SORT_FIELDS.find(f => !used.has(f.value));
+    if (!next) return;
+    _sortState.push({ field: next.value, dir: 'desc' });
+    _renderSort();
+    _sortRefreshNotes();
+  }
+
+  /* Serialize current sort state as repeated URL params. */
+  function _sortSearchParams() {
+    const p = new URLSearchParams();
+    _sortState.forEach(s => p.append('sort_by', `${s.field}:${s.dir}`));
+    return p.toString();
+  }
+
+  /* Re-fetch the note list including all active filters + current sort. */
+  function _sortRefreshNotes() {
+    const form = document.getElementById('filter-form');
+    const qs   = form ? new URLSearchParams(new FormData(form)).toString() : _sortSearchParams();
+    htmx.ajax('GET', '/notes?' + qs, { target: '#note-list', swap: 'innerHTML' });
+  }
+
+  // Boot the sort builder once the DOM is ready
+  document.addEventListener('DOMContentLoaded', _renderSort);
+
+  /* ---- Category filter refresh ---- */
+  function refreshCatFilter(wsId) {
+    htmx.ajax('GET', '/categories/filter?workspace_id=' + wsId, {
+      target: '#cat-filter-list',
+      swap:   'innerHTML',
+    });
+  }
+
+  /* ---- Workspace navigation ---- */
+  /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
+  function wsSingleClick(id) {
+    if (_wsClickTimer) return;
+    _wsClickTimer = setTimeout(() => {
+      _wsClickTimer = null;
+      document.getElementById('active-workspace').value = id;
+      htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
+        target: '#note-list', swap: 'innerHTML',
+      }).then(() => refreshCatFilter(id));
+    }, 350);
+  }
+
+  function wsDoubleClick(id) {
+    clearTimeout(_wsClickTimer);
+    _wsClickTimer = null;
+    document.getElementById('active-workspace').value = id;
+    htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
+      target: '#note-list', swap: 'innerHTML',
+    }).then(() => refreshCatFilter(id));
+  }
+
+  /* Top-bar tab click — immediate switch, no debounce, no hx-vals needed. */
+  function wsTabClick(id) {
+    window._bwWsId = id;
+    document.getElementById('active-workspace').value = id;
+    htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
+      target:  '#note-list',
+      swap:    'innerHTML',
+      pushUrl: '/?ws=' + id,
+    }).then(() => refreshCatFilter(id));
+  }
+
+  function wsCloseTab(wsId) {
+    const inp = document.getElementById('active-workspace');
+    const activeWsId = inp ? (inp.value || '0') : '0';
+    // Use a real HTMX form so OOB swaps are handled correctly
+    const form = document.getElementById('close-ws-form');
+    document.getElementById('close-ws-active-id').value = activeWsId;
+    form.setAttribute('hx-post', '/workspaces/' + wsId + '/close');
+    htmx.process(form);
+    htmx.trigger(form, 'submit');
+  }
+
+</script>
+
+<!-- ===== EMOJI PICKER ===== -->
+<div
+  id="emoji-picker"
+  class="hidden fixed z-[60] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-2xl shadow-2xl p-3 w-72"
+  role="dialog" aria-label="Choose an emoji"
+>
+  <!-- Search -->
+  <input
+    id="emoji-search"
+    type="search"
+    placeholder="Search emojis…"
+    oninput="filterEmojis(this.value)"
+    class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 mb-3 focus:outline-none focus:ring-2 focus:ring-wblue bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+    aria-label="Search emojis"
+  />
+  <!-- Grid -->
+  <div id="emoji-grid" class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto">
+  </div>
+  <p id="emoji-empty" class="hidden text-xs text-center text-gray-400 dark:text-zinc-500 py-4">No emojis found</p>
+</div>
+
+<script>
+  /* ===== Emoji Picker ===== */
+  const EMOJIS = [
+    /* Folders & Files */
+    { e:'📁', t:'folder file'        }, { e:'📂', t:'folder open file'   },
+    { e:'🗂️', t:'card index file'   }, { e:'📋', t:'clipboard task'     },
+    { e:'📌', t:'pushpin pinned'      }, { e:'📎', t:'paperclip attach'   },
+    { e:'🗃️', t:'card box archive'  }, { e:'🗄️', t:'cabinet files'      },
+    /* Work & Business */
+    { e:'💼', t:'briefcase work job'  }, { e:'📊', t:'chart bar data'      },
+    { e:'📈', t:'chart growth trend'  }, { e:'🎯', t:'target goal dart'    },
+    { e:'✅',   t:'check done complete'  }, { e:'⚡',   t:'bolt fast zap'       },
+    { e:'🔧', t:'wrench fix tool'     }, { e:'⚙️',  t:'gear settings cog'  },
+    /* Notes & Writing */
+    { e:'📝', t:'memo note write'     }, { e:'✏️',  t:'pencil edit write'  },
+    { e:'📒', t:'notebook'            }, { e:'📓', t:'notebook'            },
+    { e:'📔', t:'notebook'            }, { e:'📕', t:'notebook red book'   },
+    { e:'📗', t:'book green'          }, { e:'📘', t:'book blue'           },
+    /* Stars & Highlights */
+    { e:'⭐',   t:'star favorite'        }, { e:'🌟', t:'star glowing'        },
+    { e:'💫', t:'star dizzy sparkle'  }, { e:'🔔', t:'bell alert notify'   },
+    { e:'🚀', t:'rocket launch fast'  }, { e:'🎉', t:'party celebrate'     },
+    { e:'🏆', t:'trophy win award'    }, { e:'💡', t:'bulb idea light'      },
+    /* People & Team */
+    { e:'👥', t:'people team group'   }, { e:'🤝', t:'handshake partner'   },
+    { e:'💬', t:'chat speech talk'    }, { e:'📣', t:'megaphone announce'  },
+    { e:'📢', t:'loudspeaker update'  }, { e:'🎓', t:'graduate school'     },
+    { e:'🏅', t:'medal award'         }, { e:'👋', t:'wave hello'          },
+    /* Grocery & Retail */
+    { e:'🛒', t:'cart grocery shop'   }, { e:'🏪', t:'store shop'          },
+    { e:'🏬', t:'department store'    }, { e:'🛍️', t:'shopping bag'       },
+    { e:'🏷️', t:'label tag price'    }, { e:'💰', t:'money bag budget'   },
+    { e:'💳', t:'card payment'        }, { e:'📦', t:'box package ship'    },
+    /* Tech & Tools */
+    { e:'🔬', t:'microscope science'  }, { e:'🧪', t:'lab test science'    },
+    { e:'🏗️', t:'build project'      }, { e:'🔩', t:'hammer build'        },
+    { e:'🖥️', t:'desktop computer'   }, { e:'📱', t:'phone mobile'        },
+    { e:'🖨️', t:'printer'             }, { e:'⌨️',  t:'keyboard type'      },
+    /* Creative & Fun */
+    { e:'🎨', t:'art palette design'  }, { e:'🎭', t:'theater drama'       },
+    { e:'🎬', t:'film movie media'    }, { e:'🎵', t:'music note'          },
+    { e:'📸', t:'camera photo'        }, { e:'🎲', t:'game dice'           },
+    { e:'🧩', t:'puzzle piece'        }, { e:'🌈', t:'rainbow color'       },
+  ];
+
+  let _pickerInput  = null;  // id of the hidden <input>
+  let _pickerButton = null;  // id of the display <button>
+
+  function _buildEmojiGrid(filter) {
+    const grid  = document.getElementById('emoji-grid');
+    const empty = document.getElementById('emoji-empty');
+    const q     = (filter || '').trim().toLowerCase();
+    const list  = q ? EMOJIS.filter(item => item.t.includes(q)) : EMOJIS;
+    grid.innerHTML = list.map(item =>
+      `<button type="button" onclick="pickEmoji('${item.e}')"
+        class="text-xl p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 transition leading-none"
+        aria-label="${item.e}">${item.e}</button>`
+    ).join('');
+    empty.classList.toggle('hidden', list.length > 0);
+    grid.classList.toggle('hidden',  list.length === 0);
+  }
+
+  function openEmojiPicker(inputId, btnId) {
+    _pickerInput  = inputId;
+    _pickerButton = btnId;
+    const picker = document.getElementById('emoji-picker');
+    const search = document.getElementById('emoji-search');
+    search.value = '';
+    _buildEmojiGrid('');
+
+    /* Position below the trigger button */
+    const trigger = document.getElementById(btnId);
+    const rect    = trigger.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    picker.style.top  = '';
+    picker.style.left = '';
+    picker.style.bottom = '';
+    picker.classList.remove('hidden');
+
+    /* Decide vertical placement */
+    const pickerH = picker.offsetHeight || 260;
+    if (rect.bottom + pickerH + 8 < vh) {
+      picker.style.top = (rect.bottom + 8) + 'px';
+    } else {
+      picker.style.top = Math.max(8, rect.top - pickerH - 8) + 'px';
+    }
+    /* Decide horizontal placement */
+    const pickerW = picker.offsetWidth || 288;
+    const left = Math.min(rect.left, vw - pickerW - 8);
+    picker.style.left = Math.max(8, left) + 'px';
+
+    setTimeout(() => search.focus(), 30);
+  }
+
+  function closeEmojiPicker() {
+    document.getElementById('emoji-picker').classList.add('hidden');
+    _pickerInput  = null;
+    _pickerButton = null;
+  }
+
+  function pickEmoji(emoji) {
+    if (_pickerInput)  document.getElementById(_pickerInput).value       = emoji;
+    if (_pickerButton) document.getElementById(_pickerButton).textContent = emoji;
+    closeEmojiPicker();
+  }
+
+  function filterEmojis(q) { _buildEmojiGrid(q); }
+
+  /* Close picker when clicking outside */
+  document.addEventListener('click', (e) => {
+    const picker = document.getElementById('emoji-picker');
+    if (picker.classList.contains('hidden')) return;
+    if (picker.contains(e.target)) return;
+    if (_pickerButton && document.getElementById(_pickerButton).contains(e.target)) return;
+    closeEmojiPicker();
+  });
+
+  /* Close picker on Escape */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeEmojiPicker();
+  });
+</script>
+
+<!-- ===== DRAG & DROP (mouse-event based, no native DnD API) ===== -->
+<style>
+  .dnd-handle {
+    cursor: grab; font-size: 14px; line-height: 1; color: #9ca3af;
+    user-select: none; -webkit-user-select: none;
+  }
+  .dnd-dragging { opacity: 0.35; pointer-events: none; }
+  body.dnd-active { user-select: none; -webkit-user-select: none; }
+  body.dnd-active * { cursor: grabbing !important; }
+  #dnd-ghost {
+    position: fixed; z-index: 9999; pointer-events: none;
+    padding: 4px 10px; background: white;
+    border: 1.5px solid #0053e2; border-radius: 9999px;
+    font-size: 12px; font-weight: 600; color: #0053e2;
+    box-shadow: 0 4px 12px rgba(0,0,0,.18); white-space: nowrap;
+    transform: translate(14px,-50%); display: none;
+  }
+  /* Nest target: blue outline fill */
+  .dnd-over-ws {
+    outline: 2px solid #0053e2 !important; outline-offset: -2px;
+    border-radius: 0.375rem; background-color: rgba(0,83,226,.08) !important;
+  }
+  /* Insert-before: blue line above */
+  .dnd-over-before {
+    box-shadow: 0 -2px 0 0 #0053e2 !important;
+    border-radius: 0;
+  }
+  /* Insert-after: blue line below */
+  .dnd-over-after {
+    box-shadow: 0 2px 0 0 #0053e2 !important;
+    border-radius: 0;
+  }
+  .dnd-over-trash {
+    outline: 2px solid #ea1100 !important; border-radius: 0.375rem;
+    background-color: rgba(234,17,0,.07) !important;
+  }
+  .dnd-over-root {
+    background-color: rgba(0,83,226,.08) !important;
+    border-color: #0053e2 !important; color: #0053e2 !important;
+  }
+  body.dnd-active #dnd-root-zone { display: block !important; }
+</style>
+
+<script>
+(function initDnD() {
+  'use strict';
+
+  const THRESHOLD = 5; // px before drag commits
+
+  /* ── state ── */
+  let _wsId    = null;   // live workspace id being dragged
+  let _trashId = null;   // trashed workspace id being dragged
+  let _label   = '';     // ghost pill text
+  let _dimEl   = null;   // source row (dimmed)
+  let _overEl  = null;   // highlighted drop target
+  let _overCls = null;   // class on _overEl
+  let _startX  = 0;
+  let _startY  = 0;
+  let _active  = false;  // true once threshold crossed
+
+  const getActiveWsId = () =>
+    document.getElementById('active-workspace')?.value || '';
+
+  /* ── ghost pill ── */
+  function ghost() {
+    let g = document.getElementById('dnd-ghost');
+    if (!g) { g = document.createElement('div'); g.id = 'dnd-ghost'; document.body.appendChild(g); }
+    return g;
+  }
+  function moveGhost(x, y) {
+    const g = ghost(); g.style.display = 'block';
+    g.style.left = x + 'px'; g.style.top = y + 'px';
+    g.textContent = _label;
+  }
+
+  /* ── highlight helpers ── */
+  function clearOver() {
+    if (_overEl && _overCls) _overEl.classList.remove(_overCls);
+    _overEl = _overCls = null;
+  }
+  function setOver(el, cls) {
+    if (el === _overEl) return;
+    clearOver();
+    if (!el) return;
+    el.classList.add(cls); _overEl = el; _overCls = cls;
+  }
+
+  /* ── find drop target at pointer, hiding ghost first ── */
+  function targetAt(x, y) {
+    const g = document.getElementById('dnd-ghost');
+    const prev = g ? g.style.display : 'none';
+    if (g) g.style.display = 'none';
+    const el = document.elementFromPoint(x, y);
+    if (g) g.style.display = prev;
+    if (!el) return { zone: null, el: null };
+
+    const root = el.closest('#dnd-root-zone');
+    if (root) return { zone: 'root', el: root };
+
+    const trash = el.closest('[data-dnd-trash-drop]');
+    if (trash && _wsId) return { zone: 'trash', el: trash };
+
+    const row = el.closest('[data-dnd-drop-ws-id]');
+    if (row) {
+      const tid = +row.dataset.dndDropWsId;
+      if (_wsId && tid === _wsId) return { zone: null, el: null };
+
+      // 3-zone split: top 30% → before, bottom 30% → after, middle → nest
+      const rect = row.getBoundingClientRect();
+      const relY = y - rect.top;
+      const pct  = relY / rect.height;
+      let zone;
+      if (pct < 0.30)      zone = 'before';
+      else if (pct > 0.70) zone = 'after';
+      else                 zone = 'ws';     // nest (middle)
+
+      // Trash items restoring: always treat as nest (they pick up target's parent)
+      if (_trashId) zone = 'ws';
+
+      return { zone, el: row, targetId: tid };
+    }
+    return { zone: null, el: null };
+  }
+
+  /* ── full cleanup ── */
+  function cancel() {
+    document.body.classList.remove('dnd-active');
+    clearOver();
+    ghost().style.display = 'none';
+    if (_dimEl) _dimEl.classList.remove('dnd-dragging');
+    _wsId = _trashId = _dimEl = null;
+    _active = false;
+  }
+
+  /* ── MOUSEDOWN — arm the drag ── */
+  document.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const handle = e.target.closest('.dnd-handle');
+    if (!handle) return;
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+    e.preventDefault();
+    _startX = e.clientX; _startY = e.clientY;
+    _label  = handle.dataset.dndLabel || 'workspace';
+    if (handle.dataset.dndWsId !== undefined) {
+      _wsId = +handle.dataset.dndWsId; _trashId = null;
+      _dimEl = handle.closest('.ws-tree-node');
+    } else {
+      _trashId = +handle.dataset.dndTrashId; _wsId = null;
+      _dimEl = handle.closest('[data-dnd-trash-item]');
+    }
+  });
+
+  /* ── MOUSEMOVE — move ghost + highlight ── */
+  document.addEventListener('mousemove', (e) => {
+    if (!_wsId && !_trashId) return;
+    if (!_active) {
+      if (Math.hypot(e.clientX - _startX, e.clientY - _startY) < THRESHOLD) return;
+      _active = true;
+      document.body.classList.add('dnd-active');
+      if (_dimEl) _dimEl.classList.add('dnd-dragging');
+    }
+    moveGhost(e.clientX, e.clientY);
+    const { zone, el } = targetAt(e.clientX, e.clientY);
+    if      (zone === 'before') setOver(el, 'dnd-over-before');
+    else if (zone === 'after')  setOver(el, 'dnd-over-after');
+    else if (zone === 'ws')     setOver(el, 'dnd-over-ws');
+    else if (zone === 'trash')  setOver(el, 'dnd-over-trash');
+    else if (zone === 'root')   setOver(el, 'dnd-over-root');
+    else                        clearOver();
+  });
+
+  /* ── MOUSEUP — commit drop ── */
+  document.addEventListener('mouseup', (e) => {
+    if (!_wsId && !_trashId) return;
+    const ws = _wsId, trash = _trashId, didDrag = _active;
+    const { zone, el } = targetAt(e.clientX, e.clientY);
+    cancel();
+    if (!didDrag) return;
+    const aid = getActiveWsId();
+    const tid = el ? +el.dataset.dndDropWsId : null;
+
+    if (ws && zone === 'trash') {
+      /* ── drag live workspace → trash ── */
+      htmx.ajax('POST', `/workspaces/${ws}/delete`,
+        { target: '#note-list', swap: 'innerHTML', values: { active_ws_id: aid } });
+
+    } else if (ws && zone === 'root') {
+      /* ── promote to root level ── */
+      htmx.ajax('POST', `/workspaces/${ws}/reparent`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: '', active_ws_id: aid } });
+
+    } else if (ws && (zone === 'before' || zone === 'after')) {
+      /* ── reorder: insert before or after the target sibling ── */
+      if (tid !== ws) htmx.ajax('POST', `/workspaces/${ws}/reorder`,
+        { target: '#note-list', swap: 'innerHTML',
+          values: { relative_to_id: String(tid), position: zone, active_ws_id: aid } });
+
+    } else if (ws && zone === 'ws') {
+      /* ── nest under another workspace (drop on middle) ── */
+      if (tid !== ws) htmx.ajax('POST', `/workspaces/${ws}/reparent`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: String(tid), active_ws_id: aid } });
+
+    } else if (trash && (zone === 'ws' || zone === 'before' || zone === 'after')) {
+      /* ── restore trashed workspace near a live workspace ── */
+      htmx.ajax('POST', `/workspaces/${trash}/restore`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: String(tid), active_ws_id: aid } });
+
+    } else if (trash && zone === 'root') {
+      /* ── restore trashed workspace to root ── */
+      htmx.ajax('POST', `/workspaces/${trash}/restore`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: '', active_ws_id: aid } });
+    }
+  });
+
+  /* Escape cancels a drag in progress */
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
+})();
+</script>
+
+{% endblock %}

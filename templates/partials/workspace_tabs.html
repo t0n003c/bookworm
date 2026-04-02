@@ -1,0 +1,62 @@
+{# Top-bar tab strip — only open workspaces, breadcrumb labels #}
+{% for ws in open_workspaces %}
+{% set crumbs = breadcrumbs.get(ws.id, [ws]) %}
+<div class="flex items-center group relative flex-shrink-0">
+  <button
+    type="button"
+    title="{{ crumbs | map(attribute='name') | join(' / ') }}"
+    class="ws-tab flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-sm font-medium
+           transition whitespace-nowrap
+      {% if ws.id == active_ws_id %}
+        bg-wblue text-white shadow-sm
+      {% else %}
+        text-white/70 hover:bg-white/15 hover:text-white
+      {% endif %}"
+    aria-current="{% if ws.id == active_ws_id %}true{% else %}false{% endif %}"
+    onclick="wsTabClick({{ ws.id }})"
+  >
+    {# Just emoji + name — breadcrumb lives above the note list #}
+    <span aria-hidden="true">{{ ws.emoji }}</span>
+    <span>{{ ws.name }}</span>
+
+    {# Edit pencil — active tab only #}
+    {% if ws.id == active_ws_id %}
+    <span
+      role="button" tabindex="0"
+      title="Edit workspace"
+      aria-label="Edit workspace {{ ws.name }}"
+      data-ws-id="{{ ws.id }}"
+      data-ws-emoji="{{ ws.emoji | e }}"
+      data-ws-name="{{ ws.name | e }}"
+      data-ws-parent="{{ ws.parent_id if ws.parent_id else '' }}"
+      onclick="event.stopPropagation(); openEditWsModal(this)"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.stopPropagation();openEditWsModal(this)}"
+      class="ml-0.5 opacity-60 hover:opacity-100 transition cursor-pointer"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828
+                 2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/>
+      </svg>
+    </span>
+    {% endif %}
+  </button>
+
+  {# Close (×) button #}
+  <button
+    type="button"
+    onclick="event.stopPropagation(); wsCloseTab({{ ws.id }})"
+    title="Close {{ ws.name }}"
+    aria-label="Close workspace {{ ws.name }}"
+    class="-ml-1 flex items-center justify-center w-4 h-4 rounded-full text-white/50
+           hover:text-white hover:bg-white/20 opacity-0 group-hover:opacity-100
+           transition flex-shrink-0"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5" fill="none"
+         viewBox="0 0 24 24" stroke="currentColor" stroke-width="3" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </button>
+</div>
+{% endfor %}

@@ -1,0 +1,7 @@
+<!-- Primary swap: detail panel shows note detail -->
+{% include "partials/note_detail.html" %}
+
+<!-- OOB swap: refresh the note list -->
+<div id="note-list" hx-swap-oob="innerHTML">
+  {% include "partials/note_list.html" %}
+</div>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BookWorm — Team Notes</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  <!-- Apply saved theme before render to avoid flash -->
+  <script>
+    (function () {
+      const saved = localStorage.getItem('bw-theme');
+      if (saved === 'light') document.documentElement.classList.remove('dark');
+      else document.documentElement.classList.add('dark');
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+  <script src="https://unpkg.com/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            wblue:  { DEFAULT: '#0053e2', hover: '#0060ff', press: '#003eb0' },
+            wspark: { DEFAULT: '#ffc220', dark: '#995213' },
+            wred:   { DEFAULT: '#ea1100' },
+            wgreen: { DEFAULT: '#2a8703' },
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+    .sidebar-scroll { max-height: calc(100vh - 4rem); overflow-y: auto; }
+    .main-scroll   { height: calc(100vh - 4rem); overflow-y: auto; }
+    .panel-scroll  { height: calc(100vh - 4rem); overflow-y: auto; }
+    /* Hide scrollbar cross-browser */
+    .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+    /* Rendered markdown styles */
+    .md-body h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .5rem; }
+    .md-body h2 { font-size: 1.25rem; font-weight: 700; margin: .875rem 0 .4rem; }
+    .md-body h3 { font-size: 1.1rem; font-weight: 600; margin: .75rem 0 .35rem; }
+    .md-body p  { margin: .5rem 0; line-height: 1.65; }
+    .md-body ul { list-style: disc; padding-left: 1.5rem; margin: .5rem 0; }
+    .md-body ol { list-style: decimal; padding-left: 1.5rem; margin: .5rem 0; }
+    .md-body li { margin: .2rem 0; line-height: 1.6; }
+    /* Task list (GFM todo checkboxes) */
+    .md-body .contains-task-list { list-style: none; padding-left: .25rem; }
+    .md-body .task-list-item { display: flex; align-items: baseline; gap: .45rem; }
+    .md-body .task-list-item input[type="checkbox"] {
+      flex-shrink: 0; margin-top: .15rem;
+      width: .95rem; height: .95rem;
+      accent-color: #0053e2; cursor: pointer;
+    }
+    .md-body strong { font-weight: 700; }
+    .md-body em     { font-style: italic; }
+    .md-body code   { font-family: monospace; font-size: .875em;
+                      background: rgba(0,0,0,.08); padding: .1em .35em; border-radius: .25rem; }
+    .dark .md-body code { background: rgba(255,255,255,.08); }
+    .md-body pre    { background: rgba(0,0,0,.08); border-radius: .5rem;
+                      padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
+    .dark .md-body pre  { background: rgba(255,255,255,.06); }
+    .md-body blockquote { border-left: 3px solid #0053e2; padding-left: .75rem;
+                          color: #6b7280; margin: .5rem 0; }
+    .md-body hr { border-color: #e5e7eb; margin: 1rem 0; }
+    .dark .md-body hr { border-color: #3f3f46; }
+    .md-body a { color: #0053e2; text-decoration: underline; }
+    /* Compact card preview — scale down md-body inside note cards */
+    .md-card h1,.md-card h2,.md-card h3 { font-size:.8rem; font-weight:700; margin:0 0 .1rem; }
+    .md-card p  { margin:.1rem 0; line-height:1.5; }
+    .md-card ul,.md-card ol { padding-left:1.1rem; margin:.1rem 0; }
+    .md-card li { margin:0; line-height:1.4; }
+    .md-card table { font-size:.7rem; margin:.1rem 0; }
+    .md-card th,.md-card td { padding:.15rem .4rem; }
+    .md-card code { font-size:.75em; }
+    .md-card pre  { padding:.3rem .5rem; margin:.1rem 0; }
+    .md-card blockquote { padding-left:.5rem; margin:.1rem 0; }
+    /* contenteditable caret & placeholder */
+    [contenteditable] { caret-color: #0053e2; outline: none; }
+    [contenteditable]:empty::before {
+      content: attr(data-placeholder); color: #9ca3af; font-style: italic; pointer-events: none;
+    }
+    .dark [contenteditable]:empty::before { color: #52525b; }
+    .md-body table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
+    .md-body th   { background: #f3f4f6; font-weight: 700; text-align: left;
+                    padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
+    .md-body td   { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; height: 2.25rem; }
+    .md-body tr:nth-child(even) td { background: #f9fafb; }
+    .dark .md-body th { background: #27272a; border-color: #3f3f46; }
+    .dark .md-body td { border-color: #3f3f46; }
+    .dark .md-body tr:nth-child(even) td { background: #1f1f22; }
+
+    /* ── Toggle headings ── */
+    .bw-toggle { margin: .6rem 0; border: 1px solid #e5e7eb; border-radius: .5rem; overflow: hidden; }
+    .dark .bw-toggle { border-color: #3f3f46; }
+    .bw-toggle > summary {
+      padding: .45rem .75rem; cursor: pointer; list-style: none;
+      display: flex; align-items: center; gap: .45rem;
+      background: #f9fafb; user-select: none;
+    }
+    .dark .bw-toggle > summary { background: #27272a; color: #f4f4f5; }
+    .bw-toggle > summary::-webkit-details-marker { display: none; }
+    .bw-toggle > summary::before {
+      content: '▶'; font-size: .6rem; color: #6b7280;
+      transition: transform .15s; flex-shrink: 0;
+    }
+    .bw-toggle[open] > summary::before { transform: rotate(90deg); }
+    .bw-toggle-h1 > summary { font-size: 1.35rem; font-weight: 700; }
+    .bw-toggle-h2 > summary { font-size: 1.1rem;  font-weight: 700; }
+    .bw-toggle-h3 > summary { font-size: .95rem;  font-weight: 600; }
+    .bw-toggle > :not(summary) { padding: .4rem .75rem; }
+
+    /* ── Column layouts ── */
+    .bw-cols { display: grid; gap: .6rem; margin: .6rem 0; }
+    .bw-cols-1 { grid-template-columns: 1fr; }
+    .bw-cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .bw-cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .bw-cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .bw-cols-5 { grid-template-columns: repeat(5, 1fr); }
+    .bw-col {
+      padding: .4rem .6rem; border: 1px dashed #d1d5db;
+      border-radius: .375rem; min-height: 2.25rem;
+    }
+    .dark .bw-col { border-color: #3f3f46; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 dark:bg-zinc-950 text-gray-800 dark:text-zinc-200 transition-colors duration-200">
+  {% block body %}{% endblock %}
+  <script src="/static/js/slash_commands.js" defer></script>
+</body>
+</html>

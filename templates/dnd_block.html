@@ -1,0 +1,248 @@
+<!-- ===== DRAG & DROP — mouse-event based, no native DnD API ===== -->
+<style>
+  .dnd-handle {
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+    color: #9ca3af;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .dnd-dragging { opacity: 0.35; pointer-events: none; }
+  body.dnd-active { user-select: none; -webkit-user-select: none; }
+  body.dnd-active * { cursor: grabbing !important; }
+  #dnd-ghost {
+    position: fixed; z-index: 9999; pointer-events: none;
+    padding: 4px 10px; background: white;
+    border: 1.5px solid #0053e2; border-radius: 9999px;
+    font-size: 12px; font-weight: 600; color: #0053e2;
+    box-shadow: 0 4px 12px rgba(0,0,0,.18); white-space: nowrap;
+    transform: translate(14px,-50%); display: none;
+  }
+  .dnd-over-ws {
+    outline: 2px solid #0053e2 !important;
+    outline-offset: -2px; border-radius: 0.375rem;
+    background-color: rgba(0,83,226,.08) !important;
+  }
+  .dnd-over-trash {
+    outline: 2px solid #ea1100 !important; border-radius: 0.375rem;
+    background-color: rgba(234,17,0,.07) !important;
+  }
+  .dnd-over-root {
+    background-color: rgba(0,83,226,.08) !important;
+    border-color: #0053e2 !important; color: #0053e2 !important;
+  }
+  body.dnd-active #dnd-root-zone { display: block !important; }
+</style>
+
+<script>
+(function initDnD() {
+  'use strict';
+
+  const THRESHOLD = 5; // px — minimum move before drag commits
+
+  /* ── state ── */
+  let _wsId    = null;  // live workspace being dragged
+  let _trashId = null;  // trashed workspace being dragged
+  let _label   = '';    // ghost label text
+  let _dimEl   = null;  // the source row element (dimmed)
+  let _overEl  = null;  // currently highlighted drop target
+  let _overCls = null;  // class applied to _overEl
+  let _startX  = 0;
+  let _startY  = 0;
+  let _active  = false; // true once we've passed the threshold
+
+  const getActiveWsId = () =>
+    document.getElementById('active-workspace')?.value || '';
+
+  /* ── ghost element ── */
+  function ghost() {
+    let g = document.getElementById('dnd-ghost');
+    if (!g) {
+      g = document.createElement('div');
+      g.id = 'dnd-ghost';
+      document.body.appendChild(g);
+    }
+    return g;
+  }
+
+  function moveGhost(x, y) {
+    const g = ghost();
+    g.style.display = 'block';
+    g.style.left = x + 'px';
+    g.style.top  = y + 'px';
+    g.textContent = _label;
+  }
+
+  /* ── highlight helpers ── */
+  function clearOver() {
+    if (_overEl && _overCls) _overEl.classList.remove(_overCls);
+    _overEl = _overCls = null;
+  }
+
+  function setOver(el, cls) {
+    if (el === _overEl) return;
+    clearOver();
+    if (!el) return;
+    el.classList.add(cls);
+    _overEl = el; _overCls = cls;
+  }
+
+  /* ── find what's under the pointer, skipping the ghost ── */
+  function targetAt(x, y) {
+    const g = document.getElementById('dnd-ghost');
+    const prev = g ? g.style.display : 'none';
+    if (g) g.style.display = 'none';
+    const el = document.elementFromPoint(x, y);
+    if (g) g.style.display = prev;
+    if (!el) return { zone: null, el: null };
+
+    const root  = el.closest('#dnd-root-zone');
+    if (root)  return { zone: 'root',  el: root };
+
+    const trash = el.closest('[data-dnd-trash-drop]');
+    if (trash && _wsId) return { zone: 'trash', el: trash };
+
+    const row = el.closest('[data-dnd-drop-ws-id]');
+    if (row) {
+      const tid = +row.dataset.dndDropWsId;
+      if (_wsId && tid === _wsId) return { zone: null, el: null };
+      return { zone: 'ws', el: row };
+    }
+
+    return { zone: null, el: null };
+  }
+
+  /* ── full cleanup ── */
+  function cancel() {
+    document.body.classList.remove('dnd-active');
+    clearOver();
+    ghost().style.display = 'none';
+    if (_dimEl) _dimEl.classList.remove('dnd-dragging');
+    _wsId = _trashId = _dimEl = null;
+    _active = false;
+  }
+
+  /* ─────────────────────────────────────────────────────
+     MO arm the drag (but don't start yet)
+  ───────────────────────────────────────────────────── */
+  document.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+
+    /* Only handles can initiate a drag */
+    const handle = e.target.closest('.dnd-handle');
+    if (!handle) return;
+
+    /* Don't steal clicks from actual buttons */
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+
+    e.preventDefault(); // stops text-selection on mousedown
+
+    _startX = e.clientX;
+    _startY = e.clientY;
+    _label  = handle.dataset.dndLabel || 'workspace';
+
+    if (handle.dataset.dndWsId !== undefined) {
+      _wsId    = +handle.dataset.dndWsId;
+      _trashId = null;
+      _dimEl   = handle.closest('.ws-tree-node');
+    } else {
+      _trashId = +handle.dataset.dndTrashId;
+      _wsId    = null;
+      _dimEl   = handle.closest('[data-dnd-trash-item]');
+    }
+  });
+
+  /* ─────────────────────────────────────────────────────
+     MOUSEMOVE — move ghost + highlight drop zones
+  ───────────────────────────────────────────────────── */
+  document.addEventListener('mousemove', (e) => {
+    if (!_wsId && !_trashId) return;
+
+    if (!_active) {
+      const d = Math.hypot(e.clientX - _startX, e.clientY - _startY);
+      if (d < THRESHOLD) return;
+      _active = true;
+      document.body.classList.add('dnd-active');
+      if (_dimEl) _dimEl.classList.add('dnd-dragging');
+    }
+
+    moveGhost(e.clientX, e.clientY);
+
+    const { zone, el } = targetAt(e.clientX, e.clientY);
+    if      (zone === 'ws')    setOver(el, 'dnd-over-ws');
+    else if (zone === 'trash') setOver(el, 'dnd-over-trash');
+    else if (zone === 'root')  setOver(el, 'dnd-over-root');
+    else                       clearOver();
+  });
+
+  /* ─────────────────────────────────────────────────────
+     MOUSEUP — commit the drop (or cancel if no movement)
+  ───────────────────────────────────────────────────── */
+  document.addEventListener('mouseup', (e) => {
+    if (!_wsId && !_trashId) return;
+
+    const ws      = _wsId;
+    const trash   = _trashId;
+    const didDrag = _active;
+    const { zone, el } = targetAt(e.clientX, e.clientY);
+    cancel();
+
+    if (!didDrag) return; // was just a click — leave it alone
+
+    const aid = getActiveWsId();
+
+    /* live workspace → trash */
+    if (ws && zone === 'trash') {
+      htmx.ajax('POST', `/workspaces/${ws}/delete`, {
+        target: '#note-list', swap: 'innerHTML',
+        values: { active_ws_id: aid },
+      });
+      return;
+    }
+    /* live workspace → root zone */
+    if (ws && zone === 'root') {
+      htmx.ajax('POST', `/workspaces/${ws}/reparent`, {
+        target: '#note-list', swap: 'innerHTML',
+        values: { new_parent_id: '', active_ws_id: aid },
+      });
+      return;
+    }
+    /* live workspace → another workspace */
+    if (ws && zone === 'ws') {
+      const tid = +el.dataset.dndDropWsId;
+      if (tid === ws) return;
+      htmx.ajax('POST', `/workspaces/${ws}/reparent`, {
+        target: '#note-list', swap: 'innerHTML',
+        values: { new_parent_id: String(tid), active_ws_id: aid },
+      });
+      return;
+    }
+    /* trashed workspace → live workspace */
+    if (trash && zone === 'ws') {
+      const tid = +el.dataset.dndDropWsId;
+      htmx.ajax('POST', `/workspaces/${trash}/restore`, {
+        target: '#note-list', swap: 'innerHTML',
+        values: { new_parent_id: String(tid), active_ws_id: aid },
+      });
+      return;
+    }
+    /* trashed workspace → root zone */
+    if (trash && zone === 'root') {
+      htmx.ajax('POST', `/workspaces/${trash}/restore`, {
+        target: '#note-list', swap: 'innerHTML',
+        values: { new_parent_id: '', active_ws_id: aid },
+      });
+      return;
+    }
+    /* else: no valid target — no-op */
+  });
+
+  /* Escape cancels mid-drag */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cancel();
+  });
+})();
+</script>
+
+{% endblock %}
