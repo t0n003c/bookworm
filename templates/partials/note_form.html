@@ -1869,5 +1869,11 @@
     _dragging = _container = null;
     _didDrag  = false;
   }
+
+  /* Boot: initEditor's renderPreview() fired before this script loaded,
+     so grips were never stamped. Inject them now on whatever is already
+     in the preview pane. */
+  const _bootPreview = document.getElementById('md-live-preview');
+  if (_bootPreview) window._injectPreviewGrips(_bootPreview);
 })();
 </script>
