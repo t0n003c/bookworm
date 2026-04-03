@@ -836,6 +836,61 @@
     }
   });
 
+  /* ── Permanent focus tracker ─────────────────────────────────────────────
+     Keeps window._bwActiveEditor pointing at whichever pane the user last
+     clicked into.  mdFmt() reads this to decide whether to route formatting
+     through execCommand (contenteditable) or textarea string surgery.
+     Defined here so it survives HTMX swaps of note_form.html.              */
+  document.addEventListener('focusin', function _bwEditorFocusHandler(e) {
+    const ta = document.getElementById('note-content');
+    const pv = document.getElementById('md-live-preview');
+    if (!ta && !pv) return;                        // no editor in the DOM
+    if (ta && (e.target === ta)) {
+      window._bwActiveEditor = ta;
+    } else if (pv && pv.contains(e.target)) {
+      window._bwActiveEditor = pv;                 // covers clicks on child nodes
+    }
+  });
+
+  /* ── Permanent toolbar focus-guard ──────────────────────────────────────
+     Prevent toolbar button clicks from stealing caret/selection out of the
+     contenteditable preview.  We intercept mousedown in capture phase so
+     preventDefault fires before the browser moves focus.  Click still fires,
+     so the button's onclick handler (mdFmt etc.) works normally.           */
+  document.addEventListener('mousedown', function _bwEditorToolbarGuard(e) {
+    const toolbar = document.getElementById('md-toolbar');
+    if (!toolbar || !toolbar.contains(e.target)) return;
+    const pv = document.getElementById('md-live-preview');
+    if (pv && window._bwActiveEditor === pv) e.preventDefault();
+  }, true /* capture — must beat the browser's default focus handling */);
+
+  /* ── Permanent debounced input handlers ─────────────────────────────────
+     Wire textarea → renderPreview (150 ms) and preview → syncPreviewToMd
+     (400 ms).  Both use window globals exposed by initEditor():
+       window._bwRenderPreview    = () => renderPreview()
+       window._bwSyncPreviewToMd  = () => syncPreviewToMd()
+     Setting .value / .innerHTML programmatically does NOT fire 'input',
+     so there is no circular update risk between the two panes.             */
+  let _bwMdTimer = null;
+  let _bwPvTimer = null;
+  document.addEventListener('input', function _bwEditorInputHandler(e) {
+    const ta = document.getElementById('note-content');
+    if (ta && e.target === ta) {
+      clearTimeout(_bwMdTimer);
+      _bwMdTimer = setTimeout(() => {
+        if (typeof window._bwRenderPreview === 'function') window._bwRenderPreview();
+      }, 150);
+      return;
+    }
+    const pv = document.getElementById('md-live-preview');
+    if (pv && pv.contains(e.target)) {
+      clearTimeout(_bwPvTimer);
+      _bwPvTimer = setTimeout(() => {
+        if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+      }, 400);
+    }
+  });
+
 
 
   /* ---- Theme ---- */

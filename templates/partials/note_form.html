@@ -1008,6 +1008,7 @@
     window._bwTurndown = turndown; // exposed so slash_commands.js can add keep-rules
     // Exposed for preview DnD (initPreviewDnD runs outside this IIFE)
     window._bwSyncPreviewToMd = () => syncPreviewToMd();
+    window._bwRenderPreview    = () => renderPreview();   // used by doc-level input handler in index.html
 
     /* DOMPurify config: allow GFM task-list checkboxes (<input type="checkbox">)
        which are stripped by default because DOMPurify blocks all <input> tags. */
@@ -1253,27 +1254,10 @@
       preview.dispatchEvent(new Event('input'));       // schedule syncPreviewToMd
     }, true); // capture phase — fires before slash-command bubble listener
 
-    /* Track which editor is active so mdFmt() knows where to route */
-    ta.addEventListener('focusin',      () => { window._bwActiveEditor = ta; });
-    preview.addEventListener('focusin', () => { window._bwActiveEditor = preview; });
-
-    /* Prevent toolbar clicks from stealing focus out of the contenteditable
-       (mousedown preventDefault keeps selection alive; click still fires) */
-    document.getElementById('md-toolbar')?.addEventListener('mousedown', (e) => {
-      if (window._bwActiveEditor === preview) e.preventDefault();
-    });
-
-    /* Debounced listeners — setting .value/.innerHTML programmatically
-       does NOT fire 'input', so there is no circular update risk */
-    let mdTimer, pvTimer;
-    ta.addEventListener('input', () => {
-      clearTimeout(mdTimer);
-      mdTimer = setTimeout(renderPreview, 150);
-    });
-    preview.addEventListener('input', () => {
-      clearTimeout(pvTimer);
-      pvTimer = setTimeout(syncPreviewToMd, 400);
-    });
+    /* Focus tracking, toolbar focus-guard, and debounced input listeners
+       are registered as permanent document-level handlers in index.html so
+       they survive every HTMX swap of this partial.  See _bwEditorFocusHandler,
+       _bwEditorToolbarGuard, and _bwEditorInputHandler defined there.        */
 
     /* Mode switching — always do live getElementById so stale closure
        refs can never cause ghost-node toggling on subsequent HTMX swaps. */
