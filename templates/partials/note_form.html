@@ -438,41 +438,66 @@
 
     if (li && li !== preview) {
       /* ── Cursor IS inside a list item ── */
-      const parentList = li.parentElement;
+      const parentList  = li.parentElement;
       if (!parentList) return;
+      const grandparent = parentList.parentElement;
+      const origTag     = parentList.nodeName;           // 'UL' or 'OL'
+      const siblings    = Array.from(parentList.children);
+      const idx         = siblings.indexOf(li);
+      const before      = siblings.slice(0, idx);        // items before the cursor
+      const after       = siblings.slice(idx + 1);       // items after the cursor
+
+      /* Build a new list element, MOVEing (not cloning) the given items into it.
+         Returns null when the items array is empty. */
+      function _splitList(listTag, items) {
+        if (!items.length) return null;
+        const lst = document.createElement(listTag);
+        items.forEach(el => lst.appendChild(el));        // MOVE preserves references
+        return lst;
+      }
+
+      /* Insert the replacement nodes in order, then drop the now-empty original.
+         insertBefore(X, parentList) places X right before the old list slot. */
+      function _splice(nodes) {
+        nodes.forEach(n => { if (n) grandparent.insertBefore(n, parentList); });
+        parentList.remove();
+      }
+
+      /* Helper: walk to the first real text node in an element, skipping grips */
+      function _firstText(el) {
+        const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+          acceptNode: n => n.parentElement?.hasAttribute('data-preview-grip')
+            ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        });
+        return w.nextNode();
+      }
 
       if (parentList.nodeName === tag) {
-        /* Same type clicked → toggle OFF: lift content into a <p> */
+        /* Same type → toggle OFF: extract this <li> as a <p>.
+           Split the list around it so sibling order is preserved. */
         const p = document.createElement('p');
         Array.from(li.childNodes).forEach(child => {
-          if (!child.hasAttribute?.('data-preview-grip')) {
+          if (!child.hasAttribute?.('data-preview-grip'))
             p.appendChild(child.cloneNode(true));
-          }
         });
         if (!p.textContent.trim()) p.innerHTML = '<br>';
 
-        const grandparent = parentList.parentElement;
-        grandparent.insertBefore(p, parentList);
-        li.remove();
-        if (!parentList.querySelector('li')) parentList.remove();
+        _splice([_splitList(origTag, before), p, _splitList(origTag, after)]);
 
         const r = document.createRange();
         r.selectNodeContents(p); r.collapse(false);
         sel.removeAllRanges(); sel.addRange(r);
 
       } else {
-        /* Different type clicked → swap parent list tag (UL ↔ OL).
-           MOVE children (don't clone) so the existing li reference stays valid. */
-        const newList = document.createElement(tag);
-        while (parentList.firstChild) newList.appendChild(parentList.firstChild);
-        parentList.replaceWith(newList);
+        /* Different type → convert ONLY this <li>, not its siblings.
+           Split: before-list (origTag) | solo new-list (tag) | after-list (origTag) */
+        const soloList = document.createElement(tag);
+        soloList.appendChild(li);                        // MOVE the one item
 
-        /* Restore cursor to the moved <li> (it's now inside newList) */
-        const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, {
-          acceptNode: n => n.parentElement?.hasAttribute('data-preview-grip')
-            ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
-        });
-        const textNode = walker.nextNode();
+        _splice([_splitList(origTag, before), soloList, _splitList(origTag, after)]);
+
+        /* Restore cursor inside the moved li */
+        const textNode = _firstText(li);
         const r = document.createRange();
         if (textNode) { r.setStart(textNode, textNode.length); r.collapse(true); }
         else           { r.selectNodeContents(li); r.collapse(false); }
