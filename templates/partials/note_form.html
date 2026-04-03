@@ -573,13 +573,13 @@
 
       let newLine;
       if (wantBullet) {
-        if (bulletM)       newLine = bulletM[1] + bulletM[3];          // toggle OFF
-        else if (orderedM) newLine = orderedM[1] + '- ' + orderedM[2]; // ol → ul
-        else               newLine = '- ' + lineText;                  // plain → ul
+        if (bulletM)       newLine = bulletM[3];           // toggle OFF — strip indent
+        else if (orderedM) newLine = '- ' + orderedM[2];  // ol → ul  — strip indent
+        else               newLine = '- ' + lineText;     // plain → ul
       } else {
-        if (orderedM)      newLine = orderedM[1] + orderedM[2];         // toggle OFF
-        else if (bulletM)  newLine = bulletM[1] + '1. ' + bulletM[3];  // ul → ol
-        else               newLine = '1. ' + lineText;                  // plain → ol
+        if (orderedM)      newLine = orderedM[2];          // toggle OFF — strip indent
+        else if (bulletM)  newLine = '1. ' + bulletM[3];  // ul → ol  — strip indent
+        else               newLine = '1. ' + lineText;    // plain → ol
       }
 
       ta.value = val.slice(0, lineStart) + newLine +

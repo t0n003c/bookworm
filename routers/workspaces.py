@@ -88,7 +88,11 @@ async def switch_workspace(
     sort_by: list[str] = Query(default=[]),
 ):
     ctx = await _ws_context(workspace_id, sort_by=sort_by or None)
-    return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp = templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    # Tell HTMX to update the browser URL so a page reload lands on this workspace.
+    # This is authoritative — overrides any client-side pushUrl / replaceState.
+    resp.headers["HX-Replace-URL"] = f"/?ws={workspace_id}"
+    return resp
 
 
 @router.post("", response_class=HTMLResponse)
@@ -142,7 +146,9 @@ async def open_workspace_handler(
 ):
     await open_workspace(workspace_id)
     ctx = await _ws_context(workspace_id, sort_by=sort_by or None)
-    return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp = templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp.headers["HX-Replace-URL"] = f"/?ws={workspace_id}"
+    return resp
 
 
 @router.post("/{workspace_id}/close", response_class=HTMLResponse)
@@ -158,7 +164,10 @@ async def close_workspace_handler(
     else:
         still_active = open_wss[0]["id"] if open_wss else None
     ctx = await _ws_context(still_active)
-    return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp = templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    if still_active is not None:
+        resp.headers["HX-Replace-URL"] = f"/?ws={still_active}"
+    return resp
 
 
 @router.post("/{workspace_id}/favorite", response_class=HTMLResponse)
