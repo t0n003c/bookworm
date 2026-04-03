@@ -612,7 +612,6 @@
       /* Detect what kind of list line this is */
       const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
       const isOrdered = /^(\s*)\d+\. /.test(lineText);
-      console.log('[BW-TA Tab]', {lineText, isBullet, isOrdered, pos, lineStart});
       if (!isBullet && !isOrdered) return;           // not a list line — let Tab through
 
       e.preventDefault();
@@ -1174,90 +1173,78 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
 
       /* ── Tab / Shift+Tab inside the contenteditable preview ─────────
-         NEVER use execCommand('indent/outdent') — it wraps in <blockquote>.
-         Instead:
-           1. Find the <li> the caret is in; record its DOM index
-           2. Sync CE → markdown (captures unsaved CE edits)
-           3. Find the DOM-index-th list-item line in the markdown
-           4. Apply the same 2-sp / 3-sp indent logic as the textarea handler
-           5. Re-render and restore focus to the same <li> by index         */
+         Direct DOM manipulation: skip the markdown round-trip entirely.
+         Markdown-level indentation only works for contiguous list blocks;
+         notes with headings or blank lines between list items would never
+         nest correctly via markdown alone.
+
+         Tab        = INDENT:  move <li> into a nested list inside its
+                               previous sibling <li>.
+         Shift+Tab  = OUTDENT: move <li> out of its nested list, inserting
+                               it after its parent <li> in the outer list.
+
+         After the DOM change, sync the updated HTML back to markdown so
+         the textarea stays in sync.                                        */
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const _sel = window.getSelection();
-        console.log('[BW-CE Tab] fired, rangeCount:', _sel?.rangeCount);
         if (!_sel || !_sel.rangeCount) return;
+
         let li = _sel.getRangeAt(0).startContainer;
-        const startNode = li;
         while (li && li !== preview) {
           if (li.nodeName === 'LI') break;
           li = li.parentNode;
         }
-        console.log('[BW-CE Tab] startNode:', startNode?.nodeName, 'li found:', li?.nodeName, 'is preview?', li === preview);
-        if (!li || li === preview) return;           // not in a list — let Tab through
-        e.preventDefault();
+        if (!li || li === preview) return;          // not in a list
 
-        /* Record the <li>'s position among ALL list items in the preview.
-           querySelectorAll('li') returns DOM order, which matches the order
-           list-item lines appear in the markdown — even for nested lists.    */
-        const allPreviewLis = Array.from(preview.querySelectorAll('li'));
-        const liIndex = allPreviewLis.indexOf(li);
-        if (liIndex === -1) return;                  // not found — bail
-
-        /* Sync contenteditable → textarea (captures any unsaved CE edits) */
-        syncPreviewToMd();
-
-        const _ta   = _liveTa();
-        if (!_ta) return;
-        const lines = _ta.value.split('\n');
-
-        /* Find the liIndex-th list-item line in the markdown */
-        const LIST_LINE_RE = /^(\s*)([-*•]|\d+\.)\s/;
-        let count = 0, targetIdx = -1;
-        for (let i = 0; i < lines.length; i++) {
-          if (LIST_LINE_RE.test(lines[i])) {
-            if (count === liIndex) { targetIdx = i; break; }
-            count++;
-          }
-        }
-        console.log('[BW-CE Tab] liIndex:', liIndex, 'lines searched:', lines.length, 'targetIdx:', targetIdx);
-        if (targetIdx === -1) return;                // index out of range — bail
-
-        const lineText  = lines[targetIdx];
-        const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
-        const isOrdered = /^(\s*)\d+\. /.test(lineText);
-        console.log('[BW-CE Tab] lineText:', JSON.stringify(lineText), 'isBullet:', isBullet, 'isOrdered:', isOrdered);
-        if (!isBullet && !isOrdered) return;
-
-        const STEP    = isBullet ? 2 : 3;
-        const MAX_SP  = STEP * 3;
-        const leading = (lineText.match(/^ */) || [''])[0].length;
-
-        let newLine;
         if (!e.shiftKey) {
-          if (leading >= MAX_SP) return;             // already at deepest level
-          newLine = ' '.repeat(STEP) + lineText;
+          /* ── INDENT ── */
+          const prevLi = li.previousElementSibling;
+          if (!prevLi || prevLi.nodeName !== 'LI') return; // nothing to nest under
+          e.preventDefault();
+
+          const parentList = li.parentElement;      // inherit ul/ol type
+          let nested = Array.from(prevLi.children).find(
+            c => c.nodeName === 'UL' || c.nodeName === 'OL'
+          );
+          if (!nested) {
+            nested = document.createElement(parentList.tagName);
+            prevLi.appendChild(nested);
+          }
+          nested.appendChild(li);
         } else {
-          if (leading === 0) return;                 // already at root
-          newLine = lineText.slice(Math.min(leading, STEP));
+          /* ── OUTDENT ── */
+          const parentList = li.parentElement;       // <ul>/<ol> we live in
+          const parentLi   = parentList?.parentElement; // <li> above us, if nested
+          if (!parentLi || parentLi.nodeName !== 'LI') return; // already at root
+          e.preventDefault();
+
+          const grandparent = parentLi.parentElement;
+          grandparent.insertBefore(li, parentLi.nextSibling);
+          if (parentList.children.length === 0) parentList.remove();
         }
 
-        lines[targetIdx] = newLine;
-        _ta.value = lines.join('\n');
-        console.log('[BW-CE Tab] applied! newLine:', JSON.stringify(newLine), '→ calling renderPreview()');
-        renderPreview();
+        /* Sync DOM → markdown and block any deferred pvTimer from clobbering */
+        syncPreviewToMd();
+        clearTimeout(pvTimer);
 
-        /* Restore caret to the same logical <li> (now at updated indent) */
+        /* Restore cursor to the (now-moved) <li> */
         setTimeout(() => {
-          preview.focus();
-          const updatedLis = Array.from(preview.querySelectorAll('li'));
-          const target = updatedLis[liIndex];
-          if (target) {
-            const r2 = document.createRange();
-            r2.selectNodeContents(target);
-            r2.collapse(false);                      // cursor at end of <li>
+          const grip     = li.querySelector('[data-preview-grip]');
+          const textNode = grip ? grip.nextSibling : li.firstChild;
+          if (textNode) {
+            const r = document.createRange();
+            if (textNode.nodeType === 3 /* TEXT_NODE */) {
+              r.setStart(textNode, textNode.length);
+              r.collapse(true);
+            } else {
+              r.selectNodeContents(textNode);
+              r.collapse(false);
+            }
             _sel.removeAllRanges();
-            _sel.addRange(r2);
+            _sel.addRange(r);
           }
-        }, 20);
+          _livePv().focus();
+        }, 0);
         return;
       }
 
