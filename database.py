@@ -1,10 +1,16 @@
 """Database initialization and connection management."""
 import aiosqlite
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-DB_PATH = Path("bookworm.db")
+# BW_DATA_DIR lets Docker (or any deployment) redirect the database
+# to a persistent volume.  Defaults to "." so local dev is unchanged.
+_DATA_DIR = Path(os.getenv("BW_DATA_DIR", "."))
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = _DATA_DIR / "bookworm.db"
 
 
 CREATE_TABLES_SQL = [

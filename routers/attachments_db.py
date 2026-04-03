@@ -1,11 +1,14 @@
 """Attachment DB helpers — CRUD for note_attachments table."""
+import os
 from pathlib import Path
 from typing import Optional
 
 from database import get_db
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Mirror BW_DATA_DIR so uploads land in the same volume as the DB.
+_DATA_DIR  = Path(os.getenv("BW_DATA_DIR", "."))
+UPLOAD_DIR = _DATA_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 async def create_attachment(

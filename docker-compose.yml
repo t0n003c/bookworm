@@ -1,0 +1,25 @@
+# BookWorm — docker compose up -d  →  http://localhost:8001
+services:
+  bookworm:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      # Tell the app to store the DB and uploads under /data
+      # so they land inside the named volume below.
+      BW_DATA_DIR: /data
+    volumes:
+      - bookworm_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Named volume — data survives container rebuilds and updates.
+# Docker stores it in /var/lib/docker/volumes/bookworm_bookworm_data/
+volumes:
+  bookworm_data:

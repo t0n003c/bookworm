@@ -1,0 +1,35 @@
+# Keep the Docker image lean — none of these belong inside it.
+
+# Dev environment
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Data (persisted via Docker volume at runtime, not baked into image)
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+
+# Logs
+*.log
+
+# Git history (not needed at runtime)
+.git/
+.gitignore
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Dev/test scripts
+smoke_test.py
+template_test.py
+_test_routes.py
+_route_test.py
+
+# This file itself
+.dockerignore
