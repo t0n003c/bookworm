@@ -30,6 +30,26 @@
 
   <div class="ml-auto flex items-center gap-2">
 
+    <!-- Timeline / Grid toggle -->
+    <button
+      id="list-view-toggle"
+      onclick="toggleListView()"
+      class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+      aria-label="Toggle timeline view"
+      title="Switch to timeline view"
+    >
+      <!-- Grid icon (shown when in timeline → click to go back to grid) -->
+      <svg id="icon-grid" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+      </svg>
+      <!-- Timeline icon (shown when in grid → click to switch to timeline) -->
+      <svg id="icon-timeline" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+    </button>
+
     <!-- Dark / Light toggle -->
     <button
       id="theme-toggle"
@@ -760,6 +780,15 @@
 
   /* ---- Auto open/resize panel after every HTMX swap into #detail-panel ---- */
   document.addEventListener('htmx:afterSwap', (e) => {
+    // Re-apply timeline after any HTMX swap that targets #note-list
+    if (e.detail.target.id === 'note-list') {
+      if (localStorage.getItem('bw-list-view') === 'timeline') {
+        // HTMX already wrote fresh grid HTML into #note-list — use remount()
+        // so we never restore the stale _gridCache over the new content.
+        requestAnimationFrame(() => bwTimeline.remount());
+      }
+      return;
+    }
     if (e.detail.target.id !== 'detail-panel') return;
     // If a form landed in the panel → wide; if it's a view → normal
     const isForm = !!e.detail.target.querySelector('#note-form');
@@ -976,6 +1005,34 @@
     document.getElementById('icon-moon').classList.toggle('hidden', isDark);
   }
   syncThemeIcon();
+
+  /* ---- List-view toggle (grid ↔ timeline) ---- */
+  function syncListViewIcon() {
+    const isTl = localStorage.getItem('bw-list-view') === 'timeline';
+    document.getElementById('icon-timeline').classList.toggle('hidden',  isTl);
+    document.getElementById('icon-grid').classList.toggle('hidden',     !isTl);
+    const btn = document.getElementById('list-view-toggle');
+    if (btn) btn.title = isTl ? 'Switch to grid view' : 'Switch to timeline view';
+  }
+  function toggleListView() {
+    const isTl = bwTimeline.isMounted();
+    if (isTl) {
+      bwTimeline.unmount();
+      localStorage.setItem('bw-list-view', 'grid');
+    } else {
+      bwTimeline.mount();
+      localStorage.setItem('bw-list-view', 'timeline');
+    }
+    syncListViewIcon();
+  }
+  // Apply saved preference on page load
+  (function initListView() {
+    syncListViewIcon();
+    if (localStorage.getItem('bw-list-view') === 'timeline') {
+      // Defer so HTMX has finished rendering the note list
+      requestAnimationFrame(() => bwTimeline.mount());
+    }
+  })();
 
   /* ---- Settings ---- */
   function toggleSettings() {

@@ -21,6 +21,11 @@
     tabindex="0"
     aria-label="Open note: {{ note.title }}"
     onkeydown="if(event.key==='Enter'||event.key===' '){this.click()}"
+    data-note-id="{{ note.id }}"
+    data-title="{{ note.title | e }}"
+    data-icon="{{ (note.icon or '') | e }}"
+    data-meeting-date="{{ note.meeting_date or '' }}"
+    data-created-at="{{ (note.created_at | string)[:10] }}"
   >
     <div class="flex items-start justify-between gap-3">
       <div class="flex-1 min-w-0">
