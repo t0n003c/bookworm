@@ -1315,10 +1315,16 @@
       // toward the <ol> CSS counter, producing gaps like "1 · 2 · 4" instead
       // of "1 · 2 · 3" until the user saves and reopens.  Remove them here —
       // the cursor cannot be inside an item the user just deleted.
+      const _sel = window.getSelection();
+      const _cur = (_sel && _sel.rangeCount) ? _sel.getRangeAt(0).startContainer : null;
       _pv.querySelectorAll('li').forEach(li => {
         const tmp = li.cloneNode(true);
         tmp.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
         if (!tmp.textContent.trim() && !tmp.querySelector('input[type="checkbox"]')) {
+          // Never remove an <li> the cursor is currently sitting in —
+          // that would delete the brand-new bullet the user just created
+          // by pressing Enter and hasn't had a chance to type in yet.
+          if (_cur && li.contains(_cur)) return;
           li.remove();
         }
       });
