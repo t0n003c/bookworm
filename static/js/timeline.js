@@ -69,6 +69,7 @@ window.bwTimeline = (function () {
       shadow:    dark ? '0 2px 14px rgba(0,0,0,.5)'       : '0 2px 14px rgba(0,0,0,.10)',
       shadowHov: dark ? '0 4px 24px rgba(59,130,246,.4)'  : '0 4px 24px rgba(0,83,226,.18)',
       mainBg:    dark ? '#09090b' : '#f9fafb',
+      monthBand: dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.025)',
       btnBg:     dark ? '#27272a' : '#ffffff',
       btnBord:   dark ? '#3f3f46' : '#d1d5db',
       btnClr:    dark ? '#f4f4f5' : '#374151',
@@ -83,14 +84,15 @@ window.bwTimeline = (function () {
     if (!nl) return [];
     const out = [];
     nl.querySelectorAll('article[data-note-id]').forEach(el => {
-      const id      = el.getAttribute('data-note-id');
-      const title   = el.getAttribute('data-title')        || 'Untitled';
-      const icon    = el.getAttribute('data-icon')         || '';
-      const dateStr = el.getAttribute('data-meeting-date') ||
-                      el.getAttribute('data-created-at')   || '';
-      const date    = _parseDate(dateStr);
+      const id       = el.getAttribute('data-note-id');
+      const title    = el.getAttribute('data-title')        || 'Untitled';
+      const icon     = el.getAttribute('data-icon')         || '';
+      const dateStr  = el.getAttribute('data-meeting-date') ||
+                       el.getAttribute('data-created-at')   || '';
+      const catColor = el.getAttribute('data-cat-color')    || '';
+      const date     = _parseDate(dateStr);
       if (!id || !date) return;
-      out.push({ id, title, icon, dateStr, date });
+      out.push({ id, title, icon, dateStr, date, catColor });
     });
     return out.sort((a, b) => a.date - b.date);
   }

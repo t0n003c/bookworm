@@ -5,28 +5,83 @@
 
    cfg = { pxPerDay, PAD_ENDS, SPINE_Y, STEM_H, CARD_H, CARD_W,
            daysBetween, esc, fmtDate }
-   t   = theme colours object
+   t   = theme colours object (from _theme() in timeline.js)
    ================================================================ */
 
 window._bwTLRender = (function () {
   'use strict';
 
-  // ── Tick marks ─────────────────────────────────────────────────
-  // Month/year always; week marks ≥4 px/day;
-  // day marks ≥14 px/day; day-number labels ≥20 px/day.
-  // Day loop extends into PAD_ENDS padding so ticks fill the full
-  // visible rail, not just the space between first and last note.
+  // ── Private: today indicator ─────────────────────────────────────
+  // Draws a Walmart-spark-yellow vertical line + "TODAY" pill at the
+  // current date's rail position.  Skipped when today is > 6 months
+  // outside the note range so the rail doesn't grow absurdly wide.
+  function _buildTodayLine(rail, earliest, span, cfg, t) {
+    const { pxPerDay, PAD_ENDS, SPINE_Y } = cfg;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayDays = Math.round((today - earliest) / 86_400_000);
+    if (todayDays < -180 || todayDays > span + 180) return;
+    const x = PAD_ENDS + todayDays * pxPerDay;
+
+    const line = document.createElement('div');
+    Object.assign(line.style, {
+      position: 'absolute', left: x + 'px',
+      top: '0', bottom: '0', width: '2px',
+      background: '#ffc220',
+      transform: 'translateX(-50%)',
+      zIndex: '2', pointerEvents: 'none', opacity: '0.85',
+    });
+    rail.appendChild(line);
+
+    const lbl = document.createElement('div');
+    lbl.textContent = 'TODAY';
+    Object.assign(lbl.style, {
+      position: 'absolute', left: x + 'px',
+      top: `calc(${SPINE_Y * 100}% - 20px)`,
+      transform: 'translateX(-50%) translateY(-100%)',
+      fontSize: '9px', fontWeight: '800', letterSpacing: '.1em',
+      color: '#ffc220', whiteSpace: 'nowrap',
+      pointerEvents: 'none', zIndex: '6',
+      background: t.mainBg,
+      padding: '1px 5px', borderRadius: '3px',
+    });
+    rail.appendChild(lbl);
+  }
+
+  // ── Tick marks + month bands ─────────────────────────────────────
+  // Month/year marks always; alternating month-band shading always.
+  // Week marks ≥2 px/day; day ticks ≥8 px/day; day labels ≥14 px/day.
+  // Range extends 2 months before and 6 months after the note span so
+  // marks fill the full PAD_ENDS padding area plus generous context.
   function buildTicks(rail, earliest, span, cfg, t) {
     const { pxPerDay, PAD_ENDS, SPINE_Y, daysBetween } = cfg;
 
-    // ── Month / year ─────────────────────────────────────────────
-    let cur = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
-    const stopMs = earliest.getTime() + (span + 62) * 86_400_000;
+    // ── Month bands + month/year tick marks ──────────────────────
+    let cur      = new Date(earliest.getFullYear(), earliest.getMonth() - 2, 1);
+    const stopMs = earliest.getTime() + (span + 180) * 86_400_000;
+    let monthIdx = 0;
+
     while (cur.getTime() < stopMs) {
+      const nextM = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
       const x     = PAD_ENDS + daysBetween(earliest, cur) * pxPerDay;
       const isJan = cur.getMonth() === 0;
-      const th    = isJan ? 28 : 16;
-      const tick  = document.createElement('div');
+
+      // Every other month gets a very subtle background band.
+      // insertBefore(…, firstChild) keeps all bands behind ticks.
+      if (monthIdx % 2 === 0 && t.monthBand) {
+        const bandW = daysBetween(cur, nextM) * pxPerDay;
+        const band  = document.createElement('div');
+        Object.assign(band.style, {
+          position: 'absolute', left: x + 'px', top: '0',
+          width: bandW + 'px', height: '100%',
+          background: t.monthBand, pointerEvents: 'none',
+        });
+        rail.insertBefore(band, rail.firstChild);
+      }
+
+      // Tick mark – taller + bolder for January
+      const th   = isJan ? 28 : 16;
+      const tick = document.createElement('div');
       Object.assign(tick.style, {
         position: 'absolute', left: x + 'px',
         top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
@@ -35,6 +90,8 @@ window._bwTLRender = (function () {
         transform: 'translateX(-50%)', pointerEvents: 'none',
       });
       rail.appendChild(tick);
+
+      // Month / year label below the spine
       const lbl = document.createElement('span');
       lbl.textContent = isJan
         ? String(cur.getFullYear())
@@ -48,23 +105,28 @@ window._bwTLRender = (function () {
         whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
       });
       rail.appendChild(lbl);
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+
+      cur = nextM;
+      monthIdx++;
     }
 
-    // ── Week / day minor ticks ──────────────────────────────────
+    // ── Today indicator ──────────────────────────────────────────
+    _buildTodayLine(rail, earliest, span, cfg, t);
+
+    // ── Week / day minor ticks ───────────────────────────────────
     // Thresholds (px/day):
-    //   ≥2  → week ticks (every 7 days, no label)
-    //   ≥8  → day ticks  (every day, no label)
-    //   ≥14 → day ticks  + day-number labels
+    //   ≥2  → week ticks  (every 7 days, no label)
+    //   ≥8  → day ticks   (every 1 day,  no label)
+    //   ≥14 → day ticks   + day-number labels
     if (pxPerDay < 2) return;
     const showDays  = pxPerDay >= 8;
     const labelDays = pxPerDay >= 14;
     const step      = showDays ? 1 : 7;
-    const padDays   = Math.ceil(PAD_ENDS / pxPerDay) + 1; // cover full rail
+    const padDays   = Math.ceil(PAD_ENDS / pxPerDay) + 1;
 
     for (let d = -padDays; d <= span + padDays; d += step) {
       const dayDate = new Date(earliest.getTime() + d * 86_400_000);
-      if (dayDate.getDate() === 1) continue; // already drawn by month pass
+      if (dayDate.getDate() === 1) continue; // month boundaries already drawn
       const x  = PAD_ENDS + d * pxPerDay;
       const th = showDays ? 8 : 10;
       const minorTick = document.createElement('div');
@@ -91,17 +153,25 @@ window._bwTLRender = (function () {
     }
   }
 
-  // ── One note pin: dot + stem + card ────────────────────────────
+  // ── One note pin: dot + stem + card ─────────────────────────────
+  // Dot colour = first category colour (passed on note.catColor) or
+  // falls back to the theme's spine colour.  A thin white ring separates
+  // the dot from the spine line for a clean "pin" appearance.
   function buildPin(rail, note, x, above, laneIdx, cfg, t) {
     const { SPINE_Y, STEM_H, CARD_H, CARD_W, esc, fmtDate } = cfg;
     const DOT = 10, GAP = 8;
-    const stemH = STEM_H + laneIdx * (CARD_H + GAP);
+    const stemH   = STEM_H + laneIdx * (CARD_H + GAP);
+    const pinClr  = note.catColor || t.spine;
+    const stemClr = note.catColor ? (note.catColor + '50') : t.spineFade;
 
     const dot = document.createElement('div');
     Object.assign(dot.style, {
       position: 'absolute', left: x + 'px', top: `${SPINE_Y * 100}%`,
       width: DOT + 'px', height: DOT + 'px', borderRadius: '50%',
-      background: t.spine, transform: 'translate(-50%,-50%)',
+      background: pinClr,
+      border: `2px solid ${t.cardBg}`,   // white ring = pin-head look
+      boxSizing: 'border-box',
+      transform: 'translate(-50%,-50%)',
       zIndex: '3', pointerEvents: 'none',
     });
     rail.appendChild(dot);
@@ -111,7 +181,7 @@ window._bwTLRender = (function () {
       position: 'absolute', left: x + 'px',
       top: above ? `calc(${SPINE_Y * 100}% - ${stemH}px)` : `${SPINE_Y * 100}%`,
       width: '2px', height: stemH + 'px',
-      background: t.spineFade, transform: 'translateX(-50%)',
+      background: stemClr, transform: 'translateX(-50%)',
       zIndex: '2', pointerEvents: 'none',
     });
     rail.appendChild(stem);
@@ -145,16 +215,18 @@ window._bwTLRender = (function () {
       </h3>
       <time style="font-size:.7rem;color:${t.subClr};display:block;">&#128197; ${fmtDate(note.dateStr)}</time>`;
 
-    // Stop pointerdown bubbling so `outer`'s drag handler never calls
+    // Stop pointerdown bubbling so outer's drag handler never calls
     // setPointerCapture on a card tap — otherwise the browser routes
-    // the subsequent `click` to `outer` and HTMX never sees it.
+    // the subsequent click to outer and HTMX never fires.
     card.addEventListener('pointerdown', e => e.stopPropagation());
 
     card.addEventListener('mouseenter', () => {
-      card.style.boxShadow = t.shadowHov; card.style.borderColor = t.cardHov;
+      card.style.boxShadow    = t.shadowHov;
+      card.style.borderColor  = pinClr;     // glow in category colour
     });
     card.addEventListener('mouseleave', () => {
-      card.style.boxShadow = t.shadow;    card.style.borderColor = t.cardBord;
+      card.style.boxShadow   = t.shadow;
+      card.style.borderColor = t.cardBord;
     });
     rail.appendChild(card);
     if (window.htmx) htmx.process(card);
