@@ -219,48 +219,63 @@ window.bwTimeline = (function () {
 
   // ── Auto-fit: scale so all notes fill the visible width ───────
   function _doAutofit(outer, notes, t, getRail, setRail) {
-    const cw   = outer.offsetWidth || 800;  // fallback if not in DOM yet
-    const span = getRail()._span   || 30;
+    const cw  = outer.offsetWidth || 800;
+    const span = getRail()._span  || 30;
+    // pxPerDay that makes content exactly fill the inner width
     _pxPerDay  = Math.max(PX_MIN, Math.min(PX_MAX, (cw - PAD_ENDS * 2) / span));
     const newRail = _buildRail(notes, t);
-    // Centre the fitted rail in the viewport
-    const leftover = cw - newRail._railW;
-    newRail.style.left = Math.max(0, leftover / 2) + 'px';
+    // Always start at left:0 — avoids positive-left values that break clamp()
+    newRail.style.left = '0px';
     getRail().replaceWith(newRail);
     setRail(newRail);
   }
 
-  // ── Drag + momentum ───────────────────────────────────────────
+  // ── Drag + momentum (Pointer Events API + setPointerCapture) ─────
+  //
+  // Why not window mousemove/mouseup?
+  //   • preventDefault() on mousedown blocks mousemove in Chrome/Edge.
+  //   • Events are lost when mouse briefly leaves the window.
+  //   • Listeners accumulate on window across remounts.
+  // setPointerCapture pins all pointer events to `outer` for the
+  // entire drag, handling mouse + touch + stylus in one API.
   function _attachDrag(outer, getRail) {
     let dragging = false, didDrag = false;
     let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
 
     function clamp(v) {
-      const minL = -(getRail()._railW - outer.offsetWidth + 80);
-      return Math.min(0, Math.max(minL, v));
+      // rail may be >= or < outerWidth; allow left in [minL … 0]
+      const minL = Math.min(0, -(getRail()._railW - outer.offsetWidth + 80));
+      return Math.max(minL, Math.min(0, v));
     }
-    function down(e) {
-      if (e.button !== undefined && e.button !== 0) return;
-      dragging = true; didDrag = false;
-      startX    = e.touches ? e.touches[0].clientX : e.clientX;
-      startLeft = parseFloat(getRail().style.left) || 0;
-      lastX = startX; lastTime = Date.now(); velX = 0;
+
+    outer.addEventListener('pointerdown', e => {
+      // Only respond to primary button (left mouse, first touch/pen)
+      if (!e.isPrimary) return;
+      // Ignore right-click
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+      dragging  = true; didDrag = false;
+      startX    = e.clientX;
+      startLeft = parseFloat(getRail().style.left) || 0;
+      lastX     = startX; lastTime = Date.now(); velX = 0;
       outer.style.cursor = 'grabbing';
-      e.preventDefault();
-    }
-    function move(e) {
-      if (!dragging) return;
-      const cx = e.touches ? e.touches[0].clientX : e.clientX;
-      if (Math.abs(cx - startX) > 3) didDrag = true;
+      // Capture keeps pointermove/pointerup on this element even
+      // when the pointer moves outside the browser window.
+      outer.setPointerCapture(e.pointerId);
+    });
+
+    outer.addEventListener('pointermove', e => {
+      if (!dragging || !e.isPrimary) return;
+      const cx  = e.clientX;
       const now = Date.now(), dt = now - lastTime || 1;
-      velX = (cx - lastX) / dt * 16;
+      if (Math.abs(cx - startX) > 3) didDrag = true;
+      velX  = (cx - lastX) / dt * 16;
       lastX = cx; lastTime = now;
       getRail().style.left = clamp(startLeft + (cx - startX)) + 'px';
-      e.preventDefault();
-    }
-    function up() {
-      if (!dragging) return;
+    });
+
+    function endDrag(e) {
+      if (!dragging || !e.isPrimary) return;
       dragging = false; outer.style.cursor = 'grab';
       let pos = parseFloat(getRail().style.left) || 0;
       function decay() {
@@ -272,22 +287,18 @@ window.bwTimeline = (function () {
       }
       _rafId = requestAnimationFrame(decay);
     }
-    function clickGuard(e) {
+    outer.addEventListener('pointerup',     endDrag);
+    outer.addEventListener('pointercancel', e => {
+      if (e.isPrimary) { dragging = false; outer.style.cursor = 'grab'; }
+    });
+
+    // Swallow click that follows a drag so cards don't open
+    outer.addEventListener('click', e => {
       if (didDrag) { e.stopPropagation(); e.preventDefault(); didDrag = false; }
-    }
-    outer.addEventListener('click',      clickGuard, true);
-    outer.addEventListener('mousedown',  down);
-    outer.addEventListener('touchstart', down, { passive: false });
-    window.addEventListener('mousemove',  move);
-    window.addEventListener('touchmove',  move, { passive: false });
-    window.addEventListener('mouseup',    up);
-    window.addEventListener('touchend',   up);
-    return () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('mouseup',   up);
-      window.removeEventListener('touchend',  up);
-    };
+    }, true);
+
+    // No window listeners → cleanup is a no-op
+    return () => {};
   }
 
   // ── Zoom (wheel + buttons) ────────────────────────────────────
