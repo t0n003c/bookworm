@@ -1082,12 +1082,15 @@
   /* ---- Workspace navigation ---- */
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
-    // Cancel-and-restart debounce — the LAST clicked workspace always wins.
+    // Update URL + localStorage SYNCHRONOUSLY on every click — before the debounce
+    // timer fires.  This way a page reload triggered within the 350 ms window still
+    // lands on the correct workspace.  The HTMX content swap is still debounced so
+    // rapid sidebar clicks don't fire redundant network requests.
+    document.getElementById('active-workspace').value = id;
+    _bwSetActiveWs(id);
     clearTimeout(_wsClickTimer);
     _wsClickTimer = setTimeout(() => {
       _wsClickTimer = null;
-      document.getElementById('active-workspace').value = id;
-      _bwSetActiveWs(id);   // update URL + localStorage before the async request
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
       }).then(() => refreshCatFilter(id));

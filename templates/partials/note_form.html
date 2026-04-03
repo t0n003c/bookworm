@@ -442,7 +442,13 @@
       if (!parentList) return;
       const grandparent = parentList.parentElement;
       const origTag     = parentList.nodeName;           // 'UL' or 'OL'
-      const siblings    = Array.from(parentList.children);
+      // _injectPreviewGrips inserts a <span data-preview-grip> as the FIRST child
+      // of the list element itself (not just inside each <li>).  That span must be
+      // excluded or it gets swept into `before`/`after`, creating an orphan list
+      // that blocks _mergeAdjacent and breaks Tab indent after round-trip conversions.
+      const siblings    = Array.from(parentList.children).filter(
+        el => !el.hasAttribute('data-preview-grip')
+      );
       const idx         = siblings.indexOf(li);
       const before      = siblings.slice(0, idx);        // items before the cursor
       const after       = siblings.slice(idx + 1);       // items after the cursor
