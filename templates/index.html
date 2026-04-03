@@ -864,6 +864,29 @@
     if (pv && window._bwActiveEditor === pv) e.preventDefault();
   }, true /* capture — must beat the browser's default focus handling */);
 
+  /* ── Grip pointer-events guard for text selection ────────────────────────
+     Grip spans are position:absolute with pointer-events:all so the browser
+     hit-tests them during a drag.  When the selection sweep moves left past
+     the text into the gutter, the browser lands on the grip's
+     contenteditable="false" box and treats it as an atomic selection
+     boundary — garbling the range and leaving some lines partially selected.
+
+     Fix: the moment a non-grip mousedown starts inside the preview, disable
+     pointer-events on every grip so they are invisible to hit-testing during
+     the drag.  Restore pointer-events on mouseup (once, capture) so grips
+     work normally again for the next drag-and-drop operation.              */
+  document.addEventListener('mousedown', function _bwGripSelectionGuard(e) {
+    if (e.button !== 0) return;
+    const pv = document.getElementById('md-live-preview');
+    if (!pv || !pv.contains(e.target)) return;            // outside preview
+    if (e.target.closest('[data-preview-grip]')) return;  // grip drag — leave alone
+    const grips = pv.querySelectorAll('[data-preview-grip]');
+    grips.forEach(g => { g.style.pointerEvents = 'none'; });
+    document.addEventListener('mouseup', function _bwGripRestore() {
+      grips.forEach(g => { g.style.pointerEvents = ''; });
+    }, { once: true, capture: true });
+  }, { capture: true });
+
   /* ── Permanent debounced input handlers ─────────────────────────────────
      Wire textarea → renderPreview (150 ms) and preview → syncPreviewToMd
      (400 ms).  Both use window globals exposed by initEditor():
