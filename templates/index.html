@@ -73,6 +73,14 @@
             <p class="text-xs text-gray-400 dark:text-zinc-500">Opens note in right panel</p>
           </div>
         </label>
+        <label class="flex items-center gap-3 cursor-pointer mb-2">
+          <input type="radio" name="view-mode" value="center" onchange="setViewMode('center')"
+            class="accent-wblue" aria-label="Center panel mode"/>
+          <div>
+            <span class="text-sm font-medium text-gray-800 dark:text-zinc-200">Center Panel</span>
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Opens note in a centered overlay</p>
+          </div>
+        </label>
         <label class="flex items-center gap-3 cursor-pointer">
           <input type="radio" name="view-mode" value="fullscreen" onchange="setViewMode('fullscreen')"
             class="accent-wblue" aria-label="Fullscreen mode"/>
@@ -655,53 +663,93 @@
   }
 
   /* ---- Panel / Fullscreen ---- */
+  /* ── helpers shared by openPanel / closePanel ── */
+  function _removeBackdrop() {
+    const bd = document.getElementById('_bw-panel-backdrop');
+    if (bd) bd.remove();
+  }
+  function _clearPanelStyles(panel, dp) {
+    // Wipe every inline style openPanel may have set across all three modes
+    ['position','inset','zIndex','width','height','overflowY',
+     'display','alignItems','justifyContent','background'].forEach(
+      p => { panel.style[p] = ''; }
+    );
+    dp.style.minWidth  = '';
+    dp.style.maxHeight = '';
+    dp.style.overflowY = '';
+    dp.style.borderRadius = '';
+    dp.style.boxShadow    = '';
+    dp.style.background   = '';
+    dp.style.width        = '';
+  }
+
   function openPanel(wide = false) {
     const panel = document.getElementById('panel');
     const dp    = document.getElementById('detail-panel');
+    const mode  = localStorage.getItem('bw-view-mode') || 'panel';
 
     panel.classList.remove('overflow-hidden');
+    _removeBackdrop();   // always start fresh
+    _clearPanelStyles(panel, dp);
+    panel.classList.remove('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
+    dp.classList.remove('max-w-4xl', 'mx-auto');
 
-    if (localStorage.getItem('bw-view-mode') === 'fullscreen') {
-      // Fullscreen — use inline styles exclusively so we never fight Tailwind
-      // CDN class ordering.  The base class w-0 on the panel element is
-      // overridden by an inline style, which always wins the cascade.
-      panel.style.position = 'fixed';
-      panel.style.inset    = '0';
-      panel.style.zIndex   = '40';
-      panel.style.width    = '100%';
-      panel.style.height   = '100%';
+    if (mode === 'fullscreen') {
+      /* ── Fullscreen ── fills viewport, content scrolls inside panel ── */
+      panel.style.position  = 'fixed';
+      panel.style.inset     = '0';
+      panel.style.zIndex    = '40';
+      panel.style.width     = '100%';
+      panel.style.height    = '100%';
       panel.style.overflowY = 'auto';
-      // Tailwind classes are kept for selectors / resets on other properties
-      panel.classList.add('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
-      dp.style.minWidth = '';
       dp.classList.add('max-w-4xl', 'mx-auto');
+
+    } else if (mode === 'center') {
+      /* ── Center Panel ── floating card over a backdrop ── */
+      // Backdrop: click outside → close
+      const bd = document.createElement('div');
+      bd.id = '_bw-panel-backdrop';
+      bd.setAttribute('aria-hidden', 'true');
+      bd.style.cssText =
+        'position:fixed;inset:0;z-index:38;background:rgba(0,0,0,0.45);' +
+        'backdrop-filter:blur(2px);';
+      bd.addEventListener('click', closePanel);
+      document.body.appendChild(bd);
+
+      // Panel becomes a transparent flex container that centres the card
+      panel.style.position        = 'fixed';
+      panel.style.inset           = '0';
+      panel.style.zIndex          = '39';
+      panel.style.width           = '100%';
+      panel.style.height          = '100%';
+      panel.style.display         = 'flex';
+      panel.style.alignItems      = 'center';
+      panel.style.justifyContent  = 'center';
+      panel.style.overflowY       = 'auto';
+      panel.style.background      = 'transparent';
+
+      // dp is the visible card
+      const isDark = document.documentElement.classList.contains('dark');
+      dp.style.width        = 'min(58rem, 95vw)';
+      dp.style.maxHeight    = '90vh';
+      dp.style.overflowY    = 'auto';
+      dp.style.borderRadius = '1rem';
+      dp.style.boxShadow    = '0 24px 64px rgba(0,0,0,0.22)';
+      dp.style.background   = isDark ? '#18181b' : '#ffffff';
+
     } else {
-      // Side panel — clear fullscreen inline styles first
-      panel.style.position  = '';
-      panel.style.inset     = '';
-      panel.style.zIndex    = '';
-      panel.style.height    = '';
-      panel.style.overflowY = '';
-      // Inline width bypasses Tailwind CDN arbitrary-class limitation
+      /* ── Side Panel (default) ── */
       const w = wide ? '56rem' : '28rem';
-      panel.style.width = w;
+      panel.style.width  = w;
       dp.style.minWidth  = w;
-      panel.classList.remove('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
-      dp.classList.remove('max-w-4xl', 'mx-auto');
     }
   }
 
   function closePanel() {
     const panel = document.getElementById('panel');
     const dp    = document.getElementById('detail-panel');
-    // Clear ALL inline styles set by openPanel (both panel and fullscreen paths)
-    panel.style.width     = '';
-    panel.style.position  = '';
-    panel.style.inset     = '';
-    panel.style.zIndex    = '';
-    panel.style.height    = '';
-    panel.style.overflowY = '';
-    dp.style.minWidth     = '';
+    _removeBackdrop();
+    _clearPanelStyles(panel, dp);
     panel.classList.add('overflow-hidden');
     panel.classList.remove('fixed', 'inset-0', 'z-40', 'w-full', 'overflow-y-auto');
     dp.classList.remove('max-w-4xl', 'mx-auto');
