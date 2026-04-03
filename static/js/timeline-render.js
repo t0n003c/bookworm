@@ -51,10 +51,14 @@ window._bwTLRender = (function () {
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
 
-    // ── Week / day minor ticks ────────────────────────────────────
-    if (pxPerDay < 4) return;
-    const showDays  = pxPerDay >= 14;
-    const labelDays = pxPerDay >= 20;
+    // ── Week / day minor ticks ──────────────────────────────────
+    // Thresholds (px/day):
+    //   ≥2  → week ticks (every 7 days, no label)
+    //   ≥8  → day ticks  (every day, no label)
+    //   ≥14 → day ticks  + day-number labels
+    if (pxPerDay < 2) return;
+    const showDays  = pxPerDay >= 8;
+    const labelDays = pxPerDay >= 14;
     const step      = showDays ? 1 : 7;
     const padDays   = Math.ceil(PAD_ENDS / pxPerDay) + 1; // cover full rail
 

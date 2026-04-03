@@ -320,9 +320,13 @@ window.bwTimeline = (function () {
     // ── Year corner labels ─────────────────────────────────────
     // Fixed to the far-left and far-right corners of the viewport.
     // Updates on every drag frame, zoom step, and autofit so the user
-    // always knows which year is at each edge of the visible window.
+    // Fixed to the far-left and far-right corners, vertically just above
+    // the spine (bottom edge sits 16px above center = 2px above the tallest
+    // year tick mark).  translateY(-100%) makes `top` anchor the BOTTOM edge.
     const _ylStyle = {
-      position: 'absolute', top: '12px',
+      position: 'absolute',
+      top: `calc(${SPINE_Y * 100}% - 16px)`,
+      transform: 'translateY(-100%)',
       fontSize: '13px', fontWeight: '700', color: t.labelYear,
       pointerEvents: 'none', userSelect: 'none',
       zIndex: '9', letterSpacing: '.03em',
@@ -338,14 +342,13 @@ window.bwTimeline = (function () {
       const rail = getRail();
       if (!rail || !rail._earliest) return;
       const rl  = parseFloat(rail.style.left) || 0;
-      const ow  = outer.offsetWidth || 1;
-      // Convert a rail-x pixel to the calendar year at that position.
-      const toYear = rx => {
-        const days = (rx - PAD_ENDS) / _pxPerDay;
-        return String(new Date(rail._earliest.getTime() + days * 86_400_000).getFullYear());
-      };
-      yearLabelL.textContent = toYear(-rl);       // rail-x at left viewport edge
-      yearLabelR.textContent = toYear(ow - rl);   // rail-x at right viewport edge
+      // Compute the calendar year visible at the left viewport edge.
+      // Right label is always leftYear+1 so the user always sees a
+      // year transition — left side one year behind, right side one ahead.
+      const days     = (-rl - PAD_ENDS) / _pxPerDay;
+      const leftYear = new Date(rail._earliest.getTime() + days * 86_400_000).getFullYear();
+      yearLabelL.textContent = String(leftYear);
+      yearLabelR.textContent = String(leftYear + 1);
     }
 
     // ── Drag ──────────────────────────────────────────────────
