@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — BookWorm</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: {
+        wblue: '#0053e2', wspark: '#ffc220'
+      }}}
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+
+  <div class="w-full max-w-sm">
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="text-5xl mb-3">📚</div>
+      <h1 class="text-2xl font-bold text-gray-900">BookWorm</h1>
+      <p class="text-sm text-gray-500 mt-1">Sign in to continue</p>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
+
+      {% if created %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+        ✅ Account created! Sign in below.
+      </div>
+      {% endif %}
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="post" action="/login" class="space-y-4">
+        <div>
+          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">
+            Username
+          </label>
+          <input
+            id="username" name="username" type="text"
+            value="{{ username or '' }}"
+            required autofocus autocomplete="username"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
+                   focus:outline-none focus:ring-2 focus:ring-wblue focus:border-wblue"
+          />
+        </div>
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">
+            Password
+          </label>
+          <input
+            id="password" name="password" type="password"
+            required autocomplete="current-password"
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
+                   focus:outline-none focus:ring-2 focus:ring-wblue focus:border-wblue"
+          />
+        </div>
+        <button
+          type="submit"
+          class="w-full bg-wblue hover:bg-blue-700 text-white font-semibold
+                 py-2 rounded-lg text-sm transition focus:outline-none
+                 focus:ring-2 focus:ring-wblue focus:ring-offset-2"
+        >
+          Sign In
+        </button>
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>

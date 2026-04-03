@@ -2,13 +2,14 @@
 from fastapi import APIRouter, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from templates_env import templates
-from typing import Optional
+from typing import List, Optional
 
 from routers.categories_db import (
     get_categories_for_workspace,
     get_categories_used_in_workspaces,
     create_category,
     delete_category,
+    rename_category,
     get_all_attr_defs,
     create_attr_def,
     delete_attr_def,
@@ -16,6 +17,7 @@ from routers.categories_db import (
 from routers.workspaces_db import get_descendant_ids
 
 router = APIRouter(tags=["meta"])
+
 
 
 
@@ -92,6 +94,81 @@ async def remove_category(
         request,
         "partials/category_manage_oob.html",
         {"categories": categories, "workspace_id": workspace_id},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Category management FROM the note form (pencil panel)
+# Returns OOB swaps so the manage list AND the checkbox grid both refresh.
+# ---------------------------------------------------------------------------
+
+_NOTE_FORM_OOB = "partials/cat_form_oob.html"
+
+
+@router.post("/categories/{cat_id}/rename", response_class=HTMLResponse)
+async def rename_category_endpoint(
+    request: Request,
+    cat_id: int,
+    name: str = Form(...),
+    color: str = Form(default="#0053e2"),
+    workspace_id: Optional[int] = Form(default=None),
+    category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
+):
+    """Rename / recolor a category globally, then refresh the form panel."""
+    name = name.strip()
+    if name:
+        await rename_category(cat_id, name, color)
+    categories = await get_categories_for_workspace(workspace_id)
+    return templates.TemplateResponse(
+        request,
+        _NOTE_FORM_OOB,
+        {"categories": categories, "workspace_id": workspace_id,
+         "selected_ids": category_ids},
+    )
+
+
+@router.post("/categories/panel/add", response_class=HTMLResponse)
+async def add_category_form(
+    request: Request,
+    name: str = Form(...),
+    color: str = Form(default="#0053e2"),
+    workspace_id: Optional[int] = Form(default=None),
+    category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
+):
+    """Add a new category from the note-form panel and refresh both targets."""
+    name = name.strip()
+    if name:
+        try:
+            await create_category(name=name, color=color,
+                                  description=None, workspace_id=workspace_id)
+        except Exception:
+            pass  # unique constraint — ignore duplicate names
+    categories = await get_categories_for_workspace(workspace_id)
+    return templates.TemplateResponse(
+        request,
+        _NOTE_FORM_OOB,
+        {"categories": categories, "workspace_id": workspace_id,
+         "selected_ids": category_ids},
+    )
+
+
+@router.post("/categories/{cat_id}/panel-remove", response_class=HTMLResponse)
+async def remove_category_form(
+    request: Request,
+    cat_id: int,
+    workspace_id: Optional[int] = Form(default=None),
+    category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
+):
+    """Remove category from workspace (form-panel context) and refresh both targets."""
+    await delete_category(cat_id, workspace_id=workspace_id)
+    # Drop removed category from selected set so the checkbox grid is consistent
+    remaining = [i for i in category_ids if i != cat_id]
+    categories = await get_categories_for_workspace(workspace_id)
+    return templates.TemplateResponse(
+        request,
+        _NOTE_FORM_OOB,
+        {"categories": categories, "workspace_id": workspace_id,
+         "selected_ids": remaining},
     )
 
 

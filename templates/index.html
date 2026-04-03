@@ -121,6 +121,28 @@
           <span>Keyboard Shortcuts</span>
           <span class="ml-auto text-xs text-gray-400 dark:text-zinc-500">?</span>
         </button>
+        <!-- Divider -->
+        <hr class="my-3 border-gray-200 dark:border-zinc-700"/>
+        <!-- Account -->
+        <button
+          onclick="showAccountModal(); document.getElementById('settings-menu').classList.add('hidden');"
+          class="w-full flex items-center gap-2.5 text-sm text-gray-700 dark:text-zinc-300 hover:text-wblue dark:hover:text-blue-400 transition py-1 focus:outline-none"
+          aria-label="Account settings"
+        >
+          <span class="text-base" aria-hidden="true">👤</span>
+          <span>Account</span>
+          <span class="ml-auto text-xs text-gray-400 dark:text-zinc-500 truncate max-w-[80px]">{{ current_username }}</span>
+        </button>
+        <!-- Sign Out -->
+        <form method="post" action="/logout" class="mt-0.5">
+          <button
+            type="submit"
+            class="w-full flex items-center gap-2.5 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition py-1 focus:outline-none"
+          >
+            <span class="text-base" aria-hidden="true">🚪</span>
+            <span>Sign Out</span>
+          </button>
+        </form>
       </div>
     </div>
 
@@ -1642,6 +1664,104 @@
 })();
 </script>
 
+<!-- ===== Account Modal ===== -->
+<div
+  id="account-modal"
+  class="hidden fixed inset-0 z-[200] flex items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Account settings"
+  onclick="if(event.target===this)hideAccountModal()"
+>
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-700 overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700">
+      <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100">👤 Account</h2>
+      <button onclick="hideAccountModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition focus:outline-none focus:ring-2 focus:ring-wblue rounded" aria-label="Close">&times;</button>
+    </div>
+    <!-- Body -->
+    <div class="px-6 py-5 space-y-6">
+
+      <!-- Change Username -->
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">Change Username</p>
+        <form
+          hx-post="/account/change-username"
+          hx-target="#username-msg"
+          hx-swap="innerHTML"
+          class="space-y-3"
+        >
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
+            <input name="current_password" type="password" required autocomplete="current-password"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Username</label>
+            <input name="new_username" type="text" required autocomplete="username"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="submit"
+              class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
+              Update Username
+            </button>
+            <span id="username-msg" class="text-xs"></span>
+          </div>
+        </form>
+      </div>
+
+      <hr class="border-gray-200 dark:border-zinc-700"/>
+
+      <!-- Change Password -->
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">Change Password</p>
+        <form
+          hx-post="/account/change-password"
+          hx-target="#password-msg"
+          hx-swap="innerHTML"
+          class="space-y-3"
+        >
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
+            <input name="current_password" type="password" required autocomplete="current-password"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Password <span class="text-gray-400 font-normal">(min 6 chars)</span></label>
+            <input name="new_password" type="password" required autocomplete="new-password"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Confirm New Password</label>
+            <input name="confirm_password" type="password" required autocomplete="new-password"
+              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="submit"
+              class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
+              Update Password
+            </button>
+            <span id="password-msg" class="text-xs"></span>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- ===== Keyboard Shortcuts Modal ===== -->
 <div
   id="shortcuts-modal"
@@ -1791,6 +1911,15 @@
   function hideShortcuts() {
     document.getElementById('shortcuts-modal').classList.add('hidden');
   }
+  function showAccountModal() {
+    document.getElementById('account-modal').classList.remove('hidden');
+  }
+  function hideAccountModal() {
+    document.getElementById('account-modal').classList.add('hidden');
+    // Clear status messages so they don't linger on next open
+    document.getElementById('username-msg').innerHTML = '';
+    document.getElementById('password-msg').innerHTML = '';
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
       // Only open shortcuts if no input/textarea is focused
@@ -1802,6 +1931,7 @@
     }
     if (e.key === 'Escape') {
       hideShortcuts();
+      hideAccountModal();
     }
   });
 </script>

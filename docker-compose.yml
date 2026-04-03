@@ -8,6 +8,11 @@ services:
       # Tell the app to store the DB and uploads under /data
       # so they land inside the named volume below.
       BW_DATA_DIR: /data
+      # IMPORTANT: change this to a long random string before going live.
+      # If not set, a random key is generated per restart (= all sessions
+      # are invalidated on every container restart).
+      # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+      BW_SECRET_KEY: "change-me-to-a-long-random-string"
     volumes:
       - bookworm_data:/data
     restart: unless-stopped

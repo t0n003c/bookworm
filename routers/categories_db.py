@@ -86,6 +86,17 @@ async def create_category(
         return cat_id
 
 
+async def rename_category(cat_id: int, name: str, color: str) -> bool:
+    """Update a category's name and color globally (affects all workspaces)."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE categories SET name = ?, color = ? WHERE id = ?",
+            (name, color, cat_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
 async def delete_category(cat_id: int, workspace_id: Optional[int] = None) -> bool:
     """Remove a category from a workspace (unlinks it).
 

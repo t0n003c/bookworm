@@ -78,6 +78,7 @@ async def edit_note_form(request: Request, note_id: int):
         "partials/note_form.html",
         {
             "note": note,
+            "is_edit": True,
             "categories": categories,
             "attr_defs": attr_defs,
             "today": note["meeting_date"],

@@ -70,6 +70,15 @@ const SLASH_COMMANDS = [
     ceInsert: '- [ ] ',
   },
   {
+    id: 'link', label: 'Link', desc: 'Insert a hyperlink (Ctrl+K)',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+             <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101 m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                   stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>`,
+    // action: erase the /query text, then open the link modal
+    action: () => { if (typeof window.showLinkModal === 'function') window.showLinkModal(); },
+  },
+  {
     id: 'quote', label: 'Blockquote', desc: 'Indented quote block',
     icon: `<svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
              <path d="M3 6h4v5H3zm0 7h4v5H3zm9-7h4v5h-4zm0 7h4v5h-4z" opacity=".6"/>
@@ -93,16 +102,6 @@ const SLASH_COMMANDS = [
            </svg>`,
     snippet: '---\n', cursorOffset: 4,
     ceExec: { cmd: 'insertHorizontalRule' },
-  },
-  {
-    id: 'link', label: 'Link', desc: 'Insert a hyperlink (Ctrl+K)',
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
-             <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101
-                      m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                   stroke-linecap="round" stroke-linejoin="round"/>
-           </svg>`,
-    // action: erase the /query text, then open the link modal
-    action: () => { if (typeof showLinkModal === 'function') showLinkModal(); },
   },
 
   // ── Toggle Headings ────────────────────────────────────────────────────

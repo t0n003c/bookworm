@@ -1,11 +1,16 @@
 """BookWorm — Team Note Taking App (FastAPI + HTMX + Tailwind + SQLite)."""
+import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
+from auth_middleware import AuthMiddleware
 
 
 from database import init_db
@@ -25,6 +30,8 @@ from routers import notes as notes_router
 from routers import categories as categories_router
 from routers import workspaces as workspaces_router
 from routers import attachments as attachments_router
+from routers import auth as auth_router
+from routers import account as account_router
 from routers.attachments_db import UPLOAD_DIR
 
 
@@ -39,9 +46,23 @@ from templates_env import templates  # shared instance with all custom filters
 
 app = FastAPI(title="BookWorm", lifespan=lifespan)
 
+# SessionMiddleware must be outermost (added last) so it runs first and
+# populates request.session before AuthMiddleware reads it.
+# BW_SECRET_KEY should be set in production; a random default means
+# sessions are invalidated on every server restart (fine for dev).
+app.add_middleware(AuthMiddleware)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("BW_SECRET_KEY", secrets.token_hex(32)),
+    https_only=False,   # allow HTTP for local-network access
+    max_age=86_400 * 30,  # 30-day sessions
+)
+
 app.mount("/static",  StaticFiles(directory="static"),          name="static")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)),   name="uploads")
 
+app.include_router(auth_router.router)
+app.include_router(account_router.router)
 app.include_router(notes_router.router)
 app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
@@ -50,7 +71,10 @@ app.include_router(workspaces_router.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ws: Optional[int] = None):
-    """Render the main SPA shell."""
+    """Render the main SPA shell. Default to workspace 1 (Welcome page)."""
+    # Pass logged-in username so the header can display it.
+    if ws is None:
+        return RedirectResponse(url="/?ws=1")
     open_workspaces = await get_open_workspaces()
     all_workspaces  = await get_all_workspaces()
     ws_tree         = await get_workspace_tree()
@@ -67,10 +91,12 @@ async def index(request: Request, ws: Optional[int] = None):
     if active_ws_id is not None and active_ws_id not in breadcrumbs:
         breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id)
     trashed_workspaces = await get_trashed_workspaces()
+    current_username = request.session.get("username", "")
     return templates.TemplateResponse(
         request,
         "index.html",
         {
+            "current_username":   current_username,
             "notes":              notes,
             "categories":         categories,
             "attr_defs":          attr_defs,
@@ -95,4 +121,4 @@ if __name__ == "__main__":
         sys.stdout = open("bookworm_stdout.log", "w", buffering=1)
     if sys.stderr is None:
         sys.stderr = open("bookworm_stderr.log", "w", buffering=1)
-    uvicorn.run("main:app", host="127.0.0.1", port=8001, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
