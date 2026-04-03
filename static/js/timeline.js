@@ -95,144 +95,7 @@ window.bwTimeline = (function () {
     return out.sort((a, b) => a.date - b.date);
   }
 
-  // ── Tick marks (NO spine – spine lives on outer) ──────────────
-  // Adaptive: month/year always; week marks at ≥4 px/day;
-  // day marks at ≥14 px/day; day-number labels at ≥20 px/day.
-  function _buildTicks(rail, earliest, span, t) {
-    // ── Month / year marks (always shown) ────────────────────────
-    let cur = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
-    const stopMs = earliest.getTime() + (span + 62) * 86_400_000;
-    while (cur.getTime() < stopMs) {
-      const x     = PAD_ENDS + _daysBetween(earliest, cur) * _pxPerDay;
-      const isJan = cur.getMonth() === 0;
-      const th    = isJan ? 28 : 16;
-      const tick  = document.createElement('div');
-      Object.assign(tick.style, {
-        position: 'absolute', left: x + 'px',
-        top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
-        width: isJan ? '2px' : '1px', height: th + 'px',
-        background: isJan ? t.tickYear : t.tick,
-        transform: 'translateX(-50%)', pointerEvents: 'none',
-      });
-      rail.appendChild(tick);
-      const lbl = document.createElement('span');
-      lbl.textContent = isJan
-        ? String(cur.getFullYear())
-        : cur.toLocaleString('default', { month: 'short' });
-      Object.assign(lbl.style, {
-        position: 'absolute', left: x + 'px',
-        top: `calc(${SPINE_Y * 100}% + 18px)`,
-        transform: 'translateX(-50%)',
-        fontSize: isJan ? '11px' : '9px', fontWeight: isJan ? '700' : '400',
-        color: isJan ? t.labelYear : t.label,
-        whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
-      });
-      rail.appendChild(lbl);
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
-    }
-
-    // ── Week / day minor ticks (zoom-adaptive) ───────────────────
-    if (_pxPerDay < 4) return;
-    const showDays  = _pxPerDay >= 14; // day-level ticks vs week-level
-    const labelDays = _pxPerDay >= 20; // also draw day-number labels
-    const step      = showDays ? 1 : 7;
-    const totalDays = span + (showDays ? 14 : 28);
-
-    for (let d = 0; d <= totalDays; d += step) {
-      const dayDate = new Date(earliest.getTime() + d * 86_400_000);
-      if (dayDate.getDate() === 1) continue; // month boundary already drawn
-      const x  = PAD_ENDS + d * _pxPerDay;
-      const th = showDays ? 8 : 10;
-      const minorTick = document.createElement('div');
-      Object.assign(minorTick.style, {
-        position: 'absolute', left: x + 'px',
-        top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
-        width: '1px', height: th + 'px',
-        background: t.tick, opacity: '0.55',
-        transform: 'translateX(-50%)', pointerEvents: 'none',
-      });
-      rail.appendChild(minorTick);
-      if (labelDays) {
-        const dlbl = document.createElement('span');
-        dlbl.textContent = String(dayDate.getDate());
-        Object.assign(dlbl.style, {
-          position: 'absolute', left: x + 'px',
-          top: `calc(${SPINE_Y * 100}% + 18px)`,
-          transform: 'translateX(-50%)',
-          fontSize: '8px', color: t.label,
-          whiteSpace: 'nowrap', pointerEvents: 'none',
-        });
-        rail.appendChild(dlbl);
-      }
-    }
-  }
-
-  // ── One note pin: dot + stem + card ──────────────────────────
-  // laneIdx=0 → first lane (closest to spine), 1 → second lane, etc.
-  // Lanes stack vertically so cards on the same side never overlap.
-  function _buildPin(rail, note, x, above, laneIdx, t) {
-    const DOT = 10, GAP = 8;
-    // Each extra lane adds exactly one card-height + gap of stem,
-    // pushing cards further from the spine without overlapping.
-    const stemH = STEM_H + laneIdx * (CARD_H + GAP);
-
-    const dot = document.createElement('div');
-    Object.assign(dot.style, {
-      position: 'absolute', left: x + 'px', top: `${SPINE_Y * 100}%`,
-      width: DOT + 'px', height: DOT + 'px', borderRadius: '50%',
-      background: t.spine, transform: 'translate(-50%,-50%)',
-      zIndex: '3', pointerEvents: 'none',
-    });
-    rail.appendChild(dot);
-
-    const stem = document.createElement('div');
-    Object.assign(stem.style, {
-      position: 'absolute', left: x + 'px',
-      top: above ? `calc(${SPINE_Y * 100}% - ${stemH}px)` : `${SPINE_Y * 100}%`,
-      width: '2px', height: stemH + 'px',
-      background: t.spineFade, transform: 'translateX(-50%)',
-      zIndex: '2', pointerEvents: 'none',
-    });
-    rail.appendChild(stem);
-
-    const card = document.createElement('article');
-    card.setAttribute('role',       'button');
-    card.setAttribute('tabindex',   '0');
-    card.setAttribute('aria-label', `Open note: ${note.title}`);
-    card.setAttribute('hx-get',    `/notes/${note.id}`);
-    card.setAttribute('hx-target', '#detail-panel');
-    card.setAttribute('hx-swap',   'innerHTML');
-    card.setAttribute('onkeydown', "if(event.key==='Enter'||event.key===' '){this.click()}");
-
-    const vert = above
-      ? { bottom: `calc(${(1 - SPINE_Y) * 100}% + ${stemH + GAP}px)` }
-      : { top:    `calc(${SPINE_Y * 100}%        + ${stemH + GAP}px)` };
-
-    Object.assign(card.style, {
-      position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
-      background: t.cardBg, border: `1px solid ${t.cardBord}`,
-      borderRadius: '10px', padding: '10px 12px', boxShadow: t.shadow,
-      cursor: 'pointer', pointerEvents: 'all', zIndex: '4',
-      transition: 'box-shadow .15s, border-color .15s', ...vert,
-    });
-    card.innerHTML =
-      `<h3 style="font-size:.8rem;font-weight:700;color:${t.titleClr};
-                  margin:0 0 4px;line-height:1.35;
-                  display:-webkit-box;-webkit-line-clamp:2;
-                  -webkit-box-orient:vertical;overflow:hidden;">
-        ${note.icon ? `<span aria-hidden="true">${_esc(note.icon)} </span>` : ''}${_esc(note.title)}
-      </h3>
-      <time style="font-size:.7rem;color:${t.subClr};display:block;">📅 ${_fmtDate(note.dateStr)}</time>`;
-
-    card.addEventListener('mouseenter', () => {
-      card.style.boxShadow = t.shadowHov; card.style.borderColor = t.cardHov;
-    });
-    card.addEventListener('mouseleave', () => {
-      card.style.boxShadow = t.shadow;    card.style.borderColor = t.cardBord;
-    });
-    rail.appendChild(card);
-    if (window.htmx) htmx.process(card);
-  }
+  // ── Tick marks + note pins → see timeline-render.js (_bwTLRender) ──
 
   // ── Rail (ticks + pins only, NO spine) ────────────────────────
   function _buildRail(notes, t) {
@@ -247,7 +110,12 @@ window.bwTimeline = (function () {
       left: '0px', width: railW + 'px', pointerEvents: 'none',
     });
 
-    _buildTicks(rail, earliest, span, t);
+    // Config bundle passed to stateless render helpers in timeline-render.js.
+    const rCfg = {
+      pxPerDay: _pxPerDay, PAD_ENDS, SPINE_Y, STEM_H, CARD_H, CARD_W,
+      daysBetween: _daysBetween, esc: _esc, fmtDate: _fmtDate,
+    };
+    _bwTLRender.buildTicks(rail, earliest, span, rCfg, t);
 
     // ── Group notes into columns so no two cards on the same side overlap.
     // Notes within CARD_W+10 px of each other share a column (same x position,
@@ -272,7 +140,7 @@ window.bwTimeline = (function () {
       col.notes.forEach(n => {
         const above   = globalIdx % 2 === 0;
         const laneIdx = above ? aboveCount++ : belowCount++;
-        _buildPin(rail, n, col.x, above, laneIdx, t);
+        _bwTLRender.buildPin(rail, n, col.x, above, laneIdx, rCfg, t);
         globalIdx++;
       });
     });
@@ -329,7 +197,7 @@ window.bwTimeline = (function () {
   //   • Listeners accumulate on window across remounts.
   // setPointerCapture pins all pointer events to `outer` for the
   // entire drag, handling mouse + touch + stylus in one API.
-  function _attachDrag(outer, getRail) {
+  function _attachDrag(outer, getRail, onMove) {
     let dragging = false, didDrag = false;
     let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
 
@@ -360,6 +228,7 @@ window.bwTimeline = (function () {
       velX  = (cx - lastX) / dt * 16;
       lastX = cx; lastTime = now;
       getRail().style.left = clamp(startLeft + (cx - startX)) + 'px';
+      if (onMove) onMove();
     });
 
     function endDrag(e) {
@@ -371,6 +240,7 @@ window.bwTimeline = (function () {
         if (Math.abs(velX) < 0.4) return;
         pos = clamp(pos + velX);
         getRail().style.left = pos + 'px';
+        if (onMove) onMove();
         _rafId = requestAnimationFrame(decay);
       }
       _rafId = requestAnimationFrame(decay);
@@ -447,8 +317,39 @@ window.bwTimeline = (function () {
     const getRail = ()  => _rail;
     const setRail = (r) => { _rail = r; outer.appendChild(r); };
 
-    // ── Drag ────────────────────────────────────────────────
-    const cleanupDrag = _attachDrag(outer, getRail);
+    // ── Year corner labels ─────────────────────────────────────
+    // Fixed to the far-left and far-right corners of the viewport.
+    // Updates on every drag frame, zoom step, and autofit so the user
+    // always knows which year is at each edge of the visible window.
+    const _ylStyle = {
+      position: 'absolute', top: '12px',
+      fontSize: '13px', fontWeight: '700', color: t.labelYear,
+      pointerEvents: 'none', userSelect: 'none',
+      zIndex: '9', letterSpacing: '.03em',
+    };
+    const yearLabelL = document.createElement('div');
+    Object.assign(yearLabelL.style, { ..._ylStyle, left: '12px' });
+    outer.appendChild(yearLabelL);
+    const yearLabelR = document.createElement('div');
+    Object.assign(yearLabelR.style, { ..._ylStyle, right: '135px' }); // clears the 3-button bar
+    outer.appendChild(yearLabelR);
+
+    function updateYearLabels() {
+      const rail = getRail();
+      if (!rail || !rail._earliest) return;
+      const rl  = parseFloat(rail.style.left) || 0;
+      const ow  = outer.offsetWidth || 1;
+      // Convert a rail-x pixel to the calendar year at that position.
+      const toYear = rx => {
+        const days = (rx - PAD_ENDS) / _pxPerDay;
+        return String(new Date(rail._earliest.getTime() + days * 86_400_000).getFullYear());
+      };
+      yearLabelL.textContent = toYear(-rl);       // rail-x at left viewport edge
+      yearLabelR.textContent = toYear(ow - rl);   // rail-x at right viewport edge
+    }
+
+    // ── Drag ──────────────────────────────────────────────────
+    const cleanupDrag = _attachDrag(outer, getRail, updateYearLabels);
     outer._cleanup    = cleanupDrag;
 
     // ── Wheel zoom ──────────────────────────────────────────
@@ -456,6 +357,7 @@ window.bwTimeline = (function () {
       e.preventDefault();
       const focalX = e.clientX - outer.getBoundingClientRect().left;
       _doZoom(outer, notes, t, getRail, setRail, e.deltaY < 0 ? 1.15 : 1 / 1.15, focalX);
+      updateYearLabels();
     }, { passive: false });
 
     // ── Control buttons (−  +  ↔) ───────────────────────────
@@ -483,12 +385,18 @@ window.bwTimeline = (function () {
       return btn;
     }
 
-    bar.appendChild(makeBtn('&#8722;', 'Zoom out (scroll down)', () =>
-      _doZoom(outer, notes, t, getRail, setRail, 1 / 1.3, outer.offsetWidth / 2)));
-    bar.appendChild(makeBtn('+', 'Zoom in (scroll up)', () =>
-      _doZoom(outer, notes, t, getRail, setRail, 1.3, outer.offsetWidth / 2)));
-    bar.appendChild(makeBtn('&#8596;', 'Fit all notes in view', () =>
-      _doAutofit(outer, notes, t, getRail, setRail)));
+    bar.appendChild(makeBtn('&#8722;', 'Zoom out (scroll down)', () => {
+      _doZoom(outer, notes, t, getRail, setRail, 1 / 1.3, outer.offsetWidth / 2);
+      updateYearLabels();
+    }));
+    bar.appendChild(makeBtn('+', 'Zoom in (scroll up)', () => {
+      _doZoom(outer, notes, t, getRail, setRail, 1.3, outer.offsetWidth / 2);
+      updateYearLabels();
+    }));
+    bar.appendChild(makeBtn('&#8596;', 'Fit all notes in view', () => {
+      _doAutofit(outer, notes, t, getRail, setRail);
+      updateYearLabels();
+    }));
     outer.appendChild(bar);
 
     // ── Hint ────────────────────────────────────────────────
@@ -504,7 +412,10 @@ window.bwTimeline = (function () {
     outer.appendChild(hint);
 
     // ── Auto-fit on first render (after layout is available) ─
-    outer._onMount = () => _doAutofit(outer, notes, t, getRail, setRail);
+    outer._onMount = () => {
+      _doAutofit(outer, notes, t, getRail, setRail);
+      updateYearLabels();
+    };
 
     return outer;
   }

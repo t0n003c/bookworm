@@ -1,0 +1,155 @@
+/* ================================================================
+   BookWorm – Timeline Render Helpers  (loaded before timeline.js)
+   Pure DOM-builders: no state, no side-effects.
+   Everything dynamic is injected via cfg + t.
+
+   cfg = { pxPerDay, PAD_ENDS, SPINE_Y, STEM_H, CARD_H, CARD_W,
+           daysBetween, esc, fmtDate }
+   t   = theme colours object
+   ================================================================ */
+
+window._bwTLRender = (function () {
+  'use strict';
+
+  // ── Tick marks ─────────────────────────────────────────────────
+  // Month/year always; week marks ≥4 px/day;
+  // day marks ≥14 px/day; day-number labels ≥20 px/day.
+  // Day loop extends into PAD_ENDS padding so ticks fill the full
+  // visible rail, not just the space between first and last note.
+  function buildTicks(rail, earliest, span, cfg, t) {
+    const { pxPerDay, PAD_ENDS, SPINE_Y, daysBetween } = cfg;
+
+    // ── Month / year ─────────────────────────────────────────────
+    let cur = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    const stopMs = earliest.getTime() + (span + 62) * 86_400_000;
+    while (cur.getTime() < stopMs) {
+      const x     = PAD_ENDS + daysBetween(earliest, cur) * pxPerDay;
+      const isJan = cur.getMonth() === 0;
+      const th    = isJan ? 28 : 16;
+      const tick  = document.createElement('div');
+      Object.assign(tick.style, {
+        position: 'absolute', left: x + 'px',
+        top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
+        width: isJan ? '2px' : '1px', height: th + 'px',
+        background: isJan ? t.tickYear : t.tick,
+        transform: 'translateX(-50%)', pointerEvents: 'none',
+      });
+      rail.appendChild(tick);
+      const lbl = document.createElement('span');
+      lbl.textContent = isJan
+        ? String(cur.getFullYear())
+        : cur.toLocaleString('default', { month: 'short' });
+      Object.assign(lbl.style, {
+        position: 'absolute', left: x + 'px',
+        top: `calc(${SPINE_Y * 100}% + 18px)`,
+        transform: 'translateX(-50%)',
+        fontSize: isJan ? '11px' : '9px', fontWeight: isJan ? '700' : '400',
+        color: isJan ? t.labelYear : t.label,
+        whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
+      });
+      rail.appendChild(lbl);
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    }
+
+    // ── Week / day minor ticks ────────────────────────────────────
+    if (pxPerDay < 4) return;
+    const showDays  = pxPerDay >= 14;
+    const labelDays = pxPerDay >= 20;
+    const step      = showDays ? 1 : 7;
+    const padDays   = Math.ceil(PAD_ENDS / pxPerDay) + 1; // cover full rail
+
+    for (let d = -padDays; d <= span + padDays; d += step) {
+      const dayDate = new Date(earliest.getTime() + d * 86_400_000);
+      if (dayDate.getDate() === 1) continue; // already drawn by month pass
+      const x  = PAD_ENDS + d * pxPerDay;
+      const th = showDays ? 8 : 10;
+      const minorTick = document.createElement('div');
+      Object.assign(minorTick.style, {
+        position: 'absolute', left: x + 'px',
+        top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
+        width: '1px', height: th + 'px',
+        background: t.tick, opacity: '0.55',
+        transform: 'translateX(-50%)', pointerEvents: 'none',
+      });
+      rail.appendChild(minorTick);
+      if (labelDays) {
+        const dlbl = document.createElement('span');
+        dlbl.textContent = String(dayDate.getDate());
+        Object.assign(dlbl.style, {
+          position: 'absolute', left: x + 'px',
+          top: `calc(${SPINE_Y * 100}% + 18px)`,
+          transform: 'translateX(-50%)',
+          fontSize: '8px', color: t.label,
+          whiteSpace: 'nowrap', pointerEvents: 'none',
+        });
+        rail.appendChild(dlbl);
+      }
+    }
+  }
+
+  // ── One note pin: dot + stem + card ────────────────────────────
+  function buildPin(rail, note, x, above, laneIdx, cfg, t) {
+    const { SPINE_Y, STEM_H, CARD_H, CARD_W, esc, fmtDate } = cfg;
+    const DOT = 10, GAP = 8;
+    const stemH = STEM_H + laneIdx * (CARD_H + GAP);
+
+    const dot = document.createElement('div');
+    Object.assign(dot.style, {
+      position: 'absolute', left: x + 'px', top: `${SPINE_Y * 100}%`,
+      width: DOT + 'px', height: DOT + 'px', borderRadius: '50%',
+      background: t.spine, transform: 'translate(-50%,-50%)',
+      zIndex: '3', pointerEvents: 'none',
+    });
+    rail.appendChild(dot);
+
+    const stem = document.createElement('div');
+    Object.assign(stem.style, {
+      position: 'absolute', left: x + 'px',
+      top: above ? `calc(${SPINE_Y * 100}% - ${stemH}px)` : `${SPINE_Y * 100}%`,
+      width: '2px', height: stemH + 'px',
+      background: t.spineFade, transform: 'translateX(-50%)',
+      zIndex: '2', pointerEvents: 'none',
+    });
+    rail.appendChild(stem);
+
+    const card = document.createElement('article');
+    card.setAttribute('role',       'button');
+    card.setAttribute('tabindex',   '0');
+    card.setAttribute('aria-label', `Open note: ${note.title}`);
+    card.setAttribute('hx-get',    `/notes/${note.id}`);
+    card.setAttribute('hx-target', '#detail-panel');
+    card.setAttribute('hx-swap',   'innerHTML');
+    card.setAttribute('onkeydown', "if(event.key==='Enter'||event.key===' '){this.click()}");
+
+    const vert = above
+      ? { bottom: `calc(${(1 - SPINE_Y) * 100}% + ${stemH + GAP}px)` }
+      : { top:    `calc(${SPINE_Y * 100}%        + ${stemH + GAP}px)` };
+
+    Object.assign(card.style, {
+      position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
+      background: t.cardBg, border: `1px solid ${t.cardBord}`,
+      borderRadius: '10px', padding: '10px 12px', boxShadow: t.shadow,
+      cursor: 'pointer', pointerEvents: 'all', zIndex: '4',
+      transition: 'box-shadow .15s, border-color .15s', ...vert,
+    });
+    card.innerHTML =
+      `<h3 style="font-size:.8rem;font-weight:700;color:${t.titleClr};
+                  margin:0 0 4px;line-height:1.35;
+                  display:-webkit-box;-webkit-line-clamp:2;
+                  -webkit-box-orient:vertical;overflow:hidden;">
+        ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
+      </h3>
+      <time style="font-size:.7rem;color:${t.subClr};display:block;">&#128197; ${fmtDate(note.dateStr)}</time>`;
+
+    card.addEventListener('mouseenter', () => {
+      card.style.boxShadow = t.shadowHov; card.style.borderColor = t.cardHov;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.boxShadow = t.shadow;    card.style.borderColor = t.cardBord;
+    });
+    rail.appendChild(card);
+    if (window.htmx) htmx.process(card);
+  }
+
+  return { buildTicks, buildPin };
+})();
