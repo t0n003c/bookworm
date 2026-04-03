@@ -21,6 +21,7 @@ window.bwTimeline = (function () {
   const PX_MAX    = 60;
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
   const CARD_W    = 196;
+  const CARD_H    = 76;    // approx. card height for vertical lane stacking
   const STEM_H    = 52;
   const PAD_ENDS  = 120;   // left & right padding inside the rail
 
@@ -132,8 +133,13 @@ window.bwTimeline = (function () {
   }
 
   // ── One note pin: dot + stem + card ──────────────────────────
-  function _buildPin(rail, note, x, above, t) {
+  // laneIdx=0 → first lane (closest to spine), 1 → second lane, etc.
+  // Lanes stack vertically so cards on the same side never overlap.
+  function _buildPin(rail, note, x, above, laneIdx, t) {
     const DOT = 10, GAP = 8;
+    // Each extra lane adds exactly one card-height + gap of stem,
+    // pushing cards further from the spine without overlapping.
+    const stemH = STEM_H + laneIdx * (CARD_H + GAP);
 
     const dot = document.createElement('div');
     Object.assign(dot.style, {
@@ -147,8 +153,8 @@ window.bwTimeline = (function () {
     const stem = document.createElement('div');
     Object.assign(stem.style, {
       position: 'absolute', left: x + 'px',
-      top: above ? `calc(${SPINE_Y * 100}% - ${STEM_H}px)` : `${SPINE_Y * 100}%`,
-      width: '2px', height: STEM_H + 'px',
+      top: above ? `calc(${SPINE_Y * 100}% - ${stemH}px)` : `${SPINE_Y * 100}%`,
+      width: '2px', height: stemH + 'px',
       background: t.spineFade, transform: 'translateX(-50%)',
       zIndex: '2', pointerEvents: 'none',
     });
@@ -164,8 +170,8 @@ window.bwTimeline = (function () {
     card.setAttribute('onkeydown', "if(event.key==='Enter'||event.key===' '){this.click()}");
 
     const vert = above
-      ? { bottom: `calc(${(1 - SPINE_Y) * 100}% + ${STEM_H + GAP}px)` }
-      : { top:    `calc(${SPINE_Y * 100}%        + ${STEM_H + GAP}px)` };
+      ? { bottom: `calc(${(1 - SPINE_Y) * 100}% + ${stemH + GAP}px)` }
+      : { top:    `calc(${SPINE_Y * 100}%        + ${stemH + GAP}px)` };
 
     Object.assign(card.style, {
       position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
@@ -207,8 +213,23 @@ window.bwTimeline = (function () {
     });
 
     _buildTicks(rail, earliest, span, t);
-    notes.forEach((n, i) => {
-      _buildPin(rail, n, PAD_ENDS + _daysBetween(earliest, n.date) * _pxPerDay, i % 2 === 0, t);
+
+    // ── Group notes into columns so no two cards on the same side overlap.
+    // Notes within CARD_W+10 px of each other share a column (same x position,
+    // stacked vertically using increasing lane indices).
+    const columns = [];
+    notes.forEach(n => {
+      const x = PAD_ENDS + _daysBetween(earliest, n.date) * _pxPerDay;
+      const last = columns[columns.length - 1];
+      if (last && (x - last.x) < CARD_W + 10) {
+        last.notes.push(n);
+      } else {
+        columns.push({ x, notes: [n] });
+      }
+    });
+    // Alternate columns above/below; within each column stack notes by laneIdx.
+    columns.forEach((col, ci) => {
+      col.notes.forEach((n, ni) => _buildPin(rail, n, col.x, ci % 2 === 0, ni, t));
     });
 
     rail._earliest = earliest;
@@ -217,17 +238,20 @@ window.bwTimeline = (function () {
     return rail;
   }
 
-  // ── Auto-fit: scale so all notes fill the visible width ───────
+  // ── Auto-fit: scale so all notes fill the visible width ─────────
   function _doAutofit(outer, notes, t, getRail, setRail) {
-    const cw  = outer.offsetWidth || 800;
+    const cw  = outer.offsetWidth;
+    if (!cw) return; // layout not ready yet; double-rAF should prevent this
     const span = getRail()._span  || 30;
     // pxPerDay that makes content exactly fill the inner width
     _pxPerDay  = Math.max(PX_MIN, Math.min(PX_MAX, (cw - PAD_ENDS * 2) / span));
     const newRail = _buildRail(notes, t);
-    // Always start at left:0 — avoids positive-left values that break clamp()
+    // Always start at left:0 — content fills viewport, clamp allows ±drag
     newRail.style.left = '0px';
     getRail().replaceWith(newRail);
     setRail(newRail);
+    // Reveal the timeline now that layout is correct
+    outer.style.opacity = '1';
   }
 
   // ── Drag + momentum (Pointer Events API + setPointerCapture) ─────
@@ -243,9 +267,14 @@ window.bwTimeline = (function () {
     let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
 
     function clamp(v) {
-      // rail may be >= or < outerWidth; allow left in [minL … 0]
-      const minL = Math.min(0, -(getRail()._railW - outer.offsetWidth + 80));
-      return Math.max(minL, Math.min(0, v));
+      // After autofit, railW ≈ outerWidth which gives only ~80px of drag range.
+      // Always guarantee at least 300px of leftward and 60px of rightward drag
+      // so panning always feels physically responsive.
+      const railW = getRail()._railW;
+      const ow    = outer.offsetWidth || 1;
+      const minL  = Math.min(-(railW - ow + 80), -300); // generous left scroll
+      const maxL  = 60;                                  // slight right scroll
+      return Math.max(minL, Math.min(maxL, v));
     }
 
     outer.addEventListener('pointerdown', e => {
@@ -333,6 +362,9 @@ window.bwTimeline = (function () {
     Object.assign(outer.style, {
       position: 'absolute', inset: '0', overflow: 'hidden',
       userSelect: 'none', cursor: 'grab', background: t.mainBg,
+      touchAction: 'none',   // prevent native scroll from swallowing pointer events
+      opacity: '0',          // hidden until autofit paints the correct layout
+      transition: 'opacity 0.15s ease',
     });
 
     // ── Spine on outer — always spans full viewport width ────
@@ -438,8 +470,9 @@ window.bwTimeline = (function () {
     _overlay.appendChild(tl);
     main.appendChild(_overlay);
 
-    // Autofit after browser has laid out the overlay
-    if (tl._onMount) requestAnimationFrame(tl._onMount);
+    // Double-rAF: first frame appends overlay to DOM, second frame reads
+    // offsetWidth after the browser has run layout on the new subtree.
+    if (tl._onMount) requestAnimationFrame(() => requestAnimationFrame(tl._onMount));
     _mounted = true;
   }
 
@@ -472,7 +505,8 @@ window.bwTimeline = (function () {
     const tl    = _buildTimeline(notes);
     if (tl._cleanup)  _dragCleanup = tl._cleanup;
     _overlay.appendChild(tl);
-    if (tl._onMount) requestAnimationFrame(tl._onMount);
+    // Double-rAF for the same reason as mount()
+    if (tl._onMount) requestAnimationFrame(() => requestAnimationFrame(tl._onMount));
   }
 
   function isMounted() { return _mounted; }

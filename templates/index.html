@@ -1041,11 +1041,11 @@
   }
   // Apply saved preference on page load
   (function initListView() {
+    // Always reset to grid on page load — timeline is a session-only view.
+    // This ensures the icon always shows "Switch to timeline" after a reload
+    // instead of being stuck showing "Switch to grid" (stale localStorage).
+    localStorage.setItem('bw-list-view', 'grid');
     syncListViewIcon();
-    if (localStorage.getItem('bw-list-view') === 'timeline') {
-      // Defer so HTMX has finished rendering the note list
-      requestAnimationFrame(() => bwTimeline.mount());
-    }
   })();
 
   /* ---- Settings ---- */
