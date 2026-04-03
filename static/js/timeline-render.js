@@ -145,6 +145,11 @@ window._bwTLRender = (function () {
       </h3>
       <time style="font-size:.7rem;color:${t.subClr};display:block;">&#128197; ${fmtDate(note.dateStr)}</time>`;
 
+    // Stop pointerdown bubbling so `outer`'s drag handler never calls
+    // setPointerCapture on a card tap — otherwise the browser routes
+    // the subsequent `click` to `outer` and HTMX never sees it.
+    card.addEventListener('pointerdown', e => e.stopPropagation());
+
     card.addEventListener('mouseenter', () => {
       card.style.boxShadow = t.shadowHov; card.style.borderColor = t.cardHov;
     });

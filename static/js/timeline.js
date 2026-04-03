@@ -335,18 +335,22 @@ window.bwTimeline = (function () {
     Object.assign(yearLabelL.style, { ..._ylStyle, left: '12px' });
     outer.appendChild(yearLabelL);
     const yearLabelR = document.createElement('div');
-    Object.assign(yearLabelR.style, { ..._ylStyle, right: '135px' }); // clears the 3-button bar
+    Object.assign(yearLabelR.style, { ..._ylStyle, right: '12px' });
     outer.appendChild(yearLabelR);
 
     function updateYearLabels() {
       const rail = getRail();
       if (!rail || !rail._earliest) return;
-      const rl  = parseFloat(rail.style.left) || 0;
-      // Compute the calendar year visible at the left viewport edge.
-      // Right label is always leftYear+1 so the user always sees a
-      // year transition — left side one year behind, right side one ahead.
-      const days     = (-rl - PAD_ENDS) / _pxPerDay;
-      const leftYear = new Date(rail._earliest.getTime() + days * 86_400_000).getFullYear();
+      const rl    = parseFloat(rail.style.left) || 0;
+      const railW = rail._railW || parseFloat(rail.style.width) || 400;
+      // -rl is the viewport left edge expressed in rail-x coordinates.
+      // Clamp to [PAD_ENDS, railW-PAD_ENDS] — the actual note content zone.
+      // Without this, zooming out + dragging puts the left edge in empty
+      // void (e.g. 2022) while notes from 2025 appear to float between
+      // those wrong year labels.
+      const leftRailX = Math.max(PAD_ENDS, Math.min(railW - PAD_ENDS, -rl));
+      const days      = (leftRailX - PAD_ENDS) / _pxPerDay;
+      const leftYear  = new Date(rail._earliest.getTime() + days * 86_400_000).getFullYear();
       yearLabelL.textContent = String(leftYear);
       yearLabelR.textContent = String(leftYear + 1);
     }
