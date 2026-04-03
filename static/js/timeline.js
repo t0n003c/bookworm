@@ -32,6 +32,7 @@ window.bwTimeline = (function () {
   let _overlay         = null;
   let _dragCleanup     = null;
   let _keyCleanup      = null;   // keyboard shortcut teardown
+  let _wormCleanup     = null;   // bookworm RAF loop teardown
 
   // ── Date utilities ───────────────────────────────────────────
   function _parseDate(str) {
@@ -389,12 +390,13 @@ window.bwTimeline = (function () {
     if (legendEl) outer.appendChild(legendEl);
     outer.appendChild(minimap.el);
 
-    // ── Bookworm character ─────────────────────────────
-    // Only shown when there are notes (earliest date is known).
+    // ── Bookworm character ─────────────────────────────────────
+    // Stop any previous worm's RAF loop before building a fresh one.
+    if (_wormCleanup) { _wormCleanup(); _wormCleanup = null; }
     const worm = notes.length
       ? _bwTLUi.buildWorm(_rail._earliest, SPINE_Y, outer)
       : null;
-    if (worm) outer.appendChild(worm.el);
+    if (worm) { outer.appendChild(worm.el); _wormCleanup = worm.destroy; }
 
     // ── Unified onMove ─────────────────────────────
     function onAllMove() {
@@ -543,6 +545,7 @@ window.bwTimeline = (function () {
     if (_rafId)       { cancelAnimationFrame(_rafId); _rafId = null; }
     if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
     if (_keyCleanup)  { _keyCleanup();  _keyCleanup  = null; }
+    if (_wormCleanup) { _wormCleanup(); _wormCleanup = null; }
 
     const main = document.getElementById('main-content');
     if (main) {

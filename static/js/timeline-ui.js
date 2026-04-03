@@ -239,72 +239,156 @@ window._bwTLUi = (function () {
   // Bobs gently while idle.  Bursts with joy when T-key is pressed.
   // Returns { el, update(railLeft, pxPerDay, PAD_ENDS), burst() }
   function buildWorm(earliest, spineY, outer) {
-    // Inject keyframe CSS once per page
+    // ─ Inject keyframe CSS once per page ───────────────────────
     if (!document.getElementById('_bw-worm-style')) {
-      const s  = document.createElement('style');
-      s.id     = '_bw-worm-style';
+      const s = document.createElement('style');
+      s.id    = '_bw-worm-style';
+      // Idle: gentle bob + tilt.  Burst: same absolute explosion size as
+      // before but scales are boosted to compensate for the smaller base.
       s.textContent = [
         '@keyframes _bwIdle {',
-        '  0%,100% { transform:translateY(0) rotate(-6deg); }',
-        '  30%     { transform:translateY(-5px) rotate(6deg) scaleX(1.1); }',
-        '  60%     { transform:translateY(-2px) rotate(-4deg); }',
+        '  0%,100% { transform:translateY(0)    rotate(-6deg); }',
+        '  30%     { transform:translateY(-4px)  rotate(6deg) scaleX(1.1); }',
+        '  60%     { transform:translateY(-1px)  rotate(-4deg); }',
         '}',
         '@keyframes _bwBurst {',
         '  0%   { transform:scale(1)   rotate(0deg)   translateY(0); }',
-        '  15%  { transform:scale(2.2) rotate(-40deg) translateY(-14px); }',
-        '  35%  { transform:scale(1.5) rotate(30deg)  translateY(4px); }',
-        '  55%  { transform:scale(1.9) rotate(-25deg) translateY(-10px); }',
-        '  75%  { transform:scale(1.3) rotate(15deg)  translateY(2px); }',
+        '  15%  { transform:scale(3.2) rotate(-40deg) translateY(-14px); }',
+        '  35%  { transform:scale(2.0) rotate(30deg)  translateY(4px); }',
+        '  55%  { transform:scale(2.6) rotate(-25deg) translateY(-10px); }',
+        '  75%  { transform:scale(1.8) rotate(15deg)  translateY(2px); }',
         '  100% { transform:scale(1)   rotate(0deg)   translateY(0); }',
         '}',
       ].join('\n');
       document.head.appendChild(s);
     }
 
-    // Outer wrapper – handles left position via CSS transition
+    // ─ DOM elements ──────────────────────────────────────
+    // wrap: positions worm on-screen (left set by RAF, no CSS transition)
+    // inner: plays keyframe animation independently of position
     const wrap = document.createElement('div');
     wrap.setAttribute('aria-hidden', 'true');
     Object.assign(wrap.style, {
-      position:   'absolute',
-      top:        `${spineY * 100}%`,
-      left:       '-60px',          // starts offscreen
-      transform:  'translateY(-50%)',
-      transition: 'left 0.12s linear',
-      zIndex:     '8',
+      position:  'absolute',
+      top:       `${spineY * 100}%`,
+      left:      '-60px',
+      transform: 'translateY(-50%)',   // vertical centering on spine
+      zIndex:    '8',
       pointerEvents: 'none',
       lineHeight: '1',
     });
 
-    // Inner emoji – plays CSS animation independently of position
     const inner = document.createElement('span');
-    inner.textContent = '\uD83D\uDC1B';  // 🐛 caterpillar
+    inner.textContent = '\uD83D\uDC1B';  // \uD83D\uDC1B caterpillar
     Object.assign(inner.style, {
-      fontSize: '20px',
-      display:  'inline-block',
-      animation: '_bwIdle 2.6s ease-in-out infinite',
+      fontSize:        '14px',           // smaller default
+      display:         'inline-block',
+      animation:       '_bwIdle 2.6s ease-in-out infinite',
       transformOrigin: 'bottom center',
     });
     wrap.appendChild(inner);
 
+    // ─ Movement state ───────────────────────────────────
+    const WORM_W   = 18;    // approx. pixel width at 14px font
+    const PEEK     = 8;     // min gap from viewport edges
+    const SPEED_W  = 0.55;  // px per frame while wandering (slow crawl)
+    const SPEED_H  = 1.8;   // px per frame while homing to today
+    const PAUSE_LO = 1200;  // ms — minimum pause between wander targets
+    const PAUSE_HI = 2800;  // ms — maximum pause between wander targets
+
+    let alive    = true;
+    let curX     = -60;     // current left px (tracks actual DOM position)
+    let targetX  = 0;       // destination for current move
+    let mode     = 'home';  // 'home' | 'wander'
+    let pausing  = false;   // true while resting between wander legs
+    let prevPx   = 0;       // previous pxPerDay (zoom-change detection)
+    // Latest rail state – written by update(), read by the RAF loop
+    let _rl = 0, _px = 5, _pad = 120;
+
+    function _safeRange() {
+      const ow = outer.offsetWidth || 800;
+      return { lo: PEEK, hi: ow - WORM_W - PEEK };
+    }
+    function _clamp(x) {
+      const { lo, hi } = _safeRange();
+      return Math.max(lo, Math.min(hi, x));
+    }
+    function _todayX() {
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      const d = Math.round((t - earliest) / 86_400_000);
+      return _clamp(_rl + _pad + d * _px);
+    }
+    function _randomTarget() {
+      const { lo, hi } = _safeRange();
+      const range = hi - lo;
+      // Prefer targets that are at least 80px away from curX
+      let x = lo + Math.round(Math.random() * range);
+      if (Math.abs(x - curX) < 80) {
+        x = _clamp(x + (x > curX ? 100 : -100));
+      }
+      return x;
+    }
+    function _schedulePause() {
+      pausing = true;
+      const ms = PAUSE_LO + Math.random() * (PAUSE_HI - PAUSE_LO);
+      setTimeout(() => {
+        if (!alive) return;
+        pausing  = false;
+        mode     = 'wander';
+        targetX  = _randomTarget();
+      }, ms);
+    }
+
+    // ─ RAF loop ─────────────────────────────────────────
+    function _step() {
+      if (!alive) return;
+      requestAnimationFrame(_step);
+      if (pausing) return;
+
+      const dest  = mode === 'home' ? _todayX() : targetX;
+      const speed = mode === 'home' ? SPEED_H   : SPEED_W;
+      const diff  = dest - curX;
+
+      if (Math.abs(diff) < 1) {
+        curX = dest;
+        // Either way (home or wander target reached), pause then wander
+        _schedulePause();
+      } else {
+        curX += Math.sign(diff) * Math.min(speed, Math.abs(diff));
+      }
+
+      wrap.style.left = Math.round(curX) + 'px';
+
+      // Face the direction of travel via scaleX on the wrapper transform
+      // (inner still plays its rotation animation independently)
+      const facing = diff > 0.5 ? ' scaleX(-1)' : ' scaleX(1)';
+      wrap.style.transform = 'translateY(-50%)' + facing;
+    }
+    requestAnimationFrame(_step);
+
+    // ─ Public API ──────────────────────────────────────
     function update(railLeft, pxPerDay, PAD_ENDS) {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const days  = Math.round((today - earliest) / 86_400_000);
-      const vpX   = railLeft + PAD_ENDS + days * pxPerDay;
-      const ow    = outer.offsetWidth || 800;
-      // Always peek from whichever edge today has scrolled off to
-      const PEEK  = 6;
-      wrap.style.left = Math.max(PEEK, Math.min(ow - 24 - PEEK, vpX)) + 'px';
+      // Detect fast zoom-out: ratio drops below 0.75 → head home
+      if (prevPx > 0 && pxPerDay / prevPx < 0.75 && mode !== 'home') {
+        mode    = 'home';
+        pausing = false;
+      }
+      prevPx = pxPerDay;
+      _rl    = railLeft;
+      _px    = pxPerDay;
+      _pad   = PAD_ENDS;
     }
 
     function burst() {
-      // Reset animation so it replays even on repeated T-key presses
       inner.style.animation = 'none';
-      void inner.offsetWidth; // force reflow
+      void inner.offsetWidth;  // force reflow so animation restarts
       inner.style.animation =
         '_bwBurst 0.75s ease-in-out, _bwIdle 2.6s ease-in-out 0.75s infinite';
     }
 
-    return { el: wrap, update, burst };
+    function destroy() { alive = false; }
+
+    return { el: wrap, update, burst, destroy };
   }
 
   return { buildLegend, buildMinimap, buildWorm, collectCategories };
