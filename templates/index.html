@@ -781,16 +781,13 @@
   /* ---- Auto open/resize panel after every HTMX swap into #detail-panel ---- */
   document.addEventListener('htmx:afterSwap', (e) => {
     // ── Workspace switch detected ─────────────────────────────────────────
-    // #ws-breadcrumb is OOB-swapped ONLY on workspace switches (never on
-    // filter/sort/save).  It fires synchronously before the requestAnimationFrame
-    // scheduled below, so resetting localStorage here is guaranteed to be seen
-    // by the rAF callback when it runs.
-    if (e.detail.target.id === 'ws-breadcrumb') {
-      if (bwTimeline.isMounted()) bwTimeline.unmount();
-      localStorage.setItem('bw-list-view', 'grid');
-      syncListViewIcon();
-      return;
-    }
+    // #ws-breadcrumb is OOB-swapped ONLY on workspace switches.
+    // In timeline mode:  do NOT unmount.  The note-list handler already
+    //   scheduled a remount() that rebuilds the overlay with the new
+    //   workspace's notes — the overlay stays covering the grid the
+    //   entire time, so there is zero flash of grid view.
+    // In grid mode:  nothing is mounted, nothing to do.
+    if (e.detail.target.id === 'ws-breadcrumb') return;
 
     // ── Re-apply timeline after any HTMX swap that targets #note-list ────
     if (e.detail.target.id === 'note-list') {

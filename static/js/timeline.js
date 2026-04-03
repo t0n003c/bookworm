@@ -232,9 +232,17 @@ window.bwTimeline = (function () {
       col.notes.forEach((n, ni) => _buildPin(rail, n, col.x, ci % 2 === 0, ni, t));
     });
 
-    rail._earliest = earliest;
-    rail._span     = span;
-    rail._railW    = railW;
+    // _notesCenter: midpoint of the ACTUAL note x-positions (rail coords).
+    // For a single note this equals PAD_ENDS (not span-midpoint);
+    // for many notes it's the pixel midpoint of earliest→latest.
+    // Used by clamp() and _doAutofit() for true content centering.
+    const noteXMax = notes.length > 1
+      ? PAD_ENDS + _daysBetween(earliest, notes[notes.length - 1].date) * _pxPerDay
+      : PAD_ENDS;
+    rail._earliest    = earliest;
+    rail._span        = span;
+    rail._railW       = railW;
+    rail._notesCenter = (PAD_ENDS + noteXMax) / 2;
     return rail;
   }
 
@@ -246,8 +254,10 @@ window.bwTimeline = (function () {
     // pxPerDay that makes content exactly fill the inner width
     _pxPerDay  = Math.max(PX_MIN, Math.min(PX_MAX, (cw - PAD_ENDS * 2) / span));
     const newRail = _buildRail(notes, t);
-    // Always start at left:0 — content fills viewport, clamp allows ±drag
-    newRail.style.left = '0px';
+    // Center the ACTUAL notes (not the synthetic span) in the viewport.
+    // For a single note this means it appears at 50% width, not 10% from left.
+    const centeredL = Math.round(cw / 2 - (newRail._notesCenter || PAD_ENDS));
+    newRail.style.left = centeredL + 'px';
     getRail().replaceWith(newRail);
     setRail(newRail);
     // Reveal the timeline now that layout is correct
@@ -267,14 +277,17 @@ window.bwTimeline = (function () {
     let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
 
     function clamp(v) {
-      // After autofit, railW ≈ outerWidth which gives only ~80px of drag range.
-      // Always guarantee at least 300px of leftward and 60px of rightward drag
-      // so panning always feels physically responsive.
-      const railW = getRail()._railW;
-      const ow    = outer.offsetWidth || 1;
-      const minL  = Math.min(-(railW - ow + 80), -300); // generous left scroll
-      const maxL  = 60;                                  // slight right scroll
-      return Math.max(minL, Math.min(maxL, v));
+      // Derive the centered left dynamically from the current rail's note
+      // midpoint.  This works after autofit AND after every zoom, because
+      // _doZoom rebuilds the rail (updating _notesCenter) and _pxPerDay is
+      // always the live module-level value.
+      const ow        = outer.offsetWidth || 1;
+      const centeredL = ow / 2 - (getRail()._notesCenter || PAD_ENDS);
+      // Allow ±45% of viewport width from center so any note is reachable.
+      // For a single note at center=480 and ow=1200: range [480±540] → [-60, 1020].
+      // For many notes spanning full width center≈0: range [-540, 540].
+      const margin = Math.round(ow * 0.45);
+      return Math.max(centeredL - margin, Math.min(centeredL + margin, v));
     }
 
     outer.addEventListener('pointerdown', e => {
@@ -500,6 +513,10 @@ window.bwTimeline = (function () {
     if (!_overlay)    { mount(); return; }
 
     _pxPerDay = 5;  // reset scale for the new workspace
+    // Paint the overlay with a solid background BEFORE clearing innerHTML.
+    // The new outer element starts at opacity:0 (revealed after autofit),
+    // so without this the grid HTML underneath would show through for 2 frames.
+    _overlay.style.background = _theme().mainBg;
     _overlay.innerHTML = '';
     const notes = _collectNotes();
     const tl    = _buildTimeline(notes);
