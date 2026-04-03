@@ -251,13 +251,13 @@ window._bwTLUi = (function () {
         '  30%     { transform:translateY(-4px)  rotate(6deg) scaleX(1.1); }',
         '  60%     { transform:translateY(-1px)  rotate(-4deg); }',
         '}',
-        '@keyframes _bwBurst {',
-        '  0%   { transform:scale(1)   rotate(0deg)   translateY(0); }',
-        '  15%  { transform:scale(3.2) rotate(-40deg) translateY(-14px); }',
-        '  35%  { transform:scale(2.0) rotate(30deg)  translateY(4px); }',
-        '  55%  { transform:scale(2.6) rotate(-25deg) translateY(-10px); }',
-        '  75%  { transform:scale(1.8) rotate(15deg)  translateY(2px); }',
-        '  100% { transform:scale(1)   rotate(0deg)   translateY(0); }',
+        // Single clean hop — up then back down, no spinning
+        '@keyframes _bwHop {',
+        '  0%   { transform:translateY(0)     scale(1); }',
+        '  30%  { transform:translateY(-20px) scale(1.5); }',
+        '  60%  { transform:translateY(-8px)  scale(1.2); }',
+        '  80%  { transform:translateY(-2px)  scale(1.05); }',
+        '  100% { transform:translateY(0)     scale(1); }',
         '}',
       ].join('\n');
       document.head.appendChild(s);
@@ -292,7 +292,7 @@ window._bwTLUi = (function () {
     const WORM_W   = 18;    // approx. pixel width at 14px font
     const PEEK     = 8;     // min gap from viewport edges
     const SPEED_W  = 0.55;  // px per frame while wandering (slow crawl)
-    const SPEED_H  = 1.8;   // px per frame while homing to today
+    const SPEED_H  = 1.5;   // px per frame while homing to today
     const PAUSE_LO = 1200;  // ms — minimum pause between wander targets
     const PAUSE_HI = 2800;  // ms — maximum pause between wander targets
 
@@ -301,7 +301,7 @@ window._bwTLUi = (function () {
     let targetX  = 0;       // destination for current move
     let mode     = 'home';  // 'home' | 'wander'
     let pausing  = false;   // true while resting between wander legs
-    let prevPx   = 0;       // previous pxPerDay (zoom-change detection)
+    let wanderBasePx = 0;   // pxPerDay when wander mode last started
     // Latest rail state – written by update(), read by the RAF loop
     let _rl = 0, _px = 5, _pad = 120;
 
@@ -333,9 +333,10 @@ window._bwTLUi = (function () {
       const ms = PAUSE_LO + Math.random() * (PAUSE_HI - PAUSE_LO);
       setTimeout(() => {
         if (!alive) return;
-        pausing  = false;
-        mode     = 'wander';
-        targetX  = _randomTarget();
+        pausing      = false;
+        mode         = 'wander';
+        wanderBasePx = _px;   // snapshot zoom level each time we start wandering
+        targetX      = _randomTarget();
       }, ms);
     }
 
@@ -368,22 +369,28 @@ window._bwTLUi = (function () {
 
     // ─ Public API ──────────────────────────────────────
     function update(railLeft, pxPerDay, PAD_ENDS) {
-      // Detect fast zoom-out: ratio drops below 0.75 → head home
-      if (prevPx > 0 && pxPerDay / prevPx < 0.75 && mode !== 'home') {
-        mode    = 'home';
-        pausing = false;
+      // Zoom-out detection: compare against the pxPerDay recorded when
+      // wander mode started, NOT the previous frame.  A single wheel step
+      // only changes zoom by ~1/1.15 ≈ 0.87, so per-frame comparison never
+      // crosses the threshold.  Cumulative zoom-out from the wander baseline
+      // is what actually matters.
+      if (wanderBasePx > 0 && mode === 'wander' &&
+          pxPerDay / wanderBasePx < 0.70) {
+        mode         = 'home';
+        pausing      = false;
+        wanderBasePx = 0;
       }
-      prevPx = pxPerDay;
-      _rl    = railLeft;
-      _px    = pxPerDay;
-      _pad   = PAD_ENDS;
+      _rl  = railLeft;
+      _px  = pxPerDay;
+      _pad = PAD_ENDS;
     }
 
     function burst() {
+      // Single hop up and back down — replays cleanly on every T-key press
       inner.style.animation = 'none';
-      void inner.offsetWidth;  // force reflow so animation restarts
+      void inner.offsetWidth;  // force reflow
       inner.style.animation =
-        '_bwBurst 0.75s ease-in-out, _bwIdle 2.6s ease-in-out 0.75s infinite';
+        '_bwHop 0.5s ease-out, _bwIdle 2.6s ease-in-out 0.5s infinite';
     }
 
     function destroy() { alive = false; }
