@@ -246,6 +246,18 @@ window.bwTimeline = (function () {
     return rail;
   }
 
+  // ── Shared clamp used by both drag and zoom ──────────────────────
+  // Derives bounds from the rail's actual note midpoint so single-note
+  // views (centeredL ≈ +480) are treated identically to dense views.
+  // getRail must return the rail that will be visible after this call
+  // (pass () => newRail in _doZoom so _notesCenter is from the new rail).
+  function _clamp(outer, getRail, v) {
+    const ow        = outer.offsetWidth || 1;
+    const centeredL = ow / 2 - (getRail()._notesCenter || PAD_ENDS);
+    const margin    = Math.round(ow * 0.45); // ±45 % of viewport from center
+    return Math.max(centeredL - margin, Math.min(centeredL + margin, v));
+  }
+
   // ── Auto-fit: scale so all notes fill the visible width ─────────
   function _doAutofit(outer, notes, t, getRail, setRail) {
     const cw  = outer.offsetWidth;
@@ -276,19 +288,8 @@ window.bwTimeline = (function () {
     let dragging = false, didDrag = false;
     let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
 
-    function clamp(v) {
-      // Derive the centered left dynamically from the current rail's note
-      // midpoint.  This works after autofit AND after every zoom, because
-      // _doZoom rebuilds the rail (updating _notesCenter) and _pxPerDay is
-      // always the live module-level value.
-      const ow        = outer.offsetWidth || 1;
-      const centeredL = ow / 2 - (getRail()._notesCenter || PAD_ENDS);
-      // Allow ±45% of viewport width from center so any note is reachable.
-      // For a single note at center=480 and ow=1200: range [480±540] → [-60, 1020].
-      // For many notes spanning full width center≈0: range [-540, 540].
-      const margin = Math.round(ow * 0.45);
-      return Math.max(centeredL - margin, Math.min(centeredL + margin, v));
-    }
+    // Delegate to the module-level _clamp so drag and zoom share identical bounds.
+    function clamp(v) { return _clamp(outer, getRail, v); }
 
     outer.addEventListener('pointerdown', e => {
       // Only respond to primary button (left mouse, first touch/pen)
@@ -352,7 +353,11 @@ window.bwTimeline = (function () {
     const ratio   = newPx / _pxPerDay;
     _pxPerDay     = newPx;
     const newRail = _buildRail(notes, t);
-    newRail.style.left = Math.min(0, focalX - railX * ratio) + 'px';
+    // Use the module-level _clamp with the FRESH rail so its _notesCenter
+    // (recalculated for the new _pxPerDay) governs the bounds.
+    // The old Math.min(0, ...) forced positive left values to 0, which sent
+    // a centered single-note flying to the left on every zoom step.
+    newRail.style.left = _clamp(outer, () => newRail, focalX - railX * ratio) + 'px';
     getRail().replaceWith(newRail);
     setRail(newRail);
   }
