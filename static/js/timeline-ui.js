@@ -87,7 +87,11 @@ window._bwTLUi = (function () {
       body.appendChild(row);
     });
 
-    let expanded = true;
+    // Start collapsed — user can expand when they need the legend.
+    let expanded = false;
+    body.style.display  = 'none';
+    chevEl.textContent  = '\u25bc';   // ▼ (points down = expand)
+
     header.addEventListener('click', e => {
       e.stopPropagation();
       expanded = !expanded;
