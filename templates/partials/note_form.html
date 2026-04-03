@@ -1307,6 +1307,26 @@
       const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
       _ta.value = turndown.turndown(clone.innerHTML);
+
+      // ── Prune empty <li> shells left by cross-item deletions ─────────────
+      // When the user drag-selects across multiple list items and presses
+      // Delete/Backspace, the browser merges the boundary items but often
+      // leaves empty <li> elements behind.  Those empty items still count
+      // toward the <ol> CSS counter, producing gaps like "1 · 2 · 4" instead
+      // of "1 · 2 · 3" until the user saves and reopens.  Remove them here —
+      // the cursor cannot be inside an item the user just deleted.
+      _pv.querySelectorAll('li').forEach(li => {
+        const tmp = li.cloneNode(true);
+        tmp.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+        if (!tmp.textContent.trim() && !tmp.querySelector('input[type="checkbox"]')) {
+          li.remove();
+        }
+      });
+      // Remove any list element that became fully empty
+      _pv.querySelectorAll('ol, ul').forEach(list => {
+        if (!list.querySelector('li')) list.remove();
+      });
+
       // Re-inject drag grips — new <li> elements typed in CE won't have one yet
       if (typeof window._injectPreviewGrips === 'function') {
         window._injectPreviewGrips(_pv);
@@ -2448,6 +2468,131 @@
      in the preview pane. */
   const _bootPreview = document.getElementById('md-live-preview');
   if (_bootPreview) window._injectPreviewGrips(_bootPreview);
+})();
+</script>
+
+<!-- ===== Renumber ordered-list popup ===== -->
+<script>
+(function initPreviewRenumber() {
+  /* ── state ── */
+  let _rnBtn = null;   // floating pill button (created once, reused)
+  let _rnOls = null;   // OL elements captured when the button was shown
+
+  /* ── button factory ── */
+  function _getBtn() {
+    if (_rnBtn) return _rnBtn;
+    _rnBtn = document.createElement('button');
+    _rnBtn.type = 'button';
+    _rnBtn.id   = '_bw-renumber-btn';
+    _rnBtn.setAttribute('aria-label', 'Renumber lists sequentially');
+    _rnBtn.textContent = '↕ Renumber  1 · 2 · 3 …';
+    _rnBtn.style.cssText = [
+      'position:fixed; z-index:9990; display:none;',
+      'padding:4px 12px; border-radius:999px;',
+      'background:#0053e2; color:#fff;',
+      'font-size:0.76rem; font-weight:600; white-space:nowrap; letter-spacing:.01em;',
+      'border:none; cursor:pointer;',
+      'box-shadow:0 2px 10px rgba(0,83,226,.35);',
+      'transition:background .1s;',
+    ].join('');
+    _rnBtn.addEventListener('mouseover',  () => { _rnBtn.style.background = '#0044c4'; });
+    _rnBtn.addEventListener('mouseout',   () => { _rnBtn.style.background = '#0053e2'; });
+    /* mousedown — not click — so we can preventDefault before the browser
+       collapses the selection that showed the button in the first place.   */
+    _rnBtn.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      _doRenumber(_rnOls);
+    });
+    document.body.appendChild(_rnBtn);
+    return _rnBtn;
+  }
+
+  function _showBtn(rect, ols) {
+    _rnOls = ols;
+    const btn = _getBtn();
+    /* Place just below the selection rect, clamp so it doesn't fall off-screen */
+    const top = Math.min(
+      rect.bottom + 6,
+      window.innerHeight - 44
+    );
+    btn.style.left    = Math.max(4, rect.left) + 'px';
+    btn.style.top     = top + 'px';
+    btn.style.display = 'block';
+  }
+
+  function _hideBtn() {
+    _rnOls = null;
+    if (_rnBtn) _rnBtn.style.display = 'none';
+  }
+
+  /* ── merge + renumber ── */
+  function _doRenumber(ols) {
+    if (!ols || ols.length < 2) { _hideBtn(); return; }
+    const pv = document.getElementById('md-live-preview');
+    if (!pv) { _hideBtn(); return; }
+
+    /* Filter to only OLs still in the live DOM (selection may have shifted) */
+    const live = ols.filter(ol => pv.contains(ol));
+    if (live.length < 2) { _hideBtn(); return; }
+
+    /* Move all <li> children from every OL after the first into the first OL,
+       preserving DOM order so the final numbered sequence matches visual order. */
+    const target = live[0];
+    live.slice(1).forEach(ol => {
+      Array.from(ol.children).forEach(child => {
+        if (child.nodeName === 'LI') target.appendChild(child);
+      });
+      /* Remove the donor OL if it has no <li> left (grips are not counted) */
+      const remainingLis = Array.from(ol.children).filter(
+        c => c.nodeName === 'LI'
+      );
+      if (!remainingLis.length) ol.remove();
+    });
+
+    _hideBtn();
+
+    /* Sync DOM → markdown, then re-render markdown → DOM so the numbering
+       is clean and grips are properly re-injected on all new items.       */
+    if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+    if (typeof window._bwRenderPreview   === 'function') window._bwRenderPreview();
+  }
+
+  /* ── show / hide logic ── */
+  document.addEventListener('selectionchange', function _bwRenumberCheck() {
+    const pv = document.getElementById('md-live-preview');
+    if (!pv) { _hideBtn(); return; }
+
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) { _hideBtn(); return; }
+
+    const range = sel.getRangeAt(0);
+    /* Both ends of the selection must be inside the preview */
+    if (!pv.contains(range.commonAncestorContainer)) { _hideBtn(); return; }
+
+    /* Find every <ol> in the preview that is at least partially selected */
+    const ols = Array.from(pv.querySelectorAll('ol')).filter(
+      ol => range.intersectsNode(ol)
+    );
+
+    if (ols.length >= 2) {
+      const rect = range.getBoundingClientRect();
+      /* getBoundingClientRect can return a zero rect for collapsed ranges or
+         when the range doesn't span visible text yet — skip in that case.  */
+      if (rect.width > 0 || rect.height > 0) {
+        _showBtn(rect, ols);
+        return;
+      }
+    }
+    _hideBtn();
+  });
+
+  /* Hide when the user clicks anywhere that isn't the renumber button */
+  document.addEventListener('mousedown', function(e) {
+    if (_rnBtn && e.target !== _rnBtn && !_rnBtn.contains(e.target)) {
+      _hideBtn();
+    }
+  });
 })();
 </script>
 
