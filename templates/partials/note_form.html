@@ -611,7 +611,7 @@
 
       /* Detect what kind of list line this is */
       const isBullet  = /^(\s*)([-*•]) /.test(lineText);
-      const isOrdered = /^(\s*)(\d+|[a-z]|[ivxlcdm]+)\. /.test(lineText);
+      const isOrdered = /^(\s*)\d+\. /.test(lineText);   // only real numbers in markdown
       if (!isBullet && !isOrdered) return;           // not a list line — let Tab through
 
       e.preventDefault();
@@ -1164,30 +1164,93 @@
        Handles TWO scenarios:
          (A) Rendered HTML: caret is inside a <li class="task-list-item">
          (B) Plain text:    the /todo command just inserted "- [ ] " as
-             raw text — the 400ms debounce hasn’t rendered it yet.
-       Both cases use execCommand so the browser’s own undo stack stays intact. */
+             raw text — the 400ms debounce hasn't rendered it yet.
+       Tab/Shift+Tab on list items: manipulates markdown directly, no execCommand. */
     preview.addEventListener('keydown', (e) => {
       // Ctrl/Cmd+K → link modal (must intercept before the early-return below)
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
 
       /* ── Tab / Shift+Tab inside the contenteditable preview ─────────
-         When the caret is inside a <li>, use the browser's indent/outdent
-         execCommand, then sync the result back to the markdown textarea.   */
+         NEVER use execCommand('indent/outdent') — it wraps in <blockquote>,
+         which greys text and drops the bullet.  Instead:
+           1. Find the <li> the caret is in
+           2. Sync CE → markdown so the textarea is current
+           3. Find that same line in the textarea by text match
+           4. Apply the same 2-sp/3-sp indent logic as the textarea handler
+           5. Re-render the preview and restore focus to that <li>          */
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const sel  = window.getSelection();
-        if (!sel || !sel.rangeCount) return;
-        const node = sel.getRangeAt(0).startContainer;
-        /* Walk up to find if we're inside a list item */
-        let li = node;
+        const _sel = window.getSelection();
+        if (!_sel || !_sel.rangeCount) return;
+        let li = _sel.getRangeAt(0).startContainer;
         while (li && li !== preview) {
           if (li.nodeName === 'LI') break;
           li = li.parentNode;
         }
         if (!li || li === preview) return;           // not in a list — let Tab through
         e.preventDefault();
-        document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
-        /* Sync the mutated CE DOM back to the markdown textarea */
+
+        /* Capture the <li>'s plain text before we mutate anything */
+        const liClone = li.cloneNode(true);
+        liClone.querySelectorAll('[data-preview-grip],input[type="checkbox"]')
+               .forEach(n => n.remove());
+        const liText = liClone.textContent.trim();
+
+        /* Sync contenteditable → textarea (ensures textarea is up-to-date) */
         syncPreviewToMd();
+
+        const _ta   = _liveTa();
+        if (!_ta) return;
+        const lines = _ta.value.split('\n');
+
+        /* Find the matching list line in the markdown by text content */
+        const LIST_LINE_RE = /^(\s*)([-*•]|\d+\.)\s+(.*)$/;
+        let targetIdx = -1;
+        for (let i = 0; i < lines.length; i++) {
+          const m = lines[i].match(LIST_LINE_RE);
+          if (m && m[3].trim() === liText) { targetIdx = i; break; }
+        }
+        if (targetIdx === -1) return;                // couldn't match — bail
+
+        const lineText  = lines[targetIdx];
+        const isBullet  = /^(\s*)([-*•]) /.test(lineText);
+        const isOrdered = /^(\s*)(\d+)\. /.test(lineText);
+        if (!isBullet && !isOrdered) return;
+
+        const STEP   = isBullet ? 2 : 3;
+        const MAX_SP = STEP * 3;
+        const leading = (lineText.match(/^ */) || [''])[0].length;
+
+        let newLine;
+        if (!e.shiftKey) {
+          if (leading >= MAX_SP) return;             // already at deepest level
+          newLine = ' '.repeat(STEP) + lineText;
+        } else {
+          if (leading === 0) return;                 // already at root — nothing to do
+          newLine = lineText.slice(Math.min(leading, STEP));
+        }
+
+        lines[targetIdx] = newLine;
+        _ta.value = lines.join('\n');
+        renderPreview();
+
+        /* Restore focus inside the same logical <li> after re-render */
+        setTimeout(() => {
+          preview.focus();
+          const allLis = Array.from(preview.querySelectorAll('li'));
+          const match  = allLis.find(el => {
+            const c = el.cloneNode(true);
+            c.querySelectorAll('[data-preview-grip],input[type="checkbox"]')
+             .forEach(n => n.remove());
+            return c.textContent.trim() === liText;
+          });
+          if (match) {
+            const r2 = document.createRange();
+            r2.selectNodeContents(match);
+            r2.collapse(false);                      // cursor at end of <li>
+            _sel.removeAllRanges();
+            _sel.addRange(r2);
+          }
+        }, 20);
         return;
       }
 
