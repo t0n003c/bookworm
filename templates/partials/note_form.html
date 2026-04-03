@@ -472,6 +472,28 @@
         return w.nextNode();
       }
 
+      /* Merge a list with any adjacent sibling of the same tag name so that
+         round-trip conversions (bullet→number→bullet) re-unify the split
+         lists and Tab indent works across all siblings again.
+         - Absorbs next sibling first (lst stays as survivor).
+         - Then absorbs lst into prev sibling (prev becomes survivor).
+         - Silently skips detached or null nodes.                          */
+      function _mergeAdjacent(lst) {
+        if (!lst || !lst.parentElement) return lst;   // detached — skip
+        const nx = lst.nextElementSibling;
+        if (nx && nx.nodeName === lst.nodeName) {     // same type → eat next
+          while (nx.firstChild) lst.appendChild(nx.firstChild);
+          nx.remove();
+        }
+        const pv = lst.previousElementSibling;
+        if (pv && pv.nodeName === lst.nodeName) {     // same type → merge into prev
+          while (lst.firstChild) pv.appendChild(lst.firstChild);
+          lst.remove();
+          return pv;                                  // prev is the surviving node
+        }
+        return lst;
+      }
+
       if (parentList.nodeName === tag) {
         /* Same type → toggle OFF: extract this <li> as a <p>.
            Split the list around it so sibling order is preserved. */
@@ -482,7 +504,12 @@
         });
         if (!p.textContent.trim()) p.innerHTML = '<br>';
 
-        _splice([_splitList(origTag, before), p, _splitList(origTag, after)]);
+        const beforeList = _splitList(origTag, before);
+        const afterList  = _splitList(origTag, after);
+        _splice([beforeList, p, afterList]);
+        // Heal any pre-existing same-type lists that are now adjacent
+        if (beforeList) _mergeAdjacent(beforeList);
+        if (afterList)  _mergeAdjacent(afterList);
 
         const r = document.createRange();
         r.selectNodeContents(p); r.collapse(false);
@@ -491,10 +518,18 @@
       } else {
         /* Different type → convert ONLY this <li>, not its siblings.
            Split: before-list (origTag) | solo new-list (tag) | after-list (origTag) */
-        const soloList = document.createElement(tag);
-        soloList.appendChild(li);                        // MOVE the one item
+        const beforeList = _splitList(origTag, before);
+        const soloList   = document.createElement(tag);
+        soloList.appendChild(li);                     // MOVE the one item
+        const afterList  = _splitList(origTag, after);
+        _splice([beforeList, soloList, afterList]);
 
-        _splice([_splitList(origTag, before), soloList, _splitList(origTag, after)]);
+        /* Heal adjacent same-type lists created by round-trip conversions
+           (e.g. bullet→number→bullet leaves three <ul>s that must re-merge
+           into one so Tab indent can work across all siblings again).     */
+        if (beforeList) _mergeAdjacent(beforeList);  // heal above solo
+        _mergeAdjacent(soloList);                    // main heal (li still reachable after merge)
+        if (afterList)  _mergeAdjacent(afterList);   // heal below (may already be detached)
 
         /* Restore cursor inside the moved li */
         const textNode = _firstText(li);

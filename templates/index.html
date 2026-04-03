@@ -1053,16 +1053,41 @@
     });
   }
 
+  /* ── Active-workspace URL + localStorage helper ─────────────────────────
+     Belt-AND-suspenders: replaceState updates the address bar immediately
+     (synchronous, no network round-trip) so a page reload always lands on
+     the right workspace.  localStorage is the fallback for the edge case
+     where replaceState was somehow skipped (caught on DOMContentLoaded).  */
+  function _bwSetActiveWs(id) {
+    localStorage.setItem('bw-last-ws', String(id));
+    history.replaceState(null, '', '/?ws=' + id);
+  }
+
+  /* ── On first paint: silently correct a stale URL ────────────────────────
+     HTMX 1.9.x does not reliably process HX-Replace-URL from programmatic
+     htmx.ajax() calls, so the previous fix left the URL unmodified after
+     in-page workspace switches.  If the address bar disagrees with the last
+     saved workspace, swap the note-list without a full page reload.        */
+  document.addEventListener('DOMContentLoaded', function _bwRestoreWs() {
+    const stored = localStorage.getItem('bw-last-ws');
+    if (!stored) return;
+    const urlWs = new URLSearchParams(window.location.search).get('ws');
+    if (String(urlWs) === stored) return;           // URL already correct — do nothing
+    history.replaceState(null, '', '/?ws=' + stored);
+    htmx.ajax('GET', '/workspaces/switch/' + stored, {
+      target: '#note-list', swap: 'innerHTML',
+    });
+  });
+
   /* ---- Workspace navigation ---- */
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
-    // Cancel any pending timer (was: bail-out guard that silently dropped rapid clicks).
-    // Cancel-and-restart means the LAST clicked workspace always wins.
+    // Cancel-and-restart debounce — the LAST clicked workspace always wins.
     clearTimeout(_wsClickTimer);
     _wsClickTimer = setTimeout(() => {
       _wsClickTimer = null;
       document.getElementById('active-workspace').value = id;
-      // URL is updated server-side via HX-Replace-URL on the /switch response.
+      _bwSetActiveWs(id);   // update URL + localStorage before the async request
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
       }).then(() => refreshCatFilter(id));
@@ -1073,7 +1098,7 @@
     clearTimeout(_wsClickTimer);
     _wsClickTimer = null;
     document.getElementById('active-workspace').value = id;
-    // URL is updated server-side via HX-Replace-URL on the /open response.
+    _bwSetActiveWs(id);
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
     }).then(() => refreshCatFilter(id));
@@ -1083,10 +1108,9 @@
   function wsTabClick(id) {
     window._bwWsId = id;
     document.getElementById('active-workspace').value = id;
-    // URL updated server-side via HX-Replace-URL — no pushUrl needed.
+    _bwSetActiveWs(id);
     htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
-      target: '#note-list',
-      swap:   'innerHTML',
+      target: '#note-list', swap: 'innerHTML',
     }).then(() => refreshCatFilter(id));
   }
 
