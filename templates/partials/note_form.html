@@ -419,10 +419,101 @@
 
 <script>
   /* --- Markdown formatting helpers --- */
+
+  /* Toggle a list type (tag = 'UL' or 'OL') in the contenteditable preview.
+     execCommand('insertOrderedList') is deprecated and misfires when <li>
+     elements contain contenteditable="false" grip spans — it creates a brand-
+     new list at the bottom instead of converting the existing one.
+     We manipulate the DOM directly, the same way the Tab indent handler does. */
+  function _bwCeToggleList(preview, tag) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+
+    /* Walk up to find the <li> the cursor is sitting in */
+    let li = sel.getRangeAt(0).startContainer;
+    while (li && li !== preview) {
+      if (li.nodeName === 'LI') break;
+      li = li.parentNode;
+    }
+
+    if (li && li !== preview) {
+      /* ── Cursor IS inside a list item ── */
+      const parentList = li.parentElement;
+      if (!parentList) return;
+
+      if (parentList.nodeName === tag) {
+        /* Same type clicked → toggle OFF: lift content into a <p> */
+        const p = document.createElement('p');
+        Array.from(li.childNodes).forEach(child => {
+          if (!child.hasAttribute?.('data-preview-grip')) {
+            p.appendChild(child.cloneNode(true));
+          }
+        });
+        if (!p.textContent.trim()) p.innerHTML = '<br>';
+
+        const grandparent = parentList.parentElement;
+        grandparent.insertBefore(p, parentList);
+        li.remove();
+        if (!parentList.querySelector('li')) parentList.remove();
+
+        const r = document.createRange();
+        r.selectNodeContents(p); r.collapse(false);
+        sel.removeAllRanges(); sel.addRange(r);
+
+      } else {
+        /* Different type clicked → swap parent list tag (UL ↔ OL).
+           MOVE children (don't clone) so the existing li reference stays valid. */
+        const newList = document.createElement(tag);
+        while (parentList.firstChild) newList.appendChild(parentList.firstChild);
+        parentList.replaceWith(newList);
+
+        /* Restore cursor to the moved <li> (it's now inside newList) */
+        const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, {
+          acceptNode: n => n.parentElement?.hasAttribute('data-preview-grip')
+            ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        });
+        const textNode = walker.nextNode();
+        const r = document.createRange();
+        if (textNode) { r.setStart(textNode, textNode.length); r.collapse(true); }
+        else           { r.selectNodeContents(li); r.collapse(false); }
+        sel.removeAllRanges(); sel.addRange(r);
+      }
+
+    } else {
+      /* ── Cursor is NOT in a list → wrap current block-level element ── */
+      let block = sel.getRangeAt(0).startContainer;
+      while (block && block !== preview) {
+        if (block.nodeType === 1 && block.parentElement === preview) break;
+        block = block.parentNode;
+      }
+      if (!block || block === preview) return;
+
+      const newList = document.createElement(tag);
+      const newLi   = document.createElement('li');
+      while (block.firstChild) newLi.appendChild(block.firstChild);
+      newList.appendChild(newLi);
+      block.replaceWith(newList);
+
+      const r = document.createRange();
+      r.selectNodeContents(newLi); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    }
+
+    /* Sync mutated DOM → markdown textarea (also re-injects grips) */
+    if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+  }
+
   function mdFmt(type) {
-    // When the contenteditable preview is active, route through execCommand
     const preview = document.getElementById('md-live-preview');
+
+    /* ── Contenteditable (Preview / Split) mode ── */
     if (window._bwActiveEditor === preview) {
+      /* List toggling via execCommand is broken when <li> elements contain
+         contenteditable="false" grip spans — use direct DOM manipulation. */
+      if (type === 'ul' || type === 'ol') {
+        _bwCeToggleList(preview, type.toUpperCase());
+        return;
+      }
       const execMap = {
         bold:   ['bold'],
         italic: ['italic'],
@@ -430,26 +521,54 @@
         h1:     ['formatBlock', false, 'H1'],
         h2:     ['formatBlock', false, 'H2'],
         h3:     ['formatBlock', false, 'H3'],
-        ul:     ['insertUnorderedList'],
-        ol:     ['insertOrderedList'],
       };
       const args = execMap[type];
       if (args) {
         document.execCommand(...args);
-        // Ensure preview → MD sync fires after execCommand mutates the DOM
         preview.dispatchEvent(new Event('input'));
       }
       return;
     }
-    const ta = document.getElementById('note-content');
+
+    /* ── Raw markdown textarea mode ── */
+    const ta    = document.getElementById('note-content');
     const start = ta.selectionStart;
     const end   = ta.selectionEnd;
     const sel   = ta.value.substring(start, end);
-    const before = ta.value.substring(0, start);
-    const after  = ta.value.substring(end);
+    const val   = ta.value;
+
+    /* Helper: operate on the current line when there is no selection.
+       Detects the existing prefix and either swaps it or toggles it off. */
+    function _taListLine(wantBullet) {
+      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+      const lineEnd   = val.indexOf('\n', start);
+      const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
+      const bulletM   = lineText.match(/^(\s*)([-*]) (.*)$/);
+      const orderedM  = lineText.match(/^(\s*)\d+\. (.*)$/);
+
+      let newLine;
+      if (wantBullet) {
+        if (bulletM)       newLine = bulletM[1] + bulletM[3];          // toggle OFF
+        else if (orderedM) newLine = orderedM[1] + '- ' + orderedM[2]; // ol → ul
+        else               newLine = '- ' + lineText;                  // plain → ul
+      } else {
+        if (orderedM)      newLine = orderedM[1] + orderedM[2];         // toggle OFF
+        else if (bulletM)  newLine = bulletM[1] + '1. ' + bulletM[3];  // ul → ol
+        else               newLine = '1. ' + lineText;                  // plain → ol
+      }
+
+      ta.value = val.slice(0, lineStart) + newLine +
+                 (lineEnd === -1 ? '' : val.slice(lineEnd));
+      const newPos = lineStart + newLine.length;
+      ta.setSelectionRange(newPos, newPos);
+      ta.focus();
+      ta.dispatchEvent(new Event('input'));
+    }
 
     let insert = '';
     let cursor = 0;
+    const before = val.substring(0, start);
+    const after  = val.substring(end);
 
     if (type === 'bold') {
       insert = sel ? `**${sel}**` : '**bold text**';
@@ -470,10 +589,12 @@
       insert = prefixLines(sel || 'Heading 3', '### ');
       cursor = start + insert.length;
     } else if (type === 'ul') {
-      insert = prefixLines(sel || 'List item', '- ');
+      if (!sel) { _taListLine(true);  return; }  // no selection → convert current line
+      insert = prefixLines(sel, '- ');
       cursor = start + insert.length;
     } else if (type === 'ol') {
-      insert = numberLines(sel || 'List item');
+      if (!sel) { _taListLine(false); return; }  // no selection → convert current line
+      insert = numberLines(sel);
       cursor = start + insert.length;
     }
 
