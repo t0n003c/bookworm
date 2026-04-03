@@ -389,8 +389,20 @@ window.bwTimeline = (function () {
     if (legendEl) outer.appendChild(legendEl);
     outer.appendChild(minimap.el);
 
-    // ── Unified onMove ──────────────────────────────────
-    function onAllMove() { updateYearLabels(); minimap.update(); }
+    // ── Bookworm character ─────────────────────────────
+    // Only shown when there are notes (earliest date is known).
+    const worm = notes.length
+      ? _bwTLUi.buildWorm(_rail._earliest, SPINE_Y, outer)
+      : null;
+    if (worm) outer.appendChild(worm.el);
+
+    // ── Unified onMove ─────────────────────────────
+    function onAllMove() {
+      updateYearLabels();
+      minimap.update();
+      if (worm) worm.update(
+        parseFloat(getRail().style.left) || 0, _pxPerDay, PAD_ENDS);
+    }
 
     // ── Drag ───────────────────────────────────────────
     const cleanupDrag = _attachDrag(outer, getRail, onAllMove);
@@ -467,6 +479,7 @@ window.bwTimeline = (function () {
           _rafId = requestAnimationFrame(step);
         }
         _rafId = requestAnimationFrame(step);
+        if (worm) worm.burst();   // bookworm gets excited!
       }
     };
     document.addEventListener('keydown', keyHandler);
@@ -477,7 +490,7 @@ window.bwTimeline = (function () {
     const hint = document.createElement('div');
     hint.setAttribute('aria-hidden', 'true');
     Object.assign(hint.style, {
-      position: 'absolute', bottom: '50px', left: '50%',
+      position: 'absolute', bottom: '58px', left: '50%',
       transform: 'translateX(-50%)',
       fontSize: '10px', color: t.hintClr,
       pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap',
