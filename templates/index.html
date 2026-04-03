@@ -780,12 +780,26 @@
 
   /* ---- Auto open/resize panel after every HTMX swap into #detail-panel ---- */
   document.addEventListener('htmx:afterSwap', (e) => {
-    // Re-apply timeline after any HTMX swap that targets #note-list
+    // ── Workspace switch detected ─────────────────────────────────────────
+    // #ws-breadcrumb is OOB-swapped ONLY on workspace switches (never on
+    // filter/sort/save).  It fires synchronously before the requestAnimationFrame
+    // scheduled below, so resetting localStorage here is guaranteed to be seen
+    // by the rAF callback when it runs.
+    if (e.detail.target.id === 'ws-breadcrumb') {
+      if (bwTimeline.isMounted()) bwTimeline.unmount();
+      localStorage.setItem('bw-list-view', 'grid');
+      syncListViewIcon();
+      return;
+    }
+
+    // ── Re-apply timeline after any HTMX swap that targets #note-list ────
     if (e.detail.target.id === 'note-list') {
       if (localStorage.getItem('bw-list-view') === 'timeline') {
-        // HTMX already wrote fresh grid HTML into #note-list — use remount()
-        // so we never restore the stale _gridCache over the new content.
-        requestAnimationFrame(() => bwTimeline.remount());
+        // Re-check localStorage *inside* the rAF: a workspace switch OOB swap
+        // may have already reset it to 'grid' before this frame executes.
+        requestAnimationFrame(() => {
+          if (localStorage.getItem('bw-list-view') === 'timeline') bwTimeline.remount();
+        });
       }
       return;
     }
