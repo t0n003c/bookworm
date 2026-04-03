@@ -594,6 +594,52 @@
       }
       // else: default browser Enter behaviour
     }
+
+    /* ── Tab / Shift+Tab on list lines: indent / outdent ─────────────
+       Bullet lists indent by 2 spaces per level (max 4 levels = 6 sp).
+       Ordered lists indent by 3 spaces per level (aligns after "1. ").
+       No selection needed — acts on the single line the caret is on.   */
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const ta  = e.target;
+      const pos = ta.selectionStart;
+      if (ta.selectionEnd !== pos) return;           // leave multi-select alone
+
+      const val       = ta.value;
+      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      const lineEnd   = val.indexOf('\n', pos);
+      const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
+
+      /* Detect what kind of list line this is */
+      const isBullet  = /^(\s*)([-*•]) /.test(lineText);
+      const isOrdered = /^(\s*)(\d+|[a-z]|[ivxlcdm]+)\. /.test(lineText);
+      if (!isBullet && !isOrdered) return;           // not a list line — let Tab through
+
+      e.preventDefault();
+      const STEP    = isBullet ? 2 : 3;              // spaces per level
+      const MAX_SP   = STEP * 3;                      // 4 levels total (0,1,2,3 indents)
+      const leading  = lineText.match(/^ */)[0].length;
+
+      let newLine;
+      if (!e.shiftKey) {
+        /* Tab — add STEP spaces, but cap at MAX_SP */
+        if (leading >= MAX_SP) return;                 // already at deepest level
+        newLine = ' '.repeat(STEP) + lineText;
+      } else {
+        /* Shift+Tab — remove up to STEP leading spaces */
+        const remove = Math.min(leading, STEP);
+        newLine = lineText.slice(remove);
+      }
+
+      const before = val.slice(0, lineStart);
+      const after  = lineEnd === -1 ? '' : val.slice(lineEnd);
+      ta.value = before + newLine + after;
+
+      /* Keep caret at same logical position within the line */
+      const shift = newLine.length - lineText.length;  // positive = moved right
+      const newPos = Math.max(lineStart, pos + shift);
+      ta.setSelectionRange(newPos, newPos);
+      ta.dispatchEvent(new Event('input'));
+    }
   });
 
   /* ---- Category manage panel toggle ---- */
@@ -1025,8 +1071,9 @@
       const _pv = _livePv();
       if (!_ta || !_pv) return;
       const raw = _ta.value.trim();
-      // Normalize visual bullet chars (• ) back to markdown (- ) before parsing
-      const md  = raw.replace(/^• /gm, '- ');
+      // Normalize visual bullet chars (•) at any indent level → standard markdown (-).
+      // Preserves leading spaces so marked.js sees proper nested list indentation.
+      const md  = raw.replace(/^(\s*)• /gm, '$1- ');
       _pv.innerHTML = raw
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
@@ -1122,6 +1169,28 @@
     preview.addEventListener('keydown', (e) => {
       // Ctrl/Cmd+K → link modal (must intercept before the early-return below)
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
+
+      /* ── Tab / Shift+Tab inside the contenteditable preview ─────────
+         When the caret is inside a <li>, use the browser's indent/outdent
+         execCommand, then sync the result back to the markdown textarea.   */
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const sel  = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const node = sel.getRangeAt(0).startContainer;
+        /* Walk up to find if we're inside a list item */
+        let li = node;
+        while (li && li !== preview) {
+          if (li.nodeName === 'LI') break;
+          li = li.parentNode;
+        }
+        if (!li || li === preview) return;           // not in a list — let Tab through
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
+        /* Sync the mutated CE DOM back to the markdown textarea */
+        syncPreviewToMd();
+        return;
+      }
+
       if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
       if (typeof scIsOpen === 'function' && scIsOpen()) return;
 

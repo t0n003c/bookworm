@@ -50,8 +50,16 @@
     .md-body h2 { font-size: 1.25rem; font-weight: 700; margin: .875rem 0 .4rem; }
     .md-body h3 { font-size: 1.1rem; font-weight: 600; margin: .75rem 0 .35rem; }
     .md-body p  { margin: .5rem 0; line-height: 1.65; }
-    .md-body ul { list-style: disc; padding-left: 1.5rem; margin: .5rem 0; }
+    .md-body ul { list-style: disc;    padding-left: 1.5rem; margin: .5rem 0; }
     .md-body ol { list-style: decimal; padding-left: 1.5rem; margin: .5rem 0; }
+    /* Nested bullet levels: disc ● ▸ circle ◦ square ▪ arrow ▸ */
+    .md-body ul ul               { list-style: circle; }
+    .md-body ul ul ul            { list-style: square; }
+    .md-body ul ul ul ul         { list-style: '\25b8  '; }
+    /* Nested ordered levels: 1 2 3 → a b c → i ii iii → 1 2 3 */
+    .md-body ol ol               { list-style: lower-alpha; }
+    .md-body ol ol ol            { list-style: lower-roman; }
+    .md-body ol ol ol ol         { list-style: decimal; }
     .md-body li { margin: .2rem 0; line-height: 1.6; }
     /* Task list (GFM todo checkboxes) */
     .md-body .contains-task-list { list-style: none; padding-left: .25rem; }

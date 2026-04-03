@@ -79,8 +79,8 @@
     marked.use({ gfm: true, breaks: true });
     document.querySelectorAll('[data-md]').forEach(function(el) {
       var raw = el.getAttribute('data-md');
-      // Normalize visual bullet chars (• ) → markdown (- ) before parsing
-      var md  = raw ? raw.replace(/^• /gm, '- ') : '';
+      // Normalize visual bullet chars (•) at any indent level → markdown (-)
+      var md  = raw ? raw.replace(/^(\s*)• /gm, '$1- ') : '';
       el.innerHTML = md ? DOMPurify.sanitize(marked.parse(md)) : '';
       el.removeAttribute('data-md'); // prevent double-render on re-query
     });

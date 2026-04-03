@@ -61,8 +61,9 @@
       (function() {
         const el  = document.getElementById('md-render-target');
         const raw = el.getAttribute('data-raw');
-        // Normalize visual bullet chars stored in textarea (• ) → markdown (- )
-        const md  = raw.replace(/^• /gm, '- ');
+        // Normalize visual bullet chars (•) at any indent level → markdown (-)
+        // Preserving leading spaces keeps nested list indentation intact for marked.
+        const md  = raw.replace(/^(\s*)• /gm, '$1- ');
         marked.use({ gfm: true, breaks: true });
         // ADD_ATTR style: lets color/highlight/font-size spans pass through
         el.innerHTML = DOMPurify.sanitize(marked.parse(md), {
