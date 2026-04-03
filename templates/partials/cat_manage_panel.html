@@ -1,0 +1,169 @@
+{#
+  cat_manage_panel.html — Inline category editor inside the note-form sidebar.
+  Context: categories, workspace_id, selected_ids
+
+  Rules:
+  1. NO <form> elements — lives inside the main note <form>.
+  2. NO hidden inputs whose names collide with the note form fields.
+     Use hx-vals JS + hx-include for the checkbox group instead.
+#}
+<div id="cat-manage-list-form"
+     class="border border-gray-200 dark:border-zinc-700 rounded-lg
+            bg-gray-50 dark:bg-zinc-800/60 p-2 mb-2 space-y-1.5">
+
+  {# ── Existing categories ─────────────────────────────────────────── #}
+  {% if categories %}
+  {% for cat in categories %}
+  <div class="flex items-center gap-1.5" role="listitem" data-cat-id="{{ cat.id }}">
+
+    {# Color swatch — native color picker; persists on 'change' (picker closed) #}
+    <label class="relative flex-shrink-0 cursor-pointer" title="Change colour">
+      <span class="block w-5 h-5 rounded-full border border-gray-300 dark:border-zinc-600
+                  ring-1 ring-transparent hover:ring-wblue transition"
+            style="background:{{ cat.color }}"
+            id="swatch-{{ cat.id }}"
+            data-color="{{ cat.color }}"></span>
+      <input type="color" value="{{ cat.color }}"
+             aria-label="Colour for {{ cat.name }}"
+             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+             oninput="
+               var sw = document.getElementById('swatch-{{ cat.id }}');
+               sw.style.background = this.value;
+               sw.dataset.color = this.value;
+             "
+             onchange="document.getElementById('save-btn-{{ cat.id }}').click();">
+    </label>
+
+    {# Name input — Enter or blur → save (blur guard: skip if removing) #}
+    <input type="text"
+           id="name-txt-{{ cat.id }}"
+           value="{{ cat.name }}"
+           aria-label="Category name for {{ cat.name }}"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();
+                        document.getElementById('save-btn-{{ cat.id }}').click();}"
+           onblur="(function(inp){
+                     setTimeout(function(){
+                       var ae = document.activeElement;
+                       var row = inp.closest('[data-cat-id]');
+                       var rmBtn = row && row.querySelector('[data-remove-btn]');
+                       if(ae === rmBtn) return;  /* user is clicking remove — don't save */
+                       document.getElementById('save-btn-{{ cat.id }}').click();
+                     }, 80);
+                   })(this)"
+           class="flex-1 min-w-0 text-xs border border-gray-300 dark:border-zinc-600
+                  rounded px-1.5 py-1 bg-white dark:bg-zinc-900
+                  text-gray-800 dark:text-zinc-100
+                  focus:outline-none focus:ring-1 focus:ring-wblue">
+
+    {# Save button — icon-only ghost style (matches X button, blue hover) #}
+    <button type="button"
+            id="save-btn-{{ cat.id }}"
+            hx-post="/categories/{{ cat.id }}/rename"
+            hx-target="#cat-manage-list-form"
+            hx-swap="outerHTML"
+            hx-include="#note-form-cats input:checked"
+            hx-vals="js:{
+              workspace_id: '{{ workspace_id or '' }}',
+              color: document.getElementById('swatch-{{ cat.id }}').dataset.color,
+              name:  document.getElementById('name-txt-{{ cat.id }}').value
+            }"
+            title="Save changes to {{ cat.name }}"
+            aria-label="Save changes to {{ cat.name }}"
+            class="flex-shrink-0 text-gray-300 dark:text-zinc-600
+                   hover:text-wblue transition
+                   focus:outline-none focus:ring-1 focus:ring-wblue rounded p-0.5">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+              d="M5 13l4 4L19 7"/>
+      </svg>
+    </button>
+
+    {# Remove button — opens custom modal instead of browser confirm #}
+    <button type="button"
+            data-remove-btn
+            data-cat-name="{{ cat.name | e }}"
+            hx-post="/categories/{{ cat.id }}/panel-remove"
+            hx-target="#cat-manage-list-form"
+            hx-swap="outerHTML"
+            hx-include="#note-form-cats input:checked"
+            hx-vals="js:{workspace_id: '{{ workspace_id or '' }}'}"
+            onclick="if(!this.dataset.confirmed){event.stopImmediatePropagation();openDeleteCatModal(this);return;}this.removeAttribute('data-confirmed');"
+            title="Remove from workspace"
+            aria-label="Remove category {{ cat.name }} from workspace"
+            class="flex-shrink-0 text-gray-300 dark:text-zinc-600
+                   hover:text-red-500 transition
+                   focus:outline-none focus:ring-1 focus:ring-red-400 rounded p-0.5">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="text-xs text-gray-400 italic px-1">No categories yet. Add one below.</p>
+  {% endif %}
+
+  {# ── Add new category row ─────────────────────────────────────────── #}
+  <div class="flex items-center gap-1.5 pt-1.5
+              border-t border-gray-200 dark:border-zinc-700 mt-0.5">
+
+    <label class="relative flex-shrink-0 cursor-pointer" title="Pick colour">
+      <span class="block w-5 h-5 rounded-full border border-dashed border-gray-400 bg-wblue"
+            id="swatch-new"
+            data-color="#0053e2"></span>
+      <input type="color" value="#0053e2"
+             aria-label="Colour for new category"
+             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+             oninput="
+               var sw = document.getElementById('swatch-new');
+               sw.style.background = this.value;
+               sw.dataset.color = this.value;
+             ">
+    </label>
+
+    <input type="text"
+           id="add-name-txt"
+           placeholder="New category…"
+           aria-label="New category name"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();
+                        document.getElementById('add-cat-btn').click();}"
+           class="flex-1 min-w-0 text-xs border border-gray-300 dark:border-zinc-600
+                  rounded px-1.5 py-1 bg-white dark:bg-zinc-900
+                  text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                  focus:outline-none focus:ring-1 focus:ring-wblue">
+
+    <button type="button"
+            id="add-cat-btn"
+            hx-post="/categories/panel/add"
+            hx-target="#cat-manage-list-form"
+            hx-swap="outerHTML"
+            hx-include="#note-form-cats input:checked"
+            hx-vals="js:{
+              workspace_id: '{{ workspace_id or '' }}',
+              color: document.getElementById('swatch-new').dataset.color,
+              name:  document.getElementById('add-name-txt').value
+            }"
+            hx-on::after-request="
+              var ni = document.getElementById('add-name-txt');
+              if(ni) ni.value = '';
+              var sw = document.getElementById('swatch-new');
+              if(sw){ sw.style.background='#0053e2'; sw.dataset.color='#0053e2'; }
+            "
+            title="Add category"
+            aria-label="Add category"
+            class="flex-shrink-0 flex items-center gap-1 text-xs font-medium
+                   bg-wblue text-white px-2 py-0.5 rounded
+                   hover:bg-blue-700 active:bg-blue-800 transition
+                   focus:outline-none focus:ring-2 focus:ring-wblue focus:ring-offset-1">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+              d="M12 4v16m8-8H4"/>
+      </svg>
+      Add
+    </button>
+  </div>
+</div>

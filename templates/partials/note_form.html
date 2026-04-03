@@ -120,21 +120,65 @@
     </div>
 
     <!-- Categories -->
-    {% if categories %}
+    {% if categories is defined and (categories or workspace_id) %}
     <div class="flex-shrink-0">
-      <span class="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-2">Categories</span>
-      <div class="grid grid-cols-2 gap-1">
-        {% set selected_ids = note.categories | map(attribute='id') | list if is_edit else [] %}
-        {% for cat in categories %}
-        <label class="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-700 dark:text-zinc-300">
-          <input type="checkbox" name="category_ids" value="{{ cat.id }}"
-            {% if cat.id in selected_ids %}checked{% endif %}
-            class="accent-wblue" aria-label="Category: {{ cat.name }}"/>
-          <span class="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:{{ cat.color }}"></span>
-          <span class="truncate">{{ cat.name }}</span>
-        </label>
-        {% endfor %}
+
+      {# Header row: label + pencil toggle #}
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-semibold text-gray-700 dark:text-zinc-300">Categories</span>
+        {% if workspace_id %}
+        <button
+          type="button"
+          id="cat-manage-btn"
+          onclick="toggleCatManagePanel(this)"
+          aria-expanded="false"
+          aria-controls="cat-manage-panel"
+          title="Manage categories"
+          aria-label="Manage categories"
+          class="text-gray-400 hover:text-wblue transition rounded
+                 focus:outline-none focus:ring-1 focus:ring-wblue p-0.5"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
+               viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15.232 5.232l3.536 3.536M9 13l-4 4h4v-4zM16.5
+                     3.5a2.121 2.121 0 113 3L8 18H4v-4L16.5 3.5z"/>
+          </svg>
+        </button>
+        {% endif %}
       </div>
+
+      {# Collapsible manage panel (hidden until pencil is clicked) #}
+      {% if workspace_id %}
+      <div id="cat-manage-panel" class="hidden">
+        {% set selected_ids = note.categories | map(attribute='id') | list if (is_edit and note) else [] %}
+        {% include "partials/cat_manage_panel.html" %}
+      </div>
+      {% endif %}
+
+      {# Checkbox grid — always visible, OOB-swappable after manage actions #}
+      <div id="note-form-cats">
+        {% if categories %}
+        <div class="grid grid-cols-2 gap-1">
+          {% set selected_ids = note.categories | map(attribute='id') | list if (is_edit and note) else [] %}
+          {% for cat in categories %}
+          <label class="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded
+                        hover:bg-gray-50 dark:hover:bg-zinc-800
+                        text-gray-700 dark:text-zinc-300">
+            <input type="checkbox" name="category_ids" value="{{ cat.id }}"
+              {% if cat.id in selected_ids %}checked{% endif %}
+              class="accent-wblue" aria-label="Category: {{ cat.name }}">
+            <span class="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style="background:{{ cat.color }}"></span>
+            <span class="truncate">{{ cat.name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs text-gray-400 italic">No categories yet. Use ✏️ to add one.</p>
+        {% endif %}
+      </div>
+
     </div>
     {% endif %}
 
@@ -233,11 +277,11 @@
         </div>
         <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600" aria-hidden="true"></span>
         <div class="flex rounded overflow-hidden border border-gray-200 dark:border-zinc-700" role="group" aria-label="Editor mode">
-          <button type="button" data-mode="md" onclick="setEditorMode('md')" title="Markdown only"
+          <button type="button" data-mode="md" onclick="setEditorMode('md', true)" title="Markdown only"
             class="mode-btn px-2 py-1 text-xs font-semibold" aria-label="Markdown only">MD</button>
-          <button type="button" data-mode="split" onclick="setEditorMode('split')" title="Split view"
+          <button type="button" data-mode="split" onclick="setEditorMode('split', true)" title="Split view"
             class="mode-btn px-2 py-1 text-xs font-semibold border-x border-gray-200 dark:border-zinc-700" aria-label="Split view">Split</button>
-          <button type="button" data-mode="preview" onclick="setEditorMode('preview')" title="WYSIWYG preview"
+          <button type="button" data-mode="preview" onclick="setEditorMode('preview', true)" title="WYSIWYG preview"
             class="mode-btn px-2 py-1 text-xs font-semibold" aria-label="Preview">Preview</button>
         </div>
         </div>
@@ -258,8 +302,8 @@
 
         </div>
 
-        <!-- Live preview -->
-        <div id="preview-pane" class="flex flex-col flex-1 min-h-0">
+        <!-- Live preview (hidden by default → JS reveals it for split/preview modes) -->
+        <div id="preview-pane" class="hidden flex flex-col flex-1 min-h-0">
           <span class="text-xs text-gray-400 dark:text-zinc-500 mb-1 font-medium">Preview</span>
           <div
             id="md-live-preview"
@@ -552,6 +596,36 @@
     }
   });
 
+  /* ---- Category manage panel toggle ---- */
+  function toggleCatManagePanel(btn) {
+    const panel = document.getElementById('cat-manage-panel');
+    if (!panel) return;
+    const isOpen = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', isOpen);
+    btn.setAttribute('aria-expanded', String(!isOpen));
+    btn.classList.toggle('text-wblue', !isOpen);
+    btn.classList.toggle('text-gray-400', isOpen);
+  }
+
+  /* ---- Sync markdown preview → textarea before the form POSTs ----
+   * HTMX collects form values early, so we intercept htmx:configRequest
+   * (fires after collection) and overwrite the 'content' parameter with
+   * whatever the live textarea holds after a forced preview→MD sync.
+   */
+  (function () {
+    var form = document.getElementById('note-form');
+    if (!form) return;
+    form.addEventListener('htmx:configRequest', function (e) {
+      // Only fire for this form's own requests, not for bubbled child requests
+      if (e.target !== form) return;
+      if (window._bwSyncPreviewToMd) window._bwSyncPreviewToMd();
+      var ta = document.getElementById('note-content');
+      if (ta && e.detail && e.detail.parameters) {
+        e.detail.parameters['content'] = ta.value;
+      }
+    });
+  })();
+
   /* Dynamic attr row */
   function addAttrRow() {
     const inputCls = 'flex-1 border border-gray-300 dark:border-zinc-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100';
@@ -730,6 +804,8 @@
     const focusId = document.getElementById('link-text').value ? 'link-url' : 'link-text';
     document.getElementById(focusId).focus();
   }
+  // Expose globally so slash_commands.js can call it after form swap
+  window.showLinkModal = showLinkModal;
 
   function hideLinkModal() {
     document.getElementById('link-modal').classList.add('hidden');
@@ -937,17 +1013,27 @@
     };
 
     /* MD → Preview (never resets cursor in contenteditable) */
+    /* ── Live-lookup helpers ─────────────────────────────────────────────
+       Always call getElementById at call time so these functions work
+       correctly even when the IIFE's closed-over ta/preview are stale
+       ghost nodes from a previous HTMX swap.  Live lookups = no ghosts. */
+    function _liveTa()  { return document.getElementById('note-content'); }
+    function _livePv()  { return document.getElementById('md-live-preview'); }
+
     function renderPreview() {
-      const raw = ta.value.trim();
+      const _ta = _liveTa();
+      const _pv = _livePv();
+      if (!_ta || !_pv) return;
+      const raw = _ta.value.trim();
       // Normalize visual bullet chars (• ) back to markdown (- ) before parsing
       const md  = raw.replace(/^• /gm, '- ');
-      preview.innerHTML = raw
+      _pv.innerHTML = raw
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
       _enablePreviewTodoCbs();
       // Inject drag grips into every top-level block after each render
       if (typeof window._injectPreviewGrips === 'function') {
-        window._injectPreviewGrips(preview);
+        window._injectPreviewGrips(_pv);
       }
     }
 
@@ -958,31 +1044,36 @@
        We then manually toggle checked + update the markdown ourselves
        (can't rely on the browser to toggle since we prevented the default). */
     function _enablePreviewTodoCbs() {
+      const _pv = _livePv();
+      if (!_pv) return;
       // Remove any previous delegated handler before adding a fresh one
-      if (preview._todoCbHandler) {
-        preview.removeEventListener('mousedown', preview._todoCbHandler, true);
+      if (_pv._todoCbHandler) {
+        _pv.removeEventListener('mousedown', _pv._todoCbHandler, true);
       }
-      preview._todoCbHandler = function(e) {
+      _pv._todoCbHandler = function(e) {
         const cb = e.target.closest('input[type="checkbox"]');
         if (!cb) return;
         e.preventDefault();    // stop CE caret movement
         e.stopPropagation();
-        const allCbs   = Array.from(preview.querySelectorAll('input[type="checkbox"]'));
+        const livePv = _livePv();
+        const liveTa = _liveTa();
+        if (!livePv || !liveTa) return;
+        const allCbs   = Array.from(livePv.querySelectorAll('input[type="checkbox"]'));
         const idx      = allCbs.indexOf(cb);
         if (idx === -1) return;
         const willCheck = !cb.checked;   // we're doing the toggle manually
         const TODO_RE   = /- \[([ x])\] /g;
         let i = 0;
-        ta.value = ta.value.replace(TODO_RE, (_m) => {
+        liveTa.value = liveTa.value.replace(TODO_RE, (_m) => {
           const hit = i++ === idx;
           return hit ? (willCheck ? '- [x] ' : '- [ ] ') : _m;
         });
         renderPreview();
-        ta.dispatchEvent(new Event('input'));
+        liveTa.dispatchEvent(new Event('input'));
       };
-      preview.addEventListener('mousedown', preview._todoCbHandler, true);
+      _pv.addEventListener('mousedown', _pv._todoCbHandler, true);
       // Also make sure every checkbox looks interactive
-      preview.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      _pv.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.removeAttribute('disabled');
         cb.style.cursor        = 'pointer';
         cb.style.pointerEvents = 'auto';
@@ -990,9 +1081,11 @@
     }
 
     /* ── Click on <a> inside the live preview → edit-link modal ────────── */
-    // Registered once; handler checks the actual target each time.
-    if (!preview._linkClickHandler) {
-      preview._linkClickHandler = (e) => {
+    // Registered once per pane instance; handler checks the actual target each time.
+    (function() {
+      const _pv = _livePv();
+      if (!_pv || _pv._linkClickHandler) return;
+      _pv._linkClickHandler = (e) => {
         const anchor = e.target.closest('a[href]');
         if (!anchor) return;
         // Don't intercept clicks on the grip/drag handles
@@ -1002,15 +1095,22 @@
         showLinkModal(anchor);
       };
       // Use capture so we fire before contenteditable's own click handling
-      preview.addEventListener('click', preview._linkClickHandler, true);
-    }
+      _pv.addEventListener('click', _pv._linkClickHandler, true);
+    })();
 
     /* Preview → MD (runs after user edits contenteditable) */
     function syncPreviewToMd() {
+      const _ta = _liveTa();
+      const _pv = _livePv();
+      if (!_ta || !_pv) return;
       // Clone so we can strip grip handles without mutating the live DOM
-      const clone = preview.cloneNode(true);
+      const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
-      ta.value = turndown.turndown(clone.innerHTML);
+      _ta.value = turndown.turndown(clone.innerHTML);
+      // Re-inject drag grips — new <li> elements typed in CE won't have one yet
+      if (typeof window._injectPreviewGrips === 'function') {
+        window._injectPreviewGrips(_pv);
+      }
     }
 
     /* ── Enter key inside contenteditable task-list items ──────────────────
@@ -1157,37 +1257,45 @@
       pvTimer = setTimeout(syncPreviewToMd, 400);
     });
 
-    /* Mode switching */
-    const editorPane  = document.getElementById('editor-pane');
-    const previewPane = document.getElementById('preview-pane');
-    const mdToolbar   = document.getElementById('md-toolbar');
+    /* Mode switching — always do live getElementById so stale closure
+       refs can never cause ghost-node toggling on subsequent HTMX swaps. */
+    window.setEditorMode = function(mode, persist) {
+      if (persist) localStorage.setItem('bw-editor-mode', mode);
 
-    window.setEditorMode = function(mode) {
-      localStorage.setItem('bw-editor-mode', mode);
-      editorPane.classList.toggle('hidden', mode === 'preview');
-      previewPane.classList.toggle('hidden', mode === 'md');
+      const ep = document.getElementById('editor-pane');
+      const pp = document.getElementById('preview-pane');
+      const tb = document.getElementById('md-toolbar');
+
+      if (!ep || !pp) return; // form not in DOM yet — bail gracefully
+
+      ep.classList.toggle('hidden', mode === 'preview');
+      pp.classList.toggle('hidden', mode === 'md');
+
       // Dim toolbar hint in preview-only (toolbar targets textarea)
-      if (mdToolbar) mdToolbar.style.opacity = (mode === 'preview') ? '0.45' : '1';
-      if (mdToolbar) mdToolbar.title = (mode === 'preview')
+      if (tb) tb.style.opacity = (mode === 'preview') ? '0.45' : '1';
+      if (tb) tb.title = (mode === 'preview')
         ? 'Switch to MD or Split to use the toolbar'
         : '';
+
       // Sync preview whenever it becomes visible
       if (mode !== 'md') renderPreview();
+
       // Highlight active mode button
       document.querySelectorAll('[data-mode]').forEach(btn => {
         const on = btn.dataset.mode === mode;
-        btn.classList.toggle('bg-wblue',          on);
-        btn.classList.toggle('text-white',         on);
-        btn.classList.toggle('text-gray-600',      !on);
-        btn.classList.toggle('dark:text-zinc-300', !on);
-        btn.classList.toggle('hover:bg-gray-100',  !on);
+        btn.classList.toggle('bg-wblue',              on);
+        btn.classList.toggle('text-white',             on);
+        btn.classList.toggle('text-gray-600',          !on);
+        btn.classList.toggle('dark:text-zinc-300',     !on);
+        btn.classList.toggle('hover:bg-gray-100',      !on);
         btn.classList.toggle('dark:hover:bg-zinc-700', !on);
       });
     };
 
-    // Boot: load saved mode (default split) and render
-    const saved = localStorage.getItem('bw-editor-mode') || 'split';
-    window.setEditorMode(saved);
+    // Boot: restore saved mode (default 'md'); do NOT persist so the
+    // default never gets locked into storage by accident.
+    const saved = localStorage.getItem('bw-editor-mode') || 'md';
+    window.setEditorMode(saved, false);
     renderPreview();
 
     {% if is_edit and note %}
@@ -2071,5 +2179,90 @@
      in the preview pane. */
   const _bootPreview = document.getElementById('md-live-preview');
   if (_bootPreview) window._injectPreviewGrips(_bootPreview);
+})();
+</script>
+
+<!-- ===== DELETE CATEGORY MODAL (matches workspace delete style) ===== -->
+<div id="delete-cat-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="delete-cat-title"
+     onkeydown="if(event.key==='Escape') closeDeleteCatModal()">
+  {# backdrop #}
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeDeleteCatModal()"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-wred" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                   a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+      </span>
+      <h2 id="delete-cat-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Remove category?
+      </h2>
+    </div>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+      You're about to remove
+      <strong id="delete-cat-label" class="text-gray-900 dark:text-zinc-100"></strong>
+      from this workspace.
+    </p>
+    <p class="text-sm text-gray-500 dark:text-zinc-400 mb-5">
+      Notes that use this category won't be affected &mdash; the category
+      will just no longer appear for new notes in this workspace.
+    </p>
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="closeDeleteCatModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>
+      <button id="delete-cat-confirm-btn" type="button" onclick="_confirmDeleteCat()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Remove</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  /* avoid double-binding if note form is re-swapped */
+  if (window._deleteCatModalBound) return;
+  window._deleteCatModalBound = true;
+
+  let _pendingRemoveBtn = null;
+
+  window.openDeleteCatModal = function (btn) {
+    _pendingRemoveBtn = btn;
+    const label = document.getElementById('delete-cat-label');
+    if (label) label.textContent = '“' + (btn.dataset.catName || 'this category') + '”';
+    const modal = document.getElementById('delete-cat-modal');
+    if (modal) {
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        const confirmBtn = document.getElementById('delete-cat-confirm-btn');
+        if (confirmBtn) confirmBtn.focus();
+      }, 50);
+    }
+  };
+
+  window.closeDeleteCatModal = function () {
+    const modal = document.getElementById('delete-cat-modal');
+    if (modal) modal.classList.add('hidden');
+    _pendingRemoveBtn = null;
+  };
+
+  window._confirmDeleteCat = function () {
+    if (!_pendingRemoveBtn) return;
+    const btn = _pendingRemoveBtn;
+    closeDeleteCatModal();
+    /* Set flag so the onclick guard lets HTMX through on the re-click */
+    btn.dataset.confirmed = 'true';
+    btn.click();
+  };
 })();
 </script>
