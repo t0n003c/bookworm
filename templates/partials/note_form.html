@@ -2159,9 +2159,10 @@
   /* ── state ── */
   let _preview      = null;
   let _dragging     = null;
-  let _container    = null;   // immediate parent of the dragged element
+  let _container    = null;   // original parent of the dragged element
+  let _dropParent   = null;   // actual parent to insert into on drop
   let _ghost        = null;
-  let _indicator    = null;   // created fresh each drag, lives in _container
+  let _indicator    = null;   // fixed-position drop line, lives on document.body
   let _insertBefore = null;
   let _startY       = 0;
   let _didDrag      = false;
@@ -2206,9 +2207,18 @@
     document.addEventListener('mouseup',   _onMouseUp);
   }
 
-  /* Siblings inside the active container (excluding the dragged el + grips) */
-  function _getSiblings() {
-    return Array.from(_container.children).filter(
+  /* All drop candidates for the current drag.
+     - Dragging a <LI>  → every <li> in the preview except the dragged item
+       and any of its descendants (handles nested lists correctly).
+     - Dragging a block → every direct child of the preview except itself.  */
+  function _getCandidates() {
+    if (!_preview || !_dragging) return [];
+    if (_dragging.nodeName === 'LI') {
+      return Array.from(_preview.querySelectorAll('li')).filter(
+        el => el !== _dragging && !_dragging.contains(el)
+      );
+    }
+    return Array.from(_preview.children).filter(
       el => el !== _dragging && !el.hasAttribute('data-preview-grip')
     );
   }
@@ -2219,7 +2229,8 @@
 
     if (!_didDrag && Math.abs(e.clientY - _startY) > 4) {
       _didDrag = true;
-      // Ghost label following the cursor
+
+      /* Ghost label following the cursor */
       _ghost = document.createElement('div');
       _ghost.textContent = (_dragging.textContent || '').trim().slice(0, 80) || '(empty)';
       _ghost.style.cssText =
@@ -2230,14 +2241,13 @@
         + 'box-shadow:0 4px 12px rgba(0,83,226,.2);';
       document.body.appendChild(_ghost);
       _dragging.style.opacity = '0.3';
-      // Indicator — injected into the container so it scrolls with the content
+
+      /* Indicator — fixed on body so it works across nested containers */
       _indicator = document.createElement('div');
-      _indicator.setAttribute('data-preview-grip', '');
       _indicator.style.cssText =
-        'position:absolute;height:2px;background:#0053e2;'
-        + 'left:0;right:0;pointer-events:none;display:none;z-index:50;';
-      _container.style.position = 'relative';
-      _container.appendChild(_indicator);
+        'position:fixed;height:2px;background:#0053e2;'
+        + 'pointer-events:none;display:none;z-index:9998;';
+      document.body.appendChild(_indicator);
     }
 
     if (!_didDrag) return;
@@ -2245,25 +2255,34 @@
     _ghost.style.left = (e.clientX + 14) + 'px';
     _ghost.style.top  = (e.clientY - 14) + 'px';
 
-    // Find which sibling to insert before
-    const sibs = _getSiblings();
+    /* Find the candidate to insert before, scanning the whole preview */
+    const cands = _getCandidates();
     _insertBefore = null;
-    for (const sib of sibs) {
-      const r = sib.getBoundingClientRect();
-      if (e.clientY < r.top + r.height / 2) { _insertBefore = sib; break; }
+    _dropParent   = null;
+    for (const c of cands) {
+      const r = c.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { _insertBefore = c; break; }
+    }
+    /* Determine which parent to insert into */
+    if (_insertBefore) {
+      _dropParent = _insertBefore.parentElement;
+    } else if (cands.length) {
+      /* Append after the last candidate — use its parent */
+      _dropParent = cands[cands.length - 1].parentElement;
+    } else {
+      _dropParent = _container;   // fallback: original parent
     }
 
-    // Position the blue indicator line relative to the container
-    if (_indicator) {
-      const cr  = _container.getBoundingClientRect();
-      const ref = _insertBefore || sibs[sibs.length - 1];
+    /* Position the blue line relative to the viewport */
+    if (_indicator && _dropParent) {
+      const ref = _insertBefore || cands[cands.length - 1];
       if (ref) {
         const rr = ref.getBoundingClientRect();
-        _indicator.style.top = (
-          _insertBefore
-            ? rr.top    - cr.top + _container.scrollTop - 1
-            : rr.bottom - cr.top + _container.scrollTop - 1
-        ) + 'px';
+        const pr = _dropParent.getBoundingClientRect();
+        const y  = _insertBefore ? rr.top - 1 : rr.bottom - 1;
+        _indicator.style.left    = pr.left + 'px';
+        _indicator.style.width   = pr.width + 'px';
+        _indicator.style.top     = y + 'px';
         _indicator.style.display = 'block';
       }
     }
@@ -2279,24 +2298,34 @@
 
     if (_dragging && _didDrag) {
       _dragging.style.opacity = '';
-      if (_insertBefore) {
-        _container.insertBefore(_dragging, _insertBefore);
+
+      /* Insert into the correct parent (may differ from original container) */
+      const parent = _dropParent || _container;
+      if (_insertBefore && _insertBefore.parentElement === parent) {
+        parent.insertBefore(_dragging, _insertBefore);
       } else {
-        _container.appendChild(_dragging);
+        parent.appendChild(_dragging);
       }
-      // Sync reordered DOM back to the markdown textarea
+
+      /* Clean up any now-empty nested lists left behind */
+      _preview?.querySelectorAll('ul, ol').forEach(list => {
+        if (list.children.length === 0) list.remove();
+      });
+
+      /* Sync reordered DOM → markdown */
       if (typeof window._bwSyncPreviewToMd === 'function') {
         window._bwSyncPreviewToMd();
         const ta = document.getElementById('note-content');
         if (ta) ta.dispatchEvent(new Event('input'));
       }
-      // Re-inject grips so the next drag works
+
+      /* Re-inject grips so the next drag works */
       if (_preview) window._injectPreviewGrips(_preview);
     } else if (_dragging) {
       _dragging.style.opacity = '';
     }
 
-    _dragging = _container = null;
+    _dragging = _container = _dropParent = null;
     _didDrag  = false;
   }
 
