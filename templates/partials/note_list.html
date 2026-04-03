@@ -49,6 +49,8 @@
       <span
         class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
         style="background: {{ cat.color }}22; color: {{ cat.color }}; border: 1px solid {{ cat.color }}55"
+        data-cat-name="{{ cat.name | e }}"
+        data-cat-color="{{ cat.color }}"
       >
         <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {{ cat.color }}"></span>
         {{ cat.name }}

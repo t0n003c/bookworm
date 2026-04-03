@@ -12,9 +12,9 @@ window._bwTLRender = (function () {
   'use strict';
 
   // ── Private: today indicator ─────────────────────────────────────
-  // Draws a Walmart-spark-yellow vertical line + "TODAY" pill at the
-  // current date's rail position.  Skipped when today is > 6 months
-  // outside the note range so the rail doesn't grow absurdly wide.
+  // Draws a short spark-yellow tick that straddles the spine (not a
+  // full-height line) plus a compact 'TODAY' label above the tick.
+  // Skipped when today is >6 months outside the note range.
   function _buildTodayLine(rail, earliest, span, cfg, t) {
     const { pxPerDay, PAD_ENDS, SPINE_Y } = cfg;
     const today = new Date();
@@ -23,61 +23,46 @@ window._bwTLRender = (function () {
     if (todayDays < -180 || todayDays > span + 180) return;
     const x = PAD_ENDS + todayDays * pxPerDay;
 
-    const line = document.createElement('div');
-    Object.assign(line.style, {
+    // Short tick centred on the spine (16px above + 16px below = 32px total)
+    const tick = document.createElement('div');
+    Object.assign(tick.style, {
       position: 'absolute', left: x + 'px',
-      top: '0', bottom: '0', width: '2px',
+      top:  `calc(${SPINE_Y * 100}% - 16px)`,
+      width: '2px', height: '32px',
       background: '#ffc220',
       transform: 'translateX(-50%)',
-      zIndex: '2', pointerEvents: 'none', opacity: '0.85',
+      zIndex: '5', pointerEvents: 'none',
     });
-    rail.appendChild(line);
+    rail.appendChild(tick);
 
+    // Label sits 4px above the tick top
     const lbl = document.createElement('div');
     lbl.textContent = 'TODAY';
     Object.assign(lbl.style, {
       position: 'absolute', left: x + 'px',
-      top: `calc(${SPINE_Y * 100}% - 20px)`,
+      top:  `calc(${SPINE_Y * 100}% - 20px)`,
       transform: 'translateX(-50%) translateY(-100%)',
       fontSize: '9px', fontWeight: '800', letterSpacing: '.1em',
       color: '#ffc220', whiteSpace: 'nowrap',
       pointerEvents: 'none', zIndex: '6',
-      background: t.mainBg,
-      padding: '1px 5px', borderRadius: '3px',
+      background: t.mainBg, padding: '1px 5px', borderRadius: '3px',
     });
     rail.appendChild(lbl);
   }
 
-  // ── Tick marks + month bands ─────────────────────────────────────
-  // Month/year marks always; alternating month-band shading always.
-  // Week marks ≥2 px/day; day ticks ≥8 px/day; day labels ≥14 px/day.
-  // Range extends 2 months before and 6 months after the note span so
-  // marks fill the full PAD_ENDS padding area plus generous context.
+  // ── Tick marks ────────────────────────────────────────────────────
+  // Month/year marks always. Range: 2 months before earliest note
+  // to 6 months after latest. Week marks ≥2 px/day; day ≥8; labels ≥14.
   function buildTicks(rail, earliest, span, cfg, t) {
     const { pxPerDay, PAD_ENDS, SPINE_Y, daysBetween } = cfg;
 
-    // ── Month bands + month/year tick marks ──────────────────────
+    // ── Month / year tick marks ───────────────────────────────
     let cur      = new Date(earliest.getFullYear(), earliest.getMonth() - 2, 1);
     const stopMs = earliest.getTime() + (span + 180) * 86_400_000;
-    let monthIdx = 0;
 
     while (cur.getTime() < stopMs) {
-      const nextM = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
       const x     = PAD_ENDS + daysBetween(earliest, cur) * pxPerDay;
       const isJan = cur.getMonth() === 0;
-
-      // Every other month gets a very subtle background band.
-      // insertBefore(…, firstChild) keeps all bands behind ticks.
-      if (monthIdx % 2 === 0 && t.monthBand) {
-        const bandW = daysBetween(cur, nextM) * pxPerDay;
-        const band  = document.createElement('div');
-        Object.assign(band.style, {
-          position: 'absolute', left: x + 'px', top: '0',
-          width: bandW + 'px', height: '100%',
-          background: t.monthBand, pointerEvents: 'none',
-        });
-        rail.insertBefore(band, rail.firstChild);
-      }
 
       // Tick mark – taller + bolder for January
       const th   = isJan ? 28 : 16;
@@ -106,8 +91,7 @@ window._bwTLRender = (function () {
       });
       rail.appendChild(lbl);
 
-      cur = nextM;
-      monthIdx++;
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
 
     // ── Today indicator ──────────────────────────────────────────

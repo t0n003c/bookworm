@@ -31,6 +31,7 @@ window.bwTimeline = (function () {
   let _rafId           = null;
   let _overlay         = null;
   let _dragCleanup     = null;
+  let _keyCleanup      = null;   // keyboard shortcut teardown
 
   // ── Date utilities ───────────────────────────────────────────
   function _parseDate(str) {
@@ -69,7 +70,6 @@ window.bwTimeline = (function () {
       shadow:    dark ? '0 2px 14px rgba(0,0,0,.5)'       : '0 2px 14px rgba(0,0,0,.10)',
       shadowHov: dark ? '0 4px 24px rgba(59,130,246,.4)'  : '0 4px 24px rgba(0,83,226,.18)',
       mainBg:    dark ? '#09090b' : '#f9fafb',
-      monthBand: dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.025)',
       btnBg:     dark ? '#27272a' : '#ffffff',
       btnBord:   dark ? '#3f3f46' : '#d1d5db',
       btnClr:    dark ? '#f4f4f5' : '#374151',
@@ -166,10 +166,14 @@ window.bwTimeline = (function () {
   // views (centeredL ≈ +480) are treated identically to dense views.
   // getRail must return the rail that will be visible after this call
   // (pass () => newRail in _doZoom so _notesCenter is from the new rail).
+  // _clamp bounds the rail so every note in the set is reachable.
+  // margin = max(45% of viewport, half the rail width) ensures multi-year
+  // timelines can be scrolled all the way to their first and last notes.
   function _clamp(outer, getRail, v) {
     const ow        = outer.offsetWidth || 1;
-    const centeredL = ow / 2 - (getRail()._notesCenter || PAD_ENDS);
-    const margin    = Math.round(ow * 0.45); // ±45 % of viewport from center
+    const rail      = getRail();
+    const centeredL = ow / 2 - (rail._notesCenter || PAD_ENDS);
+    const margin    = Math.max(Math.round(ow * 0.45), (rail._railW || 400) / 2);
     return Math.max(centeredL - margin, Math.min(centeredL + margin, v));
   }
 
@@ -357,19 +361,50 @@ window.bwTimeline = (function () {
       yearLabelR.textContent = String(leftYear + 1);
     }
 
-    // ── Drag ──────────────────────────────────────────────────
-    const cleanupDrag = _attachDrag(outer, getRail, updateYearLabels);
+    // ── Minimap + legend ─────────────────────────────────
+    const categories = _bwTLUi.collectCategories();
+    const minimap    = _bwTLUi.buildMinimap(
+      notes, _rail._earliest, _rail._span,
+      getRail, () => _pxPerDay, PAD_ENDS, outer, t,
+      // jumpCb: centre on the clicked rail-x with smooth animation
+      (railX) => {
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+        const targetL = _clamp(outer, getRail,
+          Math.round(outer.offsetWidth / 2 - railX));
+        let cur = parseFloat(getRail().style.left) || 0;
+        let vel = (targetL - cur) * 0.35;
+        function step() {
+          const diff = targetL - cur;
+          if (Math.abs(diff) < 0.5) { getRail().style.left = targetL + 'px'; onAllMove(); return; }
+          vel = diff * 0.22;
+          cur += vel;
+          getRail().style.left = Math.round(cur) + 'px';
+          onAllMove();
+          _rafId = requestAnimationFrame(step);
+        }
+        _rafId = requestAnimationFrame(step);
+      },
+    );
+    const legendEl = _bwTLUi.buildLegend(categories, t);
+    if (legendEl) outer.appendChild(legendEl);
+    outer.appendChild(minimap.el);
+
+    // ── Unified onMove ──────────────────────────────────
+    function onAllMove() { updateYearLabels(); minimap.update(); }
+
+    // ── Drag ───────────────────────────────────────────
+    const cleanupDrag = _attachDrag(outer, getRail, onAllMove);
     outer._cleanup    = cleanupDrag;
 
-    // ── Wheel zoom ──────────────────────────────────────────
+    // ── Wheel zoom ──────────────────────────────────
     outer.addEventListener('wheel', e => {
       e.preventDefault();
       const focalX = e.clientX - outer.getBoundingClientRect().left;
       _doZoom(outer, notes, t, getRail, setRail, e.deltaY < 0 ? 1.15 : 1 / 1.15, focalX);
-      updateYearLabels();
+      onAllMove();
     }, { passive: false });
 
-    // ── Control buttons (−  +  ↔) ───────────────────────────
+    // ── Control buttons (−  +  ↔  T) ────────────────────
     const bar = document.createElement('div');
     Object.assign(bar.style, {
       position: 'absolute', top: '12px', right: '12px',
@@ -389,41 +424,71 @@ window.bwTimeline = (function () {
         alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 1px 4px rgba(0,0,0,.12)', flexShrink: '0',
       });
-      btn.addEventListener('pointerdown', e => e.stopPropagation()); // must not reach outer
+      btn.addEventListener('pointerdown', e => e.stopPropagation());
       btn.addEventListener('click', e => { e.stopPropagation(); onClick(); });
       return btn;
     }
 
-    bar.appendChild(makeBtn('&#8722;', 'Zoom out (scroll down)', () => {
+    bar.appendChild(makeBtn('&#8722;', 'Zoom out', () => {
       _doZoom(outer, notes, t, getRail, setRail, 1 / 1.3, outer.offsetWidth / 2);
-      updateYearLabels();
+      onAllMove();
     }));
-    bar.appendChild(makeBtn('+', 'Zoom in (scroll up)', () => {
+    bar.appendChild(makeBtn('+', 'Zoom in', () => {
       _doZoom(outer, notes, t, getRail, setRail, 1.3, outer.offsetWidth / 2);
-      updateYearLabels();
+      onAllMove();
     }));
     bar.appendChild(makeBtn('&#8596;', 'Fit all notes in view', () => {
       _doAutofit(outer, notes, t, getRail, setRail);
-      updateYearLabels();
+      onAllMove();
     }));
     outer.appendChild(bar);
 
-    // ── Hint ────────────────────────────────────────────────
+    // ── T key → jump to today ───────────────────────────
+    const keyHandler = (e) => {
+      // Skip when user is typing in an input / textarea / contenteditable
+      if (e.target && (e.target.closest('input,textarea,[contenteditable]'))) return;
+      if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey) {
+        const rail   = getRail();
+        if (!rail || !rail._earliest) return;
+        const today  = new Date(); today.setHours(0, 0, 0, 0);
+        const days   = _daysBetween(rail._earliest, today);
+        const todayX = PAD_ENDS + days * _pxPerDay;
+        // Animate to centre today in the viewport
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+        const targetL = _clamp(outer, getRail,
+          Math.round(outer.offsetWidth / 2 - todayX));
+        let cur = parseFloat(rail.style.left) || 0;
+        function step() {
+          const diff = targetL - cur;
+          if (Math.abs(diff) < 0.5) { getRail().style.left = targetL + 'px'; onAllMove(); return; }
+          cur += diff * 0.22;
+          getRail().style.left = Math.round(cur) + 'px';
+          onAllMove();
+          _rafId = requestAnimationFrame(step);
+        }
+        _rafId = requestAnimationFrame(step);
+      }
+    };
+    document.addEventListener('keydown', keyHandler);
+    if (_keyCleanup) _keyCleanup();   // remove any prior listener on remount
+    _keyCleanup = () => document.removeEventListener('keydown', keyHandler);
+
+    // ── Hint ───────────────────────────────────────────
     const hint = document.createElement('div');
     hint.setAttribute('aria-hidden', 'true');
     Object.assign(hint.style, {
-      position: 'absolute', bottom: '14px', left: '50%',
+      position: 'absolute', bottom: '50px', left: '50%',
       transform: 'translateX(-50%)',
       fontSize: '10px', color: t.hintClr,
       pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap',
     });
-    hint.textContent = '\u2190 drag to navigate \u2192  \u00b7  scroll wheel to zoom  \u00b7  \u2194 to fit all';
+    hint.textContent = '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today';
     outer.appendChild(hint);
 
     // ── Auto-fit on first render (after layout is available) ─
     outer._onMount = () => {
       _doAutofit(outer, notes, t, getRail, setRail);
-      updateYearLabels();
+      onAllMove();
     };
 
     return outer;
@@ -464,6 +529,7 @@ window.bwTimeline = (function () {
   function unmount() {
     if (_rafId)       { cancelAnimationFrame(_rafId); _rafId = null; }
     if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
+    if (_keyCleanup)  { _keyCleanup();  _keyCleanup  = null; }
 
     const main = document.getElementById('main-content');
     if (main) {
