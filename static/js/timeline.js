@@ -18,7 +18,7 @@ window.bwTimeline = (function () {
   // ── Scale constants ───────────────────────────────────────────
   let   _pxPerDay = 5;
   const PX_MIN    = 0.8;
-  const PX_MAX    = 60;
+  const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
   const CARD_W    = 196;
   const CARD_H    = 76;    // approx. card height for vertical lane stacking
@@ -96,15 +96,17 @@ window.bwTimeline = (function () {
   }
 
   // ── Tick marks (NO spine – spine lives on outer) ──────────────
+  // Adaptive: month/year always; week marks at ≥4 px/day;
+  // day marks at ≥14 px/day; day-number labels at ≥20 px/day.
   function _buildTicks(rail, earliest, span, t) {
+    // ── Month / year marks (always shown) ────────────────────────
     let cur = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
     const stopMs = earliest.getTime() + (span + 62) * 86_400_000;
     while (cur.getTime() < stopMs) {
       const x     = PAD_ENDS + _daysBetween(earliest, cur) * _pxPerDay;
       const isJan = cur.getMonth() === 0;
       const th    = isJan ? 28 : 16;
-
-      const tick = document.createElement('div');
+      const tick  = document.createElement('div');
       Object.assign(tick.style, {
         position: 'absolute', left: x + 'px',
         top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
@@ -113,7 +115,6 @@ window.bwTimeline = (function () {
         transform: 'translateX(-50%)', pointerEvents: 'none',
       });
       rail.appendChild(tick);
-
       const lbl = document.createElement('span');
       lbl.textContent = isJan
         ? String(cur.getFullYear())
@@ -127,8 +128,42 @@ window.bwTimeline = (function () {
         whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
       });
       rail.appendChild(lbl);
-
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    }
+
+    // ── Week / day minor ticks (zoom-adaptive) ───────────────────
+    if (_pxPerDay < 4) return;
+    const showDays  = _pxPerDay >= 14; // day-level ticks vs week-level
+    const labelDays = _pxPerDay >= 20; // also draw day-number labels
+    const step      = showDays ? 1 : 7;
+    const totalDays = span + (showDays ? 14 : 28);
+
+    for (let d = 0; d <= totalDays; d += step) {
+      const dayDate = new Date(earliest.getTime() + d * 86_400_000);
+      if (dayDate.getDate() === 1) continue; // month boundary already drawn
+      const x  = PAD_ENDS + d * _pxPerDay;
+      const th = showDays ? 8 : 10;
+      const minorTick = document.createElement('div');
+      Object.assign(minorTick.style, {
+        position: 'absolute', left: x + 'px',
+        top: `calc(${SPINE_Y * 100}% - ${th / 2}px)`,
+        width: '1px', height: th + 'px',
+        background: t.tick, opacity: '0.55',
+        transform: 'translateX(-50%)', pointerEvents: 'none',
+      });
+      rail.appendChild(minorTick);
+      if (labelDays) {
+        const dlbl = document.createElement('span');
+        dlbl.textContent = String(dayDate.getDate());
+        Object.assign(dlbl.style, {
+          position: 'absolute', left: x + 'px',
+          top: `calc(${SPINE_Y * 100}% + 18px)`,
+          transform: 'translateX(-50%)',
+          fontSize: '8px', color: t.label,
+          whiteSpace: 'nowrap', pointerEvents: 'none',
+        });
+        rail.appendChild(dlbl);
+      }
     }
   }
 
@@ -227,9 +262,19 @@ window.bwTimeline = (function () {
         columns.push({ x, notes: [n] });
       }
     });
-    // Alternate columns above/below; within each column stack notes by laneIdx.
-    columns.forEach((col, ci) => {
-      col.notes.forEach((n, ni) => _buildPin(rail, n, col.x, ci % 2 === 0, ni, t));
+    // Alternate every note globally above/below the spine so the timeline
+    // fills both halves naturally regardless of how notes cluster.
+    // Within a column (notes too close to spread horizontally) each side
+    // stacks independently via its own laneIdx counter.
+    let globalIdx = 0;
+    columns.forEach(col => {
+      let aboveCount = 0, belowCount = 0;
+      col.notes.forEach(n => {
+        const above   = globalIdx % 2 === 0;
+        const laneIdx = above ? aboveCount++ : belowCount++;
+        _buildPin(rail, n, col.x, above, laneIdx, t);
+        globalIdx++;
+      });
     });
 
     // _notesCenter: midpoint of the ACTUAL note x-positions (rail coords).
@@ -433,6 +478,7 @@ window.bwTimeline = (function () {
         alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 1px 4px rgba(0,0,0,.12)', flexShrink: '0',
       });
+      btn.addEventListener('pointerdown', e => e.stopPropagation()); // must not reach outer
       btn.addEventListener('click', e => { e.stopPropagation(); onClick(); });
       return btn;
     }
