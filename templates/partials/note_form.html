@@ -610,8 +610,9 @@
       const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
 
       /* Detect what kind of list line this is */
-      const isBullet  = /^(\s*)([-*•]) /.test(lineText);
-      const isOrdered = /^(\s*)\d+\. /.test(lineText);   // only real numbers in markdown
+      const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
+      const isOrdered = /^(\s*)\d+\. /.test(lineText);
+      console.log('[BW-TA Tab]', {lineText, isBullet, isOrdered, pos, lineStart});
       if (!isBullet && !isOrdered) return;           // not a list line — let Tab through
 
       e.preventDefault();
@@ -1182,12 +1183,15 @@
            5. Re-render and restore focus to the same <li> by index         */
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const _sel = window.getSelection();
+        console.log('[BW-CE Tab] fired, rangeCount:', _sel?.rangeCount);
         if (!_sel || !_sel.rangeCount) return;
         let li = _sel.getRangeAt(0).startContainer;
+        const startNode = li;
         while (li && li !== preview) {
           if (li.nodeName === 'LI') break;
           li = li.parentNode;
         }
+        console.log('[BW-CE Tab] startNode:', startNode?.nodeName, 'li found:', li?.nodeName, 'is preview?', li === preview);
         if (!li || li === preview) return;           // not in a list — let Tab through
         e.preventDefault();
 
@@ -1214,11 +1218,13 @@
             count++;
           }
         }
+        console.log('[BW-CE Tab] liIndex:', liIndex, 'lines searched:', lines.length, 'targetIdx:', targetIdx);
         if (targetIdx === -1) return;                // index out of range — bail
 
         const lineText  = lines[targetIdx];
-        const isBullet  = /^(\s*)([-*•]) /.test(lineText);
+        const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
         const isOrdered = /^(\s*)\d+\. /.test(lineText);
+        console.log('[BW-CE Tab] lineText:', JSON.stringify(lineText), 'isBullet:', isBullet, 'isOrdered:', isOrdered);
         if (!isBullet && !isOrdered) return;
 
         const STEP    = isBullet ? 2 : 3;
@@ -1236,6 +1242,7 @@
 
         lines[targetIdx] = newLine;
         _ta.value = lines.join('\n');
+        console.log('[BW-CE Tab] applied! newLine:', JSON.stringify(newLine), '→ calling renderPreview()');
         renderPreview();
 
         /* Restore caret to the same logical <li> (now at updated indent) */
