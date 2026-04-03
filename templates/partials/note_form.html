@@ -595,51 +595,9 @@
       // else: default browser Enter behaviour
     }
 
-    /* ── Tab / Shift+Tab on list lines: indent / outdent ─────────────
-       Bullet lists indent by 2 spaces per level (max 4 levels = 6 sp).
-       Ordered lists indent by 3 spaces per level (aligns after "1. ").
-       No selection needed — acts on the single line the caret is on.   */
-    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const ta  = e.target;
-      const pos = ta.selectionStart;
-      if (ta.selectionEnd !== pos) return;           // leave multi-select alone
-
-      const val       = ta.value;
-      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-      const lineEnd   = val.indexOf('\n', pos);
-      const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
-
-      /* Detect what kind of list line this is */
-      const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
-      const isOrdered = /^(\s*)\d+\. /.test(lineText);
-      if (!isBullet && !isOrdered) return;           // not a list line — let Tab through
-
-      e.preventDefault();
-      const STEP    = isBullet ? 2 : 3;              // spaces per level
-      const MAX_SP   = STEP * 3;                      // 4 levels total (0,1,2,3 indents)
-      const leading  = lineText.match(/^ */)[0].length;
-
-      let newLine;
-      if (!e.shiftKey) {
-        /* Tab — add STEP spaces, but cap at MAX_SP */
-        if (leading >= MAX_SP) return;                 // already at deepest level
-        newLine = ' '.repeat(STEP) + lineText;
-      } else {
-        /* Shift+Tab — remove up to STEP leading spaces */
-        const remove = Math.min(leading, STEP);
-        newLine = lineText.slice(remove);
-      }
-
-      const before = val.slice(0, lineStart);
-      const after  = lineEnd === -1 ? '' : val.slice(lineEnd);
-      ta.value = before + newLine + after;
-
-      /* Keep caret at same logical position within the line */
-      const shift = newLine.length - lineText.length;  // positive = moved right
-      const newPos = Math.max(lineStart, pos + shift);
-      ta.setSelectionRange(newPos, newPos);
-      ta.dispatchEvent(new Event('input'));
-    }
+    /* Tab / Shift+Tab on list lines is handled by the permanent
+       document-level listener in index.html (_bwEditorTabHandler)
+       so it survives HTMX swaps of this partial. */
   });
 
   /* ---- Category manage panel toggle ---- */
@@ -1178,75 +1136,9 @@
          notes with headings or blank lines between list items would never
          nest correctly via markdown alone.
 
-         Tab        = INDENT:  move <li> into a nested list inside its
-                               previous sibling <li>.
-         Shift+Tab  = OUTDENT: move <li> out of its nested list, inserting
-                               it after its parent <li> in the outer list.
-
-         After the DOM change, sync the updated HTML back to markdown so
-         the textarea stays in sync.                                        */
-      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const _sel = window.getSelection();
-        if (!_sel || !_sel.rangeCount) return;
-
-        let li = _sel.getRangeAt(0).startContainer;
-        while (li && li !== preview) {
-          if (li.nodeName === 'LI') break;
-          li = li.parentNode;
-        }
-        if (!li || li === preview) return;          // not in a list
-
-        if (!e.shiftKey) {
-          /* ── INDENT ── */
-          const prevLi = li.previousElementSibling;
-          if (!prevLi || prevLi.nodeName !== 'LI') return; // nothing to nest under
-          e.preventDefault();
-
-          const parentList = li.parentElement;      // inherit ul/ol type
-          let nested = Array.from(prevLi.children).find(
-            c => c.nodeName === 'UL' || c.nodeName === 'OL'
-          );
-          if (!nested) {
-            nested = document.createElement(parentList.tagName);
-            prevLi.appendChild(nested);
-          }
-          nested.appendChild(li);
-        } else {
-          /* ── OUTDENT ── */
-          const parentList = li.parentElement;       // <ul>/<ol> we live in
-          const parentLi   = parentList?.parentElement; // <li> above us, if nested
-          if (!parentLi || parentLi.nodeName !== 'LI') return; // already at root
-          e.preventDefault();
-
-          const grandparent = parentLi.parentElement;
-          grandparent.insertBefore(li, parentLi.nextSibling);
-          if (parentList.children.length === 0) parentList.remove();
-        }
-
-        /* Sync DOM → markdown and block any deferred pvTimer from clobbering */
-        syncPreviewToMd();
-        clearTimeout(pvTimer);
-
-        /* Restore cursor to the (now-moved) <li> */
-        setTimeout(() => {
-          const grip     = li.querySelector('[data-preview-grip]');
-          const textNode = grip ? grip.nextSibling : li.firstChild;
-          if (textNode) {
-            const r = document.createRange();
-            if (textNode.nodeType === 3 /* TEXT_NODE */) {
-              r.setStart(textNode, textNode.length);
-              r.collapse(true);
-            } else {
-              r.selectNodeContents(textNode);
-              r.collapse(false);
-            }
-            _sel.removeAllRanges();
-            _sel.addRange(r);
-          }
-          _livePv().focus();
-        }, 0);
-        return;
-      }
+         Tab / Shift+Tab on list items is handled by the permanent
+         document-level listener in index.html (_bwEditorTabHandler)
+         so it survives HTMX swaps of this partial.                         */
 
       if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
       if (typeof scIsOpen === 'function' && scIsOpen()) return;

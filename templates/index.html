@@ -81,6 +81,18 @@
             <p class="text-xs text-gray-400 dark:text-zinc-500">Opens note full screen</p>
           </div>
         </label>
+        <!-- Divider -->
+        <hr class="my-3 border-gray-200 dark:border-zinc-700"/>
+        <!-- Keyboard shortcuts link -->
+        <button
+          onclick="showShortcuts()"
+          class="w-full flex items-center gap-2.5 text-sm text-gray-700 dark:text-zinc-300 hover:text-wblue dark:hover:text-blue-400 transition py-1 focus:outline-none"
+          aria-label="View keyboard shortcuts"
+        >
+          <span class="text-base" aria-hidden="true">⌨️</span>
+          <span>Keyboard Shortcuts</span>
+          <span class="ml-auto text-xs text-gray-400 dark:text-zinc-500">?</span>
+        </button>
       </div>
     </div>
 
@@ -685,6 +697,143 @@
     // If a form landed in the panel → wide; if it's a view → normal
     const isForm = !!e.detail.target.querySelector('#note-form');
     openPanel(isForm);
+    // Re-apply editor mode after every form load.
+    // The form's own init script runs first (defines window.setEditorMode
+    // with fresh DOM refs), then this fires — giving us a guaranteed
+    // second-pass that survives HTMX script-execution timing quirks.
+    if (isForm && typeof window.setEditorMode === 'function') {
+      const savedMode = localStorage.getItem('bw-editor-mode') || 'md';
+      window.setEditorMode(savedMode, false);
+    }
+  });
+
+  /* ── Permanent Tab / Shift+Tab handler for the note editor ───────────────
+     Defined on document so it survives every HTMX swap of note_form.html.
+     Inline scripts inside HTMX-swapped partials have unreliable re-execution
+     timing, so we can't rely on them re-registering event listeners.
+
+     Two sub-handlers:
+       _bwCeTab  — contenteditable preview pane (indent/outdent <li> nodes)
+       _bwTaTab  — raw markdown textarea (indent/outdent list prefix spaces)  */
+  function _bwCeTab(e, pv) {
+    const _sel = window.getSelection();
+    if (!_sel || !_sel.rangeCount) return false;
+
+    /* Walk up from cursor to find the containing <li> */
+    let li = _sel.getRangeAt(0).startContainer;
+    while (li && li !== pv) {
+      if (li.nodeName === 'LI') break;
+      li = li.parentNode;
+    }
+    if (!li || li === pv) return false; // cursor not inside a list item
+
+    if (!e.shiftKey) {
+      /* ── INDENT: nest under the previous sibling <li> ── */
+      const prevLi = li.previousElementSibling;
+      if (!prevLi || prevLi.nodeName !== 'LI') return false;
+      e.preventDefault();
+      const parentList = li.parentElement;
+      let nested = Array.from(prevLi.children).find(
+        c => c.nodeName === 'UL' || c.nodeName === 'OL'
+      );
+      if (!nested) {
+        nested = document.createElement(parentList.tagName);
+        prevLi.appendChild(nested);
+      }
+      nested.appendChild(li);
+    } else {
+      /* ── OUTDENT: lift out to the grandparent list ── */
+      const parentList = li.parentElement;
+      const parentLi   = parentList?.parentElement;
+      if (!parentLi || parentLi.nodeName !== 'LI') return false; // already at root
+      e.preventDefault();
+      const grandparent = parentLi.parentElement;
+      grandparent.insertBefore(li, parentLi.nextSibling);
+      if (parentList.children.length === 0) parentList.remove();
+    }
+
+    /* Sync updated preview DOM → markdown textarea */
+    if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+    /* Re-inject drag grips (moved <li> loses its grip span) */
+    if (typeof window._injectPreviewGrips === 'function') {
+      const _pv = document.getElementById('md-live-preview');
+      if (_pv) window._injectPreviewGrips(_pv);
+    }
+
+    /* Restore cursor to the relocated <li> */
+    setTimeout(() => {
+      const grip     = li.querySelector('[data-preview-grip]');
+      const textNode = grip ? grip.nextSibling : li.firstChild;
+      if (textNode) {
+        const r = document.createRange();
+        if (textNode.nodeType === 3 /* TEXT_NODE */) {
+          r.setStart(textNode, textNode.length);
+          r.collapse(true);
+        } else {
+          r.selectNodeContents(textNode);
+          r.collapse(false);
+        }
+        _sel.removeAllRanges();
+        _sel.addRange(r);
+      }
+      pv.focus();
+    }, 0);
+    return true;
+  }
+
+  function _bwTaTab(e, ta) {
+    const pos = ta.selectionStart;
+    if (ta.selectionEnd !== pos) return false; // leave multi-select alone
+
+    const val       = ta.value;
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+    const lineEnd   = val.indexOf('\n', pos);
+    const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
+
+    const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
+    const isOrdered = /^(\s*)\d+\. /.test(lineText);
+    if (!isBullet && !isOrdered) return false; // not a list line — let Tab through
+
+    e.preventDefault();
+    const STEP   = isBullet ? 2 : 3;   // spaces per indent level
+    const MAX_SP = STEP * 3;            // cap at 3 extra levels
+    const leading = lineText.match(/^ */)[0].length;
+
+    let newLine;
+    if (!e.shiftKey) {
+      if (leading >= MAX_SP) return true; // already deepest — swallow Tab, do nothing
+      newLine = ' '.repeat(STEP) + lineText;
+    } else {
+      const remove = Math.min(leading, STEP);
+      newLine = lineText.slice(remove);
+    }
+
+    const before = val.slice(0, lineStart);
+    const after  = lineEnd === -1 ? '' : val.slice(lineEnd);
+    ta.value = before + newLine + after;
+
+    const shift  = newLine.length - lineText.length;
+    const newPos = Math.max(lineStart, pos + shift);
+    ta.setSelectionRange(newPos, newPos);
+    ta.dispatchEvent(new Event('input'));
+    return true;
+  }
+
+  document.addEventListener('keydown', function _bwEditorTabHandler(e) {
+    if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+
+    /* Check contenteditable preview pane first */
+    const pv = document.getElementById('md-live-preview');
+    if (pv && pv.contains(e.target)) {
+      _bwCeTab(e, pv);
+      return;
+    }
+
+    /* Then check the raw markdown textarea */
+    const ta = document.getElementById('note-content');
+    if (ta && e.target === ta) {
+      _bwTaTab(e, ta);
+    }
   });
 
 
@@ -856,6 +1005,8 @@
     _wsClickTimer = setTimeout(() => {
       _wsClickTimer = null;
       document.getElementById('active-workspace').value = id;
+      // Keep the URL in sync so a page refresh lands on the same workspace
+      history.replaceState(null, '', '/?ws=' + id);
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
       }).then(() => refreshCatFilter(id));
@@ -866,6 +1017,8 @@
     clearTimeout(_wsClickTimer);
     _wsClickTimer = null;
     document.getElementById('active-workspace').value = id;
+    // Keep the URL in sync so a page refresh lands on the same workspace
+    history.replaceState(null, '', '/?ws=' + id);
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
     }).then(() => refreshCatFilter(id));
@@ -1259,4 +1412,127 @@
 })();
 </script>
 
+<!-- ===== Keyboard Shortcuts Modal ===== -->
+<div
+  id="shortcuts-modal"
+  class="hidden fixed inset-0 z-[200] flex items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Keyboard shortcuts"
+  onclick="if(event.target===this)hideShortcuts()"
+>
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-700 overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700">
+      <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100">⌨️ Keyboard Shortcuts</h2>
+      <button
+        onclick="hideShortcuts()"
+        class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition focus:outline-none focus:ring-2 focus:ring-wblue rounded"
+        aria-label="Close shortcuts"
+      >&times;</button>
+    </div>
+    <!-- Body -->
+    <div class="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Editor Formatting</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Bold</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + B</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Italic</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + I</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Insert / Edit Link</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + K</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Undo / Redo</span>
+            <div class="flex gap-1">
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + Z</span>
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + Y</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Slash Commands</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Open command palette</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">/</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Navigate items</span>
+            <div class="flex gap-1">
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">↑</span>
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">↓</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Confirm selection</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Dismiss palette</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Escape</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Smart Lists</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Continue list on next line</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Exit list (blank item)</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Note Actions</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Save note</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + Enter</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  function showShortcuts() {
+    document.getElementById('shortcuts-modal').classList.remove('hidden');
+    document.getElementById('settings-menu').classList.add('hidden');
+  }
+  function hideShortcuts() {
+    document.getElementById('shortcuts-modal').classList.add('hidden');
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+      // Only open shortcuts if no input/textarea is focused
+      const tag = document.activeElement?.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !document.activeElement?.isContentEditable) {
+        e.preventDefault();
+        showShortcuts();
+      }
+    }
+    if (e.key === 'Escape') {
+      hideShortcuts();
+    }
+  });
+</script>
 {% endblock %}
