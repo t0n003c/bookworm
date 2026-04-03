@@ -405,16 +405,21 @@
   #md-live-preview { padding-left: 1.5rem !important; }
   [data-preview-grip] {
     position: absolute; left: -1.2rem; top: 2px;
-    cursor: grab; color: transparent;
+    color: transparent;
     font-size: 13px; user-select: none; padding: 0 2px;
     transition: color .12s; line-height: 1.5;
-    /* keep it out of text flow */
-    pointer-events: all;
+    /* pointer-events:none keeps grips INVISIBLE to the browser's hit-testing.
+       This is the key property that prevents them from interfering with
+       click-drag text selection.  Hover colour and cursor are managed via
+       JS mousemove/mouseleave listeners on the parent element instead. */
+    pointer-events: none;
   }
+  /* Parent-level hover tint — still works because pointer events land on the
+     parent (<li> or block) which has pointer-events:auto (browser default). */
   #md-live-preview > *:hover       > [data-preview-grip],
   #md-live-preview li:hover         > [data-preview-grip] { color: #9ca3af; }
-  [data-preview-grip]:hover  { color: #0053e2 !important; }
-  [data-preview-grip]:active { cursor: grabbing; color: #0053e2 !important; }
+  /* :hover/:active on the grip itself are removed — they can't fire with
+     pointer-events:none.  Active state is handled via JS. */
 </style>
 
 <script>
@@ -2231,6 +2236,58 @@
   let _didDrag      = false;
 
   /* ── helpers ── */
+
+  /* Returns true when the pointer event e is close enough to the grip inside
+     el that we should treat it as a drag-handle interaction.              */
+  function _isNearGrip(e, el) {
+    const grip = el.querySelector(':scope > [data-preview-grip]');
+    if (!grip) return false;
+    const r   = grip.getBoundingClientRect();
+    const PAD = 8; // px of extra hit-area around the glyph
+    return e.clientX >= r.left - PAD && e.clientX <= r.right  + PAD &&
+           e.clientY >= r.top  - PAD && e.clientY <= r.bottom + PAD;
+  }
+
+  /* mousedown on the PARENT element — fires when the pointer is in the grip
+     zone.  Because the grip itself has pointer-events:none it never receives
+     mouse events directly, so text-selection drags pass through it cleanly
+     regardless of whether the user sweeps left into the gutter.           */
+  function _parentGripDown(e) {
+    if (e.button !== 0) return;
+    if (!_isNearGrip(e, e.currentTarget)) return; // click outside grip zone — ignore
+    e.preventDefault();   // stops contenteditable caret placement
+    e.stopPropagation();
+    _dragging  = e.currentTarget;          // the <li> or block being dragged
+    _container = _dragging.parentElement;
+    if (!_dragging || !_container) return;
+    _startY  = e.clientY;
+    _didDrag = false;
+    document.addEventListener('mousemove', _onMouseMove);
+    document.addEventListener('mouseup',   _onMouseUp);
+  }
+
+  /* mousemove on parent — manages cursor style and grip highlight colour    */
+  function _parentGripMove(e) {
+    const el   = e.currentTarget;
+    const grip = el.querySelector(':scope > [data-preview-grip]');
+    if (!grip) return;
+    if (_isNearGrip(e, el)) {
+      el.style.cursor  = 'grab';
+      grip.style.color = '#0053e2';
+    } else {
+      el.style.cursor  = '';
+      grip.style.color = '';
+    }
+  }
+
+  /* mouseleave on parent — reset cursor and grip colour                     */
+  function _parentGripLeave(e) {
+    const el   = e.currentTarget;
+    const grip = el.querySelector(':scope > [data-preview-grip]');
+    if (grip) grip.style.color = '';
+    el.style.cursor = '';
+  }
+
   function _addGrip(el) {
     el.style.position = 'relative';
     const grip = document.createElement('span');
@@ -2239,7 +2296,15 @@
     grip.setAttribute('aria-hidden', 'true');
     grip.textContent = '⠿';
     el.insertBefore(grip, el.firstChild);
-    grip.addEventListener('mousedown', _onGripDown, { capture: true });
+    // Attach interaction listeners to the PARENT, not the grip.
+    // Using a flag prevents duplicate listeners when _injectPreviewGrips
+    // re-runs on the same element (e.g. after Enter in the preview).
+    if (!el._bwGripListened) {
+      el._bwGripListened = true;
+      el.addEventListener('mousedown',  _parentGripDown, { capture: true });
+      el.addEventListener('mousemove',  _parentGripMove);
+      el.addEventListener('mouseleave', _parentGripLeave);
+    }
   }
 
   /* Called by renderPreview() after every re-render */
@@ -2255,20 +2320,6 @@
     // Grip every list item so bullets/numbers can be reordered individually
     previewEl.querySelectorAll('li').forEach(li => _addGrip(li));
   };
-
-  /* ── drag start ── */
-  function _onGripDown(e) {
-    if (e.button !== 0) return;
-    e.preventDefault();   // stops contenteditable caret placement
-    e.stopPropagation();
-    _dragging  = e.currentTarget.parentElement;
-    _container = _dragging?.parentElement;
-    if (!_dragging || !_container) return;
-    _startY  = e.clientY;
-    _didDrag = false;
-    document.addEventListener('mousemove', _onMouseMove);
-    document.addEventListener('mouseup',   _onMouseUp);
-  }
 
   /* All drop candidates for the current drag.
      - Dragging a <LI>  → every <li> in the preview except the dragged item
