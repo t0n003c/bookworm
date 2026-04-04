@@ -26,3 +26,8 @@ uploads/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Secrets & scratch
+*.secret
+$null
+restart.ps1
