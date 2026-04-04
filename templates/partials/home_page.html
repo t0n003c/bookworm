@@ -155,67 +155,57 @@
 {% if w.style == 'analog' %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  {# date on top #}
-  <span id="clock-date-{{ w.id }}"
-        class="block text-xs text-center text-gray-400 dark:text-zinc-500 mb-1 select-none
-               {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
-  <div class="flex justify-center">
+  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
+    <span id="clock-date-{{ w.id }}"
+          class="text-xs text-gray-400 dark:text-zinc-500
+                 {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
     <canvas id="analog-clock-{{ w.id }}" width="120" height="120"
             data-tz="{{ tz }}" class="rounded-full"></canvas>
+    <div id="clock-greet-{{ w.id }}"
+         class="text-xs text-gray-400 dark:text-zinc-500
+                {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
   </div>
-  {# greeting below canvas #}
-  <div id="clock-greet-{{ w.id }}"
-       class="text-xs text-center text-gray-400 dark:text-zinc-500 mt-1 select-none
-              {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
 {% endcall %}
 
 {# ── Minimal ───────────────────────────────────────────────────────────────── #}
 {% elif w.style == 'minimal' %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  {# date on top #}
-  <span id="clock-date-{{ w.id }}"
-        class="block text-xs text-center text-gray-400 dark:text-zinc-500 mb-1 select-none
-               {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
-  <div class="flex items-center justify-center select-none">
+  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
+    <span id="clock-date-{{ w.id }}"
+          class="text-xs text-gray-400 dark:text-zinc-500
+                 {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
     <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
           class="text-3xl font-light text-gray-800 dark:text-zinc-100
                  tabular-nums tracking-tight">
       <span id="clock-time-{{ w.id }}"></span><!--
-   --><span id="clock-ampm-{{ w.id }}"
-            class="text-base font-normal opacity-60 ml-1"></span>
+   --><span id="clock-ampm-{{ w.id }}" class="text-base font-normal opacity-60 ml-1"></span>
     </span>
+    <div id="clock-greet-{{ w.id }}"
+         class="text-xs text-gray-400 dark:text-zinc-500
+                {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
   </div>
-  {# greeting below time #}
-  <div id="clock-greet-{{ w.id }}"
-       class="text-xs text-center text-gray-400 dark:text-zinc-500 mt-1 select-none
-              {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
 {% endcall %}
 
 {# ── Digital (default) ────────────────────────────────────────────────────── #}
 {% else %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  <div class="flex flex-col items-center select-none">
-    {# date on top #}
+  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
     <span id="clock-date-{{ w.id }}"
-          class="text-xs text-gray-400 dark:text-zinc-500 mb-1
+          class="text-xs text-gray-400 dark:text-zinc-500
                  {{ 'hidden' if not w.config.get('show_date', true) }}"></span>
-    {# big time #}
     <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
           class="text-4xl font-bold text-wblue dark:text-blue-400
                  tabular-nums tracking-tight leading-none">
       <span id="clock-time-{{ w.id }}"></span><!--
-   --><span id="clock-ampm-{{ w.id }}"
-            class="text-2xl font-normal opacity-60 ml-1"></span>
+   --><span id="clock-ampm-{{ w.id }}" class="text-2xl font-normal opacity-60 ml-1"></span>
     </span>
-    {# tz abbrev #}
     <span id="clock-tz-{{ w.id }}"
-          class="text-[10px] text-gray-300 dark:text-zinc-600 mt-0.5
+          class="text-[10px] text-gray-300 dark:text-zinc-600
                  font-mono tracking-widest uppercase"></span>
-    {# greeting below time #}
     <div id="clock-greet-{{ w.id }}"
-         class="text-xs text-gray-400 dark:text-zinc-500 mt-1
+         class="text-xs text-gray-400 dark:text-zinc-500
                 {{ 'hidden' if not w.config.get('show_greeting', true) }}"></div>
   </div>
 {% endcall %}
