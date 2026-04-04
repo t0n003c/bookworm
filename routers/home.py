@@ -14,6 +14,7 @@ from routers.home_db import (
     add_widget, create_home_page, delete_home_page, delete_widget,
     get_home_page, get_home_pages, get_widgets, reorder_widgets,
     rename_home_page, update_page_config, update_widget_config,
+    update_widget_style,
 )
 from routers.notes_db import search_notes
 from templates_env import templates
@@ -29,12 +30,19 @@ def _uid(request: Request) -> int:
 
 
 def _fetch_json(url: str) -> dict:
-    """Synchronous JSON fetch — runs in the thread-pool executor."""
+    """Synchronous JSON fetch — runs in the thread-pool executor.
+    Uses the Walmart corporate proxy so server-side requests can reach the internet.
+    """
+    proxy = urllib.request.ProxyHandler({
+        "http":  "http://sysproxy.wal-mart.com:8080",
+        "https": "http://sysproxy.wal-mart.com:8080",
+    })
+    opener = urllib.request.build_opener(proxy)
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "BookWorm/1.0 (weather proxy)"},
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with opener.open(req, timeout=10) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -217,6 +225,27 @@ async def update_widget(
         config = {}
     await update_widget_config(widget_id, config)
     return HTMLResponse("", 204)
+
+
+@router.post("/widgets/{widget_id}/change-style", response_class=HTMLResponse)
+async def change_widget_style(
+    request: Request,
+    widget_id: int,
+    style:    str = Form(...),
+    page_id:  int = Form(...),
+):
+    """Update a widget's style and return the refreshed page canvas."""
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        return HTMLResponse(_ERR.format("Page not found."), 404)
+    await update_widget_style(widget_id, style)
+    widgets   = await get_widgets(page_id)
+    all_notes = (await search_notes())[:50]
+    return templates.TemplateResponse(
+        request, "partials/home_page.html",
+        {"page": page, "widgets": widgets, "all_notes": all_notes},
+    )
 
 
 @router.post("/widgets/{widget_id}/delete", response_class=HTMLResponse)

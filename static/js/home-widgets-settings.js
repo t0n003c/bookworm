@@ -115,10 +115,6 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
     return;
   }
 
-  const divider = document.createElement('hr');
-  divider.className = 'border-gray-100 dark:border-zinc-800 my-2';
-  body.appendChild(divider);
-
   fields.forEach(f => {
     const wrap = document.createElement('div');
     const lbl  = `<label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1"
@@ -159,6 +155,61 @@ function _escAttr(s) {
   return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+// ── Style Picker (inside settings modal) ─────────────────────────────────────
+/**
+ * Build a style-switcher row for the widget and append it to `body`.
+ * Clicking a style radio calls changeWidgetStyle which re-renders the whole canvas.
+ */
+function _buildStylePicker(widgetId, wtype, wstyle, body) {
+  const styles = (typeof WIDGET_STYLES !== 'undefined' && WIDGET_STYLES[wtype]) || [];
+  if (styles.length < 2) return;   // only one style — nothing to switch between
+
+  const div = document.createElement('div');
+  div.className = 'mb-1';
+  div.innerHTML = `
+    <p class="text-[10px] text-gray-400 dark:text-zinc-500 uppercase font-semibold
+              tracking-wide mb-1.5">Widget style</p>
+    <div class="flex flex-wrap gap-2">
+      ${styles.map(([val, lbl]) => {
+        const active = val === wstyle;
+        return `<label class="flex items-center gap-1.5 cursor-pointer select-none">
+          <input type="radio" name="ws-style-${widgetId}" value="${val}"
+                 ${active ? 'checked' : ''} class="accent-wblue"
+                 onchange="changeWidgetStyle(${widgetId}, this.value)">
+          <span class="text-xs text-gray-700 dark:text-zinc-300">${lbl}</span>
+        </label>`;
+      }).join('')}
+    </div>`;
+  body.appendChild(div);
+
+  const divider = document.createElement('hr');
+  divider.className = 'border-gray-100 dark:border-zinc-800 my-2';
+  body.appendChild(divider);
+}
+
+/** Hit the server, swap the whole canvas, re-init widgets, then reopen settings. */
+async function changeWidgetStyle(widgetId, newStyle) {
+  const canvas = document.getElementById('home-canvas');
+  const pageId = canvas?.dataset.pageId;
+  if (!pageId) return;
+
+  // Grab title/icon before we blow away the DOM
+  const titleText = document.getElementById('ws-settings-name')?.textContent || 'Widget';
+  const iconText  = document.getElementById('ws-settings-icon')?.textContent  || '⚙️';
+
+  // Close modal first (returns clock children to hidden panel, clears modal state)
+  closeWidgetSettings();
+
+  const res  = await _post(`/home/widgets/${widgetId}/change-style`,
+    { style: newStyle, page_id: pageId });
+  const html = await res.text();
+  const hc   = document.getElementById('home-content');
+  if (hc) { hc.innerHTML = html; initHomeWidgets(); }
+
+  // Reopen settings for the same widget with its new style
+  openWidgetSettings(widgetId, titleText, iconText);
+}
+
 // ── openWidgetSettings — universal entry point ─────────────────────────────
 function openWidgetSettings(widgetId, title, icon) {
   const modal = document.getElementById('ws-settings-modal');
@@ -175,13 +226,13 @@ function openWidgetSettings(widgetId, title, icon) {
   // 1. Size picker (universal — all widget types)
   _buildSizePicker(widgetId, body);
 
-  // 2. Clock: move hidden config panel into modal body for live previews
+  // 2. Style switcher (universal — skipped if widget has only one style)
+  _buildStylePicker(widgetId, wtype, wstyle, body);
+
+  // 3. Clock: move hidden config panel into modal body for live previews
   if (wtype === 'clock') {
     const panel = document.getElementById(`ws-cfg-${widgetId}`);
     if (panel) {
-      const divider = document.createElement('hr');
-      divider.className = 'border-gray-100 dark:border-zinc-800 my-2';
-      body.appendChild(divider);
       // Wrap panel children so we can move them back on close
       const slot = document.createElement('div');
       slot.id = `ws-clock-slot-${widgetId}`;

@@ -132,6 +132,15 @@ async def update_widget_config(widget_id: int, config: dict) -> None:
         await db.commit()
 
 
+async def update_widget_style(widget_id: int, style: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE home_widgets SET style=? WHERE id=?",
+            (style, widget_id),
+        )
+        await db.commit()
+
+
 async def reorder_widgets(page_id: int, ordered_ids: list[int]) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         for i, wid in enumerate(ordered_ids):
