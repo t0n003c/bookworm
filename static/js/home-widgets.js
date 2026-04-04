@@ -146,6 +146,18 @@ const WIDGET_STYLES = {
   timer:      [['stopwatch','⏱️ Stopwatch'],['pomodoro','🍅 Pomodoro'],['interval','🔁 Interval']],
   countdown:  [['event','🎯 Event (D/H/M/S)'],['days','📆 Days Only']],
   reminder:   [['list','📋 List'],['agenda','📌 Agenda']],
+  title:      [
+    ['plain',      '✏️ Plain'],
+    ['banner',     '🟦 Banner'],
+    ['ruled',      '〰️ Ruled'],
+    ['badge',      '🏷️ Badge'],
+    ['gradient',   '🌈 Gradient'],
+    ['neon',       '💡 Neon Glow'],
+    ['typewriter', '⌨️ Typewriter'],
+    ['marquee',    '📢 Marquee'],
+    ['sticky',     '📝 Sticky Note'],
+    ['rainbow',    '🌈 Rainbow'],
+  ],
 };
 
 const WIDGET_CONFIG_FIELDS = {
@@ -201,7 +213,13 @@ const WIDGET_CONFIG_FIELDS = {
     { id: 'cf-date',  label: 'Target date', type: 'date', name: 'target_date' },
   ],
   reminder: () => [],
-};
+  title:    () => [
+    { id: 'cf-txt',   label: 'Title text',  type: 'text',   placeholder: 'My Section', name: 'text' },
+    { id: 'cf-sub',   label: 'Subtitle',    type: 'text',   placeholder: 'optional',   name: 'subtitle' },
+    { id: 'cf-emoji', label: 'Emoji prefix',type: 'text',   placeholder: '📂',          name: 'emoji' },
+    { id: 'cf-align', label: 'Alignment',   type: 'select', name: 'align',
+      options: [['center','Center'],['left','Left'],['right','Right']] },
+  ],
 
 function selectWidgetType(wtype) {
   document.getElementById('aw-selected-type').value = wtype;
@@ -330,6 +348,17 @@ function _initDnD(grid, pageId) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function initHomeWidgets() {
+  // Title — typewriter animation
+  document.querySelectorAll('.bw-typewriter').forEach(el => {
+    const full = el.dataset.text || '';
+    let i = 0;
+    el.textContent = '';
+    const tick = setInterval(() => {
+      if (i >= full.length) { clearInterval(tick); return; }
+      el.textContent += full[i++];
+    }, 60);
+  });
+
   // Clock — match ONLY clock-{digits}, never clock-greet-*, clock-tz-*, etc.
   document.querySelectorAll('[id^="clock-"]')
     .forEach(el => { if (/^clock-\d+$/.test(el.id)) _startClock(el); });
