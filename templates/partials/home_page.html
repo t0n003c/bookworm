@@ -11,7 +11,7 @@
 #}
 {% macro widget_header(w, title='', icon='', has_settings=true) %}
 {#- Floated absolutely — zero layout cost; only visible on card hover. -#}
-<div class="absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5
+<div id="wh-actions-{{ w.id }}" class="absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5
             opacity-0 group-hover/wcard:opacity-100 transition">
   {% if has_settings %}
   <button type="button"
@@ -255,9 +255,36 @@
    ═══════════════════════════════════════════════════════════════════ #}
 {% macro render_todo(w) %}
 {% set items = w.config.get('items', []) %}
+{% set done_count = items | selectattr('done') | list | length %}
 {% call card(w) %}
   {{ widget_header(w, 'To-Do', '✅') }}
-  <ul class="flex-1 space-y-1 overflow-y-auto" id="todo-list-{{ w.id }}">
+  {% if w.style == 'compact' %}
+  {#– COMPACT: only pending items visible, done hidden in DOM so indices stay stable –#}
+  <ul class="flex-1 space-y-0.5 overflow-y-auto" id="todo-list-{{ w.id }}" data-style="compact">
+    {% for item in items %}
+    <li class="flex items-center gap-1.5{% if item.done %} hidden{% endif %}">
+      <input type="checkbox" id="todo-{{ w.id }}-{{ loop.index0 }}"
+             class="rounded border-gray-300 text-wblue focus:ring-wblue flex-shrink-0 w-3.5 h-3.5"
+             {% if item.done %}checked{% endif %}
+             onchange="todoToggle({{ w.id }}, {{ loop.index0 }}, this.checked)">
+      <label for="todo-{{ w.id }}-{{ loop.index0 }}"
+             class="text-xs text-gray-700 dark:text-zinc-300 flex-1 cursor-pointer leading-snug">{{ item.text }}</label>
+    </li>
+    {% endfor %}
+  </ul>
+  <p id="todo-done-{{ w.id }}" class="text-[10px] text-gray-400 mt-1{% if done_count == 0 %} hidden{% endif %}">{{ done_count }} done ✓</p>
+  <div class="flex gap-1 mt-1">
+    <input id="todo-input-{{ w.id }}" type="text" placeholder="New task…"
+           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-1
+                  bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                  focus:outline-none focus:ring-1 focus:ring-wblue"
+           onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
+    <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
+            class="px-2 py-1 bg-wblue text-white text-xs rounded hover:bg-blue-700 transition">+</button>
+  </div>
+  {% else %}
+  {#– FULL LIST: all items shown, done items struck through –#}
+  <ul class="flex-1 space-y-1.5 overflow-y-auto" id="todo-list-{{ w.id }}" data-style="list">
     {% for item in items %}
     <li class="flex items-center gap-2">
       <input type="checkbox" id="todo-{{ w.id }}-{{ loop.index0 }}"
@@ -266,35 +293,18 @@
              onchange="todoToggle({{ w.id }}, {{ loop.index0 }}, this.checked)">
       <label for="todo-{{ w.id }}-{{ loop.index0 }}"
              class="text-sm text-gray-700 dark:text-zinc-300 flex-1 cursor-pointer
-                    {% if item.done %}line-through text-gray-400{% endif %}">
-        {{ item.text }}
-      </label>
+                    {% if item.done %}line-through text-gray-400 dark:text-zinc-500{% endif %}">{{ item.text }}</label>
     </li>
     {% endfor %}
   </ul>
-  {# Add input — compact style gets an inline "+" row; full list gets a wider bar #}
-  {% if w.style == 'compact' %}
-  <div class="flex gap-1 mt-2">
-    <input id="todo-input-{{ w.id }}" type="text" placeholder="New task…"
-           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-1
-                  bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
-                  focus:outline-none focus:ring-1 focus:ring-wblue"
-           onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
-    <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
-            class="px-2 py-1 bg-wblue text-white text-xs rounded hover:bg-blue-700 transition"
-            aria-label="Add task">+</button>
-  </div>
-  {% else %}
   <div class="flex gap-2 mt-2">
-    <input id="todo-input-{{ w.id }}" type="text" placeholder="Add task…"
-           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+    <input id="todo-input-{{ w.id }}" type="text" placeholder="Add a task…"
+           class="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
                   focus:outline-none focus:ring-2 focus:ring-wblue"
            onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
     <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
-            class="px-3 py-1.5 bg-wblue text-white text-xs rounded-lg hover:bg-blue-700 transition">
-      Add
-    </button>
+            class="px-3 py-1.5 bg-wblue text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition">Add</button>
   </div>
   {% endif %}
 {% endcall %}
@@ -402,36 +412,70 @@
 {% macro render_reminder(w) %}
 {% set items = w.config.get('items', []) %}
 {% call card(w) %}
+  {#– header row with notification enable button injected by JS –#}
   {{ widget_header(w, 'Reminders', '🔔') }}
-  <ul class="flex-1 space-y-1.5 overflow-y-auto" id="reminder-list-{{ w.id }}">
+
+  {% if w.style == 'agenda' %}
+  {#– AGENDA: vertical timeline cards –#}
+  <ul class="flex-1 space-y-1.5 overflow-y-auto" id="reminder-list-{{ w.id }}" data-style="agenda">
+    {% for item in items %}
+    <li class="relative flex gap-2.5 group/rem pl-1" data-time="{{ item.time }}">
+      {#– timeline dot + spine –#}
+      <div class="flex flex-col items-center flex-shrink-0">
+        <div class="w-2 h-2 rounded-full bg-wblue dark:bg-blue-400 mt-1.5 flex-shrink-0 ring-2 ring-white dark:ring-zinc-900"></div>
+        {% if not loop.last %}<div class="w-0.5 flex-1 bg-gray-200 dark:bg-zinc-700 mt-0.5"></div>{% endif %}
+      </div>
+      {#– event card –#}
+      <div class="flex-1 bg-gray-50 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 mb-0.5">
+        <div class="flex items-start justify-between gap-2">
+          <span class="text-sm text-gray-800 dark:text-zinc-100 flex-1 leading-snug">{{ item.text }}</span>
+          <button onclick="reminderDelete({{ w.id }}, {{ loop.index0 }})"
+                  class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400 hover:text-wred
+                         transition flex-shrink-0 mt-0.5" aria-label="Delete">
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <span class="text-[10px] font-mono text-wblue dark:text-blue-400 tabular-nums">{{ item.time }}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  {#– LIST: simple time-badge rows –#}
+  <ul class="flex-1 space-y-1.5 overflow-y-auto" id="reminder-list-{{ w.id }}" data-style="list">
     {% for item in items %}
     <li class="flex items-start gap-2 group/rem">
       <span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
                    px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">{{ item.time }}</span>
-      <span class="text-sm text-gray-700 dark:text-zinc-300 flex-1">{{ item.text }}</span>
+      <span class="text-sm text-gray-700 dark:text-zinc-300 flex-1 leading-snug">{{ item.text }}</span>
       <button onclick="reminderDelete({{ w.id }}, {{ loop.index0 }})"
               class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400
-                     hover:text-wred transition flex-shrink-0" aria-label="Delete reminder">
-        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-             stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                     hover:text-wred transition flex-shrink-0" aria-label="Delete">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
       </button>
     </li>
     {% endfor %}
   </ul>
-  {% if w.style != 'agenda' or not items %}
+  {% endif %}
+
+  {#– Add form — always shown for both styles –#}
   <div class="flex gap-1 mt-2">
     <input id="rem-time-{{ w.id }}" type="time"
            class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-1
-                  bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue w-24">
+                  bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                  focus:outline-none focus:ring-2 focus:ring-wblue w-24 flex-shrink-0">
     <input id="rem-text-{{ w.id }}" type="text" placeholder="Reminder…"
            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-1
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-wblue"
+                  focus:outline-none focus:ring-2 focus:ring-wblue min-w-0"
            onkeydown="if(event.key==='Enter') reminderAdd({{ w.id }}, this)">
     <button onclick="reminderAdd({{ w.id }}, document.getElementById('rem-text-{{ w.id }}'))"
-            class="px-2 py-1 bg-wblue text-white text-xs rounded hover:bg-blue-700 transition">+</button>
+            class="px-2 py-1 bg-wblue text-white text-xs rounded hover:bg-blue-700 transition flex-shrink-0">+</button>
   </div>
-  {% endif %}
 {% endcall %}
 {% endmacro %}
 

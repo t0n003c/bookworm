@@ -348,6 +348,9 @@ function _initDnD(grid, pageId) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function initHomeWidgets() {
+  // Reminder — browser notifications
+  _initReminderNotifications();
+
   // Title — typewriter animation
   document.querySelectorAll('.bw-typewriter').forEach(el => {
     const full = el.dataset.text || '';

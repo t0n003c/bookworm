@@ -277,7 +277,7 @@ function timerReset(wid) {
   if (btnEl)   btnEl.textContent   = 'Start';
 }
 
-// ── To-Do ─────────────────────────────────────────────────────────────────────
+// ── To-Do ─────────────────────────────────────────────────────────────────────────────────
 const _todoData = {};
 
 function _getTodoItems(wid) {
@@ -296,6 +296,25 @@ async function todoToggle(wid, idx, done) {
   const items = _getTodoItems(wid);
   if (items[idx]) items[idx].done = done;
   await _saveWidgetConfig(wid, { items });
+
+  // DOM update — keep in sync without a full re-render
+  const ul      = document.getElementById(`todo-list-${wid}`);
+  const compact = ul?.dataset.style === 'compact';
+  const li      = ul?.querySelectorAll('li')[idx];
+  if (!li) return;
+  const label = li.querySelector('label');
+  if (compact) {
+    li.classList.toggle('hidden', done);
+    // update done badge
+    const badge   = document.getElementById(`todo-done-${wid}`);
+    const allLis  = Array.from(ul.querySelectorAll('li'));
+    const doneN   = allLis.filter(l => l.querySelector('input')?.checked).length;
+    if (badge) { badge.textContent = `${doneN} done ✓`; badge.classList.toggle('hidden', doneN === 0); }
+  } else {
+    label?.classList.toggle('line-through', done);
+    label?.classList.toggle('text-gray-400', done);
+    label?.classList.toggle('dark:text-zinc-500', done);
+  }
 }
 
 async function todoAdd(wid, input) {
@@ -305,18 +324,31 @@ async function todoAdd(wid, input) {
   items.push({ text, done: false });
   await _saveWidgetConfig(wid, { items });
   input.value = '';
-  const ul = document.getElementById(`todo-list-${wid}`);
+  const ul      = document.getElementById(`todo-list-${wid}`);
+  const compact = ul?.dataset.style === 'compact';
   if (ul) {
-    const li = document.createElement('li');
-    li.className = 'flex items-center gap-2';
-    li.innerHTML = `<input type="checkbox" class="rounded border-gray-300 text-wblue"
-      onchange="todoToggle(${wid}, ${items.length-1}, this.checked)">
-      <label class="text-sm text-gray-700 dark:text-zinc-300 flex-1">${_esc(text)}</label>`;
+    const idx = items.length - 1;
+    const li  = document.createElement('li');
+    if (compact) {
+      li.className = 'flex items-center gap-1.5';
+      li.innerHTML = `<input type="checkbox" id="todo-${wid}-${idx}"
+        class="rounded border-gray-300 text-wblue focus:ring-wblue flex-shrink-0 w-3.5 h-3.5"
+        onchange="todoToggle(${wid}, ${idx}, this.checked)">
+        <label for="todo-${wid}-${idx}"
+               class="text-xs text-gray-700 dark:text-zinc-300 flex-1 cursor-pointer leading-snug">${_esc(text)}</label>`;
+    } else {
+      li.className = 'flex items-center gap-2';
+      li.innerHTML = `<input type="checkbox" id="todo-${wid}-${idx}"
+        class="rounded border-gray-300 text-wblue focus:ring-wblue flex-shrink-0"
+        onchange="todoToggle(${wid}, ${idx}, this.checked)">
+        <label for="todo-${wid}-${idx}"
+               class="text-sm text-gray-700 dark:text-zinc-300 flex-1 cursor-pointer">${_esc(text)}</label>`;
+    }
     ul.appendChild(li);
   }
 }
 
-// ── Reminder ──────────────────────────────────────────────────────────────────
+// ── Reminder ──────────────────────────────────────────────────────────────────────────
 const _reminderData = {};
 
 function _getReminderItems(wid) {
@@ -324,8 +356,8 @@ function _getReminderItems(wid) {
     _reminderData[wid] = Array.from(
       document.querySelectorAll(`#reminder-list-${wid} li`)
     ).map(li => ({
-      time: li.querySelector('span')?.textContent?.trim() || '',
-      text: li.querySelectorAll('span')[1]?.textContent?.trim() || '',
+      time: li.dataset.time || li.querySelector('span')?.textContent?.trim() || '',
+      text: li.querySelector('span:nth-child(2), .text-sm')?.textContent?.trim() || '',
     }));
   }
   return _reminderData[wid];
@@ -337,23 +369,126 @@ async function reminderAdd(wid, input) {
   if (!text) return;
   const items = _getReminderItems(wid);
   items.push({ time, text });
-  items.sort((a,b) => a.time.localeCompare(b.time));
+  items.sort((a, b) => a.time.localeCompare(b.time));
   await _saveWidgetConfig(wid, { items });
   input.value = '';
-  const ul = document.getElementById(`reminder-list-${wid}`);
-  if (ul) {
-    const li = document.createElement('li');
-    li.className = 'flex items-start gap-2 group/rem';
-    li.innerHTML = `<span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
-                    px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">${time}</span>
-      <span class="text-sm text-gray-700 dark:text-zinc-300 flex-1">${_esc(text)}</span>`;
-    ul.appendChild(li);
-  }
+
+  // Re-render the full list so sort order and indices stay accurate
+  const ul    = document.getElementById(`reminder-list-${wid}`);
+  const style = ul?.dataset.style || 'list';
+  if (!ul) return;
+  delete _reminderData[wid];
+  ul.innerHTML = items.map((item, i) =>
+    style === 'agenda' ? _reminderAgendaLi(wid, item, i, i === items.length - 1)
+                       : _reminderListLi(wid, item, i)
+  ).join('');
 }
 
 async function reminderDelete(wid, idx) {
   const items = _getReminderItems(wid);
   items.splice(idx, 1);
   await _saveWidgetConfig(wid, { items });
-  document.querySelector(`#reminder-list-${wid} li:nth-child(${idx+1})`)?.remove();
+  delete _reminderData[wid];
+  const ul    = document.getElementById(`reminder-list-${wid}`);
+  const style = ul?.dataset.style || 'list';
+  if (!ul) return;
+  ul.innerHTML = items.map((item, i) =>
+    style === 'agenda' ? _reminderAgendaLi(wid, item, i, i === items.length - 1)
+                       : _reminderListLi(wid, item, i)
+  ).join('');
+}
+
+function _reminderListLi(wid, item, i) {
+  return `<li class="flex items-start gap-2 group/rem">
+    <span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
+                 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">${_esc(item.time)}</span>
+    <span class="text-sm text-gray-700 dark:text-zinc-300 flex-1 leading-snug">${_esc(item.text)}</span>
+    <button onclick="reminderDelete(${wid}, ${i})"
+            class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition flex-shrink-0"
+            aria-label="Delete">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button></li>`;
+}
+
+function _reminderAgendaLi(wid, item, i, isLast) {
+  const spine = isLast ? '' : '<div class="w-0.5 flex-1 bg-gray-200 dark:bg-zinc-700 mt-0.5"></div>';
+  return `<li class="relative flex gap-2.5 group/rem pl-1" data-time="${_esc(item.time)}">
+    <div class="flex flex-col items-center flex-shrink-0">
+      <div class="w-2 h-2 rounded-full bg-wblue dark:bg-blue-400 mt-1.5 flex-shrink-0
+                  ring-2 ring-white dark:ring-zinc-900"></div>${spine}
+    </div>
+    <div class="flex-1 bg-gray-50 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 mb-0.5">
+      <div class="flex items-start justify-between gap-2">
+        <span class="text-sm text-gray-800 dark:text-zinc-100 flex-1 leading-snug">${_esc(item.text)}</span>
+        <button onclick="reminderDelete(${wid}, ${i})"
+                class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400 hover:text-red-500
+                       transition flex-shrink-0 mt-0.5" aria-label="Delete">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <span class="text-[10px] font-mono text-wblue dark:text-blue-400 tabular-nums">${_esc(item.time)}</span>
+    </div></li>`;
+}
+
+// ── Reminder Notifications ───────────────────────────────────────────────────────────────
+const _notifFired = {}; // key: `${wid}-${date}-${time}` → true
+
+function _checkReminderNotifications() {
+  const now   = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const hhmm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  document.querySelectorAll('[id^="reminder-list-"]').forEach(ul => {
+    const wid = ul.id.replace('reminder-list-', '');
+    const items = _getReminderItems(wid);
+    items.forEach(item => {
+      const key = `${wid}-${today}-${item.time}`;
+      if (item.time === hhmm && !_notifFired[key]) {
+        _notifFired[key] = true;
+        new Notification('🔔 Reminder', { body: item.text, icon: '/static/favicon.ico' });
+      }
+    });
+  });
+}
+
+function reminderEnableNotifications(widgetId) {
+  if (!('Notification' in window)) return;
+  Notification.requestPermission().then(perm => {
+    if (perm === 'granted') {
+      document.querySelectorAll('.rem-notif-btn').forEach(b => b.remove());
+      setInterval(_checkReminderNotifications, 30_000);
+      _checkReminderNotifications();
+    }
+  });
+}
+
+function _initReminderNotifications() {
+  if (!('Notification' in window)) return;
+  document.querySelectorAll('[id^="reminder-list-"]').forEach(ul => {
+    const wid = ul.id.replace('reminder-list-', '');
+    const hdr = document.getElementById(`wh-actions-${wid}`);
+    if (!hdr || hdr.querySelector('.rem-notif-btn')) return;
+    if (Notification.permission !== 'granted') {
+      const btn = document.createElement('button');
+      btn.className = 'rem-notif-btn p-1 rounded text-gray-400 hover:text-wblue'
+                    + ' hover:bg-blue-50 dark:hover:bg-wblue/10 transition';
+      btn.title   = Notification.permission === 'denied'
+                    ? 'Notifications blocked — allow in browser settings'
+                    : 'Enable reminder alerts';
+      btn.innerHTML = '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"'
+                    + ' stroke-width="2" aria-hidden="true"><path stroke-linecap="round"'
+                    + ' stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0'
+                    + ' 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67'
+                    + ' 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6'
+                    + ' 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>';
+      if (Notification.permission !== 'denied')
+        btn.onclick = () => reminderEnableNotifications(wid);
+      hdr.prepend(btn);
+    }
+  });
+  if (Notification.permission === 'granted') {
+    setInterval(_checkReminderNotifications, 30_000);
+    _checkReminderNotifications();
+  }
 }
