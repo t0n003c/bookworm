@@ -55,7 +55,7 @@
 {%- set row_span = _wcfg.get('row_span', 1) -%}
 <div id="hw-card-{{ w.id }}"
      class="hw-card group/wcard relative bg-white dark:bg-zinc-900 rounded-xl shadow-sm
-            border border-gray-200 dark:border-zinc-800 p-3
+            border border-gray-200 dark:border-zinc-800 p-3 flex flex-col
             hover:shadow-md transition-shadow duration-200 {{ extra_cls }}"
      data-widget-id="{{ w.id }}"
      data-widget-type="{{ w.widget_type }}"
@@ -155,7 +155,7 @@
 {% if w.style == 'analog' %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
+  <div class="flex-1 flex flex-col items-center justify-center gap-1 select-none">
     <span id="clock-date-{{ w.id }}"
           class="text-xs text-gray-400 dark:text-zinc-500
                  {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
@@ -171,7 +171,7 @@
 {% elif w.style == 'minimal' %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
+  <div class="flex-1 flex flex-col items-center justify-center gap-1 select-none">
     <span id="clock-date-{{ w.id }}"
           class="text-xs text-gray-400 dark:text-zinc-500
                  {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
@@ -191,7 +191,7 @@
 {% else %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  <div class="flex flex-col items-center justify-center gap-1 py-2 select-none">
+  <div class="flex-1 flex flex-col items-center justify-center gap-1 select-none">
     <span id="clock-date-{{ w.id }}"
           class="text-xs text-gray-400 dark:text-zinc-500
                  {{ 'hidden' if not w.config.get('show_date', true) }}"></span>
@@ -480,7 +480,7 @@
        id="widget-grid-{{ page.id }}"
        {%- set _pgcfg = page.get('config', {}) -%}
        data-col-count="{{ _pgcfg.get('col_count', 3) }}"
-       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: auto;">
+       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: minmax(120px, auto);">
     {% for w in widgets %}
       {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
       {% elif w.widget_type == 'weather' %}   {{ render_weather(w) }}
