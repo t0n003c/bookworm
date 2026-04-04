@@ -10,42 +10,42 @@
   - has_settings: if truthy a gear icon is rendered that opens the popup
 #}
 {% macro widget_header(w, title='', icon='', has_settings=true) %}
-<div class="flex items-center justify-end mb-3 min-h-[1.5rem]">
-  <div class="flex items-center gap-1 opacity-0 group-hover/wcard:opacity-100 transition">
-    {% if has_settings %}
-    <button type="button"
-      onclick="openWidgetSettings({{ w.id }}, '{{ title }}', '{{ icon|e }}')"
-      title="Widget settings" aria-label="Widget settings"
-      class="p-1 rounded text-gray-400 hover:text-wblue hover:bg-blue-50
-             dark:hover:bg-wblue/10 transition">
-      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-           stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
-             c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756
-             2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724
-             1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0
-             00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0
-             00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
-             c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-      </svg>
-    </button>
-    {% endif %}
-    <button type="button" onclick="deleteWidget({{ w.id }}, {{ page.id }})"
-      title="Remove widget" aria-label="Remove widget"
-      class="p-1 rounded text-gray-400 hover:text-wred hover:bg-red-50
-             dark:hover:bg-red-900/20 transition">
-      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-           stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
-    <span class="drag-handle cursor-grab active:cursor-grabbing p-1 text-gray-300
-                 dark:text-zinc-600 hover:text-gray-500 transition select-none"
-          title="Drag to reorder" aria-hidden="true">⠷</span>
-  </div>
+{#- Floated absolutely — zero layout cost; only visible on card hover. -#}
+<div class="absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5
+            opacity-0 group-hover/wcard:opacity-100 transition">
+  {% if has_settings %}
+  <button type="button"
+    onclick="openWidgetSettings({{ w.id }}, '{{ title }}', '{{ icon|e }}')"
+    title="Widget settings" aria-label="Widget settings"
+    class="p-1 rounded text-gray-400 hover:text-wblue hover:bg-blue-50
+           dark:hover:bg-wblue/10 transition">
+    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+         stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round"
+        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
+           c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756
+           2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724
+           1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0
+           00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0
+           00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
+           c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+    </svg>
+  </button>
+  {% endif %}
+  <button type="button" onclick="deleteWidget({{ w.id }}, {{ page.id }})"
+    title="Remove widget" aria-label="Remove widget"
+    class="p-1 rounded text-gray-400 hover:text-wred hover:bg-red-50
+           dark:hover:bg-red-900/20 transition">
+    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+         stroke-width="2.5" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+  </button>
+  <span class="drag-handle cursor-grab active:cursor-grabbing p-1 text-gray-300
+               dark:text-zinc-600 hover:text-gray-500 transition select-none"
+        title="Drag to reorder" aria-hidden="true">⠷</span>
 </div>
 {% endmacro %}
 
@@ -55,7 +55,7 @@
 {%- set row_span = _wcfg.get('row_span', 1) -%}
 <div id="hw-card-{{ w.id }}"
      class="hw-card group/wcard relative bg-white dark:bg-zinc-900 rounded-xl shadow-sm
-            border border-gray-200 dark:border-zinc-800 p-4
+            border border-gray-200 dark:border-zinc-800 p-3
             hover:shadow-md transition-shadow duration-200 {{ extra_cls }}"
      data-widget-id="{{ w.id }}"
      data-widget-type="{{ w.widget_type }}"
@@ -177,7 +177,7 @@
   <span id="clock-date-{{ w.id }}"
         class="block text-xs text-center text-gray-400 dark:text-zinc-500 mb-1 select-none
                {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
-  <div class="flex items-center justify-center h-10 select-none">
+  <div class="flex items-center justify-center select-none">
     <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
           class="text-3xl font-light text-gray-800 dark:text-zinc-100
                  tabular-nums tracking-tight">
@@ -267,7 +267,7 @@
 {% set items = w.config.get('items', []) %}
 {% call card(w) %}
   {{ widget_header(w, 'To-Do', '✅') }}
-  <ul class="space-y-1.5 mb-3" id="todo-list-{{ w.id }}">
+  <ul class="space-y-1 mb-2" id="todo-list-{{ w.id }}">
     {% for item in items %}
     <li class="flex items-center gap-2">
       <input type="checkbox" id="todo-{{ w.id }}-{{ loop.index0 }}"
@@ -283,7 +283,7 @@
     {% endfor %}
   </ul>
   {% if w.style != 'compact' %}
-  <div class="flex gap-2 mt-2">
+  <div class="flex gap-2 mt-1">
     <input id="todo-input-{{ w.id }}" type="text" placeholder="Add task…"
            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
@@ -334,7 +334,7 @@
 {% macro render_timer(w) %}
 {% call card(w) %}
   {{ widget_header(w, 'Timer', '⏱️') }}
-  <div class="flex flex-col items-center gap-3" id="timer-{{ w.id }}"
+  <div class="flex flex-col items-center gap-2" id="timer-{{ w.id }}"
        data-style="{{ w.style }}"
        data-pomo-work="{{ w.config.get('pomo_work', 25) }}"
        data-pomo-break="{{ w.config.get('pomo_break', 5) }}"
@@ -381,7 +381,7 @@
     {% else %}{# event style #}
     <div class="grid grid-cols-4 gap-2 w-full" id="cd-display-{{ w.id }}">
       {% for unit in ['D','H','M','S'] %}
-      <div class="flex flex-col items-center bg-gray-50 dark:bg-zinc-800 rounded-lg py-2">
+      <div class="flex flex-col items-center bg-gray-50 dark:bg-zinc-800 rounded-lg py-1.5">
         <span class="text-xl font-bold tabular-nums text-gray-800 dark:text-zinc-100
                      cd-unit-{{ unit }}-{{ w.id }}">0</span>
         <span class="text-[9px] text-gray-400 uppercase">{{ unit }}</span>
@@ -401,7 +401,7 @@
 {% set items = w.config.get('items', []) %}
 {% call card(w) %}
   {{ widget_header(w, 'Reminders', '🔔') }}
-  <ul class="space-y-2 mb-3" id="reminder-list-{{ w.id }}">
+  <ul class="space-y-1.5 mb-2" id="reminder-list-{{ w.id }}">
     {% for item in items %}
     <li class="flex items-start gap-2 group/rem">
       <span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
@@ -436,10 +436,10 @@
 {# ══════════════════════════════════════════════════════════════════════════════
    MAIN CANVAS
    ══════════════════════════════════════════════════════════════════════════════ #}
-<div id="home-canvas" class="min-h-full bg-gray-50 dark:bg-zinc-950 p-6" data-page-id="{{ page.id }}">
+<div id="home-canvas" class="min-h-full bg-gray-50 dark:bg-zinc-950 p-4" data-page-id="{{ page.id }}">
 
   <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
+  <div class="flex items-center justify-between mb-4">
     <h1 class="text-2xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
       <span>{{ page.emoji }}</span> {{ page.name }}
     </h1>
@@ -486,11 +486,11 @@
     </button>
   </div>
   {% else %}
-  <div class="grid gap-4"
+  <div class="grid gap-3"
        id="widget-grid-{{ page.id }}"
        {%- set _pgcfg = page.get('config', {}) -%}
        data-col-count="{{ _pgcfg.get('col_count', 3) }}"
-       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: minmax(160px, auto);">
+       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: auto;">
     {% for w in widgets %}
       {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
       {% elif w.widget_type == 'weather' %}   {{ render_weather(w) }}
