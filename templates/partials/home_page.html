@@ -336,7 +336,7 @@
 {% macro render_timer(w) %}
 {% call card(w) %}
   {{ widget_header(w, 'Timer', '⏱️') }}
-  <div class="flex flex-col items-center gap-2" id="timer-{{ w.id }}"
+  <div class="flex-1 flex flex-col items-center justify-center gap-2" id="timer-{{ w.id }}"
        data-style="{{ w.style }}"
        data-pomo-work="{{ w.config.get('pomo_work', 25) }}"
        data-pomo-break="{{ w.config.get('pomo_break', 5) }}"
@@ -403,7 +403,7 @@
 {% set items = w.config.get('items', []) %}
 {% call card(w) %}
   {{ widget_header(w, 'Reminders', '🔔') }}
-  <ul class="space-y-1.5 mb-2" id="reminder-list-{{ w.id }}">
+  <ul class="flex-1 space-y-1.5 overflow-y-auto" id="reminder-list-{{ w.id }}">
     {% for item in items %}
     <li class="flex items-start gap-2 group/rem">
       <span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
@@ -419,7 +419,7 @@
     {% endfor %}
   </ul>
   {% if w.style != 'agenda' or not items %}
-  <div class="flex gap-1 mt-1">
+  <div class="flex gap-1 mt-2">
     <input id="rem-time-{{ w.id }}" type="time"
            class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-1
                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue w-24">
