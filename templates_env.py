@@ -3,6 +3,7 @@
 Import `templates` from here everywhere — do NOT create new
 Jinja2Templates instances in routers, that way filters are always available.
 """
+import json
 from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory="templates")
@@ -18,3 +19,4 @@ def _fmt_bytes(size: int) -> str:
 
 
 templates.env.filters["fmt_bytes"] = _fmt_bytes
+templates.env.filters["tojson"]    = lambda v, indent=None: json.dumps(v, default=str, indent=indent)

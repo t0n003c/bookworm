@@ -1,0 +1,131 @@
+{# HTMX partial — loaded into the account modal via GET /account/2fa #}
+
+<div id="2fa-panel">
+
+  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">
+    Two-Factor Authentication
+  </p>
+
+  {% if msg %}
+  <div class="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg
+              bg-green-50 dark:bg-green-900/30
+              border border-green-300 dark:border-green-700
+              text-green-700 dark:text-green-300 text-xs font-medium">
+    {{ msg }}
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div class="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg
+              bg-red-50 dark:bg-red-900/30
+              border border-red-300 dark:border-red-700
+              text-red-700 dark:text-red-300 text-xs font-medium">
+    ⚠️ {{ error }}
+  </div>
+  {% endif %}
+
+  {% if totp_enabled %}
+  {# ── 2FA is ON ──────────────────────────────────────────────── #}
+
+  <div class="flex items-center gap-2 mb-5">
+    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold
+                 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300
+                 border border-green-300 dark:border-green-700">
+      🛡️ Active
+    </span>
+    <span class="text-xs text-gray-500 dark:text-zinc-400">
+      Your account is protected with TOTP.
+    </span>
+  </div>
+
+  <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">
+    To disable 2FA, enter a valid code from your authenticator app.
+  </p>
+
+  <div class="flex items-center gap-2">
+    <input
+      id="disable-code-input"
+      type="text" inputmode="numeric"
+      maxlength="6" pattern="[0-9]{6}"
+      placeholder="6-digit code"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();submit2FA('/account/2fa/disable','disable-code-input',this.nextElementSibling);}"
+      class="w-36 px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+             bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+             placeholder-gray-400 dark:placeholder-zinc-500
+             focus:outline-none focus:ring-2 focus:ring-red-400
+             font-mono tracking-widest"
+      aria-label="Authenticator code"
+    />
+    <button type="button"
+      onclick="submit2FA('/account/2fa/disable', 'disable-code-input', this)"
+      class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold
+             rounded-lg transition focus:outline-none focus:ring-2 focus:ring-red-400">
+      Disable 2FA
+    </button>
+  </div>
+
+  {% else %}
+  {# ── 2FA is OFF — show setup QR ─────────────────────────────── #}
+
+  <div class="flex items-center gap-2 mb-4">
+    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold
+                 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400
+                 border border-gray-300 dark:border-zinc-600">
+      Off
+    </span>
+    <span class="text-xs text-gray-500 dark:text-zinc-400">
+      Add a second layer of security to your account.
+    </span>
+  </div>
+
+  <ol class="text-xs text-gray-600 dark:text-zinc-400 space-y-1 mb-4 list-decimal list-inside">
+    <li>Install <strong class="text-gray-800 dark:text-zinc-200">Google Authenticator</strong>,
+        <strong class="text-gray-800 dark:text-zinc-200">Authy</strong>, or any TOTP app.</li>
+    <li>Scan the QR code below.</li>
+    <li>Enter the 6-digit code to confirm &amp; activate.</li>
+  </ol>
+
+  {# QR code — white bg so it's readable in dark mode #}
+  <div class="flex justify-center mb-3">
+    <div class="p-2 bg-white rounded-xl inline-block shadow">
+      {{ qr_svg | safe }}
+    </div>
+  </div>
+
+  {# Manual entry fallback #}
+  <details class="mb-4">
+    <summary class="text-xs text-gray-400 dark:text-zinc-500 cursor-pointer hover:text-gray-600 dark:hover:text-zinc-300 transition select-none">
+      Can't scan? Enter code manually ▾
+    </summary>
+    <p class="mt-2 font-mono text-xs text-gray-700 dark:text-zinc-300
+              bg-gray-100 dark:bg-zinc-800 rounded-lg px-3 py-2 break-all select-all
+              border border-gray-200 dark:border-zinc-700">
+      {{ secret }}
+    </p>
+  </details>
+
+  <div class="flex items-center gap-2">
+    <input
+      id="enable-code-input"
+      type="text" inputmode="numeric"
+      maxlength="6" pattern="[0-9]{6}"
+      placeholder="6-digit code"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();submit2FA('/account/2fa/enable','enable-code-input',this.nextElementSibling);}"
+      class="w-36 px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+             bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+             placeholder-gray-400 dark:placeholder-zinc-500
+             focus:outline-none focus:ring-2 focus:ring-[#0053e2]
+             font-mono tracking-widest"
+      aria-label="Authenticator code"
+    />
+    <button type="button"
+      onclick="submit2FA('/account/2fa/enable', 'enable-code-input', this)"
+      class="px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white text-xs font-semibold
+             rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+      Enable 2FA
+    </button>
+  </div>
+
+  {% endif %}
+
+</div>

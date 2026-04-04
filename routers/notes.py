@@ -31,7 +31,20 @@ async def list_notes(
     sort_by: list[str] = Query(default=[]),
 ):
     cat_ids = [int(x) for x in category_ids.split(",") if x.strip()] if category_ids else []
-    ws_ids  = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
+    import datetime
+    with open("debug_requests.log", "a") as _f:
+        _f.write(f"{datetime.datetime.now().isoformat()} GET /notes  workspace_id={workspace_id!r}  q={q!r}\n")
+
+    # Guard: never return unscoped notes (would expose all users' data).
+    # Without a workspace the note list is empty and shows the welcome state.
+    if workspace_id is None:
+        return templates.TemplateResponse(
+            request,
+            "partials/note_list.html",
+            {"notes": [], "active_ws_id": None},
+        )
+
+    ws_ids = list(await get_descendant_ids(workspace_id))
     notes = await search_notes(
         q=q or None,
         date_from=date_from or None,
@@ -43,7 +56,7 @@ async def list_notes(
     return templates.TemplateResponse(
         request,
         "partials/note_list.html",
-        {"notes": notes},
+        {"notes": notes, "active_ws_id": workspace_id},
     )
 
 

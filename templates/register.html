@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Join BookWorm 📚</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ── floating emoji background ── */
+    @keyframes floatUp {
+      0%   { transform: translateY(0)   rotate(0deg);   opacity: 0.6; }
+      50%  { opacity: 1; }
+      100% { transform: translateY(-110vh) rotate(360deg); opacity: 0; }
+    }
+    .floaty {
+      position: fixed;
+      bottom: -60px;
+      font-size: 2rem;
+      animation: floatUp linear infinite;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
+    }
+
+    /* ── card glow border ── */
+    @keyframes borderGlow {
+      0%, 100% { box-shadow: 0 0 12px 2px rgba(0,83,226,0.35); }
+      50%       { box-shadow: 0 0 28px 6px rgba(0,83,226,0.7); }
+    }
+    .glow-card { animation: borderGlow 3s ease-in-out infinite; }
+
+    /* ── wiggle on error ── */
+    @keyframes wiggle {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-6px); }
+      40%       { transform: translateX(6px); }
+      60%       { transform: translateX(-4px); }
+      80%       { transform: translateX(4px); }
+    }
+    .wiggle { animation: wiggle 0.4s ease; }
+
+    /* ── strength bar transition ── */
+    #strength-bar { transition: width 0.4s ease, background-color 0.4s ease; }
+
+    /* ── submit button ── */
+    .btn-solid {
+      background-color: #0053e2;
+      transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    }
+    .btn-solid:hover {
+      background-color: #0041b8;
+      box-shadow: 0 0 18px 4px rgba(0,83,226,0.5);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-hidden relative">
+
+  <!-- ── floating background emojis ─────────────────────── -->
+  <span class="floaty" style="left:5%;  animation-duration:12s; animation-delay:0s">📚</span>
+  <span class="floaty" style="left:15%; animation-duration:17s; animation-delay:2s">✨</span>
+  <span class="floaty" style="left:25%; animation-duration:14s; animation-delay:4s">📖</span>
+  <span class="floaty" style="left:38%; animation-duration:19s; animation-delay:1s">🌟</span>
+  <span class="floaty" style="left:50%; animation-duration:11s; animation-delay:6s">📝</span>
+  <span class="floaty" style="left:62%; animation-duration:16s; animation-delay:3s">💡</span>
+  <span class="floaty" style="left:73%; animation-duration:13s; animation-delay:5s">📚</span>
+  <span class="floaty" style="left:83%; animation-duration:18s; animation-delay:0.5s">🔖</span>
+  <span class="floaty" style="left:92%; animation-duration:15s; animation-delay:7s">✨</span>
+
+  <!-- ── main card ───────────────────────────────────────── -->
+  <div class="relative z-10 w-full max-w-sm">
+
+    <!-- logo + headline -->
+    <div class="text-center mb-6">
+      <div class="text-6xl mb-3 drop-shadow-lg select-none" role="img" aria-label="Books">📚</div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">BookWorm</h1>
+      <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
+        Your new favorite note-taking home 🏠
+      </p>
+    </div>
+
+    <!-- crawling worm -->
+    <div id="worm-track"
+         class="relative w-full h-9 mb-2 overflow-hidden"
+         aria-hidden="true">
+      <span id="worm"
+            class="absolute bottom-1 left-0 text-3xl select-none"
+            style="display:inline-block; transform-origin: center center;">
+        🐛
+      </span>
+    </div>
+
+    <!-- card -->
+    <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
+
+      <!-- error banner -->
+      {% if error %}
+      <div id="err-banner"
+           class="wiggle mb-5 flex items-start gap-2 px-4 py-3 rounded-xl
+                  bg-red-500/20 border border-red-500/50 text-red-300 text-sm"
+           role="alert">
+        <span class="text-lg leading-none mt-0.5">😬</span>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form method="post" action="/register" class="space-y-5" novalidate
+            id="reg-form">
+
+        <!-- username -->
+        <div>
+          <label for="username" class="block text-xs font-semibold uppercase tracking-wider
+                                       text-[#ffc220] mb-1.5">
+            Pick a username
+          </label>
+          <input
+            id="username" name="username" type="text"
+            value="{{ username or '' }}"
+            required autofocus autocomplete="username"
+            placeholder="something_cool_42"
+            class="w-full px-4 py-2.5 rounded-xl text-sm
+                   bg-white/10 border border-white/20 text-white
+                   placeholder-white/30
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                   transition"
+            aria-required="true"
+          />
+        </div>
+
+        <!-- password + strength bar -->
+        <div>
+          <label for="password" class="block text-xs font-semibold uppercase tracking-wider
+                                       text-[#ffc220] mb-1.5">
+            Password
+            <span class="normal-case font-normal text-white/40">(min 6 chars)</span>
+          </label>
+          <input
+            id="password" name="password" type="password"
+            required autocomplete="new-password"
+            placeholder="make it sneaky 🤫"
+            class="w-full px-4 py-2.5 rounded-xl text-sm
+                   bg-white/10 border border-white/20 text-white
+                   placeholder-white/30
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                   transition"
+            aria-required="true"
+            oninput="checkStrength(this.value); checkMatch()"
+          />
+          <!-- strength bar -->
+          <div class="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div id="strength-bar" class="h-full rounded-full w-0"></div>
+          </div>
+          <p id="strength-label" class="text-xs mt-1 text-white/40"></p>
+        </div>
+
+        <!-- confirm password -->
+        <div>
+          <label for="confirm" class="block text-xs font-semibold uppercase tracking-wider
+                                      text-[#ffc220] mb-1.5">
+            Confirm Password
+          </label>
+          <div class="relative">
+            <input
+              id="confirm" name="confirm" type="password"
+              required autocomplete="new-password"
+              placeholder="same thing again!"
+              class="w-full px-4 py-2.5 pr-10 rounded-xl text-sm
+                     bg-white/10 border border-white/20 text-white
+                     placeholder-white/30
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                     transition"
+              aria-required="true"
+              oninput="checkMatch()"
+            />
+            <span id="match-icon"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-base select-none"
+                  aria-live="polite"></span>
+          </div>
+        </div>
+
+        <!-- submit -->
+        <button
+          type="submit"
+          class="btn-solid w-full py-3 rounded-xl text-white font-bold text-sm
+                 tracking-wide shadow-lg
+                 focus:outline-none focus:ring-2 focus:ring-[#ffc220] focus:ring-offset-2
+                 focus:ring-offset-[#080c1a]
+                 active:scale-95"
+        >
+          🚀 Create My Account
+        </button>
+      </form>
+
+      <!-- sign-in link -->
+      <div class="mt-6 pt-5 border-t border-white/10 text-center">
+        <p class="text-sm text-white/50">
+          Already a bookworm?
+          <a href="/login"
+             class="text-[#0053e2] font-semibold hover:text-[#ffc220] transition
+                    focus:outline-none focus:underline">
+            Sign in →
+          </a>
+        </p>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-white/25 mt-5">
+      Your notes live safely on your team's server.
+    </p>
+  </div>
+
+  <!-- ── client-side helpers ─────────────────────────────── -->
+  <script>
+    const LEVELS = [
+      { min: 0,  label: '',           color: '',          width: '0%'   },
+      { min: 1,  label: '😬 Too short',  color: '#ef4444', width: '20%'  },
+      { min: 4,  label: '😐 Weak',       color: '#f97316', width: '40%'  },
+      { min: 6,  label: '🙂 OK',         color: '#eab308', width: '60%'  },
+      { min: 9,  label: '💪 Strong',     color: '#22c55e', width: '85%'  },
+      { min: 12, label: '🔥 Uncrackable',color: '#0053e2', width: '100%' },
+    ];
+
+    function checkStrength(val) {
+      const bar   = document.getElementById('strength-bar');
+      const label = document.getElementById('strength-label');
+      let level = LEVELS[0];
+      for (const l of LEVELS) { if (val.length >= l.min) level = l; }
+      bar.style.width           = level.width;
+      bar.style.backgroundColor = level.color;
+      label.textContent         = level.label;
+      label.style.color         = level.color || 'rgba(255,255,255,0.4)';
+    }
+
+    function checkMatch() {
+      const pw  = document.getElementById('password').value;
+      const cfm = document.getElementById('confirm').value;
+      const ico = document.getElementById('match-icon');
+      if (!cfm)         { ico.textContent = ''; return; }
+      ico.textContent = (pw === cfm) ? '✅' : '❌';
+    }
+
+    /* ── crawling worm ── */
+    (function () {
+      const worm  = document.getElementById('worm');
+      const track = document.getElementById('worm-track');
+      let x    = 0;
+      let dir  = 1;
+      let tick = 0;
+      let squish = 0;
+      const SPEED = 0.9;
+
+      function step() {
+        tick++;
+        x += SPEED * dir;
+
+        const maxX = track.clientWidth - 40;
+        if (x >= maxX) { x = maxX; dir = -1; squish = 10; }
+        if (x <= 0)    { x = 0;    dir =  1; squish = 10; }
+
+        const bobY = Math.sin(tick * 0.25) * 4;
+        const sy = squish > 0 ? 1 + (squish / 10) * 0.4 : 1;
+        const sx = squish > 0 ? 1 - (squish / 10) * 0.3 : 1;
+        if (squish > 0) squish--;
+
+        worm.style.transform =
+          `translateX(${x}px) translateY(${bobY}px) scaleX(${dir * sx}) scaleY(${sy})`;
+
+        requestAnimationFrame(step);
+      }
+
+      requestAnimationFrame(step);
+    })();
+  </script>
+
+</body>
+</html>

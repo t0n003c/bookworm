@@ -326,15 +326,57 @@
       </details>
     </div>
 
-    <!-- Tab: Workspaces -->
+    <!-- Tab: Workspaces (contains HOMESPACE + WORKSPACES sections) -->
     <div id="sb-panel-workspaces" class="flex-1 flex flex-col min-h-0 hidden">
 
-      <!-- Scrollable workspace list (favorites + tree + new button) -->
-      <div class="flex-1 overflow-y-auto scrollbar-hide py-5 px-4">
-        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-3">Workspaces</p>
-        <div id="sidebar-workspace-list">
-          {% include "partials/sidebar_workspace_list.html" %}
+      <!-- Scrollable area: Homespace on top, Workspaces below -->
+      <div class="flex-1 overflow-y-auto scrollbar-hide">
+
+        <!-- ── HOMESPACE section ── -->
+        <div class="py-4 px-4 border-b border-gray-200 dark:border-zinc-800">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-[10px] font-bold uppercase tracking-widest
+                       text-gray-400 dark:text-zinc-500 select-none flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0
+                         01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+              </svg>
+              Homespace
+            </p>
+            <button type="button" onclick="openNewHomePage()"
+              title="Create a new personal page"
+              class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
+                     dark:hover:bg-zinc-800 transition"
+              aria-label="Create new personal page">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+              </svg>
+            </button>
+          </div>
+          <div id="sb-home-pages">
+            {% include "partials/home_sidebar.html" %}
+          </div>
         </div>
+
+        <!-- ── WORKSPACES section ── -->
+        <div class="py-5 px-4">
+          <p class="text-[10px] font-bold uppercase tracking-widest
+                     text-gray-400 dark:text-zinc-500 select-none mb-2 flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+            </svg>
+            Workspaces
+          </p>
+          <div id="sidebar-workspace-list">
+            {% include "partials/sidebar_workspace_list.html" %}
+          </div>
+        </div>
+
       </div>
 
       <!-- Trash — pinned to the bottom of the sidebar, never scrolls away -->
@@ -358,6 +400,9 @@
     <div id="note-list">
       {% include "partials/note_list.html" %}
     </div>
+
+    <!-- Home / Personal Page canvas (hidden by default) -->
+    <div id="home-content" class="hidden -mx-6 -my-6"></div>
   </main>
 
   <!-- RIGHT DETAIL PANEL (panel OR fullscreen depending on mode) -->
@@ -382,6 +427,111 @@
 >
   <input type="hidden" name="active_ws_id" id="close-ws-active-id" value="" />
 </form>
+
+<!-- ===== DELETE WIDGET MODAL ===== -->
+<div
+  id="del-widget-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="del-widget-title"
+  onkeydown="if(event.key==='Escape') closeDelWidgetModal()"
+>
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeDelWidgetModal()" aria-hidden="true"></div>
+
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-wred" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                   a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+      </span>
+      <h2 id="del-widget-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Remove widget?
+      </h2>
+    </div>
+
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+      This widget will be permanently removed from your page.
+    </p>
+
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="closeDelWidgetModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+      >Cancel</button>
+      <button id="del-widget-confirm-btn" type="button" onclick="_confirmDelWidget()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Remove Widget</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== HOME PAGE MODAL (create & rename) ===== -->
+<div
+  id="hp-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="hp-modal-title"
+  onkeydown="if(event.key==='Escape') closeHpModal()"
+>
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+    onclick="closeHpModal()"
+    aria-hidden="true"></div>
+
+  <!-- Card -->
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <h2 id="hp-modal-title"
+        class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">New Page</h2>
+
+    <div class="flex gap-2 mb-4">
+      <!-- Emoji picker -->
+      <div class="flex-shrink-0">
+        <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Icon</label>
+        <input id="hp-emoji" type="hidden" value="🏠" />
+        <button type="button" id="hp-emoji-btn"
+          onclick="openEmojiPicker('hp-emoji', 'hp-emoji-btn')"
+          class="w-14 h-10 text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg
+                 hover:border-wblue focus:outline-none focus:ring-2 focus:ring-wblue
+                 bg-white dark:bg-zinc-800 transition"
+          aria-label="Choose page icon" aria-haspopup="true"
+        >🏠</button>
+      </div>
+      <!-- Name -->
+      <div class="flex-1">
+        <label for="hp-name"
+               class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Name</label>
+        <input id="hp-name" type="text" placeholder="e.g. My Dashboard"
+          required maxlength="80"
+          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2
+                 text-sm focus:outline-none focus:ring-2 focus:ring-wblue
+                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+          aria-label="Page name"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();submitHpModal();}"
+        />
+      </div>
+    </div>
+
+    <!-- hidden action URL (swapped by JS between create / rename) -->
+    <input type="hidden" id="hp-modal-action" value="/home/pages/create" />
+
+    <div class="flex gap-2 justify-end">
+      <button type="button" onclick="closeHpModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition"
+      >Cancel</button>
+      <button type="button" id="hp-modal-submit" onclick="submitHpModal()"
+        class="px-4 py-2 text-sm rounded-lg bg-wblue text-white font-semibold
+               hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue"
+      >Create</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== NEW WORKSPACE MODAL ===== -->
 <div
@@ -676,20 +826,22 @@
     ['search', 'workspaces'].forEach(t => {
       const btn   = document.getElementById('sb-tab-' + t);
       const panel = document.getElementById('sb-panel-' + t);
+      if (!btn || !panel) return;
       const isActive = t === tab;
-      btn.classList.toggle('border-wblue',    isActive);
-      btn.classList.toggle('text-wblue',      isActive);
+      btn.classList.toggle('border-wblue',      isActive);
+      btn.classList.toggle('text-wblue',        isActive);
       btn.classList.toggle('border-transparent', !isActive);
-      btn.classList.toggle('text-gray-500',    !isActive);
+      btn.classList.toggle('text-gray-500',     !isActive);
       btn.classList.toggle('dark:text-zinc-400', !isActive);
       panel.classList.toggle('hidden', !isActive);
     });
     localStorage.setItem('bw-sidebar-tab', tab);
   }
 
-  // Restore saved tab or default to 'workspaces'
+  // Restore saved tab — 'home' was merged into 'workspaces', migrate old pref
   (function initSidebarTab() {
-    const saved = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
+    const raw   = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
+    const saved = raw === 'home' ? 'workspaces' : raw;
     switchSidebarTab(saved);
   })();
 
@@ -1227,31 +1379,32 @@
      Belt-AND-suspenders: replaceState updates the address bar immediately
      (synchronous, no network round-trip) so a page reload always lands on
      the right workspace.  localStorage is the fallback for the edge case
-     where replaceState was somehow skipped (caught on DOMContentLoaded).  */
+     where replaceState was somehow skipped (caught on DOMContentLoaded).
+
+     Key is namespaced per user-ID so that switching accounts on the same
+     browser never leaks one user's last workspace into another's session.  */
+  const _BW_WS_KEY = 'bw-last-ws-{{ current_user_id }}';
+
   function _bwSetActiveWs(id) {
-    localStorage.setItem('bw-last-ws', String(id));
+    localStorage.setItem(_BW_WS_KEY, String(id));
     history.replaceState(null, '', '/?ws=' + id);
   }
 
-  /* ── On first paint: silently correct a stale URL ────────────────────────
-     HTMX 1.9.x does not reliably process HX-Replace-URL from programmatic
-     htmx.ajax() calls, so the previous fix left the URL unmodified after
-     in-page workspace switches.  If the address bar disagrees with the last
-     saved workspace, swap the note-list without a full page reload.        */
-  document.addEventListener('DOMContentLoaded', function _bwRestoreWs() {
-    const stored = localStorage.getItem('bw-last-ws');
-    if (!stored) return;
-    const urlWs = new URLSearchParams(window.location.search).get('ws');
-    if (String(urlWs) === stored) return;           // URL already correct — do nothing
-    history.replaceState(null, '', '/?ws=' + stored);
-    htmx.ajax('GET', '/workspaces/switch/' + stored, {
-      target: '#note-list', swap: 'innerHTML',
-    });
-  });
+  /* ── localStorage restore REMOVED ─────────────────────────────────────────
+     Previously this block read bw-last-ws from localStorage and fired an HTMX
+     request to restore the last workspace on page load.  This caused cross-user
+     contamination: a stale key from a previous session was picked up by the next
+     user on the same browser.
+
+     It is no longer needed: _bwSetActiveWs() calls history.replaceState()
+     synchronously on every workspace click, so the URL is always correct and a
+     page reload lands on the right workspace via the server's ?ws= param.    */
 
   /* ---- Workspace navigation ---- */
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
+    // Return from home page canvas to workspace view
+    if (typeof homeExit === 'function') homeExit();
     // Update URL + localStorage SYNCHRONOUSLY on every click — before the debounce
     // timer fires.  This way a page reload triggered within the 350 ms window still
     // lands on the correct workspace.  The HTMX content swap is still debounced so
@@ -1681,7 +1834,24 @@
       <button onclick="hideAccountModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition focus:outline-none focus:ring-2 focus:ring-wblue rounded" aria-label="Close">&times;</button>
     </div>
     <!-- Body -->
-    <div class="px-6 py-5 space-y-6">
+    <div class="px-6 py-5 space-y-6 overflow-y-auto max-h-[80vh]">
+
+      <!-- Profile info -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
+        <div class="w-10 h-10 rounded-full bg-[#0053e2] flex items-center justify-center text-white font-bold text-base flex-shrink-0">
+          {{ current_username[0].upper() if current_username else '?' }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ current_username }}</p>
+          {% if current_role == 'superadmin' %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-[#0053e2] text-white mt-0.5">⭐ Superadmin</span>
+          {% else %}
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mt-0.5">User</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <hr class="border-gray-200 dark:border-zinc-700"/>
 
       <!-- Change Username -->
       <div>
@@ -1757,6 +1927,25 @@
           </div>
         </form>
       </div>
+
+      <hr class="border-gray-200 dark:border-zinc-700"/>
+
+      <!-- Two-Factor Authentication -->
+      <div id="2fa-panel-loader">
+        <p class="text-xs text-gray-400 dark:text-zinc-500">Loading 2FA settings…</p>
+      </div>
+
+      {% if current_role == 'superadmin' %}
+      <hr class="border-gray-200 dark:border-zinc-700"/>
+
+      <!-- Superadmin: user management -->
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">User Management</p>
+        <div id="admin-users-loader">
+          <p class="text-xs text-gray-400 dark:text-zinc-500">Loading users…</p>
+        </div>
+      </div>
+      {% endif %}
 
     </div>
   </div>
@@ -1903,7 +2092,169 @@
   </div>
 </div>
 
+<!-- ===== PAGE LAYOUT MODAL ===== -->
+<div id="pg-layout-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="pg-layout-title"
+     onkeydown="if(event.key==='Escape') closePageLayout()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closePageLayout()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-xs mx-4 p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h2 id="pg-layout-title" class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+        🗃️ Page Layout
+      </h2>
+      <button onclick="closePageLayout()" aria-label="Close"
+              class="p-1 rounded text-gray-400 hover:text-gray-700
+                     dark:hover:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <p class="text-xs text-gray-400 dark:text-zinc-500 mb-3">Choose how many columns your widgets span.</p>
+    <div class="grid grid-cols-4 gap-2 mb-4">
+      {% for n in [2, 3, 4, 5] %}
+      <button type="button" onclick="selectPageLayout({{ n }})"
+              data-cols="{{ n }}"
+              class="pg-col-btn flex flex-col items-center gap-1.5 p-2 rounded-xl
+                     border-2 border-gray-200 dark:border-zinc-700
+                     hover:border-wblue transition">
+        <div class="grid gap-0.5 w-full" style="grid-template-columns: repeat({{ n }}, 1fr)">
+          {% for _ in range(n) %}
+          <div class="bg-gray-300 dark:bg-zinc-600 rounded-sm h-5"></div>
+          {% endfor %}
+        </div>
+        <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">{{ n }} col</span>
+      </button>
+      {% endfor %}
+    </div>
+    <div class="flex justify-end">
+      <button onclick="closePageLayout()"
+              class="px-4 py-2 text-sm rounded-lg bg-wblue text-white font-semibold
+                     hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue">
+        Done
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WIDGET SETTINGS MODAL ===== --> -->
+<div
+  id="ws-settings-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="ws-settings-title"
+  onkeydown="if(event.key==='Escape') closeWidgetSettings()"
+>
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeWidgetSettings()" aria-hidden="true"></div>
+
+  <!-- Card -->
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-xs mx-4 p-5">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4">
+      <h2 id="ws-settings-title"
+          class="flex items-center gap-2 text-sm font-bold
+                 text-gray-900 dark:text-zinc-100">
+        <span id="ws-settings-icon" class="text-base" aria-hidden="true"></span>
+        <span id="ws-settings-name"></span>
+        <span class="text-xs font-normal text-gray-400 dark:text-zinc-500">settings</span>
+      </h2>
+      <button type="button" onclick="closeWidgetSettings()"
+              aria-label="Close settings"
+              class="p-1 rounded text-gray-400 hover:text-gray-700
+                     dark:hover:text-zinc-200 hover:bg-gray-100
+                     dark:hover:bg-zinc-800 transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Dynamic settings body (populated by openWidgetSettings) -->
+    <div id="ws-settings-body" class="space-y-2.5"></div>
+
+    <!-- Footer -->
+    <div class="mt-5 flex justify-end">
+      <button type="button" onclick="closeWidgetSettings()"
+              class="px-4 py-2 text-sm rounded-lg bg-wblue text-white
+                     font-semibold hover:bg-blue-700 transition
+                     focus:outline-none focus:ring-2 focus:ring-wblue">
+        Done
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
+  async function submit2FA(url, inputId, btn) {
+    const input = document.getElementById(inputId);
+    const code  = (input?.value || '').trim();
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+      input?.focus();
+      return;
+    }
+    const original = btn.textContent;
+    btn.disabled   = true;
+    btn.textContent = '…';
+    try {
+      const body = new URLSearchParams({ code });
+      const res  = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'same-origin',
+        body,
+      });
+      const html = await res.text();
+      const loader = document.getElementById('2fa-panel-loader');
+      if (loader) loader.innerHTML = html;
+    } catch (err) {
+      console.error('2FA submit failed:', err);
+      btn.disabled    = false;
+      btn.textContent = original;
+    }
+  }
+
+  /**
+   * General-purpose fetch POST for the admin users panel.
+   * url      — endpoint to POST to
+   * formEl   — HTMLFormElement to serialize (or null for bodyless POSTs)
+   * btnEl    — the button that triggered this (disabled while in-flight)
+   */
+  async function adminPost(url, formEl, btnEl) {
+    const original = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '\u2026'; }
+    try {
+      const body = formEl
+        ? new URLSearchParams(new FormData(formEl))
+        : new URLSearchParams();
+      const res  = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'same-origin',
+        body,
+      });
+      const html = await res.text();
+      const loader = document.getElementById('admin-users-loader');
+      if (loader) loader.innerHTML = html;
+    } catch (err) {
+      console.error('adminPost failed:', err);
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = original; }
+    }
+  }
+
+  function toggleResetForm(rowId) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    const hidden = row.classList.toggle('hidden');
+    if (hidden) row.querySelectorAll('input').forEach(i => i.value = '');
+  }
+
   function showShortcuts() {
     document.getElementById('shortcuts-modal').classList.remove('hidden');
     document.getElementById('settings-menu').classList.add('hidden');
@@ -1911,14 +2262,35 @@
   function hideShortcuts() {
     document.getElementById('shortcuts-modal').classList.add('hidden');
   }
+  /** Fetch a panel partial and inject it — 100% vanilla fetch, zero HTMX. */
+  async function _loadPanel(url, targetId) {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      el.innerHTML = await res.text();
+    } catch (err) {
+      el.innerHTML =
+        '<p class="text-xs text-red-500">⚠️ Failed to load — ' +
+        '<button onclick="_loadPanel(\'' + url + '\',\'' + targetId + '\')" ' +
+        'class="underline">Retry</button></p>';
+    }
+  }
+
   function showAccountModal() {
     document.getElementById('account-modal').classList.remove('hidden');
+    _loadPanel('/account/2fa',   '2fa-panel-loader');
+    _loadPanel('/account/users', 'admin-users-loader');
   }
   function hideAccountModal() {
     document.getElementById('account-modal').classList.add('hidden');
-    // Clear status messages so they don't linger on next open
     document.getElementById('username-msg').innerHTML = '';
     document.getElementById('password-msg').innerHTML = '';
+    const twoFa = document.getElementById('2fa-panel-loader');
+    if (twoFa) twoFa.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading 2FA settings…</p>';
+    const adminUsers = document.getElementById('admin-users-loader');
+    if (adminUsers) adminUsers.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading users…</p>';
   }
   document.addEventListener('keydown', (e) => {
     if (e.key === '?' && !e.ctrlKey && !e.metaKey) {

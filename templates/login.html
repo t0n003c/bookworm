@@ -1,78 +1,247 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sign In — BookWorm</title>
+  <title>Sign In — BookWorm 📚</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: { extend: { colors: {
-        wblue: '#0053e2', wspark: '#ffc220'
-      }}}
-    };
-  </script>
-</head>
-<body class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+  <style>
+    /* ── floating emojis ── */
+    @keyframes floatUp {
+      0%   { transform: translateY(0) rotate(0deg);   opacity: 0.55; }
+      50%  { opacity: 0.9; }
+      100% { transform: translateY(-110vh) rotate(360deg); opacity: 0; }
+    }
+    .floaty {
+      position: fixed;
+      bottom: -60px;
+      font-size: 1.8rem;
+      animation: floatUp linear infinite;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
+    }
 
-  <div class="w-full max-w-sm">
-    <!-- Logo -->
-    <div class="text-center mb-8">
-      <div class="text-5xl mb-3">📚</div>
-      <h1 class="text-2xl font-bold text-gray-900">BookWorm</h1>
-      <p class="text-sm text-gray-500 mt-1">Sign in to continue</p>
+    /* ── card glow ── */
+    @keyframes borderGlow {
+      0%, 100% { box-shadow: 0 0 12px 2px rgba(0,83,226,0.3); }
+      50%       { box-shadow: 0 0 28px 6px rgba(0,83,226,0.65); }
+    }
+    .glow-card { animation: borderGlow 3.5s ease-in-out infinite; }
+
+    /* ── error wiggle ── */
+    @keyframes wiggle {
+      0%, 100% { transform: translateX(0); }
+      20%  { transform: translateX(-6px); }
+      40%  { transform: translateX(6px); }
+      60%  { transform: translateX(-4px); }
+      80%  { transform: translateX(4px); }
+    }
+    .wiggle { animation: wiggle 0.4s ease; }
+
+    /* ── sign-in button ── */
+    .btn-solid {
+      background-color: #0053e2;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-solid:hover {
+      background-color: #0041b8;
+      box-shadow: 0 0 20px 5px rgba(0,83,226,0.5);
+    }
+
+    /* ── logo bob ── */
+    @keyframes bob {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+    .bob { animation: bob 3s ease-in-out infinite; }
+  </style>
+</head>
+
+<body class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-hidden relative">
+
+  <!-- ── floating background emojis ── -->
+  <span class="floaty" style="left:4%;  animation-duration:15s; animation-delay:0s">📚</span>
+  <span class="floaty" style="left:13%; animation-duration:19s; animation-delay:3s">✨</span>
+  <span class="floaty" style="left:23%; animation-duration:13s; animation-delay:6s">🔑</span>
+  <span class="floaty" style="left:35%; animation-duration:17s; animation-delay:1s">🌟</span>
+  <span class="floaty" style="left:48%; animation-duration:12s; animation-delay:5s">📖</span>
+  <span class="floaty" style="left:60%; animation-duration:20s; animation-delay:2s">💭</span>
+  <span class="floaty" style="left:71%; animation-duration:14s; animation-delay:7s">📚</span>
+  <span class="floaty" style="left:82%; animation-duration:16s; animation-delay:4s">✨</span>
+  <span class="floaty" style="left:91%; animation-duration:18s; animation-delay:0.5s">🔖</span>
+
+  <!-- ── card ── -->
+  <div class="relative z-10 w-full max-w-sm">
+
+    <!-- logo -->
+    <div class="text-center mb-6">
+      <div class="bob text-6xl mb-3 drop-shadow-lg select-none inline-block"
+           role="img" aria-label="Books">📚</div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">BookWorm</h1>
+      <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
+        Welcome back, word nerd 🧐
+      </p>
     </div>
 
-    <!-- Card -->
-    <div class="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
+    <!-- crawling worm -->
+    <div id="worm-track"
+         class="relative w-full h-9 mb-2 overflow-hidden"
+         aria-hidden="true">
+      <span id="worm"
+            class="absolute bottom-1 left-0 text-3xl select-none"
+            style="display:inline-block; transform-origin: center center;">
+        🐛
+      </span>
+    </div>
 
+    <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
+
+      <!-- success banners -->
       {% if created %}
-      <div class="mb-4 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
-        ✅ Account created! Sign in below.
+      <div class="mb-5 flex items-center gap-2 px-4 py-3 rounded-xl
+                  bg-green-500/20 border border-green-500/40 text-green-300 text-sm">
+        ✅ Admin account created — sign in below!
       </div>
       {% endif %}
 
+      {% if registered %}
+      <div class="mb-5 flex items-center gap-2 px-4 py-3 rounded-xl
+                  bg-green-500/20 border border-green-500/40 text-green-300 text-sm">
+        🎉 Account ready! Dive in.
+      </div>
+      {% endif %}
+
+      <!-- error banner -->
       {% if error %}
-      <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-        {{ error }}
+      <div class="wiggle mb-5 flex items-start gap-2 px-4 py-3 rounded-xl
+                  bg-red-500/20 border border-red-500/50 text-red-300 text-sm"
+           role="alert">
+        <span class="text-lg leading-none mt-0.5">😕</span>
+        <span>{{ error }}</span>
       </div>
       {% endif %}
 
-      <form method="post" action="/login" class="space-y-4">
+      <form method="post" action="/login" class="space-y-5">
+
+        <!-- username -->
         <div>
-          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="username"
+                 class="block text-xs font-semibold uppercase tracking-wider text-[#ffc220] mb-1.5">
             Username
           </label>
           <input
             id="username" name="username" type="text"
             value="{{ username or '' }}"
             required autofocus autocomplete="username"
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
-                   focus:outline-none focus:ring-2 focus:ring-wblue focus:border-wblue"
+            placeholder="your_username"
+            class="w-full px-4 py-2.5 rounded-xl text-sm
+                   bg-white/10 border border-white/20 text-white placeholder-white/30
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                   transition"
           />
         </div>
+
+        <!-- password -->
         <div>
-          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="password"
+                 class="block text-xs font-semibold uppercase tracking-wider text-[#ffc220] mb-1.5">
             Password
           </label>
           <input
             id="password" name="password" type="password"
             required autocomplete="current-password"
-            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
-                   focus:outline-none focus:ring-2 focus:ring-wblue focus:border-wblue"
+            placeholder="shh, it’s a secret 🤫"
+            class="w-full px-4 py-2.5 rounded-xl text-sm
+                   bg-white/10 border border-white/20 text-white placeholder-white/30
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                   transition"
           />
         </div>
+
+        <!-- stay signed in -->
+        <label class="flex items-center gap-3 cursor-pointer select-none group">
+          <div class="relative flex-shrink-0">
+            <input
+              type="checkbox" name="stay_signed_in" value="on"
+              id="stay_signed_in"
+              class="w-4 h-4 rounded border-white/30 bg-white/10 accent-[#0053e2]
+                     focus:ring-2 focus:ring-[#0053e2] focus:ring-offset-0"
+              aria-label="Stay signed in on this computer"
+            />
+          </div>
+          <span class="text-sm text-white/60 group-hover:text-white/90 transition">
+            Keep me signed in
+          </span>
+        </label>
+
+        <!-- submit -->
         <button
           type="submit"
-          class="w-full bg-wblue hover:bg-blue-700 text-white font-semibold
-                 py-2 rounded-lg text-sm transition focus:outline-none
-                 focus:ring-2 focus:ring-wblue focus:ring-offset-2"
+          class="btn-solid w-full py-3 rounded-xl text-white font-bold text-sm
+                 tracking-wide shadow-lg
+                 focus:outline-none focus:ring-2 focus:ring-[#ffc220] focus:ring-offset-2
+                 focus:ring-offset-[#080c1a] active:scale-95 transition-transform"
         >
-          Sign In
+          🔓 Sign In
         </button>
       </form>
+
+      <!-- register link -->
+      <div class="mt-6 pt-5 border-t border-white/10 text-center">
+        <p class="text-sm text-white/50">
+          New here?
+          <a href="/register"
+             class="text-[#0053e2] font-semibold hover:text-[#ffc220] transition
+                    focus:outline-none focus:underline">
+            Create an account →
+          </a>
+        </p>
+      </div>
     </div>
+
+    <p class="text-center text-xs text-white/25 mt-5">
+      Your notes live safely on your team’s server.
+    </p>
   </div>
+
+  <script>
+    /* ── crawling worm ── */
+    (function () {
+      const worm  = document.getElementById('worm');
+      const track = document.getElementById('worm-track');
+      let x    = 0;
+      let dir  = 1;      // 1 = right, -1 = left
+      let tick = 0;
+      let squish = 0;    // frames of squish remaining after a turn
+      const SPEED = 0.9; // px per frame
+
+      function step() {
+        tick++;
+        x += SPEED * dir;
+
+        const maxX = track.clientWidth - 40;
+        if (x >= maxX) { x = maxX; dir = -1; squish = 10; }
+        if (x <= 0)    { x = 0;    dir =  1; squish = 10; }
+
+        /* gentle vertical bob — higher frequency = more wiggly */
+        const bobY = Math.sin(tick * 0.25) * 4;
+
+        /* brief vertical squish on direction change */
+        const sy = squish > 0 ? 1 + (squish / 10) * 0.4 : 1;
+        const sx = squish > 0 ? 1 - (squish / 10) * 0.3 : 1;
+        if (squish > 0) squish--;
+
+        worm.style.transform =
+          `translateX(${x}px) translateY(${bobY}px) scaleX(${dir * sx}) scaleY(${sy})`;
+
+        requestAnimationFrame(step);
+      }
+
+      requestAnimationFrame(step);
+    })();
+  </script>
 
 </body>
 </html>

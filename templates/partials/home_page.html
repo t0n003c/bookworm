@@ -1,0 +1,582 @@
+{#
+  Home page widget canvas.
+  Context: page (dict), widgets (list[dict]), all_notes (list[dict])
+#}
+
+{# ── Macros ────────────────────────────────────────────────────────── #}
+{#
+  widget_header(w, title, icon, has_settings=false)
+  - title/icon: used for the settings modal header only (no longer shown on the card)
+  - has_settings: if truthy a gear icon is rendered that opens the popup
+#}
+{% macro widget_header(w, title='', icon='', has_settings=true) %}
+<div class="flex items-center justify-end mb-3 min-h-[1.5rem]">
+  <div class="flex items-center gap-1 opacity-0 group-hover/wcard:opacity-100 transition">
+    {% if has_settings %}
+    <button type="button"
+      onclick="openWidgetSettings({{ w.id }}, '{{ title }}', '{{ icon|e }}')"
+      title="Widget settings" aria-label="Widget settings"
+      class="p-1 rounded text-gray-400 hover:text-wblue hover:bg-blue-50
+             dark:hover:bg-wblue/10 transition">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+           stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
+             c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756
+             2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724
+             1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0
+             00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0
+             00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
+             c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    </button>
+    {% endif %}
+    <button type="button" onclick="deleteWidget({{ w.id }}, {{ page.id }})"
+      title="Remove widget" aria-label="Remove widget"
+      class="p-1 rounded text-gray-400 hover:text-wred hover:bg-red-50
+             dark:hover:bg-red-900/20 transition">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+           stroke-width="2.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+    <span class="drag-handle cursor-grab active:cursor-grabbing p-1 text-gray-300
+                 dark:text-zinc-600 hover:text-gray-500 transition select-none"
+          title="Drag to reorder" aria-hidden="true">⠷</span>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro card(w, extra_cls="") %}
+{%- set col_span = w.config.get('col_span', 1) -%}
+{%- set row_span = w.config.get('row_span', 1) -%}
+<div id="hw-card-{{ w.id }}"
+     class="hw-card group/wcard relative bg-white dark:bg-zinc-900 rounded-xl shadow-sm
+            border border-gray-200 dark:border-zinc-800 p-4
+            hover:shadow-md transition-shadow duration-200 {{ extra_cls }}"
+     data-widget-id="{{ w.id }}"
+     data-widget-type="{{ w.widget_type }}"
+     data-widget-style="{{ w.style }}"
+     data-col-span="{{ col_span }}"
+     data-row-span="{{ row_span }}"
+     data-widget-config='{{ w.config | tojson | e }}'
+     style="grid-column: span {{ col_span }}; grid-row: span {{ row_span }};"
+     draggable="true">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{# ── Reusable toggle switch row ───────────────────────────────────────────────── #}
+{% macro _tog(w, key, label, default) %}
+{%- set on = w.config.get(key, default) -%}
+<label class="flex items-center justify-between text-xs cursor-pointer select-none gap-3">
+  <span class="text-gray-500 dark:text-zinc-400">{{ label }}</span>
+  <div class="relative inline-flex items-center flex-shrink-0">
+    <input type="checkbox" class="sr-only peer" data-cfg-key="{{ key }}"
+           {% if on %}checked{% endif %}
+           onchange="saveClockSetting({{ w.id }}, '{{ key }}', this.checked)">
+    <div class="w-8 h-4 rounded-full bg-gray-200 dark:bg-zinc-700
+                peer-checked:bg-wblue transition"></div>
+    <div class="absolute left-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow-sm
+                transition-transform peer-checked:translate-x-4 pointer-events-none"></div>
+  </div>
+</label>
+{% endmacro %}
+
+{# ── Timezone <option> list (one source of truth in the template) ───────────── #}
+{% set _TZ = [
+  ('local',                '🌐 Local (auto-detect)'),
+  ('America/New_York',     '🗽  Eastern — ET'),
+  ('America/Chicago',      '🌽 Central — CT'),
+  ('America/Denver',       '⛰️  Mountain — MT'),
+  ('America/Los_Angeles',  '🌉 Pacific — PT'),
+  ('America/Anchorage',    '🐻 Alaska — AKT'),
+  ('Pacific/Honolulu',     '🌺 Hawaii — HT'),
+  ('America/Puerto_Rico',  '🇵🇷 Puerto Rico — AST'),
+  ('America/Sao_Paulo',    '🇧🇷 Brasília — BRT'),
+  ('Europe/London',        '🇬🇧 London — GMT/BST'),
+  ('Europe/Paris',         '🇫🇷 Paris — CET'),
+  ('Europe/Moscow',        '🇷🇺 Moscow — MSK'),
+  ('Asia/Dubai',           '🇦🇪 Dubai — GST'),
+  ('Asia/Kolkata',         '🇮🇳 India — IST'),
+  ('Asia/Dhaka',           '🇧🇩 Dhaka — BST'),
+  ('Asia/Bangkok',         '🇹🇭 Bangkok — ICT'),
+  ('Asia/Ho_Chi_Minh',     '🇻🇳 Vietnam — ICT'),
+  ('Asia/Shanghai',        '🇨🇳 China — CST'),
+  ('Asia/Tokyo',           '🇯🇵 Japan — JST'),
+  ('Australia/Sydney',     '🦸 Sydney — AEDT'),
+  ('Pacific/Auckland',     '🇳🇿 Auckland — NZST'),
+  ('UTC',                  '🌍 UTC'),
+] %}
+
+{# ── Inline timezone <select> (takes current tz value) ───────────────── #}
+{% macro _tz_sel(w, cur_tz) %}
+<label class="flex items-center justify-between text-xs select-none gap-3">
+  <span class="text-gray-500 dark:text-zinc-400">Timezone</span>
+  <select data-cfg-key="timezone"
+          onchange="saveClockSetting({{ w.id }}, 'timezone', this.value)"
+          class="text-xs border border-gray-200 dark:border-zinc-700 rounded-md
+                 px-1.5 py-1 max-w-[148px] truncate bg-white dark:bg-zinc-800
+                 text-gray-700 dark:text-zinc-300 focus:outline-none
+                 focus:ring-1 focus:ring-wblue">
+    {% for val, lbl in _TZ %}
+    <option value="{{ val }}" {{ 'selected' if cur_tz == val }}>{{ lbl }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endmacro %}
+
+{# ── Inline format <select> (12h / 24h) ────────────────────────────── #}
+{% macro _fmt_sel(w, cur_fmt) %}
+<label class="flex items-center justify-between text-xs select-none gap-3">
+  <span class="text-gray-500 dark:text-zinc-400">Format</span>
+  <select data-cfg-key="format"
+          onchange="saveClockSetting({{ w.id }}, 'format', this.value)"
+          class="text-xs border border-gray-200 dark:border-zinc-700 rounded-md
+                 px-1.5 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                 focus:outline-none focus:ring-1 focus:ring-wblue">
+    <option value="12h" {{ 'selected' if cur_fmt == '12h' }}>12-hour (AM/PM)</option>
+    <option value="24h" {{ 'selected' if cur_fmt == '24h' }}>24-hour</option>
+  </select>
+</label>
+{% endmacro %}
+
+{# ══════════════════════════════════════════════════════════════════════
+   CLOCK
+   ══════════════════════════════════════════════════════════════════════ #}
+{% macro render_clock(w) %}
+{% set tz  = w.config.get('timezone', 'local') %}
+{% set fmt = w.config.get('format', '12h') %}
+
+{# ── Analog ────────────────────────────────────────────────────────────────── #}
+{% if w.style == 'analog' %}
+{% call card(w) %}
+  {{ widget_header(w, 'Clock', '🕐', true) }}
+  {# date on top #}
+  <span id="clock-date-{{ w.id }}"
+        class="block text-xs text-center text-gray-400 dark:text-zinc-500 mb-1 select-none
+               {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
+  <div class="flex justify-center">
+    <canvas id="analog-clock-{{ w.id }}" width="120" height="120"
+            data-tz="{{ tz }}" class="rounded-full"></canvas>
+  </div>
+  {# greeting below canvas #}
+  <div id="clock-greet-{{ w.id }}"
+       class="text-xs text-center text-gray-400 dark:text-zinc-500 mt-1 select-none
+              {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
+{% endcall %}
+
+{# ── Minimal ───────────────────────────────────────────────────────────────── #}
+{% elif w.style == 'minimal' %}
+{% call card(w) %}
+  {{ widget_header(w, 'Clock', '🕐', true) }}
+  {# date on top #}
+  <span id="clock-date-{{ w.id }}"
+        class="block text-xs text-center text-gray-400 dark:text-zinc-500 mb-1 select-none
+               {{ 'hidden' if not w.config.get('show_date', false) }}"></span>
+  <div class="flex items-center justify-center h-10 select-none">
+    <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
+          class="text-3xl font-light text-gray-800 dark:text-zinc-100
+                 tabular-nums tracking-tight">
+      <span id="clock-time-{{ w.id }}"></span><!--
+   --><span id="clock-ampm-{{ w.id }}"
+            class="text-base font-normal opacity-60 ml-1"></span>
+    </span>
+  </div>
+  {# greeting below time #}
+  <div id="clock-greet-{{ w.id }}"
+       class="text-xs text-center text-gray-400 dark:text-zinc-500 mt-1 select-none
+              {{ 'hidden' if not w.config.get('show_greeting', false) }}"></div>
+{% endcall %}
+
+{# ── Digital (default) ────────────────────────────────────────────────────── #}
+{% else %}
+{% call card(w) %}
+  {{ widget_header(w, 'Clock', '🕐', true) }}
+  <div class="flex flex-col items-center select-none">
+    {# date on top #}
+    <span id="clock-date-{{ w.id }}"
+          class="text-xs text-gray-400 dark:text-zinc-500 mb-1
+                 {{ 'hidden' if not w.config.get('show_date', true) }}"></span>
+    {# big time #}
+    <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
+          class="text-4xl font-bold text-wblue dark:text-blue-400
+                 tabular-nums tracking-tight leading-none">
+      <span id="clock-time-{{ w.id }}"></span><!--
+   --><span id="clock-ampm-{{ w.id }}"
+            class="text-2xl font-normal opacity-60 ml-1"></span>
+    </span>
+    {# tz abbrev #}
+    <span id="clock-tz-{{ w.id }}"
+          class="text-[10px] text-gray-300 dark:text-zinc-600 mt-0.5
+                 font-mono tracking-widest uppercase"></span>
+    {# greeting below time #}
+    <div id="clock-greet-{{ w.id }}"
+         class="text-xs text-gray-400 dark:text-zinc-500 mt-1
+                {{ 'hidden' if not w.config.get('show_greeting', true) }}"></div>
+  </div>
+{% endcall %}
+{% endif %}
+
+{# ── Hidden settings panel — moved into modal by JS ──────────────────────── #}
+{%- set _dflt = (w.style not in ('analog', 'minimal')) -%}
+<div id="ws-cfg-{{ w.id }}" class="hidden space-y-2.5" aria-hidden="true">
+  {% if w.style != 'analog' %}
+  {{ _fmt_sel(w, fmt) }}
+  {% endif %}
+  {{ _tog(w, 'show_date',     'Show date',     _dflt) }}
+  {{ _tog(w, 'show_greeting', 'Show greeting', _dflt) }}
+  {{ _tz_sel(w, tz) }}
+</div>
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   WEATHER
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_weather(w) %}
+{% set loc = w.config.get('location','Dallas, TX') %}
+{% set unit = w.config.get('unit','F') %}
+{% call card(w) %}
+  {{ widget_header(w, 'Weather', '🌤️') }}
+  <div id="weather-{{ w.id }}" data-loc="{{ loc }}" data-unit="{{ unit }}"
+       data-style="{{ w.style }}"
+       class="weather-widget text-gray-700 dark:text-zinc-300 text-sm">
+    <span class="text-xs text-gray-400 animate-pulse">Fetching weather…</span>
+  </div>
+{% endcall %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   CALENDAR
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_calendar(w) %}
+{% call card(w) %}
+  {{ widget_header(w, 'Calendar', '📅') }}
+  <div id="cal-{{ w.id }}" data-style="{{ w.style }}"
+       class="calendar-widget"></div>
+{% endcall %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   TO-DO LIST
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_todo(w) %}
+{% set items = w.config.get('items', []) %}
+{% call card(w) %}
+  {{ widget_header(w, 'To-Do', '✅') }}
+  <ul class="space-y-1.5 mb-3" id="todo-list-{{ w.id }}">
+    {% for item in items %}
+    <li class="flex items-center gap-2">
+      <input type="checkbox" id="todo-{{ w.id }}-{{ loop.index0 }}"
+             class="rounded border-gray-300 text-wblue focus:ring-wblue"
+             {% if item.done %}checked{% endif %}
+             onchange="todoToggle({{ w.id }}, {{ loop.index0 }}, this.checked)">
+      <label for="todo-{{ w.id }}-{{ loop.index0 }}"
+             class="text-sm text-gray-700 dark:text-zinc-300 flex-1 cursor-pointer
+                    {% if item.done %}line-through text-gray-400{% endif %}">
+        {{ item.text }}
+      </label>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if w.style != 'compact' %}
+  <div class="flex gap-2 mt-2">
+    <input id="todo-input-{{ w.id }}" type="text" placeholder="Add task…"
+           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                  bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                  focus:outline-none focus:ring-2 focus:ring-wblue"
+           onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
+    <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
+            class="px-3 py-1.5 bg-wblue text-white text-xs rounded-lg hover:bg-blue-700 transition">
+      Add
+    </button>
+  </div>
+  {% endif %}
+{% endcall %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   NOTE LINK
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_note_link(w) %}
+{% set note_id = w.config.get('note_id') %}
+{% set note_title = w.config.get('note_title', 'Linked Note') %}
+{% set note_snippet = w.config.get('note_snippet', '') %}
+{% if w.style == 'minimal' %}
+{% call card(w) %}
+  {{ widget_header(w, 'Note', '📄') }}
+  <button onclick="wsSingleClick(null); openNote({{ note_id }})"
+          class="text-sm font-medium text-wblue hover:underline truncate block w-full text-left">
+    {{ note_title }}
+  </button>
+{% endcall %}
+{% else %}{# card style #}
+{% call card(w) %}
+  {{ widget_header(w, 'Note', '📄') }}
+  <button onclick="openNote({{ note_id }})"
+          class="block w-full text-left hover:bg-gray-50 dark:hover:bg-zinc-800
+                 rounded-lg p-2 -mx-2 transition">
+    <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">{{ note_title }}</p>
+    {% if note_snippet %}
+    <p class="text-xs text-gray-500 dark:text-zinc-400 mt-1 line-clamp-2">{{ note_snippet }}</p>
+    {% endif %}
+  </button>
+{% endcall %}
+{% endif %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   TIMER
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_timer(w) %}
+{% call card(w) %}
+  {{ widget_header(w, 'Timer', '⏱️') }}
+  <div class="flex flex-col items-center gap-3" id="timer-{{ w.id }}"
+       data-style="{{ w.style }}"
+       data-pomo-work="{{ w.config.get('pomo_work', 25) }}"
+       data-pomo-break="{{ w.config.get('pomo_break', 5) }}"
+       data-interval="{{ w.config.get('interval', 5) }}">
+    <span class="text-3xl font-bold tabular-nums text-gray-800 dark:text-zinc-100 select-none"
+          id="timer-display-{{ w.id }}">
+      {% if w.style == 'pomodoro' %}25:00{% else %}00:00{% endif %}
+    </span>
+    {% if w.style == 'pomodoro' %}
+    <span class="text-[10px] uppercase tracking-widest text-gray-400" id="timer-phase-{{ w.id }}">Work</span>
+    {% endif %}
+    <div class="flex gap-2">
+      <button onclick="timerToggle({{ w.id }})"
+              id="timer-btn-{{ w.id }}"
+              class="px-4 py-1.5 bg-wblue text-white text-xs rounded-lg hover:bg-blue-700 transition">
+        Start
+      </button>
+      <button onclick="timerReset({{ w.id }})"
+              class="px-3 py-1.5 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                     text-xs rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
+        Reset
+      </button>
+    </div>
+  </div>
+{% endcall %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   COUNTDOWN
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_countdown(w) %}
+{% set label = w.config.get('label', 'Countdown') %}
+{% set target = w.config.get('target_date', '') %}
+{% call card(w) %}
+  {{ widget_header(w, 'Countdown', '⏳') }}
+  <div class="flex flex-col items-center gap-2" id="countdown-{{ w.id }}"
+       data-target="{{ target }}" data-style="{{ w.style }}">
+    <p class="text-xs text-gray-500 dark:text-zinc-400 font-medium truncate w-full text-center">
+      {{ label }}</p>
+    {% if w.style == 'days' %}
+    <span id="cd-display-{{ w.id }}"
+          class="text-5xl font-black text-wblue dark:text-blue-400 tabular-nums select-none">—</span>
+    <span class="text-xs text-gray-400">days to go</span>
+    {% else %}{# event style #}
+    <div class="grid grid-cols-4 gap-2 w-full" id="cd-display-{{ w.id }}">
+      {% for unit in ['D','H','M','S'] %}
+      <div class="flex flex-col items-center bg-gray-50 dark:bg-zinc-800 rounded-lg py-2">
+        <span class="text-xl font-bold tabular-nums text-gray-800 dark:text-zinc-100
+                     cd-unit-{{ unit }}-{{ w.id }}">0</span>
+        <span class="text-[9px] text-gray-400 uppercase">{{ unit }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+{% endcall %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   CLOCK (analog variant helper — handled in JS)
+   REMINDER
+   ═══════════════════════════════════════════════════════════════════ #}
+{% macro render_reminder(w) %}
+{% set items = w.config.get('items', []) %}
+{% call card(w) %}
+  {{ widget_header(w, 'Reminders', '🔔') }}
+  <ul class="space-y-2 mb-3" id="reminder-list-{{ w.id }}">
+    {% for item in items %}
+    <li class="flex items-start gap-2 group/rem">
+      <span class="text-xs font-mono text-wblue bg-blue-50 dark:bg-blue-900/20
+                   px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">{{ item.time }}</span>
+      <span class="text-sm text-gray-700 dark:text-zinc-300 flex-1">{{ item.text }}</span>
+      <button onclick="reminderDelete({{ w.id }}, {{ loop.index0 }})"
+              class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400
+                     hover:text-wred transition flex-shrink-0" aria-label="Delete reminder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if w.style != 'agenda' or not items %}
+  <div class="flex gap-1 mt-1">
+    <input id="rem-time-{{ w.id }}" type="time"
+           class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-1
+                  bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue w-24">
+    <input id="rem-text-{{ w.id }}" type="text" placeholder="Reminder…"
+           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-1
+                  bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                  focus:outline-none focus:ring-2 focus:ring-wblue"
+           onkeydown="if(event.key==='Enter') reminderAdd({{ w.id }}, this)">
+    <button onclick="reminderAdd({{ w.id }}, document.getElementById('rem-text-{{ w.id }}'))"
+            class="px-2 py-1 bg-wblue text-white text-xs rounded hover:bg-blue-700 transition">+</button>
+  </div>
+  {% endif %}
+{% endcall %}
+{% endmacro %}
+
+{# ══════════════════════════════════════════════════════════════════════════════
+   MAIN CANVAS
+   ══════════════════════════════════════════════════════════════════════════════ #}
+<div id="home-canvas" class="min-h-full bg-gray-50 dark:bg-zinc-950 p-6" data-page-id="{{ page.id }}">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
+      <span>{{ page.emoji }}</span> {{ page.name }}
+    </h1>
+    <div class="flex items-center gap-2">
+      <button onclick="openAddWidget({{ page.id }})"
+              class="flex items-center gap-2 px-4 py-2 bg-wblue text-white text-sm
+                     font-semibold rounded-xl hover:bg-blue-700 transition
+                     focus:outline-none focus:ring-2 focus:ring-wblue">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add Widget
+      </button>
+      <button onclick="openPageLayout({{ page.id }})"
+              title="Change column layout"
+              class="p-2 rounded-xl border border-gray-200 dark:border-zinc-700
+                     text-gray-500 hover:text-wblue hover:border-wblue
+                     dark:hover:border-wblue dark:text-zinc-400 transition
+                     focus:outline-none focus:ring-2 focus:ring-wblue"
+              aria-label="Page layout">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Widget grid -->
+  {% if not widgets %}
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <div class="text-6xl mb-4">🧩</div>
+    <h2 class="text-xl font-semibold text-gray-700 dark:text-zinc-300 mb-2">No widgets yet</h2>
+    <p class="text-sm text-gray-400 dark:text-zinc-500 mb-6">
+      Add clocks, weather, to-dos, timers and more to personalise your page.
+    </p>
+    <button onclick="openAddWidget({{ page.id }})"
+            class="px-6 py-2.5 bg-wblue text-white rounded-xl font-semibold hover:bg-blue-700 transition">
+      + Add your first widget
+    </button>
+  </div>
+  {% else %}
+  <div class="grid gap-4"
+       id="widget-grid-{{ page.id }}"
+       data-col-count="{{ page.config.get('col_count', 3) }}"
+       style="grid-template-columns: repeat({{ page.config.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: minmax(160px, auto);">
+    {% for w in widgets %}
+      {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
+      {% elif w.widget_type == 'weather' %}   {{ render_weather(w) }}
+      {% elif w.widget_type == 'calendar' %}  {{ render_calendar(w) }}
+      {% elif w.widget_type == 'todo' %}      {{ render_todo(w) }}
+      {% elif w.widget_type == 'note_link' %} {{ render_note_link(w) }}
+      {% elif w.widget_type == 'timer' %}     {{ render_timer(w) }}
+      {% elif w.widget_type == 'countdown' %} {{ render_countdown(w) }}
+      {% elif w.widget_type == 'reminder' %}  {{ render_reminder(w) }}
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{# ── Add-Widget Modal ───────────────────────────────────────────────── #}
+<div id="add-widget-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="aw-title">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeAddWidget()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+    <div class="p-6">
+      <h2 id="aw-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">
+        Add Widget
+      </h2>
+
+      <!-- Step 1: Type picker (always visible) -->
+      <div id="aw-step1">
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3 uppercase font-semibold tracking-wide">
+          Choose a widget type
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          {% set wt_list = [
+            ('clock','🕐','Clock'),
+            ('weather','🌤️','Weather'),
+            ('calendar','📅','Calendar'),
+            ('todo','✅','To-Do'),
+            ('note_link','📄','Note Link'),
+            ('timer','⏱️','Timer'),
+            ('countdown','⏳','Countdown'),
+            ('reminder','🔔','Reminder'),
+          ] %}
+          {% for wtype, icon, label in wt_list %}
+          <button type="button" onclick="selectWidgetType('{{ wtype }}')"
+                  data-wtype="{{ wtype }}"
+                  class="aw-type-btn flex flex-col items-center gap-2 p-3 rounded-xl border-2
+                         border-gray-200 dark:border-zinc-700 hover:border-wblue
+                         transition cursor-pointer group">
+            <span class="text-2xl">{{ icon }}</span>
+            <span class="text-xs font-semibold text-gray-700 dark:text-zinc-300
+                         group-hover:text-wblue transition">{{ label }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Step 2: Style + Config (shown after type pick) -->
+      <div id="aw-step2" class="hidden">
+        <hr class="border-gray-200 dark:border-zinc-700 mb-4">
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3 uppercase font-semibold tracking-wide">
+          Style &amp; Options
+        </p>
+        <div id="aw-style-options" class="mb-4"></div>
+        <div id="aw-config-fields" class="space-y-3 mb-4"></div>
+        <div class="flex gap-3 justify-end">
+          <button type="button" onclick="aw_back()"
+                  class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                         text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+            ← Back
+          </button>
+          <button type="button" id="aw-add-btn" onclick="aw_submit()"
+                  class="px-5 py-2 bg-wblue text-white text-sm font-semibold rounded-lg
+                         hover:bg-blue-700 transition">
+            Add Widget
+          </button>
+        </div>
+      </div>
+
+      <!-- Hidden state -->
+      <input type="hidden" id="aw-page-id" value="">
+      <input type="hidden" id="aw-selected-type" value="">
+    </div>
+  </div>
+</div>
+
+{# notes data for note-link picker embedded as JSON #}
+<script id="all-notes-data" type="application/json">
+{{ all_notes | tojson | safe }}
+</script>

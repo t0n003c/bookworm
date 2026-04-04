@@ -6,3 +6,5 @@ python-multipart
 aiosqlite
 bcrypt
 itsdangerous
+pyotp
+qrcode

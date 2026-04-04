@@ -19,14 +19,16 @@ CREATE_TABLES_SQL = [
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         username      TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        role          TEXT NOT NULL DEFAULT 'user',
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
     """
     CREATE TABLE IF NOT EXISTS workspaces (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        emoji TEXT NOT NULL DEFAULT '📁',
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        name       TEXT NOT NULL,
+        emoji      TEXT NOT NULL DEFAULT '📁',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -91,6 +93,28 @@ CREATE_TABLES_SQL = [
         mime_type     TEXT NOT NULL DEFAULT 'application/octet-stream',
         size          INTEGER NOT NULL DEFAULT 0,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS home_pages (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name        TEXT    NOT NULL DEFAULT 'My Page',
+        emoji       TEXT    NOT NULL DEFAULT '🏠',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        config_json TEXT    NOT NULL DEFAULT '{}',
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS home_widgets (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        page_id     INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+        widget_type TEXT    NOT NULL,
+        style       TEXT    NOT NULL DEFAULT 'default',
+        config_json TEXT    NOT NULL DEFAULT '{}',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
 ]
@@ -158,6 +182,47 @@ async def init_db() -> None:
                 "ALTER TABLE workspaces ADD COLUMN deleted_at DATETIME DEFAULT NULL"
             )
 
+        # Migration: add user_id (per-user isolation) to workspaces if missing
+        cursor = await db.execute("PRAGMA table_info(workspaces)")
+        ws_cols = {r[1] for r in await cursor.fetchall()}
+        if "user_id" not in ws_cols:
+            await db.execute(
+                "ALTER TABLE workspaces ADD COLUMN "
+                "user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+            )
+        # Backfill: assign orphaned workspaces to the first (super-admin) user
+        await db.execute(
+            "UPDATE workspaces SET user_id = "
+            "(SELECT id FROM users ORDER BY id ASC LIMIT 1) "
+            "WHERE user_id IS NULL"
+        )
+
+        # Migration: add role column to users if missing
+        cursor = await db.execute("PRAGMA table_info(users)")
+        u_cols = {r[1] for r in await cursor.fetchall()}
+        if "role" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN "
+                "role TEXT NOT NULL DEFAULT 'user'"
+            )
+        # Backfill: the very first user (lowest id) is the super-admin
+        await db.execute(
+            "UPDATE users SET role = 'superadmin' "
+            "WHERE id = (SELECT MIN(id) FROM users) AND role != 'superadmin'"
+        )
+
+        # Migration: add TOTP columns to users if missing
+        cursor = await db.execute("PRAGMA table_info(users)")
+        u_cols = {r[1] for r in await cursor.fetchall()}
+        if "totp_secret" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL"
+            )
+        if "totp_enabled" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0"
+            )
+
         # Migration: add sort_order column for drag-and-drop reordering
         cursor = await db.execute("PRAGMA table_info(workspaces)")
         ws_cols = {r[1] for r in await cursor.fetchall()}
@@ -217,8 +282,15 @@ async def init_db() -> None:
             """
         )
 
-        await db.commit()
+        # Migration: add config_json to home_pages (stores col_count etc.)
+        cursor = await db.execute("PRAGMA table_info(home_pages)")
+        hp_cols = {r[1] for r in await cursor.fetchall()}
+        if "config_json" not in hp_cols:
+            await db.execute(
+                "ALTER TABLE home_pages ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'"
+            )
 
+        await db.commit()
 
 @asynccontextmanager
 async def get_db():

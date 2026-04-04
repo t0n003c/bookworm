@@ -1,16 +1,16 @@
 """BookWorm — Team Note Taking App (FastAPI + HTMX + Tailwind + SQLite)."""
 import os
-import secrets
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth_middleware import AuthMiddleware
+from security import load_secret_key
 
 
 from database import init_db
@@ -26,12 +26,15 @@ from routers.workspaces_db import (
     get_trashed_workspaces,
     purge_expired_trash,
 )
+from routers.home_db import get_home_pages
 from routers import notes as notes_router
 from routers import categories as categories_router
 from routers import workspaces as workspaces_router
 from routers import attachments as attachments_router
 from routers import auth as auth_router
 from routers import account as account_router
+from routers import totp as totp_router
+from routers import home as home_router
 from routers.attachments_db import UPLOAD_DIR
 
 
@@ -53,9 +56,9 @@ app = FastAPI(title="BookWorm", lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("BW_SECRET_KEY", secrets.token_hex(32)),
+    secret_key=os.getenv("BW_SECRET_KEY", load_secret_key()),
     https_only=False,   # allow HTTP for local-network access
-    max_age=86_400 * 30,  # 30-day sessions
+    max_age=86_400 * 30,  # 30-day cookie TTL; per-session expiry enforced in middleware
 )
 
 app.mount("/static",  StaticFiles(directory="static"),          name="static")
@@ -63,6 +66,8 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)),   name="uploads")
 
 app.include_router(auth_router.router)
 app.include_router(account_router.router)
+app.include_router(totp_router.router)
+app.include_router(home_router.router)
 app.include_router(notes_router.router)
 app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
@@ -71,14 +76,45 @@ app.include_router(workspaces_router.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ws: Optional[int] = None):
-    """Render the main SPA shell. Default to workspace 1 (Welcome page)."""
-    # Pass logged-in username so the header can display it.
+    """Render the main SPA shell.
+
+    - No workspace selected: redirect to the user's own first workspace,
+      or show the welcome state if they have none yet.
+    - Workspace selected: validate it actually belongs to this user before
+      loading any notes (prevents account bleed-through).
+    """
+    user_id = request.session.get("user_id")
+    import datetime
+    def _dbg(msg):
+        with open("debug_requests.log", "a") as _f:
+            _f.write(f"{datetime.datetime.now().isoformat()} {msg}\n")
+    _dbg(f"GET /  user_id={user_id!r}  ws_param={ws!r}  session_keys={list(request.session.keys())}")
+
+    # ── resolve active workspace ──────────────────────────────────────────
     if ws is None:
-        return RedirectResponse(url="/?ws=1")
-    open_workspaces = await get_open_workspaces()
-    all_workspaces  = await get_all_workspaces()
-    ws_tree         = await get_workspace_tree()
-    active_ws_id    = ws or (open_workspaces[0]["id"] if open_workspaces else None)
+        # Find *this* user's first workspace — never fall back to ws=1.
+        first_ws = await get_first_workspace_id(user_id)
+        if first_ws is not None:
+            return RedirectResponse(url=f"/?ws={first_ws}")
+        # User has no workspaces yet → fall through with active_ws_id=None
+        #  which triggers the welcome/empty state in note_list.html.
+
+    # ── guard: ensure the requested workspace belongs to this user ────────
+    all_workspaces = await get_all_workspaces(user_id)
+    user_ws_ids    = {w["id"] for w in all_workspaces}
+
+    if ws is not None and ws not in user_ws_ids:
+        # Someone navigated to another user's workspace (or a stale URL).
+        # Send them to their own landing instead.
+        first_ws = await get_first_workspace_id(user_id)
+        redirect_to = f"/?ws={first_ws}" if first_ws else "/"
+        return RedirectResponse(url=redirect_to)
+
+    active_ws_id = ws  # None → welcome state; int → validated user workspace
+    _dbg(f"GET /  active_ws_id={active_ws_id!r}  user_ws_ids={user_ws_ids}")
+
+    open_workspaces = await get_open_workspaces(user_id)
+    ws_tree         = await get_workspace_tree(user_id)
     open_ws_ids     = {w["id"] for w in open_workspaces}
     ws_id_set = await get_descendant_ids(active_ws_id) if active_ws_id is not None else None
     notes     = await search_notes(workspace_ids=list(ws_id_set)) if ws_id_set is not None else []
@@ -86,17 +122,21 @@ async def index(request: Request, ws: Optional[int] = None):
     attr_defs       = await get_all_attr_defs()
     breadcrumbs: dict = {}
     for ow in open_workspaces:
-        breadcrumbs[ow["id"]] = await get_workspace_breadcrumb(ow["id"])
+        breadcrumbs[ow["id"]] = await get_workspace_breadcrumb(ow["id"], user_id)
     # also include the active workspace even if it isn't pinned to the top bar
     if active_ws_id is not None and active_ws_id not in breadcrumbs:
-        breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id)
-    trashed_workspaces = await get_trashed_workspaces()
+        breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id, user_id)
+    trashed_workspaces = await get_trashed_workspaces(user_id)
+    home_pages       = await get_home_pages(user_id)
     current_username = request.session.get("username", "")
-    return templates.TemplateResponse(
+    current_role     = request.session.get("role", "user")
+    response = templates.TemplateResponse(
         request,
         "index.html",
         {
             "current_username":   current_username,
+            "current_user_id":    user_id,
+            "current_role":       current_role,
             "notes":              notes,
             "categories":         categories,
             "attr_defs":          attr_defs,
@@ -109,8 +149,13 @@ async def index(request: Request, ws: Optional[int] = None):
             "active_ws_id":       active_ws_id,
             "open_count":         len(open_workspaces),
             "open_ws_ids":        open_ws_ids,
+            "home_pages":         home_pages,
         },
     )
+    # Prevent the browser from caching this page — it is user-specific and must
+    # always be fetched fresh so a new login never sees a previous user's data.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 if __name__ == "__main__":

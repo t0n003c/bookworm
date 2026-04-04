@@ -3,27 +3,48 @@ from typing import Optional
 from database import get_db
 
 
-async def get_all_workspaces() -> list[dict]:
-    """Return all active (non-trashed) workspaces ordered by sort_order."""
+# ── private helpers ───────────────────────────────────────────
+
+async def _all_workspaces_raw() -> list[dict]:
+    """All non-trashed workspaces, no user filter (for internal BFS ops)."""
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at "
+            "       sort_order, created_at, user_id "
             "FROM workspaces WHERE deleted_at IS NULL ORDER BY sort_order ASC"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
-async def get_descendant_ids(root_id: int) -> set[int]:
-    """Return root_id plus the IDs of every workspace nested beneath it."""
-    all_ws = await get_all_workspaces()
+# ── public user-scoped queries ────────────────────────────────
+
+async def get_all_workspaces(user_id: int) -> list[dict]:
+    """Return all active (non-trashed) workspaces for a given user."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
+            "       sort_order, created_at "
+            "FROM workspaces WHERE deleted_at IS NULL AND user_id = ? "
+            "ORDER BY sort_order ASC",
+            (user_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_descendant_ids(root_id: int, user_id: Optional[int] = None) -> set[int]:
+    """Return root_id plus the IDs of every workspace nested beneath it.
+
+    Uses the raw (unfiltered) workspace list so it correctly traverses
+    the full tree even when called from internal bulk operations.
+    """
+    all_ws = await _all_workspaces_raw()
     by_parent: dict[int, list[int]] = {}
     for ws in all_ws:
         pid = ws.get("parent_id")
         if pid:
             by_parent.setdefault(pid, []).append(ws["id"])
-    # BFS from root
     result: set[int] = set()
     queue = [root_id]
     while queue:
@@ -33,9 +54,9 @@ async def get_descendant_ids(root_id: int) -> set[int]:
     return result
 
 
-async def get_workspace_tree() -> list[dict]:
-    """Return all workspaces as a nested tree (each node has a 'children' list)."""
-    all_ws = await get_all_workspaces()
+async def get_workspace_tree(user_id: int) -> list[dict]:
+    """Return a user's workspaces as a nested tree (each node has 'children')."""
+    all_ws = await get_all_workspaces(user_id)
     by_id: dict[int, dict] = {ws["id"]: {**ws, "children": []} for ws in all_ws}
     roots: list[dict] = []
     for ws in all_ws:
@@ -47,9 +68,9 @@ async def get_workspace_tree() -> list[dict]:
     return roots
 
 
-async def get_workspace_breadcrumb(workspace_id: int) -> list[dict]:
+async def get_workspace_breadcrumb(workspace_id: int, user_id: int) -> list[dict]:
     """Return the ancestor chain from root → workspace (inclusive)."""
-    all_ws = await get_all_workspaces()
+    all_ws = await get_all_workspaces(user_id)
     by_id = {ws["id"]: ws for ws in all_ws}
     path: list[dict] = []
     current_id: Optional[int] = workspace_id
@@ -64,14 +85,15 @@ async def get_workspace_breadcrumb(workspace_id: int) -> list[dict]:
     return path
 
 
-async def get_open_workspaces() -> list[dict]:
-    """Return only active workspaces currently pinned to the top bar."""
+async def get_open_workspaces(user_id: int) -> list[dict]:
+    """Return workspaces currently pinned to the top bar for a given user."""
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
             "       sort_order, created_at "
             "FROM workspaces WHERE is_open = 1 AND deleted_at IS NULL "
-            "ORDER BY sort_order ASC"
+            "AND user_id = ? ORDER BY sort_order ASC",
+            (user_id,),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -109,10 +131,11 @@ async def close_workspace(workspace_id: int) -> None:
 
 async def create_workspace(
     name: str,
+    user_id: int,
     emoji: str = "\U0001f4c1",
     parent_id: Optional[int] = None,
 ) -> int:
-    """Insert a workspace and return its new id.
+    """Insert a workspace for the given user and return its new id.
 
     sort_order is set to max(siblings) + 10 so the new workspace
     naturally lands at the bottom of its sibling group.
@@ -120,15 +143,15 @@ async def create_workspace(
     async with get_db() as db:
         cur = await db.execute(
             "SELECT COALESCE(MAX(sort_order), -10) FROM workspaces "
-            "WHERE parent_id IS ? AND deleted_at IS NULL",
-            (parent_id,),
+            "WHERE parent_id IS ? AND deleted_at IS NULL AND user_id = ?",
+            (parent_id, user_id),
         )
         row = await cur.fetchone()
         new_sort_order = (row[0] if row else -10) + 10
         cursor = await db.execute(
-            "INSERT INTO workspaces (name, emoji, parent_id, sort_order) "
-            "VALUES (?, ?, ?, ?)",
-            (name.strip(), emoji, parent_id, new_sort_order),
+            "INSERT INTO workspaces (name, emoji, parent_id, sort_order, user_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name.strip(), emoji, parent_id, new_sort_order, user_id),
         )
         await db.commit()
         return cursor.lastrowid
@@ -149,22 +172,26 @@ async def update_workspace(
         await db.commit()
 
 
-async def get_first_workspace_id() -> Optional[int]:
-    """Return the id of the oldest active workspace (fallback default)."""
+async def get_first_workspace_id(user_id: int) -> Optional[int]:
+    """Return the id of the oldest active workspace for a user (fallback default)."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1"
+            "SELECT id FROM workspaces WHERE deleted_at IS NULL AND user_id = ? "
+            "ORDER BY created_at ASC LIMIT 1",
+            (user_id,),
         )
         row = await cursor.fetchone()
         return row[0] if row else None
 
 
-async def get_favorite_workspaces() -> list[dict]:
-    """Return active workspaces marked as favorite, ordered by name."""
+async def get_favorite_workspaces(user_id: int) -> list[dict]:
+    """Return active workspaces marked as favorite for a user, ordered by name."""
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, created_at "
-            "FROM workspaces WHERE is_favorite = 1 AND deleted_at IS NULL ORDER BY name ASC"
+            "FROM workspaces WHERE is_favorite = 1 AND deleted_at IS NULL "
+            "AND user_id = ? ORDER BY name ASC",
+            (user_id,),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -329,8 +356,8 @@ async def permanent_delete_workspace(workspace_id: int) -> None:
         await db.commit()
 
 
-async def get_trashed_workspaces() -> list[dict]:
-    """Return workspaces currently in the trash, with days_remaining computed."""
+async def get_trashed_workspaces(user_id: int) -> list[dict]:
+    """Return trashed workspaces for a given user, with days_remaining."""
     async with get_db() as db:
         cursor = await db.execute(
             """
@@ -339,9 +366,10 @@ async def get_trashed_workspaces() -> list[dict]:
                        (julianday('now') - julianday(deleted_at))
                    AS INTEGER)) AS days_remaining
             FROM workspaces
-            WHERE deleted_at IS NOT NULL
+            WHERE deleted_at IS NOT NULL AND user_id = ?
             ORDER BY deleted_at DESC
-            """
+            """,
+            (user_id,),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
