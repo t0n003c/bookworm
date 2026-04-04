@@ -50,8 +50,9 @@
 {% endmacro %}
 
 {% macro card(w, extra_cls="") %}
-{%- set col_span = w.config.get('col_span', 1) -%}
-{%- set row_span = w.config.get('row_span', 1) -%}
+{%- set _wcfg = w.get('config', {}) -%}
+{%- set col_span = _wcfg.get('col_span', 1) -%}
+{%- set row_span = _wcfg.get('row_span', 1) -%}
 <div id="hw-card-{{ w.id }}"
      class="hw-card group/wcard relative bg-white dark:bg-zinc-900 rounded-xl shadow-sm
             border border-gray-200 dark:border-zinc-800 p-4
@@ -61,7 +62,7 @@
      data-widget-style="{{ w.style }}"
      data-col-span="{{ col_span }}"
      data-row-span="{{ row_span }}"
-     data-widget-config='{{ w.config | tojson | e }}'
+     data-widget-config='{{ _wcfg | tojson | e }}'
      style="grid-column: span {{ col_span }}; grid-row: span {{ row_span }};"
      draggable="true">
   {{ caller() }}
@@ -70,7 +71,7 @@
 
 {# ── Reusable toggle switch row ───────────────────────────────────────────────── #}
 {% macro _tog(w, key, label, default) %}
-{%- set on = w.config.get(key, default) -%}
+{%- set on = w.get('config', {}).get(key, default) -%}
 <label class="flex items-center justify-between text-xs cursor-pointer select-none gap-3">
   <span class="text-gray-500 dark:text-zinc-400">{{ label }}</span>
   <div class="relative inline-flex items-center flex-shrink-0">
@@ -487,8 +488,9 @@
   {% else %}
   <div class="grid gap-4"
        id="widget-grid-{{ page.id }}"
-       data-col-count="{{ page.config.get('col_count', 3) }}"
-       style="grid-template-columns: repeat({{ page.config.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: minmax(160px, auto);">
+       {%- set _pgcfg = page.get('config', {}) -%}
+       data-col-count="{{ _pgcfg.get('col_count', 3) }}"
+       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: minmax(160px, auto);">
     {% for w in widgets %}
       {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
       {% elif w.widget_type == 'weather' %}   {{ render_weather(w) }}
