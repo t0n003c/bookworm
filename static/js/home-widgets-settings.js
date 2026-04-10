@@ -21,9 +21,13 @@ function _pageColCount(widgetId) {
  */
 function _buildSizePicker(widgetId, body) {
   const card      = _cardEl(widgetId);
-  const curCol    = parseInt(card?.dataset.colSpan || '1', 10);
+  // Legacy dividers stored '__ALL__' — treat that as full-width (= maxCols)
+  const maxCols   = _pageColCount(widgetId);
+  const rawCol    = card?.dataset.colSpan;
+  const curCol    = (rawCol === '__ALL__' || !rawCol)
+                    ? maxCols
+                    : (parseInt(rawCol, 10) || 1);
   const curRow    = parseInt(card?.dataset.rowSpan || '1', 10);
-  const maxCols   = Math.min(_pageColCount(widgetId), 4);
 
   const section = document.createElement('div');
   section.innerHTML = `
@@ -39,7 +43,7 @@ function _buildSizePicker(widgetId, body) {
   body.prepend(section);
 
   const grid = document.getElementById(`sz-picker-${widgetId}`);
-  for (let r = 1; r <= 3; r++) {
+  for (let r = 1; r <= 4; r++) {
     for (let c = 1; c <= maxCols; c++) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -78,7 +82,11 @@ async function _selectSize(widgetId, col, row) {
   // Update card DOM immediately for live feedback
   const card = _cardEl(widgetId);
   if (card) {
-    card.style.gridColumn = `span ${col}`;
+    const maxCols = _pageColCount(widgetId);
+    // Use 1/-1 (true full-width) when the chosen col count matches the grid width.
+    // This keeps dividers and titles flush with the grid edges instead of
+    // relying on the last cell of a span-N row accidentally hitting the edge.
+    card.style.gridColumn = (col >= maxCols) ? '1 / -1' : `span ${col}`;
     card.style.gridRow    = `span ${row}`;
     card.dataset.colSpan  = col;
     card.dataset.rowSpan  = row;
@@ -95,9 +103,94 @@ function _getCardConfig(widgetId) {
   } catch { return {}; }
 }
 
+// Classes that make up the default card shell (bg, border, shadow).
+// Toggled on/off when card_bg config changes.
+const _CARD_SHELL_CLS = [
+  'bg-white', 'dark:bg-zinc-900', 'shadow-sm', 'border',
+  'border-gray-200', 'dark:border-zinc-800', 'hover:shadow-md',
+  'transition-shadow', 'duration-200',
+];
+
 async function _saveWidgetFullConfig(widgetId, config) {
   await _post(`/home/widgets/${widgetId}/update-config`,
     { config_json: JSON.stringify(config) });
+
+  // ── Update in-memory DOM so every subsequent read sees fresh values ──────────
+  // Without this, _getCardConfig keeps returning the page-load snapshot and
+  // reopening the modal always shows the pre-save state.
+  const card = _cardEl(widgetId);
+  if (card) {
+    card.dataset.widgetConfig = JSON.stringify(config);
+
+    // Widget label: create / update / remove the <p class="hw-widget-label"> strip
+    const existingLabel = card.querySelector('.hw-widget-label');
+    if (config.show_name && config.custom_name) {
+      if (existingLabel) {
+        existingLabel.textContent = config.custom_name;
+      } else {
+        const lbl = document.createElement('p');
+        lbl.className = 'hw-widget-label text-[11px] font-bold uppercase tracking-widest ' +
+                        'text-gray-400 dark:text-zinc-500 mb-1.5 leading-none select-none';
+        lbl.textContent = config.custom_name;
+        card.prepend(lbl);
+      }
+    } else if (existingLabel) {
+      existingLabel.remove();
+    }
+
+    // Card background: toggle the outer widget shell (bg / border / shadow).
+    // card_bg = '0' → transparent/bare shell; anything else → default framed.
+    if (config.card_bg !== undefined) {
+      if (String(config.card_bg) === '0') {
+        card.classList.remove(..._CARD_SHELL_CLS);
+      } else {
+        card.classList.add(..._CARD_SHELL_CLS);
+      }
+    }
+
+    // RSS feed: sync data-* attributes then re-render immediately so changes
+    // to feeds, thumbs, grouping, etc. appear without a page reload.
+    const rssEl = card.querySelector('.rss-widget');
+    if (rssEl) {
+      const sync = {
+        feeds:           v => { rssEl.dataset.feeds          = JSON.stringify(v); },
+        max_items:       v => { rssEl.dataset.max            = String(v || 5); },
+        refresh_min:     v => { rssEl.dataset.refresh        = String(v); },
+        show_thumbs:     v => { rssEl.dataset.showThumbs     = String(v); },
+        group_by:        v => { rssEl.dataset.groupBy        = String(v); },
+        track_read:      v => { rssEl.dataset.trackRead      = String(v); },
+        compact_label:    v => { rssEl.dataset.compactLabel = String(v); },
+      };
+      // Snapshot URL list + max BEFORE the sync loop mutates the dataset.
+      // We compare only feed URLs (not labels/colors/categories) because those
+      // metadata fields don't need a network refetch — they only affect rendering.
+      // Full JSON comparison was broken: rssSyncFeeds writes {color,url,label,…}
+      // but Python tojson writes {url,label,color,…} → different strings even
+      // when the data is identical → _loadRss was always called, skipping rerender.
+      const _prevFeeds = JSON.parse(rssEl.dataset.feeds || '[]');
+      const _prevUrls  = _prevFeeds.map(f => f.url).join('\0');
+      const _prevMax   = rssEl.dataset.max || '5';
+
+      Object.entries(sync).forEach(([k, fn]) => {
+        if (config[k] !== undefined) fn(config[k]);
+      });
+
+      const _nextFeeds = Array.isArray(config.feeds) ? config.feeds : _prevFeeds;
+      const _nextUrls  = _nextFeeds.map(f => f.url).join('\0');
+      const _nextMax   = String(config.max_items || _prevMax);
+      // Only do a network refetch when feed URLs or item count actually changed.
+      // Everything else (bubbles, thumbs, grouping, track-read) is render-only.
+      const needsReload = (_nextUrls !== _prevUrls) || (_nextMax !== _prevMax);
+      if (needsReload) {
+        if (typeof _loadRss === 'function') _loadRss(rssEl);
+      } else {
+        if (typeof _rssRerender === 'function') _rssRerender(rssEl);
+      }
+    }
+  }
+
+  const pid = Number(sessionStorage.getItem('bw-hp'));
+  if (pid && typeof invalidateHomePageCache === 'function') invalidateHomePageCache(pid);
 }
 
 // ── Generic field builder ─────────────────────────────────────────────────────
@@ -116,10 +209,15 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
   }
 
   fields.forEach(f => {
-    const wrap = document.createElement('div');
-    const lbl  = `<label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1"
+    const wrap   = document.createElement('div');
+    const lbl    = `<label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1"
                          for="${f.id}">${f.label}</label>`;
     const curVal = config[f.name] ?? '';
+    // Fields marked refresh:true need a full canvas reload after saving so
+    // server-rendered widgets (like banners) reflect changes immediately.
+    const saveFn = f.refresh
+      ? `saveAndReloadWidget(${widgetId})`
+      : `saveWidgetSettings(${widgetId})`;
 
     let input = '';
     if (f.type === 'select') {
@@ -130,29 +228,126 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
                 class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                        focus:outline-none focus:ring-2 focus:ring-wblue"
-                onchange="saveWidgetSettings(${widgetId})">${opts}</select>`;
+                onchange="${saveFn}">${opts}</select>`;
     } else if (f.type === 'number') {
       input = `<input id="${f.id}" type="number" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||''}" value="${curVal}"
                 class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                        focus:outline-none focus:ring-2 focus:ring-wblue"
-                onchange="saveWidgetSettings(${widgetId})">`;
+                onchange="${saveFn}">`;
+    } else if (f.type === 'feeds-list') {
+      // Migrate legacy single-url config to the new feeds array
+      let existing = Array.isArray(config[f.name]) ? config[f.name] : [];
+      if (!existing.length && config.url) {
+        existing = [{ url: config.url, label: config.title || '', category: '', color: '' }];
+      }
+      // _rssFeedsEditorHtml lives in home-widget-rss.js; always available at runtime
+      wrap.innerHTML = lbl + _rssFeedsEditorHtml(f.id, existing, f.name);
+      body.appendChild(wrap);
+      return;   // skip generic wrap.innerHTML = lbl + input path below
+    } else if (f.type === 'color') {
+      const colorVal  = curVal || f.default || '#0053e2';
+      const resetDflt = f.default || '#0053e2';
+      const hexId     = `${f.id}-hex`;
+      const btnId     = `${f.id}-btn`;
+      // Swatch: a relative container holds a coloured span (visual) and the
+      // real <input type="color"> overlaid on top (opacity:0 but full-size so
+      // the OS picker opens on click — zero-size inputs won't trigger it).
+      input = `
+        <div class="flex items-center gap-2">
+          <span style="position:relative;display:inline-block;width:2rem;height:2rem;flex-shrink:0;">
+            <span id="${btnId}"
+                  style="position:absolute;inset:0;border-radius:6px;border:2px solid #e5e7eb;
+                         background:${colorVal};box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);"></span>
+            <input id="${f.id}" type="color" data-cfg-key="${f.name}"
+                   value="${_escAttr(colorVal)}" title="Click to pick a color"
+                   style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;padding:0;"
+                   oninput="(function(v){document.getElementById('${btnId}').style.background=v;document.getElementById('${hexId}').textContent=v;})(this.value)"
+                   onchange="${saveFn}">
+          </span>
+          <code id="${hexId}" class="text-xs font-mono text-gray-500 dark:text-zinc-400 select-all">${colorVal}</code>
+          <button type="button" title="Reset to default"
+                  class="ml-auto text-[10px] text-gray-400 hover:text-wblue dark:hover:text-blue-400 transition underline underline-offset-2"
+                  onclick="(function(){var v='${resetDflt}';document.getElementById('${f.id}').value=v;document.getElementById('${btnId}').style.background=v;document.getElementById('${hexId}').textContent=v;${saveFn};})()">
+            Reset
+          </button>
+        </div>`;
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
-                placeholder="${f.placeholder||''}" value="${_escAttr(curVal)}"
+                placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
                 class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                        focus:outline-none focus:ring-2 focus:ring-wblue"
-                onchange="saveWidgetSettings(${widgetId})">`;
+                onchange="${saveFn}">`;
     }
     wrap.innerHTML = lbl + input;
+    // Clickable suggestion chips — rendered for any field that supplies a
+    // suggestions array (e.g. the emoji picker for the title widget).
+    if (f.suggestions && f.suggestions.length) {
+      const chips = document.createElement('div');
+      chips.className = 'flex flex-wrap gap-1 mt-1.5';
+      f.suggestions.forEach(s => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = s;
+        btn.title = `Use ${s}`;
+        btn.className = [
+          'text-base px-1 py-0.5 rounded cursor-pointer leading-none',
+          'hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors',
+        ].join(' ');
+        btn.addEventListener('click', () => {
+          const inp = document.getElementById(f.id);
+          if (inp) inp.value = s;
+          saveWidgetSettings(widgetId);
+        });
+        chips.appendChild(btn);
+      });
+      wrap.appendChild(chips);
+    }
     body.appendChild(wrap);
   });
 }
 
 function _escAttr(s) {
   return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+// ── Name / label fields (universal — all widget types) ─────────────────────
+/**
+ * Inject a small “Widget label” section at the top of the settings body.
+ * Two fields, both auto-save on change via saveWidgetSettings:
+ *   custom_name  — free-text display name
+ *   show_name    — checkbox: whether to render that name on the card
+ */
+function _buildNameFields(widgetId, body) {
+  const cfg        = _getCardConfig(widgetId);
+  const curName    = cfg.custom_name || '';
+  const showChecked= cfg.show_name   ? 'checked' : '';
+  const saveFn     = `saveWidgetSettings(${widgetId})`;
+
+  const sec = document.createElement('div');
+  sec.className = 'mb-4 pb-3 border-b border-gray-100 dark:border-zinc-800';
+  sec.innerHTML = `
+    <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400
+              dark:text-zinc-500 mb-2">Widget label</p>
+    <input id="ws-name-${widgetId}" type="text"
+           data-cfg-key="custom_name"
+           placeholder="e.g. Tech News, Team Feeds…"
+           value="${_escAttr(curName)}"
+           class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg
+                  px-2 py-1.5 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                  focus:outline-none focus:ring-2 focus:ring-wblue mb-2"
+           onchange="${saveFn}">
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input id="ws-show-name-${widgetId}" type="checkbox"
+             data-cfg-key="show_name"
+             ${showChecked}
+             class="w-3.5 h-3.5 rounded accent-wblue cursor-pointer"
+             onchange="${saveFn}">
+      <span class="text-xs text-gray-600 dark:text-zinc-300">Show label on widget</span>
+    </label>`;
+  body.appendChild(sec);
 }
 
 // ── Style Picker (inside settings modal) ─────────────────────────────────────
@@ -223,13 +418,16 @@ function openWidgetSettings(widgetId, title, icon) {
   const wtype = card?.dataset.widgetType  || 'clock';
   const wstyle= card?.dataset.widgetStyle || 'default';
 
-  // 1. Size picker (universal — all widget types)
+  // 1. Size picker — shown for all widget types including dividers & titles
   _buildSizePicker(widgetId, body);
 
-  // 2. Style switcher (universal — skipped if widget has only one style)
+  // 2. Widget label (name + show toggle) — universal
+  _buildNameFields(widgetId, body);
+
+  // 3. Style switcher (universal — skipped if widget has only one style)
   _buildStylePicker(widgetId, wtype, wstyle, body);
 
-  // 3. Clock: move hidden config panel into modal body for live previews
+  // 4. Clock: move hidden config panel into modal body for live previews
   if (wtype === 'clock') {
     const panel = document.getElementById(`ws-cfg-${widgetId}`);
     if (panel) {
@@ -264,6 +462,25 @@ function closeWidgetSettings() {
   if (slot && panel) panel.append(...Array.from(slot.children));
   modal.classList.add('hidden');
   delete modal.dataset.widgetId;
+}
+
+/**
+ * Save all settings (including feeds-list hidden input), then close.
+ * Used by the "Done" button — ensures feeds-list changes are always persisted
+ * because those fields have no individual onchange trigger.
+ */
+async function saveAndCloseWidgetSettings() {
+  const modal    = document.getElementById('ws-settings-modal');
+  const widgetId = modal?.dataset.widgetId;
+  if (widgetId) {
+    // Sync any feeds-list editors before saving (in case focus never left an input)
+    document.querySelectorAll('[id$="-rows"]').forEach(rows => {
+      const fieldId = rows.id.replace(/-rows$/, '');
+      if (typeof rssSyncFeeds === 'function') rssSyncFeeds(fieldId);
+    });
+    await saveWidgetSettings(Number(widgetId));
+  }
+  closeWidgetSettings();
 }
 
 // ── saveClockSetting — live-preview + persist for clock widgets ────────────
@@ -305,12 +522,24 @@ async function saveClockSetting(widgetId, key, value) {
   await _saveWidgetFullConfig(widgetId, config);
 }
 
+/** Save config then re-render via changeWidgetStyle (same style = force reload). */
+async function saveAndReloadWidget(widgetId) {
+  await saveWidgetSettings(widgetId);
+  const wstyle = _cardEl(widgetId)?.dataset.widgetStyle || 'default';
+  changeWidgetStyle(widgetId, wstyle);
+}
+
 /** Generic save for all non-clock widget settings (reads data-cfg-key inputs). */
 async function saveWidgetSettings(widgetId) {
   const body = document.getElementById('ws-settings-body');
   const config = { ..._getCardConfig(widgetId) };
   body?.querySelectorAll('[data-cfg-key]').forEach(el => {
-    config[el.dataset.cfgKey] = el.type === 'checkbox' ? el.checked : el.value;
+    if (el.dataset.json) {
+      try { config[el.dataset.cfgKey] = JSON.parse(el.value || '[]'); }
+      catch { config[el.dataset.cfgKey] = []; }
+    } else {
+      config[el.dataset.cfgKey] = el.type === 'checkbox' ? el.checked : el.value;
+    }
   });
   await _saveWidgetFullConfig(widgetId, config);
 }
@@ -367,4 +596,5 @@ async function selectPageLayout(cols) {
   // Persist to backend
   await _post(`/home/pages/${pageId}/update-config`,
     { config_json: JSON.stringify({ col_count: cols }) });
+  if (typeof invalidateHomePageCache === 'function') invalidateHomePageCache(pageId);
 }

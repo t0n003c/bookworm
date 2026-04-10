@@ -1,6 +1,16 @@
 """FastAPI router for categories and attribute definitions."""
 from fastapi import APIRouter, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+
+# Demo users must NOT mutate global tables (categories, attr_definitions).
+# They are shared across ALL users — a demo session's garbage pollutes real users.
+_DEMO_NOOP = Response(status_code=204, headers={"HX-Reswap": "none"})
+
+def _demo_guard(request: Request):
+    """Return a no-op response if the caller is a demo session, else None."""
+    if request.session.get("is_demo"):
+        return _DEMO_NOOP
+    return None
 from templates_env import templates
 from typing import List, Optional
 
@@ -63,6 +73,7 @@ async def add_category(
     description: Optional[str] = Form(default=None),
     workspace_id: Optional[int] = Form(default=None),
 ):
+    if (guard := _demo_guard(request)): return guard
     try:
         await create_category(
             name=name,
@@ -87,6 +98,7 @@ async def remove_category(
     cat_id: int,
     workspace_id: Optional[int] = None,
 ):
+    if (guard := _demo_guard(request)): return guard
     await delete_category(cat_id, workspace_id=workspace_id)
     categories = await get_categories_for_workspace(workspace_id)
     # Return both the manage list AND an OOB swap for the filter checkboxes
@@ -115,6 +127,7 @@ async def rename_category_endpoint(
     category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
 ):
     """Rename / recolor a category globally, then refresh the form panel."""
+    if (guard := _demo_guard(request)): return guard
     name = name.strip()
     if name:
         await rename_category(cat_id, name, color)
@@ -136,6 +149,7 @@ async def add_category_form(
     category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
 ):
     """Add a new category from the note-form panel and refresh both targets."""
+    if (guard := _demo_guard(request)): return guard
     name = name.strip()
     if name:
         try:
@@ -160,6 +174,7 @@ async def remove_category_form(
     category_ids: List[int] = Form(default=[]),  # currently-checked boxes via hx-include
 ):
     """Remove category from workspace (form-panel context) and refresh both targets."""
+    if (guard := _demo_guard(request)): return guard
     await delete_category(cat_id, workspace_id=workspace_id)
     # Drop removed category from selected set so the checkbox grid is consistent
     remaining = [i for i in category_ids if i != cat_id]
@@ -193,6 +208,7 @@ async def add_attr_def(
     field_type: str = Form(default="text"),
     options: Optional[str] = Form(default=None),
 ):
+    if (guard := _demo_guard(request)): return guard
     try:
         await create_attr_def(name=name, field_type=field_type, options=options)
     except Exception:
@@ -207,6 +223,7 @@ async def add_attr_def(
 
 @router.delete("/attr-defs/{def_id}", response_class=HTMLResponse)
 async def remove_attr_def(request: Request, def_id: int):
+    if (guard := _demo_guard(request)): return guard
     await delete_attr_def(def_id)
     attr_defs = await get_all_attr_defs()
     return templates.TemplateResponse(

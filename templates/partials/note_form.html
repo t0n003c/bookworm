@@ -298,6 +298,10 @@
             placeholder="Write your meeting notes here… (supports **bold**, # H1, - bullet, 1. numbered)"
             class="flex-1 min-h-[26rem] border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue resize-none bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400 font-mono leading-relaxed"
             aria-label="Note content"
+            lang="en-US"
+            spellcheck="true"
+            autocorrect="on"
+            autocomplete="off"
           >{{ note.content if is_edit else '' }}</textarea>
 
         </div>
@@ -400,6 +404,44 @@
   .toolbar-btn:hover { background: #e5e7eb; }
   .dark .toolbar-btn { color: #a1a1aa; }
   .dark .toolbar-btn:hover { background: #3f3f46; }
+
+  /* ── Editor code blocks — match note-detail look without touching DOM ────
+     Language badge is driven by data-lang set by JS after each render.
+     No wrapper divs are injected, so serialising back to markdown is safe. */
+  #md-live-preview pre {
+    background: #1e1e1e !important;
+    border: 1px solid #3f3f46;
+    border-radius: .5rem;
+    overflow: hidden;
+    margin: .5rem 0;
+    padding: 0;
+  }
+  #md-live-preview pre code,
+  #md-live-preview pre code.hljs {
+    display: block !important;
+    padding: .75rem 1rem !important;
+    font-size: .82rem;
+    line-height: 1.45;
+    background: transparent !important;
+    color: #d4d4d4;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  /* Language badge — pure CSS, never serialised */
+  #md-live-preview pre[data-lang]::before {
+    content: attr(data-lang);
+    display: block;
+    padding: .22rem .65rem;
+    font-size: .65rem;
+    font-weight: 600;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    background: #27272a;
+    color: #a1a1aa;
+    border-bottom: 1px solid #3f3f46;
+    user-select: none;
+  }
 
   /* ── Preview block drag-and-drop ── */
   #md-live-preview { padding-left: 1.5rem !important; }
@@ -953,9 +995,11 @@
 
   /* ── Link modal ──────────────────────────────────────────────────────── */
   // CE selection snapshot (saved before modal steals focus)
-  let _savedLinkRange = null;
+  // Use `var` (not `let`) — this script is re-injected by HTMX every time a
+  // note opens; `let` throws 'already declared' on the second injection.
+  var _savedLinkRange = null;
   // The <a> element we are editing (null → insert mode)
-  let _editingLinkEl  = null;
+  var _editingLinkEl  = null;
 
   /**
    * showLinkModal(anchorEl)
@@ -1151,6 +1195,12 @@
     const preview = document.getElementById('md-live-preview');
     if (!ta || !preview) return;
 
+    // Prevent the browser's native text drag-and-drop inside the CE pane.
+    // Without this, ending a drag-selection *inside* the pane causes the
+    // browser to drop the dragged text at the release point, which creates
+    // a stray empty paragraph at the bottom of the editor.
+    preview.addEventListener('dragstart', e => e.preventDefault());
+
     // Configure marked + Turndown (HTML → MD)
     marked.use({ gfm: true, breaks: true });
     const turndown = new TurndownService({
@@ -1197,6 +1247,44 @@
       },
     });
 
+    // ── BookWorm custom-element keep-rules ──────────────────────────────
+    // These MUST be added after newTabLink so they take precedence
+    // (Turndown uses unshift internally — last addRule = highest priority).
+    // Each rule emits raw outerHTML so the styled card survives the full
+    // round-trip: CE → TA (save) → TA → renderPreview() → CE (reload).
+
+    // @-Mention pill (has data-bw-mention attribute) — inline, no block separators
+    turndown.addRule('bwMention', {
+      filter: (node) => node.nodeName === 'A' && node.hasAttribute('data-bw-mention'),
+      replacement: (_c, node) => node.outerHTML,
+    });
+
+    // Mention page-title annotation — <span class="bw-mn-ttl">…</span>
+    // Must come AFTER bwMention so this sibling span is caught separately.
+    turndown.addRule('bwMentionTitle', {
+      filter: (node) =>
+        node.nodeName === 'SPAN' && node.classList.contains('bw-mn-ttl'),
+      replacement: (_c, node) => node.outerHTML,
+    });
+
+    // Bookmark amber card (has data-bw-bookmark attribute)
+    turndown.addRule('bwBookmark', {
+      filter: (node) => node.nodeName === 'A' && node.hasAttribute('data-bw-bookmark'),
+      replacement: (_c, node) => `\n\n${node.outerHTML}\n\n`,
+    });
+
+    // Embed fallback card — outer <div data-bw-embed>
+    turndown.addRule('bwEmbedDiv', {
+      filter: (node) => node.nodeName === 'DIV' && node.hasAttribute('data-bw-embed'),
+      replacement: (_c, node) => `\n\n${node.outerHTML}\n\n`,
+    });
+
+    // Embed video — <figure> wrapping an <iframe> (YouTube / Vimeo player)
+    turndown.addRule('bwEmbedFigure', {
+      filter: (node) => node.nodeName === 'FIGURE' && !!node.querySelector('iframe'),
+      replacement: (_c, node) => `\n\n${node.outerHTML}\n\n`,
+    });
+
     window._bwTurndown = turndown; // exposed so slash_commands.js can add keep-rules
     // Exposed for preview DnD (initPreviewDnD runs outside this IIFE)
     window._bwSyncPreviewToMd = () => syncPreviewToMd();
@@ -1205,8 +1293,11 @@
     /* DOMPurify config: allow GFM task-list checkboxes (<input type="checkbox">)
        which are stripped by default because DOMPurify blocks all <input> tags. */
     const PURIFY_CFG = {
-      ADD_TAGS:  ['input'],
-      ADD_ATTR:  ['type', 'checked', 'disabled', 'class', 'style', 'target', 'rel'],
+      ADD_TAGS:  ['input', 'iframe', 'figure'],
+      ADD_ATTR:  ['type', 'checked', 'disabled', 'class', 'style', 'target', 'rel',
+                  'src', 'frameborder', 'allowfullscreen', 'allow',
+                  'width', 'height', 'data-bw-bookmark', 'data-bw-embed', 'data-bw-mention'],
+      ALLOW_DATA_ATTR: true,   // preserve any data-bw-* without listing each one
     };
 
     /* MD → Preview (never resets cursor in contenteditable) */
@@ -1217,6 +1308,26 @@
     function _liveTa()  { return document.getElementById('note-content'); }
     function _livePv()  { return document.getElementById('md-live-preview'); }
 
+    /* Decorate code blocks in the EDITOR preview:
+       - Sets data-lang on <pre> so CSS shows the language badge (::before)
+       - Runs hljs syntax highlighting (safe: Turndown reads .textContent, not .innerHTML)
+       Only called from renderPreview() (textarea-driven), never from contenteditable input. */
+    function _decorateEditorCode(pv) {
+      if (!pv) return;
+      pv.querySelectorAll('pre code').forEach(codeEl => {
+        const pre = codeEl.parentElement;
+        if (!pre || pre.tagName !== 'PRE' || pre.dataset.bwE) return;
+        pre.dataset.bwE = '1';  // prevent double-run on same element
+        // Language badge via data-lang attr + CSS ::before
+        const lang = (codeEl.className.match(/\blanguage-(\w+)\b/) || [])[1] || '';
+        if (lang && lang !== 'undefined') pre.dataset.lang = lang;
+        // Syntax colours (hljs modifies .innerHTML; Turndown ignores spans via .textContent)
+        if (typeof hljs !== 'undefined') {
+          try { hljs.highlightElement(codeEl); } catch (_) { /* silent */ }
+        }
+      });
+    }
+
     function renderPreview() {
       const _ta = _liveTa();
       const _pv = _livePv();
@@ -1226,11 +1337,16 @@
       const raw = _ta.value;
       // Normalize visual bullet chars (•) at any indent level → standard markdown (-).
       // Preserves leading spaces so marked.js sees proper nested list indentation.
-      const md  = raw.replace(/^(\s*)• /gm, '$1- ');
+      const md  = raw.replace(/(^|\n)(\s*)• /g, '$1$2- ');
       _pv.innerHTML = raw.trim()
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
+      // NOTE: _bwApplyCodeHighlighting is intentionally NOT called here.
+      // The live preview is contenteditable, so injecting wrapper divs would
+      // corrupt the note content on save. Highlighting runs only in the
+      // read-only note detail view (note_detail.html).
       _enablePreviewTodoCbs();
+      _decorateEditorCode(_pv);  // language badge + hljs colours (no wrapper divs)
       // Inject drag grips into every top-level block after each render
       if (typeof window._injectPreviewGrips === 'function') {
         window._injectPreviewGrips(_pv);
@@ -1306,7 +1422,14 @@
       // Clone so we can strip grip handles without mutating the live DOM
       const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
-      _ta.value = turndown.turndown(clone.innerHTML);
+      // Strip editor-only decoration attrs so they never leak into markdown
+      clone.querySelectorAll('pre[data-lang]').forEach(p => p.removeAttribute('data-lang'));
+      clone.querySelectorAll('pre[data-bw-e]').forEach(p => p.removeAttribute('data-bw-e'));
+      // .trimEnd() strips the trailing "\n\n" Turndown always emits,
+      // which prevents a phantom empty <p> from being re-rendered on the
+      // next renderPreview() call (the empty trailing line the user sees
+      // after typing in the preview pane).
+      _ta.value = turndown.turndown(clone.innerHTML).trimEnd();
 
       // ── Prune empty <li> shells left by cross-item deletions ─────────────
       // When the user drag-selects across multiple list items and presses
@@ -1358,6 +1481,66 @@
          Tab / Shift+Tab on list items is handled by the permanent
          document-level listener in index.html (_bwEditorTabHandler)
          so it survives HTMX swaps of this partial.                         */
+
+      /* ── Enter inside a <pre> code block ──────────────────────────
+         Two jobs:
+           1. Prevent Chrome from inserting <div>/<br> into <pre>
+           2. Exit the code block when Enter is pressed on an empty last line
+         Strategy: check BEFORE inserting.
+           - Measure text from start of <code> up to the caret via Range.
+           - If the last char before the caret is \n (or caret is at position 0),
+             the cursor is on a blank line → exit.
+           - Otherwise insert a literal \n text node and stay in the block.
+         This sidesteps the marked.js trailing-\n ambiguity entirely.       */
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const _sel = window.getSelection();
+        if (_sel && _sel.rangeCount) {
+          let _n = _sel.getRangeAt(0).startContainer;
+          if (_n.nodeType === Node.TEXT_NODE) _n = _n.parentElement;
+          const _pre = _n?.closest('pre');
+          if (_pre) {
+            e.preventDefault();
+            const _code = _pre.querySelector('code') || _pre;
+            const _rng  = _sel.getRangeAt(0);
+
+            // Measure text from start of <code> to the caret
+            let _textBefore = '';
+            try {
+              const _rb = document.createRange();
+              _rb.setStart(_code, 0);
+              _rb.setEnd(_rng.startContainer, _rng.startOffset);
+              _textBefore = _rb.toString();
+            } catch (_) { /* empty → treat as start of block */ }
+
+            const _prevChar = _textBefore ? _textBefore[_textBefore.length - 1] : '';
+
+            if (_prevChar === '\n') {
+              // Cursor is on an empty line → exit the code block
+              const _p = Object.assign(document.createElement('p'), { innerHTML: '<br>' });
+              _pre.after(_p);
+              const _r2 = document.createRange();
+              _r2.setStart(_p, 0);
+              _r2.collapse(true);
+              _sel.removeAllRanges();
+              _sel.addRange(_r2);
+              syncPreviewToMd();
+              return;
+            }
+
+            // Not on an empty line → insert a real \n text node
+            // (avoids Chrome's <div>/<br> injection into <pre>)
+            _rng.deleteContents();
+            const _nl = document.createTextNode('\n');
+            _rng.insertNode(_nl);
+            const _cur = document.createRange();
+            _cur.setStartAfter(_nl);
+            _cur.collapse(true);
+            _sel.removeAllRanges();
+            _sel.addRange(_cur);
+            return;
+          }
+        }
+      }
 
       if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
       if (typeof scIsOpen === 'function' && scIsOpen()) return;
@@ -1517,6 +1700,9 @@
     const saved = localStorage.getItem('bw-editor-mode') || 'md';
     window.setEditorMode(saved, false);
     renderPreview();
+
+    // Attach spell-check suggestion handler (right-click on misspelled word).
+    if (typeof window.bwSpellInit === 'function') window.bwSpellInit();
 
     {% if is_edit and note %}
     /* ── Image picker + paste/drop upload ──────────────────────────────── */
@@ -1779,57 +1965,83 @@
 })();
 </script>
 
-<!-- ===== Floating Color / Highlight / Size Picker ===== -->
+<!-- ===== Floating selection-formatting toolbar ===== -->
 <div id="color-popup"
-  role="dialog" aria-label="Text formatting picker"
-  class="hidden fixed z-60 bg-white dark:bg-zinc-900 border border-gray-200
-         dark:border-zinc-700 rounded-xl shadow-xl p-3 min-w-[15rem]"
+  role="toolbar" aria-label="Text formatting"
+  class="hidden fixed z-60 select-none
+         bg-white dark:bg-zinc-800
+         border border-gray-200 dark:border-zinc-600
+         rounded-lg shadow-xl"
 >
-  <!-- Text color row -->
-  <p class="text-[10px] font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-1.5 tracking-wide">Text Color</p>
-  <div class="flex flex-wrap gap-1.5 mb-3" id="cp-text-swatches"></div>
+  <!-- Main button row: B / I / S | Highlight | Color | Size -->
+  <div class="flex items-center gap-0.5 p-1" id="cp-main-row">
+    <button type="button" id="cp-bold-btn"   title="Bold (Ctrl+B)"   class="cp-fmt-btn"><b   style="font-size:13px">B</b></button>
+    <button type="button" id="cp-italic-btn" title="Italic (Ctrl+I)" class="cp-fmt-btn"><i   style="font-size:13px">I</i></button>
+    <button type="button" id="cp-strike-btn" title="Strikethrough"   class="cp-fmt-btn"><s   style="font-size:12px">S</s></button>
+    <!-- Edit-link button: only visible when selection is inside an <a> element -->
+    <button type="button" id="cp-link-btn" title="Edit link" aria-label="Edit link" class="cp-fmt-btn hidden">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5z"/>
+        <path d="M7.414 15.414a2 2 0 01-2.828-2.828l3-3a2 2 0 012.828 0 1 1 0 001.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 005.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5z"/>
+      </svg>
+    </button>
+    <div class="cp-vsep"></div>
+    <button type="button" id="cp-hl-btn"     title="Highlight color" class="cp-fmt-btn" style="border-bottom:3px solid #fef08a">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M13.586 3.586a2 2 0 112.828 2.828l-1.06 1.06-2.829-2.828 1.061-1.06z"/>
+        <path d="M11.232 5.94L3 14.172V17h2.828l8.232-8.232-2.828-2.828z"/>
+      </svg>
+    </button>
+    <button type="button" id="cp-tc-btn"     title="Text color"      class="cp-fmt-btn" style="border-bottom:3px solid #3b82f6">
+      <span style="font-size:13px;font-weight:700">A</span>
+    </button>
+    <div class="cp-vsep"></div>
+    <button type="button" id="cp-sz-up-btn" title="Increase size" class="cp-fmt-btn">
+      <span style="font-size:11px;font-weight:700">A<sup>+</sup></span>
+    </button>
+    <button type="button" id="cp-sz-dn-btn" title="Decrease size" class="cp-fmt-btn">
+      <span style="font-size:11px;font-weight:700">A<sub>-</sub></span>
+    </button>
+  </div>
 
-  <!-- Highlight row -->
-  <p class="text-[10px] font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-1.5 tracking-wide">Highlight</p>
-  <div class="flex flex-wrap gap-1.5 mb-3" id="cp-hl-swatches"></div>
+  <!-- Flyout: highlight swatches (toggled by #cp-hl-btn) -->
+  <div id="cp-hl-flyout" class="hidden border-t border-gray-100 dark:border-zinc-700 px-2 pt-1.5 pb-2">
+    <div class="flex flex-wrap gap-1.5" id="cp-hl-swatches"></div>
+  </div>
 
-  <!-- Text size row -->
-  <p class="text-[10px] font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-1.5 tracking-wide">Text Size</p>
-  <div class="flex items-end gap-1.5" id="cp-size-btns"></div>
+  <!-- Flyout: text-color swatches (toggled by #cp-tc-btn) -->
+  <div id="cp-tc-flyout" class="hidden border-t border-gray-100 dark:border-zinc-700 px-2 pt-1.5 pb-2">
+    <div class="flex flex-wrap gap-1.5" id="cp-text-swatches"></div>
+  </div>
 </div>
 
 <style>
-  #color-popup { box-shadow: 0 8px 28px rgba(0,0,0,.2); }
+  /* z-60 shim — Tailwind CDN doesn't generate arbitrary z-index utilities */
+  .z-60 { z-index: 60; }
+
+  /* Formatting action button — matches tw-fmt-bar in home-widget-text-fmt.js */
+  .cp-fmt-btn {
+    width: 1.75rem; height: 1.75rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: .375rem; border: none; background: transparent;
+    color: #374151; cursor: pointer; flex-shrink: 0;
+    transition: background .1s;
+  }
+  .cp-fmt-btn:hover { background: #f3f4f6; }
+  .dark .cp-fmt-btn { color: #e4e4e7; }
+  .dark .cp-fmt-btn:hover { background: #3f3f46; }
+
+  /* Vertical separator between groups */
+  .cp-vsep { width: 1px; height: 1.25rem; background: #e5e7eb; margin: 0 .125rem; flex-shrink: 0; }
+  .dark .cp-vsep { background: #52525b; }
+
+  /* Color / highlight swatches */
   .cp-swatch {
-    width: 1.5rem; height: 1.5rem;
-    border-radius: .375rem;
-    border: 2px solid transparent;
-    cursor: pointer;
-    flex-shrink: 0;
+    width: 1.35rem; height: 1.35rem; border-radius: .3rem;
+    border: 2px solid transparent; cursor: pointer; flex-shrink: 0;
     transition: transform .1s, border-color .1s;
   }
   .cp-swatch:hover { transform: scale(1.2); border-color: #0053e2; }
-  .cp-size-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 1.75rem; height: 1.75rem; padding: 0 .3rem;
-    border-radius: .375rem; border: 1.5px solid #e5e7eb;
-    cursor: pointer; background: transparent; color: #374151;
-    font-weight: 700; line-height: 1; transition: background .1s, border-color .1s;
-    white-space: nowrap; flex-shrink: 0;
-  }
-  .cp-size-btn:hover  { background: #eff6ff; border-color: #0053e2; color: #0053e2; }
-  .cp-size-btn.cp-active {
-    background: #0053e2; border-color: #0053e2; color: #fff;
-    box-shadow: 0 0 0 2px #bfdbfe;
-  }
-  .dark .cp-size-btn { color: #a1a1aa; border-color: #3f3f46; }
-  .dark .cp-size-btn:hover  { background: #1e293b; border-color: #0053e2; color: #60a5fa; }
-  .dark .cp-size-btn.cp-active {
-    background: #0053e2; border-color: #60a5fa; color: #fff;
-    box-shadow: 0 0 0 2px #1e3a5f;
-  }
-  /* z-60 shim — Tailwind CDN doesn't generate arbitrary z-index */
-  .z-60 { z-index: 60; }
 </style>
 
 <script>
@@ -1856,17 +2068,6 @@
     { label: 'Red',              color: '#fecaca'  },
     { label: 'Purple',           color: '#e9d5ff'  },
   ];
-  // label shown as visual "A", fontSize applied to the button so you can see the size
-  const SIZES = [
-    { label: 'Remove size', size: null,       display: '✕',  btnSize: '0.7rem'  },
-    { label: 'Tiny',        size: '0.7rem',   display: 'A',  btnSize: '0.6rem'  },
-    { label: 'Small',       size: '0.85rem',  display: 'A',  btnSize: '0.75rem' },
-    { label: 'Normal',      size: '1rem',     display: 'A',  btnSize: '0.85rem' },
-    { label: 'Large',       size: '1.2rem',   display: 'A',  btnSize: '1rem'    },
-    { label: 'X-Large',     size: '1.5rem',   display: 'A',  btnSize: '1.2rem'  },
-    { label: 'Huge',        size: '2rem',     display: 'A',  btnSize: '1.5rem'  },
-    { label: 'Giant',       size: '2.5rem',   display: 'A',  btnSize: '1.9rem'  },
-  ];
 
   const popup = document.getElementById('color-popup');
   const ta    = document.getElementById('note-content');
@@ -1877,6 +2078,8 @@
   let _draggingFrom = null;   // 'ta' | 'ce' | null
   let _src          = null;   // confirmed source after mouseup
   let _taSel        = null;   // { start, end }
+
+  let _anchorEl      = null;  // nearest <a> when selection is inside a link
 
   /* ── Build color swatches ───────────────────────────── */
   function buildSwatches(container, palette, applyFn) {
@@ -1904,53 +2107,168 @@
   }
 
   /* ── Build size buttons ─────────────────────────────── */
-  function buildSizeBtns(container) {
-    SIZES.forEach(({ label, size, display, btnSize }) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.title = label;
-      btn.setAttribute('aria-label', label);
-      btn.setAttribute('data-size', size ?? '__none__');  // queryable later
-      btn.className = 'cp-size-btn';
-      btn.textContent = display;
-      btn.style.fontSize = btnSize;
-      btn.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        applySize(size);
-        hidePopup();
-      });
-      container.appendChild(btn);
-    });
-  }
-
   buildSwatches(document.getElementById('cp-text-swatches'), TEXT_COLORS, applyColor);
   buildSwatches(document.getElementById('cp-hl-swatches'),   HL_COLORS,   applyHighlight);
-  buildSizeBtns(document.getElementById('cp-size-btns'));
 
-  /* ── Show / hide ─────────────────────────────────────── */
-  /* ── Detect active font-size for the current selection ─ */
+  document.getElementById('cp-link-btn')?.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const anchor = _anchorEl;  // capture before hidePopup clears it
+    hidePopup();
+    if (anchor && typeof window.showLinkModal === 'function') {
+      window.showLinkModal(anchor);
+    }
+  });
+
+  /* ── B / I / S formatting buttons ─────────────────────
+     mousedown+preventDefault keeps the editor focused and
+     the selection alive so mdFmt() operates on the right text. */
+  const _fmtPairs = [
+    ['cp-bold-btn',   'bold'],
+    ['cp-italic-btn', 'italic'],
+    ['cp-strike-btn', 'strike'],
+  ];
+  _fmtPairs.forEach(([id, type]) => {
+    document.getElementById(id)?.addEventListener('mousedown', e => {
+      e.preventDefault();
+      mdFmt(type);
+      hidePopup();
+    });
+  });
+
+  /* ── Flyout toggles — each anchor opens its own panel and closes the others */
+  const _flyouts = {
+    'cp-hl-btn':  'cp-hl-flyout',
+    'cp-tc-btn':  'cp-tc-flyout',
+  };
+  Object.entries(_flyouts).forEach(([btnId, flyoutId]) => {
+    document.getElementById(btnId)?.addEventListener('mousedown', e => {
+      e.preventDefault();
+      const target = document.getElementById(flyoutId);
+      const isOpen = !target.classList.contains('hidden');
+      // Close all flyouts first
+      Object.values(_flyouts).forEach(fId =>
+        document.getElementById(fId)?.classList.add('hidden')
+      );
+      // Toggle the clicked one
+      if (!isOpen) {
+        target.classList.remove('hidden');
+      }
+    });
+  });
+
+  /* ── A⁺ / A₋ — step font size ±2 px, toolbar stays open ──────────────────
+
+     KEY INVARIANT: always update an existing size span IN-PLACE rather than
+     wrapping it in a new one.  Nested spans leave the outer span's font-size
+     in effect for line-box sizing, so the block stays tall even after the
+     text visually shrinks — causing the drag grip to drift off the text.
+
+     CE path: walk DOM up from anchor → found size span → patch .style.fontSize
+              directly, re-select contents, reposition popup.
+              Not found → surroundContents (first use on this text).
+     TA path: selected text already IS the full <span …>…</span> from the
+              previous step → regex-replace font-size in-place.
+              Otherwise → applySize() wraps it (first use on this text).       */
+  function _changeSizeStep(delta) {
+    if (_src === 'ce') {
+      const browserSel = window.getSelection();
+      if (!browserSel || browserSel.isCollapsed || !browserSel.rangeCount) return;
+
+      // Walk up from anchor to find an existing size span we own
+      let node = browserSel.anchorNode;
+      if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      let sizeSpan = null;
+      for (let cur = node; cur && cur !== ce; cur = cur.parentElement) {
+        if (cur.nodeName === 'SPAN' && cur.style?.fontSize) { sizeSpan = cur; break; }
+      }
+
+      const currentPx = parseFloat(getComputedStyle(node).fontSize) || 14;
+      const newPx     = Math.max(10, Math.min(96, currentPx + delta));
+
+      let targetSpan;
+      if (sizeSpan) {
+        // In-place update — no new nesting, no line-box side-effects
+        sizeSpan.style.fontSize = `${newPx}px`;
+        targetSpan = sizeSpan;
+      } else {
+        // First step on this text — create a fresh span
+        const range = browserSel.getRangeAt(0);
+        targetSpan  = document.createElement('span');
+        targetSpan.style.fontSize = `${newPx}px`;
+        try {
+          range.surroundContents(targetSpan);
+        } catch {
+          targetSpan.appendChild(range.extractContents());
+          range.insertNode(targetSpan);
+        }
+      }
+
+      // Re-select span contents so popup stays relevant
+      browserSel.removeAllRanges();
+      const nr = document.createRange();
+      nr.selectNodeContents(targetSpan);
+      browserSel.addRange(nr);
+      ce.dispatchEvent(new Event('input'));
+
+      const rect = nr.getBoundingClientRect();
+      if (rect && rect.width > 0) showPopup(rect.left + rect.width / 2, rect.top);
+
+    } else if (_src === 'ta') {
+      const active = _getActiveSize();
+      let currentPx = 14;
+      if (active) {
+        currentPx = active.endsWith('rem')
+          ? parseFloat(active) * 16
+          : parseFloat(active) || 14;
+      }
+      const newPx = Math.max(10, Math.min(96, currentPx + delta));
+
+      // If _taSel already covers a full <span style="font-size:…">…</span>
+      // patch it in-place to avoid nesting (same reasoning as CE path above)
+      const raw    = ta.value;
+      const selStr = raw.substring(_taSel.start, _taSel.end);
+      if (/^<span[^>]*font-size:/i.test(selStr)) {
+        const patched = selStr.replace(/font-size:[^;"\s]*/i, `font-size:${newPx}px`);
+        ta.value = raw.substring(0, _taSel.start) + patched + raw.substring(_taSel.end);
+        ta.focus();
+        ta.setSelectionRange(_taSel.start, _taSel.start + patched.length);
+        ta.dispatchEvent(new Event('input'));
+      } else {
+        applySize(`${newPx}px`);
+      }
+      // Sync _taSel so the next A⁺/A₋ tap reads the updated span correctly
+      _taSel = { start: ta.selectionStart, end: ta.selectionEnd };
+    }
+    // ↑ No hidePopup() — toolbar stays visible while text remains highlighted
+  }
+
+  document.getElementById('cp-sz-up-btn')?.addEventListener('mousedown', e => {
+    e.preventDefault();
+    _changeSizeStep(+2);
+  });
+  document.getElementById('cp-sz-dn-btn')?.addEventListener('mousedown', e => {
+    e.preventDefault();
+    _changeSizeStep(-2);
+  });
+
+  /* ── Detect the active font-size on the current selection ──────────────────
+     TA path: parse the surrounding <span style="font-size:…"> in raw markdown
+     CE path: walk DOM up from anchor node looking for a sized <span>            */
   function _getActiveSize() {
     if (_src === 'ta' && _taSel) {
-      const val    = ta.value;
-      const before = val.substring(0, _taSel.start);
-      const sel    = val.substring(_taSel.start, _taSel.end);
-
-      // Case A: user selected the whole span tag (e.g. shift+click outside the span)
-      // Selected text starts with <span style="...font-size:..."
-      const mSel = /^<span[^>]*style="([^"]*)"/i.exec(sel);
+      const val     = ta.value;
+      const before  = val.substring(0, _taSel.start);
+      const sel     = val.substring(_taSel.start, _taSel.end);
+      const mSel    = /^<span[^>]*style="([^"]*)"/i.exec(sel);
       if (mSel) {
         const mSz = /font-size:\s*([^;"'\s]+)/i.exec(mSel[1]);
         if (mSz) return mSz[1].trim();
       }
-
-      // Case B: user selected just the *content* — the opening tag is right before
-      // the selection start in the raw markdown
       const mBefore = /<span[^>]*style="([^"]*)"[^>]*>$/.exec(before);
       if (mBefore) {
         const mSz = /font-size:\s*([^;"'\s]+)/i.exec(mBefore[1]);
         if (mSz) return mSz[1].trim();
       }
-
       return null;
     }
 
@@ -1958,19 +2276,12 @@
       const browserSel = window.getSelection();
       if (!browserSel || !browserSel.rangeCount) return null;
       const range = browserSel.getRangeAt(0);
-
-      // Walk up from BOTH startContainer and commonAncestorContainer.
-      // startContainer is the text node where the selection begins — its
-      // parentElement is often exactly the sized <span>.
-      // commonAncestorContainer covers multi-node selections.
       for (const seed of [range.startContainer, range.commonAncestorContainer]) {
         let node = (seed && seed.nodeType === Node.TEXT_NODE)
-          ? seed.parentElement
-          : seed;
+          ? seed.parentElement : seed;
         while (node && node !== ce) {
-          if (node.nodeName === 'SPAN' && node.style && node.style.fontSize) {
+          if (node.nodeName === 'SPAN' && node.style && node.style.fontSize)
             return node.style.fontSize;
-          }
           node = node.parentElement;
         }
       }
@@ -1979,19 +2290,10 @@
     return null;
   }
 
-  function _highlightActiveSize() {
-    const active = _getActiveSize();  // e.g. '1.5rem' or null
-    const key    = active ?? '__none__';
-    popup.querySelectorAll('.cp-size-btn').forEach(btn => {
-      btn.classList.toggle('cp-active', btn.dataset.size === key);
-    });
-  }
-
   function showPopup(x, y) {
     // Briefly make it visible-but-transparent to measure real dimensions
     popup.style.visibility = 'hidden';
     popup.classList.remove('hidden');
-    _highlightActiveSize();           // mark current size before measuring
     const pw = popup.offsetWidth;
     const ph = popup.offsetHeight;
     popup.style.visibility = '';
@@ -2001,10 +2303,30 @@
     const top  = y - ph - 12 < 8 ? y + 16 : y - ph - 12;
     popup.style.left = left + 'px';
     popup.style.top  = top  + 'px';
+
+    // Show the "Edit link" button only when the CE selection is inside a link.
+    const _linkBtn = document.getElementById('cp-link-btn');
+    _anchorEl = null;
+    if (_src === 'ce') {
+      const _sel = window.getSelection();
+      if (_sel && _sel.rangeCount) {
+        let _n = _sel.getRangeAt(0).commonAncestorContainer;
+        if (_n && _n.nodeType === Node.TEXT_NODE) _n = _n.parentElement;
+        while (_n && _n !== ce) {
+          if (_n.tagName === 'A') { _anchorEl = _n; break; }
+          _n = _n.parentElement;
+        }
+      }
+    }
+    if (_linkBtn) _linkBtn.classList.toggle('hidden', !_anchorEl);
   }
 
   function hidePopup() {
     popup.classList.add('hidden');
+    // Close any open flyout panels so next show starts fresh
+    ['cp-hl-flyout','cp-tc-flyout'].forEach(id =>
+      document.getElementById(id)?.classList.add('hidden')
+    );
     _src   = null;
     _taSel = null;
   }
@@ -2052,6 +2374,36 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') hidePopup();
   });
+
+  /* ── CE keyboard-selection support (Shift+Arrow, Shift+End, etc.) ───────
+     The mousedown/mouseup path only fires for mouse drags that START inside
+     the CE element.  Keyboard selections never set _draggingFrom, so we also
+     listen to selectionchange, which fires for every selection update
+     regardless of input device.  A suppression flag prevents the handler
+     from re-popping the toolbar the instant a format button hides it.    */
+  let _suppressNextSel = false;
+  document.addEventListener('selectionchange', () => {
+    if (_draggingFrom) return; // mid-mouse-drag — let mouseup handle it
+    if (_suppressNextSel) { _suppressNextSel = false; return; }
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return; // nothing selected
+      const anchor = sel.getRangeAt(0).commonAncestorContainer;
+      if (!ce.contains(anchor)) return; // selection not in preview — ignore
+      _src = 'ce';
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      showPopup(rect.left + rect.width / 2, rect.top);
+    });
+  });
+
+  /* Suppress the selectionchange re-pop when a format button explicitly
+     hides the popup (Bold, Italic, etc. collapse the selection after
+     applying the format, which would immediately re-show the toolbar). */
+  const _origHidePopup = hidePopup;
+  hidePopup = function() {
+    _suppressNextSel = true;
+    _origHidePopup();
+  };
 
   /* ── Apply text color ────────────────────────────────── */
   function applyColor(color) {
@@ -2241,6 +2593,89 @@
         const parent = el.parentNode;
         while (el.firstChild) parent.insertBefore(el.firstChild, el);
         parent.removeChild(el);
+      }
+    });
+  }
+})();
+</script>
+
+<!-- ===== Click-below-last-line: auto empty line ===== -->
+<script>
+(function initClickBelowHandlers() {
+  const ta = document.getElementById('note-content');
+  const ce = document.getElementById('md-live-preview');
+  if (!ta && !ce) return;
+
+  /* ── Markdown textarea ──────────────────────────────────────────────────────────
+     After any click, if the cursor landed at the very end of content AND
+     the last line is not already empty, append a newline and move cursor there.
+     value.endsWith('\n') → last line IS empty → do nothing.                   */
+  if (ta) {
+    ta.addEventListener('click', () => {
+      requestAnimationFrame(() => {
+        if (ta.selectionStart !== ta.selectionEnd) return; // has a text selection
+        if (ta.selectionStart !== ta.value.length)  return; // cursor not at end
+        if (ta.value.endsWith('\n'))                return; // last line already empty
+        ta.value += '\n';
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        ta.dispatchEvent(new Event('input'));
+      });
+    });
+  }
+
+  /* ── WYSIWYG preview (contenteditable) ────────────────────────────────────────
+     e.target === ce means the click landed on the container itself (the empty
+     padding below all content), NOT on a child block or list item.
+     • Last block has text  → append a new empty <p>, place cursor in it.
+     • Last block is empty  → just move the cursor there (no new line added).   */
+  if (ce) {
+    ce.addEventListener('click', e => {
+      if (e.target !== ce) return;
+
+      // Real children, excluding injected grip spans
+      const blocks = Array.from(ce.children).filter(
+        el => !el.hasAttribute('data-preview-grip')
+      );
+      const last = blocks[blocks.length - 1];
+
+      // Helper: is this block effectively empty?
+      function _isEmpty(el) {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+        return !clone.textContent.trim() && !clone.querySelector('input');
+      }
+
+      function _placeCursorAtEnd(el) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        el.focus();
+      }
+
+      if (!last) {
+        // Completely empty preview — create a starter paragraph
+        const p = document.createElement('p');
+        p.innerHTML = '<br>';
+        ce.appendChild(p);
+        if (typeof window._injectPreviewGrips === 'function')
+          window._injectPreviewGrips(ce);
+        _placeCursorAtEnd(p);
+        ce.dispatchEvent(new Event('input'));
+      } else if (_isEmpty(last)) {
+        // Already an empty trailing block — just put the cursor there
+        _placeCursorAtEnd(last);
+      } else {
+        // Last block has content — add a new empty paragraph after it
+        const p = document.createElement('p');
+        p.innerHTML = '<br>';
+        ce.appendChild(p);
+        if (typeof window._injectPreviewGrips === 'function')
+          window._injectPreviewGrips(ce);
+        _placeCursorAtEnd(p);
+        ce.dispatchEvent(new Event('input'));
       }
     });
   }
@@ -2700,5 +3135,22 @@
     btn.dataset.confirmed = 'true';
     btn.click();
   };
+})();
+</script>
+
+<!-- ── Paste-as URL popup (Notion-style) ─────────────────────────────── -->
+<script>
+(function () {
+  /* bw-paste-as.js is loaded deferred from base.html — it may not be
+     parsed yet when this inline script runs during an HTMX swap.
+     Retry until it's available so the feature always boots correctly. */
+  function _tryInit() {
+    if (window.bwPasteAs) {
+      window.bwPasteAs.init();
+    } else {
+      setTimeout(_tryInit, 80);
+    }
+  }
+  _tryInit();
 })();
 </script>

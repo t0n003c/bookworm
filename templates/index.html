@@ -65,6 +65,60 @@
       </svg>
     </button>
 
+    <!-- Reminder notification bell -->
+    <div class="relative" id="rem-bell-container">
+      <button
+        onclick="window.toggleRemBell && window.toggleRemBell()"
+        id="rem-bell-btn"
+        aria-label="Reminder notifications"
+        title="Reminder notifications"
+        class="relative flex items-center justify-center w-9 h-9 rounded-lg
+               bg-white/10 hover:bg-white/20 transition text-white
+               focus:outline-none focus:ring-2 focus:ring-white/50"
+      >
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002
+               6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6
+               11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0
+               11-6 0v-1m6 0H9"/>
+        </svg>
+        {# Red badge — hidden until JS populates it #}
+        <span id="rem-bell-badge"
+              class="hidden absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem]
+                     px-0.5 bg-red-500 text-white text-[10px] font-bold
+                     rounded-full flex items-center justify-center
+                     ring-2 ring-wblue pointer-events-none"
+              aria-live="polite" aria-label="Unread reminder count">
+        </span>
+      </button>
+      {# Dropdown panel #}
+      <div id="rem-bell-panel"
+           class="hidden absolute right-0 mt-2 w-72 z-50
+                  bg-white dark:bg-zinc-900 border border-gray-200
+                  dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden"
+           role="dialog" aria-label="Missed reminders">
+        <div class="flex items-center justify-between px-4 py-3
+                    border-b border-gray-100 dark:border-zinc-800">
+          <span class="text-xs font-bold text-gray-700 dark:text-zinc-200
+                       uppercase tracking-wide">🔔 Missed Reminders</span>
+          <button onclick="window.remBellClear && window.remBellClear()"
+                  class="text-[11px] text-gray-400 hover:text-wblue
+                         dark:hover:text-blue-400 transition">
+            Clear all
+          </button>
+        </div>
+        <div id="rem-bell-list"
+             class="max-h-64 overflow-y-auto px-4 py-1 divide-y
+                    divide-gray-100 dark:divide-zinc-800">
+          <p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-4">
+            No missed reminders 🎉
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings dropdown -->
     <div class="relative" id="settings-container">
       <button
@@ -146,23 +200,199 @@
       </div>
     </div>
 
-    <!-- New Note button -->
-    <button
-      hx-get="/notes/form/new"
-      hx-target="#detail-panel"
-      hx-swap="innerHTML"
-      hx-include="#active-workspace"
-      class="flex items-center gap-2 bg-wspark text-gray-900 font-semibold px-4 py-2 rounded-lg hover:bg-yellow-300 transition text-sm focus:outline-none focus:ring-2 focus:ring-wspark focus:ring-offset-2 flex-shrink-0"
-      aria-label="Create new note"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-      New Note
-    </button>
+    <!-- Action area: swaps between "New Note" (workspace) and "Add Widget" (HomeSpace) -->
+    <div id="top-action-area" class="flex-shrink-0">
+      <button
+        id="btn-new-note"
+        hx-get="/notes/form/new"
+        hx-target="#detail-panel"
+        hx-swap="innerHTML"
+        hx-include="#active-workspace"
+        class="flex items-center gap-2 bg-wspark text-gray-900 font-semibold px-4 py-2 rounded-lg hover:bg-yellow-300 transition text-sm focus:outline-none focus:ring-2 focus:ring-wspark focus:ring-offset-2"
+        aria-label="Create new note"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        New Note
+      </button>
+    </div>
   </div>
 </header>
 
-<!-- ===== MAIN LAYOUT ===== -->
-<div class="flex pt-16 h-screen">
+{% if is_demo %}
+<!-- ===== DEMO MODE BANNER ===== -->
+<div id="demo-banner"
+     class="fixed top-16 left-0 right-0 z-20 flex items-center justify-between
+            gap-3 px-4 py-2
+            bg-[#ffc220] text-[#1a0f00]"
+     role="status" aria-live="polite">
+  <div class="flex items-center gap-2 text-sm font-semibold">
+    <span class="text-base" aria-hidden="true">🎮</span>
+    <span>You're in <strong>Demo Mode</strong> &mdash; explore freely!
+      Nothing you do here is saved.</span>
+  </div>
+  <div class="flex items-center gap-3 flex-shrink-0">
+    {# Live countdown — JS fills this in #}
+    <span id="demo-countdown"
+          class="text-xs font-mono bg-[#1a0f00]/10 px-2 py-0.5 rounded"
+          aria-live="off" title="Session expires automatically"></span>
+    <a href="/register"
+       class="px-3 py-1 rounded-lg bg-[#1a0f00]/15 hover:bg-[#1a0f00]/25
+              text-[#1a0f00] font-bold text-xs transition
+              focus:outline-none focus:ring-2 focus:ring-[#1a0f00]/40">
+      Create free account &rarr;
+    </a>
+    <button type="button"
+            onclick="endDemoNow()"
+            class="px-3 py-1 rounded-lg bg-[#1a0f00]/10 hover:bg-[#1a0f00]/20
+                   text-[#1a0f00] text-xs font-semibold transition
+                   focus:outline-none focus:ring-2 focus:ring-[#1a0f00]/40"
+            aria-label="Exit demo and return to login">
+      Exit Demo
+    </button>
+  </div>
+</div>
+<script>
+  /* ── Demo session management ────────────────────────────────────── */
+  /* Everything in one flat IIFE — no nested scopes, no HTMX hooks.        */
+  (function () {
+    var EXPIRES_AT  = {{ demo_expires_at | tojson }};
+    var END_URL     = '/demo/end';
+    var PRE_END_URL = '/demo/pre-end';
+    var CANCEL_URL  = '/demo/cancel-end';
+    var FLAG        = 'bw_demo_ending';
+
+    /* Cancel any tab-close deletion that fired during the previous page
+     * load (the user refreshed rather than truly closing the tab).         */
+    if (sessionStorage.getItem(FLAG) === '1') {
+      sessionStorage.removeItem(FLAG);
+      fetch(CANCEL_URL, { method: 'POST', credentials: 'same-origin' }).catch(function () {});
+    }
+
+    /* Schedule deletion when the tab is closed / navigated away.           */
+    window.addEventListener('pagehide', function (evt) {
+      if (!evt.persisted) {
+        sessionStorage.setItem(FLAG, '1');
+        navigator.sendBeacon(PRE_END_URL);
+      }
+    });
+
+    /* Countdown ticker — updates every second, hard-redirects at zero.     */
+    function updateCountdown() {
+      var el = document.getElementById('demo-countdown');
+      if (!el || !EXPIRES_AT) return;
+      var secsLeft = Math.max(0, Math.round(
+        (new Date(EXPIRES_AT) - Date.now()) / 1000
+      ));
+      if (secsLeft === 0) {
+        el.textContent = 'Session expired';
+        navigator.sendBeacon(END_URL);
+        window.location.href = '/login';
+        return;
+      }
+      var m = String(Math.floor(secsLeft / 60)).padStart(2, '0');
+      var s = String(secsLeft % 60).padStart(2, '0');
+      el.textContent = '⏱ ' + m + ':' + s + ' left';
+    }
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+
+    /* ── Admin-deletion modal ────────────────────────────────────────────
+     * Called by the poller below when /demo/alive returns {alive:false}.
+     * Fully self-contained — no outer state needed except FLAG.            */
+    function showAdminEndedModal() {
+      console.warn('[BW demo] showAdminEndedModal() called');
+      if (document.getElementById('bw-admin-ended-modal')) {
+        console.debug('[BW demo] modal already in DOM — skipping (idempotent)');
+        return;
+      }
+
+      var secs    = 30;
+      var overlay = document.createElement('div');
+      overlay.id  = 'bw-admin-ended-modal';
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'bw-aem-title');
+      overlay.setAttribute('aria-describedby', 'bw-aem-body');
+      overlay.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:9999',
+        'background:rgba(8,12,26,0.92)',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'padding:1rem', 'backdrop-filter:blur(6px)'
+      ].join(';');
+
+      overlay.innerHTML =
+        '<div style="background:#1a1f2e;border:1px solid rgba(255,194,32,0.35);'
+        + 'border-radius:1rem;padding:2rem 2rem 1.75rem;max-width:400px;'
+        + 'width:100%;text-align:center;box-shadow:0 0 60px rgba(0,83,226,0.25);">'
+        + '<div style="font-size:2.5rem;margin:0 0 0.75rem" aria-hidden="true">🔔</div>'
+        + '<h2 id="bw-aem-title" style="color:#ffc220;font-size:1.125rem;'
+        + 'font-weight:700;margin:0 0 0.75rem;">Demo Session Ended</h2>'
+        + '<p id="bw-aem-body" style="color:#c4cbd8;font-size:0.875rem;'
+        + 'line-height:1.65;margin:0 0 1.25rem;">'
+        + 'An administrator has <strong style="color:#fff;">ended your demo'
+        + ' session</strong> and removed your temporary data.<br><br>'
+        + 'Thanks for trying out <strong style="color:#fff;">BookWorm</strong>! 📚'
+        + '</p>'
+        + '<p style="color:#6b7280;font-size:0.8rem;margin:0 0 1.25rem;">'
+        + 'Redirecting to login in '
+        + '<strong id="bw-aem-secs" style="color:#9ca3af;">' + secs + '</strong>s…'
+        + '</p>'
+        + '<button id="bw-aem-btn" style="background:#0053e2;color:#fff;border:none;'
+        + 'border-radius:0.5rem;padding:0.625rem 1.75rem;font-size:0.875rem;'
+        + 'font-weight:600;cursor:pointer;transition:background 0.15s;"'
+        + ' onmouseover="this.style.background=\'#1462e8\'"'
+        + ' onmouseout="this.style.background=\'#0053e2\'">Go to Login →</button>'
+        + '</div>';
+
+      document.body.appendChild(overlay);
+
+      var btn    = document.getElementById('bw-aem-btn');
+      var secsEl = document.getElementById('bw-aem-secs');
+      if (btn) btn.focus();
+
+      function goNow() {
+        clearInterval(ticker);
+        sessionStorage.removeItem(FLAG); // don't let pagehide interfere
+        window.location.href = '/login?admin_ended=1';
+      }
+
+      if (btn) btn.addEventListener('click', goNow);
+
+      var ticker = setInterval(function () {
+        secs -= 1;
+        if (secsEl) secsEl.textContent = secs;
+        if (secs <= 0) goNow();
+      }, 1000);
+    }
+
+    /* ── Admin-deletion poller ────────────────────────────────────────────
+     * Checks /demo/alive every 2 s.  When the super admin deletes this demo
+     * account, the next poll returns {alive:false} and the modal appears.
+     * showAdminEndedModal() is idempotent so multiple fires are harmless.  */
+    console.log('[BW demo] poller armed — checking /demo/alive every 2 s');
+    setInterval(function () {
+      fetch('/demo/alive', { credentials: 'same-origin' })
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (data) {
+          if (data && data.alive === false) {
+            console.warn('[BW demo] alive=false — showing ended modal');
+            showAdminEndedModal();
+          }
+        })
+        .catch(function () { /* network blip — ignore */ });
+    }, 2000);
+
+    /* Expose the modal globally so the session-expiry interceptor (below)
+     * can call it instead of navigating to a plain /login page.           */
+    window.bwShowAdminEndedModal = showAdminEndedModal;
+    console.log('[BW demo] IIFE ready — test any time: bwShowAdminEndedModal()');
+
+  })();
+</script>
+{% endif %}
+<div class="flex {% if is_demo %}pt-[6.5rem]{% else %}pt-16{% endif %} h-screen">
 
   <!-- LEFT SIDEBAR -->
   <aside
@@ -335,16 +565,16 @@
         <!-- ── HOMESPACE section ── -->
         <div class="py-4 px-4 border-b border-gray-200 dark:border-zinc-800">
           <div class="flex items-center justify-between mb-2">
-            <p class="text-[10px] font-bold uppercase tracking-widest
-                       text-gray-400 dark:text-zinc-500 select-none flex items-center gap-1">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+            <div class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+                        text-gray-400 dark:text-zinc-500 select-none">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 flex-shrink-0" fill="none"
                    viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round"
                       d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0
                          01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
               </svg>
-              Homespace
-            </p>
+              <span>Homespace</span>
+            </div>
             <button type="button" onclick="openNewHomePage()"
               title="Create a new personal page"
               class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
@@ -402,7 +632,7 @@
     </div>
 
     <!-- Home / Personal Page canvas (hidden by default) -->
-    <div id="home-content" class="hidden -mx-6 -my-6"></div>
+    <div id="home-content" class="hidden"></div>
   </main>
 
   <!-- RIGHT DETAIL PANEL (panel OR fullscreen depending on mode) -->
@@ -472,6 +702,51 @@
   </div>
 </div>
 
+<!-- ===== TODO CLEAR-ALL CONFIRMATION MODAL ===== -->
+<div
+  id="todo-clear-all-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="tca-title"
+  onkeydown="if(event.key==='Escape') closeTodoClearAllModal()"
+>
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeTodoClearAllModal()" aria-hidden="true"></div>
+
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-wred" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
+                   L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </span>
+      <h2 id="tca-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Clear all tasks?
+      </h2>
+    </div>
+
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+      Every task on this list will be permanently deleted. This can't be undone.
+    </p>
+
+    <input type="hidden" id="tca-widget-id" value="">
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="closeTodoClearAllModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+      >Cancel</button>
+      <button id="tca-confirm-btn" type="button" onclick="_confirmTodoClearAll()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Yes, clear all</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== HOME PAGE MODAL (create & rename) ===== -->
 <div
   id="hp-modal"
@@ -484,23 +759,104 @@
     onclick="closeHpModal()"
     aria-hidden="true"></div>
 
-  <!-- Card -->
-  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+  <!-- Card (wider when creating to accommodate the type picker) -->
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
     <h2 id="hp-modal-title"
         class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">New Page</h2>
 
+    <!-- ── Page type picker (hidden during rename) ────────────────────── -->
+    <div id="hp-type-picker" class="mb-5">
+      <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Page type</p>
+      <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Page type">
+
+        <!-- Dashboard -->
+        <button type="button" data-type="dashboard"
+          onclick="selectPageType('dashboard')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="true">
+          <span class="text-2xl leading-none" aria-hidden="true">📊</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">Dashboard</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Widgets &amp; feeds</span>
+        </button>
+
+        <!-- CRM -->
+        <button type="button" data-type="crm"
+          onclick="selectPageType('crm')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">👥</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">CRM</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Contacts &amp; pipeline</span>
+        </button>
+
+        <!-- Media Management -->
+        <button type="button" data-type="media"
+          onclick="selectPageType('media')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">📅</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">Media</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Schedule posts</span>
+        </button>
+
+        <!-- Grid Builder -->
+        <button type="button" data-type="grid_builder"
+          onclick="selectPageType('grid_builder')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">🎨</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">Grid Builder</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Content grids</span>
+        </button>
+
+        <!-- Uploads -->
+        <button type="button" data-type="uploads"
+          onclick="selectPageType('uploads')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">🖼️</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">Uploads</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Media library</span>
+        </button>
+
+        <!-- RSS -->
+        <button type="button" data-type="rss"
+          onclick="selectPageType('rss')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">📡</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">RSS Reader</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Feed reader</span>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- ── Name + emoji row ───────────────────────────────────────────── -->
     <div class="flex gap-2 mb-4">
-      <!-- Emoji picker -->
-      <div class="flex-shrink-0">
+      <!-- Emoji picker (hidden when creating new page; shown for rename) -->
+      <div id="hp-emoji-section" class="flex-shrink-0">
         <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Icon</label>
-        <input id="hp-emoji" type="hidden" value="🏠" />
+        <input id="hp-emoji" type="hidden" value="📊" />
         <button type="button" id="hp-emoji-btn"
           onclick="openEmojiPicker('hp-emoji', 'hp-emoji-btn')"
           class="w-14 h-10 text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg
                  hover:border-wblue focus:outline-none focus:ring-2 focus:ring-wblue
                  bg-white dark:bg-zinc-800 transition"
           aria-label="Choose page icon" aria-haspopup="true"
-        >🏠</button>
+        >📊</button>
       </div>
       <!-- Name -->
       <div class="flex-1">
@@ -517,8 +873,9 @@
       </div>
     </div>
 
-    <!-- hidden action URL (swapped by JS between create / rename) -->
+    <!-- hidden fields -->
     <input type="hidden" id="hp-modal-action" value="/home/pages/create" />
+    <input type="hidden" id="hp-page-type"   value="dashboard" />
 
     <div class="flex gap-2 justify-end">
       <button type="button" onclick="closeHpModal()"
@@ -702,6 +1059,50 @@
   </div>
 </div>
 
+<!-- ===== DELETE NOTE MODAL ===== -->
+<div
+  id="delete-note-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="delete-note-title"
+  onkeydown="if(event.key==='Escape') closeDeleteNoteModal()"
+>
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDeleteNoteModal()"></div>
+
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-wred" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </span>
+      <h2 id="delete-note-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Delete note?
+      </h2>
+    </div>
+
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+      You're about to permanently delete
+      <strong id="delete-note-label" class="text-gray-900 dark:text-zinc-100"></strong>.
+    </p>
+    <p class="text-sm text-gray-500 dark:text-zinc-500 mb-5">This cannot be undone.</p>
+
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="closeDeleteNoteModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+      >Cancel</button>
+      <button id="delete-note-confirm-btn" type="button" onclick="_confirmDeleteNote()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Delete permanently</button>
+    </div>
+  </div>
+</div>
+
 <script>
   /* ---- Edit Workspace Modal ---- */
   function openEditWsModal(btn) {
@@ -747,6 +1148,54 @@
       target:  '#note-list',
       swap:    'innerHTML',
       values:  { active_ws_id: activeId },
+    });
+  }
+
+  /* ---- Delete Note Modal ---- */
+  let _deleteNotePendingId = null;
+  function openDeleteNoteModal(noteId, noteTitle) {
+    _deleteNotePendingId = noteId;
+    document.getElementById('delete-note-label').textContent =
+      noteTitle || 'this note';
+    document.getElementById('delete-note-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('delete-note-confirm-btn').focus(), 50);
+  }
+  function closeDeleteNoteModal() {
+    document.getElementById('delete-note-modal').classList.add('hidden');
+    _deleteNotePendingId = null;
+  }
+  function _confirmDeleteNote() {
+    if (!_deleteNotePendingId) return;
+    const noteId = _deleteNotePendingId;
+    const wsId   = document.getElementById('active-workspace')?.value || '';
+    closeDeleteNoteModal();
+    closePanel();
+    /* workspace_id MUST be a query-string param — FastAPI reads it from QS
+     * for DELETE requests; htmx.ajax `values` goes to the body, not QS.  */
+    const url = '/notes/' + noteId + (wsId ? '?workspace_id=' + encodeURIComponent(wsId) : '');
+    htmx.ajax('DELETE', url, { target: '#note-list', swap: 'innerHTML' });
+  }
+
+  /* ---- Demo exit (always defined; no-op for non-demo users) ---- */
+  async function endDemoNow() {
+    // Clear the pagehide flag so the /login page load doesn't try to
+    // cancel a deletion that was already completed by this explicit exit.
+    sessionStorage.removeItem('bw_demo_ending');
+    try { await fetch('/demo/end', { method: 'POST', credentials: 'same-origin' }); }
+    catch (_) {}
+    window.location.replace('/login');
+  }
+
+  /* ---- Duplicate Workspace ---- */
+  function duplicateWorkspace(wsId, wsName) {
+    if (!confirm(
+      '📎 Duplicate \u201c' + wsName + '\u201d?\n\n' +
+      'A copy of this workspace and all its nested workspaces\n' +
+      'and notes will be created alongside the original.'
+    )) return;
+    htmx.ajax('POST', '/workspaces/' + wsId + '/duplicate', {
+      target: '#note-list',
+      swap:   'innerHTML',
     });
   }
 
@@ -799,6 +1248,7 @@
       chevron && chevron.classList.add('rotate-90');
     }
     _saveCollapsed(collapsed);
+    wsUpdateToggleAllBtn(); // keep toggle-all icon in sync
   }
 
   function wsInitCollapse() {
@@ -813,10 +1263,56 @@
         chevron && chevron.classList.add('rotate-90');
       }
     });
+    wsUpdateToggleAllBtn(); // keep the toggle-all icon in sync
   }
   // Run on first load; HTMX re-runs it after OOB swaps
   wsInitCollapse();
   document.addEventListener('htmx:afterSettle', wsInitCollapse);
+
+  // True if at least one ws-children div is currently visible.
+  function _anyWsExpanded() {
+    return [...document.querySelectorAll('.ws-children')]
+      .some(el => !el.classList.contains('hidden'));
+  }
+
+  // Sync the toggle-all button icon + label to match the actual tree state.
+  function wsUpdateToggleAllBtn() {
+    const btn  = document.getElementById('ws-toggle-all-btn');
+    const icon = document.getElementById('ws-toggle-all-icon');
+    if (!btn || !icon) return;
+    const expanded = _anyWsExpanded();
+    // rotate-90 = pointing down = "tree is expanded, click to collapse"
+    icon.classList.toggle('rotate-90', expanded);
+    const label = expanded ? 'Collapse all workspaces' : 'Expand all workspaces';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+
+  // Single toggle: collapses everything when any child is visible,
+  // expands everything when all children are hidden.
+  function wsToggleAll() {
+    const collapsed = _getCollapsed();
+    if (_anyWsExpanded()) {
+      document.querySelectorAll('.ws-children').forEach(el => {
+        const wsId = parseInt(el.id.replace('ws-children-', ''));
+        el.classList.add('hidden');
+        collapsed.add(wsId);
+        const chevron = document.getElementById('chevron-' + wsId);
+        chevron && chevron.classList.remove('rotate-90');
+      });
+      _saveCollapsed(collapsed);
+    } else {
+      document.querySelectorAll('.ws-children').forEach(el => {
+        const wsId = parseInt(el.id.replace('ws-children-', ''));
+        el.classList.remove('hidden');
+        collapsed.delete(wsId);
+        const chevron = document.getElementById('chevron-' + wsId);
+        chevron && chevron.classList.add('rotate-90');
+      });
+      _saveCollapsed(new Set());
+    }
+    wsUpdateToggleAllBtn();
+  }
 
   /* ---- Sidebar tabs ---- */
   const SB_TAB_ACTIVE   = ['border-wblue', 'text-wblue'];
@@ -952,26 +1448,82 @@
 
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanel(); });
 
+  /* ---- HTMX session-expiry / user-deleted redirect interceptor ----------
+   * Signal A) X-BW-Demo-Ended:1 — auth middleware returns this (+ HX-Reswap:
+   *   none) for deleted demo HTMX requests.  No redirect; JS shows modal.
+   * Signal B) responseURL ends at /login — classic 302 auto-follow.
+   * ------------------------------------------------------------------- */
+  (function () {
+    function _isDemoEnded(xhr) {
+      return xhr && xhr.getResponseHeader &&
+             xhr.getResponseHeader('X-BW-Demo-Ended') === '1';
+    }
+    function _isLoginRedirect(xhr) {
+      var url = (xhr && xhr.responseURL) || '';
+      return url.length > 0 && /\/login(\?.*)?$/.test(url);
+    }
+    function _handleSessionLost(showModal) {
+      if (showModal && typeof window.bwShowAdminEndedModal === 'function') {
+        window.bwShowAdminEndedModal();
+      } else {
+        window.location.replace('/login');
+      }
+    }
+
+    /* Primary hook — htmx:beforeSwap fires for every swap attempt.         */
+    document.addEventListener('htmx:beforeSwap', function (evt) {
+      var xhr = evt.detail && evt.detail.xhr;
+      if (_isDemoEnded(xhr)) {
+        evt.detail.shouldSwap = false;
+        console.warn('[BW interceptor] X-BW-Demo-Ended — showing demo modal');
+        _handleSessionLost(true);
+        return;
+      }
+      if (_isLoginRedirect(xhr)) {
+        evt.detail.shouldSwap = false;
+        console.warn('[BW interceptor] htmx:beforeSwap caught /login redirect');
+        _handleSessionLost(typeof window.bwShowAdminEndedModal === 'function');
+      }
+    });
+
+    /* Belt-and-suspenders — raw XHR load listener (fires before htmx onload).*/
+    (function () {
+      var _open = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (method, url) {
+        this.addEventListener('load', function () {
+          if (_isDemoEnded(this)) {
+            console.warn('[BW interceptor] XHR X-BW-Demo-Ended on', url);
+            _handleSessionLost(true);
+            return;
+          }
+          if (_isLoginRedirect(this)) {
+            console.warn('[BW interceptor] XHR /login responseURL on', url);
+            _handleSessionLost(typeof window.bwShowAdminEndedModal === 'function');
+          }
+        });
+        return _open.apply(this, arguments);
+      };
+    })();
+  })();
+
+
   /* ---- Auto open/resize panel after every HTMX swap into #detail-panel ---- */
   document.addEventListener('htmx:afterSwap', (e) => {
     // ── Workspace switch detected ─────────────────────────────────────────
     // #ws-breadcrumb is OOB-swapped ONLY on workspace switches.
-    // In timeline mode:  do NOT unmount.  The note-list handler already
-    //   scheduled a remount() that rebuilds the overlay with the new
-    //   workspace's notes — the overlay stays covering the grid the
-    //   entire time, so there is zero flash of grid view.
+    // In timeline mode:  do NOT unmount.  The note-list handler below
+    //   calls remount() synchronously so the opaque overlay never drops.
     // In grid mode:  nothing is mounted, nothing to do.
     if (e.detail.target.id === 'ws-breadcrumb') return;
 
     // ── Re-apply timeline after any HTMX swap that targets #note-list ────
+    // IMPORTANT: call remount() directly — NO requestAnimationFrame wrapper.
+    // A rAF delay gives the browser a chance to paint the swapped-in grid
+    // for one frame before the overlay covers it again (= visible flash).
+    // remount() immediately repaints the overlay background synchronously,
+    // so there is zero gap between the HTMX swap and the opaque overlay.
     if (e.detail.target.id === 'note-list') {
-      if (localStorage.getItem('bw-list-view') === 'timeline') {
-        // Re-check localStorage *inside* the rAF: a workspace switch OOB swap
-        // may have already reset it to 'grid' before this frame executes.
-        requestAnimationFrame(() => {
-          if (localStorage.getItem('bw-list-view') === 'timeline') bwTimeline.remount();
-        });
-      }
+      if (bwTimeline.isMounted()) bwTimeline.remount();
       return;
     }
     if (e.detail.target.id !== 'detail-panel') return;
@@ -985,6 +1537,13 @@
     if (isForm && typeof window.setEditorMode === 'function') {
       const savedMode = localStorage.getItem('bw-editor-mode') || 'md';
       window.setEditorMode(savedMode, false);
+    }
+    // ── Safety-net: ensure code blocks get highlighted + copy buttons even if the
+    //    inline script inside note_detail.html ran before _bwApplyCodeHighlighting
+    //    was defined (edge-case on slow CDN connections). Runs only on view panels
+    //    (not the form) since the form has its own live preview highlighting.
+    if (!isForm && typeof window._bwApplyCodeHighlighting === 'function') {
+      window._bwApplyCodeHighlighting(e.detail.target);
     }
   });
 
@@ -1205,6 +1764,10 @@
       bwTimeline.unmount();
       localStorage.setItem('bw-list-view', 'grid');
     } else {
+      // Exit home-page canvas if it's currently active — the timeline overlay
+      // sits at z-index:10 over main-content, so it would hide the canvas but
+      // leave home-content visible; unmounting later would expose both at once.
+      if (typeof homeExit === 'function') homeExit();
       bwTimeline.mount();
       localStorage.setItem('bw-list-view', 'timeline');
     }
@@ -1401,36 +1964,59 @@
      page reload lands on the right workspace via the server's ?ws= param.    */
 
   /* ---- Workspace navigation ---- */
+
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
-    // Return from home page canvas to workspace view
-    if (typeof homeExit === 'function') homeExit();
-    // Update URL + localStorage SYNCHRONOUSLY on every click — before the debounce
-    // timer fires.  This way a page reload triggered within the 350 ms window still
-    // lands on the correct workspace.  The HTMX content swap is still debounced so
-    // rapid sidebar clicks don't fire redundant network requests.
-    document.getElementById('active-workspace').value = id;
-    _bwSetActiveWs(id);
-    clearTimeout(_wsClickTimer);
-    _wsClickTimer = setTimeout(() => {
-      _wsClickTimer = null;
+    const hc = document.getElementById('home-content');
+    const fromHome = !!(hc && !hc.classList.contains('hidden'));
+
+    if (fromHome) {
+      // Homespace → workspace: exit the canvas, keep #note-list hidden until
+      // the new content arrives so stale HTML never flashes through.
+      if (typeof homeExit === 'function') homeExit();
+      const nl = document.getElementById('note-list');
+      if (nl) nl.classList.add('hidden'); // counteract homeExit’s unhide
+      document.getElementById('active-workspace').value = id;
+      _bwSetActiveWs(id);
+      clearTimeout(_wsClickTimer); _wsClickTimer = null;
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
-      }).then(() => refreshCatFilter(id));
-    }, 350);
+      }).then(() => {
+        if (nl) nl.classList.remove('hidden'); // reveal with correct content
+        refreshCatFilter(id);
+      });
+    } else {
+      // Workspace → workspace: debounce to batch rapid sidebar clicks.
+      document.getElementById('active-workspace').value = id;
+      _bwSetActiveWs(id);
+      clearTimeout(_wsClickTimer);
+      _wsClickTimer = setTimeout(() => {
+        _wsClickTimer = null;
+        htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
+          target: '#note-list', swap: 'innerHTML',
+        }).then(() => refreshCatFilter(id));
+      }, 150);
+    }
   }
 
   function wsDoubleClick(id) {
-    clearTimeout(_wsClickTimer);
-    _wsClickTimer = null;
+    clearTimeout(_wsClickTimer); _wsClickTimer = null;
+    const hc = document.getElementById('home-content');
+    const fromHome = !!(hc && !hc.classList.contains('hidden'));
+    if (typeof homeExit === 'function') homeExit();
+    const nl = document.getElementById('note-list');
+    if (fromHome && nl) nl.classList.add('hidden');
     document.getElementById('active-workspace').value = id;
     _bwSetActiveWs(id);
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
-    }).then(() => refreshCatFilter(id));
+    }).then(() => {
+      if (fromHome && nl) nl.classList.remove('hidden');
+      refreshCatFilter(id);
+    });
   }
 
-  /* Top-bar tab click — immediate switch, no debounce, no hx-vals needed. */
+  /* Top-bar tab click — tabs only visible in workspace view, never from Homespace. */
   function wsTabClick(id) {
     window._bwWsId = id;
     document.getElementById('active-workspace').value = id;
@@ -1579,6 +2165,13 @@
     if (_pickerInput)  document.getElementById(_pickerInput).value       = emoji;
     if (_pickerButton) document.getElementById(_pickerButton).textContent = emoji;
     closeEmojiPicker();
+    // When picking an emoji in the HP new-page modal, auto-select the
+    // matching page type so the user doesn't have to click two things.
+    // e.g. picking 📡 auto-selects RSS, 👥 auto-selects CRM, etc.
+    if (_pickerInput === 'hp-emoji' && typeof HP_TYPE_DEFAULTS !== 'undefined') {
+      const hit = Object.entries(HP_TYPE_DEFAULTS).find(([, d]) => d.emoji === emoji);
+      if (hit) selectPageType(hit[0]);
+    }
   }
 
   function filterEmojis(q) { _buildEmojiGrid(q); }
@@ -1826,18 +2419,147 @@
   aria-label="Account settings"
   onclick="if(event.target===this)hideAccountModal()"
 >
-  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true"></div>
-  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-700 overflow-hidden">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" onclick="hideAccountModal()"></div>
+  <div id="account-modal-inner" class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-700 overflow-hidden">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700">
       <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100">👤 Account</h2>
-      <button onclick="hideAccountModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition focus:outline-none focus:ring-2 focus:ring-wblue rounded" aria-label="Close">&times;</button>
+      <div class="flex items-center gap-2">
+        <!-- Window size pills -->
+        <div class="flex items-center gap-0.5 rounded-lg border border-gray-200 dark:border-zinc-700 p-0.5 text-xs">
+          <button type="button" data-acct-size="S" onclick="_setAcctSize('S')"
+            class="acct-size-btn px-2 py-0.5 rounded-md transition font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100"
+            aria-label="Compact view" title="Compact">S</button>
+          <button type="button" data-acct-size="M" onclick="_setAcctSize('M')"
+            class="acct-size-btn px-2 py-0.5 rounded-md transition font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100"
+            aria-label="Standard view" title="Standard">M</button>
+          <button type="button" data-acct-size="L" onclick="_setAcctSize('L')"
+            class="acct-size-btn px-2 py-0.5 rounded-md transition font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100"
+            aria-label="Wide view" title="Wide">L</button>
+        </div>
+        <button onclick="hideAccountModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition focus:outline-none focus:ring-2 focus:ring-wblue rounded" aria-label="Close">&times;</button>
+      </div>
     </div>
-    <!-- Body -->
-    <div class="px-6 py-5 space-y-6 overflow-y-auto max-h-[80vh]">
+    <!-- ── Layout CSS (grid magic for M/L modes) ────────────────────── -->
+    <style>
+      /* S: single column, full scroll — default */
+      #account-modal-body.acct-sz-s { max-height:75vh; overflow-y:auto; }
+      #account-modal-body.acct-sz-s #acct-l-sidenav { display:none !important; }
 
-      <!-- Profile info -->
-      <div class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
+      /* M: single-column scroll — wider than S; username + password side-by-side */
+      #account-modal-body.acct-sz-m {
+        max-height: 78vh;
+        overflow-y: auto;
+      }
+      #account-modal-body.acct-sz-m #acct-l-sidenav { display:none !important; }
+
+      /* Two-column grid for the credential forms in M mode */
+      #account-modal-body.acct-sz-m .acct-credential-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 1.5rem;
+        align-items: start;
+      }
+      /* Vertical divider between the two columns */
+      #account-modal-body.acct-sz-m .acct-credential-grid > div:first-child {
+        padding-right: 1.5rem;
+        border-right: 1px solid #e5e7eb;
+      }
+      .dark #account-modal-body.acct-sz-m .acct-credential-grid > div:first-child {
+        border-right-color: #3f3f46;
+      }
+
+      /* S + L stacked mode: separator between credential sections */
+      #account-modal-body.acct-sz-s .acct-credential-grid > div + div,
+      #account-modal-body.acct-sz-l .acct-credential-grid > div + div {
+        border-top: 1px solid #e5e7eb;
+        padding-top: 1.25rem;
+        margin-top: 1.25rem;
+      }
+      .dark #account-modal-body.acct-sz-s .acct-credential-grid > div + div,
+      .dark #account-modal-body.acct-sz-l .acct-credential-grid > div + div {
+        border-top-color: #3f3f46;
+      }
+
+      /* L: sidebar nav (160px) + one section at a time */
+      #account-modal-body.acct-sz-l {
+        display:grid; grid-template-columns:160px 1fr; max-height:72vh;
+      }
+      #account-modal-body.acct-sz-l #acct-l-sidenav {
+        display:flex !important; flex-direction:column;
+        grid-column:1; grid-row:1;
+      }
+      #account-modal-body.acct-sz-l #acct-s1,
+      #account-modal-body.acct-sz-l #acct-s2,
+      #account-modal-body.acct-sz-l #acct-s3 {
+        grid-column:2; grid-row:1; overflow-y:auto; border-top:none;
+      }
+      /* Profile card hidden in L — sidenav shows it instead */
+      #account-modal-body.acct-sz-l #acct-inline-profile { display:none; }
+      /* Only one section visible at a time in L mode */
+      #account-modal-body.acct-sz-l .acct-sec-hidden { display:none !important; }
+
+      /* Nav button base styles (used in L sidebar) */
+      .acct-l-navbtn {
+        display:flex; align-items:center; gap:0.375rem;
+        width:100%; padding:0.375rem 0.5rem;
+        border-radius:0.5rem; font-size:0.8rem; font-weight:500;
+        text-align:left; cursor:pointer; border:none; background:transparent;
+        color:#6b7280; transition:background 120ms, color 120ms;
+      }
+      .acct-l-navbtn:hover { background:#f3f4f6; color:#111827; }
+      .dark .acct-l-navbtn { color:#a1a1aa; }
+      .dark .acct-l-navbtn:hover { background:rgba(63,63,70,0.6); color:#f4f4f5; }
+      .acct-l-navbtn.acct-nav-active {
+        background:#dbeafe; color:#0053e2; font-weight:600;
+      }
+      .dark .acct-l-navbtn.acct-nav-active {
+        background:rgba(30,64,175,0.2); color:#60a5fa;
+      }
+      /* ── 2FA QR layout — lives in 2fa_panel.html partial (always fresh) — */
+    </style>
+
+    <!-- Body -->
+    <div id="account-modal-body" class="acct-sz-s">
+
+      <!-- ── L-mode sidebar nav (shows in grid column 1 only when L is active) ── -->
+      <nav id="acct-l-sidenav"
+           class="hidden overflow-y-auto py-4 px-2 gap-1
+                  bg-gray-50 dark:bg-zinc-800/60
+                  border-r border-gray-200 dark:border-zinc-700">
+        <div class="flex items-center gap-2 mb-3 pb-3 px-1
+                    border-b border-gray-200 dark:border-zinc-700">
+          <div class="w-8 h-8 rounded-full bg-[#0053e2] flex items-center justify-center
+                      text-white font-bold text-sm flex-shrink-0">
+            {{ current_username[0].upper() if current_username else '?' }}
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ current_username }}</p>
+            {% if current_role == 'superadmin' %}
+            <span class="text-[10px] font-medium text-[#0053e2]">Superadmin</span>
+            {% else %}
+            <span class="text-[10px] text-gray-500 dark:text-zinc-400">User</span>
+            {% endif %}
+          </div>
+        </div>
+        <button type="button" class="acct-l-navbtn" data-sec="s1" onclick="_acctNav('s1')" aria-label="Account credentials">
+          &#128273; Account
+        </button>
+        <button type="button" class="acct-l-navbtn" data-sec="s2" onclick="_acctNav('s2')" aria-label="Security settings">
+          &#128737;&#65039; Security
+        </button>
+        {% if current_role == 'superadmin' %}
+        <button type="button" class="acct-l-navbtn" data-sec="s3" onclick="_acctNav('s3')" aria-label="Admin panel">
+          &#128101; Admin
+        </button>
+        {% endif %}
+      </nav>
+
+      <!-- ── Section 1: Credentials ────────────────────────────── -->
+      <div id="acct-s1" class="px-6 py-5 space-y-5">
+
+        <!-- Inline profile card (hidden in L mode via CSS) -->
+        <div id="acct-inline-profile" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
         <div class="w-10 h-10 rounded-full bg-[#0053e2] flex items-center justify-center text-white font-bold text-base flex-shrink-0">
           {{ current_username[0].upper() if current_username else '?' }}
         </div>
@@ -1851,103 +2573,145 @@
         </div>
       </div>
 
-      <hr class="border-gray-200 dark:border-zinc-700"/>
+      <!-- Change Username + Change Password side-by-side in M, stacked in S/L -->
+      <div class="acct-credential-grid">
 
-      <!-- Change Username -->
-      <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">Change Username</p>
-        <form
-          hx-post="/account/change-username"
-          hx-target="#username-msg"
-          hx-swap="innerHTML"
-          class="space-y-3"
-        >
-          <div>
-            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
-            <input name="current_password" type="password" required autocomplete="current-password"
-              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Username</label>
-            <input name="new_username" type="text" required autocomplete="username"
-              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-          </div>
-          <div class="flex items-center gap-3">
-            <button type="submit"
-              class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
-              Update Username
-            </button>
-            <span id="username-msg" class="text-xs"></span>
-          </div>
-        </form>
-      </div>
+        <!-- Change Username -->
+        <div>
+          <button type="button" onclick="_acctToggle('acct-username-body', this)" aria-expanded="true"
+            class="w-full flex items-center justify-between group py-0.5">
+            <span class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500
+                         group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition">Change Username</span>
+            <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 transition-transform duration-200 flex-shrink-0"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+            </svg>
+          </button>
+          <div id="acct-username-body" class="mt-3">
+          <form
+            hx-post="/account/change-username"
+            hx-target="#username-msg"
+            hx-swap="innerHTML"
+            class="space-y-3"
+          >
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
+              <input name="current_password" type="password" required autocomplete="current-password"
+                class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                       bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"/>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Username</label>
+              <input name="new_username" type="text" required autocomplete="username"
+                class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                       bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"/>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="submit"
+                class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
+                Update Username
+              </button>
+              <span id="username-msg" class="text-xs"></span>
+            </div>
+          </form>
+          </div><!-- /acct-username-body -->
+        </div>
 
-      <hr class="border-gray-200 dark:border-zinc-700"/>
+        <!-- Change Password -->
+        <div>
+          <button type="button" onclick="_acctToggle('acct-password-body', this)" aria-expanded="true"
+            class="w-full flex items-center justify-between group py-0.5">
+            <span class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500
+                         group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition">Change Password</span>
+            <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 transition-transform duration-200 flex-shrink-0"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+            </svg>
+          </button>
+          <div id="acct-password-body" class="mt-3">
+          <form
+            hx-post="/account/change-password"
+            hx-target="#password-msg"
+            hx-swap="innerHTML"
+            class="space-y-3"
+          >
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
+              <input name="current_password" type="password" required autocomplete="current-password"
+                class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                       bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"/>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Password <span class="text-gray-400 font-normal">(min 6 chars)</span></label>
+              <input name="new_password" type="password" required autocomplete="new-password"
+                class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                       bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"/>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Confirm New Password</label>
+              <input name="confirm_password" type="password" required autocomplete="new-password"
+                class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                       bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"/>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="submit"
+                class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
+                Update Password
+              </button>
+              <span id="password-msg" class="text-xs"></span>
+            </div>
+          </form>
+          </div><!-- /acct-password-body -->
+        </div>
 
-      <!-- Change Password -->
-      <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">Change Password</p>
-        <form
-          hx-post="/account/change-password"
-          hx-target="#password-msg"
-          hx-swap="innerHTML"
-          class="space-y-3"
-        >
-          <div>
-            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Current Password</label>
-            <input name="current_password" type="password" required autocomplete="current-password"
-              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">New Password <span class="text-gray-400 font-normal">(min 6 chars)</span></label>
-            <input name="new_password" type="password" required autocomplete="new-password"
-              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Confirm New Password</label>
-            <input name="confirm_password" type="password" required autocomplete="new-password"
-              class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-          </div>
-          <div class="flex items-center gap-3">
-            <button type="submit"
-              class="px-4 py-1.5 bg-wblue hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition focus:outline-none focus:ring-2 focus:ring-wblue">
-              Update Password
-            </button>
-            <span id="password-msg" class="text-xs"></span>
-          </div>
-        </form>
-      </div>
+      </div><!-- /.acct-credential-grid -->
 
-      <hr class="border-gray-200 dark:border-zinc-700"/>
+      </div><!-- /#acct-s1 -->
 
-      <!-- Two-Factor Authentication -->
-      <div id="2fa-panel-loader">
-        <p class="text-xs text-gray-400 dark:text-zinc-500">Loading 2FA settings…</p>
-      </div>
+      <!-- ── Section 2: Security (2FA) ──────────────────────────────────── -->
+      <div id="acct-s2" class="px-6 py-5 border-t border-gray-200 dark:border-zinc-700">
+        <button type="button" onclick="_acctToggle('acct-s2-body', this)" aria-expanded="true"
+          class="w-full flex items-center justify-between group py-0.5 mb-3">
+          <span class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500
+                       group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition">Two-Factor Authentication</span>
+          <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 transition-transform duration-200 flex-shrink-0"
+               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+          </svg>
+        </button>
+        <div id="acct-s2-body">
+          <div id="2fa-panel-loader">
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Loading 2FA settings…</p>
+          </div>
+        </div>
+      </div><!-- /#acct-s2 -->
 
       {% if current_role == 'superadmin' %}
-      <hr class="border-gray-200 dark:border-zinc-700"/>
-
-      <!-- Superadmin: user management -->
-      <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">User Management</p>
-        <div id="admin-users-loader">
-          <p class="text-xs text-gray-400 dark:text-zinc-500">Loading users…</p>
+      <!-- ── Section 3: Admin (superadmin only) ─────────────────────────── -->
+      <div id="acct-s3" class="px-6 py-5 border-t border-gray-200 dark:border-zinc-700">
+        <button type="button" onclick="_acctToggle('acct-s3-body', this)" aria-expanded="true"
+          class="w-full flex items-center justify-between group py-0.5 mb-3">
+          <span class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500
+                       group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition">User Management</span>
+          <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 transition-transform duration-200 flex-shrink-0"
+               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+          </svg>
+        </button>
+        <div id="acct-s3-body">
+          <div id="admin-users-loader">
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Loading users…</p>
+          </div>
         </div>
-      </div>
+      </div><!-- /#acct-s3 -->
       {% endif %}
 
-    </div>
+    </div><!-- /#account-modal-body -->
   </div>
 </div>
 
@@ -2140,7 +2904,7 @@
   </div>
 </div>
 
-<!-- ===== WIDGET SETTINGS MODAL ===== --> -->
+<!-- ===== WIDGET SETTINGS MODAL ===== -->
 <div
   id="ws-settings-modal"
   class="hidden fixed inset-0 z-50 flex items-center justify-center"
@@ -2181,7 +2945,7 @@
 
     <!-- Footer -->
     <div class="mt-5 flex justify-end">
-      <button type="button" onclick="closeWidgetSettings()"
+      <button type="button" onclick="saveAndCloseWidgetSettings()"
               class="px-4 py-2 text-sm rounded-lg bg-wblue text-white
                      font-semibold hover:bg-blue-700 transition
                      focus:outline-none focus:ring-2 focus:ring-wblue">
@@ -2255,6 +3019,28 @@
     if (hidden) row.querySelectorAll('input').forEach(i => i.value = '');
   }
 
+  function confirmDeleteUser(userId, username) {
+    if (!confirm(
+      '\u26a0\ufe0f Delete \u201c' + username + '\u201d?\n\n' +
+      'This permanently deletes:\n' +
+      '  \u2022 All their workspaces\n' +
+      '  \u2022 All their notes & attachments\n' +
+      '  \u2022 Their home pages & widgets\n\n' +
+      'This cannot be undone.'
+    )) return;
+    adminPost('/account/users/' + userId + '/delete', null, document.activeElement);
+  }
+
+  function confirmDeleteAllDemo(count) {
+    if (!confirm(
+      '\u26a0\ufe0f Delete ALL ' + count + ' demo user(s)?\n\n' +
+      'Every demo account, its workspaces, notes, attachments,\n' +
+      'home pages and widgets will be permanently removed.\n\n' +
+      'This cannot be undone.'
+    )) return;
+    adminPost('/account/users/delete-all-demo', null, document.activeElement);
+  }
+
   function showShortcuts() {
     document.getElementById('shortcuts-modal').classList.remove('hidden');
     document.getElementById('settings-menu').classList.add('hidden');
@@ -2278,12 +3064,92 @@
     }
   }
 
+  /* ---- Account modal: window size picker (S / M / L) ---- */
+  const _ACCT_SIZES = { S: 'max-w-md', M: 'max-w-2xl', L: 'max-w-3xl' };
+  const _ACCT_SIZE_KEY = 'bw-acct-size';
+
+  function _setAcctSize(size) {
+    const inner = document.getElementById('account-modal-inner');
+    const body  = document.getElementById('account-modal-body');
+    if (!inner) return;
+
+    // 1. Swap width class on the modal window
+    Object.values(_ACCT_SIZES).forEach(c => inner.classList.remove(c));
+    inner.classList.add(_ACCT_SIZES[size] || _ACCT_SIZES.S);
+
+    // 2. Swap layout class on the body (drives CSS Grid)
+    if (body) {
+      body.classList.remove('acct-sz-s', 'acct-sz-m', 'acct-sz-l');
+      body.classList.add('acct-sz-' + size.toLowerCase());
+    }
+
+    // 3. L mode: show first section by default; S/M: show all
+    if (size === 'L') {
+      _acctNav('s1');
+    } else {
+      ['s1', 's2', 's3'].forEach(function (id) {
+        var el = document.getElementById('acct-' + id);
+        if (el) el.classList.remove('acct-sec-hidden');
+      });
+      // Remove active state from all nav buttons (not relevant in S/M)
+      document.querySelectorAll('.acct-l-navbtn').forEach(function (b) {
+        b.classList.remove('acct-nav-active');
+      });
+    }
+
+    // 4. Highlight active pill
+    document.querySelectorAll('.acct-size-btn').forEach(function (btn) {
+      var active = btn.dataset.acctSize === size;
+      btn.classList.toggle('bg-blue-100',         active);
+      btn.classList.toggle('dark:bg-blue-900/30', active);
+      btn.classList.toggle('text-wblue',          active);
+      btn.classList.toggle('dark:text-blue-400',  active);
+    });
+    try { localStorage.setItem(_ACCT_SIZE_KEY, size); } catch (_) {}
+  }
+
+  /* _acctToggle: collapse/expand an account section body */
+  function _acctToggle(bodyId, btn) {
+    var body    = document.getElementById(bodyId);
+    var chevron = btn && btn.querySelector('svg');
+    if (!body) return;
+    var isHidden = body.classList.toggle('hidden');
+    if (btn) btn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+    if (chevron) chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  }
+
+  /* _acctNav: show one section at a time in L-mode sidebar */
+  function _acctNav(secId) {
+    ['s1', 's2', 's3'].forEach(function (id) {
+      var el = document.getElementById('acct-' + id);
+      if (el) el.classList.toggle('acct-sec-hidden', id !== secId);
+    });
+    document.querySelectorAll('.acct-l-navbtn').forEach(function (btn) {
+      btn.classList.toggle('acct-nav-active', btn.dataset.sec === secId);
+    });
+  }
+
+  let _adminPollTimer = null;
   function showAccountModal() {
     document.getElementById('account-modal').classList.remove('hidden');
+    /* Restore saved size (default S — compact single-column) */
+    try { _setAcctSize(localStorage.getItem(_ACCT_SIZE_KEY) || 'S'); } catch (_) { _setAcctSize('S'); }
     _loadPanel('/account/2fa',   '2fa-panel-loader');
     _loadPanel('/account/users', 'admin-users-loader');
+    /* Auto-refresh the user list every 8 s so new demo sessions appear
+     * without the superadmin having to manually reload.  Pause if the
+     * admin is actively typing inside the panel (avoids clearing inputs). */
+    _adminPollTimer = setInterval(function () {
+      const loader = document.getElementById('admin-users-loader');
+      if (!loader) return;
+      const focused = document.activeElement;
+      if (loader.contains(focused) && focused.tagName === 'INPUT') return;
+      _loadPanel('/account/users', 'admin-users-loader');
+    }, 8000);
   }
   function hideAccountModal() {
+    clearInterval(_adminPollTimer);
+    _adminPollTimer = null;
     document.getElementById('account-modal').classList.add('hidden');
     document.getElementById('username-msg').innerHTML = '';
     document.getElementById('password-msg').innerHTML = '';

@@ -59,7 +59,31 @@
   </style>
 </head>
 
-<body class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-hidden relative">
+<body data-bw-page="login" class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-hidden relative">
+
+  <!-- ── Demo button — top right (hidden when BW_DEMO_ENABLED=false) ── -->
+  {% if demo_enabled %}
+  <div class="fixed top-4 right-4 z-50">
+    <form method="post" action="/demo/start">
+      <button type="submit"
+              class="group flex items-center gap-2 px-4 py-2 rounded-xl
+                     bg-[#ffc220] hover:bg-[#e6ae1d] active:bg-[#cca019]
+                     text-[#1a0f00] font-bold text-sm shadow-lg
+                     focus:outline-none focus:ring-2 focus:ring-[#ffc220]
+                     focus:ring-offset-2 focus:ring-offset-[#080c1a]
+                     transition-all active:scale-95"
+              aria-label="Try BookWorm without an account">
+        <span class="text-base leading-none">🐛</span>
+        <span>Try Demo</span>
+        <svg class="w-3.5 h-3.5 opacity-70 group-hover:translate-x-0.5 transition-transform"
+             fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
+             aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </form>
+  </div>
+  {% endif %}
 
   <!-- ── floating background emojis ── -->
   <span class="floaty" style="left:4%;  animation-duration:15s; animation-delay:0s">📚</span>
@@ -112,6 +136,25 @@
         🎉 Account ready! Dive in.
       </div>
       {% endif %}
+
+      <!-- admin-ended banner (shown when ?admin_ended=1 is in the URL) -->
+      <div id="bw-admin-ended-banner"
+           class="hidden mb-5 px-4 py-3 rounded-xl text-sm
+                  bg-[#ffc220]/15 border border-[#ffc220]/40"
+           role="alert" aria-live="polite">
+        <p class="font-semibold text-[#ffc220] mb-0.5">🔔 Demo session ended by an admin</p>
+        <p class="text-[#c4cbd8] leading-relaxed">
+          An administrator ended your demo session and removed the temporary
+          data. Thanks for trying out <strong class="text-white">BookWorm</strong>! 📚
+        </p>
+      </div>
+      <script>
+        if (new URLSearchParams(window.location.search).get('admin_ended') === '1') {
+          document.getElementById('bw-admin-ended-banner').classList.remove('hidden');
+          /* Clean up the URL so a browser refresh doesn't re-show the banner */
+          history.replaceState(null, '', '/login');
+        }
+      </script>
 
       <!-- error banner -->
       {% if error %}
@@ -189,6 +232,7 @@
       </form>
 
       <!-- register link -->
+      {% if registration_open %}
       <div class="mt-6 pt-5 border-t border-white/10 text-center">
         <p class="text-sm text-white/50">
           New here?
@@ -199,6 +243,7 @@
           </a>
         </p>
       </div>
+      {% endif %}
     </div>
 
     <p class="text-center text-xs text-white/25 mt-5">

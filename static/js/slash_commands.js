@@ -93,7 +93,8 @@ const SLASH_COMMANDS = [
              <polyline points="8 6 2 12 8 18"/>
            </svg>`,
     snippet: '```\n\n```', cursorOffset: 4, placeCursorMiddle: true,
-    ceExec: { cmd: 'formatBlock', arg: 'PRE' },
+    // CE mode: insert real <pre><code> block and place cursor inside via marker attr
+    ceHtml: '<pre><code data-bwcc=""></code></pre><p><br></p>',
   },
   {
     id: 'divider', label: 'Divider', desc: 'Horizontal rule',
@@ -191,6 +192,32 @@ const SLASH_COMMANDS = [
     snippet: '<div class="bw-cols bw-cols-5">\n<div class="bw-col">Col 1</div>\n<div class="bw-col">Col 2</div>\n<div class="bw-col">Col 3</div>\n<div class="bw-col">Col 4</div>\n<div class="bw-col">Col 5</div>\n</div>\n',
     cursorFromStart: 52,
     ceHtml: '<div class="bw-cols bw-cols-5"><div class="bw-col"><p>Col 1</p></div><div class="bw-col"><p>Col 2</p></div><div class="bw-col"><p>Col 3</p></div><div class="bw-col"><p>Col 4</p></div><div class="bw-col"><p>Col 5</p></div></div>',
+  },
+
+  // ── Callout Blocks ────────────────────────────────────────────────────
+  {
+    id: 'callout-info', label: 'Callout Info', desc: 'Blue informational callout block',
+    icon: `<span style="font-size:1.15rem;line-height:1">💡</span>`,
+    snippet: '<div class="bw-callout bw-callout-info">\n<div class="bw-callout-icon">💡</div>\n<div class="bw-callout-body">Your note here\u2026</div>\n</div>\n',
+    ceHtml: '<div class="bw-callout bw-callout-info"><div class="bw-callout-icon">💡</div><div class="bw-callout-body"><p>Your note here…</p></div></div><p><br></p>',
+  },
+  {
+    id: 'callout-warning', label: 'Callout Warning', desc: 'Amber warning callout block',
+    icon: `<span style="font-size:1.15rem;line-height:1">⚠️</span>`,
+    snippet: '<div class="bw-callout bw-callout-warning">\n<div class="bw-callout-icon">⚠️</div>\n<div class="bw-callout-body">Your note here\u2026</div>\n</div>\n',
+    ceHtml: '<div class="bw-callout bw-callout-warning"><div class="bw-callout-icon">⚠️</div><div class="bw-callout-body"><p>Your note here…</p></div></div><p><br></p>',
+  },
+  {
+    id: 'callout-tip', label: 'Callout Tip', desc: 'Green helpful tip callout block',
+    icon: `<span style="font-size:1.15rem;line-height:1">✅</span>`,
+    snippet: '<div class="bw-callout bw-callout-tip">\n<div class="bw-callout-icon">✅</div>\n<div class="bw-callout-body">Your note here\u2026</div>\n</div>\n',
+    ceHtml: '<div class="bw-callout bw-callout-tip"><div class="bw-callout-icon">✅</div><div class="bw-callout-body"><p>Your note here…</p></div></div><p><br></p>',
+  },
+  {
+    id: 'callout-danger', label: 'Callout Danger', desc: 'Red danger / critical callout block',
+    icon: `<span style="font-size:1.15rem;line-height:1">🚨</span>`,
+    snippet: '<div class="bw-callout bw-callout-danger">\n<div class="bw-callout-icon">🚨</div>\n<div class="bw-callout-body">Your note here\u2026</div>\n</div>\n',
+    ceHtml: '<div class="bw-callout bw-callout-danger"><div class="bw-callout-icon">🚨</div><div class="bw-callout-body"><p>Your note here…</p></div></div><p><br></p>',
   },
 ];
 
@@ -503,10 +530,17 @@ function _cePrefixBeforeCaret(ce) {
     return '';
   }
 
-  // Range: start of the nearest block → current caret position
+  // Range: start of the nearest block → current caret position.
+  // Skip the drag-grip span (data-preview-grip, contenteditable=false) that
+  // sits as the FIRST child of every rendered block — its '⠿' text would
+  // prefix the returned string and prevent prefix.startsWith('/') from
+  // matching, so we start the range AFTER the grip if one is present.
   try {
     const r = document.createRange();
-    r.setStart(block, 0);
+    const firstChild = block.firstChild;
+    const hasGrip    = firstChild?.nodeType === Node.ELEMENT_NODE
+                       && firstChild.hasAttribute('data-preview-grip');
+    r.setStart(block, hasGrip ? 1 : 0);
     r.setEnd(caretRange.startContainer, caretRange.startOffset);
     return r.toString();
   } catch (_) {
@@ -577,6 +611,20 @@ function _applyCE(cmd) {
     // Apply — priority: ceHtml > ceExec > ceInsert / snippet
     if (cmd.ceHtml) {
       document.execCommand('insertHTML', false, cmd.ceHtml);
+      // For code blocks: if a <code data-bwcc> marker was inserted,
+      // move the cursor inside it so the user can type straight away.
+      const marker = ce.querySelector('code[data-bwcc]');
+      if (marker) {
+        marker.removeAttribute('data-bwcc');
+        marker.contentEditable = 'plaintext-only';
+        marker.spellcheck = false;
+        // Place cursor at start of the code element
+        const r = document.createRange();
+        r.selectNodeContents(marker);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
     } else if (cmd.ceExec) {
       document.execCommand(cmd.ceExec.cmd, false, cmd.ceExec.arg ?? null);
     } else {
@@ -658,11 +706,13 @@ function _attachTextarea(ta) {
     }
 
     if (text[pos - 1] !== '/') return;
-    // Allow '/' at the real start of a line, OR after a list marker
-    // e.g.  "/"  "- /"  "* /"  "+ /"  "1. /"  "  - /"  etc.
+    // Allow '/' at the real start of a line, OR after a list marker.
+    // Includes '•' — the visual bullet produced by the auto-bullet feature
+    // (which converts '- ' → '• ' on spacebar press).
+    // e.g.  "/"  "- /"  "* /"  "+ /"  "• /"  "1. /"  "  - /"  etc.
     const lineStart  = text.lastIndexOf('\n', pos - 2) + 1;
     const linePrefix = text.slice(lineStart, pos - 1);  // content before '/'
-    if (!/^(\s*[-*+]\s+|\s*\d+\.\s+)?$/.test(linePrefix)) return;
+    if (!/^(\s*[-*+•]\s+|\s*\d+\.\s+)?$/.test(linePrefix)) return;
     _open('ta', { ta, slashPos: pos - 1 });
   });
 
@@ -773,7 +823,10 @@ function _scInit() {
       node.nodeName === 'SUMMARY' ||
       (node.nodeName === 'DIV' && (
         node.classList?.contains('bw-cols') ||
-        node.classList?.contains('bw-col')
+        node.classList?.contains('bw-col')  ||
+        node.classList?.contains('bw-callout') ||
+        node.classList?.contains('bw-callout-icon') ||
+        node.classList?.contains('bw-callout-body')
       ))
     );
     td._bwKeepConfigured = true;
@@ -786,3 +839,7 @@ document.addEventListener('htmx:afterSwap',   _scInit);
 /** Public: returns true when the slash-command palette is currently open.
  *  Used by other scripts to guard against conflicting Enter-key handlers. */
 function scIsOpen() { return !!_sc.open; }
+
+/** Public: attach slash-command support to a contenteditable element.
+ *  Call this whenever a CE editor is dynamically activated (e.g. text widget). */
+window.bwSlashAttachCE = function (ce) { _attachCE(ce); };

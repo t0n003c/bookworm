@@ -129,6 +129,34 @@ async def close_workspace(workspace_id: int) -> None:
         await db.commit()
 
 
+async def _unique_sibling_name(
+    db,
+    base_name: str,
+    user_id: int,
+    parent_id: Optional[int],
+    exclude_id: Optional[int] = None,
+) -> str:
+    """Return base_name if unique among active siblings, else 'base_name (2)', etc."""
+    sql = (
+        "SELECT name FROM workspaces "
+        "WHERE user_id=? AND deleted_at IS NULL "
+        "AND (parent_id IS ? OR parent_id=?)"
+    )
+    params: list = [user_id, parent_id, parent_id]
+    if exclude_id is not None:
+        sql += " AND id != ?"
+        params.append(exclude_id)
+    cur = await db.execute(sql, params)
+    taken = {r[0].strip().lower() for r in await cur.fetchall()}
+    candidate = base_name.strip()
+    if candidate.lower() not in taken:
+        return candidate
+    n = 2
+    while f"{candidate} ({n})".lower() in taken:
+        n += 1
+    return f"{candidate} ({n})"
+
+
 async def create_workspace(
     name: str,
     user_id: int,
@@ -137,10 +165,13 @@ async def create_workspace(
 ) -> int:
     """Insert a workspace for the given user and return its new id.
 
+    Name is auto-suffixed '(2)', '(3)' … when a sibling with the same
+    name already exists (case-insensitive).
     sort_order is set to max(siblings) + 10 so the new workspace
     naturally lands at the bottom of its sibling group.
     """
     async with get_db() as db:
+        unique_name = await _unique_sibling_name(db, name, user_id, parent_id)
         cur = await db.execute(
             "SELECT COALESCE(MAX(sort_order), -10) FROM workspaces "
             "WHERE parent_id IS ? AND deleted_at IS NULL AND user_id = ?",
@@ -151,7 +182,7 @@ async def create_workspace(
         cursor = await db.execute(
             "INSERT INTO workspaces (name, emoji, parent_id, sort_order, user_id) "
             "VALUES (?, ?, ?, ?, ?)",
-            (name.strip(), emoji, parent_id, new_sort_order, user_id),
+            (unique_name, emoji, parent_id, new_sort_order, user_id),
         )
         await db.commit()
         return cursor.lastrowid
@@ -163,11 +194,23 @@ async def update_workspace(
     emoji: str,
     parent_id: Optional[int] = None,
 ) -> None:
-    """Update a workspace's name, emoji and optional parent."""
+    """Update a workspace's name, emoji and optional parent.
+
+    If the new name collides with a sibling's name the name is
+    auto-suffixed '(2)', '(3)' … (case-insensitive, excludes self).
+    """
     async with get_db() as db:
+        row = await (await db.execute(
+            "SELECT user_id FROM workspaces WHERE id=?", (workspace_id,)
+        )).fetchone()
+        user_id = row[0] if row else None
+        unique_name = (
+            await _unique_sibling_name(db, name, user_id, parent_id, exclude_id=workspace_id)
+            if user_id is not None else name.strip()
+        )
         await db.execute(
             "UPDATE workspaces SET name = ?, emoji = ?, parent_id = ? WHERE id = ?",
-            (name.strip(), emoji, parent_id, workspace_id),
+            (unique_name, emoji, parent_id, workspace_id),
         )
         await db.commit()
 
@@ -321,12 +364,140 @@ async def reparent_workspace(workspace_id: int, new_parent_id: Optional[int]) ->
         await db.commit()
 
 
+async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
+    """Deep-copy a workspace and its entire subtree as a sibling.
+
+    Copies (BFS, one transaction):
+      - workspace rows (name → "name (copy)", same emoji + parent)
+      - workspace_categories
+      - notes: title, content, meeting_date, icon
+      - note_categories + note_attributes per note
+
+    Attachment *files* are intentionally skipped — copying binary blobs
+    across disk paths is I/O-heavy for questionable gain.  Duplicated notes
+    start clean without attachments.
+
+    Returns the id of the newly-created root clone.
+    """
+    async with get_db() as db:
+        # ── fetch source root ────────────────────────────────────────────
+        cur = await db.execute(
+            "SELECT name, emoji, parent_id FROM workspaces "
+            "WHERE id = ? AND deleted_at IS NULL",
+            (workspace_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise ValueError(f"Workspace {workspace_id} not found")
+        src_name    = row["name"]
+        src_emoji   = row["emoji"]
+        src_parent  = row["parent_id"]
+
+        # ── create root clone ────────────────────────────────────────────
+        clone_name = await _unique_sibling_name(
+            db, f"{src_name} (copy)", user_id, src_parent
+        )
+        cur = await db.execute(
+            "SELECT COALESCE(MAX(sort_order), -10) FROM workspaces "
+            "WHERE parent_id IS ? AND deleted_at IS NULL AND user_id = ?",
+            (src_parent, user_id),
+        )
+        new_sort = (await cur.fetchone())[0] + 10
+
+        cur = await db.execute(
+            "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open) "
+            "VALUES(?, ?, ?, ?, ?, 1)",
+            (clone_name, src_emoji, src_parent, new_sort, user_id),
+        )
+        new_root_id = cur.lastrowid
+
+        # ── BFS: (source_ws_id, new_clone_id) ───────────────────────────
+        queue: list[tuple[int, int]] = [(workspace_id, new_root_id)]
+
+        while queue:
+            src_id, new_id = queue.pop(0)
+
+            # workspace_categories
+            cat_cur = await db.execute(
+                "SELECT category_id FROM workspace_categories WHERE workspace_id = ?",
+                (src_id,),
+            )
+            for cr in await cat_cur.fetchall():
+                await db.execute(
+                    "INSERT OR IGNORE INTO workspace_categories(workspace_id, category_id) "
+                    "VALUES(?, ?)",
+                    (new_id, cr[0]),
+                )
+
+            # notes + their tags + attributes
+            note_cur = await db.execute(
+                "SELECT id, title, content, meeting_date, icon FROM notes "
+                "WHERE workspace_id = ?",
+                (src_id,),
+            )
+            for note in await note_cur.fetchall():
+                nc = await db.execute(
+                    "INSERT INTO notes(workspace_id, title, content, meeting_date, icon) "
+                    "VALUES(?, ?, ?, ?, ?)",
+                    (new_id, note["title"], note["content"],
+                     note["meeting_date"], note["icon"]),
+                )
+                new_note_id = nc.lastrowid
+
+                # note_categories
+                ncat_cur = await db.execute(
+                    "SELECT category_id FROM note_categories WHERE note_id = ?",
+                    (note["id"],),
+                )
+                for ncr in await ncat_cur.fetchall():
+                    await db.execute(
+                        "INSERT OR IGNORE INTO note_categories(note_id, category_id) "
+                        "VALUES(?, ?)",
+                        (new_note_id, ncr[0]),
+                    )
+
+                # note_attributes
+                attr_cur = await db.execute(
+                    "SELECT key, value, attr_def_id FROM note_attributes "
+                    "WHERE note_id = ?",
+                    (note["id"],),
+                )
+                for ar in await attr_cur.fetchall():
+                    await db.execute(
+                        "INSERT INTO note_attributes(note_id, key, value, attr_def_id) "
+                        "VALUES(?, ?, ?, ?)",
+                        (new_note_id, ar["key"], ar["value"], ar["attr_def_id"]),
+                    )
+
+            # enqueue children
+            child_cur = await db.execute(
+                "SELECT id, name, emoji, sort_order FROM workspaces "
+                "WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC",
+                (src_id,),
+            )
+            for child in await child_cur.fetchall():
+                child_name = await _unique_sibling_name(
+                    db, child["name"], user_id, new_id
+                )
+                nc2 = await db.execute(
+                    "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open) "
+                    "VALUES(?, ?, ?, ?, ?, 0)",
+                    (child_name, child["emoji"], new_id, child["sort_order"], user_id),
+                )
+                queue.append((child["id"], nc2.lastrowid))
+
+        await db.commit()
+        return new_root_id
+
+
 async def permanent_delete_workspace(workspace_id: int) -> None:
     """Permanently destroy a trashed workspace, ALL its descendants, and their notes.
 
     Uses a BFS over the full workspaces table (including trashed rows) so that
     children trashed alongside the parent are also wiped.
+    Cleans up attachment files on disk after the DB transaction commits.
     """
+    from routers.attachments_db import UPLOAD_DIR  # local import avoids circularity
     async with get_db() as db:
         # Build parent→children map across ALL workspaces (including trashed)
         cursor = await db.execute("SELECT id, parent_id FROM workspaces")
@@ -347,6 +518,16 @@ async def permanent_delete_workspace(workspace_id: int) -> None:
 
         placeholders = ",".join("?" * len(ids_to_delete))
         id_tuple = tuple(ids_to_delete)
+
+        # Collect attachment filenames before cascade-delete wipes them
+        cur = await db.execute(
+            f"SELECT na.filename FROM note_attachments na "
+            f"JOIN notes n ON n.id = na.note_id "
+            f"WHERE n.workspace_id IN ({placeholders})",
+            id_tuple,
+        )
+        filenames = [r[0] for r in await cur.fetchall()]
+
         await db.execute(
             f"DELETE FROM notes WHERE workspace_id IN ({placeholders})", id_tuple
         )
@@ -354,6 +535,12 @@ async def permanent_delete_workspace(workspace_id: int) -> None:
             f"DELETE FROM workspaces WHERE id IN ({placeholders})", id_tuple
         )
         await db.commit()
+
+    # Clean up orphaned files after the transaction commits
+    for fname in filenames:
+        p = UPLOAD_DIR / fname
+        if p.exists():
+            p.unlink(missing_ok=True)
 
 
 async def get_trashed_workspaces(user_id: int) -> list[dict]:
@@ -379,7 +566,10 @@ async def purge_expired_trash() -> int:
     """Hard-delete workspaces that have been in the trash for >30 days.
 
     Returns the number of workspaces permanently removed.
+    Cleans up attachment files on disk after the DB transaction commits.
     """
+    from routers.attachments_db import UPLOAD_DIR  # local import avoids circularity
+    filenames_to_purge: list[str] = []
     async with get_db() as db:
         # Find expired IDs first so we can cascade-delete notes
         cursor = await db.execute(
@@ -389,10 +579,23 @@ async def purge_expired_trash() -> int:
         )
         expired = [r[0] for r in await cursor.fetchall()]
         for ws_id in expired:
+            # Collect attachment filenames before cascade-delete wipes them
+            cur = await db.execute(
+                "SELECT na.filename FROM note_attachments na "
+                "JOIN notes n ON n.id = na.note_id "
+                "WHERE n.workspace_id = ?",
+                (ws_id,),
+            )
+            filenames_to_purge.extend(r[0] for r in await cur.fetchall())
             await db.execute("DELETE FROM notes WHERE workspace_id = ?", (ws_id,))
             await db.execute(
                 "UPDATE workspaces SET parent_id = NULL WHERE parent_id = ?", (ws_id,)
             )
             await db.execute("DELETE FROM workspaces WHERE id = ?", (ws_id,))
         await db.commit()
-        return len(expired)
+    # Clean up orphaned files after the transaction commits
+    for fname in filenames_to_purge:
+        p = UPLOAD_DIR / fname
+        if p.exists():
+            p.unlink(missing_ok=True)
+    return len(expired)

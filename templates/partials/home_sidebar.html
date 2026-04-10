@@ -6,6 +6,15 @@
 #}
 {% set pages = pages | default(home_pages) | default([]) %}
 {% set active_pg = active_page_id | default(none) %}
+
+{# ── Sidebar label for non-dashboard types ────────────────────────────────── #}
+{% set TYPE_LABELS = {
+  "crm":          "CRM",
+  "media":        "Media",
+  "grid_builder": "Grid",
+  "uploads":      "Uploads",
+  "rss":          "RSS"
+} %}
 <!-- ── Page list ── -->
 {% if not pages %}
 <p class="px-2 text-xs text-gray-400 dark:text-zinc-600 italic">No pages yet — hit + to create one.</p>
@@ -16,6 +25,7 @@
   <li class="flex items-center gap-0.5 group/hpg" data-page-id="{{ pg.id }}">
     <button type="button"
       onclick="openHomePage({{ pg.id }})"
+      onmouseenter="if(typeof prefetchHomePage==='function') prefetchHomePage({{ pg.id }})"
       title="{{ pg.name }}"
       class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition
         {% if is_active %}
@@ -25,8 +35,16 @@
         {% endif %}"
       aria-current="{% if is_active %}page{% else %}false{% endif %}"
     >
-      <span aria-hidden="true">{{ pg.emoji }}</span>
-      <span class="flex-1 truncate">{{ pg.name }}</span>
+      <span class="flex-shrink-0 w-5 text-center leading-none" aria-hidden="true">{{ pg.emoji }}</span>
+      <span class="truncate flex-1">{{ pg.name }}</span>
+      {% set pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
+      {% if pg_type != 'dashboard' %}
+      <span class="flex-shrink-0 text-[9px] font-bold uppercase tracking-wide
+                   px-1 py-0.5 rounded bg-[#0053e2]/10 text-[#0053e2]
+                   dark:bg-blue-900/30 dark:text-blue-400 leading-none">
+        {{ TYPE_LABELS.get(pg_type, pg_type) }}
+      </span>
+      {% endif %}
     </button>
 
     <!-- Edit -->
@@ -42,6 +60,41 @@
         <path stroke-linecap="round" stroke-linejoin="round"
               d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828
                  2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/>
+      </svg>
+    </button>
+
+    <!-- Layout settings (dashboard only) -->
+    {% if pg.get('page_type', 'dashboard') == 'dashboard' %}
+    <button type="button"
+      onclick="(function(){ const needNav=!document.querySelector('[data-page-id=\'{{ pg.id }}\'] [data-col-count]'); if(needNav){ openHomePage({{ pg.id }}); setTimeout(()=>openPageLayout({{ pg.id }}),600); } else { openPageLayout({{ pg.id }}); } })()"
+      title="Page layout settings"
+      aria-label="Layout settings for {{ pg.name }}"
+      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-wblue
+             hover:bg-gray-100 dark:hover:bg-zinc-800
+             opacity-0 group-hover/hpg:opacity-100 transition">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+    </button>
+    {% endif %}
+
+    <!-- Duplicate -->
+    <button type="button"
+      onclick="duplicateHomePage({{ pg.id }}, '{{ pg.name | e }}')"
+      title="Duplicate page"
+      aria-label="Duplicate {{ pg.name }}"
+      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-[#0053e2]
+             hover:bg-gray-100 dark:hover:bg-zinc-800
+             opacity-0 group-hover/hpg:opacity-100 transition">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2"/>
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
       </svg>
     </button>
 

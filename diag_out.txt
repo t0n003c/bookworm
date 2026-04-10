@@ -1,0 +1,34 @@
+C:\Users\t0n003c\OneDrive - Walmart Inc\Desktop\Team's Document\Grocery\Important Tools\Ai\CodePuppy\BookWorm\diag_home.py:2: SyntaxWarning: invalid escape sequence '\S'
+  Run with:  .venv\Scripts\python.exe diag_home.py
+[1] Pages for uid=1: 1
+     id=1 name='My 1st Page' emoji='🏠'
+
+[2] Testing page_id=1 ...
+    get_home_page OK: 'My 1st Page'
+    get_widgets OK: 20 widgets
+      wid=1 type=clock style=digital
+      wid=11 type=calendar style=mini
+      wid=4 type=clock style=analog
+      wid=3 type=clock style=minimal
+      wid=10 type=calendar style=month
+      wid=12 type=weather style=full
+      wid=13 type=weather style=full
+      wid=14 type=todo style=list
+      wid=15 type=todo style=compact
+      wid=16 type=timer style=stopwatch
+      wid=17 type=timer style=pomodoro
+      wid=18 type=timer style=interval
+      wid=19 type=countdown style=event
+      wid=20 type=countdown style=days
+      wid=21 type=reminder style=list
+      wid=22 type=reminder style=agenda
+      wid=23 type=title style=plain
+      wid=24 type=note_link style=card
+      wid=25 type=note_link style=minimal
+      wid=26 type=note_link style=card
+    workspaces: [1, 3, 47, 48, 49, 7, 22, 65, 66, 67, 68]
+    all_notes OK: 8 notes
+    render OK: 103058 chars
+    tojson OK: 6775 chars
+
+[done]

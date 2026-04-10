@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full dark">
+<html lang="en-US" class="h-full dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,14 +11,212 @@
       const saved = localStorage.getItem('bw-theme');
       if (saved === 'light') document.documentElement.classList.remove('dark');
       else document.documentElement.classList.add('dark');
+
+      // ── HomeSpace flash prevention ────────────────────────────────────────
+      // If sessionStorage has a home-page ID we're about to restore, brand the
+      // <html> element with bw-hp-restore RIGHT NOW — before Tailwind, before
+      // HTMX, before any content is painted.  The CSS rule below then keeps
+      // #note-list / #ws-breadcrumb invisible for the entire initial render so
+      // the workspace never flashes before the home canvas takes over.
+      if (parseInt(sessionStorage.getItem('bw-hp') || '0', 10)) {
+        document.documentElement.classList.add('bw-hp-restore');
+      }
     })();
   </script>
+  <style>
+    /* Paired with the bw-hp-restore class set above. */
+    html.bw-hp-restore #note-list,
+    html.bw-hp-restore #ws-breadcrumb  { display: none !important; }
+    /* Hide workspace-only controls when restoring HomeSpace */
+    html.bw-hp-restore #list-view-toggle { display: none !important; }
+    /* Show home canvas as a centred flex container so the CSS spinner renders */
+    html.bw-hp-restore #home-content {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 4rem);
+    }
+    /* Pure-CSS loading spinner shown while JS hasn't populated #home-content yet */
+    html.bw-hp-restore #home-content::after {
+      content: '';
+      display: block;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-bottom-color: #0053e2;
+      animation: bw-hp-spin 0.75s linear infinite;
+    }
+    @keyframes bw-hp-spin { to { transform: rotate(360deg); } }
+    html.bw-hp-restore #main-content  { padding: 0 !important; }
+  </style>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
   <script src="https://unpkg.com/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
+  <!-- Highlight.js — syntax coloring for code blocks in note view -->
+  <!-- Using jsdelivr (same CDN as marked+dompurify) for Walmart network compatibility -->
+  <link id="hljs-light" rel="stylesheet" disabled
+    href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+  <link id="hljs-dark" rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark-dimmed.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+  <script>
+    // Sync highlight.js theme with app dark / light mode
+    (function () {
+      function _syncHljs() {
+        var d = document.documentElement.classList.contains('dark');
+        document.getElementById('hljs-dark').disabled  = !d;
+        document.getElementById('hljs-light').disabled =  d;
+      }
+      _syncHljs();
+      new MutationObserver(_syncHljs).observe(
+        document.documentElement, { attributes: true, attributeFilter: ['class'] }
+      );
+    })();
+  </script>
+  <script>
+    /* ─────────────────────────────────────────────────────────────────────────
+       _bwApplyCodeHighlighting(el)
+       Walk every <pre><code> inside `el`, run hljs syntax highlighting,
+       auto-detect the language, and add:
+         1) a slim header bar with the language badge + mini copy icon
+         2) a VS Code-style floating "Copy" pill that pops up when you hover
+            over the code block — no hunting for a hidden button!
+       Called from note detail view AND the live editor preview.
+    ───────────────────────────────────────────────────────────────────────── */
+    window._bwApplyCodeHighlighting = function(el) {
+      if (!el) return;
+      // SAFETY: never inject wrapper divs into a contenteditable surface —
+      // they become literal text in the note content when the editor saves.
+      if (el.isContentEditable || el.closest('[contenteditable="true"]')) return;
+
+      const COPY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2.5" aria-hidden="true">'
+        + '<rect x="9" y="9" width="13" height="13" rx="2"/>'
+        + '<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      const CHECK_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2.5" aria-hidden="true">'
+        + '<polyline points="20 6 9 17 4 12"/></svg>';
+      const HDR_COPY   = () => COPY_SVG + '<span>Copy</span>';
+      const HDR_COPIED = () => CHECK_SVG + '<span>Copied!</span>';
+
+      function _doCopy(codeEl, btn) {
+        const code = codeEl.innerText || codeEl.textContent || '';
+        const done = () => {
+          btn.classList.add('bw-copied');
+          btn.innerHTML = HDR_COPIED();
+          setTimeout(() => {
+            btn.classList.remove('bw-copied');
+            btn.innerHTML = HDR_COPY();
+          }, 2000);
+        };
+        const fallback = () => {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = code;
+            ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+            document.body.appendChild(ta);
+            ta.focus(); ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (_) { /* silent */ }
+        };
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(code).catch(fallback).finally(done);
+        } else { fallback(); done(); }
+      }
+
+      el.querySelectorAll('pre code').forEach(codeEl => {
+        if (codeEl.closest('.bw-code-block')) return; // already wrapped
+
+        const pre = codeEl.parentElement;
+
+        // 1️⃣ Detect language from existing class set by marked.js (e.g. "language-python")
+        let langLabel = '';
+        const langCls = [...codeEl.classList].find(c => c.startsWith('language-'));
+        if (langCls) langLabel = langCls.replace('language-', '');
+
+        // 2️⃣ Apply hljs — syntax-color the code AND auto-detect language when no hint
+        const _hljs_noise = new Set(['plaintext', 'undefined', 'txt', '', 'text']);
+        if (typeof hljs !== 'undefined') {
+          if (langLabel && langLabel !== 'text' && langLabel !== 'plaintext') {
+            // User gave a hint — use it to ensure the right grammar fires
+            try { hljs.highlightElement(codeEl); } catch(_){}
+          } else {
+            // No hint — let hljs auto-detect (may still get 'plaintext')
+            try { hljs.highlightElement(codeEl); } catch(_){}
+          }
+          // Read back the detected language stamp from hljs
+          if (!langLabel || _hljs_noise.has(langLabel)) {
+            const det = [...codeEl.classList].find(c => {
+              if (!c.startsWith('language-')) return false;
+              const lang = c.replace('language-', '');
+              return !_hljs_noise.has(lang);
+            });
+            if (det) langLabel = det.replace('language-', '');
+          }
+        }
+        // Pin spacing inline so no CDN stylesheet or inherited leading-relaxed
+        // can override. Must happen after hljs (which may set its own styles).
+        codeEl.style.lineHeight  = '1.45';
+        codeEl.style.whiteSpace  = 'pre';
+        // marked.js always appends a trailing \n inside <code>; with
+        // white-space:pre that renders as a visible blank line at the bottom.
+        // Trim it from the last text node so the bottom padding alone controls
+        // the visual gap — this fixes the "extra spacing" complaint without
+        // touching font-size or line-height.
+        (function _trimTrailingNewline(el) {
+          const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+          let last = null;
+          while (tw.nextNode()) last = tw.currentNode;
+          if (last) last.data = last.data.replace(/\n+$/, '');
+        })(codeEl);
+        // 3️⃣ Heuristic fallbacks when hljs says “no idea”
+        if (!langLabel || _hljs_noise.has(langLabel)) {
+          const raw = (codeEl.textContent || '').trimStart();
+          if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw)) {
+            langLabel = 'shell';
+          } else if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM) /i.test(raw)) {
+            langLabel = 'sql';
+          } else if (/^\s*<[a-zA-Z]/.test(raw)) {
+            langLabel = 'html';
+          } else if (/^\s*\{/.test(raw) && raw.includes(':')) {
+            langLabel = 'json';
+          }
+        }
+
+        // 4️⃣ Build wrapper
+        const wrapper = document.createElement('div');
+        wrapper.className = 'bw-code-block';
+
+        // ── Header: language badge + always-visible "Copy" button ───────────
+        const header = document.createElement('div');
+        header.className = 'bw-code-header';
+
+        const lbl = document.createElement('span');
+        lbl.className   = 'bw-lang-label';
+        lbl.textContent = langLabel || 'code';
+
+        const hdrBtn = document.createElement('button');
+        hdrBtn.className = 'bw-copy-btn';
+        hdrBtn.type      = 'button';
+        hdrBtn.title     = 'Copy code to clipboard';
+        hdrBtn.setAttribute('aria-label', 'Copy code');
+        hdrBtn.innerHTML = HDR_COPY();
+        hdrBtn.addEventListener('click', e => { e.stopPropagation(); _doCopy(codeEl, hdrBtn); });
+
+        header.appendChild(lbl);
+        header.appendChild(hdrBtn);
+        wrapper.appendChild(header);
+
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+      });
+    };
+  </script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -39,8 +237,17 @@
     .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
     .htmx-request .htmx-indicator { opacity: 1; }
     .sidebar-scroll { max-height: calc(100vh - 4rem); overflow-y: auto; }
-    .main-scroll   { height: calc(100vh - 4rem); overflow-y: auto; }
-    .panel-scroll  { height: calc(100vh - 4rem); overflow-y: auto; }
+    .main-scroll   { height: calc(100vh - 4rem); overflow-y: auto;
+                     overscroll-behavior-y: contain; }
+    .panel-scroll  { height: calc(100vh - 4rem); overflow-y: auto;
+                     overscroll-behavior-y: contain; }
+    /* Widget cards: isolate layout so scroll doesn't trigger full-page reflow */
+    .hw-card { contain: layout style; }
+    /* Suppress shadow transitions while user is actively scrolling the home canvas.
+       JS adds .bw-scrolling to #main-content during scroll; removed after 150 ms idle. */
+    .bw-scrolling .hw-card { transition: none !important; }
+    /* Home page fade — JS toggles opacity; transition only on the fade-out side */
+    #home-content { transition: opacity 120ms ease-out; }
     /* Hide scrollbar cross-browser */
     .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -74,14 +281,144 @@
     .md-body code   { font-family: monospace; font-size: .875em;
                       background: rgba(0,0,0,.08); padding: .1em .35em; border-radius: .25rem; }
     .dark .md-body code { background: rgba(255,255,255,.08); }
-    .md-body pre    { background: rgba(0,0,0,.08); border-radius: .5rem;
-                      padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
-    .dark .md-body pre  { background: rgba(255,255,255,.06); }
+    .md-body pre    { border-radius: .5rem; line-height: 1.45;
+                      overflow-x: auto; margin: .5rem 0; padding: 0; position: relative; }
+    /* ── Text-widget edit-mode code blocks — match the note-editor look.
+       Applies only while contenteditable="true" (i.e. during openTextEdit). */
+    .tw-md-body[contenteditable="true"] pre {
+      background: #1e1e1e !important;
+      border: 1px solid #3f3f46 !important;
+      border-radius: .5rem;
+      overflow: hidden;
+      margin: .5rem 0;
+      padding: 0;
+      position: relative;
+    }
+    .tw-md-body[contenteditable="true"] pre code {
+      display: block !important;
+      padding: .75rem 1rem !important;
+      font-size: .82rem;
+      line-height: 1.45 !important;   /* override leading-relaxed bleed-through */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: transparent !important;
+      color: #d4d4d4 !important;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    /* Language badge — pure CSS ::before, never serialised by Turndown */
+    .tw-md-body[contenteditable="true"] pre[data-lang]::before {
+      content: attr(data-lang);
+      display: block;
+      padding: .22rem .65rem;
+      font-size: .65rem;
+      font-weight: 600;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      background: #27272a;
+      color: #a1a1aa;
+      border-bottom: 1px solid #3f3f46;
+      user-select: none;
+      pointer-events: none;
+    }
+    /* Code block wrapper — header bar + copy button */
+    .bw-code-block  { position: relative; margin: .5rem 0; border-radius: .5rem; overflow: hidden;
+                      border: 1px solid #d1d5db; }
+    .dark .bw-code-block { border-color: #3f3f46; }
+    .bw-code-header { display: flex; align-items: center; justify-content: space-between;
+                      padding: .3rem .7rem; font-size: .72rem; font-family: monospace;
+                      background: #e5e7eb; color: #6b7280; user-select: none; }
+    .dark .bw-code-header { background: #27272a; color: #a1a1aa; }
+    .bw-code-header .bw-lang-label { text-transform: uppercase; letter-spacing: .06em;
+                                     font-weight: 600; }
+    /* ── Copy button in the header bar — always visible, more prominent ── */
+    .bw-copy-btn { display: inline-flex; align-items: center; gap: .3rem;
+                   padding: .22rem .55rem;
+                   border-radius: .35rem; border: 1px solid rgba(0,83,226,.25);
+                   background: rgba(0,83,226,.07);
+                   cursor: pointer; color: #0053e2; line-height: 1;
+                   font-size: .72rem; font-family: sans-serif; font-weight: 600;
+                   transition: opacity .15s, background .15s, border-color .15s, color .15s; }
+    .dark .bw-copy-btn { background: rgba(0,83,226,.15); border-color: rgba(96,165,250,.3);
+                          color: #93c5fd; }
+    .bw-copy-btn:hover  { background: #0053e2; color: #fff; border-color: #0053e2; }
+    .dark .bw-copy-btn:hover { background: #0053e2; color: #fff; border-color: #0053e2; }
+    .bw-copy-btn.bw-copied { color: #2a8703; border-color: #2a8703;
+                              background: rgba(42,135,3,.10); }
+    .dark .bw-copy-btn.bw-copied { color: #4ade80; border-color: #4ade80;
+                                    background: rgba(74,222,128,.10); }
+    .bw-code-block pre { margin: 0 !important; border-radius: 0 !important;
+                         border: none !important; }
+    /* Target both the plain <code> and <code class="hljs"> so the rule fires
+       even when the CDN is blocked and hljs never adds its class.
+       !important beats any inherited leading-relaxed (1.625) from the parent. */
+    .bw-code-block pre code,
+    .bw-code-block pre code.hljs { padding: .75rem 1rem; font-size: .82rem;
+                                    line-height: 1.45 !important;
+                                    white-space: pre !important; }
+
+    /* ── Muted scrollbars inside code blocks (dark mode especially) ── */
+    .bw-code-block pre { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+    .bw-code-block pre::-webkit-scrollbar       { height: 5px; width: 5px; }
+    .bw-code-block pre::-webkit-scrollbar-track { background: transparent; }
+    .bw-code-block pre::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+    .dark .bw-code-block pre::-webkit-scrollbar-thumb { background: #3f3f46; }
+    .dark .bw-code-block pre { scrollbar-color: #3f3f46 transparent; }
     .md-body blockquote { border-left: 3px solid #0053e2; padding-left: .75rem;
                           color: #6b7280; margin: .5rem 0; }
     .md-body hr { border-color: #e5e7eb; margin: 1rem 0; }
     .dark .md-body hr { border-color: #3f3f46; }
     .md-body a { color: #0053e2; text-decoration: underline; }
+
+    /* ── Rich-link components: mention pill, bookmark card, embed card ────
+       Colours live here (not inline) so light↔dark toggle works instantly. */
+
+    /* Mention pill */
+    [data-bw-mention] {
+      background: rgba(0,83,226,.06); border: 1px solid rgba(0,83,226,.18);
+      color: inherit !important; text-decoration: none !important;
+    }
+    .dark [data-bw-mention] {
+      background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14);
+    }
+    .bw-mn-lbl { color: #111827; font-weight: 700; }
+    .dark .bw-mn-lbl { color: #f3f4f6; }
+    .bw-mn-tld { color: #6b7280; }
+    .dark .bw-mn-tld { color: #9ca3af; }
+    /* Italic page-title annotation appended after the pill */
+    .bw-mn-ttl {
+      font-size: .83rem; font-style: italic;
+      color: #6b7280; margin-left: 6px;
+    }
+    .dark .bw-mn-ttl { color: #9ca3af; }
+
+    /* Bookmark card */
+    [data-bw-bookmark] {
+      border-style: solid; border-color: #fde68a; border-left-color: #f59e0b;
+      background: #fffbeb; color: #111827 !important; text-decoration: none !important;
+    }
+    .dark [data-bw-bookmark] {
+      border-color: rgba(245,158,11,.28); border-left-color: #d97706;
+      background: rgba(245,158,11,.09); color: #fef3c7 !important;
+    }
+    .bw-bm-label { color: #92400e; }
+    .dark .bw-bm-label { color: #fcd34d; }
+    .bw-bm-url { color: #44403c; }
+    .dark .bw-bm-url { color: #d97706; }
+
+    /* Embed card */
+    [data-bw-embed] { border: 1px solid #bfdbfe; }
+    .dark [data-bw-embed] { border-color: rgba(59,130,246,.3); }
+    .bw-emb-head { background: #2563eb; }
+    .dark .bw-emb-head { background: #1e3a8a; }
+    [data-bw-embed] > a { background: #eff6ff; text-decoration: none !important; }
+    .dark [data-bw-embed] > a { background: rgba(30,64,175,.15); }
+    .bw-emb-icon { background: rgba(37,99,235,.12); color: #1d4ed8; }
+    .dark .bw-emb-icon { background: rgba(29,78,216,.35); color: #93c5fd; }
+    .bw-emb-title { color: #1e40af; }
+    .dark .bw-emb-title { color: #93c5fd; }
+    .bw-emb-path { color: #1d4ed8; }
+    .dark .bw-emb-path { color: #60a5fa; }
     /* Compact card preview — scale down md-body inside note cards */
     .md-card h1,.md-card h2,.md-card h3 { font-size:.8rem; font-weight:700; margin:0 0 .1rem; }
     .md-card p  { margin:.1rem 0; line-height:1.5; }
@@ -98,6 +435,25 @@
       content: attr(data-placeholder); color: #9ca3af; font-style: italic; pointer-events: none;
     }
     .dark [contenteditable]:empty::before { color: #52525b; }
+    /* ── Reminder toast slide-up animation ────────────────────── */
+    @keyframes bw-slideup {
+      from { opacity: 0; transform: translateY(20px) scale(.95); }
+      to   { opacity: 1; transform: translateY(0)    scale(1);   }
+    }
+    /* ── Note preview popup prose typography ────────────────── */
+    .npp-body h1,.npp-body h2,.npp-body h3 { font-weight:700; margin:.6rem 0 .25rem; }
+    .npp-body h1 { font-size:1.25rem; }
+    .npp-body h2 { font-size:1.05rem; }
+    .npp-body h3 { font-size:.9rem; }
+    .npp-body p  { margin:.35rem 0; line-height:1.7; }
+    .npp-body ul,.npp-body ol { padding-left:1.4rem; margin:.35rem 0; }
+    .npp-body li { margin:.1rem 0; }
+    .npp-body a  { color:#0053e2; text-decoration:underline; }
+    .npp-body blockquote { border-left:3px solid #0053e2; padding-left:.75rem;
+                            color:#6b7280; margin:.5rem 0; }
+    .npp-body code { background:#f3f4f6; padding:.1em .3em; border-radius:.25rem;
+                     font-size:.85em; }
+    .dark .npp-body code { background:#27272a; }
     .md-body table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
     .md-body th   { background: #f3f4f6; font-weight: 700; text-align: left;
                     padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
@@ -139,17 +495,117 @@
       border-radius: .375rem; min-height: 2.25rem;
     }
     .dark .bw-col { border-color: #3f3f46; }
+
+    /* ── Callout blocks ── */
+    .bw-callout {
+      display: flex; align-items: flex-start; gap: .65rem;
+      margin: .65rem 0; padding: .65rem .85rem;
+      border-radius: .45rem; border-left: 4px solid;
+    }
+    .bw-callout-icon {
+      font-size: 1.15rem; line-height: 1.5; flex-shrink: 0; user-select: none;
+    }
+    .bw-callout-body { flex: 1; min-width: 0; font-size: .9rem; line-height: 1.55; }
+    .bw-callout-body > :first-child { margin-top: 0; }
+    .bw-callout-body > :last-child  { margin-bottom: 0; }
+
+    /* info — blue */
+    .bw-callout-info {
+      background: #eff6ff; border-color: #0053e2; color: #1e3a5f;
+    }
+    .dark .bw-callout-info {
+      background: #1e2e4a; border-color: #3b82f6; color: #bfdbfe;
+    }
+    /* warning — amber */
+    .bw-callout-warning {
+      background: #fffbeb; border-color: #f59e0b; color: #78350f;
+    }
+    .dark .bw-callout-warning {
+      background: #2d2008; border-color: #fbbf24; color: #fde68a;
+    }
+    /* tip — green */
+    .bw-callout-tip {
+      background: #f0fdf4; border-color: #2a8703; color: #14532d;
+    }
+    .dark .bw-callout-tip {
+      background: #0d2818; border-color: #4ade80; color: #bbf7d0;
+    }
+    /* danger — red */
+    .bw-callout-danger {
+      background: #fff1f2; border-color: #ea1100; color: #7f1d1d;
+    }
+    .dark .bw-callout-danger {
+      background: #2d0a0a; border-color: #f87171; color: #fecaca;
+    }
   </style>
 </head>
 <body class="h-full bg-gray-50 dark:bg-zinc-950 text-gray-800 dark:text-zinc-200 transition-colors duration-200">
   {% block body %}{% endblock %}
-  <script src="/static/js/slash_commands.js" defer></script>
-  <script src="/static/js/timeline-render.js" defer></script>
-<script src="/static/js/timeline-ui.js" defer></script>
-<script src="/static/js/timeline.js" defer></script>
-<script src="/static/js/home-widgets.js" defer></script>
-<script src="/static/js/home-widgets-clock.js" defer></script>
-<script src="/static/js/home-widgets-render.js" defer></script>
-<script src="/static/js/home-widgets-settings.js" defer></script>
+  <script src="/static/js/slash_commands.js?v={{ static_v }}" defer></script>
+<script src="/static/js/bw-paste-as.js?v={{ static_v }}" defer></script>
+  <script src="/static/js/timeline-render.js?v={{ static_v }}" defer></script>
+<script src="/static/js/timeline-ui.js?v={{ static_v }}" defer></script>
+<script src="/static/js/timeline.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widgets.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widgets-clock.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widgets-render.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widget-events.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widgets-settings.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widget-rss.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-page-rss.js?v={{ static_v }}" defer></script>
+<script src="/static/js/bw-spellcheck.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widget-text.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-widget-text-fmt.js?v={{ static_v }}" defer></script>
+
+{# ── Reminder toast container — position:fixed, lives outside home-content
+   so toasts appear even when the user is in workspace view. #}
+<div id="rem-fun-popup-wrap"
+     class="fixed bottom-6 right-6 z-[60] flex flex-col items-end gap-3
+            pointer-events-none">
+</div>
+
+{# ── Global JS error toast — catches silent errors that would otherwise be
+   invisible (no DevTools open). Only shows for non-network errors.
+   Hidden by default; shown by window.onerror / unhandledrejection. #}
+<div id="bw-js-error-toast" style="display:none;"
+     class="fixed top-4 right-4 z-[9999] max-w-sm w-full"
+     role="alert" aria-live="assertive">
+  <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800
+              rounded-xl shadow-lg px-4 py-3 flex gap-3 items-start">
+    <span class="text-xl flex-shrink-0">🐛</span>
+    <div class="flex-1 min-w-0">
+      <p class="text-xs font-bold text-red-700 dark:text-red-300 mb-0.5">JS Error (open DevTools → Console)</p>
+      <p id="bw-js-error-msg" class="text-xs text-red-600 dark:text-red-400 font-mono break-all"></p>
+    </div>
+    <button onclick="document.getElementById('bw-js-error-toast').style.display='none'"
+      class="flex-shrink-0 text-red-400 hover:text-red-600 text-lg leading-none"
+      aria-label="Dismiss">&times;</button>
+  </div>
+</div>
+<script>
+  (function() {
+    function _showErrToast(msg) {
+      var t = document.getElementById('bw-js-error-toast');
+      var m = document.getElementById('bw-js-error-msg');
+      if (!t || !m) return;
+      m.textContent = msg.slice(0, 300);
+      t.style.display = 'block';
+      // Auto-dismiss after 15 s
+      setTimeout(function() { t.style.display = 'none'; }, 15000);
+    }
+    window.addEventListener('error', function(e) {
+      // Filter out network errors (CDN blocked etc.) — we only want JS errors
+      if (e.filename && e.message) {
+        _showErrToast(e.message + ' \u2014 ' + (e.filename.split('/').pop() || '') + ':' + e.lineno);
+      }
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var msg = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+      if (msg && msg !== 'undefined' && !msg.includes('fetch')) {
+        _showErrToast('Unhandled: ' + msg);
+      }
+    });
+  })();
+</script>
 </body>
 </html>

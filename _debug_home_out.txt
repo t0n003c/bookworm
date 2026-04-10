@@ -1,0 +1,7 @@
+Data OK: 20 widgets
+[ERR] TemplateResponse failed:
+Traceback (most recent call last):
+  File "C:\Users\t0n003c\OneDrive - Walmart Inc\Desktop\Team's Document\Grocery\Important Tools\Ai\CodePuppy\BookWorm\_debug_home.py", line 44, in main
+    async for chunk in resp.body_iterator:
+                       ^^^^^^^^^^^^^^^^^^
+AttributeError: '_TemplateResponse' object has no attribute 'body_iterator'

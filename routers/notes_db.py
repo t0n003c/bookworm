@@ -107,7 +107,8 @@ async def search_notes(
     Unknown / duplicate tokens are silently dropped; falls back to date DESC.
     """
     sql = """
-        SELECT DISTINCT n.id, n.title, n.icon, n.content, n.meeting_date, n.created_at, n.updated_at
+        SELECT DISTINCT n.id, n.title, n.icon, n.content, n.meeting_date,
+               n.created_at, n.updated_at, n.workspace_id
         FROM notes n
     """
     joins = []
@@ -172,8 +173,26 @@ async def create_note(
     workspace_id: Optional[int] = None,
     icon: Optional[str] = None,
 ) -> int:
-    """Insert a note, its categories and attributes. Returns new note id."""
+    """Insert a note, its categories and attributes. Returns new note id.
+
+    Title is auto-suffixed '(2)', '(3)' … when another note in the same
+    workspace already has the same title (case-insensitive).
+    """
     async with get_db() as db:
+        # Uniqueness check within the same workspace.
+        if workspace_id is not None:
+            cur = await db.execute(
+                "SELECT title FROM notes WHERE workspace_id = ?", (workspace_id,)
+            )
+            taken = {r[0].strip().lower() for r in await cur.fetchall()}
+            candidate = title.strip()
+            if candidate.lower() in taken:
+                n = 2
+                while f"{candidate} ({n})".lower() in taken:
+                    n += 1
+                title = f"{candidate} ({n})"
+            else:
+                title = candidate
         cursor = await db.execute(
             "INSERT INTO notes (title, icon, content, meeting_date, workspace_id) VALUES (?, ?, ?, ?, ?)",
             (title, icon or None, content, meeting_date, workspace_id),

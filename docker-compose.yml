@@ -1,30 +1,59 @@
 # BookWorm — docker compose up -d  →  http://localhost:8001
+#
+# FIRST-RUN CHECKLIST:
+#   1. Copy this file's env block to a .env file (never commit it).
+#   2. Set BW_SECRET_KEY to a long random string:
+#        python -c "import secrets; print(secrets.token_hex(32))"
+#   3. Set BW_HTTPS=true if you're putting this behind nginx/Caddy/Traefik.
+#   4. Set BW_ALLOW_REGISTRATION=false for invite-only teams.
+#   5. Set BW_DEMO_ENABLED=false for private deployments.
+
 services:
   bookworm:
     build: .
     ports:
       - "8001:8001"
     environment:
-      # Tell the app to store the DB and uploads under /data
-      # so they land inside the named volume below.
+      # ── Data location ──────────────────────────────────────────────────────
+      # DB and uploads are stored here, inside the named volume below.
       BW_DATA_DIR: /data
-      # IMPORTANT: change this to a long random string before going live.
-      # If not set, a random key is generated per restart (= all sessions
-      # are invalidated on every container restart).
-      # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
-      BW_SECRET_KEY: "change-me-to-a-long-random-string"
+
+      # ── Secret key (REQUIRED — change before going live!) ─────────────────
+      # Sessions are signed with this key. If unset or left as the placeholder,
+      # all sessions are lost on every restart.
+      # Generate: python -c "import secrets; print(secrets.token_hex(32))"
+      BW_SECRET_KEY: ${BW_SECRET_KEY:?BW_SECRET_KEY must be set — see docker-compose.yml header}
+
+      # ── HTTPS cookies ──────────────────────────────────────────────────────
+      # Set to "true" when the app is behind a TLS proxy (nginx, Caddy, etc.)
+      # Leave "false" for plain-HTTP LAN / development use.
+      BW_HTTPS: ${BW_HTTPS:-false}
+
+      # ── Open registration ──────────────────────────────────────────────────
+      # "true"  → anyone can create an account (good for open communities)
+      # "false" → admin creates accounts manually (good for closed teams)
+      BW_ALLOW_REGISTRATION: ${BW_ALLOW_REGISTRATION:-true}
+
+      # ── Demo mode ──────────────────────────────────────────────────────────
+      # "true"  → "Try Demo" button appears on the login page
+      # "false" → remove the button; route returns 302 to /login
+      BW_DEMO_ENABLED: ${BW_DEMO_ENABLED:-true}
+
     volumes:
       - bookworm_data:/data
     restart: unless-stopped
     healthcheck:
+      # Hits the dedicated /health endpoint — no auth, no redirect, no DB load.
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
 
-# Named volume — data survives container rebuilds and updates.
+# Named volume — survives container rebuilds and image updates.
 # Docker stores it in /var/lib/docker/volumes/bookworm_bookworm_data/
+# Back it up with: docker run --rm -v bookworm_bookworm_data:/data -v $(pwd):/backup \
+#                    alpine tar czf /backup/bookworm-backup.tar.gz /data
 volumes:
   bookworm_data:

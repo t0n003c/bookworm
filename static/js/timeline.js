@@ -526,7 +526,14 @@ window.bwTimeline = (function () {
 
     _overlay = document.createElement('div');
     _overlay.id = '_bw-tl-overlay';
-    Object.assign(_overlay.style, { position: 'absolute', inset: '0', zIndex: '10' });
+    // Give the overlay an immediate opaque background so the note-list grid
+    // never bleeds through while the inner canvas fades in from opacity:0.
+    Object.assign(_overlay.style, {
+      position:   'absolute',
+      inset:      '0',
+      zIndex:     '10',
+      background: _theme().mainBg,
+    });
 
     const notes = _collectNotes();
     const tl    = _buildTimeline(notes);

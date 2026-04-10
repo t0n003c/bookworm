@@ -1,8 +1,10 @@
 """Login / logout / first-run setup / self-service registration routes."""
+import os
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from routers.auth_db import authenticate, create_user, user_count, get_user_by_username
+from routers.auth_db import authenticate, create_user, user_count, get_user_by_username, get_registration_open
 from routers.totp_db import get_totp_status
 from database import get_db
 from security import make_expires_at
@@ -60,7 +62,12 @@ async def login_page(request: Request, created: int = 0, registered: int = 0):
     """Show login form; redirect to /setup if no account exists yet."""
     if await user_count() == 0:
         return RedirectResponse("/setup", status_code=302)
-    ctx = {"created": bool(created), "registered": bool(registered)}
+    ctx = {
+        "created":           bool(created),
+        "registered":        bool(registered),
+        "demo_enabled":      os.getenv("BW_DEMO_ENABLED", "true").lower() == "true",
+        "registration_open": await get_registration_open(),
+    }
     return templates.TemplateResponse(request, "login.html", ctx)
 
 
@@ -109,11 +116,15 @@ async def logout(request: Request):
     return RedirectResponse("/login", status_code=302)
 
 
-# ── Self-service registration ──────────────────────────────
+# ── Self-service registration ────────────────────────────
+# Toggle via superadmin account panel; seeds from BW_ALLOW_REGISTRATION on first boot.
+
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     """Show the self-service sign-up form."""
+    if not await get_registration_open():
+        return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse(request, "register.html", {})
 
 
@@ -124,6 +135,8 @@ async def register_submit(
     password: str = Form(...),
     confirm:  str = Form(...),
 ):
+    if not await get_registration_open():
+        return RedirectResponse("/login", status_code=302)
     error = None
     username = username.strip()
     if not username:

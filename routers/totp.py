@@ -66,12 +66,24 @@ async def _render_panel(request: Request, *, msg: str = "", error: str = "") -> 
 @router.get("/account/2fa", response_class=HTMLResponse)
 async def totp_panel(request: Request):
     """HTMX: render the 2FA section inside the account modal."""
+    if request.session.get("is_demo"):
+        return HTMLResponse(
+            '<div id="2fa-panel" class="flex items-start gap-3 p-3 rounded-xl'
+            ' bg-amber-50 dark:bg-amber-900/20 border border-amber-200'
+            ' dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300">'
+            '<span class="text-base flex-shrink-0">\U0001f3ae</span>'
+            '<span>2FA is disabled in demo mode.'
+            ' <a href="/register" class="underline font-medium">Create a free account</a>'
+            ' to enable it.</span></div>'
+        )
     return await _render_panel(request)
 
 
 @router.post("/account/2fa/enable", response_class=HTMLResponse)
 async def totp_enable(request: Request, code: str = Form(...)):
     """Verify the first TOTP code and activate 2FA for the user."""
+    if request.session.get("is_demo"):
+        return HTMLResponse("Not available in demo mode.", status_code=403)
     user_id = request.session["user_id"]
     status  = await get_totp_status(user_id)
 
@@ -92,6 +104,8 @@ async def totp_enable(request: Request, code: str = Form(...)):
 @router.post("/account/2fa/disable", response_class=HTMLResponse)
 async def totp_disable(request: Request, code: str = Form(...)):
     """Require a valid TOTP code before disabling 2FA."""
+    if request.session.get("is_demo"):
+        return HTMLResponse("Not available in demo mode.", status_code=403)
     user_id = request.session["user_id"]
     status  = await get_totp_status(user_id)
 

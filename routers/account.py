@@ -1,13 +1,18 @@
 """Account management — change credentials + superadmin user management."""
+from pathlib import Path
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
+from routers.attachments_db import UPLOAD_DIR
 from routers.auth_db import (
     authenticate,
     create_user,
     delete_user,
     get_all_users,
     get_user_by_username,
+    get_registration_open,
+    set_registration_open,
     update_username,
     update_password,
 )
@@ -82,7 +87,30 @@ async def list_users(request: Request):
     users = await get_all_users()
     me    = request.session.get("user_id")
     return templates.TemplateResponse(
-        request, "partials/admin_users.html", {"users": users, "me": me}
+        request, "partials/admin_users.html",
+        {"users": users, "me": me, "registration_open": await get_registration_open()},
+    )
+
+
+# ── admin: toggle registration ───────────────────────────────────
+
+@router.post("/settings/registration", response_class=HTMLResponse)
+async def toggle_registration(
+    request: Request,
+    enabled: str = Form(default=""),
+):
+    """Superadmin-only: persist registration open/closed state to site_settings."""
+    if not _is_superadmin(request):
+        return HTMLResponse("", status_code=403)
+    new_value = enabled.strip().lower() == "on"
+    await set_registration_open(new_value)
+    users = await get_all_users()
+    me    = request.session.get("user_id")
+    label = "open" if new_value else "closed"
+    return templates.TemplateResponse(
+        request, "partials/admin_users.html",
+        {"users": users, "me": me, "registration_open": new_value,
+         "success": f"Public registration is now {label}."},
     )
 
 
@@ -116,8 +144,18 @@ async def create_user_handler(
     return templates.TemplateResponse(
         request,
         "partials/admin_users.html",
-        {"users": users, "me": me, "success": f'User "{new_username}" created.'},
+        {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "success": f'User "{new_username}" created.'},
     )
+
+
+def _purge_files(filenames: list[str]) -> None:
+    """Silently unlink attachment files from disk."""
+    for name in filenames:
+        try:
+            (UPLOAD_DIR / name).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 # ── admin: delete user ────────────────────────────────────
@@ -130,19 +168,55 @@ async def delete_user_handler(request: Request, target_id: int):
     if target_id == me:
         return HTMLResponse(_ERR.format("You cannot delete your own account."))
 
-    target = await get_all_users()
-    target_user = next((u for u in target if u["id"] == target_id), None)
+    all_users = await get_all_users()
+    target_user = next((u for u in all_users if u["id"] == target_id), None)
     if not target_user:
         return HTMLResponse(_ERR.format("User not found."))
     if target_user["role"] == "superadmin":
         return HTMLResponse(_ERR.format("Cannot delete another superadmin."))
 
-    await delete_user(target_id)
+    filenames = await delete_user(target_id)
+    _purge_files(filenames)
+
     users = await get_all_users()
+    tname = target_user["username"]
     return templates.TemplateResponse(
         request,
         "partials/admin_users.html",
-        {"users": users, "me": me, "success": "User deleted."},
+        {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "success": f'User "{tname}" and all their data deleted.'},
+    )
+
+
+# ── admin: bulk-delete all demo users ────────────────────────
+
+@router.post("/users/delete-all-demo", response_class=HTMLResponse)
+async def delete_all_demo_handler(request: Request):
+    """Hard-delete every user whose role == 'demo' in one shot."""
+    if not _is_superadmin(request):
+        return HTMLResponse(_ERR.format("Forbidden."), status_code=403)
+    me = request.session.get("user_id")
+
+    all_users = await get_all_users()
+    demo_users = [u for u in all_users if u["role"] == "demo"]
+    if not demo_users:
+        users = await get_all_users()
+        return templates.TemplateResponse(
+            request, "partials/admin_users.html",
+            {"users": users, "me": me, "registration_open": await get_registration_open(),
+             "success": "No demo users to delete."},
+        )
+
+    all_filenames: list[str] = []
+    for u in demo_users:
+        all_filenames += await delete_user(u["id"])
+    _purge_files(all_filenames)
+
+    users = await get_all_users()
+    return templates.TemplateResponse(
+        request, "partials/admin_users.html",
+        {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "success": f"{len(demo_users)} demo user(s) and all their data deleted."},
     )
 
 
@@ -176,6 +250,6 @@ async def reset_user_password(
     return templates.TemplateResponse(
         request,
         "partials/admin_users.html",
-        {"users": users, "me": me,
+        {"users": users, "me": me, "registration_open": await get_registration_open(),
          "success": f'Password reset for "{tname}".'},
     )

@@ -33,6 +33,7 @@ from routers.workspaces_db import (
     get_first_workspace_id,
     toggle_workspace_favorite,
     delete_workspace,
+    duplicate_workspace,
     restore_workspace,
     reparent_workspace,
     reorder_workspace,
@@ -201,6 +202,23 @@ async def toggle_favorite_handler(
     await toggle_workspace_favorite(workspace_id)
     ctx = await _ws_context(_parse_ws_id(active_ws_id), _uid(request))
     return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+
+
+@router.post("/{workspace_id}/duplicate", response_class=HTMLResponse)
+async def duplicate_workspace_handler(
+    request: Request,
+    workspace_id: int,
+):
+    """Deep-copy workspace + entire nested subtree + all notes as a sibling.
+
+    Opens the clone immediately and navigates to it.
+    """
+    uid = _uid(request)
+    new_id = await duplicate_workspace(workspace_id, uid)
+    ctx = await _ws_context(new_id, uid)
+    resp = templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp.headers["HX-Replace-URL"] = f"/?ws={new_id}"
+    return resp
 
 
 @router.post("/{workspace_id}/delete", response_class=HTMLResponse)

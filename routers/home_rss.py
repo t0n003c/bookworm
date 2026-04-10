@@ -1,0 +1,99 @@
+"""RSS Reader page-level routes.
+
+Mounted with prefix=/home (same as routers/home.py).
+Routes live under /home/rss-reader/{page_id}/...
+
+These are JSON-returning endpoints consumed by home-page-rss.js.
+They never render full templates — the page itself is rendered by
+home_page_view() in home.py.
+"""
+from __future__ import annotations
+
+import logging
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import JSONResponse
+
+from routers.home_rss_db import (
+    add_page_feed,
+    delete_page_feed,
+    get_page_feeds,
+    get_read_guids,
+    mark_read,
+)
+from routers.home_db import get_home_page
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/home")
+
+
+def _uid(request: Request) -> int:
+    uid = request.session.get("user_id")
+    if not uid:
+        raise PermissionError("not logged in")
+    return int(uid)
+
+
+# ── Feed CRUD ─────────────────────────────────────────────────────────────────
+
+@router.get("/rss-reader/{page_id}/feeds")
+async def list_feeds(request: Request, page_id: int):
+    uid   = _uid(request)
+    page  = await get_home_page(page_id, uid)
+    if not page or page.get("page_type") != "rss":
+        return JSONResponse([], status_code=200)
+    feeds = await get_page_feeds(page_id, uid)
+    return JSONResponse(feeds)
+
+
+@router.post("/rss-reader/{page_id}/feeds/add")
+async def add_feed(
+    request: Request,
+    page_id: int,
+    url:   str = Form(...),
+    label: str = Form(""),
+    color: str = Form(""),
+):
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page or page.get("page_type") != "rss":
+        return JSONResponse({"error": "page not found"}, status_code=404)
+
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse({"error": "invalid url"}, status_code=400)
+
+    feeds = await add_page_feed(page_id, uid, url, label, color)
+    return JSONResponse(feeds)
+
+
+@router.post("/rss-reader/{page_id}/feeds/{feed_id}/delete")
+async def remove_feed(request: Request, page_id: int, feed_id: int):
+    uid   = _uid(request)
+    feeds = await delete_page_feed(feed_id, page_id, uid)
+    return JSONResponse(feeds)
+
+
+# ── Read state ────────────────────────────────────────────────────────────────
+
+@router.get("/rss-reader/{page_id}/read")
+async def get_read(request: Request, page_id: int):
+    uid   = _uid(request)
+    guids = await get_read_guids(page_id, uid)
+    return JSONResponse(list(guids))
+
+
+@router.post("/rss-reader/{page_id}/read")
+async def post_read(request: Request, page_id: int):
+    """Body: JSON array of guids  OR  form field guids (comma-separated)."""
+    uid = _uid(request)
+    try:
+        body = await request.json()
+        guids: list[str] = body if isinstance(body, list) else []
+    except Exception:
+        form = await request.form()
+        raw  = form.get("guids", "")
+        guids = [g.strip() for g in str(raw).split(",") if g.strip()]
+
+    await mark_read(page_id, uid, guids)
+    return JSONResponse({"ok": True})

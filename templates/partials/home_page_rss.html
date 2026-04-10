@@ -1,0 +1,106 @@
+{# ── RSS Reader page ── partials/home_page_rss.html ──────────────────────────
+   Rendered by home_page_view() when page.page_type == 'rss'.
+   Context: page (dict), page_type (str)
+   JS:      static/js/home-page-rss.js (loaded via index.html static_v tag)
+#}
+<div id="rss-page-root" data-page-id="{{ page.id }}"
+     class="flex flex-col"
+     style="height:calc(100vh - 3.5rem)">
+
+  {# ── Top bar ─────────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-zinc-800
+              bg-white dark:bg-zinc-900 flex-shrink-0">
+    <span class="text-lg leading-none">{{ page.emoji }}</span>
+    <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">{{ page.name }}</h1>
+    <span class="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
+                 bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">RSS</span>
+    {# Unread badge — updated by JS #}
+    <span id="rss-unread-badge"
+          class="ml-auto hidden text-xs font-semibold px-2 py-0.5 rounded-full
+                 bg-[#0053e2] text-white"></span>
+  </div>
+
+  {# ── 3-column body ───────────────────────────────────────────────────── #}
+  <div class="flex flex-1 min-h-0 overflow-hidden">
+
+    {# ── Feeds panel (left) ──────────────────────────────────────────────── #}
+    <div class="w-56 flex-shrink-0 border-r border-gray-200 dark:border-zinc-800
+                flex flex-col bg-gray-50 dark:bg-zinc-950">
+
+      <div class="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-400 dark:text-zinc-500
+                  uppercase tracking-widest">Feeds</div>
+
+      {# All Feeds shortcut #}
+      <button id="rss-all-btn" onclick="rssSelectAll()"
+              class="text-left flex items-center gap-2 px-3 py-1.5 mx-2 mb-1 rounded-lg
+                     text-sm text-gray-700 dark:text-zinc-200
+                     hover:bg-gray-100 dark:hover:bg-zinc-800 transition
+                     bg-gray-200 dark:bg-zinc-700 font-semibold"
+              aria-pressed="true">
+        <span class="text-base leading-none" aria-hidden="true">📚</span>
+        <span class="truncate">All Feeds</span>
+        <span id="rss-all-count" class="ml-auto text-[10px] text-gray-400 dark:text-zinc-500"></span>
+      </button>
+
+      {# Feed list — populated by JS #}
+      <div id="rss-feed-list" class="flex-1 overflow-y-auto px-2 space-y-0.5 pb-2"></div>
+
+      {# Add-feed form #}
+      <div class="border-t border-gray-200 dark:border-zinc-800 p-3 flex-shrink-0">
+        <form id="rss-add-form">
+          <input id="rss-add-url" type="url" placeholder="Feed URL…" required
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-1.5" />
+          <input id="rss-add-label" type="text" placeholder="Label (optional)"
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-2" />
+          <button id="rss-add-btn" type="submit"
+                  class="w-full py-1.5 text-xs font-semibold rounded-lg
+                         bg-[#0053e2] text-white hover:bg-[#003eb3] transition
+                         disabled:opacity-50 disabled:cursor-not-allowed">
+            + Add Feed
+          </button>
+          <p id="rss-add-err" class="hidden mt-1.5 text-[10px] text-red-500"></p>
+        </form>
+      </div>
+    </div>
+
+    {# ── Articles panel (middle) ─────────────────────────────────────────── #}
+    <div class="w-72 flex-shrink-0 border-r border-gray-200 dark:border-zinc-800
+                flex flex-col bg-white dark:bg-zinc-900">
+
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-100
+                  dark:border-zinc-800 flex-shrink-0">
+        <span class="text-[10px] font-bold text-gray-400 dark:text-zinc-500
+                     uppercase tracking-widest flex-1" id="rss-items-title">Articles</span>
+        <button onclick="rssMarkAllRead()"
+                title="Mark all as read"
+                class="text-[10px] text-gray-400 hover:text-[#0053e2] dark:hover:text-blue-400 transition">
+          ✓ All read
+        </button>
+      </div>
+
+      <div id="rss-items-panel" class="flex-1 overflow-y-auto">
+        <div class="p-4 text-sm text-gray-400 text-center mt-8">
+          <div class="text-3xl mb-2">📡</div>
+          Add a feed to get started
+        </div>
+      </div>
+    </div>
+
+    {# ── Preview panel (right) ───────────────────────────────────────────── #}
+    <div class="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+      <div id="rss-preview-panel" class="h-full flex items-center justify-center p-8">
+        <div class="text-center text-gray-300 dark:text-zinc-600">
+          <div class="text-5xl mb-3">📰</div>
+          <p class="text-sm">Click an article to read it here</p>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /3-column #}
+</div>{# /rss-page-root #}

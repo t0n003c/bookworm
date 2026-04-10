@@ -138,72 +138,130 @@ async def init_db() -> None:
         for sql in CREATE_TABLES_SQL:
             await db.execute(sql)
 
-        # Seed default workspace and get its id
-        await db.execute(
-            "INSERT OR IGNORE INTO workspaces (name, emoji) VALUES (?, ?)",
-            (SEED_WORKSPACE_NAME, SEED_WORKSPACE_EMOJI),
+        # ── Migration: drop stale global UNIQUE on workspaces.name ───────────
+        # Original single-user schema had `name TEXT NOT NULL UNIQUE`.
+        # Multi-user requires only per-user uniqueness; the global constraint
+        # breaks demo mode and any two users who share a workspace name.
+        # SQLite cannot DROP constraints, so we rebuild the table.
+        ws_ddl_cur = await db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='workspaces'"
         )
-        cursor = await db.execute(
-            "SELECT id FROM workspaces WHERE name = ?", (SEED_WORKSPACE_NAME,)
-        )
-        row = await cursor.fetchone()
-        default_ws_id = row[0] if row else 1
+        ws_ddl_row = await ws_ddl_cur.fetchone()
+        ws_ddl = ws_ddl_row[0] if ws_ddl_row else ""
+        if "name TEXT NOT NULL UNIQUE" in ws_ddl:
+            await db.execute("PRAGMA foreign_keys = OFF")
+            await db.execute("""
+                CREATE TABLE workspaces_new (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    name        TEXT NOT NULL,
+                    emoji       TEXT NOT NULL DEFAULT '📁',
+                    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    is_open     INTEGER NOT NULL DEFAULT 1,
+                    parent_id   INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
+                    is_favorite INTEGER NOT NULL DEFAULT 0,
+                    deleted_at  DATETIME DEFAULT NULL,
+                    sort_order  INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            await db.execute("""
+                INSERT INTO workspaces_new
+                    (id, user_id, name, emoji, created_at,
+                     is_open, parent_id, is_favorite, deleted_at, sort_order)
+                SELECT
+                    id, user_id, name, emoji, created_at,
+                    COALESCE(is_open, 1),
+                    parent_id,
+                    COALESCE(is_favorite, 0),
+                    deleted_at,
+                    COALESCE(sort_order, id * 10)
+                FROM workspaces
+            """)
+            await db.execute("DROP TABLE workspaces")
+            await db.execute("ALTER TABLE workspaces_new RENAME TO workspaces")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ws_sort "
+                "ON workspaces(parent_id, sort_order)"
+            )
+            await db.execute("PRAGMA foreign_keys = ON")
 
-        # Migration: add is_open column to workspaces if missing
+        # Seed default workspace — fresh-install only.
+        # Only insert if the workspaces table is completely empty.  Any prior
+        # row (active, trashed, or migrated) means we already seeded; picking
+        # that row is fine because default_ws_id is only used below to backfill
+        # notes whose workspace_id is NULL, a one-time migration step.
+        ws_count_cur = await db.execute("SELECT COUNT(*) FROM workspaces")
+        ws_count = (await ws_count_cur.fetchone())[0]
+        if ws_count == 0:
+            cur = await db.execute(
+                "INSERT INTO workspaces (name, emoji) VALUES (?, ?)",
+                (SEED_WORKSPACE_NAME, SEED_WORKSPACE_EMOJI),
+            )
+            default_ws_id = cur.lastrowid
+        else:
+            ws_any = await db.execute("SELECT id FROM workspaces LIMIT 1")
+            default_ws_id = (await ws_any.fetchone())[0]
+
+        # ── workspaces migrations (single PRAGMA read) ────────────────────────
         cursor = await db.execute("PRAGMA table_info(workspaces)")
         ws_cols = {r[1] for r in await cursor.fetchall()}
+
         if "is_open" not in ws_cols:
             await db.execute(
                 "ALTER TABLE workspaces ADD COLUMN is_open INTEGER NOT NULL DEFAULT 1"
             )
             await db.execute("UPDATE workspaces SET is_open = 1")
 
-        # Migration: add parent_id column to workspaces if missing
-        cursor = await db.execute("PRAGMA table_info(workspaces)")
-        ws_cols = {r[1] for r in await cursor.fetchall()}
         if "parent_id" not in ws_cols:
             await db.execute(
-                "ALTER TABLE workspaces ADD COLUMN parent_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL"
+                "ALTER TABLE workspaces ADD COLUMN "
+                "parent_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL"
             )
 
-        # Migration: add is_favorite column to workspaces if missing
-        cursor = await db.execute("PRAGMA table_info(workspaces)")
-        ws_cols = {r[1] for r in await cursor.fetchall()}
         if "is_favorite" not in ws_cols:
             await db.execute(
                 "ALTER TABLE workspaces ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0"
             )
 
-        # Migration: add deleted_at (soft-delete / trash) column if missing
-        cursor = await db.execute("PRAGMA table_info(workspaces)")
-        ws_cols = {r[1] for r in await cursor.fetchall()}
         if "deleted_at" not in ws_cols:
             await db.execute(
                 "ALTER TABLE workspaces ADD COLUMN deleted_at DATETIME DEFAULT NULL"
             )
 
-        # Migration: add user_id (per-user isolation) to workspaces if missing
-        cursor = await db.execute("PRAGMA table_info(workspaces)")
-        ws_cols = {r[1] for r in await cursor.fetchall()}
         if "user_id" not in ws_cols:
             await db.execute(
                 "ALTER TABLE workspaces ADD COLUMN "
                 "user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
             )
-        # Backfill: assign orphaned workspaces to the first (super-admin) user
-        await db.execute(
-            "UPDATE workspaces SET user_id = "
-            "(SELECT id FROM users ORDER BY id ASC LIMIT 1) "
-            "WHERE user_id IS NULL"
-        )
+            # One-time backfill: rows that existed before this column was added
+            # have no owner — assign them to the first (super-admin) user.
+            # This block only runs on the single boot where the column is new;
+            # on every subsequent boot user_id is already in ws_cols so we
+            # never touch NULL rows again (prevents orphaned demo data from
+            # being re-assigned to the superadmin after a purge).
+            await db.execute(
+                "UPDATE workspaces SET user_id = "
+                "(SELECT id FROM users ORDER BY id ASC LIMIT 1) "
+                "WHERE user_id IS NULL"
+            )
 
-        # Migration: add role column to users if missing
+        if "sort_order" not in ws_cols:
+            await db.execute(
+                "ALTER TABLE workspaces ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+            )
+            await db.execute("UPDATE workspaces SET sort_order = id * 10")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ws_sort "
+                "ON workspaces(parent_id, sort_order)"
+            )
+
+        # ── users migrations (single PRAGMA read) ─────────────────────────────
         cursor = await db.execute("PRAGMA table_info(users)")
         u_cols = {r[1] for r in await cursor.fetchall()}
+
         if "role" not in u_cols:
             await db.execute(
-                "ALTER TABLE users ADD COLUMN "
-                "role TEXT NOT NULL DEFAULT 'user'"
+                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
             )
         # Backfill: the very first user (lowest id) is the super-admin
         await db.execute(
@@ -211,9 +269,6 @@ async def init_db() -> None:
             "WHERE id = (SELECT MIN(id) FROM users) AND role != 'superadmin'"
         )
 
-        # Migration: add TOTP columns to users if missing
-        cursor = await db.execute("PRAGMA table_info(users)")
-        u_cols = {r[1] for r in await cursor.fetchall()}
         if "totp_secret" not in u_cols:
             await db.execute(
                 "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL"
@@ -223,35 +278,20 @@ async def init_db() -> None:
                 "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0"
             )
 
-        # Migration: add sort_order column for drag-and-drop reordering
-        cursor = await db.execute("PRAGMA table_info(workspaces)")
-        ws_cols = {r[1] for r in await cursor.fetchall()}
-        if "sort_order" not in ws_cols:
-            await db.execute(
-                "ALTER TABLE workspaces ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
-            )
-            # Backfill: preserve existing creation order using id spacing
-            await db.execute("UPDATE workspaces SET sort_order = id * 10")
-            await db.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ws_sort "
-                "ON workspaces(parent_id, sort_order)"
-            )
-
-        # Migration: add icon column to notes if missing
+        # ── notes migrations (single PRAGMA read) ─────────────────────────────
         cursor = await db.execute("PRAGMA table_info(notes)")
-        cols = {r[1] for r in await cursor.fetchall()}
-        if "icon" not in cols:
+        n_cols = {r[1] for r in await cursor.fetchall()}
+
+        if "icon" not in n_cols:
             await db.execute("ALTER TABLE notes ADD COLUMN icon TEXT DEFAULT NULL")
 
-        # Migration: add workspace_id column to notes if missing
-        cursor = await db.execute("PRAGMA table_info(notes)")
-        cols = {r[1] for r in await cursor.fetchall()}
-        if "workspace_id" not in cols:
-            await db.execute("ALTER TABLE notes ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL")
-            # Assign existing notes to the default workspace
-            await db.execute("UPDATE notes SET workspace_id = ? WHERE workspace_id IS NULL", (default_ws_id,))
+        if "workspace_id" not in n_cols:
+            await db.execute(
+                "ALTER TABLE notes ADD COLUMN "
+                "workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL"
+            )
 
-        # Seed existing notes that have no workspace
+        # Backfill: assign any orphaned notes to the default workspace
         await db.execute(
             "UPDATE notes SET workspace_id = ? WHERE workspace_id IS NULL", (default_ws_id,)
         )
@@ -289,13 +329,69 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE home_pages ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'"
             )
+        if "page_type" not in hp_cols:
+            await db.execute(
+                "ALTER TABLE home_pages ADD COLUMN page_type TEXT NOT NULL DEFAULT 'dashboard'"
+            )
+
+        # ── RSS Reader tables ──────────────────────────────────────────────────
+        # Feeds subscribed to a specific RSS Reader page
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS rss_page_feeds (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                url        TEXT    NOT NULL,
+                label      TEXT    NOT NULL DEFAULT '',
+                color      TEXT    NOT NULL DEFAULT '#0053e2',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(page_id, url)
+            )
+        """)
+        # Persistent per-user read state (guid = item identifier from feed)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS rss_read_items (
+                user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                page_id  INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                item_guid TEXT NOT NULL,
+                read_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (user_id, page_id, item_guid)
+            )
+        """)
+
+        # ── site_settings: persistent runtime flags (admin-toggleable) ────────
+        # Separate from env vars so superadmin can change them without a restart.
+        # BW_ALLOW_REGISTRATION seeds the initial value on first boot; after that
+        # the DB value is authoritative and the env var is ignored.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS site_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        reg_seed = "true" if os.getenv("BW_ALLOW_REGISTRATION", "true").lower() == "true" else "false"
+        await db.execute(
+            "INSERT OR IGNORE INTO site_settings (key, value) VALUES ('registration_open', ?)",
+            (reg_seed,),
+        )
 
         await db.commit()
 
 @asynccontextmanager
 async def get_db():
-    """Async context manager yielding a live DB connection."""
+    """Async context manager yielding a live DB connection.
+
+    Pragmas applied on every connection:
+      - foreign_keys   : enforce referential integrity
+      - journal_mode   : WAL for concurrent readers + one writer (safe for
+                         multiple async tasks and up to a few uvicorn workers)
+      - busy_timeout   : wait up to 5 s before raising "database is locked"
+                         instead of failing immediately under write contention
+    """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
+        await db.execute("PRAGMA foreign_keys  = ON")
+        await db.execute("PRAGMA journal_mode  = WAL")
+        await db.execute("PRAGMA busy_timeout  = 5000")
         yield db

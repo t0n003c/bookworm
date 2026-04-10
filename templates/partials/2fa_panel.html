@@ -1,10 +1,44 @@
 {# HTMX partial — loaded into the account modal via GET /account/2fa #}
+{# ── QR layout CSS travels with the partial so it's always fresh ─────────────
+   Browsers process <style> tags injected via innerHTML (Chrome / FF / Safari).
+   Selector anchors on #account-modal-body.acct-sz-* which lives in the main DOM.
+#}
+<style id="qr-layout-css">
+  /* S (default): stacked column — steps → QR centred → actions */
+  .qr-setup-layout { display:flex; flex-direction:column; gap:0.75rem; }
+  .qr-code-box     { display:flex; justify-content:center; }
+  .qr-dir-right    { display:none; }
+  .qr-dir-below    { display:inline; }
+
+  /* M/L: CSS Grid — text left | QR right (spans both rows)
+     max-content: text column only as wide as its words → QR stays close */
+  #account-modal-body.acct-sz-m .qr-setup-layout,
+  #account-modal-body.acct-sz-l .qr-setup-layout {
+    display:grid;
+    grid-template-columns:max-content auto;
+    grid-template-rows:auto 1fr;
+    row-gap:0.5rem;
+    align-items:start;
+  }
+  #account-modal-body.acct-sz-m .qr-setup-layout { column-gap:7rem; }
+  #account-modal-body.acct-sz-l .qr-setup-layout { column-gap:5rem; }
+  #account-modal-body.acct-sz-m .qr-steps,
+  #account-modal-body.acct-sz-l .qr-steps   { grid-column:1; grid-row:1; }
+  #account-modal-body.acct-sz-m .qr-code-box,
+  #account-modal-body.acct-sz-l .qr-code-box {
+    grid-column:2; grid-row:1/3;
+    display:flex; justify-content:flex-start; align-items:flex-start;
+  }
+  #account-modal-body.acct-sz-m .qr-actions,
+  #account-modal-body.acct-sz-l .qr-actions { grid-column:1; grid-row:2; }
+  /* Swap step-2 directional text */
+  #account-modal-body.acct-sz-m .qr-dir-right,
+  #account-modal-body.acct-sz-l .qr-dir-right { display:inline; }
+  #account-modal-body.acct-sz-m .qr-dir-below,
+  #account-modal-body.acct-sz-l .qr-dir-below { display:none; }
+</style>
 
 <div id="2fa-panel">
-
-  <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-3">
-    Two-Factor Authentication
-  </p>
 
   {% if msg %}
   <div class="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg
@@ -78,53 +112,67 @@
     </span>
   </div>
 
-  <ol class="text-xs text-gray-600 dark:text-zinc-400 space-y-1 mb-4 list-decimal list-inside">
-    <li>Install <strong class="text-gray-800 dark:text-zinc-200">Google Authenticator</strong>,
-        <strong class="text-gray-800 dark:text-zinc-200">Authy</strong>, or any TOTP app.</li>
-    <li>Scan the QR code below.</li>
-    <li>Enter the 6-digit code to confirm &amp; activate.</li>
-  </ol>
+  {# ── Responsive QR layout ──────────────────────────────────────
+     S  → stacked column  (steps → QR centered → actions)
+     M/L → CSS Grid       (steps top-left | QR right spanning rows | actions bottom-left)
+     Layout is driven by .acct-sz-* on the ancestor #account-modal-body (see <style> block).
+  ── #}
+  <div class="qr-setup-layout">
 
-  {# QR code — white bg so it's readable in dark mode #}
-  <div class="flex justify-center mb-3">
-    <div class="p-2 bg-white rounded-xl inline-block shadow">
-      {{ qr_svg | safe }}
+    {# ① Steps list #}
+    <ol class="qr-steps text-xs text-gray-600 dark:text-zinc-400 space-y-1 list-decimal list-inside">
+      <li>Install <strong class="text-gray-800 dark:text-zinc-200">Google Authenticator</strong>,
+          <strong class="text-gray-800 dark:text-zinc-200">Authy</strong>, or any TOTP app.</li>
+      <li>Scan the QR code
+        <span class="qr-dir-right">on the right</span><span class="qr-dir-below">below</span>.</li>
+      <li>Enter the 6-digit code to confirm &amp; activate.</li>
+    </ol>
+
+    {# ② QR code — white bg keeps it readable in dark mode #}
+    <div class="qr-code-box">
+      <div class="p-2 bg-white rounded-xl inline-block shadow">
+        {{ qr_svg | safe }}
+      </div>
     </div>
-  </div>
 
-  {# Manual entry fallback #}
-  <details class="mb-4">
-    <summary class="text-xs text-gray-400 dark:text-zinc-500 cursor-pointer hover:text-gray-600 dark:hover:text-zinc-300 transition select-none">
-      Can't scan? Enter code manually ▾
-    </summary>
-    <p class="mt-2 font-mono text-xs text-gray-700 dark:text-zinc-300
-              bg-gray-100 dark:bg-zinc-800 rounded-lg px-3 py-2 break-all select-all
-              border border-gray-200 dark:border-zinc-700">
-      {{ secret }}
-    </p>
-  </details>
+    {# ③ Manual fallback + activation input #}
+    <div class="qr-actions">
+      <details class="mb-4 mt-1">
+        <summary class="text-xs text-gray-400 dark:text-zinc-500 cursor-pointer
+                        hover:text-gray-600 dark:hover:text-zinc-300 transition select-none">
+          Can't scan? Enter code manually ▾
+        </summary>
+        <p class="mt-2 font-mono text-xs text-gray-700 dark:text-zinc-300
+                  bg-gray-100 dark:bg-zinc-800 rounded-lg px-3 py-2 break-all select-all
+                  border border-gray-200 dark:border-zinc-700">
+          {{ secret }}
+        </p>
+      </details>
 
-  <div class="flex items-center gap-2">
-    <input
-      id="enable-code-input"
-      type="text" inputmode="numeric"
-      maxlength="6" pattern="[0-9]{6}"
-      placeholder="6-digit code"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();submit2FA('/account/2fa/enable','enable-code-input',this.nextElementSibling);}"
-      class="w-36 px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
-             bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
-             placeholder-gray-400 dark:placeholder-zinc-500
-             focus:outline-none focus:ring-2 focus:ring-[#0053e2]
-             font-mono tracking-widest"
-      aria-label="Authenticator code"
-    />
-    <button type="button"
-      onclick="submit2FA('/account/2fa/enable', 'enable-code-input', this)"
-      class="px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white text-xs font-semibold
-             rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
-      Enable 2FA
-    </button>
-  </div>
+      <div class="flex items-center gap-2">
+        <input
+          id="enable-code-input"
+          type="text" inputmode="numeric"
+          maxlength="6" pattern="[0-9]{6}"
+          placeholder="6-digit code"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();submit2FA('/account/2fa/enable','enable-code-input',this.nextElementSibling);}"
+          class="w-36 px-3 py-1.5 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                 placeholder-gray-400 dark:placeholder-zinc-500
+                 focus:outline-none focus:ring-2 focus:ring-[#0053e2]
+                 font-mono tracking-widest"
+          aria-label="Authenticator code"
+        />
+        <button type="button"
+          onclick="submit2FA('/account/2fa/enable', 'enable-code-input', this)"
+          class="px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white text-xs font-semibold
+                 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+          Enable 2FA
+        </button>
+      </div>
+    </div>{# /qr-actions #}
+
+  </div>{# /qr-setup-layout #}
 
   {% endif %}
 

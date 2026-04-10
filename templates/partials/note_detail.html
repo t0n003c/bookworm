@@ -63,7 +63,7 @@
         const raw = el.getAttribute('data-raw');
         // Normalize visual bullet chars (•) at any indent level → markdown (-)
         // Preserving leading spaces keeps nested list indentation intact for marked.
-        const md  = raw.replace(/^(\s*)• /gm, '$1- ');
+        const md = raw.replace(/^(\s*)• /gm, '$1- ');
         marked.use({ gfm: true, breaks: true });
         // ADD_ATTR style: lets color/highlight/font-size spans pass through
         el.innerHTML = DOMPurify.sanitize(marked.parse(md), {
@@ -72,7 +72,12 @@
           FORCE_BODY: true,
         });
 
-        // Make every todo checkbox clickable — POSTs to the toggle endpoint
+        // ── Syntax highlighting + copy buttons (shared utility in base.html) ───────
+        if (typeof window._bwApplyCodeHighlighting === 'function') {
+          window._bwApplyCodeHighlighting(el);
+        }
+
+        // ── Todo checkboxes — make interactive ───────────────────────────────
         el.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
           cb.removeAttribute('disabled');
           cb.style.cursor = 'pointer';
@@ -118,13 +123,9 @@
       Edit
     </button>
     <button
-      hx-delete="/notes/{{ note.id }}"
-      hx-target="#note-list"
-      hx-swap="innerHTML"
-      hx-confirm="Delete this note? This cannot be undone."
-      hx-include="#active-workspace"
-      hx-on::after-request="closePanel()"
-      class="flex items-center gap-2 border border-wred text-wred font-semibold px-4 py-2.5 rounded-lg hover:bg-red-50 transition text-sm focus:outline-none focus:ring-2 focus:ring-wred"
+      type="button"
+      onclick="openDeleteNoteModal('{{ note.id }}', {{ note.title | tojson }})"
+      class="flex items-center gap-2 border border-wred text-wred font-semibold px-4 py-2.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition text-sm focus:outline-none focus:ring-2 focus:ring-wred"
       aria-label="Delete this note"
     >
       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">

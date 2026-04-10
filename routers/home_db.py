@@ -1,14 +1,13 @@
 """Database helpers for Home Pages + Widgets."""
 import json
-import aiosqlite
-from database import DB_PATH
+
+from database import get_db
 
 
 # ── Home Pages ────────────────────────────────────────────────────────────────
 
 async def get_home_pages(user_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_db() as db:
         cur = await db.execute(
             "SELECT * FROM home_pages WHERE user_id=? ORDER BY sort_order,id",
             (user_id,),
@@ -25,8 +24,7 @@ async def get_home_pages(user_id: int) -> list[dict]:
 
 
 async def get_home_page(page_id: int, user_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_db() as db:
         cur = await db.execute(
             "SELECT * FROM home_pages WHERE id=? AND user_id=?", (page_id, user_id)
         )
@@ -41,8 +39,15 @@ async def get_home_page(page_id: int, user_id: int) -> dict | None:
         return p
 
 
-async def create_home_page(user_id: int, name: str, emoji: str = "🏠") -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
+# Valid page types — kept here so router + db stay in sync.
+PAGE_TYPES = frozenset({"dashboard", "crm", "media", "grid_builder", "uploads", "rss"})
+
+
+async def create_home_page(
+    user_id: int, name: str, emoji: str = "🏠", page_type: str = "dashboard"
+) -> int:
+    page_type = page_type if page_type in PAGE_TYPES else "dashboard"
+    async with get_db() as db:
         cur = await db.execute(
             "SELECT COALESCE(MAX(sort_order),0)+1 FROM home_pages WHERE user_id=?",
             (user_id,),
@@ -50,15 +55,15 @@ async def create_home_page(user_id: int, name: str, emoji: str = "🏠") -> int:
         row = await cur.fetchone()
         sort = row[0] if row else 1
         cur = await db.execute(
-            "INSERT INTO home_pages(user_id,name,emoji,sort_order) VALUES(?,?,?,?)",
-            (user_id, name.strip() or "My Page", emoji, sort),
+            "INSERT INTO home_pages(user_id,name,emoji,sort_order,page_type) VALUES(?,?,?,?,?)",
+            (user_id, name.strip() or "My Page", emoji, sort, page_type),
         )
         await db.commit()
         return cur.lastrowid
 
 
 async def rename_home_page(page_id: int, user_id: int, name: str, emoji: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
             "UPDATE home_pages SET name=?,emoji=? WHERE id=? AND user_id=?",
             (name.strip() or "My Page", emoji, page_id, user_id),
@@ -67,7 +72,7 @@ async def rename_home_page(page_id: int, user_id: int, name: str, emoji: str) ->
 
 
 async def update_page_config(page_id: int, user_id: int, config: dict) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
             "UPDATE home_pages SET config_json=? WHERE id=? AND user_id=?",
             (json.dumps(config), page_id, user_id),
@@ -76,18 +81,70 @@ async def update_page_config(page_id: int, user_id: int, config: dict) -> None:
 
 
 async def delete_home_page(page_id: int, user_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
             "DELETE FROM home_pages WHERE id=? AND user_id=?", (page_id, user_id)
         )
         await db.commit()
 
 
+async def duplicate_home_page(page_id: int, user_id: int) -> int:
+    """Clone a home page (metadata + all widgets) and return the new page id.
+
+    The clone is named '<original> (copy)' and inserted after the original
+    in sort_order.  All widget rows are duplicated with the same config.
+    """
+    async with get_db() as db:
+        # fetch source
+        cur = await db.execute(
+            "SELECT name, emoji, config_json, sort_order, page_type FROM home_pages "
+            "WHERE id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise ValueError(f"Home page {page_id} not found")
+
+        clone_name = row["name"].strip() + " (copy)"
+        new_sort   = row["sort_order"] + 1
+        p_type     = row["page_type"] or "dashboard"
+
+        # shift pages that come after to make room
+        await db.execute(
+            "UPDATE home_pages SET sort_order = sort_order + 1 "
+            "WHERE user_id=? AND sort_order > ?",
+            (user_id, row["sort_order"]),
+        )
+
+        # insert clone page
+        pc = await db.execute(
+            "INSERT INTO home_pages(user_id, name, emoji, sort_order, config_json, page_type) "
+            "VALUES(?, ?, ?, ?, ?, ?)",
+            (user_id, clone_name, row["emoji"], new_sort, row["config_json"], p_type),
+        )
+        new_page_id = pc.lastrowid
+
+        # clone widgets
+        wc = await db.execute(
+            "SELECT widget_type, style, config_json, sort_order "
+            "FROM home_widgets WHERE page_id=? ORDER BY sort_order",
+            (page_id,),
+        )
+        for w in await wc.fetchall():
+            await db.execute(
+                "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (new_page_id, w["widget_type"], w["style"], w["config_json"], w["sort_order"]),
+            )
+
+        await db.commit()
+        return new_page_id
+
+
 # ── Widgets ───────────────────────────────────────────────────────────────────
 
 async def get_widgets(page_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    async with get_db() as db:
         cur = await db.execute(
             "SELECT * FROM home_widgets WHERE page_id=? ORDER BY sort_order,id",
             (page_id,),
@@ -107,7 +164,7 @@ async def get_widgets(page_id: int) -> list[dict]:
 async def add_widget(
     page_id: int, widget_type: str, style: str, config: dict
 ) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         cur = await db.execute(
             "SELECT COALESCE(MAX(sort_order),0)+1 FROM home_widgets WHERE page_id=?",
             (page_id,),
@@ -124,7 +181,7 @@ async def add_widget(
 
 
 async def update_widget_config(widget_id: int, config: dict) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
             "UPDATE home_widgets SET config_json=? WHERE id=?",
             (json.dumps(config), widget_id),
@@ -133,7 +190,7 @@ async def update_widget_config(widget_id: int, config: dict) -> None:
 
 
 async def update_widget_style(widget_id: int, style: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
             "UPDATE home_widgets SET style=? WHERE id=?",
             (style, widget_id),
@@ -142,7 +199,7 @@ async def update_widget_style(widget_id: int, style: str) -> None:
 
 
 async def reorder_widgets(page_id: int, ordered_ids: list[int]) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         for i, wid in enumerate(ordered_ids):
             await db.execute(
                 "UPDATE home_widgets SET sort_order=? WHERE id=? AND page_id=?",
@@ -152,6 +209,6 @@ async def reorder_widgets(page_id: int, ordered_ids: list[int]) -> None:
 
 
 async def delete_widget(widget_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with get_db() as db:
         await db.execute("DELETE FROM home_widgets WHERE id=?", (widget_id,))
         await db.commit()

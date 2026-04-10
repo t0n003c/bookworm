@@ -1,9 +1,12 @@
 """FastAPI router for notes (returns HTMX HTML partials)."""
+import asyncio
+import html as _html
 import re
+import urllib.request
 from datetime import date as date_type
 from typing import Optional
 from fastapi import APIRouter, Form, Query, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from templates_env import templates
 
 from routers.notes_db import (
@@ -31,9 +34,6 @@ async def list_notes(
     sort_by: list[str] = Query(default=[]),
 ):
     cat_ids = [int(x) for x in category_ids.split(",") if x.strip()] if category_ids else []
-    import datetime
-    with open("debug_requests.log", "a") as _f:
-        _f.write(f"{datetime.datetime.now().isoformat()} GET /notes  workspace_id={workspace_id!r}  q={q!r}\n")
 
     # Guard: never return unscoped notes (would expose all users' data).
     # Without a workspace the note list is empty and shows the welcome state.
@@ -98,6 +98,52 @@ async def edit_note_form(request: Request, note_id: int):
             "workspace_id": ws_id,
         },
     )
+
+
+@router.get("/url-title")
+async def url_title_endpoint(url: str = Query(..., description="URL whose page title to fetch")):
+    """Fetch og:title / <title> of a URL for mention pill annotations.
+
+    Runs the blocking urllib call in a thread so the event loop stays free.
+    Always returns JSON {"title": str} — empty string on any failure so
+    callers can treat it as a graceful no-op.
+    """
+    def _fetch() -> str:
+        try:
+            import ssl
+            # Walmart proxy does SSL inspection with a corporate CA that Python's
+            # bundled OpenSSL doesn't trust.  Skip verification for this lightweight
+            # metadata fetch (no sensitive data, read-only, title only).
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode    = ssl.CERT_NONE
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (BookWorm/1.0 mention-preview)"},
+            )
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as resp:
+                raw = resp.read(32_768).decode("utf-8", errors="replace")
+
+            # og:title comes in two attribute orderings; try both.
+            og = re.search(
+                r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
+                raw, re.I,
+            ) or re.search(
+                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+                raw, re.I,
+            )
+            if og:
+                return _html.unescape(og.group(1).strip())
+
+            t = re.search(r"<title[^>]*>([^<]{1,200})</title>", raw, re.I)
+            if t:
+                return _html.unescape(t.group(1).strip())
+        except Exception:
+            pass
+        return ""
+
+    title = await asyncio.to_thread(_fetch)
+    return JSONResponse({"title": title})
 
 
 @router.get("/{note_id}", response_class=HTMLResponse)
@@ -247,3 +293,43 @@ async def delete_note_handler(
         "partials/note_list.html",
         {"notes": notes},
     )
+
+
+# NOTE: /url-title is registered ABOVE /{note_id} to avoid being swallowed
+# by the parameterised route. Do not move it below that route.
+async def url_title_endpoint(url: str = Query(..., description="URL whose page title to fetch")):
+    """Fetch og:title / <title> of a URL for mention pill annotations.
+
+    Runs the blocking urllib call in a thread so the event loop stays free.
+    Always returns JSON {"title": str} — empty string on any failure so
+    callers can treat it as a graceful no-op.
+    """
+    def _fetch() -> str:
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (BookWorm/1.0 mention-preview)"},
+            )
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                raw = resp.read(32_768).decode("utf-8", errors="replace")
+
+            # og:title comes in two attribute orderings; try both.
+            og = re.search(
+                r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
+                raw, re.I,
+            ) or re.search(
+                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+                raw, re.I,
+            )
+            if og:
+                return _html.unescape(og.group(1).strip())
+
+            t = re.search(r"<title[^>]*>([^<]{1,200})</title>", raw, re.I)
+            if t:
+                return _html.unescape(t.group(1).strip())
+        except Exception:
+            pass
+        return ""
+
+    title = await asyncio.to_thread(_fetch)
+    return JSONResponse({"title": title})

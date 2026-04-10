@@ -22,7 +22,7 @@
         </p>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {% set wt_list = [
-            ('clock',    '🕐', 'Clock'),
+            ('clock',    '🔐', 'Clock'),
             ('weather',  '🌤️', 'Weather'),
             ('calendar', '📅', 'Calendar'),
             ('todo',     '✅', 'To-Do'),
@@ -30,9 +30,35 @@
             ('timer',    '⏱️', 'Timer'),
             ('countdown','⏳', 'Countdown'),
             ('reminder', '🔔', 'Reminder'),
+            ('event',    '📅', 'Events'),
             ('title',    '🏷️', 'Title'),
+            ('banner',   '🟦', 'Banner'),
+            ('divider',  '➖', 'Divider'),
+            ('text',     '📝', 'Text'),
+            ('sticky',   '📌', 'Sticky Note'),
+            ('quote',    '❝', 'Quote'),
           ] %}
           {% for wtype, icon, label in wt_list %}
+          <button type="button" onclick="selectWidgetType('{{ wtype }}')"
+                  data-wtype="{{ wtype }}"
+                  class="aw-type-btn flex flex-col items-center gap-2 p-3 rounded-xl border-2
+                         border-gray-200 dark:border-zinc-700 hover:border-wblue
+                         transition cursor-pointer group">
+            <span class="text-2xl">{{ icon }}</span>
+            <span class="text-xs font-semibold text-gray-700 dark:text-zinc-300
+                         group-hover:text-wblue transition">{{ label }}</span>
+          </button>
+          {% endfor %}
+        </div>
+
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-5 mb-3 uppercase font-semibold tracking-wide"
+           id="aw-advanced-heading">
+          ⚡ Advanced
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          {% for wtype, icon, label in [
+            ('rss_feed', '📡', 'RSS Feed'),
+          ] %}
           <button type="button" onclick="selectWidgetType('{{ wtype }}')"
                   data-wtype="{{ wtype }}"
                   class="aw-type-btn flex flex-col items-center gap-2 p-3 rounded-xl border-2

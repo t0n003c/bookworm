@@ -1,4 +1,5 @@
 """Auth DB helpers — user creation, lookup, password hashing."""
+import os
 import bcrypt
 from database import get_db
 
@@ -82,19 +83,44 @@ async def create_user(
         return cur.lastrowid
 
 
-async def delete_user(user_id: int) -> None:
-    """Hard-delete a user account.
+async def delete_user(user_id: int) -> list[str]:
+    """Fully delete a user and ALL their data. Returns disk filenames to unlink.
 
-    Their workspaces are orphaned (user_id set to NULL) but NOT deleted,
-    so data is preserved and can be reassigned later by a superadmin.
+    Deletion order (respects FK constraints with foreign_keys=ON):
+      1. Collect attachment filenames for disk cleanup (DB rows cascade from notes).
+      2. DELETE notes in user's workspaces   -> cascades note_categories,
+         note_attributes, note_attachments.
+      3. DELETE workspaces                   -> cascades workspace_categories.
+      4. DELETE user                         -> cascades home_pages -> home_widgets.
     """
     async with get_db() as db:
-        # Orphan their workspaces rather than cascading delete
-        await db.execute(
-            "UPDATE workspaces SET user_id = NULL WHERE user_id = ?", (user_id,)
+        await db.execute("PRAGMA foreign_keys = ON")
+
+        # 1. Grab attachment filenames before notes disappear.
+        cur = await db.execute(
+            "SELECT a.filename FROM note_attachments a "
+            "JOIN notes n ON a.note_id = n.id "
+            "JOIN workspaces w ON n.workspace_id = w.id "
+            "WHERE w.user_id = ?",
+            (user_id,),
         )
+        filenames = [r[0] for r in await cur.fetchall()]
+
+        # 2. Notes (cascades note_categories, note_attributes, note_attachments).
+        await db.execute(
+            "DELETE FROM notes WHERE workspace_id IN "
+            "(SELECT id FROM workspaces WHERE user_id = ?)",
+            (user_id,),
+        )
+
+        # 3. Workspaces (cascades workspace_categories).
+        await db.execute("DELETE FROM workspaces WHERE user_id = ?", (user_id,))
+
+        # 4. User row (cascades home_pages -> home_widgets).
         await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
         await db.commit()
+        return filenames
 
 
 async def update_username(user_id: int, new_username: str) -> None:
@@ -112,5 +138,30 @@ async def update_password(user_id: int, new_password: str) -> None:
         await db.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (hashed, user_id),
+        )
+        await db.commit()
+
+
+# ── site settings ───────────────────────────────────────────────────
+
+async def get_registration_open() -> bool:
+    """Read registration_open from site_settings (DB-authoritative after first boot)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT value FROM site_settings WHERE key = 'registration_open'"
+        )
+        row = await cur.fetchone()
+        if row is None:
+            # Table not yet migrated (very first request before init_db completes)
+            return os.getenv("BW_ALLOW_REGISTRATION", "true").lower() == "true"
+        return row["value"] == "true"
+
+
+async def set_registration_open(value: bool) -> None:
+    """Persist registration_open toggle to site_settings."""
+    async with get_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO site_settings (key, value) VALUES ('registration_open', ?)",
+            ("true" if value else "false",),
         )
         await db.commit()
