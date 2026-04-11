@@ -19,6 +19,7 @@ from routers.home_rss_db import (
     get_page_feeds,
     get_read_guids,
     mark_read,
+    update_page_feed,
 )
 from routers.home_db import get_home_page
 
@@ -50,9 +51,10 @@ async def list_feeds(request: Request, page_id: int):
 async def add_feed(
     request: Request,
     page_id: int,
-    url:   str = Form(...),
-    label: str = Form(""),
-    color: str = Form(""),
+    url:      str = Form(...),
+    label:    str = Form(""),
+    color:    str = Form(""),
+    category: str = Form(""),
 ):
     uid  = _uid(request)
     page = await get_home_page(page_id, uid)
@@ -63,7 +65,21 @@ async def add_feed(
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "invalid url"}, status_code=400)
 
-    feeds = await add_page_feed(page_id, uid, url, label, color)
+    feeds = await add_page_feed(page_id, uid, url, label, color, category)
+    return JSONResponse(feeds)
+
+
+@router.post("/rss-reader/{page_id}/feeds/{feed_id}/update")
+async def update_feed(
+    request: Request,
+    page_id: int,
+    feed_id: int,
+    label:    str = Form(""),
+    color:    str = Form("#0053e2"),
+    category: str = Form(""),
+):
+    uid   = _uid(request)
+    feeds = await update_page_feed(feed_id, page_id, uid, label, color, category)
     return JSONResponse(feeds)
 
 

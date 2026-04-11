@@ -57,7 +57,14 @@
                  class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
                         px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
                         text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-1.5" />
+          <input id="rss-add-category" type="text" placeholder="Category (optional)"
+                 list="rss-category-list"
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-2" />
+          <datalist id="rss-category-list"></datalist>
           <button id="rss-add-btn" type="submit"
                   class="w-full py-1.5 text-xs font-semibold rounded-lg
                          bg-[#0053e2] text-white hover:bg-[#003eb3] transition
@@ -76,12 +83,32 @@
       <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-100
                   dark:border-zinc-800 flex-shrink-0">
         <span class="text-[10px] font-bold text-gray-400 dark:text-zinc-500
-                     uppercase tracking-widest flex-1" id="rss-items-title">Articles</span>
-        <button onclick="rssMarkAllRead()"
-                title="Mark all as read"
-                class="text-[10px] text-gray-400 hover:text-[#0053e2] dark:hover:text-blue-400 transition">
-          ✓ All read
-        </button>
+                     uppercase tracking-widest" id="rss-items-title">Articles</span>
+        <div class="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          <select id="rss-filter-sel" onchange="rssApplyDisplay()"
+                  title="Filter articles"
+                  class="text-[10px] border border-gray-200 dark:border-zinc-700 rounded
+                         px-1 py-0.5 bg-white dark:bg-zinc-800
+                         text-gray-500 dark:text-zinc-400 cursor-pointer
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+            <option value="all">All</option>
+            <option value="unread">Unread</option>
+            <option value="read">Read</option>
+          </select>
+          <select id="rss-sort-sel" onchange="rssApplyDisplay()"
+                  title="Sort articles"
+                  class="text-[10px] border border-gray-200 dark:border-zinc-700 rounded
+                         px-1 py-0.5 bg-white dark:bg-zinc-800
+                         text-gray-500 dark:text-zinc-400 cursor-pointer
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+          </select>
+          <button onclick="rssMarkAllRead()"
+                  title="Mark all as read"
+                  class="text-[10px] text-gray-400 hover:text-[#0053e2] dark:hover:text-blue-400 transition"
+                  aria-label="Mark all as read">✓</button>
+        </div>
       </div>
 
       <div id="rss-items-panel" class="flex-1 overflow-y-auto">

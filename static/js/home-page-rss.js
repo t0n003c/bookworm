@@ -3,36 +3,36 @@
    Server APIs:
      GET  /home/rss-reader/{pid}/feeds
      POST /home/rss-reader/{pid}/feeds/add
+     POST /home/rss-reader/{pid}/feeds/{id}/update
      POST /home/rss-reader/{pid}/feeds/{id}/delete
      GET  /home/rss-reader/{pid}/read
      POST /home/rss-reader/{pid}/read
-     GET  /home/rss?url=...   (existing proxy — returns RSS/Atom XML)
+     GET  /home/rss?url=...            proxy → RSS/Atom JSON
+     GET  /home/rss/article?url=...    full-article extractor
 */
 'use strict';
 
-// ── Module state ───────────────────────────────────────────────────
-let _pid      = 0;         // page_id
-let _feeds    = [];        // [{id,url,label,color,sort_order}]
-let _selFeed  = null;      // feed id or null = All
-let _items    = [];        // currently displayed items
-let _read     = new Set(); // guids marked read (client truth)
-let _initEl   = null;      // DOM ref of the #rss-page-root that was last initialised
+// ── Module state ──────────────────────────────────────────────────────────────
+let _pid         = 0;
+let _feeds       = [];        // [{id,url,label,color,category,sort_order}]
+let _selFeed     = null;      // selected feed id, or null = All
+let _selCategory = null;      // selected category string, or null
+let _rawItems    = [];        // fetched items before filter/sort
+let _items       = [];        // currently displayed items
+let _sortMode    = 'newest';  // 'newest' | 'oldest'
+let _filterMode  = 'all';     // 'all' | 'unread' | 'read'
+let _read        = new Set();
+let _initEl      = null;
 
-// ── Init ─────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function initRssPage(pageId) {
-  // Guard against double-init on the *same DOM element*.
-  // Each innerHTML swap creates brand-new DOM nodes, so comparing element
-  // references (not just pageId) correctly re-initialises after navigate-away
-  // then navigate-back to the same page.
   const root = document.getElementById('rss-page-root');
   if (!root || _initEl === root) return;
   _initEl = root;
-
-  _pid     = pageId;
-  _read    = new Set();   // reset read state for new page context
-  _feeds   = [];
-  _items   = [];
-  _selFeed = null;
+  _pid = pageId;
+  _read = new Set(); _feeds = []; _rawItems = []; _items = [];
+  _selFeed = null; _selCategory = null;
+  _sortMode = 'newest'; _filterMode = 'all';
   await _syncReadFromServer();
   await _loadFeeds();
   _initAddForm();
@@ -45,10 +45,8 @@ function _esc(s) {
 }
 function _fmtDate(iso) {
   if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch { return ''; }
+  try { return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+  catch { return ''; }
 }
 
 // ── Read state ────────────────────────────────────────────────────────────────
@@ -56,53 +54,45 @@ async function _syncReadFromServer() {
   try {
     const r = await fetch(`/home/rss-reader/${_pid}/read`);
     if (!r.ok) return;
-    const guids = await r.json();
-    guids.forEach(g => _read.add(g));
-  } catch { /* network blip — use empty set */ }
+    (await r.json()).forEach(g => _read.add(g));
+  } catch { /* network blip */ }
 }
 
 function _markRead(guid) {
   if (_read.has(guid)) return;
   _read.add(guid);
-  // Update item card immediately
   const card = document.querySelector(`[data-guid="${CSS.escape(guid)}"]`);
   if (card) {
     card.classList.remove('bw-rss-unread');
     card.querySelector('.rss-dot')?.classList.add('invisible');
   }
   _updateUnreadBadge();
-  // Fire-and-forget server sync
   fetch(`/home/rss-reader/${_pid}/read`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
     body: JSON.stringify([guid]),
-  }).catch(() => {});
+  }).catch(()=>{});
 }
 
 function _updateUnreadBadge() {
-  const total  = _items.filter(it => !_read.has(it.guid)).length;
-  const badge  = document.getElementById('rss-unread-badge');
+  const total = _items.filter(it => !_read.has(it.guid)).length;
+  const badge = document.getElementById('rss-unread-badge');
   if (!badge) return;
-  if (total > 0) {
-    badge.textContent = `${total} unread`;
-    badge.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
-  }
+  badge.textContent = `${total} unread`;
+  badge.classList.toggle('hidden', total === 0);
 }
 
 // ── Mark all read ─────────────────────────────────────────────────────────────
 async function rssMarkAllRead() {
-  const unread = _items.filter(it => !_read.has(it.guid)).map(it => it.guid);
+  const unread = _rawItems.filter(it => !_read.has(it.guid)).map(it => it.guid);
   if (!unread.length) return;
   unread.forEach(g => _read.add(g));
-  _renderItems(_items);
-  _updateUnreadBadge();
+  _applyDisplay();
   await fetch(`/home/rss-reader/${_pid}/read`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
     body: JSON.stringify(unread),
-  }).catch(() => {});
+  }).catch(()=>{});
 }
 
 // ── Feeds list ────────────────────────────────────────────────────────────────
@@ -113,80 +103,167 @@ async function _loadFeeds() {
     _feeds = await r.json();
   } catch { _feeds = []; }
   _renderFeedList();
-  // Auto-load All Feeds on first open
   rssSelectAll();
 }
 
 function _renderFeedList() {
-  const list = document.getElementById('rss-feed-list');
+  const list   = document.getElementById('rss-feed-list');
+  const allBtn = document.getElementById('rss-all-btn');
   if (!list) return;
+
+  // All Feeds button highlight
+  const isAll = _selFeed === null && _selCategory === null;
+  if (allBtn) {
+    allBtn.classList.toggle('bg-gray-200',      isAll);
+    allBtn.classList.toggle('dark:bg-zinc-700', isAll);
+    allBtn.classList.toggle('font-semibold',    isAll);
+  }
+
+  // Update datalist for category autocomplete
+  const dl = document.getElementById('rss-category-list');
+  if (dl) {
+    const cats = [...new Set(_feeds.map(f => f.category).filter(Boolean))].sort();
+    dl.innerHTML = cats.map(c => `<option value="${_esc(c)}">`).join('');
+  }
+
   if (!_feeds.length) {
     list.innerHTML = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 text-center py-3 px-2">No feeds yet</p>';
     return;
   }
-  list.innerHTML = _feeds.map(f => `
-    <div class="flex items-center gap-1 group rounded-lg px-1 py-0.5
-                hover:bg-gray-100 dark:hover:bg-zinc-800 transition
-                ${_selFeed === f.id ? 'bg-blue-50 dark:bg-zinc-700' : ''}"
-         data-feed-id="${f.id}">
-      <button onclick="rssSelectFeed(${f.id})"
-              class="flex-1 text-left flex items-center gap-2 py-1 text-sm truncate
-                     ${_selFeed === f.id ? 'font-semibold text-[#0053e2] dark:text-blue-300' : 'text-gray-700 dark:text-zinc-200'}">
-        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${_esc(f.color)}"></span>
-        <span class="truncate">${_esc(f.label || f.url)}</span>
-      </button>
-      <button onclick="rssDeleteFeed(event,${f.id})"
-              title="Remove feed"
-              class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500
-                     transition text-xs px-1 flex-shrink-0" aria-label="Remove feed">✕</button>
-    </div>
-  `).join('');
+
+  // Group feeds by category; uncategorized first
+  const groups = {};
+  _feeds.forEach(f => { const c = f.category || ''; (groups[c] = groups[c] || []).push(f); });
+  const catKeys = ['', ...Object.keys(groups).filter(Boolean).sort()];
+
+  const html = [];
+  catKeys.forEach(cat => {
+    const group = groups[cat];
+    if (!group) return;
+    if (cat) {
+      const isSelCat = _selCategory === cat;
+      html.push(`
+        <button onclick="rssSelectCategory('${_esc(cat)}')"
+                class="w-full text-left flex items-center gap-1 px-2 py-1 mt-1
+                       text-[10px] font-bold uppercase tracking-wider rounded
+                       ${isSelCat ? 'text-[#0053e2] bg-blue-50 dark:bg-zinc-700 dark:text-blue-300'
+                                  : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'}">
+          <span>📁</span> ${_esc(cat)}
+        </button>`);
+    }
+    group.forEach(f => html.push(_feedRow(f)));
+  });
+
+  list.innerHTML = html.join('');
+}
+
+function _feedRow(f) {
+  const isActive = String(_selFeed) === String(f.id);
+  return `
+    <div data-feed-id="${f.id}" class="rounded-lg overflow-hidden">
+      <div class="flex items-center gap-1 group px-1 py-0.5
+                  ${isActive ? 'bg-blue-50 dark:bg-zinc-700' : 'hover:bg-gray-100 dark:hover:bg-zinc-800'} transition">
+        <button onclick="rssSelectFeed(${f.id})"
+                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1 text-sm
+                       ${isActive ? 'font-semibold text-[#0053e2] dark:text-blue-300' : 'text-gray-700 dark:text-zinc-200'}">
+          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${_esc(f.color)}"></span>
+          <span class="truncate">${_esc(f.label || f.url)}</span>
+        </button>
+        <button onclick="rssEditFeed(${f.id})" title="Edit feed"
+                class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-blue-500
+                       transition text-xs px-0.5 flex-shrink-0" aria-label="Edit feed">✎</button>
+        <button onclick="rssDeleteFeed(event,${f.id})" title="Remove feed"
+                class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500
+                       transition text-xs px-1 flex-shrink-0" aria-label="Remove feed">✕</button>
+      </div>
+      <div id="rss-edit-${f.id}"
+           class="hidden px-2 pb-2 pt-1 bg-gray-50 dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800">
+        <form onsubmit="rssUpdateFeed(event,${f.id})" class="space-y-1">
+          <input name="label" value="${_esc(f.label)}" placeholder="Label"
+                 class="w-full text-xs px-2 py-1 border border-gray-300 dark:border-zinc-600
+                        rounded bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                        focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+          <input name="category" value="${_esc(f.category || '')}" placeholder="Category (optional)"
+                 list="rss-category-list"
+                 class="w-full text-xs px-2 py-1 border border-gray-300 dark:border-zinc-600
+                        rounded bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                        focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+          <div class="flex items-center gap-2">
+            <label class="text-[10px] text-gray-400">Colour</label>
+            <input name="color" type="color" value="${_esc(f.color)}"
+                   class="h-5 w-8 rounded border border-gray-300 dark:border-zinc-600 cursor-pointer">
+            <button type="submit"
+                    class="ml-auto text-[10px] px-2 py-0.5 bg-[#0053e2] text-white rounded
+                           hover:bg-[#003eb3] transition font-semibold">Save</button>
+            <button type="button" onclick="rssEditFeed(${f.id})"
+                    class="text-[10px] px-2 py-0.5 border border-gray-300 dark:border-zinc-600
+                           rounded text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
 }
 
 // ── Feed selection ────────────────────────────────────────────────────────────
 async function rssSelectAll() {
-  _selFeed = null;
-  _highlightFeedButtons();
+  _selFeed = null; _selCategory = null;
+  _renderFeedList();
   document.getElementById('rss-items-title').textContent = 'All Feeds';
   await _loadAllItems();
 }
 
 async function rssSelectFeed(feedId) {
-  _selFeed = feedId;
-  _highlightFeedButtons();
+  _selFeed = feedId; _selCategory = null;
+  _renderFeedList();
   const feed = _feeds.find(f => f.id === feedId);
-  document.getElementById('rss-items-title').textContent =
-    _esc(feed?.label || feed?.url || 'Feed');
+  document.getElementById('rss-items-title').textContent = _esc(feed?.label || feed?.url || 'Feed');
   if (feed) await _loadFeedItems(feed.url);
 }
 
-function _highlightFeedButtons() {
-  // All Feeds button
-  const allBtn = document.getElementById('rss-all-btn');
-  if (allBtn) {
-    allBtn.classList.toggle('bg-gray-200',      _selFeed === null);
-    allBtn.classList.toggle('dark:bg-zinc-700', _selFeed === null);
-    allBtn.classList.toggle('font-semibold',    _selFeed === null);
-  }
-  // Individual feed rows
-  document.querySelectorAll('[data-feed-id]').forEach(el => {
-    const isActive = String(el.dataset.feedId) === String(_selFeed);
-    el.classList.toggle('bg-blue-50',           isActive);
-    el.classList.toggle('dark:bg-zinc-700',     isActive);
-    const btn = el.querySelector('button:first-child');
-    if (btn) {
-      btn.classList.toggle('font-semibold',       isActive);
-      btn.classList.toggle('text-[#0053e2]',      isActive);
-      btn.classList.toggle('dark:text-blue-300',  isActive);
-    }
-  });
+async function rssSelectCategory(cat) {
+  _selFeed = null; _selCategory = cat;
+  _renderFeedList();
+  document.getElementById('rss-items-title').textContent = `📁 ${_esc(cat)}`;
+  await _loadAllItems();  // loads all; _applyDisplay will filter to category
 }
 
-// ── Map server JSON → client item format ─────────────────────────────────────
-// The /home/rss proxy already parses RSS/Atom and returns:
-//   { feed_title, items: [{title, link, description, pub_date, thumbnail}] }
-// We map that to the shape _renderItems() expects.
-function _mapServerItems(rawItems, color, source) {
+// ── Display: filter + sort ────────────────────────────────────────────────────
+function rssApplyDisplay() {
+  const sortSel   = document.getElementById('rss-sort-sel');
+  const filterSel = document.getElementById('rss-filter-sel');
+  if (sortSel)   _sortMode   = sortSel.value;
+  if (filterSel) _filterMode = filterSel.value;
+  _applyDisplay();
+}
+
+function _applyDisplay() {
+  let items = [..._rawItems];
+
+  // Category filter (when viewing a category, not a specific feed)
+  if (_selCategory && _selFeed === null) {
+    const inCat = new Set(_feeds.filter(f => f.category === _selCategory).map(f => f.id));
+    items = items.filter(it => inCat.has(it._feedId));
+  }
+
+  // Read/unread filter
+  if (_filterMode === 'unread') items = items.filter(it => !_read.has(it.guid));
+  if (_filterMode === 'read')   items = items.filter(it =>  _read.has(it.guid));
+
+  // Sort
+  items.sort((a, b) => _sortMode === 'oldest'
+    ? (a._ts || 0) - (b._ts || 0)
+    : (b._ts || 0) - (a._ts || 0));
+
+  _items = items;
+  _renderItems(_items);
+  _updateUnreadBadge();
+
+  const countEl = document.getElementById('rss-all-count');
+  if (countEl) countEl.textContent = _items.length > 0 ? String(_items.length) : '';
+}
+
+// ── Map server JSON → client item format ──────────────────────────────────────
+function _mapServerItems(rawItems, feed) {
   return (rawItems || []).map(it => {
     const raw = it.pub_date || '';
     const d   = raw ? new Date(raw) : null;
@@ -199,9 +276,11 @@ function _mapServerItems(rawItems, color, source) {
       thumbnail: it.thumbnail   || '',
       pubDate:   raw,
       _ts:       ts,
-      _date:     d && !isNaN(d) ? _fmtDate(d.toISOString()) : '',
-      _color:    color,
-      _source:   source,
+      _date:     ts ? _fmtDate(new Date(ts).toISOString()) : '',
+      _color:    feed.color,
+      _source:   feed.label || feed.url,
+      _feedId:   feed.id,
+      _feedCategory: feed.category || '',
     };
   });
 }
@@ -214,15 +293,10 @@ async function _loadFeedItems(url) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    const feed  = _feeds.find(f => f.url === url);
-    const color = feed?.color || '#0053e2';
-    const label = feed?.label || url;
-    _items = _mapServerItems(data.items, color, label);
-    _renderItems(_items);
-    _updateUnreadBadge();
-  } catch (e) {
-    _showItemsError('Could not load feed. Check the URL or try again.');
-  }
+    const feed = _feeds.find(f => f.url === url) || { color:'#0053e2', label:url, id:0, category:'' };
+    _rawItems = _mapServerItems(data.items, feed);
+    _applyDisplay();
+  } catch { _showItemsError('Could not load feed. Check the URL or try again.'); }
 }
 
 async function _loadAllItems() {
@@ -230,8 +304,8 @@ async function _loadAllItems() {
     document.getElementById('rss-items-panel').innerHTML =
       '<div class="p-4 text-center text-sm text-gray-400 mt-8">' +
       '<div class="text-3xl mb-2">📡</div>Add a feed to get started</div>';
-    _items = [];
-    _updateUnreadBadge();
+    _rawItems = [];
+    _applyDisplay();
     return;
   }
   _showItemsLoading();
@@ -247,16 +321,10 @@ async function _loadAllItems() {
     if (res.status !== 'fulfilled') continue;
     const { data, feed } = res.value;
     if (data.error) continue;
-    _mapServerItems(data.items, feed.color, feed.label || feed.url)
-      .forEach(it => all.push(it));
+    _mapServerItems(data.items, feed).forEach(it => all.push(it));
   }
-  // Sort newest-first
-  all.sort((a, b) => (b._ts || 0) - (a._ts || 0));
-  _items = all;
-  _renderItems(all);
-  document.getElementById('rss-all-count').textContent =
-    all.length > 0 ? String(all.length) : '';
-  _updateUnreadBadge();
+  _rawItems = all;
+  _applyDisplay();
 }
 
 function _showItemsLoading() {
@@ -302,84 +370,57 @@ function _renderItems(items) {
   }).join('');
 }
 
-// ── Open item (preview) ──────────────────────────────────────────────────────────────
+// ── Open item (preview) ───────────────────────────────────────────────────────
 function rssOpenItem(idx) {
   const it = _items[idx];
   if (!it) return;
   _markRead(it.guid);
-
-  // Highlight active item
   document.querySelectorAll('.rss-item').forEach((el, i) => {
     el.classList.toggle('bg-blue-50', i === idx);
     el.classList.toggle('dark:bg-zinc-700/50', i === idx);
   });
-
   _showPreview(it);
 }
 
 function _showPreview(it) {
   const panel = document.getElementById('rss-preview-panel');
-
-  // Strip dangerous tags from feed description; keep safe HTML
   const safe = (it.desc || '')
     .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, '')
-    .replace(/<(script|iframe|object|embed|form)(\s[^>]*)?\/>/gi, '')
+    .replace(/<(script|iframe|object|embed|form)(\s[^>]*)?\/?>/gi, '')
     .trim();
-
-  // Decide whether to offer "Load full article"
-  // Strip all tags to get raw text length for the heuristic
   const textLen = safe.replace(/<[^>]+>/g, '').trim().length;
   const canLoad = it.link && textLen < 400;
-
-  // Thumbnail — proxy through /home/img so Walmart firewall doesn't block it
   const thumbHtml = it.thumbnail
-    ? `<img src="/home/img?url=${encodeURIComponent(it.thumbnail)}"
-            alt=""
-            class="w-full max-h-64 object-cover rounded-xl mb-5
-                   bg-gray-100 dark:bg-zinc-800"
+    ? `<img src="/home/img?url=${encodeURIComponent(it.thumbnail)}" alt=""
+            class="w-full max-h-64 object-cover rounded-xl mb-5 bg-gray-100 dark:bg-zinc-800"
             onerror="this.style.display='none'">`
     : '';
-
   panel.innerHTML = `
     <div class="max-w-2xl mx-auto px-6 py-6">
-
       <div class="flex items-center gap-2 text-[11px] text-gray-400 dark:text-zinc-500 mb-3">
         <span class="inline-block w-2 h-2 rounded-full flex-shrink-0"
               style="background:${_esc(it._color || '#0053e2')}"></span>
         ${it._source ? `<span class="font-medium text-gray-500 dark:text-zinc-400">${_esc(it._source)}</span><span>·</span>` : ''}
         <span>${it._date || ''}</span>
       </div>
-
-      <h2 class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-snug mb-4">
-        ${_esc(it.title)}
-      </h2>
-
+      <h2 class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-snug mb-4">${_esc(it.title)}</h2>
       ${thumbHtml}
-
       <div id="rss-preview-body"
-           class="prose prose-sm dark:prose-invert max-w-none
-                  text-gray-700 dark:text-zinc-300 leading-relaxed mb-5
-                  [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2
+           class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-zinc-300
+                  leading-relaxed mb-5 [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2
                   [&_a]:text-[#0053e2] [&_a:hover]:underline">
         ${safe || '<p class="text-gray-400 italic">No preview in feed — load the full article below.</p>'}
       </div>
-
       <div class="flex items-center gap-3 flex-wrap">
-        ${it.link ? `
-          <a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
-             class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
-                    bg-[#0053e2] text-white rounded-lg hover:bg-[#003eb3] transition">
-            Open Article <span aria-hidden="true">↗</span>
-          </a>` : ''}
-        ${canLoad ? `
-          <button id="rss-load-full-btn"
-                  onclick="_rssLoadFullArticle('${_esc(it.link)}')"
-                  class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
-                         border border-gray-300 dark:border-zinc-600
-                         text-gray-700 dark:text-zinc-200 rounded-lg
-                         hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
-            📖 Load Full Article
-          </button>` : ''}
+        ${it.link ? `<a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                  bg-[#0053e2] text-white rounded-lg hover:bg-[#003eb3] transition">
+          Open Article <span aria-hidden="true">↗</span></a>` : ''}
+        ${canLoad ? `<button id="rss-load-full-btn" onclick="_rssLoadFullArticle('${_esc(it.link)}')"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                           border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-200
+                           rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+          📖 Load Full Article</button>` : ''}
       </div>
     </div>`;
 }
@@ -388,37 +429,25 @@ async function _rssLoadFullArticle(url) {
   const btn  = document.getElementById('rss-load-full-btn');
   const body = document.getElementById('rss-preview-body');
   if (!btn || !body) return;
-
-  btn.disabled    = true;
-  btn.textContent = 'Loading…';
-
+  btn.disabled = true; btn.textContent = 'Loading…';
   try {
     const r    = await fetch(`/home/rss/article?url=${encodeURIComponent(url)}`);
     const data = await r.json();
-
     if (!r.ok || data.error) throw new Error(data.error || 'fetch failed');
-
-    if (!data.paragraphs || !data.paragraphs.length) {
+    if (!data.paragraphs?.length) {
       body.innerHTML = '<p class="text-gray-400 italic">Could not extract article content. Try opening it directly.</p>';
-      btn.remove();
-      return;
+      btn.remove(); return;
     }
-
-    body.innerHTML = data.paragraphs
-      .map(p => `<p>${_esc(p)}</p>`)
-      .join('');
+    body.innerHTML = data.paragraphs.map(p => `<p>${_esc(p)}</p>`).join('');
     btn.remove();
   } catch {
-    body.insertAdjacentHTML(
-      'afterend',
-      '<p class="text-red-400 text-sm mt-2">Could not load article. Try opening it directly.</p>'
-    );
-    btn.disabled    = false;
-    btn.textContent = '📖 Load Full Article';
+    body.insertAdjacentHTML('afterend',
+      '<p class="text-red-400 text-sm mt-2">Could not load article. Try opening it directly.</p>');
+    btn.disabled = false; btn.textContent = '📖 Load Full Article';
   }
 }
 
-// ── Add / Delete feeds ────────────────────────────────────────────────────────
+// ── Add / Delete / Edit feeds ─────────────────────────────────────────────────
 function _initAddForm() {
   const form = document.getElementById('rss-add-form');
   if (!form) return;
@@ -426,35 +455,29 @@ function _initAddForm() {
     e.preventDefault();
     const urlIn = document.getElementById('rss-add-url');
     const lblIn = document.getElementById('rss-add-label');
+    const catIn = document.getElementById('rss-add-category');
     const errEl = document.getElementById('rss-add-err');
     const btn   = document.getElementById('rss-add-btn');
     const url   = urlIn.value.trim();
     if (!url) return;
-
     errEl.classList.add('hidden');
-    btn.disabled    = true;
-    btn.textContent = 'Adding…';
+    btn.disabled = true; btn.textContent = 'Adding…';
     try {
       const r = await fetch(`/home/rss-reader/${_pid}/feeds/add`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ url, label: lblIn.value.trim() }),
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ url, label: lblIn.value.trim(), category: catIn.value.trim() }),
       });
       if (!r.ok) throw new Error(await r.text());
       _feeds = await r.json();
-      urlIn.value = '';
-      lblIn.value = '';
+      urlIn.value = ''; lblIn.value = ''; catIn.value = '';
       _renderFeedList();
-      // Auto-select the newly added feed
       const newest = _feeds[_feeds.length - 1];
       if (newest) rssSelectFeed(newest.id);
-    } catch (err) {
+    } catch {
       errEl.textContent = 'Could not add feed — check the URL.';
       errEl.classList.remove('hidden');
-    } finally {
-      btn.disabled    = false;
-      btn.textContent = '+ Add Feed';
-    }
+    } finally { btn.disabled = false; btn.textContent = '+ Add Feed'; }
   });
 }
 
@@ -464,15 +487,43 @@ async function rssDeleteFeed(e, feedId) {
   if (!confirm(`Remove "${feed?.label || feed?.url || 'this feed'}"?`)) return;
   try {
     const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/delete`, {
-      method: 'POST', credentials: 'same-origin',
+      method:'POST', credentials:'same-origin',
     });
     if (!r.ok) throw new Error();
     _feeds = await r.json();
     _renderFeedList();
     if (_selFeed === feedId) rssSelectAll();
-  } catch {
-    alert('Could not remove feed.');
-  }
+  } catch { alert('Could not remove feed.'); }
+}
+
+function rssEditFeed(feedId) {
+  const el = document.getElementById(`rss-edit-${feedId}`);
+  el?.classList.toggle('hidden');
+}
+
+async function rssUpdateFeed(e, feedId) {
+  e.preventDefault();
+  const form  = e.target;
+  const label    = form.label.value.trim();
+  const category = form.category.value.trim();
+  const color    = form.color.value.trim();
+  try {
+    const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/update`, {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({ label, category, color }),
+    });
+    if (!r.ok) throw new Error();
+    _feeds = await r.json();
+    _renderFeedList();
+    // Refresh display labels/colors on already-loaded items
+    _rawItems = _rawItems.map(it => {
+      if (it._feedId !== feedId) return it;
+      const f = _feeds.find(f => f.id === feedId);
+      return f ? { ...it, _color: f.color, _source: f.label || f.url, _feedCategory: f.category || '' } : it;
+    });
+    _applyDisplay();
+  } catch { alert('Could not save changes.'); }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

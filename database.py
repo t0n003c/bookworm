@@ -360,6 +360,15 @@ async def init_db() -> None:
             )
         """)
 
+        # ── rss_page_feeds: add category column (migration) ──────────────────
+        try:
+            await db.execute(
+                "ALTER TABLE rss_page_feeds ADD COLUMN category TEXT NOT NULL DEFAULT ''"
+            )
+            await db.commit()
+        except Exception:
+            pass  # column already exists — idempotent
+
         # ── site_settings: persistent runtime flags (admin-toggleable) ────────
         # Separate from env vars so superadmin can change them without a restart.
         # BW_ALLOW_REGISTRATION seeds the initial value on first boot; after that
