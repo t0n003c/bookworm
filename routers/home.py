@@ -217,7 +217,11 @@ def _parse_rss(xml_text: str) -> dict:
             link_el = entry.find(f'{{{ns}}}link')
             link    = (link_el.get('href') if link_el is not None else '') or ''
             summary = (entry.findtext(f'{{{ns}}}summary') or
-                       entry.findtext(f'{{{ns}}}content') or '').strip()
+                       entry.findtext(f'{{{ns}}}content') or
+                       entry.findtext(f'{{{_NS_MEDIA}}}description') or
+                       (lambda g: g.findtext(f'{{{_NS_MEDIA}}}description') or ''
+                        if g is not None else '')(
+                           entry.find(f'{{{_NS_MEDIA}}}group')) or '').strip()
             pub     = (entry.findtext(f'{{{ns}}}published') or
                        entry.findtext(f'{{{ns}}}updated') or '').strip()
             items.append({'title': ftxt(entry, 'title'), 'link': link,
