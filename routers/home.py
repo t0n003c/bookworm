@@ -1,4 +1,5 @@
 """Home Pages router — personal dashboard with drag-and-drop widgets."""
+import html.parser
 import json
 import logging
 import re
@@ -18,9 +19,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from routers.home_db import (
     add_widget, create_home_page, delete_home_page, delete_widget,
-    duplicate_home_page, get_home_page, get_home_pages, get_widgets,
-    reorder_widgets, rename_home_page, update_page_config, update_widget_config,
-    update_widget_style,
+    duplicate_home_page, get_home_page, get_home_pages, get_widget_by_id,
+    get_widgets, reorder_widgets, rename_home_page, update_page_config,
+    update_widget_config, update_widget_style,
+)
+from routers.home_rss_db import (
+    get_all_rss_widget_feeds,
+    sync_widget_feeds_to_rss_pages,
 )
 from routers.notes_db import search_notes
 from routers.workspaces_db import get_all_workspaces
@@ -335,6 +340,111 @@ async def rss_proxy(url: str = Query(...)):
         return JSONResponse({'error': str(exc)}, status_code=500)
 
 
+# ── Article content extractor ───────────────────────────────────────────────────────
+
+class _ArticleExtractor(html.parser.HTMLParser):
+    """Minimal stdlib HTML parser that extracts readable paragraphs.
+
+    Strategy: skip noisy/chrome tags entirely, flush paragraph buffers on block
+    boundaries, keep only chunks longer than 40 chars as real paragraphs.
+    """
+    _SKIP  = frozenset({
+        'script','style','noscript','nav','header','footer','aside',
+        'form','iframe','button','input','select','textarea','svg',
+        'figure','figcaption','menu','menuitem','dialog','template',
+    })
+    _BLOCK = frozenset({
+        'p','div','li','blockquote','td','th',
+        'h1','h2','h3','h4','h5','h6',
+        'article','section','main','pre',
+    })
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._cur:  list[str] = []
+        self._paras: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if self._skip_depth or tag in self._SKIP:
+            self._skip_depth += 1
+            return
+        if tag in self._BLOCK:
+            self._flush()
+
+    def handle_endtag(self, tag):
+        if self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if tag in self._BLOCK:
+            self._flush()
+
+    def handle_data(self, data):
+        if not self._skip_depth:
+            self._cur.append(data)
+
+    def _flush(self):
+        text = ' '.join(''.join(self._cur).split()).strip()
+        if len(text) > 40:
+            self._paras.append(text)
+        self._cur = []
+
+    def result(self) -> list[str]:
+        self._flush()
+        # De-duplicate consecutive identical paragraphs (ad boilerplate)
+        seen, out = set(), []
+        for p in self._paras:
+            key = p[:80]
+            if key not in seen:
+                seen.add(key)
+                out.append(p)
+        return out
+
+
+def _extract_article(url: str) -> dict:
+    """Fetch an article URL and return {title, paragraphs, url}."""
+    text, _ = _fetch_raw(url)
+    # Best-effort title extraction
+    title_m = re.search(r'<title[^>]*>([^<]{1,200})</title>', text, re.IGNORECASE)
+    title   = title_m.group(1).strip() if title_m else ''
+    # Parse paragraphs
+    parser = _ArticleExtractor()
+    parser.feed(text)
+    paras = parser.result()
+    # Cap at ~6 000 chars total to avoid massive payloads
+    out, total = [], 0
+    for p in paras:
+        out.append(p)
+        total += len(p)
+        if total >= 6_000:
+            break
+    return {'title': title, 'paragraphs': out, 'url': url}
+
+
+@router.get('/rss/article')
+async def article_proxy(request: Request, url: str = Query(...)):
+    """Fetch a full article page and return extracted readable paragraphs.
+
+    Returns JSON: {title, paragraphs:[str], url}
+    Only http/https URLs are accepted.
+    """
+    _uid(request)  # must be logged in
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        return JSONResponse({'error': 'invalid url'}, status_code=400)
+    try:
+        loop = get_running_loop()
+        data = await loop.run_in_executor(_POOL, partial(_extract_article, url))
+        return JSONResponse(data)
+    except urllib.error.HTTPError as exc:
+        return JSONResponse({'error': f'HTTP {exc.code}'}, status_code=502)
+    except urllib.error.URLError as exc:
+        return JSONResponse({'error': str(exc.reason)}, status_code=502)
+    except Exception as exc:
+        log.warning('article_proxy error %s: %s', url, exc)
+        return JSONResponse({'error': str(exc)}, status_code=500)
+
+
 # ── CRUD: pages (specific routes MUST come before /{page_id} to avoid
 #   Starlette matching 'create'/'delete'/etc as a path parameter integer) ────
 
@@ -437,6 +547,13 @@ async def home_page_view(request: Request, page_id: int):
             tmpl = "partials/home_page.html"
         elif p_type == "rss":
             tmpl = "partials/home_page_rss.html"
+            # Auto-import feeds from every rss_feed widget this user owns.
+            # One-way only: existing reader-page feeds are never removed.
+            # This handles the migration case for widgets created before the
+            # sync hook was introduced, and is idempotent on repeat visits.
+            widget_feeds = await get_all_rss_widget_feeds(uid)
+            if widget_feeds:
+                await sync_widget_feeds_to_rss_pages(uid, widget_feeds)
         else:
             tmpl = "partials/home_page_coming_soon.html"
 
@@ -530,6 +647,9 @@ async def add_widget_handler(
     except Exception:
         config = {}
     await add_widget(page_id, widget_type, style, config)
+    # One-way sync: push new widget's feeds → all RSS reader pages for this user.
+    if widget_type == "rss_feed":
+        await sync_widget_feeds_to_rss_pages(uid, config.get("feeds") or [])
     widgets   = await get_widgets(page_id)
     all_notes = await _user_notes(uid)
     return templates.TemplateResponse(
@@ -549,6 +669,13 @@ async def update_widget(
     except Exception:
         config = {}
     await update_widget_config(widget_id, config)
+    # One-way sync: if this is an RSS feed widget, push any new feed URLs
+    # into all RSS reader pages for this user (no deletions, no reverse flow).
+    widget = await get_widget_by_id(widget_id)
+    if widget and widget.get("widget_type") == "rss_feed":
+        uid = request.session.get("user_id")
+        if uid:
+            await sync_widget_feeds_to_rss_pages(int(uid), config.get("feeds") or [])
     return HTMLResponse("", 204)
 
 

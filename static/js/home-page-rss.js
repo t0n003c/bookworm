@@ -10,17 +10,29 @@
 */
 'use strict';
 
-// ── Module state ──────────────────────────────────────────────────────────────
+// ── Module state ───────────────────────────────────────────────────
 let _pid      = 0;         // page_id
 let _feeds    = [];        // [{id,url,label,color,sort_order}]
 let _selFeed  = null;      // feed id or null = All
 let _items    = [];        // currently displayed items
 let _read     = new Set(); // guids marked read (client truth)
+let _initEl   = null;      // DOM ref of the #rss-page-root that was last initialised
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ─────────────────────────────────────────────────────────────────────
 async function initRssPage(pageId) {
-  _pid  = pageId;
-  // Bootstrap read set from server (then localStorage as a fast local cache)
+  // Guard against double-init on the *same DOM element*.
+  // Each innerHTML swap creates brand-new DOM nodes, so comparing element
+  // references (not just pageId) correctly re-initialises after navigate-away
+  // then navigate-back to the same page.
+  const root = document.getElementById('rss-page-root');
+  if (!root || _initEl === root) return;
+  _initEl = root;
+
+  _pid     = pageId;
+  _read    = new Set();   // reset read state for new page context
+  _feeds   = [];
+  _items   = [];
+  _selFeed = null;
   await _syncReadFromServer();
   await _loadFeeds();
   _initAddForm();
@@ -31,15 +43,6 @@ function _esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
                         .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
-function _post(url, body = {}) {
-  return fetch(url, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(body),
-  });
-}
-
 function _fmtDate(iso) {
   if (!iso) return '';
   try {
@@ -179,17 +182,42 @@ function _highlightFeedButtons() {
   });
 }
 
+// ── Map server JSON → client item format ─────────────────────────────────────
+// The /home/rss proxy already parses RSS/Atom and returns:
+//   { feed_title, items: [{title, link, description, pub_date, thumbnail}] }
+// We map that to the shape _renderItems() expects.
+function _mapServerItems(rawItems, color, source) {
+  return (rawItems || []).map(it => {
+    const raw = it.pub_date || '';
+    const d   = raw ? new Date(raw) : null;
+    const ts  = d && !isNaN(d) ? d.getTime() : 0;
+    return {
+      guid:      it.link || it.title || String(Math.random()),
+      title:     it.title || '(No title)',
+      link:      it.link  || '',
+      desc:      it.description || '',
+      thumbnail: it.thumbnail   || '',
+      pubDate:   raw,
+      _ts:       ts,
+      _date:     d && !isNaN(d) ? _fmtDate(d.toISOString()) : '',
+      _color:    color,
+      _source:   source,
+    };
+  });
+}
+
 // ── Item loading ──────────────────────────────────────────────────────────────
 async function _loadFeedItems(url) {
   _showItemsLoading();
   try {
-    const r   = await fetch(`/home/rss?url=${encodeURIComponent(url)}`);
+    const r    = await fetch(`/home/rss?url=${encodeURIComponent(url)}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const xml  = await r.text();
-    const feed = _feeds.find(f => f.url === url);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    const feed  = _feeds.find(f => f.url === url);
     const color = feed?.color || '#0053e2';
     const label = feed?.label || url;
-    _items = _parseRss(xml).map(it => ({ ...it, _color: color, _source: label }));
+    _items = _mapServerItems(data.items, color, label);
     _renderItems(_items);
     _updateUnreadBadge();
   } catch (e) {
@@ -210,17 +238,17 @@ async function _loadAllItems() {
   const results = await Promise.allSettled(
     _feeds.map(f =>
       fetch(`/home/rss?url=${encodeURIComponent(f.url)}`)
-        .then(r => r.ok ? r.text() : Promise.reject(r.status))
-        .then(xml => ({ xml, feed: f }))
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(data => ({ data, feed: f }))
     )
   );
   const all = [];
   for (const res of results) {
     if (res.status !== 'fulfilled') continue;
-    const { xml, feed } = res.value;
-    _parseRss(xml).forEach(it =>
-      all.push({ ...it, _color: feed.color, _source: feed.label || feed.url })
-    );
+    const { data, feed } = res.value;
+    if (data.error) continue;
+    _mapServerItems(data.items, feed.color, feed.label || feed.url)
+      .forEach(it => all.push(it));
   }
   // Sort newest-first
   all.sort((a, b) => (b._ts || 0) - (a._ts || 0));
@@ -238,52 +266,6 @@ function _showItemsLoading() {
 function _showItemsError(msg) {
   document.getElementById('rss-items-panel').innerHTML =
     `<div class="p-4 text-sm text-red-500 text-center mt-4">${_esc(msg)}</div>`;
-}
-
-// ── RSS / Atom parser ─────────────────────────────────────────────────────────
-function _parseRss(xmlText) {
-  let doc;
-  try { doc = new DOMParser().parseFromString(xmlText, 'text/xml'); }
-  catch { return []; }
-
-  const rssItems = doc.querySelectorAll('item');
-  if (rssItems.length) return [...rssItems].map(_parseRssItem);
-
-  const atomEntries = doc.querySelectorAll('entry');
-  return [...atomEntries].map(_parseAtomEntry);
-}
-
-function _parseRssItem(el) {
-  const t = tag => el.querySelector(tag)?.textContent?.trim() ?? '';
-  const raw  = t('pubDate') || t('dc\\:date') || t('date');
-  const d    = raw ? new Date(raw) : null;
-  return {
-    guid:    t('guid') || t('link') || String(Math.random()),
-    title:   t('title') || '(No title)',
-    link:    t('link'),
-    desc:    t('description') || t('summary'),
-    pubDate: raw,
-    _ts:     d?.getTime() ?? 0,
-    _date:   d ? _fmtDate(d.toISOString()) : '',
-  };
-}
-
-function _parseAtomEntry(el) {
-  const t   = tag => el.querySelector(tag)?.textContent?.trim() ?? '';
-  const lnk = el.querySelector('link[rel="alternate"]')?.getAttribute('href')
-            || el.querySelector('link')?.getAttribute('href')
-            || t('id');
-  const raw = t('updated') || t('published');
-  const d   = raw ? new Date(raw) : null;
-  return {
-    guid:    t('id') || lnk || String(Math.random()),
-    title:   t('title') || '(No title)',
-    link:    lnk,
-    desc:    t('summary') || t('content'),
-    pubDate: raw,
-    _ts:     d?.getTime() ?? 0,
-    _date:   d ? _fmtDate(d.toISOString()) : '',
-  };
 }
 
 // ── Render item cards ─────────────────────────────────────────────────────────
@@ -320,7 +302,7 @@ function _renderItems(items) {
   }).join('');
 }
 
-// ── Open item (preview) ───────────────────────────────────────────────────────
+// ── Open item (preview) ──────────────────────────────────────────────────────────────
 function rssOpenItem(idx) {
   const it = _items[idx];
   if (!it) return;
@@ -337,12 +319,33 @@ function rssOpenItem(idx) {
 
 function _showPreview(it) {
   const panel = document.getElementById('rss-preview-panel');
-  // Strip script/iframe tags from description (basic sanitize)
-  const safe  = (it.desc || '').replace(/<(script|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, '');
+
+  // Strip dangerous tags from feed description; keep safe HTML
+  const safe = (it.desc || '')
+    .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(script|iframe|object|embed|form)(\s[^>]*)?\/>/gi, '')
+    .trim();
+
+  // Decide whether to offer "Load full article"
+  // Strip all tags to get raw text length for the heuristic
+  const textLen = safe.replace(/<[^>]+>/g, '').trim().length;
+  const canLoad = it.link && textLen < 400;
+
+  // Thumbnail — proxy through /home/img so Walmart firewall doesn't block it
+  const thumbHtml = it.thumbnail
+    ? `<img src="/home/img?url=${encodeURIComponent(it.thumbnail)}"
+            alt=""
+            class="w-full max-h-64 object-cover rounded-xl mb-5
+                   bg-gray-100 dark:bg-zinc-800"
+            onerror="this.style.display='none'">`
+    : '';
+
   panel.innerHTML = `
     <div class="max-w-2xl mx-auto px-6 py-6">
 
       <div class="flex items-center gap-2 text-[11px] text-gray-400 dark:text-zinc-500 mb-3">
+        <span class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+              style="background:${_esc(it._color || '#0053e2')}"></span>
         ${it._source ? `<span class="font-medium text-gray-500 dark:text-zinc-400">${_esc(it._source)}</span><span>·</span>` : ''}
         <span>${it._date || ''}</span>
       </div>
@@ -351,20 +354,68 @@ function _showPreview(it) {
         ${_esc(it.title)}
       </h2>
 
-      ${it.link ? `
-        <a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
-           class="inline-flex items-center gap-1.5 px-4 py-2 mb-5 text-sm font-semibold
-                  bg-[#0053e2] text-white rounded-lg hover:bg-[#003eb3] transition">
-          Open Article <span aria-hidden="true">↗</span>
-        </a>` : ''}
+      ${thumbHtml}
 
-      <div class="prose prose-sm dark:prose-invert max-w-none
-                  text-gray-700 dark:text-zinc-300 leading-relaxed
+      <div id="rss-preview-body"
+           class="prose prose-sm dark:prose-invert max-w-none
+                  text-gray-700 dark:text-zinc-300 leading-relaxed mb-5
                   [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2
                   [&_a]:text-[#0053e2] [&_a:hover]:underline">
-        ${safe || '<p class="text-gray-400 italic">No preview available — click Open Article to read.</p>'}
+        ${safe || '<p class="text-gray-400 italic">No preview in feed — load the full article below.</p>'}
+      </div>
+
+      <div class="flex items-center gap-3 flex-wrap">
+        ${it.link ? `
+          <a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
+             class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                    bg-[#0053e2] text-white rounded-lg hover:bg-[#003eb3] transition">
+            Open Article <span aria-hidden="true">↗</span>
+          </a>` : ''}
+        ${canLoad ? `
+          <button id="rss-load-full-btn"
+                  onclick="_rssLoadFullArticle('${_esc(it.link)}')"
+                  class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                         border border-gray-300 dark:border-zinc-600
+                         text-gray-700 dark:text-zinc-200 rounded-lg
+                         hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+            📖 Load Full Article
+          </button>` : ''}
       </div>
     </div>`;
+}
+
+async function _rssLoadFullArticle(url) {
+  const btn  = document.getElementById('rss-load-full-btn');
+  const body = document.getElementById('rss-preview-body');
+  if (!btn || !body) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Loading…';
+
+  try {
+    const r    = await fetch(`/home/rss/article?url=${encodeURIComponent(url)}`);
+    const data = await r.json();
+
+    if (!r.ok || data.error) throw new Error(data.error || 'fetch failed');
+
+    if (!data.paragraphs || !data.paragraphs.length) {
+      body.innerHTML = '<p class="text-gray-400 italic">Could not extract article content. Try opening it directly.</p>';
+      btn.remove();
+      return;
+    }
+
+    body.innerHTML = data.paragraphs
+      .map(p => `<p>${_esc(p)}</p>`)
+      .join('');
+    btn.remove();
+  } catch {
+    body.insertAdjacentHTML(
+      'afterend',
+      '<p class="text-red-400 text-sm mt-2">Could not load article. Try opening it directly.</p>'
+    );
+    btn.disabled    = false;
+    btn.textContent = '📖 Load Full Article';
+  }
 }
 
 // ── Add / Delete feeds ────────────────────────────────────────────────────────
