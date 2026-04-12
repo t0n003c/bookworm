@@ -17,6 +17,7 @@ let _pid         = 0;
 let _feeds       = [];        // [{id,url,label,color,category,sort_order}]
 let _selFeed     = null;      // selected feed id, or null = All
 let _selCategory = null;      // selected category string, or null
+let _selItemCat  = null;      // selected article-level topic tag, or null
 let _rawItems    = [];        // fetched items before filter/sort
 let _items       = [];        // currently displayed items
 let _sortMode    = 'newest';  // 'newest' | 'oldest'
@@ -31,7 +32,7 @@ async function initRssPage(pageId) {
   _initEl = root;
   _pid = pageId;
   _read = new Set(); _feeds = []; _rawItems = []; _items = [];
-  _selFeed = null; _selCategory = null;
+  _selFeed = null; _selCategory = null; _selItemCat = null;
   _sortMode = 'newest'; _filterMode = 'all';
   await _syncReadFromServer();
   await _loadFeeds();
@@ -128,6 +129,9 @@ function _renderFeedList() {
 
   if (!_feeds.length) {
     list.innerHTML = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 text-center py-3 px-2">No feeds yet</p>';
+    // Hide top cat bar so it doesn't linger after all feeds are deleted
+    var topBarEl = document.getElementById('rss-top-cat-bar');
+    if (topBarEl) { topBarEl.classList.add('hidden'); topBarEl.innerHTML = ''; }
     return;
   }
 
@@ -155,19 +159,63 @@ function _renderFeedList() {
   });
 
   list.innerHTML = html.join('');
+  _renderTopCatBar();
+}
+
+// ── Top category filter bar (full-width strip below page title bar) ────────────
+function _renderTopCatBar() {
+  const el = document.getElementById('rss-top-cat-bar');
+  if (!el) return;
+
+  const cats = [...new Set(_feeds.map(f => f.category).filter(Boolean))].sort();
+
+  if (!cats.length) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+
+  el.classList.remove('hidden');
+
+  const isAll = (_selFeed === null && _selCategory === null);
+  const baseBtn = 'flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full border transition';
+  const active  = 'bg-[#0053e2] text-white border-[#0053e2]';
+  const idle    = 'border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300'
+                + ' hover:border-[#0053e2] hover:text-[#0053e2] dark:hover:text-blue-300';
+
+  let html = `<button onclick="rssSelectAll()" aria-pressed="${isAll}"
+    class="${baseBtn} ${isAll ? active : idle}">All</button>`;
+
+  cats.forEach(cat => {
+    const on = (_selCategory === cat);
+    html += `<button onclick="rssSelectCategory(${JSON.stringify(cat)})" aria-pressed="${on}"
+      class="${baseBtn} ${on ? active : idle}">${_esc(cat)}</button>`;
+  });
+
+  el.innerHTML = html;
 }
 
 function _feedRow(f) {
   const isActive = String(_selFeed) === String(f.id);
+  const src = (window._rssWidgetSources || {})[f.id];
+  const badge = src
+    ? '<span class="block text-[9px] text-[#0053e2] dark:text-blue-400 truncate leading-tight mt-0.5"'
+      + ' title="Synced from ' + _esc(src.page_name) + ' › ' + _esc(src.widget_label) + '">'
+      + '📌 ' + _esc(src.page_emoji) + ' ' + _esc(src.page_name) + ' › ' + _esc(src.widget_label)
+      + '</span>'
+    : '';
   return `
     <div data-feed-id="${f.id}" class="rounded-lg overflow-hidden">
       <div class="flex items-center gap-1 group px-1 py-0.5
                   ${isActive ? 'bg-blue-50 dark:bg-zinc-700' : 'hover:bg-gray-100 dark:hover:bg-zinc-800'} transition">
         <button onclick="rssSelectFeed(${f.id})"
-                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1 text-sm
+                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1
                        ${isActive ? 'font-semibold text-[#0053e2] dark:text-blue-300' : 'text-gray-700 dark:text-zinc-200'}">
-          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${_esc(f.color)}"></span>
-          <span class="truncate">${_esc(f.label || f.url)}</span>
+          <span class="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style="background:${_esc(f.color)}"></span>
+          <span class="flex-1 min-w-0">
+            <span class="truncate block text-sm">${_esc(f.label || f.url)}</span>
+            ${badge}
+          </span>
         </button>
         <button onclick="rssEditFeed(${f.id})" title="Edit feed"
                 class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-blue-500
@@ -204,37 +252,59 @@ function _feedRow(f) {
     </div>`;
 }
 
-// ── BookWorm-styled toast (reuses the reminder popup container) ─────────────
+// ── BookWorm-styled toast — matches _showReminderToast in home-widgets-render.js ──
 function _rssToast(msg, isErr) {
   var wrap = document.getElementById('rem-fun-popup-wrap');
   if (!wrap) return;
+  var dur  = 6000;
   var card = document.createElement('div');
-  card.className = 'pointer-events-auto w-72 rounded-xl shadow-lg overflow-hidden'
+  card.className = 'pointer-events-auto w-72 overflow-hidden rounded-xl shadow-lg'
     + ' bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700'
     + ' animate-[bw-slideup_.3s_cubic-bezier(.17,.67,.38,1.3)_both]';
-  card.style.borderLeft = '3px solid ' + (isErr ? '#ea1100' : '#2a8703');
-  card.innerHTML = '<div class="flex items-center gap-3 px-4 py-3">'
-    + '<span class="text-lg" aria-hidden="true">' + (isErr ? '⚠️' : '✅') + '</span>'
-    + '<p class="flex-1 text-sm ' + (isErr ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400') + '">' + _esc(msg) + '</p>'
-    + '<button data-rc aria-label="Dismiss" class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 text-xl leading-none px-1">&times;</button>'
-    + '</div>';
-  var tid;
-  var dismiss = function() { clearTimeout(tid); card.style.cssText += 'opacity:0;transition:opacity .35s;'; setTimeout(function() { card.remove(); }, 350); };
-  card.querySelector('[data-rc]').addEventListener('click', dismiss);
+  card.style.cssText = 'border-left:3px solid ' + (isErr ? '#ea1100' : '#2a8703') + ';';
+  card.innerHTML =
+    '<div class="flex items-start gap-3 px-4 pt-3 pb-2">'
+    + '<span class="flex-shrink-0 mt-0.5 text-xl" aria-hidden="true">' + (isErr ? '⚠️' : '✅') + '</span>'
+    + '<div class="flex-1 min-w-0">'
+    + '<p class="text-[11px] font-bold uppercase tracking-wider mb-0.5 '
+    + (isErr ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400') + '">'
+    + (isErr ? 'Error' : 'Saved') + '</p>'
+    + '<p class="text-sm text-gray-800 dark:text-zinc-100 leading-snug">' + _esc(msg) + '</p>'
+    + '</div>'
+    + '<button data-rc aria-label="Dismiss" class="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded'
+    + ' text-gray-300 hover:text-gray-600 dark:hover:text-zinc-300 transition">'
+    + '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
+    + '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
+    + '</button></div>'
+    + '<div class="h-0.5 bg-gray-100 dark:bg-zinc-800 mx-4 mb-2 rounded-full overflow-hidden">'
+    + '<div data-rc-bar class="h-full rounded-full" style="width:100%;background:'
+    + (isErr ? '#ea1100' : '#2a8703') + '"></div></div>';
+  var dismiss = function() {
+    card.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+    card.style.opacity    = '0';
+    card.style.transform  = 'translateX(1rem)';
+    setTimeout(function() { card.remove(); }, 350);
+  };
+  var tid = setTimeout(dismiss, dur);
+  card.querySelector('[data-rc]').addEventListener('click', function() { clearTimeout(tid); dismiss(); });
   wrap.appendChild(card);
-  tid = setTimeout(dismiss, 6000);
+  requestAnimationFrame(function() { requestAnimationFrame(function() {
+    var bar = card.querySelector('[data-rc-bar]');
+    bar.style.transition = 'width ' + dur + 'ms linear';
+    bar.style.width = '0%';
+  }); });
 }
 
 // ── Feed selection ────────────────────────────────────────────────────────────
 async function rssSelectAll() {
-  _selFeed = null; _selCategory = null;
+  _selFeed = null; _selCategory = null; _selItemCat = null;
   _renderFeedList();
   document.getElementById('rss-items-title').textContent = 'All Feeds';
   await _loadAllItems();
 }
 
 async function rssSelectFeed(feedId) {
-  _selFeed = feedId; _selCategory = null;
+  _selFeed = feedId; _selCategory = null; _selItemCat = null;
   _renderFeedList();
   const feed = _feeds.find(f => f.id === feedId);
   document.getElementById('rss-items-title').textContent = _esc(feed?.label || feed?.url || 'Feed');
@@ -242,10 +312,16 @@ async function rssSelectFeed(feedId) {
 }
 
 async function rssSelectCategory(cat) {
-  _selFeed = null; _selCategory = cat;
+  _selFeed = null; _selCategory = cat; _selItemCat = null;
   _renderFeedList();
   document.getElementById('rss-items-title').textContent = `📁 ${_esc(cat)}`;
   await _loadAllItems();  // loads all; _applyDisplay will filter to category
+}
+
+function rssSelectItemCat(cat) {
+  // Toggle: clicking active pill deselects it
+  _selItemCat = (_selItemCat === cat) ? null : cat;
+  _applyDisplay();
 }
 
 // ── Display: filter + sort ────────────────────────────────────────────────────
@@ -260,10 +336,18 @@ function rssApplyDisplay() {
 function _applyDisplay() {
   let items = [..._rawItems];
 
-  // Category filter (when viewing a category, not a specific feed)
+  // Feed-category filter (when viewing a feed group, not a specific feed)
   if (_selCategory && _selFeed === null) {
     const inCat = new Set(_feeds.filter(f => f.category === _selCategory).map(f => f.id));
     items = items.filter(it => inCat.has(it._feedId));
+  }
+
+  // Article-level topic filter (per-item RSS <category> tags)
+  if (_selItemCat) {
+    const needle = _selItemCat.toLowerCase();
+    items = items.filter(it =>
+      (it.item_categories || []).some(c => c.toLowerCase() === needle)
+    );
   }
 
   // Read/unread filter
@@ -278,9 +362,45 @@ function _applyDisplay() {
   _items = items;
   _renderItems(_items);
   _updateUnreadBadge();
+  _renderItemCatPills();
 
   const countEl = document.getElementById('rss-all-count');
   if (countEl) countEl.textContent = _items.length > 0 ? String(_items.length) : '';
+}
+
+// ── Article-level topic pills ─────────────────────────────────────────────────
+function _renderItemCatPills() {
+  const el = document.getElementById('rss-item-cat-pills');
+  if (!el) return;
+
+  // Collect all unique categories from raw items (not filtered items, so pills
+  // stay stable while a filter is active — UX parity with _renderTopCatBar)
+  const seen = new Map();  // lowercase → display string (first-seen casing wins)
+  _rawItems.forEach(it => {
+    (it.item_categories || []).forEach(c => {
+      const key = c.toLowerCase();
+      if (c && !seen.has(key)) seen.set(key, c);
+    });
+  });
+
+  if (!seen.size) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+
+  el.classList.remove('hidden');
+  const sorted = [...seen.values()].sort((a, b) => a.localeCompare(b));
+  el.innerHTML = sorted.map(cat => {
+    const active = _selItemCat !== null && _selItemCat.toLowerCase() === cat.toLowerCase();
+    return '<button onclick="rssSelectItemCat(' + JSON.stringify(cat) + ')"'
+      + ' class="text-[10px] px-2 py-0.5 rounded-full border transition flex-shrink-0 '
+      + (active
+          ? 'bg-[#ffc220] text-[#5a3a00] border-[#ffc220] font-semibold'
+          : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400'
+            + ' hover:border-[#ffc220] hover:text-[#995213]')
+      + '" title="Filter by topic: ' + _esc(cat) + '">' + _esc(cat) + '</button>';
+  }).join('');
 }
 
 // ── Map server JSON → client item format ──────────────────────────────────────
@@ -290,18 +410,19 @@ function _mapServerItems(rawItems, feed) {
     const d   = raw ? new Date(raw) : null;
     const ts  = d && !isNaN(d) ? d.getTime() : 0;
     return {
-      guid:      it.link || it.title || String(Math.random()),
-      title:     it.title || '(No title)',
-      link:      it.link  || '',
-      desc:      it.description || '',
-      thumbnail: it.thumbnail   || '',
-      pubDate:   raw,
-      _ts:       ts,
-      _date:     ts ? _fmtDate(new Date(ts).toISOString()) : '',
-      _color:    feed.color,
-      _source:   feed.label || feed.url,
-      _feedId:   feed.id,
-      _feedCategory: feed.category || '',
+      guid:           it.link || it.title || String(Math.random()),
+      title:          it.title || '(No title)',
+      link:           it.link  || '',
+      desc:           it.description || '',
+      thumbnail:      it.thumbnail   || '',
+      pubDate:        raw,
+      _ts:            ts,
+      _date:          ts ? _fmtDate(new Date(ts).toISOString()) : '',
+      _color:         feed.color,
+      _source:        feed.label || feed.url,
+      _feedId:        feed.id,
+      _feedCategory:  feed.category || '',
+      item_categories: it.categories || [],
     };
   });
 }
@@ -489,7 +610,9 @@ function _initAddForm() {
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body: new URLSearchParams({ url, label: lblIn.value.trim(), category: catIn.value.trim() }),
       });
-      if (!r.ok) throw new Error(await r.text());
+      if (r.redirected || !r.ok) {
+        throw new Error(r.redirected ? 'Session expired — please refresh.' : await r.text());
+      }
       _feeds = await r.json();
       urlIn.value = ''; lblIn.value = ''; catIn.value = '';
       _renderFeedList();
@@ -535,8 +658,9 @@ async function rssDeleteFeed(e, feedId) {
         method: 'POST', credentials: 'same-origin',
       });
       const ct = r.headers.get('Content-Type') || '';
-      if (!r.ok || !ct.includes('application/json')) {
-        throw new Error(r.status === 401 ? 'session_expired' : 'server_error');
+      // r.redirected catches auth-middleware 302→login (fetch follows → 200 HTML)
+      if (r.redirected || !r.ok || !ct.includes('application/json')) {
+        throw new Error((r.redirected || r.status === 401) ? 'session_expired' : 'server_error');
       }
       _feeds = await r.json();
       _renderFeedList();
@@ -574,8 +698,10 @@ async function rssUpdateFeed(e, feedId) {
       body: new URLSearchParams({ label, category, color }),
     });
     const ct = r.headers.get('Content-Type') || '';
-    if (!r.ok || !ct.includes('application/json')) {
-      throw new Error(r.status === 401 ? 'session_expired' : 'server_error');
+    // r.redirected = true when auth middleware redirected to /login (fetch follows 302→HTML).
+    // Checking only r.status===401 would miss this case since the redirect resolves as 200.
+    if (r.redirected || !r.ok || !ct.includes('application/json')) {
+      throw new Error((r.redirected || r.status === 401) ? 'session_expired' : 'server_error');
     }
     _feeds = await r.json();
     _renderFeedList();
