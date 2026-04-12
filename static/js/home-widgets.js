@@ -866,7 +866,10 @@ function _initSwappedPage() {
     if (pid && typeof initRssPage === 'function') {
       try { initRssPage(pid); } catch(e) { console.error('[home] initRssPage:', e); }
     }
-    return; // RSS page has no widget canvas — stop here
+    // Not a widget canvas — no Add Widget button needed
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
   }
   // CRM page
   const crmRoot = document.getElementById('crm-page-root');
@@ -875,9 +878,12 @@ function _initSwappedPage() {
     if (pid && typeof initCrmPage === 'function') {
       try { initCrmPage(pid); } catch(e) { console.error('[home] initCrmPage:', e); }
     }
-    return; // CRM page has no widget canvas — stop here
+    // Not a widget canvas — no Add Widget button needed
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
   }
-  // Dashboard (widget canvas)
+  // Dashboard (widget canvas) — Add Widget button already set by showHomePage()
   try { initHomeWidgets(); } catch(e) { console.error('[home] initHomeWidgets:', e); }
 }
 
