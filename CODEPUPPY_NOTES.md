@@ -171,8 +171,20 @@
 **`note_attributes`** — per-note custom field values
 **`note_attachments`** — file metadata (actual files in `UPLOAD_DIR`)
 **`workspace_categories`** — M2M: workspaces ↔ categories (which tags are available per WS)
-**`home_pages`** — personal dashboard pages (`user_id, name, emoji, sort_order, config_json`)
+**`home_pages`** — personal dashboard pages (`user_id, name, emoji, sort_order, config_json, page_type`)
 **`home_widgets`** — widgets on a page (`page_id, widget_type, style, config_json, sort_order`)
+
+**`rss_page_feeds`**
+- `id, page_id, user_id, url, label, color, sort_order, created_at`
+- `category` — added via migration (feed category tag for pill filter UI)
+- `source_widget_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL` — added via migration
+  - `NULL` = manually added feed; non-NULL = synced from that RSS widget on the home page
+  - FK enforced by `get_db()` (`PRAGMA foreign_keys = ON`)
+  - Widget deleted → FK `ON DELETE SET NULL` auto-clears the link; feed is kept, badge disappears
+  - `UNIQUE(page_id, url)` — first-writer wins if two widgets sync the same URL (known limitation)
+
+**`rss_read_items`** — per-user persistent read state (`user_id, page_id, item_guid, read_at`; PK = all three)
+**`site_settings`** — admin-toggleable runtime flags (`key, value`); `registration_open` seeds from `BW_ALLOW_REGISTRATION` on first boot only
 
 ---
 
@@ -190,16 +202,22 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 | `note_link` | `default` | Quick-link card to a specific note |
 | `timer` | `default` | Stopwatch |
 | `countdown` | `default` | Countdown to a target date |
+| `event` | `default` | Calendar event tracker with repeating-recurrence rules + countdown badges |
 | `title` | `plain`, `ruled`, `badge`, `gradient`, `neon`, `typewriter`, `marquee`, `sticky`, `rainbow` | Section header text (banner style moved to its own widget) |
 | `banner` | `cinema`, `oversize`, `slate`, `infrared`, `studio`, `editorial`, `dusk`, `amber` | Full-bleed banner header widget |
 | `divider` | `default` | Visual separator |
 | `text` | `default` | Rich text block |
 | `sticky` | `paper`, `grid`, `kraft`, `chalk`, `memo` | Sticky note (editable text, distinct surface styles) |
+| `quote` | `default` | Pull-quote block |
+| `rss_feed` | `card`, `compact`, `minimal` | RSS feed widget; feeds auto-sync to linked RSS Reader pages |
 
 **Jinja2 filters used by widget templates** (all registered in `templates_env.py`):
 - `fmt_bytes` — human-readable file sizes
 - `fmt_reminder_date` — `'2025-01-06'` → `'Today'`, `'Tomorrow'`, `'Jan 6'`
 - `sort_reminders` — sorts reminder items by date then time
+- `evt_prepare_items` — sort/enrich event widget items with next-occurrence date, countdown badge, and repeat label
+- `local_time` — UTC datetime string → server-local time string (e.g. `'6:19 PM'`)
+- `local_date` — UTC datetime string → server-local date string (e.g. `'2025-04-07'`)
 - `tojson` — JSON serialisation with `default=str`
 
 > ⚠️ **Critical rule:** ALL new Jinja2 filters MUST be added to `templates_env.py`
@@ -212,7 +230,8 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 
 - Session-based via `starlette.middleware.sessions` (30-day cookie TTL)
 - `AuthMiddleware` in `auth_middleware.py` intercepts unauthenticated requests
-- Public routes (bypass auth): `/login`, `/logout`, `/register`, `/setup`, `/static/`
+- Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`
+- `/static/` prefix is allowed separately via path-prefix check, not via `_PUBLIC`
 - First-run: `/setup` creates the first user (role=`superadmin`). Blocked if any user exists.
 - Optional **TOTP 2FA** per user (`routers/totp.py`). QR code setup + verify flow.
 - Role system: `user` (regular) and `superadmin` (can manage all users via admin panel)
@@ -241,7 +260,7 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 
 ---
 
-## ✅ Features Completed (as of 2026-04-05)
+## ✅ Features Completed (as of 2026-04-11)
 
 - [x] Multi-user auth (login/logout/register/setup) with session management
 - [x] Optional per-user TOTP 2FA
@@ -260,25 +279,98 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 - [x] Reminder widget — `default` + `agenda` (day-planner) style variants
 - [x] `sort_reminders` Jinja2 filter + `fmt_reminder_date` filter
 - [x] Browser notification support for reminders (in progress — last session)
+- [x] **RSS widget → RSS Reader page one-way sync** — widget feeds auto-pushed to all `rss` pages on widget create / settings save / page load. Each synced feed now stores `source_widget_id` (FK to `home_widgets`) so the reader knows which widget it came from. Widget deleted → `source_widget_id` SET NULL automatically (FK cascade), feed retained as "Manual". Direct reader-page feeds are independent. `INSERT OR IGNORE` = first-writer wins if two widgets share a URL (known limitation).
+- [x] **RSS Reader: category filter top bar** — `<div id="rss-top-cat-bar">` full-width bar between page title and 3-column layout; `_renderTopCatBar()` called at end of `_renderFeedList()` and early-return path. Hidden when no categories exist. (Supersedes sidebar `#rss-cat-pills` + `_renderCatPills()`, which were removed.)
+- [x] **RSS Reader: widget source badge** — each feed row shows a 📌 `PageName › WidgetLabel` badge when `source_widget_id` is set. Badge data injected via `window._rssWidgetSources` (built server-side by `_build_widget_sources()` in `routers/home.py`; short-circuits to `{}` when no feeds have a source widget). Widget deleted → badge disappears automatically (FK SET NULL).
+- [x] **4 BookWorm-specific Code Puppy skills created** — `bookworm-widget-scaffolder`, `bookworm-pre-commit`, `bookworm-db-migration`, `bookworm-template-audit` (see 🐾 Skills section below)
 
 ---
 
-## 🚧 In Progress / Last Session Work (2026-04-05 ~5:22 PM)
+## 🚧 In Progress / Last Session Work (2026-04-11 ~8:26 PM)
 
-Last commit message: **`feat(home): differentiate todo list/compact, reminder list/agenda, add browser notifications`**
+Last commit message: **`feat(rss): category pills, widget-source badge, widget-deletion unlink (Step 12 of 13)`**
 
-Files modified in last session:
-1. `routers/home.py` — home routes (reminder notification endpoints possibly)
-2. `templates/base.html` — likely notification permission prompt or SW registration
-3. `static/js/home-widgets.js` — widget CRUD core
-4. `static/js/home-widgets-render.js` — render engines (reminder + todo updates)
-5. `static/js/home-widget-text.js` — text widget
-6. `static/js/slash_commands.js` — slash command palette
-7. `templates/partials/home_page.html` — widget macros (reminder agenda style added)
-8. `templates/partials/index.html` + `templates_env.py` — filter additions
+Three features shipped this session — all in the RSS Reader:
 
-**Current status:** App is healthy and running (HTTP 200). All templates parse cleanly.
-The `sort_reminders` filter is fully wired. Browser notification feature may be partially done.
+1. **Category filter top bar** (`templates/partials/home_page_rss.html`, `static/js/home-page-rss.js`)
+   - ~~`<div id="rss-cat-pills">` sidebar pill strip~~ → replaced by `<div id="rss-top-cat-bar">` full-width bar between page title and 3-column layout.
+   - ~~`_renderCatPills()`~~ → replaced by `_renderTopCatBar()` — called at end of `_renderFeedList()` and in early-return path.
+   - Hidden when no categories exist.
+
+2. **Widget source badge** (`routers/home.py`, `routers/home_rss_db.py`, `routers/home_db.py`, `static/js/home-page-rss.js`, `templates/partials/home_page_rss.html`)
+   - New `source_widget_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL` column in `rss_page_feeds` (idempotent migration in `database.py`).
+   - `_build_widget_sources(feeds, uid)` async helper in `routers/home.py` — builds `{feed_id: {widget_label, page_name, page_emoji}}` lookup; short-circuits to `{}` when no feeds have `source_widget_id` set. Known N+1 pattern — tracked as tech debt, acceptable at current feed counts.
+   - Template injects `<script>var _rssWidgetSources = {{ widget_sources | tojson | safe }};</script>` at bottom.
+   - `_feedRow()` reads `(window._rssWidgetSources || {})[f.id]` and renders 📌 badge.
+
+3. **Widget deletion → feed unlink (automatic via FK)** (`routers/home.py`)
+   - No extra Python delete logic needed.
+   - `source_widget_id ON DELETE SET NULL` FK handles it automatically when `get_db()` has `PRAGMA foreign_keys = ON` (which it always does).
+   - Comment added to `del_widget` to document this.
+
+**Updated functions this session:**
+- `routers/home_rss_db.py`: `get_page_feeds`, `add_page_feed`, `sync_widget_feeds_to_rss_pages`, `get_all_rss_widget_feeds` — all include `source_widget_id` in SELECTs/INSERTs
+- `routers/home_db.py`: `get_all_rss_widget_feeds` — SELECT includes `hw.id AS widget_id`
+- `routers/home.py`: `add_widget_handler`, `update_widget`, `home_page_view` (rss branch), `del_widget`
+
+**Sync rules (updated):**
+- **Widget created/saved** → feeds pushed **with `source_widget_id` = widget's ID**
+- **Widget deleted** → `source_widget_id` SET NULL automatically (FK); feed retained as "Manual"
+- **Reader page feeds** → never flow back to widget
+- `INSERT OR IGNORE` = first-writer wins if two widgets sync the same URL (known limitation)
+
+**Current status:** App healthy. Docs sync in progress (Step 12 of 13). Pre-commit check is Step 13.
+
+---
+
+## 🐾 Code Puppy Skills (BookWorm-specific)
+
+Skills live at `C:\Users\t0n003c\.claude\skills\` — **user-global, not in the BookWorm project folder**.
+They are available from any project but won't auto-trigger on non-BookWorm work (BookWorm-prefixed names + scoped descriptions keep them isolated).
+
+| Skill | When to use |
+|---|---|
+| `bookworm-widget-scaffolder` | Adding a new home widget type. Touches all 9 required files in order. |
+| `bookworm-pre-commit` | Before any git commit or PR. Runs 10-phase BookWorm-specific safety checklist. |
+| `bookworm-db-migration` | Adding/changing tables or columns in `bookworm.db`. Generates idempotent SQL + dry-run. |
+| `bookworm-template-audit` | After adding templates or JS. Catches HTMX/Jinja2 bugs specific to this codebase. |
+
+**Invoke with**: `activate_skill('bookworm-widget-scaffolder')` etc., or just ask Eddie to scaffold a widget / run pre-commit checks.
+
+---
+
+## 🤖 Code Puppy Agents (BookWorm-specific)
+
+Agents live at `C:\Users\t0n003c\.code_puppy\agents\` — **user-global, not in the BookWorm project folder**.
+All have `bookworm-` prefix so they won't auto-trigger on other projects.
+
+### Orchestrator
+
+| Agent | Role |
+|---|---|
+| `bookworm-dev` 🎼 | Single entry point for ALL BookWorm tasks. Routes to the right agent or skill, chains/parallelizes them, falls back to Eddie if out of scope. |
+
+### Specialist Agents
+
+| Agent | When to use |
+|---|---|
+| `bookworm-feature-planner` 📋 | Before writing any code. Reads codebase → produces PLAN.md with files to touch, DB migrations, gotchas flagged. |
+| `bookworm-qa` 🧪 | After changes or before committing. Hits real endpoints, scans error logs, runs `_health_check.py`. Reports 🟢/🟡/🔴 status. |
+| `bookworm-perf-detective` 🔍 | When something feels slow. Hunts N+1 queries, missing indexes, aggressive HTMX polling, expensive template loops. |
+| `bookworm-docs-keeper` 📝 | Anytime. Compares CODEPUPPY_NOTES.md against live code and auto-updates stale sections (schema, filters, widgets, routes). |
+
+### How They Chain
+
+```
+"ready to commit"     → pre-commit skill + docs-keeper agent (parallel)
+"full health check"   → bookworm-qa + bookworm-perf-detective (parallel)
+"add a new widget"    → widget-scaffolder skill → template-audit skill
+"plan a new feature"  → feature-planner agent → lists skills needed
+```
+
+### Fallback Rule
+bookworm-dev always hands back to Eddie if the request isn't BookWorm-related or no specialist matches.
+Eddie is always the outermost layer — agents supplement, not replace.
 
 ---
 
@@ -308,6 +400,17 @@ The `sort_reminders` filter is fully wired. Browser notification feature may be 
     ```
     This fully detaches uvicorn's handles from the tool's capture pipe.
 16. **`| tojson` inside `<script>` tags MUST have `| safe`** — Jinja2 autoescape is enabled globally. The custom `_tojson` filter returns a plain Python string, so without `| safe`, every `"` in the JSON gets HTML-escaped to `&quot;` in the rendered source. Browsers treat `<script>` body as raw text (no HTML entity decoding), so `JSON.parse()` will silently fail and return `[]`. **Rule: always write `{{ data | tojson | safe }}` for `<script type="application/json">` blocks. For HTML attributes use `{{ data | tojson | e }}` (the `| e` HTML-escapes for safe attribute embedding).**
+17. **`_build_widget_sources()` in `routers/home.py` is an N+1 query pattern** — it loops over distinct `source_widget_id` values from the feed list and issues one `get_widget_by_id` + `get_home_page_by_id` call per unique widget. At typical RSS reader feed counts (≤20 feeds, ≤5 unique widgets) this is acceptable. If a user accumulates many widgets with large feed sets this will degrade. Tracked as tech debt. Do not copy this pattern to new code — prefer a JOIN or a single IN-clause query instead.
+18. **`urllib.request.urlopen` with no timeout freezes the shell tool indefinitely.** If the server isn't ready (slow OneDrive path startup, port conflict, crash), `urlopen` blocks forever — no exception, no timeout, just silence. Code Puppy's shell runner waits for the subprocess to exit, which never happens. **Rule: NEVER call `urlopen` without `timeout=N`. NEVER chain a server-start command with an inline `urlopen` health check in a single shell command.** Always: (1) start the server, (2) wait, (3) run `_health_check.py` as a completely separate shell call. The `_health_check.py` script already uses `timeout=5` on all its HTTP calls — use it exclusively.
+    ```
+    # ✅ CORRECT — two separate steps
+    powershell -Command "...Start-Process uvicorn..."   ← step 1: start
+    Start-Sleep 5                                        ← step 2: wait
+    .venv\Scripts\python.exe _health_check.py           ← step 3: verify
+
+    # ❌ WRONG — chained in one command, urlopen has no timeout = freeze
+    start "bw8000" /MIN uvicorn... && ping -n 5 ... && python -c "urlopen('...').read()"
+    ```
 
 ---
 
@@ -342,9 +445,13 @@ powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Pr
 
 > ⚠️ NEVER use `start /B` or `cmd /c "start /B ..."` — inherited stdout/stderr handles freeze the shell tool (see Quirk #13).
 
+> ⚠️ NEVER chain server start + health check in one shell command. Start the server first, then run `_health_check.py` as a separate step (see Quirk #18).
+
 Verify it started:
 ```powershell
-powershell -Command "Start-Sleep 4; Invoke-WebRequest 'http://localhost:8000/health' -UseBasicParsing | Select-Object StatusCode, Content"
+# Wait for startup, then run the proper health check script
+powershell -Command "Start-Sleep 5"
+.venv\Scripts\python.exe _health_check.py
 ```
 
 ---
@@ -391,8 +498,12 @@ powershell -Command "Start-Sleep 4; Invoke-WebRequest 'http://localhost:8000/hea
 | 2026-04-08 | **RSS widget visual overhaul — card frames, compact rows, vertical feed editor (overflow fix).** Two bugs + one UX complaint. (1) **Card ≡ Compact visually** — old card renderer was just a `div.border-b` with a blue title link; compact was nearly identical. Fix: card is now a full framed box — `<a>` with `rounded-xl border bg-white shadow-hover overflow-hidden`, 16:9 thumbnail banner at top, dark-gray bold title inside, coloured source dot + date at bottom right. Compact stays flat borderless rows: small 44×44 square thumb on left, one-line gray title + badge, no chrome. They look completely different even with zero thumbnails. (2) **Category input overflowing modal** — settings modal is `max-w-xs` (320px, ~280px content after padding). Old feed row was a single horizontal flex with `color|URL|label|category|✕` side-by-side — inputs had no room, category bled out. Fix: restructured to fully **vertical** layout: row-1 = colour swatch + domain label + ✕ button; row-2 = full-width URL input; row-3 = `display:grid;grid-template-columns:1fr 1fr;gap:4px` label+category with `min-w-0` on inputs. CSS grid (inline style) is used because Tailwind `grid-cols-2` in dynamic JS strings is JIT-safe on CDN but inline `style` is 100% guaranteed regardless. (3) **Stale JS cache** — `static_v` is computed once at server startup from max JS mtime; changes after startup don't update the version param, so browser serves old cached file. Fix: touched `templates_env.py` + `home-widget-rss.js` mtime to force uvicorn auto-reload and recompute `static_v`. Hard refresh (`Ctrl+Shift+R`) bypasses cache entirely as a fallback. | 2026-04-08 | **RSS proxy: HTML autodiscovery + browser UA (YouTube fix).** Root cause: YouTube channel URLs (e.g. `/@StephanieSoo`) return HTML, not XML — old proxy tried to parse HTML as XML and returned HTTP 502/422. Fix: (1) upgraded `_fetch_raw` to return `(text, content_type_header)` and use a real Chrome User-Agent so YouTube/sites don't 404 bot requests; (2) added `_autodiscover_feed_url(html, base_url)` that scans for `<link rel="alternate" type="application/rss+xml">` or `atom+xml` in any attribute order — YouTube embeds the channel Atom feed link in every channel page `<head>`; (3) in `rss_proxy`: detect HTML response by content-type/sniffing, run autodiscovery, follow discovered feed URL, or return a site-specific hint (YouTube: show the `feeds/videos.xml?channel_id=UC…` format; others: suggest finding the RSS button); (4) frontend error block revamped — server `data.error` hint shown directly (no more generic "Failed to load feed" with no detail); `HTTPError` now returns `HTTP XXX from remote server` instead of Python exception string. Server restarted (PIDs 25964+52152 killed, new process launched). |
 | 2026-04-10 | **Non-dashboard pages showed blank widget canvas instead of coming-soon template.** Two-part root cause: (1) **Wrong `page_type` in DB** — when user created CRM/Media/Grid/RSS/Uploads pages the server was running OLD code (before today's `p_type` branching was added). FastAPI `Form("dashboard")` default kicked in for every new page, so all 5 pages got saved as `dashboard`. Fix: `_fix_page_types.py` (infers correct type from emoji, runs `UPDATE home_pages SET page_type=?` for each). (2) **JS `_hpCache` (5-min TTL) served stale empty-dashboard HTML** — even after DB was corrected, browser served the cached response. Fix: `Ctrl+Shift+R` hard refresh. Future prevention: `invalidateHomePageCache(pageId)` must be called from any route that mutates a page's type or structure. Server log `bookworm.log` was last written 4/9 PM — current server on port 8001 was started fresh by user (writing to terminal, not log file), so it already had the correct Python code and only needed the DB fix + hard refresh. |
 | 2026-04-10 | **Bug: new non-dashboard pages showed 'Add your first widget'.** Root cause: user was picking the type-matching emoji (e.g. 📡) directly via the emoji picker WITHOUT clicking the page-type card button in the hp-modal grid. The emoji picker sets hp-emoji only; hp-page-type hidden input stayed at its default 'dashboard', so page was always saved as dashboard regardless of emoji. Page 65 (name 'sdfsd', emoji 📡) confirmed as affected — page_type corrected from 'dashboard' to 'rss' via direct SQLite UPDATE. Fix: hooked pickEmoji() in index.html to call selectPageType(matchedType) whenever the chosen emoji matches one of the HP_TYPE_DEFAULTS entries (📊→dashboard, 👥→crm, 📅→media, 🎨→grid_builder, 🖼️→uploads, 📡→rss). Guard: only fires when _pickerInput === 'hp-emoji' so workspace emoji pickers are unaffected. templates_env.py touched to force uvicorn reload + fresh static_v. |
+| 2026-04-10 | **RSS compact "Feed label bubbles" toggle was visually invisible — two contrast bugs + same-label disambiguation.** Three stacked issues in `home-widget-rss.js`: **(1) `_rssFeedContainer` border opacity too low** — `border-color:${c}44` (27% opacity) and `color:${c}` for header text meant yellow (#e4de1b) borders and text were essentially invisible on white (~1.2:1 contrast ratio, WCAG needs 4.5:1). Result: bubble mode looked identical to flat list mode. Fix: border now `1px solid ${c}33` + `border-left:4px solid ${c}` (thick left accent, full opacity — always visible even for yellow). Header text uses new `_rssTextOnWhite(hex)` which computes perceived luminance; if > 160 (too light for white bg) falls back to `#374151` dark gray so text is readable while the dot/border stay in the accent color. **(2) `_rssBadgeDot` same contrast bug** — colored text invisible for light accents. Fix: text now uses `_rssTextOnWhite()`, badge gets a tinted pill background (`${c}22`) to give shape/visibility regardless of accent brightness. **(3) Both feeds labeled "Youtube"** — even with working bubbles, both containers had identical headers. Fix: `_rssFeedContainer` extracts the last URL path fragment (e.g. `@StephanieSoo`, `@DBTechYT`) as a gray subtitle when it differs from the user-defined label. Files: `static/js/home-widget-rss.js`. `templates_env.py` comment touched to bust static_v on next restart. |
 | 2026-04-10 | **RSS compact label bubbles — third and final pass (root-cause fix).** Two deep bugs found via DB/code audit: **(1) feeds.map normalised labels before fetch** — URL-domain fallback (www.youtube.com) was applied eagerly, so feed_title from the RSS response (e.g. 'StephanieSoo', 'DBTechYT') was silently discarded. Fix: feeds.map now only assigns colors + _feedIdx; final label resolved in results.forEach using priority: user-set label > feed_title > URL fragment. **(2) feedWrap grouped by _label** — two YouTube channels share domain www.youtube.com, so all items landed in one container instead of two separate labelled bubbles. Fix: added _feedIdx (stable integer feed array index) as per-item group key; feedWrap now groups by it._feedIdx and maps with groups[f._feedIdx]. **(3) Non-dashboard pages showed widget canvas** — fix injected as Jinja2 gate inside home_page.html (after last endmacro), server-restart-proof: reads page.page_type from SELECT* dict, sets page_type = _pt, includes home_page_coming_soon.html for non-dashboard types; normal canvas wrapped in else...endif. Files: static/js/home-widget-rss.js, templates/partials/home_page.html. |
 | 2026-04-10 | **Phase 1 — Homespace page types infrastructure shipped.** Added `page_type` column to `home_pages` (migration via `_migrate_once.py` since reload didn't trigger `init_db`; column confirmed in live DB). `PAGE_TYPES` frozenset guards valid values in `home_db.py`. `create_home_page` + `duplicate_home_page` carry `page_type`. `POST /home/pages/create` accepts `page_type` form field. `home_page_view` routes non-dashboard types to `partials/home_page_coming_soon.html` — rich "coming soon" card with per-type feature list, gradient strip, and planned feature checklist. `hp-modal` expanded to `max-w-lg` with 3×2 type picker grid (Dashboard/CRM/Media/Grid Builder/Uploads/RSS); selecting a type auto-swaps emoji + placeholder. Rename modal hides type picker. `submitHpModal` passes `page_type`. Sidebar shows blue pill badge for non-dashboard pages. Layout-settings button hidden for non-dashboard pages. Server confirmed running on **port 8001** via `python main.py` (reload=True). DB migration run directly. JS cache-busted by touching static files. |
-| 2026-04-10 | **RSS compact style: label bubbles redesigned + feed container setting added (then consolidated).** (1) Removed `_rssBadgeBubble` — YAGNI. `_rssBadgeDot` now uses **feed color for text** (colored dot + bold colored name). (2) New `_rssFeedContainer(feed, items)` helper — wraps all items from one feed in a rounded border card with colored header (dot + bold name + subtle tinted bg). (3) Settings panel: replaced the two-field `compact_bubbles` + `compact_label` combo with a single **`compact_label`** dropdown — three states: `'1'` = dot+text per row, `'wrap'` = bubble each feed (calls `_rssFeedContainer`), `'0'` = hidden. `compact_feed_wrap` key removed from all config objects, settings sync, and template. `home_page.html` `data-compact-label` only (no `data-compact-bubbles`, no `data-compact-feed-wrap`). | (1) SyntaxError at `home-widgets-settings.js:151` (`v=1775577030`) was a stale browser cache — fix had already landed last session (changed `\'\'' → `''` in template literal `${}`). User needs a hard refresh (`Ctrl+Shift+R`). (2) **RSS Feed widget** (`rss_feed`) added: 6-file implementation. New `GET /home/rss?url=...` proxy endpoint in `routers/home.py` — `xml.etree.ElementTree` parses both RSS 2.0 and Atom feeds server-side via Walmart proxy (`sysproxy.wal-mart.com:8080`); returns `{feed_title, items:[{title, link, description, pub_date}]}`. New `static/js/home-widget-rss.js` — `_loadRss(el)` fetches proxy, renders in 3 styles (`card`/`compact`/`minimal`), auto-refresh via `setTimeout`, retry button on error. Jinja2 macro `render_rss_feed` added to `home_page.html` (after `render_text` endmacro, before sticky `<style>` block). Dispatcher branch `{% elif w.widget_type == 'rss_feed' %}` added. `WIDGET_STYLES` and `WIDGET_CONFIG_FIELDS` for `rss_feed` added to `home-widgets.js`; `initHomeWidgets()` calls `_loadRss` on `.rss-widget` elements. Advanced section added to `home_add_widget_modal.html` (below main grid, `⚡ Advanced` heading). Script tag for `home-widget-rss.js` added to `base.html`. |
+| 2026-04-10 | **RSS compact style: label bubbles redesigned + feed container setting added (then consolidated).** (1) Removed `_rssBadgeBubble` — YAGNI. `_rssBadgeDot` now uses **feed color for text** (colored dot + bold colored name). (2) New `_rssFeedContainer(feed, items)` helper — wraps all items from one feed in a rounded border card with colored header (dot + bold name + subtle tinted bg). (3) Settings panel: replaced the two-field `compact_bubbles` + `compact_label` combo with a single **`compact_label`** dropdown — three states: `'1'` = dot+text per row, `'wrap'` = bubble each feed, `'0'` = hidden. Files: `static/js/home-widget-rss.js`, `templates/partials/home_page.html`, `static/js/home-widgets-settings.js`. |
+| 2026-04-11 | **RSS Reader: category filter upgraded from sidebar pills to full-width top bar.** `#rss-cat-pills` sidebar strip and `_renderCatPills()` removed entirely. New `<div id="rss-top-cat-bar">` full-width filter bar added between page title and 3-column layout in `home_page_rss.html`. `_renderTopCatBar()` added to `home-page-rss.js` — called at end of `_renderFeedList()` and in the no-feeds early-return path; hidden when no categories exist. Zero new endpoints, zero DB changes. Template audit + QA + pre-commit all green. |
+| 2026-04-11 | **RSS Reader JS full rewrite — category grouping, inline feed editing, sort/filter controls + `_health_check.py` port fix.** `static/js/home-page-rss.js` fully rewritten. Three new UX features added: **(1) Category grouping in sidebar** — feeds grouped by `rss_page_feeds.category` field; each group is a collapsible section; ungrouped feeds fall into an unlabelled bucket. **(2) Inline feed editing** — label, color, and category are now editable in-place per feed row via new `POST /home/rss-reader/{page_id}/feeds/{feed_id}/update` endpoint (`label`, `color`, `category` form fields; persists via `update_page_feed()` in `home_rss_db.py`). **(3) Sort + filter controls** — sort toggle (newest/oldest) and filter selector (all/unread/read) rendered above the article list; state kept in JS, no server round-trip. **`_health_check.py` port corrected 8000 → 8001** to match `restart.ps1` — previously the standalone health-check script was smoke-testing the wrong port. `rss_page_feeds.category TEXT NOT NULL DEFAULT ''` migration was applied to live DB and already documented in schema. |
+| 2026-04-11 | **RSS Reader: category pills, widget-source badge, widget-deletion unlink (3 features).** **(1) Category filter pills** — `<div id="rss-cat-pills">` strip above feed list in `home_page_rss.html`. `_renderCatPills()` added to `home-page-rss.js`; called at end of `_renderFeedList()` and early-return path; hidden when no categories exist. **⚠️ Later superseded:** sidebar pills promoted to a full-width top bar (`#rss-top-cat-bar`, `_renderTopCatBar()`) and removed — see next entry. **(2) Widget source badge** — new `source_widget_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL` column in `rss_page_feeds` (idempotent migration in `database.py`). New `_build_widget_sources(feeds, uid)` async helper in `routers/home.py` builds `{feed_id: {widget_label, page_name, page_emoji}}` lookup from a per-widget DB query loop (N+1, tracked as tech debt — acceptable at current feed counts). Template injects `<script>var _rssWidgetSources = {{ widget_sources | default({}) | tojson | safe }};</script>`. `_feedRow()` in `home-page-rss.js` renders 📌 badge when entry exists. **(3) Widget deletion → feed unlink** — zero extra Python needed; `ON DELETE SET NULL` FK + `get_db()` `PRAGMA foreign_keys = ON` handles it automatically; comment added to `del_widget` in `routers/home.py`. Updated functions: `get_page_feeds`, `add_page_feed`, `sync_widget_feeds_to_rss_pages`, `get_all_rss_widget_feeds` in `home_rss_db.py`; `get_all_rss_widget_feeds` in `home_db.py`; `add_widget_handler`, `update_widget`, `home_page_view` (rss branch) in `home.py`. |
 | 2026-04-07 | **Server restarted (was down on port 8000). New static_v = 1775577806.** Fixed JS SyntaxError in `home-widgets-settings.js` line 151 — `\'` inside `${}` template expression is invalid; changed to plain `''`. `\\'` (escaped single-quote) inside a template-literal `${}` expression is invalid JS — the `${}` block is plain JS, not a string context, so no escaping is needed. Changed `f.placeholder||\\'\\'` → `f.placeholder||''`. One-char fix, zero drama. |
 | 2026-04-06 | **Replaced banner `noir`/`velvet` + full sticky note widget restyle.** Banner: `noir` → `oversize` (massive 2.8rem bottom-anchored title, fine-print subtitle, editorial bleed), `velvet` → `slate` (dark-slate `#1e293b`, ultra-thin `font-weight:200`, wide `0.3em` letter-spacing, short `#0053e2` rule accent). Final banner set: `cinema`, `oversize`, `slate`, `infrared`, `studio`, `editorial`, `dusk`, `amber`. Sticky note widget: scrapped all 5 pastel+border-left styles (`yellow/pink/blue/green/lavender`). Replaced with 5 fully distinct surface styles — `paper` (warm cream with CSS ruled lines), `grid` (graph paper: dual-direction faint blue CSS grid), `kraft` (brown craft paper gradient), `chalk` (dark chalkboard green, off-white text), `memo` (clean white/dark with inline MEMO label + divider). Each style has its own `txtcls` text-color variable. `memo` and `chalk` render conditional inline elements above the content div. All dark-mode variants defined in CSS. Files: `home-widgets.js`, `home_page.html`. Health check: all green. |
