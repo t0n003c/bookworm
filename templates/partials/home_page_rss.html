@@ -20,6 +20,14 @@
                  bg-[#0053e2] text-white"></span>
   </div>
 
+  {# ── Category filter bar — populated + shown by JS when ≥1 feed has a category ── #}
+  <div id="rss-top-cat-bar"
+       class="hidden flex-shrink-0 flex items-center gap-2 px-4 py-2
+              border-b border-gray-200 dark:border-zinc-800
+              bg-white dark:bg-zinc-900 overflow-x-auto">
+    {# Buttons injected by _renderTopCatBar() in home-page-rss.js #}
+  </div>
+
   {# ── 3-column body ───────────────────────────────────────────────────── #}
   <div class="flex flex-1 min-h-0 overflow-hidden">
 
@@ -30,19 +38,7 @@
       <div class="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-400 dark:text-zinc-500
                   uppercase tracking-widest">Feeds</div>
 
-      {# All Feeds shortcut #}
-      <button id="rss-all-btn" onclick="rssSelectAll()"
-              class="text-left flex items-center gap-2 px-3 py-1.5 mx-2 mb-1 rounded-lg
-                     text-sm text-gray-700 dark:text-zinc-200
-                     hover:bg-gray-100 dark:hover:bg-zinc-800 transition
-                     bg-gray-200 dark:bg-zinc-700 font-semibold"
-              aria-pressed="true">
-        <span class="text-base leading-none" aria-hidden="true">📚</span>
-        <span class="truncate">All Feeds</span>
-        <span id="rss-all-count" class="ml-auto text-[10px] text-gray-400 dark:text-zinc-500"></span>
-      </button>
-
-      {# Feed list — populated by JS #}
+      {# Feed list — rendered flat by _renderFeedList() #}
       <div id="rss-feed-list" class="flex-1 overflow-y-auto px-2 space-y-0.5 pb-2"></div>
 
       {# Add-feed form #}
@@ -111,6 +107,13 @@
         </div>
       </div>
 
+      {# Article topic pills — populated by JS when items have RSS <category> tags.
+         JS shows/hides this; it's always hidden by default. #}
+      <div id="rss-item-cat-pills"
+           class="hidden px-3 py-1.5 border-b border-gray-100 dark:border-zinc-800
+                  flex flex-wrap gap-1 overflow-y-auto max-h-16 flex-shrink-0
+                  bg-white dark:bg-zinc-900"></div>
+
       <div id="rss-items-panel" class="flex-1 overflow-y-auto">
         <div class="p-4 text-sm text-gray-400 text-center mt-8">
           <div class="text-3xl mb-2">📡</div>
@@ -131,3 +134,8 @@
 
   </div>{# /3-column #}
 </div>{# /rss-page-root #}
+<script>
+{# Widget-source lookup: {feed_id: {widget_label, page_name, page_emoji}}.
+   Use var (not let/const) — this partial is HTMX-reinjected on navigation. #}
+var _rssWidgetSources = {{ widget_sources | default({}) | tojson | safe }};
+</script>

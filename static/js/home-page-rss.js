@@ -109,16 +109,7 @@ async function _loadFeeds() {
 
 function _renderFeedList() {
   const list   = document.getElementById('rss-feed-list');
-  const allBtn = document.getElementById('rss-all-btn');
   if (!list) return;
-
-  // All Feeds button highlight
-  const isAll = _selFeed === null && _selCategory === null;
-  if (allBtn) {
-    allBtn.classList.toggle('bg-gray-200',      isAll);
-    allBtn.classList.toggle('dark:bg-zinc-700', isAll);
-    allBtn.classList.toggle('font-semibold',    isAll);
-  }
 
   // Update datalist for category autocomplete
   const dl = document.getElementById('rss-category-list');
@@ -147,12 +138,8 @@ function _renderTopCatBar() {
 
   const cats = [...new Set(_feeds.map(f => f.category).filter(Boolean))].sort();
 
-  if (!cats.length) {
-    el.classList.add('hidden');
-    el.innerHTML = '';
-    return;
-  }
-
+  // Always show bar (even no categories) — "All" pill lives here now.
+  // Bar is hidden only when there are no feeds (_renderFeedList handles that).
   el.classList.remove('hidden');
 
   const baseBtn = 'flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full border transition';
@@ -160,9 +147,11 @@ function _renderTopCatBar() {
   const idle    = 'border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300'
                 + ' hover:border-[#0053e2] hover:text-[#0053e2] dark:hover:text-blue-300';
 
-  // No "All" pill here — sidebar "All Feeds" button handles that.
-  // Category pills toggle: clicking the active category deselects it.
-  let html = '';
+  // "All" pill is always first; category pills follow.
+  // Clicking the active category pill toggles it off (back to All).
+  const isAll = (_selFeed === null && _selCategory === null);
+  let html = `<button onclick="rssSelectAll()" aria-pressed="${isAll}"
+    class="${baseBtn} ${isAll ? active : idle}">All</button>`;
   cats.forEach(cat => {
     const on = (_selCategory === cat);
     html += `<button onclick="rssSelectCategory('${_esc(cat)}')" aria-pressed="${on}"
@@ -343,8 +332,6 @@ function _applyDisplay() {
   _updateUnreadBadge();
   _renderItemCatPills();
 
-  const countEl = document.getElementById('rss-all-count');
-  if (countEl) countEl.textContent = _items.length > 0 ? String(_items.length) : '';
 }
 
 // ── Article-level topic pills ─────────────────────────────────────────────────
