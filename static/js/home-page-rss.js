@@ -199,6 +199,7 @@ function _feedRow(f) {
                     class="text-[10px] px-2 py-0.5 border border-gray-300 dark:border-zinc-600
                            rounded text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800">Cancel</button>
           </div>
+          <p class="rss-edit-err hidden mt-1 text-[10px] text-red-500 leading-tight"></p>
         </form>
       </div>
     </div>`;
@@ -483,17 +484,66 @@ function _initAddForm() {
 
 async function rssDeleteFeed(e, feedId) {
   e.stopPropagation();
-  const feed = _feeds.find(f => f.id === feedId);
-  if (!confirm(`Remove "${feed?.label || feed?.url || 'this feed'}"?`)) return;
-  try {
-    const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/delete`, {
-      method:'POST', credentials:'same-origin',
-    });
-    if (!r.ok) throw new Error();
-    _feeds = await r.json();
-    _renderFeedList();
-    if (_selFeed === feedId) rssSelectAll();
-  } catch { alert('Could not remove feed.'); }
+  const feed  = _feeds.find(f => f.id === feedId);
+  const rowEl = document.querySelector(`[data-feed-id="${feedId}"]`);
+  if (!rowEl) return;
+
+  // Remove any existing confirm bar (prevents duplicates on double-click)
+  rowEl.querySelector('.rss-del-confirm')?.remove();
+
+  // Inject inline confirmation bar — no native confirm() dialog
+  const bar = document.createElement('div');
+  bar.className = 'rss-del-confirm flex items-center gap-2 px-2 py-1.5'
+    + ' bg-red-50 dark:bg-red-900/20 border-t border-red-100 dark:border-red-800/40';
+  bar.innerHTML = `
+    <span class="flex-1 text-[10px] text-red-600 dark:text-red-400 truncate">
+      Remove <strong>${_esc(feed?.label || feed?.url || 'this feed')}</strong>?
+    </span>
+    <button type="button" data-rss-del-yes
+            class="text-[10px] px-2 py-0.5 bg-red-500 text-white rounded
+                   hover:bg-red-600 transition font-semibold">Remove</button>
+    <button type="button" data-rss-del-no
+            class="text-[10px] px-2 py-0.5 border border-gray-300 dark:border-zinc-600
+                   rounded text-gray-600 dark:text-zinc-300
+                   hover:bg-gray-100 dark:hover:bg-zinc-800 transition">Keep</button>`;
+
+  bar.querySelector('[data-rss-del-no]').addEventListener('click', () => bar.remove());
+  bar.querySelector('[data-rss-del-yes]').addEventListener('click', async () => {
+    bar.remove();
+    try {
+      const r  = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/delete`, {
+        method: 'POST', credentials: 'same-origin',
+      });
+      const ct = r.headers.get('Content-Type') || '';
+      if (!r.ok || !ct.includes('application/json')) {
+        throw new Error(r.status === 401 ? 'session_expired' : 'server_error');
+      }
+      _feeds = await r.json();
+      _renderFeedList();
+      if (_selFeed === feedId) rssSelectAll();
+    } catch (err) {
+      // Re-render to restore the row, then show inline error
+      _renderFeedList();
+      const restoredRow = document.querySelector(`[data-feed-id="${feedId}"]`);
+      if (restoredRow) {
+        const errBar = document.createElement('div');
+        errBar.className = 'rss-del-confirm flex items-center gap-2 px-2 py-1.5'
+          + ' bg-red-50 dark:bg-red-900/20 border-t border-red-100 dark:border-red-800/40';
+        const msg = err.message === 'session_expired'
+          ? 'Session expired — refresh and try again.'
+          : 'Could not remove — please try again.';
+        errBar.innerHTML = `
+          <span class="flex-1 text-[10px] text-red-600 dark:text-red-400">${_esc(msg)}</span>
+          <button type="button"
+                  class="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300
+                         transition px-1" aria-label="Dismiss">✕</button>`;
+        errBar.querySelector('button').addEventListener('click', () => errBar.remove());
+        restoredRow.appendChild(errBar);
+      }
+    }
+  });
+
+  rowEl.appendChild(bar);
 }
 
 function rssEditFeed(feedId) {
@@ -503,27 +553,40 @@ function rssEditFeed(feedId) {
 
 async function rssUpdateFeed(e, feedId) {
   e.preventDefault();
-  const form  = e.target;
+  const form     = e.target;
   const label    = form.label.value.trim();
   const category = form.category.value.trim();
   const color    = form.color.value.trim();
+  const errEl    = form.querySelector('.rss-edit-err');
+  if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
   try {
     const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/update`, {
-      method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ label, category, color }),
     });
-    if (!r.ok) throw new Error();
+    // Guard: session expiry → auth middleware returns 302→/login (200 HTML, not JSON)
+    const ct = r.headers.get('Content-Type') || '';
+    if (!r.ok || !ct.includes('application/json')) {
+      throw new Error(r.status === 401 ? 'session_expired' : 'server_error');
+    }
     _feeds = await r.json();
     _renderFeedList();
-    // Refresh display labels/colors on already-loaded items
     _rawItems = _rawItems.map(it => {
       if (it._feedId !== feedId) return it;
       const f = _feeds.find(f => f.id === feedId);
       return f ? { ...it, _color: f.color, _source: f.label || f.url, _feedCategory: f.category || '' } : it;
     });
     _applyDisplay();
-  } catch { alert('Could not save changes.'); }
+  } catch (err) {
+    const msg = err.message === 'session_expired'
+      ? 'Session expired — refresh the page and try again.'
+      : 'Could not save — please try again.';
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+    }
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

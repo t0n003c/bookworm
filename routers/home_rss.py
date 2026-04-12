@@ -78,16 +78,30 @@ async def update_feed(
     color:    str = Form("#0053e2"),
     category: str = Form(""),
 ):
-    uid   = _uid(request)
-    feeds = await update_page_feed(feed_id, page_id, uid, label, color, category)
-    return JSONResponse(feeds)
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return JSONResponse({"error": "not logged in"}, status_code=401)
+    try:
+        feeds = await update_page_feed(feed_id, page_id, uid, label, color, category)
+        return JSONResponse(feeds)
+    except Exception as exc:
+        log.exception("update_feed error: %s", exc)
+        return JSONResponse({"error": "server error"}, status_code=500)
 
 
 @router.post("/rss-reader/{page_id}/feeds/{feed_id}/delete")
 async def remove_feed(request: Request, page_id: int, feed_id: int):
-    uid   = _uid(request)
-    feeds = await delete_page_feed(feed_id, page_id, uid)
-    return JSONResponse(feeds)
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return JSONResponse({"error": "not logged in"}, status_code=401)
+    try:
+        feeds = await delete_page_feed(feed_id, page_id, uid)
+        return JSONResponse(feeds)
+    except Exception as exc:
+        log.exception("remove_feed error: %s", exc)
+        return JSONResponse({"error": "server error"}, status_code=500)
 
 
 # ── Read state ────────────────────────────────────────────────────────────────
