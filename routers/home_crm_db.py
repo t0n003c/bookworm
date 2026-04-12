@@ -56,13 +56,14 @@ async def add_contact(
     page_id: int, user_id: int,
     name: str, email: str, phone: str,
     company: str, tags: str, avatar_emoji: str,
+    profile_pic: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
             "INSERT INTO crm_contacts "
-            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (page_id, user_id, name, email, phone, company, tags, avatar_emoji),
+            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic),
         )
         await db.commit()
     return await get_contacts(page_id, user_id)
@@ -72,15 +73,30 @@ async def update_contact(
     contact_id: int, page_id: int, user_id: int,
     name: str, email: str, phone: str,
     company: str, tags: str, avatar_emoji: str,
+    profile_pic: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
-            "UPDATE crm_contacts SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=? "
+            "UPDATE crm_contacts "
+            "SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=?,profile_pic=? "
             "WHERE id=? AND page_id=? AND user_id=?",
-            (name, email, phone, company, tags, avatar_emoji, contact_id, page_id, user_id),
+            (name, email, phone, company, tags, avatar_emoji, profile_pic,
+             contact_id, page_id, user_id),
         )
         await db.commit()
     return await get_contacts(page_id, user_id)
+
+
+async def update_contact_pic(
+    contact_id: int, page_id: int, user_id: int, pic_url: str
+) -> None:
+    """Update profile_pic only — used by the dedicated upload endpoint."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_contacts SET profile_pic=? WHERE id=? AND page_id=? AND user_id=?",
+            (pic_url, contact_id, page_id, user_id),
+        )
+        await db.commit()
 
 
 async def delete_contact(contact_id: int, page_id: int, user_id: int) -> list[dict]:

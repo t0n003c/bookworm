@@ -481,6 +481,14 @@ async def init_db() -> None:
             END
         """)
 
+        # ── crm_contacts: profile_pic column (additive migration) ─────────────
+        cur = await db.execute("PRAGMA table_info(crm_contacts)")
+        _crm_contact_cols = {r[1] for r in await cur.fetchall()}
+        if "profile_pic" not in _crm_contact_cols:
+            await db.execute(
+                "ALTER TABLE crm_contacts ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''"
+            )
+
         await db.commit()
 
 @asynccontextmanager

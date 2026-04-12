@@ -54,11 +54,14 @@ async function _crmLoadAll() {
 
 function _crmRender() {
   if (_crmView === 'pipeline') {
+    const tb = document.getElementById('crm-toolbar');
+    if (tb) tb.innerHTML = '';
     if (typeof initCrmPipeline === 'function') {
       initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts);
     }
     return;
   }
+  if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
   _crmView === 'gallery' ? _crmRenderGallery() : _crmRenderTable();
 }
 
@@ -100,15 +103,24 @@ function _crmRenderTable() {
     `<th class="${thCls}">${_crmEsc(f.label)}</th>`
   ).join('');
 
-  const bodyRows = rows.length ? rows.map(c => {
+  const bodyRows = rows.length ? rows.map((c, i) => {
     const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
       `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mr-0.5">${_crmEsc(t.trim())}</span>`
     ).join('');
     const fieldVals = _crmFields.map(f =>
-      `<td class="${tdCls}">${_crmEsc((c.field_values||{})[f.id] || '')}</td>`
+      `<td class="${tdCls}">${_crmFieldDisplay(f, c)}</td>`
     ).join('');
-    return `<tr class="border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition">
-      <td class="px-3 py-2 text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</td>
+    const grpHdr = (typeof _crmGroupField === 'string' && _crmGroupField && typeof _crmGroupValue === 'function')
+      ? (() => {
+          const gC = _crmGroupValue(c, _crmGroupField);
+          const gP = i > 0 ? _crmGroupValue(rows[i-1], _crmGroupField) : null;
+          return gC !== gP ? `<tr><td colspan="${6+_crmFields.length+1}" class="px-3 py-1 text-[11px] font-bold text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800/80 uppercase tracking-wider border-t border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</td></tr>` : '';
+        })()
+      : '';
+    return grpHdr + `<tr class="border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition">
+      <td class="px-3 py-2">${c.profile_pic
+        ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
+        : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>
       <td class="${tdCls} font-semibold">
         <button onclick="crmOpenEdit(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button>
       </td>
@@ -159,18 +171,26 @@ function _crmRenderGallery() {
       ${_crmQuery ? 'No contacts match your search.' : 'No contacts yet — click <strong>+ Contact</strong> to add one.'}</p>`);
     return;
   }
-  const cards = rows.map(c => {
+  const cards = rows.map((c, i) => {
     const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
       `<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px]
               bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
         >${_crmEsc(t.trim())}</span>`
     ).join(' ');
-    return `
+    let grpHdr = '';
+    if (typeof _crmGroupField === 'string' && _crmGroupField && typeof _crmGroupValue === 'function') {
+      const gC = _crmGroupValue(c, _crmGroupField);
+      const gP = i > 0 ? _crmGroupValue(rows[i-1], _crmGroupField) : null;
+      if (gC !== gP) grpHdr = `<div class="col-span-full text-[11px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider pt-2 pb-1 border-b border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</div>`;
+    }
+    return grpHdr + `
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
                   rounded-2xl p-4 flex flex-col gap-2 shadow-sm hover:shadow-md transition">
         <div class="flex items-center gap-3">
-          <span class="text-3xl leading-none w-10 h-10 flex items-center justify-center
-                       rounded-full bg-gray-100 dark:bg-zinc-800">${_crmEsc(c.avatar_emoji||'👤')}</span>
+          <span class="text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0">
+            ${c.profile_pic
+              ? `<img src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
+              : _crmEsc(c.avatar_emoji||'👤')}</span>
           <div class="min-w-0">
             <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate">${_crmEsc(c.name||'—')}</p>
             <p class="text-xs text-gray-500 dark:text-zinc-400 truncate">${_crmEsc(c.company||'')}</p>
@@ -193,11 +213,34 @@ function _crmRenderGallery() {
 }
 
 function _crmFiltered() {
+  if (typeof _crmProcessed === 'function') return _crmProcessed();
   if (!_crmQuery) return _crmContacts;
   return _crmContacts.filter(c => {
     const hay = [c.name, c.email, c.phone, c.company, c.tags].join(' ').toLowerCase();
     return hay.includes(_crmQuery);
   });
+}
+
+function _crmFieldDisplay(f, c) {
+  const raw = String((c.field_values || {})[f.id] ?? '');
+  if (f.field_type === 'checkbox')     return raw === '1' ? '✅' : '☐';
+  if (f.field_type === 'multi_select') {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length)
+        return arr.map(v => `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 mr-0.5">${_crmEsc(v)}</span>`).join('');
+    } catch {}
+    return '';
+  }
+  if (f.field_type === 'file_links') {
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length)
+        return arr.map(url => `<a href="${_crmEsc(url)}" target="_blank" rel="noopener noreferrer" class="text-[#0053e2] hover:underline text-xs block truncate">${_crmEsc(url)}</a>`).join('');
+    } catch {}
+    return raw ? `<a href="${_crmEsc(raw)}" target="_blank" rel="noopener noreferrer" class="text-[#0053e2] hover:underline text-xs truncate">${_crmEsc(raw)}</a>` : '';
+  }
+  return _crmEsc(raw);
 }
 
 // ── Contact modal (add / edit) ────────────────────────────────────────────────
@@ -218,7 +261,29 @@ function _crmContactModal(c) {
   const customFields = _crmFields.map(f => {
     const val = fv[f.id] || '';
     let control;
-    if (f.field_type === 'select') {
+    if (f.field_type === 'checkbox') {
+      return `<div class="flex items-center gap-2 pt-4">
+        <input type="checkbox" name="cf_${f.id}" value="1" ${val==='1'?'checked':''} id="cf_chk_${f.id}"
+          class="w-4 h-4 rounded accent-[#0053e2]"/>
+        <label for="cf_chk_${f.id}" class="text-sm text-gray-700 dark:text-zinc-200 cursor-pointer">${_crmEsc(f.label)}</label>
+      </div>`;
+    }
+    if (f.field_type === 'multi_select') {
+      var ms = []; try { ms = JSON.parse(val); } catch {}
+      const opts = (f.options||'').split('|').filter(Boolean);
+      control = `<div class="flex flex-wrap gap-x-3 gap-y-1">${opts.length
+        ? opts.map(o => `<label class="flex items-center gap-1.5 text-sm cursor-pointer">
+            <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}" ${ms.includes(o)?'checked':''} class="w-3.5 h-3.5 rounded accent-[#0053e2]"/>
+            ${_crmEsc(o)}</label>`).join('')
+        : '<span class="text-xs text-gray-400">No options — edit field to add some.</span>'
+      }</div>`;
+    } else if (f.field_type === 'file_links') {
+      var fl = []; try { fl = JSON.parse(val); } catch {}
+      control = `<textarea name="cf_${f.id}" rows="2" placeholder="One URL per line"
+        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(fl.join('\n'))}</textarea>`;
+    } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean).map(o =>
         `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
       ).join('');
@@ -228,7 +293,8 @@ function _crmContactModal(c) {
                focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
         <option value="">—</option>${opts}</select>`;
     } else {
-      control = inp(`cf_${f.id}`, val, f.field_type === 'date' ? 'date' : f.field_type === 'number' ? 'number' : f.field_type === 'url' ? 'url' : 'text');
+      const iType = {date:'date', number:'number', url:'url', email:'email'}[f.field_type] || 'text';
+      control = inp(`cf_${f.id}`, val, iType);
     }
     return `<div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>${control}</div>`;
   }).join('');
@@ -239,13 +305,39 @@ function _crmContactModal(c) {
       <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">${isEdit ? '✎ Edit Contact' : '+ Add Contact'}</h2>
       <form id="crm-contact-form" onsubmit="crmSaveContact(event,${c?c.id:0})">
         <div class="grid grid-cols-2 gap-3 mb-3">
-          <div class="col-span-2 flex gap-3 items-end">
-            <div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Avatar</label>
-              <input name="avatar_emoji" value="${_crmEsc(c?c.avatar_emoji:'👤')}" maxlength="4"
-                class="w-16 text-center text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg py-1
-                       bg-white dark:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/></div>
-            <div class="flex-1"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Name <span class="text-red-400">*</span></label>
-              ${inp('name', c?.name, 'text', 'Full name')}</div>
+          <div class="col-span-2 flex gap-4 items-start">
+            <!-- Profile picture upload -->
+            <div class="flex-shrink-0">
+              <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Photo</label>
+              <div id="crm-pic-preview"
+                class="w-16 h-16 rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800
+                       flex items-center justify-center text-3xl leading-none
+                       border-2 border-gray-200 dark:border-zinc-700
+                       ${isEdit ? 'cursor-pointer hover:opacity-75 transition' : 'opacity-50'}"
+                title="${isEdit ? 'Click to upload a photo' : 'Save contact first, then edit to add a photo'}"
+                onclick="${isEdit ? 'document.getElementById(\'crm-pic-file\').click()' : ''}">
+                ${c?.profile_pic
+                  ? `<img id="crm-pic-img" src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
+                  : `<span id="crm-pic-img">${_crmEsc(c?.avatar_emoji||'👤')}</span>`}
+              </div>
+              <p class="text-[10px] text-center text-gray-400 mt-1 italic">${isEdit?'click to upload':'—'}</p>
+              <input type="hidden" name="profile_pic" id="crm-pic-url" value="${_crmEsc(c?.profile_pic||'')}"/>
+              <input type="file" id="crm-pic-file" accept="image/jpeg,image/png,image/gif,image/webp"
+                     class="hidden" onchange="crmHandlePicFile(this,${c?c.id:0})"/>
+            </div>
+            <!-- Emoji fallback + Name -->
+            <div class="flex-1 space-y-2">
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Emoji <span class="font-normal text-gray-400 dark:text-zinc-500">(fallback)</span></label>
+                <input name="avatar_emoji" value="${_crmEsc(c?c.avatar_emoji:'👤')}" maxlength="4"
+                  class="w-16 text-center text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg py-1
+                         bg-white dark:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Name <span class="text-red-400">*</span></label>
+                ${inp('name', c?.name, 'text', 'Full name')}
+              </div>
+            </div>
           </div>
           <div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Email</label>${inp('email', c?.email, 'email', 'email@example.com')}</div>
           <div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Phone</label>${inp('phone', c?.phone, 'tel', '+1 555 000 0000')}</div>
@@ -293,7 +385,18 @@ async function crmSaveContact(e, contactId) {
     // Save custom field values (find new contact ID if adding)
     const savedId = contactId || Math.max(...contacts.map(c => c.id));
     await Promise.all(_crmFields.map(f => {
-      const val = (data.get(`cf_${f.id}`) || '').trim();
+      var val;
+      if (f.field_type === 'multi_select') {
+        val = JSON.stringify(data.getAll(`cf_${f.id}`));
+      } else if (f.field_type === 'checkbox') {
+        val = data.has(`cf_${f.id}`) ? '1' : '0';
+      } else if (f.field_type === 'file_links') {
+        val = JSON.stringify(
+          (data.get(`cf_${f.id}`) || '').trim().split('\n').map(l => l.trim()).filter(Boolean)
+        );
+      } else {
+        val = (data.get(`cf_${f.id}`) || '').trim();
+      }
       const fBody = new URLSearchParams({field_id: f.id, value: val});
       return _crmFetch(`/home/crm/${_crmPid}/contacts/${savedId}/field-value`,
                        {method:'POST', body: fBody}).catch(() => {});
@@ -317,94 +420,52 @@ async function crmDeleteContact(id) {
   } catch(e) { alert('Delete failed: ' + e.message); }
 }
 
-// ── Fields modal ──────────────────────────────────────────────────────────────
-function crmOpenFields() {
-  const TYPE_LABELS = {text:'Text', select:'Select', url:'URL', date:'Date', number:'Number'};
-  const list = _crmFields.map(f => `
-    <div class="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-zinc-800">
-      <span class="flex-1 text-sm text-gray-800 dark:text-zinc-100">${_crmEsc(f.label)}</span>
-      <span class="text-xs text-gray-400 dark:text-zinc-500 px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800">${TYPE_LABELS[f.field_type]||f.field_type}</span>
-      <button onclick="crmEditField(${f.id})" class="text-gray-300 hover:text-[#0053e2] transition text-xs">✎</button>
-      <button onclick="crmDeleteField(${f.id})" class="text-gray-300 hover:text-red-500 transition text-xs">✕</button>
-    </div>`).join('') || '<p class="text-sm text-gray-400 dark:text-zinc-500 py-3">No custom fields yet.</p>';
-
-  const typeOpts = ['text','select','url','date','number'].map(t =>
-    `<option value="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('');
-
-  _crmShowModal(`
-    <div class="h-1.5 w-full bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-    <div class="p-6">
-      <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-3">⚙ Custom Fields</h2>
-      <div class="mb-4">${list}</div>
-      <form id="crm-field-form" onsubmit="crmSaveField(event,0)" class="space-y-2">
-        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">Add field</p>
-        <div class="flex gap-2">
-          <input name="label" placeholder="Field label" required
-            class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm
-                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                   focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-          <select name="field_type"
-            class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm
-                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                   focus:outline-none focus:ring-1 focus:ring-[#0053e2]"
-            onchange="crmToggleOptions(this)">${typeOpts}</select>
-        </div>
-        <input name="options" id="crm-field-options" placeholder="Options (pipe-separated): Low|Medium|High" style="display:none"
-          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm
-                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-        <p id="crm-field-err" class="hidden text-xs text-red-500"></p>
-        <div class="flex gap-2 justify-end">
-          <button type="button" onclick="crmCloseModal()"
-            class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Close</button>
-          <button type="submit"
-            class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-[#0053e2] text-white hover:bg-blue-700 transition">+ Add Field</button>
-        </div>
-      </form>
-    </div>`);
-}
-
-function crmToggleOptions(sel) {
-  const el = document.getElementById('crm-field-options');
-  if (el) el.style.display = sel.value === 'select' ? 'block' : 'none';
-}
-
-async function crmSaveField(e, fieldId) {
-  e.preventDefault();
-  const form = e.target;
-  const errEl = document.getElementById('crm-field-err');
-  const label = form.label.value.trim();
-  if (!label) { _crmShowErr(errEl, 'Label is required.'); return; }
-  const body = new URLSearchParams({
-    label, field_type: form.field_type.value,
-    options: (form.options?.value || '').trim(),
-  });
-  const url = fieldId
-    ? `/home/crm/${_crmPid}/fields/${fieldId}/update`
-    : `/home/crm/${_crmPid}/fields/add`;
+// ── Profile picture upload ───────────────────────────────────────────────────
+async function crmHandlePicFile(input, contactId) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!contactId) {
+    alert('Save the contact first, then edit to add a photo.');
+    input.value = '';
+    return;
+  }
+  const MAX = 3 * 1024 * 1024;
+  if (file.size > MAX) { alert('File too large \u2014 max 3 MB.'); input.value = ''; return; }
+  const preview = document.getElementById('crm-pic-preview');
+  const urlInput = document.getElementById('crm-pic-url');
+  if (preview) preview.style.opacity = '0.4';
   try {
-    _crmFields = await _crmFetch(url, {method:'POST', body});
-    crmOpenFields(); // re-render fields modal with updated list
-  } catch(err) { _crmShowErr(errEl, err.message || 'Could not save field.'); }
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`/home/crm/${_crmPid}/contacts/${contactId}/upload-pic`,
+                          {method: 'POST', body: fd});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if (urlInput) urlInput.value = j.url;
+    const imgEl = document.getElementById('crm-pic-img');
+    if (imgEl) {
+      if (imgEl.tagName === 'IMG') {
+        imgEl.src = j.url;
+      } else {
+        const img = document.createElement('img');
+        img.id = 'crm-pic-img';
+        img.src = j.url;
+        img.className = 'w-full h-full object-cover';
+        img.alt = '';
+        imgEl.replaceWith(img);
+      }
+    }
+  } catch(e) {
+    alert('Upload failed: ' + e.message);
+  } finally {
+    if (preview) preview.style.opacity = '';
+    input.value = '';
+  }
 }
 
-async function crmDeleteField(id) {
-  const f = _crmFields.find(x => x.id === id);
-  if (!confirm(`Delete field "${f?.label}"? All contact values for this field will be lost.`)) return;
-  try {
-    _crmFields = await _crmFetch(`/home/crm/${_crmPid}/fields/${id}/delete`, {method:'POST'});
-    crmOpenFields();
-  } catch(e) { alert('Delete failed: ' + e.message); }
-}
+// Field management → home-page-crm-fields.js
 
-function crmEditField(id) {
-  // For simplicity, editing a field just focuses the label input with existing values.
-  // A full edit UI would be Phase 1.5 polish; for now, delete + re-add.
-  alert('To edit a field, delete it and re-add it with the new settings.\n(Full inline edit coming soon.)');
-}
-
-// ── Modal helpers ─────────────────────────────────────────────────────────────
+Modal helpers ─────────────────────────────────────────────────────────────
 function _crmShowModal(html) {
   document.getElementById('crm-modal-body').innerHTML = html;
   document.getElementById('crm-modal').classList.remove('hidden');

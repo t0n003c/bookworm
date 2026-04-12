@@ -19,7 +19,7 @@ async def get_page_feeds(page_id: int, user_id: int) -> list[dict]:
     """Return all feeds for a page, ordered by sort_order."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT id, url, label, color, sort_order, category "
+            "SELECT id, url, label, color, sort_order, category, source_widget_id "
             "FROM rss_page_feeds "
             "WHERE page_id=? AND user_id=? "
             "ORDER BY sort_order, id",
@@ -31,7 +31,8 @@ async def get_page_feeds(page_id: int, user_id: int) -> list[dict]:
 
 async def add_page_feed(
     page_id: int, user_id: int, url: str,
-    label: str = "", color: str = "", category: str = ""
+    label: str = "", color: str = "", category: str = "",
+    widget_id: int | None = None,
 ) -> list[dict]:
     """Add a feed (idempotent on url).  Returns updated feed list."""
     async with get_db() as db:
@@ -55,9 +56,9 @@ async def add_page_feed(
 
         await db.execute(
             "INSERT OR IGNORE INTO rss_page_feeds"
-            "(page_id, user_id, url, label, color, sort_order, category)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (page_id, user_id, url.strip(), label.strip(), color, sort, category.strip()),
+            "(page_id, user_id, url, label, color, sort_order, category, source_widget_id)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (page_id, user_id, url.strip(), label.strip(), color, sort, category.strip(), widget_id),
         )
         await db.commit()
 
@@ -123,12 +124,14 @@ async def mark_read(page_id: int, user_id: int, guids: list[str]) -> None:
 async def sync_widget_feeds_to_rss_pages(
     user_id: int,
     widget_feeds: list[dict],
+    widget_id: int | None = None,
 ) -> None:
     """Push feeds from an rss_feed widget into all RSS Reader pages for this user.
 
     Rules (deliberately one-way):
     - Feeds present in the widget but missing from a reader page are ADDED.
-    - Feeds already in the reader page are left untouched (no overwrite).
+    - Feeds already in the reader page are left untouched (INSERT OR IGNORE).
+    - First widget to sync a URL owns the source_widget_id for that feed.
     - Feeds deleted from the widget are NOT removed from the reader page.
     - New feeds added directly in the reader page never flow back to the widget.
 
@@ -176,9 +179,9 @@ async def sync_widget_feeds_to_rss_pages(
 
                 await db.execute(
                     "INSERT OR IGNORE INTO rss_page_feeds"
-                    "(page_id, user_id, url, label, color, sort_order, category)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (page_id, user_id, url, label, color, sort, ''),
+                    "(page_id, user_id, url, label, color, sort_order, category, source_widget_id)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (page_id, user_id, url, label, color, sort, '', widget_id),
                 )
                 await db.commit()
 
@@ -189,13 +192,16 @@ async def sync_widget_feeds_to_rss_pages(
 async def get_all_rss_widget_feeds(user_id: int) -> list[dict]:
     """Collect every feed URL configured in any rss_feed widget owned by this user.
 
+    Returns each feed dict enriched with `widget_id` (the home_widgets.id) so
+    callers can attribute which widget owns each feed (Feature 2 — source badge).
+
     Used at RSS reader page load time to auto-import feeds from existing widgets
     (handles the one-time migration case for widgets created before the sync
     logic was wired in).
     """
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT hw.config_json "
+            "SELECT hw.id AS widget_id, hw.config_json "
             "FROM home_widgets hw "
             "JOIN home_pages hp ON hw.page_id = hp.id "
             "WHERE hp.user_id=? AND hw.widget_type='rss_feed'",
@@ -206,13 +212,14 @@ async def get_all_rss_widget_feeds(user_id: int) -> list[dict]:
     feeds: list[dict] = []
     seen_urls: set[str] = set()
     for row in rows:
+        widget_id = row["widget_id"]
         try:
-            cfg = json.loads(row[0] or "{}")
+            cfg = json.loads(row["config_json"] or "{}")
         except Exception:
             continue
         for f in cfg.get("feeds") or []:
             url = (f.get("url") or "").strip()
             if url and url not in seen_urls:
-                feeds.append(f)
+                feeds.append({**f, "widget_id": widget_id})
                 seen_urls.add(url)
     return feeds

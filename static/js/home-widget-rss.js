@@ -122,29 +122,69 @@ function _rssMarkAllRead(btn) {
 
 // ── Source badge & feed container ────────────────────────────────────────────
 
-/** Dot + colored text label shown on each compact row when compact_label='1'. */
+/** Dot + colored text label shown on each compact row when compact_label='1'.
+ * Uses a tinted pill so the badge is visible regardless of accent brightness.
+ * Dark/light luminance check ensures text is always readable on any background.
+ */
 function _rssBadgeDot(label, color) {
-  const c = _rssEsc(color);
-  return `<span class="inline-flex items-center gap-1 text-[10px] font-semibold leading-none flex-shrink-0" style="color:${c}">
+  const c   = _rssEsc(color || '#6b7280');
+  const tc  = _rssTextOnWhite(color);  // readable text color (dark if accent is light)
+  return `<span class="inline-flex items-center gap-1 text-[10px] font-semibold leading-none flex-shrink-0"
+               style="padding:1px 5px;border-radius:999px;background:${c}22;color:${tc}">
     <span style="width:5px;height:5px;border-radius:50%;background:${c};display:inline-block;flex-shrink:0;"></span>${_rssEsc(label)}
   </span>`;
+}
+
+/**
+ * Returns a readable text color for content placed on a white/light background.
+ * If the accent is very light (e.g. yellow #e4de1b), fall back to gray-700
+ * so text is legible. The accent dot/border still uses the full color.
+ */
+function _rssTextOnWhite(hex) {
+  const h = (hex || '#6b7280').replace('#', '');
+  const r = parseInt(h.slice(0,2), 16) || 0;
+  const g = parseInt(h.slice(2,4), 16) || 0;
+  const b = parseInt(h.slice(4,6), 16) || 0;
+  // Perceived luminance (0-255 scale); > 160 = too light for white background
+  return (0.299*r + 0.587*g + 0.114*b) > 160 ? '#374151' : `#${h}`;
 }
 
 /**
  * Per-feed bubble container (compact_label='wrap').
  * Groups all items from one feed in a rounded card with a coloured header.
  * Per-item labels are hidden inside — the header already identifies the source.
+ *
+ * Visual design: thick 4px left accent border at FULL opacity so it's
+ * unmistakably visible even for very light accent colors like yellow.
+ * Text color falls back to dark gray when accent is too light for white bg.
+ * URL fragment shown as subtitle to differentiate same-named feeds.
  */
 function _rssFeedContainer(feed, items, showThumb, readSet) {
-  const c    = _rssEsc(feed.color || '#6b7280');
+  const raw  = feed.color || '#6b7280';
+  const c    = _rssEsc(raw);
+  const tc   = _rssTextOnWhite(raw);   // dark gray for light accents, accent for dark
   const name = _rssEsc(feed.label || feed.url);
+
+  // Extract URL path fragment as subtitle (e.g. '@StephanieSoo' from YouTube URL).
+  // Only shown when it's meaningfully different from the label — helps users
+  // distinguish feeds that share the same user-defined label (e.g. both 'Youtube').
+  let subtitle = '';
+  try {
+    const fragment = new URL(feed.url).pathname.replace(/\/$/, '').split('/').pop();
+    if (fragment && fragment.toLowerCase() !== (feed.label || '').toLowerCase()) {
+      subtitle = `<span class="text-[9px] text-gray-400 dark:text-zinc-500 ml-1 font-normal">${_rssEsc(fragment)}</span>`;
+    }
+  } catch { /* non-URL feeds — skip subtitle */ }
+
   const rows = items.map(it => _rssItemCompact(it, showThumb, readSet, false)).join('');
   return `
-  <div class="rounded-xl border mb-2 last:mb-0 overflow-hidden" style="border-color:${c}44">
+  <div class="rounded-r-xl mb-2 last:mb-0 overflow-hidden"
+       style="border:1px solid ${c}33; border-left:4px solid ${c}; background:transparent;">
     <div class="flex items-center gap-1.5 px-2.5 py-1.5" style="background:${c}18">
-      <span style="width:6px;height:6px;border-radius:50%;background:${c};
+      <span style="width:7px;height:7px;border-radius:50%;background:${c};
                    flex-shrink:0;display:inline-block;"></span>
-      <span class="text-[10px] font-bold leading-none" style="color:${c}">${name}</span>
+      <span class="text-[10px] font-bold leading-none" style="color:${tc}">${name}</span>
+      ${subtitle}
     </div>
     <div class="px-2">${rows}</div>
   </div>`;

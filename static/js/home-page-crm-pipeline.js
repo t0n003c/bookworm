@@ -83,7 +83,9 @@ function _ppColumn(stageId, name, color, deals, stage) {
 
   const cards = deals.length
     ? deals.map(d => _ppCard(d)).join('')
-    : `<div class="text-center text-[11px] text-gray-300 dark:text-zinc-600 py-6 select-none">Drop cards here</div>`;
+    : `<div class="text-center text-[11px] text-gray-300 dark:text-zinc-600 py-6 select-none leading-relaxed">
+        No deals yet<br><span class="text-[10px] italic">Add one below ↓ or drag a card from another column</span>
+      </div>`;
 
   return `
     <div class="flex-shrink-0 w-60 flex flex-col rounded-xl border border-gray-200 dark:border-zinc-700

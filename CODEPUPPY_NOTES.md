@@ -126,15 +126,19 @@
 | `routers/attachments_db.py` | DB helpers for attachments; sets `UPLOAD_DIR` |
 | `routers/home.py` | Home pages + widget CRUD + weather proxy |
 | `routers/home_db.py` | DB helpers for home_pages + home_widgets tables |
+| `routers/home_crm.py` | 9 endpoints under `/home/crm/{page_id}/…` — contacts CRUD + fields CRUD + field-value upsert. Ownership validated via `_get_crm_page()`. |
+| `routers/home_crm_db.py` | DB helpers for CRM. Uses single JOIN in `_attach_field_values()` to avoid N+1. |
 | `routers/account.py` | User profile / password change / admin user management |
 | `routers/totp.py` | 2FA (TOTP) setup + verify routes |
 | `routers/totp_db.py` | DB helpers for TOTP |
 | `templates/index.html` | Main SPA shell (~112 KB — massive) |
 | `templates/base.html` | Base layout (~24 KB) |
 | `templates/partials/home_page.html` | All home widget macros + grid render (~54 KB) |
+| `templates/partials/home_page_crm.html` | CRM page shell — `#crm-page-root`, `#crm-main`, modal container. No inline script blocks. |
 | `templates/partials/note_form.html` | Note editor (huge — ~122 KB) |
-| `static/js/home-widgets.js` | Home nav + widget CRUD core |
+| `static/js/home-widgets.js` | Home nav + widget CRUD core; `_initSwappedPage()` dispatches HTMX page boots to 3 page types: rss (`#rss-page-root` → `initRssPage`), crm (`#crm-page-root` → `initCrmPage`), dashboard (fallback → `initHomeWidgets`) |
 | `static/js/home-widgets-render.js` | Widget JS engines (weather, calendar, todo, reminder, etc.) |
+| `static/js/home-page-crm.js` | CRM JS module. `initCrmPage(pid)` entry point called by `_initSwappedPage()`. Module-level state: `_crmPid, _crmContacts, _crmFields, _crmView, _crmQuery`. Views: table + gallery. Contact CRUD via modals. Fields management modal. View preference persisted to localStorage key `bw_crm_view`. |
 | `static/js/home-widgets-settings.js` | Widget settings modal + size picker |
 | `static/js/home-widgets-clock.js` | Clock widget engine (analog/digital) |
 | `static/js/slash_commands.js` | `/` command palette in note editor |
@@ -185,6 +189,17 @@
 
 **`rss_read_items`** — per-user persistent read state (`user_id, page_id, item_guid, read_at`; PK = all three)
 **`site_settings`** — admin-toggleable runtime flags (`key, value`); `registration_open` seeds from `BW_ALLOW_REGISTRATION` on first boot only
+
+**`crm_contacts`** — contact records scoped per CRM page
+- `id, page_id, user_id, name, email, phone, company, tags` (comma-sep), `avatar_emoji, sort_order, created_at, updated_at`
+- `updated_at` maintained by SQLite trigger `crm_contacts_updated_at`
+
+**`crm_custom_fields`** — field definitions per CRM page
+- `id, page_id, user_id, label, field_type` (`text|select|url|date|number`), `options` (pipe-sep for select), `sort_order, created_at`
+
+**`crm_contact_field_values`** — per-contact custom field values
+- `id, contact_id` (→`crm_contacts` CASCADE), `field_id` (→`crm_custom_fields` CASCADE), `value`
+- `UNIQUE(contact_id, field_id)` — upsert-safe
 
 ---
 
@@ -283,6 +298,7 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 - [x] **RSS Reader: category filter top bar** — `<div id="rss-top-cat-bar">` full-width bar between page title and 3-column layout; `_renderTopCatBar()` called at end of `_renderFeedList()` and early-return path. Hidden when no categories exist. (Supersedes sidebar `#rss-cat-pills` + `_renderCatPills()`, which were removed.)
 - [x] **RSS Reader: widget source badge** — each feed row shows a 📌 `PageName › WidgetLabel` badge when `source_widget_id` is set. Badge data injected via `window._rssWidgetSources` (built server-side by `_build_widget_sources()` in `routers/home.py`; short-circuits to `{}` when no feeds have a source widget). Widget deleted → badge disappears automatically (FK SET NULL).
 - [x] **4 BookWorm-specific Code Puppy skills created** — `bookworm-widget-scaffolder`, `bookworm-pre-commit`, `bookworm-db-migration`, `bookworm-template-audit` (see 🐾 Skills section below)
+- [x] **CRM Homespace page (Phase 1)** — per-page contact database with table + gallery view, custom field definitions (text/select/url/date/number), full CRUD for contacts and fields, field-value upsert (`UNIQUE(contact_id, field_id)`), authz ownership checks via `_get_crm_page()`. Router: `routers/home_crm.py` (9 endpoints). DB: `crm_contacts` + `crm_custom_fields` + `crm_contact_field_values`. JS: `home-page-crm.js` (`initCrmPage`). Template: `home_page_crm.html`.
 
 ---
 

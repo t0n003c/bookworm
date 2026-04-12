@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import json
 import logging
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+from routers.attachments_db import UPLOAD_DIR
 from routers.home_db import get_home_page
 from routers.home_crm_db import (
-    get_contacts, add_contact, update_contact, delete_contact, upsert_field_value,
+    get_contacts, add_contact, update_contact, update_contact_pic,
+    delete_contact, upsert_field_value,
     get_fields, add_field, update_field, delete_field,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
@@ -68,7 +70,8 @@ async def create_contact(
     phone:        str = Form(""),
     company:      str = Form(""),
     tags:         str = Form(""),
-    avatar_emoji: str = Form("👤"),
+    avatar_emoji: str = Form("🧑"),
+    profile_pic:  str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -76,7 +79,8 @@ async def create_contact(
             return _err("page not found", 404)
         contacts = await add_contact(page_id, uid, name.strip(), email.strip(),
                                      phone.strip(), company.strip(),
-                                     tags.strip(), avatar_emoji.strip() or "👤")
+                                     tags.strip(), avatar_emoji.strip() or "🧑",
+                                     profile_pic.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
@@ -93,7 +97,8 @@ async def edit_contact(
     phone:        str = Form(""),
     company:      str = Form(""),
     tags:         str = Form(""),
-    avatar_emoji: str = Form("👤"),
+    avatar_emoji: str = Form("🧑"),
+    profile_pic:  str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -101,12 +106,46 @@ async def edit_contact(
             return _err("page not found", 404)
         contacts = await update_contact(contact_id, page_id, uid, name.strip(),
                                         email.strip(), phone.strip(), company.strip(),
-                                        tags.strip(), avatar_emoji.strip() or "👤")
+                                        tags.strip(), avatar_emoji.strip() or "🧑",
+                                        profile_pic.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("edit_contact contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/upload-pic")
+async def upload_contact_pic(
+    request: Request, page_id: int, contact_id: int,
+    file: UploadFile = File(...),
+):
+    """Upload a profile picture for a contact. Returns {url: str}."""
+    _ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    _ALLOWED_EXT   = {"jpg", "jpeg", "png", "gif", "webp"}
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        if file.content_type not in _ALLOWED_TYPES:
+            return _err("Only JPG, PNG, GIF, WEBP images are allowed")
+        raw_ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+        ext = raw_ext if raw_ext in _ALLOWED_EXT else "jpg"
+        data = await file.read()
+        if len(data) > 3 * 1024 * 1024:
+            return _err("File too large — max 3 MB")
+        pic_dir = UPLOAD_DIR / "crm-pics"
+        pic_dir.mkdir(parents=True, exist_ok=True)
+        fpath = pic_dir / f"c{page_id}_{contact_id}.{ext}"
+        fpath.write_bytes(data)
+        pic_url = f"/uploads/crm-pics/{fpath.name}"
+        await update_contact_pic(contact_id, page_id, uid, pic_url)
+        return JSONResponse({"url": pic_url})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("upload_contact_pic contact_id=%s", contact_id)
         return _err(str(e), 500)
 
 
@@ -174,7 +213,7 @@ async def create_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "select", "url", "date", "number"}
+        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links"}
         if field_type not in VALID_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await add_field(page_id, uid, label.strip(), field_type, options.strip())
@@ -197,7 +236,7 @@ async def edit_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "select", "url", "date", "number"}
+        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links"}
         if field_type not in VALID_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await update_field(field_id, page_id, uid, label.strip(),

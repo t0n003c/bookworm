@@ -119,6 +119,21 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 ### Ports
 - Local dev: **8000** | Docker: **8001** | Teams: **8080** (never touch)
 
+### Server Start & Health Check (READ THIS — it causes freezes if ignored)
+- **NEVER** chain server-start + health check in one shell command. The freeze culprit is `urlopen` with no timeout — if the server isn't ready it blocks forever.
+- **NEVER** use `start /B` or `cmd /c "start /B ..."` to launch uvicorn — child inherits stdout/stderr handles, shell tool waits forever for them to close.
+- **NEVER** call `urllib.request.urlopen(url)` without a `timeout=` argument.
+- **ALWAYS** start the server as a detached process first, wait, then call `_health_check.py` as a **separate** shell step:
+  ```
+  # Step 1 — start (detached, logs to file)
+  powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-Process -FilePath '.venv\\Scripts\\uvicorn.exe' -ArgumentList 'main:app','--host','127.0.0.1','--port','8000' -NoNewWindow -RedirectStandardOutput 'bookworm.log' -RedirectStandardError 'bookworm_err.log'"
+  # Step 2 — wait
+  powershell -Command "Start-Sleep 5"
+  # Step 3 — verify (has timeout=5 built in, safe to run from tools)
+  .venv\Scripts\python.exe _health_check.py
+  ```
+- `restart.bat` is for **human double-click only** — it has a `pause` at the end that blocks non-interactive shells permanently.
+
 ### Docker & GitHub Safety
 - Every change must be safe for `git clone → docker compose up -d` by strangers
 - `.env` gitignored | `.env.example` committed with placeholder values only

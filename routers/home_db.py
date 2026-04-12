@@ -212,3 +212,20 @@ async def delete_widget(widget_id: int) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM home_widgets WHERE id=?", (widget_id,))
         await db.commit()
+
+
+async def get_widget_by_id(widget_id: int) -> dict | None:
+    """Fetch a single widget row by ID.  Returns None if not found."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT * FROM home_widgets WHERE id=?", (widget_id,)
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    w = dict(row)
+    try:
+        w["config"] = json.loads(w["config_json"])
+    except Exception:
+        w["config"] = {}
+    return w
