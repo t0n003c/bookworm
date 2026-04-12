@@ -173,10 +173,16 @@ function _crmToggleRemForm(btn, contactId, fieldId) {
   if (!form) return;
   var isOpening = form.classList.contains('hidden');
   form.classList.toggle('hidden');
-  // Scroll the form into view so it's never cut off by the modal's overflow-y-auto
+  // Scroll the modal body to its bottom so the full form (incl. buttons) is visible.
+  // scrollIntoView(block:'nearest') only reveals the top edge — not enough for a tall form.
   if (isOpening) {
     setTimeout(function() {
-      form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      var modalBody = document.getElementById('crm-modal-body');
+      if (modalBody) {
+        modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
+      } else {
+        form.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
     }, 50);
   }
 }
