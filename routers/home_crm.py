@@ -484,6 +484,7 @@ async def add_reminder(
     contact_id: int,
     field_id: int = Form(...),
     label: str = Form(""),
+    message: str = Form(""),
     reminder_date: str = Form(...),
     reminder_time: str = Form("09:00"),
 ):
@@ -500,6 +501,7 @@ async def add_reminder(
             contact_id, field_id, uid,
             label.strip() or "Reminder",
             date_str, reminder_time.strip() or "09:00",
+            message.strip(),
         ))
     except PermissionError:
         return _err("not logged in", 401)

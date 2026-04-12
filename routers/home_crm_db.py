@@ -330,7 +330,7 @@ async def get_contact_reminders(contact_id: int) -> list[dict]:
     """Return all reminders for a contact ordered by date then time."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT id, contact_id, field_id, label, reminder_date, reminder_time, created_at"
+            "SELECT id, contact_id, field_id, label, message, reminder_date, reminder_time, created_at"
             " FROM crm_contact_reminders"
             " WHERE contact_id=?"
             " ORDER BY reminder_date, reminder_time",
@@ -347,14 +347,15 @@ async def add_contact_reminder(
     label: str,
     reminder_date: str,
     reminder_time: str,
+    message: str = "",
 ) -> list[dict]:
     """Insert a reminder and return the updated list for this contact."""
     async with get_db() as db:
         await db.execute(
             "INSERT INTO crm_contact_reminders"
-            " (contact_id, field_id, user_id, label, reminder_date, reminder_time)"
-            " VALUES (?,?,?,?,?,?)",
-            (contact_id, field_id, user_id, label, reminder_date, reminder_time),
+            " (contact_id, field_id, user_id, label, message, reminder_date, reminder_time)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (contact_id, field_id, user_id, label, message, reminder_date, reminder_time),
         )
         await db.commit()
     return await get_contact_reminders(contact_id)
@@ -376,7 +377,7 @@ async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
     async with get_db() as db:
         cur = await db.execute(
             "SELECT r.id, r.contact_id, c.name AS contact_name,"
-            " r.field_id, r.label, r.reminder_date, r.reminder_time"
+            " r.field_id, r.label, r.message, r.reminder_date, r.reminder_time"
             " FROM crm_contact_reminders r"
             " JOIN crm_contacts c ON c.id = r.contact_id"
             " WHERE r.user_id=? AND r.reminder_date=?"

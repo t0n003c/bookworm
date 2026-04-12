@@ -498,6 +498,13 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_crm_reminders_user_date
                 ON crm_contact_reminders(user_id, reminder_date)
         """)
+        # ── crm_contact_reminders: message column (additive) ─────────────────
+        cur = await db.execute("PRAGMA table_info(crm_contact_reminders)")
+        _crm_rem_cols = {r[1] for r in await cur.fetchall()}
+        if "message" not in _crm_rem_cols:
+            await db.execute(
+                "ALTER TABLE crm_contact_reminders ADD COLUMN message TEXT NOT NULL DEFAULT ''"
+            )
 
         # ── crm_contacts: profile_pic column (additive migration) ─────────────
         cur = await db.execute("PRAGMA table_info(crm_contacts)")
