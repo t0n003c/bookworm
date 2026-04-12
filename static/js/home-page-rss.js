@@ -199,10 +199,30 @@ function _feedRow(f) {
                     class="text-[10px] px-2 py-0.5 border border-gray-300 dark:border-zinc-600
                            rounded text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800">Cancel</button>
           </div>
-          <p class="rss-edit-err hidden mt-1 text-[10px] text-red-500 leading-tight"></p>
         </form>
       </div>
     </div>`;
+}
+
+// ── BookWorm-styled toast (reuses the reminder popup container) ─────────────
+function _rssToast(msg, isErr) {
+  var wrap = document.getElementById('rem-fun-popup-wrap');
+  if (!wrap) return;
+  var card = document.createElement('div');
+  card.className = 'pointer-events-auto w-72 rounded-xl shadow-lg overflow-hidden'
+    + ' bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700'
+    + ' animate-[bw-slideup_.3s_cubic-bezier(.17,.67,.38,1.3)_both]';
+  card.style.borderLeft = '3px solid ' + (isErr ? '#ea1100' : '#2a8703');
+  card.innerHTML = '<div class="flex items-center gap-3 px-4 py-3">'
+    + '<span class="text-lg" aria-hidden="true">' + (isErr ? '⚠️' : '✅') + '</span>'
+    + '<p class="flex-1 text-sm ' + (isErr ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400') + '">' + _esc(msg) + '</p>'
+    + '<button data-rc aria-label="Dismiss" class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 text-xl leading-none px-1">&times;</button>'
+    + '</div>';
+  var tid;
+  var dismiss = function() { clearTimeout(tid); card.style.cssText += 'opacity:0;transition:opacity .35s;'; setTimeout(function() { card.remove(); }, 350); };
+  card.querySelector('[data-rc]').addEventListener('click', dismiss);
+  wrap.appendChild(card);
+  tid = setTimeout(dismiss, 6000);
 }
 
 // ── Feed selection ────────────────────────────────────────────────────────────
@@ -522,24 +542,14 @@ async function rssDeleteFeed(e, feedId) {
       _renderFeedList();
       if (_selFeed === feedId) rssSelectAll();
     } catch (err) {
-      // Re-render to restore the row, then show inline error
+      console.error('[rss] rssDeleteFeed:', err);
       _renderFeedList();
-      const restoredRow = document.querySelector(`[data-feed-id="${feedId}"]`);
-      if (restoredRow) {
-        const errBar = document.createElement('div');
-        errBar.className = 'rss-del-confirm flex items-center gap-2 px-2 py-1.5'
-          + ' bg-red-50 dark:bg-red-900/20 border-t border-red-100 dark:border-red-800/40';
-        const msg = err.message === 'session_expired'
-          ? 'Session expired — refresh and try again.'
-          : 'Could not remove — please try again.';
-        errBar.innerHTML = `
-          <span class="flex-1 text-[10px] text-red-600 dark:text-red-400">${_esc(msg)}</span>
-          <button type="button"
-                  class="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300
-                         transition px-1" aria-label="Dismiss">✕</button>`;
-        errBar.querySelector('button').addEventListener('click', () => errBar.remove());
-        restoredRow.appendChild(errBar);
-      }
+      _rssToast(
+        err.message === 'session_expired'
+          ? 'Session expired — please refresh the page.'
+          : 'Could not remove feed — please try again.',
+        true
+      );
     }
   });
 
@@ -553,19 +563,16 @@ function rssEditFeed(feedId) {
 
 async function rssUpdateFeed(e, feedId) {
   e.preventDefault();
-  const form     = e.target;
-  const label    = form.label.value.trim();
-  const category = form.category.value.trim();
-  const color    = form.color.value.trim();
-  const errEl    = form.querySelector('.rss-edit-err');
-  if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
   try {
+    const form     = e.target;
+    const label    = form.label.value.trim();
+    const category = form.category.value.trim();
+    const color    = form.color.value.trim();
     const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/update`, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ label, category, color }),
     });
-    // Guard: session expiry → auth middleware returns 302→/login (200 HTML, not JSON)
     const ct = r.headers.get('Content-Type') || '';
     if (!r.ok || !ct.includes('application/json')) {
       throw new Error(r.status === 401 ? 'session_expired' : 'server_error');
@@ -579,13 +586,13 @@ async function rssUpdateFeed(e, feedId) {
     });
     _applyDisplay();
   } catch (err) {
-    const msg = err.message === 'session_expired'
-      ? 'Session expired — refresh the page and try again.'
-      : 'Could not save — please try again.';
-    if (errEl) {
-      errEl.textContent = msg;
-      errEl.classList.remove('hidden');
-    }
+    console.error('[rss] rssUpdateFeed:', err);
+    _rssToast(
+      err.message === 'session_expired'
+        ? 'Session expired — please refresh the page.'
+        : 'Could not save changes — please try again.',
+      true
+    );
   }
 }
 
