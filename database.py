@@ -481,6 +481,24 @@ async def init_db() -> None:
             END
         """)
 
+        # ── crm_contact_reminders table (additive) ───────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_contact_reminders (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id    INTEGER NOT NULL REFERENCES crm_contacts(id)      ON DELETE CASCADE,
+                field_id      INTEGER NOT NULL REFERENCES crm_custom_fields(id) ON DELETE CASCADE,
+                user_id       INTEGER NOT NULL REFERENCES users(id)              ON DELETE CASCADE,
+                label         TEXT    NOT NULL DEFAULT '',
+                reminder_date TEXT    NOT NULL,
+                reminder_time TEXT    NOT NULL DEFAULT '09:00',
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_crm_reminders_user_date
+                ON crm_contact_reminders(user_id, reminder_date)
+        """)
+
         # ── crm_contacts: profile_pic column (additive migration) ─────────────
         cur = await db.execute("PRAGMA table_info(crm_contacts)")
         _crm_contact_cols = {r[1] for r in await cur.fetchall()}

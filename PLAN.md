@@ -1,52 +1,23 @@
-# Plan: CRM Homespace Page (page_type = "crm")
-Date: 2026-04-11
-Estimated complexity: High (phased — Phase 1 = Medium, Phase 2–3 = High each)
-
----
+# Plan: CRM Date Field Reminders
+Date: 2026-04-12
+Estimated complexity: Medium
 
 ## Summary
-
-Replace the `home_page_coming_soon.html` stub for CRM pages with a fully working
-Contact Relationship Management page. The page type `"crm"` is already in `PAGE_TYPES`
-(in `routers/home_db.py`) and already routes to the coming-soon fallback in
-`home_page_view()`. This plan adds the router, DB schema, template, and JS module
-to bring it to life — mirroring the exact same structural pattern as the RSS Reader
-(`rss` page type) but without any feed-sync complexity.
-
-**Three discrete phases, each independently shippable:**
-
-- **Phase 1** — Contact list with table/gallery view toggle, full CRUD, and per-page
-  custom field definitions. Core CRM loop.
-- **Phase 2** — Kanban pipeline: drag-and-drop stages, deal cards linked to contacts.
-- **Phase 3** — Activity log (call/email/meeting/task/note), linked BookWorm notes,
-  next follow-up reminder date per contact.
-
----
-
-## What Already Exists — Do NOT Rebuild
-
-| Thing | Where | Status |
-|---|---|---|
-| `"crm"` in `PAGE_TYPES` frozenset | `routers/home_db.py` line 43 | ✅ done |
-| `home_page_view()` routing stub — falls to `coming_soon` | `routers/home.py` lines 591–607 | ✅ done (needs `elif crm:` added) |
-| `_initSwappedPage()` dispatcher — detects `#rss-page-root`, falls back to `initHomeWidgets()` | `static/js/home-widgets.js` lines 861–872 | ✅ done (needs `#crm-page-root` guard added) |
-| `coming_soon` template stub with CRM feature list | `templates/partials/home_page_coming_soon.html` | ✅ exists (do not delete — other types still use it) |
-| All JS loaded from `base.html` via `?v={{ static_v }}` | `templates/base.html` lines 544–558 | ✅ pattern established |
-| `get_db()` context manager | `database.py` | ✅ use everywhere |
+Add a "Set Reminder" sub-section beneath every `date`-type custom field in the CRM contact **edit** modal. A user can add one or more reminders linked to a specific date field on a specific contact (pre-filled label, date, and 09:00 default time). Reminders are stored in a new `crm_contact_reminders` table. A new cross-page polling endpoint (`GET /home/crm-reminders/due`) is hit every 30 s by a new JS module; any reminder whose `reminder_date == today` and `reminder_time == current HH:MM` (browser local time) fires a `_showReminderToast()`. All CRUD is immediate (no waiting for the contact Save button). Reminder UI is hidden in Add-Contact mode (no contact ID yet).
 
 ---
 
 ## Files to Change
-
-Touch **in this order** to avoid import-order or template-not-found errors at startup.
+Ordered — touch in this sequence to avoid dependency issues.
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `database.py` | Add CRM tables to `init_db()` — Phase 1 tables first, then Phase 2, then Phase 3 (all additive) |
-| 2 | `routers/home.py` | Add `elif p_type == "crm":` branch in `home_page_view()` |
-| 3 | `static/js/home-widgets.js` | Add `#crm-page-root` guard in `_initSwappedPage()` before the dashboard fallback |
-| 4 | `templates/base.html` | Add `<script src="/static/js/home-page-crm.js?v={{ static_v }}" defer></script>` after the RSS line (line 555) |
-| 5 | `main.py` | Import `home_crm` router and `app.include_router(home_crm_router.router)` after the `home_rss` line |
+| 1 | `database.py` | Add `crm_contact_reminders` table inside `init_db()` (new `CREATE TABLE IF NOT EXISTS` block, additive migration) |
+| 2 | `routers/home_crm_db.py` | Add 4 new DB helpers: `get_contact_reminders`, `add_contact_reminder`, `delete_contact_reminder`, `get_due_crm_reminders` |
+| 3 | `routers/home_crm.py` | Add 4 new routes (list, add, delete per-contact reminders; cross-page due-poll) |
+| 4 | `static/js/home-page-crm.js` | Inject reminder placeholder `<div id="crm-rem-{f.id}">` in the date-field branch of `_crmContactModal`; call `crmLoadReminders()` for each date field after `_crmShowModal(body)` |
+| 5 | `static/js/home-page-crm-reminders.js` | **New file** — all reminder UI, CRUD fetch calls, and the 30 s poll loop (see New Files section) |
+| 6 | `templates/base.html` | Add `<script src="/static/js/home-page-crm-reminders.js?v={{ static_v }}" defer></script>` after the existing CRM script tags (line 576) |
 
 ---
 
@@ -54,706 +25,313 @@ Touch **in this order** to avoid import-order or template-not-found errors at st
 
 | File | Purpose |
 |---|---|
-| `routers/home_crm_db.py` | All DB query helpers for CRM (contacts, fields, stages, deals, activities) |
-| `routers/home_crm.py` | FastAPI router — all `/home/crm/{page_id}/...` JSON endpoints |
-| `templates/partials/home_page_crm.html` | CRM page shell — top bar + view container + seed JSON; JS does all rendering |
-| `static/js/home-page-crm.js` | CRM JS module — `initCrmPage(pageId)`, all views, CRUD, drag-drop (Phase 2) |
+| `static/js/home-page-crm-reminders.js` | Reminder list render, add/delete CRUD, `_checkCrmReminders()` poll, `initCrmRemindersPolling()` entry point |
 
 ---
 
 ## DB Migrations Needed
 
-All migrations go inside `init_db()` in `database.py`. They are additive and
-idempotent (safe to run on a live DB). **No table-swap dance needed** — all CRM
-tables are brand-new; nothing needs a constraint change.
-
-### Phase 1 Tables
+### New table — additive, safe to run on live DB
 
 ```sql
--- Core contact record (scoped per CRM page + user)
-CREATE TABLE IF NOT EXISTS crm_contacts (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id      INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
-    user_id      INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
-    name         TEXT    NOT NULL DEFAULT '',
-    email        TEXT    NOT NULL DEFAULT '',
-    phone        TEXT    NOT NULL DEFAULT '',
-    company      TEXT    NOT NULL DEFAULT '',
-    tags         TEXT    NOT NULL DEFAULT '',       -- comma-separated free-text tags
-    avatar_emoji TEXT    NOT NULL DEFAULT '👤',
-    sort_order   INTEGER NOT NULL DEFAULT 0,
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER IF NOT EXISTS crm_contacts_updated_at
-AFTER UPDATE ON crm_contacts
-BEGIN
-    UPDATE crm_contacts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
-
--- Custom field definitions (per CRM page)
-CREATE TABLE IF NOT EXISTS crm_custom_fields (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
-    user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
-    label      TEXT    NOT NULL,
-    field_type TEXT    NOT NULL DEFAULT 'text',   -- text | select | url | date | number
-    options    TEXT    NOT NULL DEFAULT '',        -- pipe-separated choices for 'select'
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Per-contact values for each custom field
-CREATE TABLE IF NOT EXISTS crm_contact_field_values (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact_id INTEGER NOT NULL REFERENCES crm_contacts(id)      ON DELETE CASCADE,
-    field_id   INTEGER NOT NULL REFERENCES crm_custom_fields(id) ON DELETE CASCADE,
-    value      TEXT    NOT NULL DEFAULT '',
-    UNIQUE(contact_id, field_id)          -- upsert-safe
-);
-```
-
-### Phase 2 Tables
-
-```sql
--- Pipeline stages (per CRM page, ordered)
-CREATE TABLE IF NOT EXISTS crm_stages (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
-    user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
-    name       TEXT    NOT NULL DEFAULT 'New Stage',
-    color      TEXT    NOT NULL DEFAULT '#0053e2',
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Deal / pipeline card (links a contact to a stage)
-CREATE TABLE IF NOT EXISTS crm_deals (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
-    user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
-    contact_id INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
-    stage_id   INTEGER REFERENCES crm_stages(id)   ON DELETE SET NULL,
-    title      TEXT    NOT NULL DEFAULT '',
-    value      REAL    NOT NULL DEFAULT 0,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER IF NOT EXISTS crm_deals_updated_at
-AFTER UPDATE ON crm_deals
-BEGIN
-    UPDATE crm_deals SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
-```
-
-### Phase 3 Tables
-
-```sql
--- Activity records (call, email, meeting, task, note) per contact
-CREATE TABLE IF NOT EXISTS crm_activities (
+CREATE TABLE IF NOT EXISTS crm_contact_reminders (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id       INTEGER NOT NULL REFERENCES home_pages(id)   ON DELETE CASCADE,
-    user_id       INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
-    contact_id    INTEGER REFERENCES crm_contacts(id)           ON DELETE CASCADE,
-    activity_type TEXT    NOT NULL DEFAULT 'note',  -- note|call|email|meeting|task
-    body          TEXT    NOT NULL DEFAULT '',
-    due_date      DATE    DEFAULT NULL,
-    completed     INTEGER NOT NULL DEFAULT 0,
-    note_id       INTEGER REFERENCES notes(id) ON DELETE SET NULL,  -- linked BookWorm note
+    contact_id    INTEGER NOT NULL REFERENCES crm_contacts(id)      ON DELETE CASCADE,
+    field_id      INTEGER NOT NULL REFERENCES crm_custom_fields(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL REFERENCES users(id)              ON DELETE CASCADE,
+    label         TEXT    NOT NULL DEFAULT '',
+    reminder_date TEXT    NOT NULL,          -- 'YYYY-MM-DD' (stored as text)
+    reminder_time TEXT    NOT NULL DEFAULT '09:00',  -- 'HH:MM' 24-h, browser local time
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-Migration placement inside `init_db()`: add a new `# ── CRM tables ──` section at the
-end of the function, directly after the existing `# ── RSS Reader tables ──` block.
-Use the same `CREATE TABLE IF NOT EXISTS` / `CREATE TRIGGER IF NOT EXISTS` pattern —
-no `try/except` needed because these are all fresh tables.
-
----
-
-## API Endpoints
-
-All endpoints live in `routers/home_crm.py`, prefix `/home`. All return `JSONResponse`.
-None are public — no `_PUBLIC` changes needed.
-
-### Phase 1 — Contacts + Custom Fields
-
-```
-GET  /home/crm/{page_id}/contacts                          → list all contacts + their field values
-POST /home/crm/{page_id}/contacts/add                      → create contact
-POST /home/crm/{page_id}/contacts/{contact_id}/update      → update contact core fields
-POST /home/crm/{page_id}/contacts/{contact_id}/delete      → delete contact (cascades field values + activities)
-POST /home/crm/{page_id}/contacts/{contact_id}/field-value → upsert a custom field value (INSERT OR REPLACE)
-
-GET  /home/crm/{page_id}/fields                            → list custom field definitions
-POST /home/crm/{page_id}/fields/add                        → add custom field definition
-POST /home/crm/{page_id}/fields/{field_id}/update          → rename / change type / options
-POST /home/crm/{page_id}/fields/{field_id}/delete          → delete field + all its values (CASCADE)
-```
-
-### Phase 2 — Kanban Pipeline
-
-```
-GET  /home/crm/{page_id}/stages                            → list stages ordered by sort_order
-POST /home/crm/{page_id}/stages/add                        → add stage
-POST /home/crm/{page_id}/stages/{stage_id}/update          → rename / recolor
-POST /home/crm/{page_id}/stages/{stage_id}/delete          → delete stage (deals → stage_id SET NULL)
-POST /home/crm/{page_id}/stages/reorder                    → body: JSON array of ordered stage IDs
-
-GET  /home/crm/{page_id}/deals                             → list all deals (joined with contact name + stage name)
-POST /home/crm/{page_id}/deals/add                         → create deal
-POST /home/crm/{page_id}/deals/{deal_id}/update            → update title / value / contact_id
-POST /home/crm/{page_id}/deals/{deal_id}/move              → body: stage_id + sort_order (drag result)
-POST /home/crm/{page_id}/deals/{deal_id}/delete            → delete deal
-```
-
-### Phase 3 — Activity Log
-
-```
-GET  /home/crm/{page_id}/contacts/{contact_id}/activities  → list activities for one contact
-POST /home/crm/{page_id}/contacts/{contact_id}/activities/add  → add activity
-POST /home/crm/{page_id}/activities/{activity_id}/update   → update body/due_date/completed/note_id
-POST /home/crm/{page_id}/activities/{activity_id}/delete   → delete activity
-```
-
----
-
-## Exact Code Changes for Wired-In Files
-
-### Change A — `routers/home.py` — add the CRM branch
-
-In `home_page_view()`, locate the block starting at line 591:
-
-```python
-# EXISTING:
-        if p_type == "dashboard":
-            tmpl = "partials/home_page.html"
-        elif p_type == "rss":
-            tmpl = "partials/home_page_rss.html"
-            # ... rss-specific db prep ...
-        else:
-            tmpl = "partials/home_page_coming_soon.html"
-```
-
-Add **one `elif` block** between `rss` and `else`:
-
-```python
-        elif p_type == "crm":
-            tmpl = "partials/home_page_crm.html"
-            # No server-side DB prep — JS calls /home/crm/{page_id}/contacts
-            # and /home/crm/{page_id}/fields after the page loads.
-```
-
-No new imports needed in `home.py` for Phase 1 — the CRM router is standalone.
-
-### Change B — `static/js/home-widgets.js` — add CRM guard in `_initSwappedPage()`
-
-Locate lines 861–872 (the `_initSwappedPage` function body):
-
-```js
-// EXISTING:
-function _initSwappedPage() {
-  // RSS Reader page
-  const rssRoot = document.getElementById('rss-page-root');
-  if (rssRoot) {
-    const pid = parseInt(rssRoot.dataset.pageId, 10);
-    if (pid && typeof initRssPage === 'function') {
-      try { initRssPage(pid); } catch(e) { console.error('[home] initRssPage:', e); }
-    }
-    return; // RSS page has no widget canvas — stop here
-  }
-  // Dashboard (widget canvas)
-  try { initHomeWidgets(); } catch(e) { console.error('[home] initHomeWidgets:', e); }
-}
-```
-
-Insert a CRM guard **between the RSS block and the Dashboard fallback**:
-
-```js
-  // CRM page
-  const crmRoot = document.getElementById('crm-page-root');
-  if (crmRoot) {
-    const pid = parseInt(crmRoot.dataset.pageId, 10);
-    if (pid && typeof initCrmPage === 'function') {
-      try { initCrmPage(pid); } catch(e) { console.error('[home] initCrmPage:', e); }
-    }
-    return; // CRM page has no widget canvas — stop here
-  }
-```
-
-### Change C — `templates/base.html` — load CRM JS
-
-After line 555 (`home-page-rss.js` script tag):
-
-```html
-<script src="/static/js/home-page-crm.js?v={{ static_v }}" defer></script>
-```
-
-### Change D — `main.py` — mount the CRM router
-
-Add import after the existing `home_rss` import line:
-
-```python
-from routers import home_crm as home_crm_router
-```
-
-Add include after the existing `home_rss_router` include line:
-
-```python
-app.include_router(home_crm_router.router)
-```
-
----
-
-## New File Specifications
-
-### `routers/home_crm.py`
-
-```python
-"""CRM page-level routes.
-
-Mounted with prefix=/home (same as routers/home.py + home_rss.py).
-Routes live under /home/crm/{page_id}/...
-
-All endpoints return JSONResponse and are consumed by home-page-crm.js.
-The page shell is rendered by home_page_view() in home.py.
-"""
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import JSONResponse
-from routers.home_db import get_home_page
-from routers.home_crm_db import (
-    get_contacts, add_contact, update_contact, delete_contact,
-    get_fields, add_field, update_field, delete_field,
-    upsert_field_value,
-    # Phase 2:
-    # get_stages, add_stage, update_stage, delete_stage, reorder_stages,
-    # get_deals, add_deal, update_deal, move_deal, delete_deal,
-    # Phase 3:
-    # get_activities, add_activity, update_activity, delete_activity,
 )
-
-router = APIRouter(prefix="/home")
-
-def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise PermissionError("not logged in")
-    return int(uid)
-
-async def _get_crm_page(page_id: int, uid: int):
-    """Return the page dict or None; validate page_type == 'crm'."""
-    page = await get_home_page(page_id, uid)
-    if not page or page.get("page_type") != "crm":
-        return None
-    return page
 ```
 
-Pattern all endpoints like RSS router — validate page ownership via `_get_crm_page()`,
-return `{"error": "page not found"}` with 404 if missing, return `{"error": "..."}` with
-400/500 on failure.
+**Placement in `database.py`:** Add this block inside `init_db()`, immediately after the `crm_deals_updated_at` trigger block (around line 482), before the additive `crm_contacts: profile_pic column` migration block. Follow the exact `await db.execute(""" CREATE TABLE IF NOT EXISTS ... """)` pattern used by all CRM tables.
 
-### `routers/home_crm_db.py`
-
-```python
-"""DB helpers for the CRM page type.
-
-Tables:
-  crm_contacts           — contact records per CRM page
-  crm_custom_fields      — custom field definitions per CRM page
-  crm_contact_field_values — per-contact custom field values
-  crm_stages             — pipeline stages (Phase 2)
-  crm_deals              — deal cards (Phase 2)
-  crm_activities         — activity log (Phase 3)
-
-ALL access via get_db() — never raw aiosqlite.connect().
-"""
-from database import get_db
+**Index** — add immediately after the table creation:
+```sql
+CREATE INDEX IF NOT EXISTS idx_crm_reminders_user_date
+    ON crm_contact_reminders(user_id, reminder_date);
 ```
 
-Key function signatures for Phase 1:
-
-```python
-async def get_contacts(page_id: int, user_id: int) -> list[dict]:
-    """Return all contacts for page, with custom field values joined in."""
-    # Strategy: SELECT * FROM crm_contacts WHERE page_id=? AND user_id=? ORDER BY sort_order, id
-    # Then for each contact, SELECT field_id, value FROM crm_contact_field_values WHERE contact_id=?
-    # Attach as contact["field_values"] = {field_id: value, ...}
-    # Acceptable N+1 at Phase 1 contact counts; optimize with JOIN if profiling flags it.
-
-async def add_contact(page_id: int, user_id: int, name: str, email: str,
-                      phone: str, company: str, tags: str, avatar_emoji: str) -> list[dict]:
-    """Insert contact, return updated contact list."""
-
-async def update_contact(contact_id: int, page_id: int, user_id: int, **kwargs) -> list[dict]:
-    """Update allowed core fields, return updated contact list."""
-
-async def delete_contact(contact_id: int, page_id: int, user_id: int) -> list[dict]:
-    """Delete contact (cascades field values + activities), return updated list."""
-
-async def upsert_field_value(contact_id: int, field_id: int, value: str) -> bool:
-    """INSERT OR REPLACE into crm_contact_field_values."""
-
-async def get_fields(page_id: int, user_id: int) -> list[dict]:
-    """Return custom field definitions ordered by sort_order."""
-
-async def add_field(page_id: int, user_id: int, label: str,
-                    field_type: str, options: str) -> list[dict]:
-    """Insert field definition, return updated field list."""
-
-async def update_field(field_id: int, page_id: int, user_id: int,
-                       label: str, field_type: str, options: str) -> list[dict]:
-
-async def delete_field(field_id: int, page_id: int, user_id: int) -> list[dict]:
-    """Delete field + CASCADE removes all its field values; return updated list."""
-```
-
-### `templates/partials/home_page_crm.html`
-
-Minimum viable shell (JS does all rendering):
-
-```html
-{# ── CRM page — partials/home_page_crm.html ─────────────────────────────────
-   Rendered by home_page_view() when page.page_type == 'crm'.
-   Context: page (dict), page_type (str)
-   JS:      static/js/home-page-crm.js (loaded via base.html static_v tag)
-#}
-<div id="crm-page-root" data-page-id="{{ page.id }}"
-     class="flex flex-col"
-     style="height:calc(100vh - 3.5rem)">
-
-  {# ── Top bar ── #}
-  <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200
-              dark:border-zinc-800 bg-white dark:bg-zinc-900 flex-shrink-0">
-    <span class="text-lg leading-none">{{ page.emoji }}</span>
-    <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
-      {{ page.name }}
-    </h1>
-    <span class="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
-                 bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
-      CRM
-    </span>
-
-    {# View toggle — JS wires onclick #}
-    <div id="crm-view-toggle" class="ml-auto flex items-center gap-1"></div>
-
-    {# Add contact button — JS wires onclick #}
-    <button id="crm-add-contact-btn"
-            class="ml-2 text-xs font-semibold px-3 py-1.5 rounded-lg
-                   bg-[#0053e2] text-white hover:bg-blue-700 transition">
-      + Contact
-    </button>
-
-    {# Manage fields button #}
-    <button id="crm-manage-fields-btn"
-            class="text-xs font-medium px-2 py-1.5 rounded-lg
-                   border border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] transition">
-      ⚙ Fields
-    </button>
-  </div>
-
-  {# ── Main content area — populated entirely by home-page-crm.js ── #}
-  <div id="crm-main" class="flex-1 overflow-auto p-4">
-    <p class="text-gray-400 dark:text-zinc-500 text-sm">Loading contacts…</p>
-  </div>
-
-  {# ── Modal backdrop — JS shows/hides ── #}
-  <div id="crm-modal-backdrop"
-       class="hidden fixed inset-0 bg-black/40 z-40"
-       onclick="crmCloseModal()"></div>
-
-  {# ── Contact add/edit modal — JS populates ── #}
-  <div id="crm-modal"
-       class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg
-                border border-gray-200 dark:border-zinc-700 overflow-hidden">
-      <div id="crm-modal-body" class="p-6"></div>
-    </div>
-  </div>
-
-</div>
-```
-
-### `static/js/home-page-crm.js`
-
-Module structure (use `var` for all module-level state — not `let`/`const` — because
-while this file itself is not HTMX-reinjected, `_initSwappedPage()` calls `initCrmPage()`
-on every page swap. Calling `initCrmPage()` must be idempotent and safe to call multiple
-times. Using `var` at module scope prevents re-declaration errors if the script somehow
-executes twice in a session.):
-
-```js
-// ── CRM page module ──────────────────────────────────────────────────────────
-// Loaded once via base.html. Activated by _initSwappedPage() when
-// #crm-page-root is detected in the DOM.
-
-var _crmPageId   = null;
-var _crmContacts = [];
-var _crmFields   = [];
-var _crmView     = localStorage.getItem('bw_crm_view') || 'table'; // 'table' | 'gallery'
-
-function initCrmPage(pageId) {
-  _crmPageId = pageId;
-  _crmView   = localStorage.getItem('bw_crm_view') || 'table';
-  _crmRenderViewToggle();
-  _crmLoadAll();
-}
-
-async function _crmLoadAll() {
-  // Parallel fetch contacts + fields
-  // Render table or gallery depending on _crmView
-}
-
-function _crmRenderTable() { /* ... */ }
-function _crmRenderGallery() { /* ... */ }
-function _crmRenderViewToggle() { /* ... */ }
-
-// ── Contact CRUD ──────────────────────────────────────────────────────────────
-function crmOpenAdd() { /* show modal with blank form */ }
-function crmOpenEdit(contactId) { /* show modal prefilled */ }
-async function crmSaveContact(contactId) { /* POST add or update */ }
-async function crmDeleteContact(contactId) { /* POST delete, confirm first */ }
-function crmCloseModal() { /* hide modal + backdrop */ }
-
-// ── Field management ──────────────────────────────────────────────────────────
-function crmOpenFields() { /* show fields modal */ }
-async function crmSaveField(fieldId) { /* add or update field */ }
-async function crmDeleteField(fieldId) { /* delete field */ }
-async function crmSaveFieldValue(contactId, fieldId, value) { /* upsert */ }
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function _crmEsc(s) { /* HTML escape */ }
-async function _crmFetch(url, opts) {
-  // Wrapper: check Content-Type before .json() to catch session-expiry 302→HTML
-  // (same pattern as home-page-rss.js)
-}
-```
-
-> ⚠️ The JS file is **not** HTMX-reinjected (it's loaded once from `base.html`), so
-> `let`/`const` inside function bodies are fine. However, **module-level state variables**
-> (`_crmPageId`, `_crmContacts`, etc.) should use `var` so that if `initCrmPage()` is
-> called a second time (navigating away and back), the re-assignment to `var` is silent
-> and idempotent rather than throwing on `const` re-declaration in a future edge case.
-> See Quirk #13 for the underlying rule.
+This is **additive only** — no table-swap needed. Safe to run 10× on a live DB.
 
 ---
 
-## Phase Boundary Summary
+## API Contract
 
-| Phase | Tables | Routes | Template additions | JS additions |
-|---|---|---|---|---|
-| 1 — Contacts + Fields | `crm_contacts`, `crm_custom_fields`, `crm_contact_field_values`, 1 trigger | 9 endpoints | Initial shell (top bar, `#crm-main`, modal) | `initCrmPage`, table/gallery render, contact CRUD, field management |
-| 2 — Kanban | `crm_stages`, `crm_deals`, 1 trigger | 10 endpoints | "Pipeline" tab / view in top bar | Stage columns, deal cards, drag-drop via HTML5 drag or SortableJS |
-| 3 — Activity Log | `crm_activities` | 4 endpoints | Sidebar or modal panel for contact detail | Activity feed render, note-link picker (reuse `_user_notes` search pattern), due-date highlight |
+### Per-contact routes (prefix: `/home/crm/{page_id}/contacts/{contact_id}/`)
 
-Ship Phase 1 to production before designing Phase 2 UI — real usage shapes the Kanban schema better than up-front guessing.
+| Method | Path suffix | Body (Form) | Returns |
+|---|---|---|---|
+| `GET` | `reminders` | — | `[{id, contact_id, field_id, label, reminder_date, reminder_time, created_at}]` |
+| `POST` | `reminders/add` | `field_id, label, reminder_date, reminder_time` | same list |
+| `POST` | `reminders/{reminder_id}/delete` | — | same list |
+
+### Cross-page poll route
+
+| Method | Full path | Query param | Returns |
+|---|---|---|---|
+| `GET` | `/home/crm-reminders/due` | `date=YYYY-MM-DD` (browser sends today's local date) | `[{id, contact_id, contact_name, field_id, label, reminder_date, reminder_time}]` |
+
+**Auth:** All 4 routes are auth-guarded via `_uid(request)`. No `_PUBLIC` entry needed.
+
+**Ownership validation:** The 3 per-contact routes call `_crm_page(page_id, uid)` (existing helper) + verify `contact_id` belongs to that page via `get_contacts(page_id, uid)` membership check — same pattern as the existing `save_field_value` route. The poll route filters directly by `user_id` in the DB query (no page_id needed).
+
+---
+
+## JS Function Signatures
+
+All functions live in `static/js/home-page-crm-reminders.js`. Use `var` for module-level state to match the existing CRM module pattern.
+
+```js
+// ── Module state ──────────────────────────────────────────────────────────────
+var _crmRemFired    = {};   // {`${reminderId}-${todayDate}`: true} dedup key
+var _crmRemInterval = null; // setInterval handle — cleared on re-init
+
+// ── Called from initCrmPage() in home-page-crm.js ─────────────────────────────
+function initCrmRemindersPolling()
+// Clear existing interval (guard against HTMX double-init).
+// setInterval(_checkCrmReminders, 30_000) + immediate first call.
+
+// ── 30-second poll ─────────────────────────────────────────────────────────────
+async function _checkCrmReminders()
+// Build date string from browser local time (new Date()).
+// GET /home/crm-reminders/due?date=YYYY-MM-DD
+// For each item whose reminder_time == current HH:MM and !_crmRemFired[key]:
+//   _crmRemFired[key] = true
+//   if (typeof _showReminderToast === 'function')
+//     _showReminderToast(`${item.contact_name} — ${item.label}`)
+
+// ── Called from home-page-crm.js after _crmShowModal(body) ───────────────────
+async function crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dateVal)
+// GET /home/crm/{_crmPid}/contacts/{contactId}/reminders
+// Filter returned list to reminders where r.field_id === fieldId
+// Target el: document.getElementById(`crm-rem-${fieldId}`)
+// Call _crmRenderReminderSection(el, filtered, contactId, contactName, fieldId, fieldLabel, dateVal)
+
+// ── Render the reminder sub-section under a date field ─────────────────────────
+function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldId, fieldLabel, dateVal)
+// Renders into el.innerHTML:
+//   - Existing reminders list: each row = label + date + time + 🗑 delete button
+//   - "+ Set Reminder" toggle button that expands an inline mini-form
+//   - Mini-form pre-fills: label="{contactName} — {fieldLabel}", date=dateVal, time="09:00"
+// Use _crmEsc() for all user-supplied text (already available globally from home-page-crm.js)
+
+// ── Add a reminder ─────────────────────────────────────────────────────────────
+async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, dateVal)
+// Read label/date/time from sibling inputs in the mini-form (identified by data-* attrs)
+// POST /home/crm/{_crmPid}/contacts/{contactId}/reminders/add
+// On success: crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dateVal)
+
+// ── Delete a reminder ──────────────────────────────────────────────────────────
+async function crmDeleteReminder(reminderIdStr, contactId, fieldId, fieldLabel, contactName, dateVal)
+// POST /home/crm/{_crmPid}/contacts/{contactId}/reminders/{reminderIdStr}/delete
+// On success: crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dateVal)
+```
+
+---
+
+## Changes to Existing JS (`home-page-crm.js`)
+
+### 1 — In `_crmContactModal(c)`: split `date` out of the combined `iType` branch
+
+**Find** (around line 263 — the else-branch before the `return` for each field):
+```js
+} else {
+  const iType = {date:'date', number:'number', url:'url', email:'email'}[f.field_type] || 'text';
+  control = inp(`cf_${f.id}`, val, iType);
+}
+return `<div><label ...>${_crmEsc(f.label)}</label>${control}</div>`;
+```
+
+**Replace with:**
+```js
+} else if (f.field_type === 'date') {
+  control = inp(`cf_${f.id}`, val, 'date');
+  var remDiv = isEdit
+    ? `<div id="crm-rem-${f.id}" class="mt-1 text-xs text-gray-400 italic">Loading…</div>`
+    : '';
+  return `<div>
+    <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>
+    ${control}${remDiv}
+  </div>`;
+} else {
+  var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
+  control = inp(`cf_${f.id}`, val, iType);
+}
+```
+> ⚠️ Note: `iType` changed from `const` to `var` to keep the existing `var`-only pattern in this function.
+
+### 2 — After `_crmShowModal(body)` call in `_crmContactModal`
+
+Add immediately after `_crmShowModal(body)`:
+```js
+if (isEdit && typeof crmLoadReminders === 'function') {
+  _crmFields.filter(function(f) { return f.field_type === 'date'; })
+    .forEach(function(f) {
+      crmLoadReminders(c.id, c.name, f.id, f.label, fv[f.id] || '');
+    });
+}
+```
+
+### 3 — In `initCrmPage(pid)`: start the poll
+
+Add at the end of `initCrmPage(pid)` (before the closing `}`):
+```js
+if (typeof initCrmRemindersPolling === 'function') initCrmRemindersPolling();
+```
+
+---
+
+## DB Helper Signatures (`routers/home_crm_db.py`)
+
+```python
+async def get_contact_reminders(contact_id: int) -> list[dict]:
+    """Return all reminders for a contact, ordered by reminder_date, reminder_time."""
+    # SELECT * FROM crm_contact_reminders WHERE contact_id=?
+    # ORDER BY reminder_date, reminder_time
+
+async def add_contact_reminder(
+    contact_id: int, field_id: int, user_id: int,
+    label: str, reminder_date: str, reminder_time: str,
+) -> list[dict]:
+    """Insert a reminder and return the updated list for this contact."""
+    # INSERT INTO crm_contact_reminders
+    #   (contact_id, field_id, user_id, label, reminder_date, reminder_time)
+    #   VALUES (?,?,?,?,?,?)
+    # then return get_contact_reminders(contact_id)
+
+async def delete_contact_reminder(reminder_id: int, contact_id: int) -> list[dict]:
+    """Delete one reminder, validate contact_id to prevent cross-contact deletes.
+    Return updated list for this contact."""
+    # DELETE FROM crm_contact_reminders WHERE id=? AND contact_id=?
+    # then return get_contact_reminders(contact_id)
+
+async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
+    """Return all reminders for user where reminder_date == date_str.
+    JOIN crm_contacts to include contact name."""
+    # SELECT r.id, r.contact_id, c.name AS contact_name,
+    #        r.field_id, r.label, r.reminder_date, r.reminder_time
+    # FROM crm_contact_reminders r
+    # JOIN crm_contacts c ON c.id = r.contact_id
+    # WHERE r.user_id=? AND r.reminder_date=?
+    # ORDER BY r.reminder_time
+```
+
+---
+
+## Route Implementations (`routers/home_crm.py`)
+
+**Import block addition** at top of file (add to existing import from `home_crm_db`):
+```python
+from routers.home_crm_db import (
+    ...,  # all existing imports unchanged
+    get_contact_reminders, add_contact_reminder,
+    delete_contact_reminder, get_due_crm_reminders,
+)
+```
+
+Also add to the stdlib imports at top:
+```python
+import datetime
+from fastapi import Query
+```
+
+### Route 1: `GET /home/crm/{page_id}/contacts/{contact_id}/reminders`
+- `_uid(request)` → `_crm_page(page_id, uid)` → membership check → `get_contact_reminders(contact_id)`
+- Returns `JSONResponse(reminders)`
+
+### Route 2: `POST /home/crm/{page_id}/contacts/{contact_id}/reminders/add`
+Form params: `field_id: int = Form(...)`, `label: str = Form("")`, `reminder_date: str = Form(...)`, `reminder_time: str = Form("09:00")`.
+- Validate `reminder_date` is non-empty and 10 chars (basic guard).
+- Standard ownership chain, then `add_contact_reminder(contact_id, field_id, uid, label.strip(), reminder_date, reminder_time)`.
+
+### Route 3: `POST /home/crm/{page_id}/contacts/{contact_id}/reminders/{reminder_id}/delete`
+- Standard ownership chain, then `delete_contact_reminder(reminder_id, contact_id)`.
+
+### Route 4: `GET /home/crm-reminders/due`
+```python
+@router.get("/crm-reminders/due")
+async def crm_reminders_due(
+    request: Request,
+    date: str = Query(default=""),
+):
+    try:
+        uid = _uid(request)
+        date_str = date.strip() if len(date.strip()) == 10 else datetime.date.today().isoformat()
+        return JSONResponse(await get_due_crm_reminders(uid, date_str))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_reminders_due")
+        return _err(str(e), 500)
+```
+> FastAPI resolves `/home/crm-reminders/due` as a literal path before trying the parameterized `/home/crm/{page_id}/...` family — no routing conflict.
 
 ---
 
 ## Skills to Invoke
 
-Run in this order during and after implementation:
-
-| # | Skill / Agent | When | Why |
-|---|---|---|---|
-| 1 | `bookworm-db-migration` | After writing `database.py` changes | Dry-run the 5 new `CREATE TABLE IF NOT EXISTS` + 2 triggers, confirm idempotent on live DB |
-| 2 | `bookworm-template-audit` | After writing `home_page_crm.html` and `home-page-crm.js` | Check for `var` in module-level state, `| tojson | safe` on any JSON injection, `?v={{ static_v }}` on script tag, broken `hx-target` IDs |
-| 3 | `bookworm-qa` | After each phase ships | Hit all new endpoints, check page renders, confirm `_initSwappedPage` fires `initCrmPage`, verify no widget canvas init error on CRM pages |
-| 4 | `bookworm-pre-commit` | Before every commit | Standard 10-phase BookWorm safety checklist |
-| 5 | `bookworm-docs-keeper` | After Phase 1 ships | Update CODEPUPPY_NOTES schema section (5 new tables + triggers), update "Features Completed" list |
+- **`bookworm-db-migration`** — validate the `crm_contact_reminders` migration is idempotent before applying to live DB
+- **`bookworm-template-audit`** — after touching `home-page-crm.js` and creating `home-page-crm-reminders.js`; specifically verify no `let`/`const` in injected-HTML contexts, and `?v={{ static_v }}` present on the new `<script>` tag in `base.html`
+- **`bookworm-qa`** — hit all 4 new endpoints; verify toast fires; verify edit modal shows reminder section and add modal does not; verify delete works
+- **`bookworm-pre-commit`** — before committing
+- **`bookworm-docs-keeper`** — update `CODEPUPPY_NOTES.md` schema section with `crm_contact_reminders`, new routes, and new JS module in the file map
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Quirk #10 — `_hpCache` 5-min client-side TTL.**
-`home-widgets.js` caches each `/home/pages/{id}` response in `_hpCache` for 5 minutes.
-If a user navigates to a CRM page, goes elsewhere, and comes back within 5 minutes, HTMX
-serves the cached HTML. `_initSwappedPage()` still fires after the swap, so `initCrmPage()`
-will still be called — but if there was a bug fix in the template between the two visits,
-the old HTML is served. **Rule: always hard-refresh (`Ctrl+Shift+R`) when testing template
-changes to a CRM page.**
+**`var` not `let`/`const` in `_crmContactModal`:**
+The existing `_crmContactModal` function already uses `var` for its module-level bindings. The new `var remDiv = ...` and `var iType = ...` replacements maintain this pattern. If `let` or `const` were used in this scope, repeated HTMX navigations that reinitialize the page would throw redeclaration errors in strict mode. (Quirk from CODEPUPPY_NOTES.md § Known Quirks section, general CRM module pattern.)
 
-**Quirk #13 — `var` not `let`/`const` in HTMX-reinjected `<script>` blocks.**
-`home_page_crm.html` must not have any `<script>` blocks with top-level `let`/`const`.
-The template is swapped into the DOM by HTMX on every page navigation. Any top-level
-`let`/`const` declaration in a `<script>` inside the template will throw
-`SyntaxError: Identifier already declared` on the second navigation. Use `var` or move
-state into the `home-page-crm.js` static module (preferred — keep the template's `<script>`
-minimal or absent entirely).
+**`?v={{ static_v }}` cache-busting on the new `<script>` tag:**
+Without it, browsers will serve the old (missing) JS file from cache after deployment. The new line in `base.html` must be:
+`<script src="/static/js/home-page-crm-reminders.js?v={{ static_v }}" defer></script>`
 
-**Quirk #16 — `| tojson | safe` for any JSON in `<script>` tags.**
-If the template injects any server-side data into the page as JSON (e.g. initial contact
-list to avoid a loading flash), it **must** be `{{ data | tojson | safe }}`. Without `|
-safe`, Jinja2 autoescape HTML-encodes every `"` to `&quot;`, which `JSON.parse()` silently
-fails on. For Phase 1, we're using the pure-API-call approach (JS fetches contacts after
-page load), so this quirk only matters if we add a data-injection shortcut later.
+**`get_db()` — never raw `aiosqlite.connect()`:**
+All 4 new DB helpers must use `async with get_db() as db:`. This is enforced by the pre-commit check.
 
-**Quirk #3 — Static JS mtime must change for `static_v` to increment.**
-After editing `home-page-crm.js`, the server must be restarted (or the file touched) for
-browsers to get the updated script. In the `reload=True` dev mode, Python files auto-reload
-but static JS does **not** trigger a `static_v` recompute. **Workaround: restart the server
-or hard-refresh.** This is especially easy to forget when iterating on the JS module.
+**Interval guard on HTMX re-navigation:**
+`initCrmRemindersPolling()` must clear `_crmRemInterval` before calling `setInterval`. Without this, each CRM page navigation spawns a new poll loop. After 10 navigations the poll fires 10× per tick.
 
-**Quirk #17 — Avoid N+1 for custom field values.**
-`get_contacts()` in `home_crm_db.py` will be tempted to do one DB call per contact to
-fetch its field values. At Phase 1 contact counts (≤100) this is acceptable, but document
-it as tech debt and add a `# FIXME: N+1 — replace with JOIN or IN() query` comment. Do
-not copy the pattern to the activity log (Phase 3) without a JOIN.
+**`_showReminderToast` availability guard:**
+`home-widgets-render.js` is loaded before CRM scripts. `_showReminderToast` is always available on the home page. However, use `if (typeof _showReminderToast === 'function')` defensive guard before calling it (matches the pattern in `home-widget-events.js:632`).
 
-**Quirk re: `_uid()` function naming collision.**
-Both `routers/home.py` and `routers/home_rss.py` define a local `_uid(request)` helper.
-`routers/home_crm.py` should do the same (copy the exact pattern from `home_rss.py` lines
-28–31). Do NOT import `_uid` from another router — it's intentionally private.
+**No `_PUBLIC` entry:** `/home/crm-reminders/due` requires a logged-in session. Do NOT add to `_PUBLIC`.
 
-**Quirk re: page ownership validation.**
-Every CRM endpoint must validate that `page.user_id == uid` AND `page.page_type == "crm"`.
-Use the `_get_crm_page(page_id, uid)` helper (defined in `home_crm.py`) which calls
-`get_home_page(page_id, uid)` — that function already filters by `user_id` at the SQL
-level (`WHERE id=? AND user_id=?`), making it impossible to read another user's page.
-
-**Quirk re: `crm_stages` ON DELETE cascade choice.**
-When a stage is deleted, deals in that stage should NOT be deleted (the contact data is
-valuable). Use `stage_id REFERENCES crm_stages(id) ON DELETE SET NULL` on `crm_deals` —
-same pattern as `source_widget_id` on `rss_page_feeds`. JS should handle `stage_id = null`
-deals gracefully (show in an "Unsorted" column).
+**No `_demo_guard`:** `crm_contact_reminders` is per-user, not a global table. No demo guard needed.
 
 ---
 
 ## Implementation Checklist
 
-### Phase 1 — Contacts + Custom Fields
-
-- [ ] **Step 1 — DB: write Phase 1 migrations**
-  In `database.py` `init_db()`, after the RSS block, add:
-  - `CREATE TABLE IF NOT EXISTS crm_contacts (...)`
-  - `CREATE TRIGGER IF NOT EXISTS crm_contacts_updated_at ...`
-  - `CREATE TABLE IF NOT EXISTS crm_custom_fields (...)`
-  - `CREATE TABLE IF NOT EXISTS crm_contact_field_values (...)`
-  Run `bookworm-db-migration` skill to dry-run on live DB.
-
-- [ ] **Step 2 — DB helpers: write `routers/home_crm_db.py`**
-  Implement Phase 1 functions: `get_contacts`, `add_contact`, `update_contact`,
-  `delete_contact`, `upsert_field_value`, `get_fields`, `add_field`, `update_field`,
-  `delete_field`. Use `get_db()` everywhere. Add `# FIXME: N+1` comment on field-value
-  fetching loop.
-
-- [ ] **Step 3 — Router: write `routers/home_crm.py`**
-  Implement 9 Phase 1 endpoints. Validate page ownership on every route via
-  `_get_crm_page()`. Return `JSONResponse` throughout.
-
-- [ ] **Step 4 — Routing: add `elif p_type == "crm":` in `routers/home.py`**
-  One-liner change in `home_page_view()`. Confirm `widget_sources` NameError does
-  NOT occur — the existing `"widget_sources": widget_sources if p_type == "rss" else {}`
-  short-circuits safely (Python evaluates the `else {}` branch without accessing
-  `widget_sources` when `p_type != "rss"`).
-
-- [ ] **Step 5 — Template: create `templates/partials/home_page_crm.html`**
-  Shell with `#crm-page-root`, top bar, `#crm-main`, modal backdrop, modal container.
-  Zero inline `<script>` if possible — keep all logic in the static JS file.
-  No `let`/`const` at top level of any `<script>` block.
-
-- [ ] **Step 6 — JS: create `static/js/home-page-crm.js`**
-  Implement `initCrmPage(pageId)`, `_crmLoadAll()`, `_crmRenderTable()`,
-  `_crmRenderGallery()`, `_crmRenderViewToggle()`, `crmOpenAdd()`, `crmOpenEdit()`,
-  `crmSaveContact()`, `crmDeleteContact()`, `crmCloseModal()`, `crmOpenFields()`,
-  `crmSaveField()`, `crmDeleteField()`, `crmSaveFieldValue()`, `_crmEsc()`,
-  `_crmFetch()`. Use `var` for all module-level state.
-
-- [ ] **Step 7 — Wire JS into `_initSwappedPage()` in `static/js/home-widgets.js`**
-  Add the `#crm-page-root` guard block between the RSS block and the Dashboard fallback.
-
-- [ ] **Step 8 — Wire JS into `templates/base.html`**
-  Add `<script src="/static/js/home-page-crm.js?v={{ static_v }}" defer></script>`
-  after the `home-page-rss.js` line.
-
-- [ ] **Step 9 — Mount router in `main.py`**
-  Import `home_crm` and `app.include_router(home_crm_router.router)`.
-
-- [ ] **Step 10 — Restart server, hard-refresh, smoke test**
-  Navigate to a CRM page. Confirm: (a) page no longer shows "Coming Soon", (b) top
-  bar renders, (c) `initCrmPage` fires in browser console, (d) API calls succeed.
-  Add a contact, edit it, delete it. Add a custom field, set a value on a contact,
-  delete the field.
-
-- [ ] **Step 11 — Run `bookworm-template-audit`**
-  Pass files: `templates/partials/home_page_crm.html`, `static/js/home-page-crm.js`,
-  `static/js/home-widgets.js`.
-
-- [ ] **Step 12 — Run `bookworm-qa`**
-  Pass: new endpoints (contacts CRUD, fields CRUD), page render, `_initSwappedPage` guard.
-
-- [ ] **Step 13 — Run `bookworm-pre-commit`**
-
-- [ ] **Step 14 — Run `bookworm-docs-keeper`**
-  Update CODEPUPPY_NOTES schema section (5 new tables + 2 triggers), "Features Completed".
-
-- [ ] **Step 15 — Commit Phase 1**
-  Message: `feat(crm): Phase 1 — contact list, gallery view, custom fields`
-
-### Phase 2 — Kanban Pipeline
-
-- [ ] **Step 16 — DB: write Phase 2 migrations** (`crm_stages`, `crm_deals`, trigger)
-- [ ] **Step 17 — DB helpers: extend `home_crm_db.py`** with stage + deal functions
-- [ ] **Step 18 — Router: add 10 Phase 2 endpoints to `home_crm.py`**
-- [ ] **Step 19 — Template: add "Pipeline" tab/view switcher to `home_page_crm.html`**
-- [ ] **Step 20 — JS: implement Kanban render, drag-drop (HTML5 drag API, no extra deps)**
-  Decide on drag library (HTML5 native preferred — no new CDN tags per guidelines).
-- [ ] **Step 21 — Audit → QA → Pre-commit → Docs → Commit Phase 2**
-  Message: `feat(crm): Phase 2 — Kanban pipeline with drag-and-drop stages`
-
-### Phase 3 — Activity Log + Note Links + Reminders
-
-- [ ] **Step 22 — DB: write Phase 3 migration** (`crm_activities`)
-- [ ] **Step 23 — DB helpers: extend `home_crm_db.py`** with activity functions
-- [ ] **Step 24 — Router: add 4 Phase 3 endpoints**
-- [ ] **Step 25 — Template: add activity panel anchor** (slide-out or tab in contact detail modal)
-- [ ] **Step 26 — JS: implement activity feed, note-link picker (call `/home/crm/{page_id}/contacts/{id}/activities`)**
-  Note-link picker should call an existing notes search endpoint (pattern from `_user_notes()` in `home.py`).
-  Next follow-up date: derived from `min(due_date) WHERE completed=0` per contact; show in table/gallery row.
-- [ ] **Step 27 — Audit → QA → Pre-commit → Docs → Commit Phase 3**
-  Message: `feat(crm): Phase 3 — activity log, note links, follow-up reminders`
+- [ ] **Step 1 — DB schema** — Add `crm_contact_reminders` table + index to `init_db()` in `database.py` after the `crm_deals_updated_at` trigger block. Run `bookworm-db-migration` to confirm idempotency.
+- [ ] **Step 2 — DB helpers** — Add `get_contact_reminders`, `add_contact_reminder`, `delete_contact_reminder`, `get_due_crm_reminders` to `routers/home_crm_db.py`. All use `get_db()`, not raw `aiosqlite.connect()`.
+- [ ] **Step 3 — Routes** — Add 4 routes to `routers/home_crm.py`. Update the `from routers.home_crm_db import (...)` block. Add `import datetime` and `from fastapi import Query` to stdlib/FastAPI imports.
+- [ ] **Step 4 — Modal UI patch** — In `home-page-crm.js`, split the date-type field out of the combined `iType` else-branch. Add `<div id="crm-rem-${f.id}">` placeholder in edit mode. Change `const iType` to `var iType` in the remaining branch.
+- [ ] **Step 5 — Poll init hook** — Add `if (typeof initCrmRemindersPolling === 'function') initCrmRemindersPolling();` to end of `initCrmPage(pid)` in `home-page-crm.js`.
+- [ ] **Step 6 — Post-modal loader** — Add the date-field reminder loader loop after `_crmShowModal(body)` in `_crmContactModal`.
+- [ ] **Step 7 — New JS module** — Create `static/js/home-page-crm-reminders.js` with all functions from the JS Function Signatures section. Use `var` for module-level state. Use `_crmEsc()` (global from `home-page-crm.js`) for all user text.
+- [ ] **Step 8 — Register script tag** — Add `<script src="/static/js/home-page-crm-reminders.js?v={{ static_v }}" defer></script>` to `templates/base.html` after line 575.
+- [ ] **Step 9 — Smoke test (modal)** — Edit an existing contact with a date field. Confirm reminder placeholder renders. Add a reminder. Confirm it appears with label, date, time, and delete button. Delete it. Confirm it disappears. Open Add Contact modal — confirm NO reminder section.
+- [ ] **Step 10 — Smoke test (toast)** — Add a reminder for today's date, set time to current minute + 1. Wait for the 30 s poll. Confirm toast fires with text "{contact_name} — {field_label}".
+- [ ] **Step 11 — Template audit** — Run `bookworm-template-audit`. Pass: files = `base.html`, `home-page-crm.js`, `home-page-crm-reminders.js`.
+- [ ] **Step 12 — QA** — Run `bookworm-qa`. Pass: new endpoints, modal guard (add vs edit), toast behavior, delete behavior.
+- [ ] **Step 13 — Pre-commit** — Run `bookworm-pre-commit`.
+- [ ] **Step 14 — Docs sync** — Run `bookworm-docs-keeper`. Update `crm_contact_reminders` in schema, add routes + JS module to file map.
 
 ---
 
 ## Open Questions
 
-**1. Contacts-per-page vs contacts-per-user scope (Phase 1)**
-Current plan: contacts are scoped to a specific CRM page (`page_id` on `crm_contacts`).
-This means each CRM page is an independent contact database. Alternative: contacts are
-global per user and any CRM page can see all the user's contacts (shared address book).
-**Recommendation: per-page scope (simpler, more flexible — team members can run
-separate pipelines).** But confirm with Tinh before writing the schema — switching
-from per-page to per-user later requires a table rebuild.
+1. **Repeat rules?** The existing reminder widget supports `repeat_unit` / `repeat_interval`. Should CRM date-field reminders repeat (e.g., "remind me every year on this date")? Not included here — additive migration if needed later.
 
-**2. Drag library for Phase 2 Kanban**
-The app currently has zero npm / no-CDN policy for Tailwind (tech debt), and `AGENTS.md`
-says "no new CDN script tags". HTML5 drag-and-drop API is sufficient for basic column
-drag but terrible on mobile. Options: (a) HTML5 native (no dep, desktop-only), (b)
-SortableJS baked into `static/js/` as a committed file (no CDN, adds ~18 KB). **Decision
-needed before Phase 2 JS work starts.** Baking SortableJS into `static/js/` is the
-cleanest path — download from the GitHub releases URL pattern used for Walmart installs.
+2. **Unified vs per-field reminder section:** This plan renders a separate reminder sub-section under each date field. If a contact has 3 date fields there will be 3 independent reminder sections. Alternative: a single "Reminders" panel at the bottom of the modal listing all reminders across fields, with the field name as a tag. Decide before implementation.
 
-**3. Activity note-link picker UX (Phase 3)**
-The RSS module uses a server-side fetch to list user's notes. For CRM, we need a
-typeahead/searchable dropdown in the activity modal to pick an existing BookWorm note.
-Should this reuse the existing note-search endpoint (`GET /notes?q=...`) or get its own
-dedicated CRM endpoint? **Recommendation: call `GET /home/crm/{page_id}/notes-search?q=`
-which proxies to `search_notes(workspace_ids=...)`** — this avoids adding cross-router
-imports and keeps CRM self-contained.
+3. **Missed reminder bell badge:** The existing reminder widget feeds `_remLogMissed()` to show a bell badge on widget headers. Should CRM reminders also feed into that bell? Not included — the poll only calls `_showReminderToast`.
 
-**4. Follow-up reminder integration with the Reminder widget (Phase 3)**
-CRM "next follow-up" dates are stored in `crm_activities.due_date`. Should overdue CRM
-follow-ups appear in the existing Reminder widget on the dashboard? That would require
-the Reminder widget JS to call a CRM endpoint, coupling the two systems. **Recommendation:
-keep them separate for now (YAGNI) — CRM shows its own overdue indicators in the contact
-table. Revisit if Tinh asks for cross-page reminders.**
+4. **Reminder count on contact cards:** Should gallery/table views show a 🔔 badge on contacts that have upcoming reminders? Out of scope for Phase 1 — flag for Phase 2 CRM.
 
-**5. Gallery view card design**
-The "gallery view" for contacts needs a card design decision. Options: (a) avatar emoji +
-name + email + company + tags (compact), (b) full detail card (name, all custom fields).
-**Recommendation: compact card (emoji + name + company + email + tag pills) — consistent
-with the existing note_link widget card style.** Confirm with Tinh before implementing.
+5. **`GET /home/crm-reminders/due` route ordering:** Verify in `home_crm.py` that the literal path `/home/crm-reminders/due` does not conflict with the parameterized `/home/crm/{page_id}/...` family. FastAPI resolves literal paths before parameterized ones so this should be safe, but worth confirming after implementation.

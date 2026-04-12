@@ -8,9 +8,10 @@ The page shell is rendered by home_page_view() in home.py.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import logging
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from routers.attachments_db import UPLOAD_DIR
@@ -21,6 +22,8 @@ from routers.home_crm_db import (
     get_fields, add_field, update_field, delete_field,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
+    get_contact_reminders, add_contact_reminder,
+    delete_contact_reminder, get_due_crm_reminders,
 )
 
 log = logging.getLogger(__name__)
@@ -455,4 +458,85 @@ async def remove_deal(request: Request, page_id: int, deal_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_deal deal_id=%s", deal_id)
+        return _err(str(e), 500)
+
+
+# ── Contact Reminders ─────────────────────────────────────────────────────────────────────
+
+@router.get("/crm/{page_id}/contacts/{contact_id}/reminders")
+async def list_contact_reminders(request: Request, page_id: int, contact_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await get_contact_reminders(contact_id))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("list_contact_reminders contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/reminders/add")
+async def add_reminder(
+    request: Request,
+    page_id: int,
+    contact_id: int,
+    field_id: int = Form(...),
+    label: str = Form(""),
+    reminder_date: str = Form(...),
+    reminder_time: str = Form("09:00"),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        date_str = reminder_date.strip()
+        try:
+            datetime.date.fromisoformat(date_str)
+        except ValueError:
+            return _err("invalid date — expected YYYY-MM-DD", 400)
+        return JSONResponse(await add_contact_reminder(
+            contact_id, field_id, uid,
+            label.strip() or "Reminder",
+            date_str, reminder_time.strip() or "09:00",
+        ))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("add_reminder contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/reminders/{reminder_id}/delete")
+async def remove_reminder(
+    request: Request, page_id: int, contact_id: int, reminder_id: int,
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await delete_contact_reminder(reminder_id, contact_id))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("remove_reminder reminder_id=%s", reminder_id)
+        return _err(str(e), 500)
+
+
+@router.get("/crm-reminders/due")
+async def crm_reminders_due(
+    request: Request,
+    date: str = Query(default=""),
+):
+    try:
+        uid = _uid(request)
+        date_str = date.strip()
+        if len(date_str) != 10:
+            date_str = datetime.date.today().isoformat()
+        return JSONResponse(await get_due_crm_reminders(uid, date_str))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_reminders_due")
         return _err(str(e), 500)

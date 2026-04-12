@@ -33,6 +33,7 @@ function initCrmPage(pid) {
   if (s) s.value = '';
   _crmRenderViewToggle();
   _crmLoadAll();
+  if (typeof initCrmRemindersPolling === 'function') initCrmRemindersPolling();
 }
 
 async function _crmLoadAll() {
@@ -259,8 +260,17 @@ function _crmContactModal(c) {
                text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
         <option value="">—</option>${opts}</select>`;
+    } else if (f.field_type === 'date') {
+      control = inp(`cf_${f.id}`, val, 'date');
+      var remDiv = isEdit
+        ? `<div id="crm-rem-${f.id}" class="mt-1.5 text-xs text-gray-400 italic">Loading reminders…</div>`
+        : '';
+      return `<div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>
+        ${control}${remDiv}
+      </div>`;
     } else {
-      const iType = {date:'date', number:'number', url:'url', email:'email'}[f.field_type] || 'text';
+      var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
       control = inp(`cf_${f.id}`, val, iType);
     }
     return `<div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>${control}</div>`;
@@ -324,6 +334,12 @@ function _crmContactModal(c) {
       </form>
     </div>`;
   _crmShowModal(body);
+  if (isEdit && typeof crmLoadReminders === 'function') {
+    _crmFields.filter(function(f) { return f.field_type === 'date'; })
+      .forEach(function(f) {
+        crmLoadReminders(c.id, c.name, f.id, f.label, fv[f.id] || '');
+      });
+  }
 }
 
 async function crmSaveContact(e, contactId) {
