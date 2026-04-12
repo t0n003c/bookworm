@@ -465,7 +465,7 @@ async function crmHandlePicFile(input, contactId) {
 
 // Field management → home-page-crm-fields.js
 
-Modal helpers ─────────────────────────────────────────────────────────────
+// ── Modal helpers ─────────────────────────────────────────────────────────────
 function _crmShowModal(html) {
   document.getElementById('crm-modal-body').innerHTML = html;
   document.getElementById('crm-modal').classList.remove('hidden');
