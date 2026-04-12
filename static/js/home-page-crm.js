@@ -207,12 +207,19 @@ function _crmRenderGallery() {
       ? `<img src="${_crmEsc(c.profile_pic)}" class="w-20 h-20 rounded-xl object-cover flex-shrink-0" alt=""/>`
       : `<div class="w-20 h-20 rounded-xl flex-shrink-0 flex items-center justify-center text-3xl leading-none
               bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">${_crmEsc(c.avatar_emoji||'👤')}</div>`;
-    // Custom fields — show only visible, non-empty ones
     const cfRows = (typeof _crmFields !== 'undefined' ? _crmFields : [])
       .filter(f => cv(`cf_${f.id}`))
       .map(f => {
         const display = (typeof _crmFieldDisplay === 'function') ? _crmFieldDisplay(f, c) : '';
-        if (!display || display === '☐') return ''; // skip blanks and unchecked checkboxes
+        if (!display) return ''; // skip truly empty
+        if (f.field_type === 'checkbox') {
+          // always show checkbox fields — checked or unchecked, the state is the value
+          const isChecked = display === '\u2705';
+          return `<div class="flex items-center gap-1.5 text-[11px] mt-0.5">
+            <span class="flex-shrink-0 leading-none">${isChecked ? '\u2705' : '\u2610'}</span>
+            <span class="${isChecked ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 line-through'} truncate">${_crmEsc(f.label)}</span>
+          </div>`;
+        }
         return `<div class="flex items-baseline gap-1 text-[11px] mt-0.5">
           <span class="text-gray-400 dark:text-zinc-500 flex-shrink-0 truncate max-w-[70px]" title="${_crmEsc(f.label)}">${_crmEsc(f.label)}:</span>
           <span class="text-gray-700 dark:text-zinc-200 truncate">${display}</span>
