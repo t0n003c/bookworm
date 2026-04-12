@@ -204,12 +204,4 @@ async def index(request: Request, ws: Optional[int] = None):
     return response
 
 
-if __name__ == "__main__":
-    import sys
-    import uvicorn
-    # Ensure stdout/stderr are real streams (guards against Windows background-launch NoneType bug)
-    if sys.stdout is None:
-        sys.stdout = open("bookworm_stdout.log", "w", buffering=1)
-    if sys.stderr is None:
-        sys.stderr = open("bookworm_stderr.log", "w", buffering=1)
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+

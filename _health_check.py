@@ -57,7 +57,7 @@ routes = [
     ("/",         [200, 302, 307]),
 ]
 for path, expected in routes:
-    url = f"http://localhost:8000{path}"
+    url = f"http://127.0.0.1:8000{path}"
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as r:
