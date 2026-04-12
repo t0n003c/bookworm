@@ -213,12 +213,13 @@ function _crmRenderGallery() {
         const display = (typeof _crmFieldDisplay === 'function') ? _crmFieldDisplay(f, c) : '';
         if (!display) return ''; // skip truly empty
         if (f.field_type === 'checkbox') {
-          // always show checkbox fields — checked or unchecked, the state is the value
           const isChecked = display === '\u2705';
-          return `<div class="flex items-center gap-1.5 text-[11px] mt-0.5">
-            <span class="flex-shrink-0 leading-none">${isChecked ? '\u2705' : '\u2610'}</span>
-            <span class="${isChecked ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 line-through'} truncate">${_crmEsc(f.label)}</span>
-          </div>`;
+          return `<label onclick="event.stopPropagation()" class="flex items-center gap-1.5 text-[11px] mt-0.5 cursor-pointer select-none">
+            <input type="checkbox" ${isChecked ? 'checked' : ''}
+              onchange="crmQuickCheckbox(event,${c.id},${f.id},this.checked)"
+              class="accent-[#0053e2] w-3.5 h-3.5 flex-shrink-0 cursor-pointer"/>
+            <span class="${isChecked ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500'} truncate">${_crmEsc(f.label)}</span>
+          </label>`;
         }
         return `<div class="flex items-baseline gap-1 text-[11px] mt-0.5">
           <span class="text-gray-400 dark:text-zinc-500 flex-shrink-0 truncate max-w-[70px]" title="${_crmEsc(f.label)}">${_crmEsc(f.label)}:</span>
@@ -239,7 +240,10 @@ function _crmRenderGallery() {
            ondragend="crmGalDragEnd()">
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
         <div class="p-4 flex gap-3 items-start">
-          ${avatar}
+          <div class="flex flex-col items-center gap-1.5 flex-shrink-0 w-20">
+            ${avatar}
+            ${tags ? `<div class="flex flex-wrap gap-1 w-full">${tags}</div>` : ''}
+          </div>
           <div class="flex-1 min-w-0">
             <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">${_crmEsc(c.name||'—')}</p>
             ${cv('company') && c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
@@ -249,7 +253,6 @@ function _crmRenderGallery() {
             ${cfRows}
           </div>
         </div>
-        ${tags ? `<div class="px-4 pb-3 flex flex-wrap gap-1">${tags}</div>` : '<div class="pb-1"></div>'}
       </div>`;
   }).join('');
   _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">${cards}</div>`);
@@ -258,25 +261,19 @@ function _crmRenderGallery() {
 // ── Gallery drag-and-drop ───────────────────────────────────────────────
 function _galCards() { return document.querySelectorAll('.crm-gallery-card'); }
 function _galClearDrop() {
-  _galCards().forEach(el => {
-    el.classList.remove('ring-[#0053e2]/60', '!shadow-lg');
-    el.style.opacity = '';
-  });
+  _galCards().forEach(el => { el.classList.remove('ring-[#0053e2]/60','!shadow-lg'); el.style.opacity = ''; });
 }
-
 function crmGalDragStart(e, id) {
-  _galDragId = id;
-  e.dataTransfer.effectAllowed = 'move';
+  _galDragId = id; e.dataTransfer.effectAllowed = 'move';
   setTimeout(() => { const el = e.target.closest('.crm-gallery-card'); if (el) el.style.opacity = '0.35'; }, 0);
 }
 function crmGalDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  e.currentTarget.classList.add('ring-[#0053e2]/60', '!shadow-lg');
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('ring-[#0053e2]/60','!shadow-lg');
 }
 function crmGalDragLeave(e) {
   if (!e.currentTarget.contains(e.relatedTarget))
-    e.currentTarget.classList.remove('ring-[#0053e2]/60', '!shadow-lg');
+    e.currentTarget.classList.remove('ring-[#0053e2]/60','!shadow-lg');
 }
 function crmGalDrop(e, toId) {
   e.preventDefault();
@@ -297,6 +294,17 @@ function crmGalDrop(e, toId) {
   }).then(fresh => { _crmContacts = fresh; }).catch(() => {});
 }
 function crmGalDragEnd() { _galClearDrop(); _galDragId = null; }
+
+// ── Gallery quick-toggle checkbox ─────────────────────────────────────────────
+async function crmQuickCheckbox(e, cid, fid, checked) {
+  e.stopPropagation();
+  var val = checked ? '1' : '0';
+  await _crmFetch(`/home/crm/${_crmPid}/contacts/${cid}/field-value`,
+    {method:'POST', body: new URLSearchParams({field_id: fid, value: val})}
+  ).catch(err => alert('Could not save: ' + err.message));
+  var c = _crmContacts.find(x => x.id === cid);
+  if (c) (c.field_values = c.field_values || {})[fid] = val;
+}
 
 function _crmFiltered() {
   if (typeof _crmProcessed === 'function') return _crmProcessed();
