@@ -173,17 +173,16 @@ function _crmToggleRemForm(btn, contactId, fieldId) {
   if (!form) return;
   var isOpening = form.classList.contains('hidden');
   form.classList.toggle('hidden');
-  // Scroll the modal body to its bottom so the full form (incl. buttons) is visible.
-  // scrollIntoView(block:'nearest') only reveals the top edge — not enough for a tall form.
+  // Double-rAF: ensures the browser has done a full layout pass after un-hiding
+  // before we read scrollHeight. Instant scrollTop (no 'smooth') is reliable;
+  // smooth can be interrupted mid-animation leaving the form still clipped.
   if (isOpening) {
-    setTimeout(function() {
-      var modalBody = document.getElementById('crm-modal-body');
-      if (modalBody) {
-        modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
-      } else {
-        form.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }
-    }, 50);
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        var modalBody = document.getElementById('crm-modal-body');
+        if (modalBody) modalBody.scrollTop = modalBody.scrollHeight;
+      });
+    });
   }
 }
 
