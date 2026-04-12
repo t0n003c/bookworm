@@ -135,30 +135,8 @@ function _renderFeedList() {
     return;
   }
 
-  // Group feeds by category; uncategorized first
-  const groups = {};
-  _feeds.forEach(f => { const c = f.category || ''; (groups[c] = groups[c] || []).push(f); });
-  const catKeys = ['', ...Object.keys(groups).filter(Boolean).sort()];
-
-  const html = [];
-  catKeys.forEach(cat => {
-    const group = groups[cat];
-    if (!group) return;
-    if (cat) {
-      const isSelCat = _selCategory === cat;
-      html.push(`
-        <button onclick="rssSelectCategory('${_esc(cat)}')"
-                class="w-full text-left flex items-center gap-1 px-2 py-1 mt-1
-                       text-[10px] font-bold uppercase tracking-wider rounded
-                       ${isSelCat ? 'text-[#0053e2] bg-blue-50 dark:bg-zinc-700 dark:text-blue-300'
-                                  : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'}">
-          <span>📁</span> ${_esc(cat)}
-        </button>`);
-    }
-    group.forEach(f => html.push(_feedRow(f)));
-  });
-
-  list.innerHTML = html.join('');
+  // Flat list — categories are filtered via the top cat bar, not sidebar folders
+  list.innerHTML = _feeds.map(f => _feedRow(f)).join('');
   _renderTopCatBar();
 }
 
@@ -177,18 +155,17 @@ function _renderTopCatBar() {
 
   el.classList.remove('hidden');
 
-  const isAll = (_selFeed === null && _selCategory === null);
   const baseBtn = 'flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full border transition';
   const active  = 'bg-[#0053e2] text-white border-[#0053e2]';
   const idle    = 'border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300'
                 + ' hover:border-[#0053e2] hover:text-[#0053e2] dark:hover:text-blue-300';
 
-  let html = `<button onclick="rssSelectAll()" aria-pressed="${isAll}"
-    class="${baseBtn} ${isAll ? active : idle}">All</button>`;
-
+  // No "All" pill here — sidebar "All Feeds" button handles that.
+  // Category pills toggle: clicking the active category deselects it.
+  let html = '';
   cats.forEach(cat => {
     const on = (_selCategory === cat);
-    html += `<button onclick="rssSelectCategory(${JSON.stringify(cat)})" aria-pressed="${on}"
+    html += `<button onclick="rssSelectCategory('${_esc(cat)}')" aria-pressed="${on}"
       class="${baseBtn} ${on ? active : idle}">${_esc(cat)}</button>`;
   });
 
@@ -312,6 +289,8 @@ async function rssSelectFeed(feedId) {
 }
 
 async function rssSelectCategory(cat) {
+  // Toggle off if clicking the already-active category pill
+  if (_selCategory === cat) { await rssSelectAll(); return; }
   _selFeed = null; _selCategory = cat; _selItemCat = null;
   _renderFeedList();
   document.getElementById('rss-items-title').textContent = `📁 ${_esc(cat)}`;
@@ -393,7 +372,7 @@ function _renderItemCatPills() {
   const sorted = [...seen.values()].sort((a, b) => a.localeCompare(b));
   el.innerHTML = sorted.map(cat => {
     const active = _selItemCat !== null && _selItemCat.toLowerCase() === cat.toLowerCase();
-    return '<button onclick="rssSelectItemCat(' + JSON.stringify(cat) + ')"'
+    return '<button onclick="rssSelectItemCat(\'' + _esc(cat) + '\')"'
       + ' class="text-[10px] px-2 py-0.5 rounded-full border transition flex-shrink-0 '
       + (active
           ? 'bg-[#ffc220] text-[#5a3a00] border-[#ffc220] font-semibold'
