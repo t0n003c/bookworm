@@ -27,6 +27,8 @@ function initCrmPage(pid) {
   _crmPid  = pid;
   _crmView = localStorage.getItem('bw_crm_view') || 'table';
   _crmQuery = '';
+  if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
+  if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
   const s = document.getElementById('crm-search');
   if (s) s.value = '';
   _crmRenderViewToggle();
@@ -93,78 +95,94 @@ function crmSearch() {
   _crmRender();
 }
 
-// ── Table view ────────────────────────────────────────────────────────────────
+// ── Table view ───────────────────────────────────────────────────────────────────
 function _crmRenderTable() {
+  if (typeof _crmLoadColPrefs === 'function') _crmLoadColPrefs(_crmPid);
+  const cols = (typeof _crmCols === 'function') ? _crmCols() : [];
   const rows = _crmFiltered();
-  const thCls = 'px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 whitespace-nowrap';
-  const tdCls = 'px-3 py-2 text-sm text-gray-700 dark:text-zinc-200 whitespace-nowrap max-w-[160px] truncate';
+  const tdCls = 'px-3 py-2 text-sm text-gray-700 dark:text-zinc-200 whitespace-nowrap max-w-[200px] truncate';
+  const widths = (typeof _crmColWidths !== 'undefined') ? _crmColWidths : {};
 
-  const fieldCols = _crmFields.map(f =>
-    `<th class="${thCls}">${_crmEsc(f.label)}</th>`
-  ).join('');
+  const colgroup = `<colgroup>
+    <col data-col="_avatar" style="width:${widths['_avatar']||40}px"/>
+    ${cols.map(col => `<col data-col="${_crmEsc(col.id)}" style="width:${widths[col.id] ? widths[col.id]+'px' : 'auto'}"/>`).join('')}
+    <col data-col="_actions" style="width:${widths['_actions']||72}px"/>
+  </colgroup>`;
+
+  const thCls = 'px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 select-none whitespace-nowrap relative';
+  const rh    = '<span class="crm-rh absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-[#0053e2]/30 rounded"></span>';
+
+  const thead = `<thead class="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
+    <tr>
+      <th class="${thCls} w-10"></th>
+      ${cols.map(col =>
+        `<th class="${thCls}" data-col="${_crmEsc(col.id)}" draggable="true">
+          ${_crmEsc(col.label)}
+          ${rh}
+        </th>`).join('')}
+      <th class="${thCls} w-16"></th>
+    </tr>
+  </thead>`;
 
   const bodyRows = rows.length ? rows.map((c, i) => {
-    const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
-      `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mr-0.5">${_crmEsc(t.trim())}</span>`
-    ).join('');
-    const fieldVals = _crmFields.map(f =>
-      `<td class="${tdCls}">${_crmFieldDisplay(f, c)}</td>`
-    ).join('');
     const grpHdr = (typeof _crmGroupField === 'string' && _crmGroupField && typeof _crmGroupValue === 'function')
       ? (() => {
           const gC = _crmGroupValue(c, _crmGroupField);
           const gP = i > 0 ? _crmGroupValue(rows[i-1], _crmGroupField) : null;
-          return gC !== gP ? `<tr><td colspan="${6+_crmFields.length+1}" class="px-3 py-1 text-[11px] font-bold text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800/80 uppercase tracking-wider border-t border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</td></tr>` : '';
+          return gC !== gP
+            ? `<tr><td colspan="${cols.length+2}" class="px-3 py-1 text-[11px] font-bold text-gray-400 dark:text-zinc-500 bg-gray-50 dark:bg-zinc-800/80 uppercase tracking-wider border-t border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</td></tr>` : '';
         })()
       : '';
+
+    const dataCells = cols.map(col => {
+      if (col.id === 'name') return `<td class="${tdCls} font-semibold"><button onclick="crmOpenEdit(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button></td>`;
+      if (col.id === 'company') return `<td class="${tdCls}">${_crmEsc(c.company||'')}</td>`;
+      if (col.id === 'email')   return `<td class="${tdCls}"><a href="mailto:${_crmEsc(c.email||'')}" class="hover:text-[#0053e2]">${_crmEsc(c.email||'')}</a></td>`;
+      if (col.id === 'phone')   return `<td class="${tdCls}">${_crmEsc(c.phone||'')}</td>`;
+      if (col.id === 'tags') {
+        const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
+          `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mr-0.5">${_crmEsc(t.trim())}</span>`
+        ).join('');
+        return `<td class="px-3 py-2 text-sm">${tags||'—'}</td>`;
+      }
+      // Custom field
+      const f = col.fieldDef;
+      return f ? `<td class="${tdCls}">${_crmFieldDisplay(f, c)}</td>` : `<td></td>`;
+    }).join('');
+
+    const avatarCell = `<td class="px-3 py-2">${c.profile_pic
+      ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
+      : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>`;
+
     return grpHdr + `<tr class="border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition">
-      <td class="px-3 py-2">${c.profile_pic
-        ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
-        : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>
-      <td class="${tdCls} font-semibold">
-        <button onclick="crmOpenEdit(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button>
-      </td>
-      <td class="${tdCls}">${_crmEsc(c.company||'')}</td>
-      <td class="${tdCls}"><a href="mailto:${_crmEsc(c.email||'')}" class="hover:text-[#0053e2]">${_crmEsc(c.email||'')}</a></td>
-      <td class="${tdCls}">${_crmEsc(c.phone||'')}</td>
-      <td class="px-3 py-2 text-sm">${tags||'—'}</td>
-      ${fieldVals}
+      ${avatarCell}${dataCells}
       <td class="px-3 py-2 text-right whitespace-nowrap">
-        <button onclick="crmOpenEdit(${c.id})" title="Edit"
-          class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
-        <button onclick="crmDeleteContact(${c.id})" title="Delete"
-          class="text-gray-300 hover:text-red-500 transition">✕</button>
+        <button onclick="crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
+        <button onclick="crmDeleteContact(${c.id})" title="Delete" class="text-gray-300 hover:text-red-500 transition">✕</button>
       </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="${6 + _crmFields.length + 1}"
-      class="text-center text-sm text-gray-400 dark:text-zinc-500 py-12">
+  }).join('') : `<tr><td colspan="${cols.length+2}" class="text-center text-sm text-gray-400 dark:text-zinc-500 py-12">
       ${_crmQuery ? 'No contacts match your search.' : 'No contacts yet — click <strong>+ Contact</strong> to add one.'}
     </td></tr>`;
 
   _crmSetMain(`
     <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-zinc-700">
-      <table class="w-full min-w-max bg-white dark:bg-zinc-900">
-        <thead class="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
-          <tr>
-            <th class="${thCls} w-8"></th>
-            <th class="${thCls}">Name</th>
-            <th class="${thCls}">Company</th>
-            <th class="${thCls}">Email</th>
-            <th class="${thCls}">Phone</th>
-            <th class="${thCls}">Tags</th>
-            ${fieldCols}
-            <th class="${thCls} w-16"></th>
-          </tr>
-        </thead>
+      <table id="crm-table" class="w-full min-w-max bg-white dark:bg-zinc-900">
+        ${colgroup}
+        ${thead}
         <tbody>${bodyRows}</tbody>
       </table>
     </div>
     <p class="mt-2 text-[11px] text-gray-400 dark:text-zinc-600 text-right">${rows.length} contact${rows.length !== 1 ? 's' : ''}</p>
   `);
+  if (typeof initTableInteractions === 'function')
+    initTableInteractions(document.getElementById('crm-table'));
 }
 
 // ── Gallery view ──────────────────────────────────────────────────────────────
 function _crmRenderGallery() {
+  if (typeof _crmLoadColPrefs === 'function') _crmLoadColPrefs(_crmPid);
+  const cv = (typeof crmColVisible === 'function') ? crmColVisible : () => true;
   const rows = _crmFiltered();
   if (!rows.length) {
     _crmSetMain(`<p class="text-sm text-gray-400 dark:text-zinc-500 text-center mt-12">
@@ -172,11 +190,11 @@ function _crmRenderGallery() {
     return;
   }
   const cards = rows.map((c, i) => {
-    const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
+    const tags = cv('tags') ? (c.tags||'').split(',').filter(Boolean).map(t =>
       `<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px]
               bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
         >${_crmEsc(t.trim())}</span>`
-    ).join(' ');
+    ).join(' ') : '';
     let grpHdr = '';
     if (typeof _crmGroupField === 'string' && _crmGroupField && typeof _crmGroupValue === 'function') {
       const gC = _crmGroupValue(c, _crmGroupField);
@@ -186,19 +204,19 @@ function _crmRenderGallery() {
     return grpHdr + `
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
                   rounded-2xl p-4 flex flex-col gap-2 shadow-sm hover:shadow-md transition">
-        <div class="flex items-center gap-3">
-          <span class="text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0">
-            ${c.profile_pic
-              ? `<img src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
-              : _crmEsc(c.avatar_emoji||'👤')}</span>
-          <div class="min-w-0">
-            <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate">${_crmEsc(c.name||'—')}</p>
-            <p class="text-xs text-gray-500 dark:text-zinc-400 truncate">${_crmEsc(c.company||'')}</p>
+        <div class="flex gap-3 min-w-0">
+          <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+            <div class="flex items-center gap-1.5">
+              <span class="text-lg leading-none flex-shrink-0">${_crmEsc(c.avatar_emoji||'👤')}</span>
+              <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate">${_crmEsc(c.name||'—')}</p>
+            </div>
+            ${cv('company') && c.company ? `<p class="text-xs text-gray-500 dark:text-zinc-400 truncate">${_crmEsc(c.company)}</p>` : ''}
+            ${cv('email') && c.email ? `<a href="mailto:${_crmEsc(c.email)}" class="text-xs text-[#0053e2] dark:text-blue-400 truncate hover:underline">${_crmEsc(c.email)}</a>` : ''}
+            ${cv('phone') && c.phone ? `<p class="text-xs text-gray-500 dark:text-zinc-400">${_crmEsc(c.phone)}</p>` : ''}
+            ${tags ? `<div class="flex flex-wrap gap-1 mt-0.5">${tags}</div>` : ''}
           </div>
+          ${c.profile_pic ? `<img src="${_crmEsc(c.profile_pic)}" class="w-20 h-20 rounded-xl object-cover flex-shrink-0 self-start" alt=""/>` : ''}
         </div>
-        ${c.email ? `<a href="mailto:${_crmEsc(c.email)}" class="text-xs text-[#0053e2] dark:text-blue-400 truncate hover:underline">${_crmEsc(c.email)}</a>` : ''}
-        ${c.phone ? `<p class="text-xs text-gray-500 dark:text-zinc-400">${_crmEsc(c.phone)}</p>` : ''}
-        ${tags ? `<div class="flex flex-wrap gap-1 mt-1">${tags}</div>` : ''}
         <div class="flex gap-2 mt-auto pt-2 border-t border-gray-100 dark:border-zinc-800">
           <button onclick="crmOpenEdit(${c.id})"
             class="flex-1 text-xs py-1 rounded-lg border border-gray-200 dark:border-zinc-700

@@ -11,6 +11,7 @@ var _crmSortKey     = '';   // '{field}_{dir}': 'name_asc' | 'company_desc' | 'c
 var _crmFilterField = '';   // 'company' | 'cf_{id}'
 var _crmFilterValue = '';   // exact value to match
 var _crmGroupField  = '';   // 'company' | 'cf_{id}'
+var _colPanelOpen   = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function _tbEsc(s) {
@@ -91,6 +92,25 @@ window.crmRenderToolbar = function() {
                 text-gray-400 hover:text-red-500 hover:border-red-300 dark:hover:border-red-700 transition">\u2715 Clear</button>`
     : '';
 
+  // Columns toggle panel
+  const hideableCols = (typeof _crmAllHideableCols === 'function') ? _crmAllHideableCols() : [];
+  const colsBtnActive = _colPanelOpen;
+  const colsPanel = _colPanelOpen && hideableCols.length ? `
+    <div id="crm-col-panel"
+      class="absolute z-30 top-full left-0 mt-1 bg-white dark:bg-zinc-900 border border-gray-200
+             dark:border-zinc-700 rounded-xl shadow-xl p-3 min-w-[180px]">
+      <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 mb-2">Show / hide fields</p>
+      ${hideableCols.map(col => {
+        const vis = (typeof crmColVisible === 'function') ? crmColVisible(col.id) : true;
+        return `<label class="flex items-center gap-2 py-1 cursor-pointer group">
+          <input type="checkbox" ${vis ? 'checked' : ''}
+            onchange="crmToggleColFromPanel('${_tbEsc(col.id)}')"
+            class="accent-[#0053e2] cursor-pointer"/>
+          <span class="text-sm text-gray-700 dark:text-zinc-200 group-hover:text-[#0053e2] transition">${_tbEsc(col.label)}</span>
+        </label>`;
+      }).join('')}
+    </div>` : '';
+
   const lbl = t => `<span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500">${t}</span>`;
 
   el.innerHTML =
@@ -99,7 +119,30 @@ window.crmRenderToolbar = function() {
     lbl('Filter') + ' ' + sel(filterDefs, _crmFilterField, 'crmSetFilterField') + ' ' + filterValSel +
     lbl('Group') + ' ' + sel(groupDefs, _crmGroupField, 'crmSetGroup') +
     ' ' + clearBtn +
+    `<div class="relative ml-auto">
+      <button onclick="crmToggleColPanel(event)"
+        class="text-[11px] px-2.5 py-1 rounded-lg border transition
+               ${colsBtnActive ? 'border-[#0053e2] text-[#0053e2] bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2]'}"
+        title="Show/hide columns">☰ Columns</button>
+      ${colsPanel}
+    </div>` +
     `</div>`;
+
+  // Close panel on outside click (re-attach each render)
+  if (_colPanelOpen) {
+    setTimeout(() => {
+      const handler = ev => {
+        const panel = document.getElementById('crm-col-panel');
+        const btn   = el.querySelector('button[title="Show/hide columns"]');
+        if (panel && !panel.contains(ev.target) && btn && !btn.contains(ev.target)) {
+          _colPanelOpen = false;
+          document.removeEventListener('click', handler);
+          if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
+        }
+      };
+      document.addEventListener('click', handler);
+    }, 0);
+  }
 };
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -108,6 +151,18 @@ window.crmSetFilterField = function(field) { _crmFilterField = field; _crmFilter
 window.crmSetFilterValue = function(val)   { _crmFilterValue = val; _crmRefreshContent(); };
 window.crmSetGroup       = function(field) { _crmGroupField = field; _crmRefreshContent(); };
 window.crmClearFilters   = function()      { _crmSortKey = _crmFilterField = _crmFilterValue = _crmGroupField = ''; _crmRefreshContent(); };
+
+window.crmToggleColPanel = function(e) {
+  e.stopPropagation();
+  _colPanelOpen = !_colPanelOpen;
+  if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
+};
+
+window.crmToggleColFromPanel = function(id) {
+  if (typeof crmToggleCol === 'function') crmToggleCol(id);
+  // re-render toolbar after toggle to keep checkboxes in sync
+  if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
+};
 
 // ── _crmGroupValue: extract grouping/sorting key from a contact ───────────────
 window._crmGroupValue = function(c, field) {
