@@ -378,9 +378,28 @@ async function crmSaveContact(e, contactId) {
   }
 }
 
-async function crmDeleteContact(id) {
+var _crmDelPending = null;
+
+function crmDeleteContact(id) {
   const c = _crmContacts.find(x => x.id === id);
-  if (!confirm(`Delete "${c?.name || 'this contact'}"? This cannot be undone.`)) return;
+  const modal = document.getElementById('del-contact-modal');
+  if (!modal) { _doCrmDel(id); return; } // safety fallback (should never happen)
+  _crmDelPending = id;
+  document.getElementById('del-contact-name').textContent = c?.name || 'this contact';
+  modal.classList.remove('hidden');
+  setTimeout(() => document.getElementById('del-contact-confirm-btn')?.focus(), 50);
+}
+function _closeCrmDelModal() {
+  document.getElementById('del-contact-modal')?.classList.add('hidden');
+  _crmDelPending = null;
+}
+async function _confirmCrmDel() {
+  const id = _crmDelPending;
+  _closeCrmDelModal();
+  if (!id) return;
+  await _doCrmDel(id);
+}
+async function _doCrmDel(id) {
   try {
     _crmContacts = await _crmFetch(`/home/crm/${_crmPid}/contacts/${id}/delete`, {method:'POST'});
     _crmRender();

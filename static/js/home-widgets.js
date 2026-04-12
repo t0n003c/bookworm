@@ -349,8 +349,27 @@ async function submitHpModal() {
   if (newPageId) showHomePage(parseInt(newPageId, 10));
 }
 
+var _delPagePending = null;
+
 function deleteHomePage(pageId, name) {
-  if (!confirm(`Delete page "${name}"? This removes all its widgets too.`)) return;
+  const modal = document.getElementById('del-page-modal');
+  if (!modal) { _doDeletePage(pageId); return; } // safety fallback
+  _delPagePending = { pageId, name };
+  document.getElementById('del-page-name').textContent = name;
+  modal.classList.remove('hidden');
+  setTimeout(() => document.getElementById('del-page-confirm-btn')?.focus(), 50);
+}
+function _closeDelPageModal() {
+  document.getElementById('del-page-modal')?.classList.add('hidden');
+  _delPagePending = null;
+}
+async function _confirmDelPage() {
+  const pending = _delPagePending;
+  _closeDelPageModal();
+  if (!pending) return;
+  await _doDeletePage(pending.pageId);
+}
+function _doDeletePage(pageId) {
   _post(`/home/pages/${pageId}/delete`)
     .then(r => r.text())
     .then(html => {
