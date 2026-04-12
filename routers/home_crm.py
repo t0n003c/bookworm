@@ -8,6 +8,7 @@ The page shell is rendered by home_page_view() in home.py.
 """
 from __future__ import annotations
 
+import json
 import logging
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
@@ -16,6 +17,8 @@ from routers.home_db import get_home_page
 from routers.home_crm_db import (
     get_contacts, add_contact, update_contact, delete_contact, upsert_field_value,
     get_fields, add_field, update_field, delete_field,
+    get_stages, add_stage, update_stage, delete_stage, reorder_stages,
+    get_deals, add_deal, update_deal, move_deal, delete_deal,
 )
 
 log = logging.getLogger(__name__)
@@ -218,4 +221,180 @@ async def remove_field(request: Request, page_id: int, field_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_field field_id=%s", field_id)
+        return _err(str(e), 500)
+
+
+# ── Stages (Phase 2) ─────────────────────────────────────────────────────────
+
+@router.get("/crm/{page_id}/stages")
+async def list_stages(request: Request, page_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return JSONResponse([])
+        return JSONResponse(await get_stages(page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("list_stages page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/stages/add")
+async def create_stage(
+    request: Request, page_id: int,
+    name:  str = Form("New Stage"),
+    color: str = Form("#0053e2"),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await add_stage(page_id, uid, name.strip() or "New Stage", color.strip()))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("create_stage page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/stages/{stage_id}/update")
+async def edit_stage(
+    request: Request, page_id: int, stage_id: int,
+    name:  str = Form(...),
+    color: str = Form("#0053e2"),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await update_stage(stage_id, page_id, uid, name.strip(), color.strip()))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("edit_stage stage_id=%s", stage_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/stages/{stage_id}/delete")
+async def remove_stage(request: Request, page_id: int, stage_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await delete_stage(stage_id, page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("remove_stage stage_id=%s", stage_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/stages/reorder")
+async def reages_handler(request: Request, page_id: int):
+    """Body: JSON array of stage IDs in desired order."""
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        body = await request.body()
+        ordered_ids = json.loads(body)
+        if not isinstance(ordered_ids, list):
+            return _err("body must be a JSON array of stage IDs")
+        return JSONResponse(await reorder_stages(page_id, uid, [int(i) for i in ordered_ids]))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("reorder_stages page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+# ── Deals (Phase 2) ──────────────────────────────────────────────────────────
+
+@router.get("/crm/{page_id}/deals")
+async def list_deals(request: Request, page_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return JSONResponse([])
+        return JSONResponse(await get_deals(page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("list_deals page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/deals/add")
+async def create_deal(
+    request: Request, page_id: int,
+    title:      str  = Form(...),
+    stage_id:   str  = Form(""),       # empty string = unsorted
+    contact_id: str  = Form(""),
+    value:      float = Form(0),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        sid = int(stage_id) if stage_id.strip() else None
+        cid = int(contact_id) if contact_id.strip() else None
+        return JSONResponse(await add_deal(page_id, uid, sid, cid, title.strip(), value))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("create_deal page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/deals/{deal_id}/update")
+async def edit_deal(
+    request: Request, page_id: int, deal_id: int,
+    title:      str   = Form(...),
+    contact_id: str   = Form(""),
+    value:      float = Form(0),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        cid = int(contact_id) if contact_id.strip() else None
+        return JSONResponse(await update_deal(deal_id, page_id, uid, title.strip(), value, cid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("edit_deal deal_id=%s", deal_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/deals/{deal_id}/move")
+async def move_deal_handler(
+    request: Request, page_id: int, deal_id: int,
+    stage_id:   str = Form(""),
+    sort_order: int = Form(0),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        sid = int(stage_id) if stage_id.strip() else None
+        return JSONResponse(await move_deal(deal_id, page_id, uid, sid, sort_order))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("move_deal deal_id=%s", deal_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/deals/{deal_id}/delete")
+async def remove_deal(request: Request, page_id: int, deal_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await delete_deal(deal_id, page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("remove_deal deal_id=%s", deal_id)
         return _err(str(e), 500)

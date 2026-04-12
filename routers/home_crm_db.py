@@ -152,3 +152,143 @@ async def delete_field(field_id: int, page_id: int, user_id: int) -> list[dict]:
         )
         await db.commit()
     return await get_fields(page_id, user_id)
+
+
+# ── Stages (Phase 2) ─────────────────────────────────────────────────────────
+
+async def get_stages(page_id: int, user_id: int) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT * FROM crm_stages WHERE page_id=? AND user_id=? ORDER BY sort_order, id",
+            (page_id, user_id),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def add_stage(
+    page_id: int, user_id: int, name: str, color: str,
+) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 FROM crm_stages WHERE page_id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        row = await cur.fetchone()
+        sort_order = row[0] if row else 1
+        await db.execute(
+            "INSERT INTO crm_stages (page_id, user_id, name, color, sort_order) VALUES (?,?,?,?,?)",
+            (page_id, user_id, name, color, sort_order),
+        )
+        await db.commit()
+    return await get_stages(page_id, user_id)
+
+
+async def update_stage(
+    stage_id: int, page_id: int, user_id: int, name: str, color: str,
+) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_stages SET name=?,color=? WHERE id=? AND page_id=? AND user_id=?",
+            (name, color, stage_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_stages(page_id, user_id)
+
+
+async def delete_stage(stage_id: int, page_id: int, user_id: int) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_stages WHERE id=? AND page_id=? AND user_id=?",
+            (stage_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_stages(page_id, user_id)
+
+
+async def reorder_stages(
+    page_id: int, user_id: int, ordered_ids: list[int],
+) -> list[dict]:
+    async with get_db() as db:
+        for i, sid in enumerate(ordered_ids):
+            await db.execute(
+                "UPDATE crm_stages SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+                (i, sid, page_id, user_id),
+            )
+        await db.commit()
+    return await get_stages(page_id, user_id)
+
+
+# ── Deals (Phase 2) ──────────────────────────────────────────────────────────
+
+async def get_deals(page_id: int, user_id: int) -> list[dict]:
+    """Deals joined with contact name for display. stage_id may be NULL."""
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT d.*, c.name AS contact_name
+            FROM crm_deals d
+            LEFT JOIN crm_contacts c ON c.id = d.contact_id
+            WHERE d.page_id=? AND d.user_id=?
+            ORDER BY d.stage_id, d.sort_order, d.id
+            """,
+            (page_id, user_id),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def add_deal(
+    page_id: int, user_id: int,
+    stage_id: int | None, contact_id: int | None,
+    title: str, value: float,
+) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 FROM crm_deals WHERE page_id=? AND stage_id IS ?",
+            (page_id, stage_id),
+        )
+        row = await cur.fetchone()
+        sort_order = row[0] if row else 1
+        await db.execute(
+            "INSERT INTO crm_deals (page_id, user_id, stage_id, contact_id, title, value, sort_order) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (page_id, user_id, stage_id, contact_id, title, value, sort_order),
+        )
+        await db.commit()
+    return await get_deals(page_id, user_id)
+
+
+async def update_deal(
+    deal_id: int, page_id: int, user_id: int,
+    title: str, value: float, contact_id: int | None,
+) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_deals SET title=?,value=?,contact_id=? "
+            "WHERE id=? AND page_id=? AND user_id=?",
+            (title, value, contact_id, deal_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_deals(page_id, user_id)
+
+
+async def move_deal(
+    deal_id: int, page_id: int, user_id: int,
+    stage_id: int | None, sort_order: int,
+) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_deals SET stage_id=?,sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            (stage_id, sort_order, deal_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_deals(page_id, user_id)
+
+
+async def delete_deal(deal_id: int, page_id: int, user_id: int) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_deals WHERE id=? AND page_id=? AND user_id=?",
+            (deal_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_deals(page_id, user_id)

@@ -17,7 +17,9 @@
 var _crmPid      = null;
 var _crmContacts = [];
 var _crmFields   = [];
-var _crmView     = 'table';   // 'table' | 'gallery'
+var _crmStages   = [];
+var _crmDeals    = [];
+var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline'
 var _crmQuery    = '';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -34,12 +36,16 @@ function initCrmPage(pid) {
 async function _crmLoadAll() {
   _crmSetMain('<p class="text-sm text-gray-400 dark:text-zinc-500 text-center mt-12">Loading…</p>');
   try {
-    const [contacts, fields] = await Promise.all([
+    const [contacts, fields, stages, deals] = await Promise.all([
       _crmFetch(`/home/crm/${_crmPid}/contacts`),
       _crmFetch(`/home/crm/${_crmPid}/fields`),
+      _crmFetch(`/home/crm/${_crmPid}/stages`),
+      _crmFetch(`/home/crm/${_crmPid}/deals`),
     ]);
     _crmContacts = contacts;
     _crmFields   = fields;
+    _crmStages   = stages;
+    _crmDeals    = deals;
     _crmRender();
   } catch(e) {
     _crmSetMain(`<p class="text-sm text-red-500 text-center mt-12">Failed to load: ${_crmEsc(e.message)}</p>`);
@@ -47,6 +53,12 @@ async function _crmLoadAll() {
 }
 
 function _crmRender() {
+  if (_crmView === 'pipeline') {
+    if (typeof initCrmPipeline === 'function') {
+      initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts);
+    }
+    return;
+  }
   _crmView === 'gallery' ? _crmRenderGallery() : _crmRenderTable();
 }
 
@@ -62,7 +74,7 @@ function _crmRenderViewToggle() {
                   : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}"
     >${label}</button>`;
   };
-  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery');
+  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline');
 }
 
 function crmSetView(v) {
@@ -429,6 +441,9 @@ async function _crmFetch(url, opts) {
   if (!r.ok || data?.error) throw new Error(data?.error || `HTTP ${r.status}`);
   return data;
 }
+
+// ── Public reload hook (called by pipeline module after mutations) ─────────────
+window.crmReload = function() { _crmLoadAll(); };
 
 // ── HTML escape ────────────────────────────────────────────────────────────────
 function _crmEsc(s) {

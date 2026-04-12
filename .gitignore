@@ -7,6 +7,13 @@ __pycache__/
 venv/
 .env
 
+# Eddie debug / temp scripts (never commit these)
+_check_*.py
+_qa_*.py
+_migrate_*.py
+_test_*.py
+_jscheck.py
+
 # Database (may contain PII)
 *.db
 *.sqlite

@@ -447,6 +447,40 @@ async def init_db() -> None:
             )
         """)
 
+        # ── CRM tables (Phase 2) ──────────────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_stages (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                name       TEXT    NOT NULL DEFAULT 'New Stage',
+                color      TEXT    NOT NULL DEFAULT '#0053e2',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_deals (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                contact_id INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+                stage_id   INTEGER REFERENCES crm_stages(id)   ON DELETE SET NULL,
+                title      TEXT    NOT NULL DEFAULT '',
+                value      REAL    NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS crm_deals_updated_at
+            AFTER UPDATE ON crm_deals
+            BEGIN
+                UPDATE crm_deals SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END
+        """)
+
         await db.commit()
 
 @asynccontextmanager
