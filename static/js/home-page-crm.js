@@ -204,9 +204,20 @@ function _crmRenderGallery() {
       if (gC !== gP) grpHdr = `<div class="col-span-full text-[11px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider pt-2 pb-1 border-b border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</div>`;
     }
     const avatar = c.profile_pic
-      ? `<img src="${_crmEsc(c.profile_pic)}" class="w-14 h-14 rounded-xl object-cover flex-shrink-0" alt=""/>`
-      : `<div class="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center text-2xl leading-none
+      ? `<img src="${_crmEsc(c.profile_pic)}" class="w-20 h-20 rounded-xl object-cover flex-shrink-0" alt=""/>`
+      : `<div class="w-20 h-20 rounded-xl flex-shrink-0 flex items-center justify-center text-3xl leading-none
               bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">${_crmEsc(c.avatar_emoji||'👤')}</div>`;
+    // Custom fields — show only visible, non-empty ones
+    const cfRows = (typeof _crmFields !== 'undefined' ? _crmFields : [])
+      .filter(f => cv(`cf_${f.id}`))
+      .map(f => {
+        const display = (typeof _crmFieldDisplay === 'function') ? _crmFieldDisplay(f, c) : '';
+        if (!display || display === '☐') return ''; // skip blanks and unchecked checkboxes
+        return `<div class="flex items-baseline gap-1 text-[11px] mt-0.5">
+          <span class="text-gray-400 dark:text-zinc-500 flex-shrink-0 truncate max-w-[70px]" title="${_crmEsc(f.label)}">${_crmEsc(f.label)}:</span>
+          <span class="text-gray-700 dark:text-zinc-200 truncate">${display}</span>
+        </div>`;
+      }).filter(Boolean).join('');
     return grpHdr + `
       <div class="crm-gallery-card relative bg-white dark:bg-zinc-900 rounded-2xl shadow-sm
                   hover:shadow-lg transition-all duration-150 overflow-hidden cursor-pointer
@@ -228,6 +239,7 @@ function _crmRenderGallery() {
             ${cv('email') && c.email ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
               class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-1 leading-tight">${_crmEsc(c.email)}</a>` : ''}
             ${cv('phone') && c.phone ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(c.phone)}</p>` : ''}
+            ${cfRows}
           </div>
         </div>
         ${tags ? `<div class="px-4 pb-3 flex flex-wrap gap-1">${tags}</div>` : '<div class="pb-1"></div>'}

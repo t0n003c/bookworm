@@ -49,6 +49,21 @@
     }
     @keyframes bw-hp-spin { to { transform: rotate(360deg); } }
     html.bw-hp-restore #main-content  { padding: 0 !important; }
+
+    /* ── Scrollbar styling (light + dark) ───────────────────────────── */
+    /* Webkit-based browsers (Chrome, Edge, Safari) */
+    ::-webkit-scrollbar              { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track        { background: transparent; }
+    ::-webkit-scrollbar-thumb        { background: #d1d5db; border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover  { background: #9ca3af; }
+    ::-webkit-scrollbar-corner       { background: transparent; }
+
+    .dark ::-webkit-scrollbar-thumb        { background: #3f3f46; }
+    .dark ::-webkit-scrollbar-thumb:hover  { background: #52525b; }
+
+    /* Firefox */
+    * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+    .dark * { scrollbar-color: #3f3f46 transparent; }
   </style>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
