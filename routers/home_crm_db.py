@@ -109,6 +109,20 @@ async def delete_contact(contact_id: int, page_id: int, user_id: int) -> list[di
     return await get_contacts(page_id, user_id)
 
 
+async def reorder_contacts(
+    page_id: int, user_id: int, ordered_ids: list[int],
+) -> list[dict]:
+    """Persist gallery card order by writing sort_order for each contact ID."""
+    async with get_db() as db:
+        for i, cid in enumerate(ordered_ids):
+            await db.execute(
+                "UPDATE crm_contacts SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+                (i, cid, page_id, user_id),
+            )
+        await db.commit()
+    return await get_contacts(page_id, user_id)
+
+
 async def upsert_field_value(contact_id: int, field_id: int, value: str) -> bool:
     async with get_db() as db:
         await db.execute(

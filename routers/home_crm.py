@@ -17,7 +17,7 @@ from routers.attachments_db import UPLOAD_DIR
 from routers.home_db import get_home_page
 from routers.home_crm_db import (
     get_contacts, add_contact, update_contact, update_contact_pic,
-    delete_contact, upsert_field_value,
+    delete_contact, reorder_contacts, upsert_field_value,
     get_fields, add_field, update_field, delete_field,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
@@ -160,6 +160,25 @@ async def remove_contact(request: Request, page_id: int, contact_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_contact contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/reorder")
+async def reorder_contacts_handler(request: Request, page_id: int):
+    """Body: JSON array of contact IDs in the desired display order."""
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        body = await request.body()
+        ordered_ids = json.loads(body)
+        if not isinstance(ordered_ids, list):
+            return _err("body must be a JSON array of contact IDs")
+        return JSONResponse(await reorder_contacts(page_id, uid, [int(i) for i in ordered_ids]))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("reorder_contacts page_id=%s", page_id)
         return _err(str(e), 500)
 
 

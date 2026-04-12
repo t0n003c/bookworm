@@ -180,6 +180,8 @@ function _crmRenderTable() {
 }
 
 // ── Gallery view ──────────────────────────────────────────────────────────────
+var _galDragId = null;
+
 function _crmRenderGallery() {
   if (typeof _crmLoadColPrefs === 'function') _crmLoadColPrefs(_crmPid);
   const cv = (typeof crmColVisible === 'function') ? crmColVisible : () => true;
@@ -191,8 +193,8 @@ function _crmRenderGallery() {
   }
   const cards = rows.map((c, i) => {
     const tags = cv('tags') ? (c.tags||'').split(',').filter(Boolean).map(t =>
-      `<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px]
-              bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300"
+      `<span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium
+              bg-[#e8f0ff] dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300"
         >${_crmEsc(t.trim())}</span>`
     ).join(' ') : '';
     let grpHdr = '';
@@ -201,34 +203,81 @@ function _crmRenderGallery() {
       const gP = i > 0 ? _crmGroupValue(rows[i-1], _crmGroupField) : null;
       if (gC !== gP) grpHdr = `<div class="col-span-full text-[11px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider pt-2 pb-1 border-b border-gray-200 dark:border-zinc-700">${_crmEsc(gC||'—')}</div>`;
     }
+    const avatar = c.profile_pic
+      ? `<img src="${_crmEsc(c.profile_pic)}" class="w-14 h-14 rounded-xl object-cover flex-shrink-0" alt=""/>`
+      : `<div class="w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center text-2xl leading-none
+              bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">${_crmEsc(c.avatar_emoji||'👤')}</div>`;
     return grpHdr + `
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
-                  rounded-2xl p-4 flex flex-col gap-2 shadow-sm hover:shadow-md transition">
-        <div class="flex gap-3 min-w-0">
-          <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-            <div class="flex items-center gap-1.5">
-              <span class="text-lg leading-none flex-shrink-0">${_crmEsc(c.avatar_emoji||'👤')}</span>
-              <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate">${_crmEsc(c.name||'—')}</p>
-            </div>
-            ${cv('company') && c.company ? `<p class="text-xs text-gray-500 dark:text-zinc-400 truncate">${_crmEsc(c.company)}</p>` : ''}
-            ${cv('email') && c.email ? `<a href="mailto:${_crmEsc(c.email)}" class="text-xs text-[#0053e2] dark:text-blue-400 truncate hover:underline">${_crmEsc(c.email)}</a>` : ''}
-            ${cv('phone') && c.phone ? `<p class="text-xs text-gray-500 dark:text-zinc-400">${_crmEsc(c.phone)}</p>` : ''}
-            ${tags ? `<div class="flex flex-wrap gap-1 mt-0.5">${tags}</div>` : ''}
+      <div class="crm-gallery-card relative bg-white dark:bg-zinc-900 rounded-2xl shadow-sm
+                  hover:shadow-lg transition-all duration-150 overflow-hidden cursor-pointer
+                  border border-gray-100 dark:border-zinc-800
+                  ring-2 ring-transparent hover:ring-[#0053e2]/20"
+           draggable="true" data-cid="${c.id}"
+           onclick="crmOpenEdit(${c.id})"
+           ondragstart="crmGalDragStart(event,${c.id})"
+           ondragover="crmGalDragOver(event)"
+           ondragleave="crmGalDragLeave(event)"
+           ondrop="crmGalDrop(event,${c.id})"
+           ondragend="crmGalDragEnd()">
+        <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
+        <div class="p-4 flex gap-3 items-start">
+          ${avatar}
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">${_crmEsc(c.name||'—')}</p>
+            ${cv('company') && c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
+            ${cv('email') && c.email ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
+              class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-1 leading-tight">${_crmEsc(c.email)}</a>` : ''}
+            ${cv('phone') && c.phone ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(c.phone)}</p>` : ''}
           </div>
-          ${c.profile_pic ? `<img src="${_crmEsc(c.profile_pic)}" class="w-20 h-20 rounded-xl object-cover flex-shrink-0 self-start" alt=""/>` : ''}
         </div>
-        <div class="flex gap-2 mt-auto pt-2 border-t border-gray-100 dark:border-zinc-800">
-          <button onclick="crmOpenEdit(${c.id})"
-            class="flex-1 text-xs py-1 rounded-lg border border-gray-200 dark:border-zinc-700
-                   text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition">✎ Edit</button>
-          <button onclick="crmDeleteContact(${c.id})"
-            class="text-xs px-3 py-1 rounded-lg border border-gray-200 dark:border-zinc-700
-                   text-gray-400 hover:border-red-400 hover:text-red-500 transition">✕</button>
-        </div>
+        ${tags ? `<div class="px-4 pb-3 flex flex-wrap gap-1">${tags}</div>` : '<div class="pb-1"></div>'}
       </div>`;
   }).join('');
-  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">${cards}</div>`);
+  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">${cards}</div>`);
 }
+
+// ── Gallery drag-and-drop ───────────────────────────────────────────────
+function _galCards() { return document.querySelectorAll('.crm-gallery-card'); }
+function _galClearDrop() {
+  _galCards().forEach(el => {
+    el.classList.remove('ring-[#0053e2]/60', '!shadow-lg');
+    el.style.opacity = '';
+  });
+}
+
+function crmGalDragStart(e, id) {
+  _galDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => { const el = e.target.closest('.crm-gallery-card'); if (el) el.style.opacity = '0.35'; }, 0);
+}
+function crmGalDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('ring-[#0053e2]/60', '!shadow-lg');
+}
+function crmGalDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget))
+    e.currentTarget.classList.remove('ring-[#0053e2]/60', '!shadow-lg');
+}
+function crmGalDrop(e, toId) {
+  e.preventDefault();
+  _galClearDrop();
+  if (!_galDragId || _galDragId === toId) { _galDragId = null; return; }
+  const fi = _crmContacts.findIndex(c => c.id === _galDragId);
+  const ti = _crmContacts.findIndex(c => c.id === toId);
+  if (fi < 0 || ti < 0) { _galDragId = null; return; }
+  const [moved] = _crmContacts.splice(fi, 1);
+  _crmContacts.splice(ti, 0, moved);
+  _galDragId = null;
+  _crmRenderGallery();
+  // persist asynchronously — fire and forget, re-sync on success
+  _crmFetch(`/home/crm/${_crmPid}/contacts/reorder`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(_crmContacts.map(c => c.id)),
+  }).then(fresh => { _crmContacts = fresh; }).catch(() => {});
+}
+function crmGalDragEnd() { _galClearDrop(); _galDragId = null; }
 
 function _crmFiltered() {
   if (typeof _crmProcessed === 'function') return _crmProcessed();

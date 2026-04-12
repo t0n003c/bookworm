@@ -92,7 +92,15 @@ window.crmRenderToolbar = function() {
                 text-gray-400 hover:text-red-500 hover:border-red-300 dark:hover:border-red-700 transition">\u2715 Clear</button>`
     : '';
 
-  // Columns toggle panel
+  const isTableView = (typeof _crmView !== 'undefined' && _crmView === 'table');
+  const autofitBtn = isTableView
+    ? `<button onclick="crmAutofitCols()" title="Auto-size all columns to fit their content"
+         class="text-[11px] px-2.5 py-1 rounded-lg border border-gray-200 dark:border-zinc-700
+                text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2] transition">
+         ⇔ Autofit</button>`
+    : '';
+
+  // Columns toggle panel (table + gallery)
   const hideableCols = (typeof _crmAllHideableCols === 'function') ? _crmAllHideableCols() : [];
   const colsBtnActive = _colPanelOpen;
   const colsPanel = _colPanelOpen && hideableCols.length ? `
@@ -119,13 +127,15 @@ window.crmRenderToolbar = function() {
     lbl('Filter') + ' ' + sel(filterDefs, _crmFilterField, 'crmSetFilterField') + ' ' + filterValSel +
     lbl('Group') + ' ' + sel(groupDefs, _crmGroupField, 'crmSetGroup') +
     ' ' + clearBtn +
-    `<div class="relative ml-auto">
-      <button onclick="crmToggleColPanel(event)"
+    `<div class="flex items-center gap-1.5 ml-auto">
+      ${autofitBtn}
+      <div class="relative">
+        <button onclick="crmToggleColPanel(event)"
         class="text-[11px] px-2.5 py-1 rounded-lg border transition
                ${colsBtnActive ? 'border-[#0053e2] text-[#0053e2] bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2]'}"
         title="Show/hide columns">☰ Columns</button>
       ${colsPanel}
-    </div>` +
+    </div></div>` +
     `</div>`;
 
   // Close panel on outside click (re-attach each render)

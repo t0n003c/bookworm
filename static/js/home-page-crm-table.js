@@ -47,7 +47,32 @@ function _saveColPrefs() {
   } catch {}
 }
 
-// ── Public API — column visibility ────────────────────────────────────────────
+// ── Autofit columns ──────────────────────────────────────────────────────────────
+window.crmAutofitCols = function() {
+  const tableEl = document.getElementById('crm-table');
+  if (!tableEl) return;
+  const PAD = 24; // extra breathing room per column
+
+  // Temporarily clear all forced widths so the browser measures natural content size
+  tableEl.querySelectorAll('col').forEach(col => { col.style.width = ''; });
+
+  // Read each column's actual rendered width from the header cells
+  tableEl.querySelectorAll('thead th').forEach(th => {
+    const colId = th.dataset.col;
+    if (!colId) return;
+    // offsetWidth includes padding; we just add a little breathing room on top
+    const w = Math.max(40, th.offsetWidth + PAD);
+    _crmColWidths[colId] = w;
+    const colEl = tableEl.querySelector(`col[data-col="${colId}"]`);
+    if (colEl) colEl.style.width = w + 'px';
+  });
+
+  _saveColPrefs();
+  // Kick a re-render so colgroup picks up the new widths cleanly
+  if (typeof _crmRenderTable === 'function') _crmRenderTable();
+};
+
+// ── Public API — column visibility ──────────────────────────────────────────────────
 /** True when the column is NOT hidden. */
 window.crmColVisible = function(id) { return !_crmHiddenCols.has(id); };
 
