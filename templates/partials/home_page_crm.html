@@ -1,0 +1,75 @@
+{# ── CRM page — partials/home_page_crm.html ──────────────────────────────────
+   Rendered by home_page_view() when page.page_type == 'crm'.
+   Context: page (dict), page_type (str)
+   JS:      static/js/home-page-crm.js (loaded via base.html static_v tag)
+   All rendering is done client-side — this is a minimal shell only.
+#}
+<div id="crm-page-root" data-page-id="{{ page.id }}"
+     class="flex flex-col select-none"
+     style="height:calc(100vh - 3.5rem)">
+
+  {# ── Top bar ───────────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
+              border-b border-gray-200 dark:border-zinc-800
+              bg-white dark:bg-zinc-900">
+    <span class="text-lg leading-none">{{ page.emoji }}</span>
+    <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
+      {{ page.name }}
+    </h1>
+    <span class="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
+                 bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
+      CRM
+    </span>
+
+    {# Search — wired by JS #}
+    <input id="crm-search" type="search" placeholder="Search contacts…"
+           oninput="crmSearch()"
+           class="ml-4 w-48 border border-gray-300 dark:border-zinc-700 rounded-lg
+                  px-3 py-1 text-xs bg-white dark:bg-zinc-800
+                  text-gray-800 dark:text-zinc-100 placeholder-gray-400
+                  focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
+
+    {# View toggle — populated by JS #}
+    <div id="crm-view-toggle" class="ml-auto flex items-center gap-1 flex-shrink-0"></div>
+
+    {# Manage fields #}
+    <button onclick="crmOpenFields()"
+            class="ml-2 text-xs font-medium px-2.5 py-1.5 rounded-lg flex-shrink-0
+                   border border-gray-300 dark:border-zinc-600
+                   text-gray-600 dark:text-zinc-300
+                   hover:border-[#0053e2] hover:text-[#0053e2] transition">
+      ⚙ Fields
+    </button>
+
+    {# Add contact #}
+    <button onclick="crmOpenAdd()"
+            class="text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0
+                   bg-[#0053e2] text-white hover:bg-blue-700 transition">
+      + Contact
+    </button>
+  </div>
+
+  {# ── Main area — all content rendered by home-page-crm.js ─────────────── #}
+  <div id="crm-main" class="flex-1 overflow-auto p-4">
+    <p class="text-sm text-gray-400 dark:text-zinc-500 text-center mt-12">
+      Loading…
+    </p>
+  </div>
+
+  {# ── Modal backdrop ───────────────────────────────────────────────────── #}
+  <div id="crm-backdrop"
+       class="hidden fixed inset-0 bg-black/40 z-40"
+       onclick="crmCloseModal()"></div>
+
+  {# ── Modal container — body injected by JS ────────────────────────────── #}
+  <div id="crm-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+       role="dialog" aria-modal="true">
+    <div id="crm-modal-body"
+         class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+                w-full max-w-lg border border-gray-200 dark:border-zinc-700
+                overflow-hidden max-h-[90vh] overflow-y-auto">
+    </div>
+  </div>
+
+</div>

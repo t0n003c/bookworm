@@ -369,6 +369,21 @@ async def init_db() -> None:
         except Exception:
             pass  # column already exists — idempotent
 
+        # ── rss_page_feeds: add source_widget_id column (migration) ───────────
+        # Tracks which RSS widget originally synced this feed.
+        # NULL = manually added feed.  ON DELETE SET NULL means widget deletion
+        # automatically clears the link (feed is kept, badge disappears).
+        # get_db() enforces PRAGMA foreign_keys=ON on every connection.
+        try:
+            await db.execute(
+                "ALTER TABLE rss_page_feeds "
+                "ADD COLUMN source_widget_id INTEGER "
+                "REFERENCES home_widgets(id) ON DELETE SET NULL"
+            )
+            await db.commit()
+        except Exception:
+            pass  # column already exists — idempotent
+
         # ── site_settings: persistent runtime flags (admin-toggleable) ────────
         # Separate from env vars so superadmin can change them without a restart.
         # BW_ALLOW_REGISTRATION seeds the initial value on first boot; after that
@@ -384,6 +399,53 @@ async def init_db() -> None:
             "INSERT OR IGNORE INTO site_settings (key, value) VALUES ('registration_open', ?)",
             (reg_seed,),
         )
+
+        # ── CRM tables (Phase 1) ──────────────────────────────────────────────
+        # Each CRM page is its own independent contact database (per-page scope).
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_contacts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id      INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id      INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                name         TEXT    NOT NULL DEFAULT '',
+                email        TEXT    NOT NULL DEFAULT '',
+                phone        TEXT    NOT NULL DEFAULT '',
+                company      TEXT    NOT NULL DEFAULT '',
+                tags         TEXT    NOT NULL DEFAULT '',
+                avatar_emoji TEXT    NOT NULL DEFAULT '👤',
+                sort_order   INTEGER NOT NULL DEFAULT 0,
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS crm_contacts_updated_at
+            AFTER UPDATE ON crm_contacts
+            BEGIN
+                UPDATE crm_contacts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_custom_fields (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                label      TEXT    NOT NULL,
+                field_type TEXT    NOT NULL DEFAULT 'text',
+                options    TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_contact_field_values (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL REFERENCES crm_contacts(id)      ON DELETE CASCADE,
+                field_id   INTEGER NOT NULL REFERENCES crm_custom_fields(id) ON DELETE CASCADE,
+                value      TEXT    NOT NULL DEFAULT '',
+                UNIQUE(contact_id, field_id)
+            )
+        """)
 
         await db.commit()
 

@@ -150,7 +150,7 @@ function _hpFetch(pageId, { silent = false, onDone = null } = {}) {
         const cur = Number(sessionStorage.getItem('bw-hp'));
         if (cur === pageId) {
           const hc = document.getElementById('home-content');
-          if (hc) { hc.innerHTML = html; try { initHomeWidgets(); } catch(e) {} }
+          if (hc) { hc.innerHTML = html; _initSwappedPage(); }
         }
       }
     })
@@ -186,7 +186,7 @@ function showHomePage(pageId) {
 
   const _applyHtml = html => {
     hc.innerHTML = html;
-    try { initHomeWidgets(); } catch(e) { console.error('[home] initHomeWidgets:', e); }
+    _initSwappedPage();
     requestAnimationFrame(() => { hc.style.opacity = '1'; });
   };
 
@@ -853,6 +853,32 @@ function _initDnD(grid, pageId) {
     await _post(`/home/pages/${pageId}/widgets/reorder`, { order });
     invalidateHomePageCache(pageId);
   });
+}
+
+// ── Page-module dispatcher ───────────────────────────────────────────────────
+// Called after every innerHTML swap so the right module boots for the
+// current page type (dashboard → initHomeWidgets, rss → initRssPage, etc.).
+function _initSwappedPage() {
+  // RSS Reader page
+  const rssRoot = document.getElementById('rss-page-root');
+  if (rssRoot) {
+    const pid = parseInt(rssRoot.dataset.pageId, 10);
+    if (pid && typeof initRssPage === 'function') {
+      try { initRssPage(pid); } catch(e) { console.error('[home] initRssPage:', e); }
+    }
+    return; // RSS page has no widget canvas — stop here
+  }
+  // CRM page
+  const crmRoot = document.getElementById('crm-page-root');
+  if (crmRoot) {
+    const pid = parseInt(crmRoot.dataset.pageId, 10);
+    if (pid && typeof initCrmPage === 'function') {
+      try { initCrmPage(pid); } catch(e) { console.error('[home] initCrmPage:', e); }
+    }
+    return; // CRM page has no widget canvas — stop here
+  }
+  // Dashboard (widget canvas)
+  try { initHomeWidgets(); } catch(e) { console.error('[home] initHomeWidgets:', e); }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

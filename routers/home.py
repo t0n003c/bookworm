@@ -25,6 +25,7 @@ from routers.home_db import (
 )
 from routers.home_rss_db import (
     get_all_rss_widget_feeds,
+    get_page_feeds,
     sync_widget_feeds_to_rss_pages,
 )
 from routers.notes_db import search_notes
@@ -34,6 +35,34 @@ from templates_env import templates
 router = APIRouter(prefix="/home")
 
 _ERR  = "<span class='text-red-500 text-xs'>{}</span>"
+
+
+async def _build_widget_sources(feeds: list[dict], uid: int) -> dict:
+    """Build a {feed_id: {widget_label, page_name, page_emoji}} lookup.
+
+    Called only for RSS reader pages.  Returns {} when no feeds have a
+    source_widget_id (manually added feeds).  N+1 by design — feed counts
+    are small; optimise with bulk IN() queries only if profiling flags it.
+    """
+    result: dict = {}
+    for feed in feeds:
+        wid = feed.get("source_widget_id")
+        if not wid:
+            continue
+        widget = await get_widget_by_id(wid)
+        if not widget:
+            continue
+        try:
+            cfg = json.loads(widget.get("config_json") or "{}")
+        except Exception:
+            cfg = {}
+        page = await get_home_page(widget["page_id"], uid)
+        result[feed["id"]] = {
+            "widget_label": cfg.get("custom_name") or "RSS Widget",
+            "page_name":    page["name"]  if page else "Unknown Page",
+            "page_emoji":   page["emoji"] if page else "🏠",
+        }
+    return result
 _POOL = ThreadPoolExecutor(max_workers=4)   # small pool for sync URL fetches
 
 
@@ -224,9 +253,15 @@ def _parse_rss(xml_text: str) -> dict:
                            entry.find(f'{{{_NS_MEDIA}}}group')) or '').strip()
             pub     = (entry.findtext(f'{{{ns}}}published') or
                        entry.findtext(f'{{{ns}}}updated') or '').strip()
+            item_cats = [
+                c.get('term', '').strip()
+                for c in entry.findall(f'{{{ns}}}category')
+                if c.get('term', '').strip()
+            ]
             items.append({'title': ftxt(entry, 'title'), 'link': link,
                           'description': summary, 'pub_date': pub,
-                          'thumbnail': _thumb_from_atom(entry)})
+                          'thumbnail': _thumb_from_atom(entry),
+                          'categories': item_cats})
         return {'feed_title': title, 'items': items}
 
     # ─ RSS 2.0 ────────────────────────────────────────────────────────────────────────────────
@@ -237,9 +272,15 @@ def _parse_rss(xml_text: str) -> dict:
         link = (item.findtext('link') or '').strip()
         desc = (item.findtext('description') or '').strip()
         pub  = (item.findtext('pubDate') or item.findtext('dc:date') or '').strip()
+        item_cats = [
+            c.text.strip()
+            for c in item.findall('category')
+            if c.text and c.text.strip()
+        ]
         items.append({'title': (item.findtext('title') or '').strip(),
                       'link': link, 'description': desc, 'pub_date': pub,
-                      'thumbnail': _thumb_from_rss(item)})
+                      'thumbnail': _thumb_from_rss(item),
+                      'categories': item_cats})
     return {'feed_title': title, 'items': items}
 
 
@@ -552,18 +593,29 @@ async def home_page_view(request: Request, page_id: int):
         elif p_type == "rss":
             tmpl = "partials/home_page_rss.html"
             # Auto-import feeds from every rss_feed widget this user owns.
-            # One-way only: existing reader-page feeds are never removed.
-            # This handles the migration case for widgets created before the
-            # sync hook was introduced, and is idempotent on repeat visits.
+            # Call per-widget so source_widget_id attribution is accurate
+            # (INSERT OR IGNORE: first widget to sync a URL owns the badge).
             widget_feeds = await get_all_rss_widget_feeds(uid)
-            if widget_feeds:
-                await sync_widget_feeds_to_rss_pages(uid, widget_feeds)
+            for wfeed in widget_feeds:
+                await sync_widget_feeds_to_rss_pages(
+                    uid, [wfeed], widget_id=wfeed.get("widget_id")
+                )
+            # Build widget-source lookup for the feed badge (Feature 2).
+            page_feeds   = await get_page_feeds(page_id, uid)
+            widget_sources = await _build_widget_sources(page_feeds, uid)
+        elif p_type == "crm":
+            tmpl = "partials/home_page_crm.html"
+            # No server-side DB prep — JS fetches contacts + fields after load.
         else:
             tmpl = "partials/home_page_coming_soon.html"
 
         return templates.TemplateResponse(
             request, tmpl,
-            {"page": page, "page_type": p_type, "widgets": widgets, "all_notes": all_notes},
+            {
+                "page": page, "page_type": p_type,
+                "widgets": widgets, "all_notes": all_notes,
+                "widget_sources": widget_sources if p_type == "rss" else {},
+            },
         )
     except Exception as e:
         tb = traceback.format_exc()
@@ -650,10 +702,13 @@ async def add_widget_handler(
         config = json.loads(config_json)
     except Exception:
         config = {}
-    await add_widget(page_id, widget_type, style, config)
+    new_widget_id = await add_widget(page_id, widget_type, style, config)
     # One-way sync: push new widget's feeds → all RSS reader pages for this user.
+    # Pass new_widget_id so feeds are attributed (source badge, Feature 2).
     if widget_type == "rss_feed":
-        await sync_widget_feeds_to_rss_pages(uid, config.get("feeds") or [])
+        await sync_widget_feeds_to_rss_pages(
+            uid, config.get("feeds") or [], widget_id=new_widget_id
+        )
     widgets   = await get_widgets(page_id)
     all_notes = await _user_notes(uid)
     return templates.TemplateResponse(
@@ -679,7 +734,9 @@ async def update_widget(
     if widget and widget.get("widget_type") == "rss_feed":
         uid = request.session.get("user_id")
         if uid:
-            await sync_widget_feeds_to_rss_pages(int(uid), config.get("feeds") or [])
+            await sync_widget_feeds_to_rss_pages(
+                int(uid), config.get("feeds") or [], widget_id=widget_id
+            )
     return HTMLResponse("", 204)
 
 
@@ -710,6 +767,9 @@ async def del_widget(request: Request, widget_id: int, page_id: int = Form(...))
     page = await get_home_page(page_id, uid)
     if not page:
         return HTMLResponse(_ERR.format("Forbidden."), 403)
+    # Note: rss_page_feeds.source_widget_id has ON DELETE SET NULL —
+    # any reader-page feeds linked to this widget are automatically unlinked
+    # (kept as "Manual" feeds) when the widget row is deleted.
     await delete_widget(widget_id)
     widgets   = await get_widgets(page_id)
     all_notes = await _user_notes(uid)
