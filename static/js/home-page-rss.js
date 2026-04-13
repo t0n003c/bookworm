@@ -20,8 +20,9 @@ let _selCategory = null;      // selected category string, or null
 let _selItemCat  = null;      // selected article-level topic tag, or null
 let _rawItems    = [];        // fetched items before filter/sort
 let _items       = [];        // currently displayed items
-let _sortMode    = 'newest';  // 'newest' | 'oldest'
+let _sortMode    = 'newest';  // 'newest' | 'oldest' | 'title_az' | 'title_za' | 'feed'
 let _filterMode  = 'all';     // 'all' | 'unread' | 'read'
+let _groupMode   = 'none';    // 'none' | 'category'
 let _read        = new Set();
 let _initEl      = null;
 
@@ -33,7 +34,7 @@ async function initRssPage(pageId) {
   _pid = pageId;
   _read = new Set(); _feeds = []; _rawItems = []; _items = [];
   _selFeed = null; _selCategory = null; _selItemCat = null;
-  _sortMode = 'newest'; _filterMode = 'all';
+  _sortMode = 'newest'; _filterMode = 'all'; _groupMode = 'none';
   await _syncReadFromServer();
   await _loadFeeds();
   _initAddForm();
@@ -296,8 +297,10 @@ function rssSelectItemCat(cat) {
 function rssApplyDisplay() {
   const sortSel   = document.getElementById('rss-sort-sel');
   const filterSel = document.getElementById('rss-filter-sel');
+  const groupSel  = document.getElementById('rss-group-sel');
   if (sortSel)   _sortMode   = sortSel.value;
   if (filterSel) _filterMode = filterSel.value;
+  if (groupSel)  _groupMode  = groupSel.value;
   _applyDisplay();
 }
 
@@ -323,9 +326,15 @@ function _applyDisplay() {
   if (_filterMode === 'read')   items = items.filter(it =>  _read.has(it.guid));
 
   // Sort
-  items.sort((a, b) => _sortMode === 'oldest'
-    ? (a._ts || 0) - (b._ts || 0)
-    : (b._ts || 0) - (a._ts || 0));
+  items.sort((a, b) => {
+    switch (_sortMode) {
+      case 'oldest':   return (a._ts || 0) - (b._ts || 0);
+      case 'title_az': return (a.title || '').localeCompare(b.title || '');
+      case 'title_za': return (b.title || '').localeCompare(a.title || '');
+      case 'feed':     return (a._source || '').localeCompare(b._source || '');
+      default:         return (b._ts || 0) - (a._ts || 0);  // newest
+    }
+  });
 
   _items = items;
   _renderItems(_items);
@@ -444,38 +453,68 @@ function _showItemsError(msg) {
     `<div class="p-4 text-sm text-red-500 text-center mt-4">${_esc(msg)}</div>`;
 }
 
-// ── Render item cards ─────────────────────────────────────────────────────────
+// ── Single article card (shared by flat + grouped renders) ──────────────────
+function _itemCard(it, idx) {
+  const isRead = _read.has(it.guid);
+  return `
+    <button class="rss-item w-full text-left px-3 py-2.5
+                   border-b border-gray-100 dark:border-zinc-800
+                   hover:bg-gray-50 dark:hover:bg-zinc-800 transition group
+                   ${isRead ? '' : 'bw-rss-unread'}"
+            data-guid="${_esc(it.guid)}" data-idx="${idx}"
+            onclick="rssOpenItem(${idx})">
+      <div class="flex items-start gap-2">
+        <span class="rss-dot w-1.5 h-1.5 mt-1.5 rounded-full flex-shrink-0 ${isRead ? 'invisible' : ''}"
+              style="background:${_esc(it._color || '#0053e2')}"></span>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-semibold leading-snug text-gray-800 dark:text-zinc-100
+                    line-clamp-2 group-hover:text-[#0053e2] transition
+                    ${isRead ? 'font-normal text-gray-500 dark:text-zinc-400' : ''}">
+            ${_esc(it.title)}
+          </p>
+          <p class="mt-0.5 text-[10px] text-gray-400 dark:text-zinc-500 truncate">
+            ${it._source ? _esc(it._source) + (it._date ? ' · ' : '') : ''}${it._date}
+          </p>
+        </div>
+      </div>
+    </button>`;
+}
+
+// ── Render item cards (flat or grouped by category) ──────────────────────────
 function _renderItems(items) {
   const panel = document.getElementById('rss-items-panel');
   if (!items.length) {
     panel.innerHTML = '<div class="p-4 text-sm text-gray-400 text-center mt-4">No articles found.</div>';
     return;
   }
-  panel.innerHTML = items.map((it, idx) => {
-    const isRead = _read.has(it.guid);
-    return `
-      <button class="rss-item w-full text-left px-3 py-2.5
-                     border-b border-gray-100 dark:border-zinc-800
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition group
-                     ${isRead ? '' : 'bw-rss-unread'}"
-              data-guid="${_esc(it.guid)}" data-idx="${idx}"
-              onclick="rssOpenItem(${idx})">
-        <div class="flex items-start gap-2">
-          <span class="rss-dot w-1.5 h-1.5 mt-1.5 rounded-full flex-shrink-0 ${isRead ? 'invisible' : ''}"
-                style="background:${_esc(it._color || '#0053e2')}"></span>
-          <div class="flex-1 min-w-0">
-            <p class="text-xs font-semibold leading-snug text-gray-800 dark:text-zinc-100
-                      line-clamp-2 group-hover:text-[#0053e2] transition
-                      ${isRead ? 'font-normal text-gray-500 dark:text-zinc-400' : ''}">
-              ${_esc(it.title)}
-            </p>
-            <p class="mt-0.5 text-[10px] text-gray-400 dark:text-zinc-500 truncate">
-              ${it._source ? _esc(it._source) + (it._date ? ' · ' : '') : ''}${it._date}
-            </p>
-          </div>
-        </div>
-      </button>`;
-  }).join('');
+
+  if (_groupMode === 'category') {
+    // Bucket items into their feed category, preserving flat sort order within each group
+    const groups = new Map();
+    items.forEach((it, idx) => {
+      const cat = it._feedCategory || '';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push({ it, idx });
+    });
+    // Sort groups alphabetically; empty string (“Uncategorized”) goes last
+    const sorted = [...groups.entries()].sort(([a], [b]) => {
+      if (!a && b)  return  1;
+      if (a  && !b) return -1;
+      return a.localeCompare(b);
+    });
+    panel.innerHTML = sorted.map(([cat, entries]) =>
+      `<div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider
+                   text-gray-400 dark:text-zinc-500
+                   bg-gray-50 dark:bg-zinc-950
+                   border-b border-gray-100 dark:border-zinc-800
+                   sticky top-0 z-10">${_esc(cat || 'Uncategorized')}</div>` +
+      entries.map(({ it, idx }) => _itemCard(it, idx)).join('')
+    ).join('');
+    return;
+  }
+
+  // Flat render (default)
+  panel.innerHTML = items.map((it, idx) => _itemCard(it, idx)).join('');
 }
 
 // ── Open item (preview) ───────────────────────────────────────────────────────

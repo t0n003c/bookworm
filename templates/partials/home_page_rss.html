@@ -99,6 +99,18 @@
                          focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>
+            <option value="title_az">A → Z</option>
+            <option value="title_za">Z → A</option>
+            <option value="feed">By Feed</option>
+          </select>
+          <select id="rss-group-sel" onchange="rssApplyDisplay()"
+                  title="Group articles"
+                  class="text-[10px] border border-gray-200 dark:border-zinc-700 rounded
+                         px-1 py-0.5 bg-white dark:bg-zinc-800
+                         text-gray-500 dark:text-zinc-400 cursor-pointer
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+            <option value="none">No group</option>
+            <option value="category">By Category</option>
           </select>
           <button onclick="rssMarkAllRead()"
                   title="Mark all as read"
