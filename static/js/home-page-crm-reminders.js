@@ -192,7 +192,7 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
             <label class="block text-[10px] font-semibold uppercase tracking-wide
                           text-gray-400 dark:text-zinc-500 mb-0.5">Repeat</label>
             <select data-rem-recurrence
-              onchange="var cw=this.closest('[data-rem-section]').querySelector('[data-rem-custom-row]');cw.style.display=this.value==='custom'?'flex':'none';"
+              onchange="var cw=this.parentElement.querySelector('[data-rem-custom-row]');if(cw)cw.style.display=this.value==='custom'?'flex':'none';"
               class="w-full border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1.5 text-xs
                      bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                      focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
