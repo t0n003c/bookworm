@@ -330,7 +330,7 @@ async def get_contact_reminders(contact_id: int) -> list[dict]:
     """Return all reminders for a contact ordered by date then time."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT id, contact_id, field_id, label, message, reminder_date, reminder_time, created_at"
+            "SELECT id, contact_id, field_id, label, message, recurrence, reminder_date, reminder_time, created_at"
             " FROM crm_contact_reminders"
             " WHERE contact_id=?"
             " ORDER BY reminder_date, reminder_time",
@@ -348,14 +348,15 @@ async def add_contact_reminder(
     reminder_date: str,
     reminder_time: str,
     message: str = "",
+    recurrence: str = "none",
 ) -> list[dict]:
     """Insert a reminder and return the updated list for this contact."""
     async with get_db() as db:
         await db.execute(
             "INSERT INTO crm_contact_reminders"
-            " (contact_id, field_id, user_id, label, message, reminder_date, reminder_time)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (contact_id, field_id, user_id, label, message, reminder_date, reminder_time),
+            " (contact_id, field_id, user_id, label, message, recurrence, reminder_date, reminder_time)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (contact_id, field_id, user_id, label, message, recurrence, reminder_date, reminder_time),
         )
         await db.commit()
     return await get_contact_reminders(contact_id)
@@ -376,8 +377,8 @@ async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
     """Return all of a user's reminders scheduled for date_str, with contact name."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT r.id, r.contact_id, c.name AS contact_name,"
-            " r.field_id, r.label, r.message, r.reminder_date, r.reminder_time"
+            "SELECT r.id, r.contact_id, c.name AS contact_name, c.page_id,"
+            " r.field_id, r.label, r.message, r.recurrence, r.reminder_date, r.reminder_time"
             " FROM crm_contact_reminders r"
             " JOIN crm_contacts c ON c.id = r.contact_id"
             " WHERE r.user_id=? AND r.reminder_date=?"
@@ -389,16 +390,70 @@ async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
 
 
 async def get_upcoming_crm_reminders(page_id: int, user_id: int, from_date: str) -> list[dict]:
-    """Return all future reminders for contacts on a CRM page, ordered by date/time."""
+    """Return all upcoming reminders for a CRM page (team-scoped — no user filter)."""
     async with get_db() as db:
         cur = await db.execute(
             "SELECT r.id, r.contact_id, c.name AS contact_name,"
-            " r.field_id, r.label, r.message, r.reminder_date, r.reminder_time"
+            " r.field_id, r.label, r.message, r.recurrence, r.reminder_date, r.reminder_time"
             " FROM crm_contact_reminders r"
             " JOIN crm_contacts c ON c.id = r.contact_id"
-            " WHERE c.page_id=? AND r.user_id=? AND r.reminder_date>=?"
+            " WHERE c.page_id=? AND r.reminder_date>=?"
             " ORDER BY r.reminder_date, r.reminder_time",
-            (page_id, user_id, from_date),
+            (page_id, from_date),
         )
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
+
+async def advance_crm_reminder(reminder_id: int, user_id: int) -> bool:
+    """Bump a recurring reminder's date to the next occurrence.
+
+    Returns True if the reminder was found and advanced, False if it's
+    non-recurring (the caller should delete it instead) or not owned by user_id.
+    """
+    import datetime
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, user_id, reminder_date, recurrence FROM crm_contact_reminders WHERE id=?",
+            (reminder_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return False
+        row = dict(row)
+        if row["user_id"] != user_id:
+            return False
+        rec = row["recurrence"] or "none"
+        if rec == "none":
+            return False
+        try:
+            d = datetime.date.fromisoformat(row["reminder_date"])
+        except ValueError:
+            return False
+        if rec == "daily":
+            d += datetime.timedelta(days=1)
+        elif rec == "weekly":
+            d += datetime.timedelta(weeks=1)
+        elif rec == "biweekly":
+            d += datetime.timedelta(weeks=2)
+        elif rec == "monthly":
+            # Advance by one month, clamping to last day if needed
+            m = d.month + 1
+            y = d.year + (m - 1) // 12
+            m = ((m - 1) % 12) + 1
+            import calendar
+            day = min(d.day, calendar.monthrange(y, m)[1])
+            d = datetime.date(y, m, day)
+        elif rec == "yearly":
+            try:
+                d = d.replace(year=d.year + 1)
+            except ValueError:  # Feb 29 on non-leap year
+                d = d.replace(year=d.year + 1, day=28)
+        else:
+            return False
+        await db.execute(
+            "UPDATE crm_contact_reminders SET reminder_date=? WHERE id=?",
+            (d.isoformat(), reminder_id),
+        )
+        await db.commit()
+    return True

@@ -505,6 +505,10 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE crm_contact_reminders ADD COLUMN message TEXT NOT NULL DEFAULT ''"
             )
+        if "recurrence" not in _crm_rem_cols:
+            await db.execute(
+                "ALTER TABLE crm_contact_reminders ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none'"
+            )
 
         # ── crm_contacts: profile_pic column (additive migration) ─────────────
         cur = await db.execute("PRAGMA table_info(crm_contacts)")

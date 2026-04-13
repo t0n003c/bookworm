@@ -16,6 +16,16 @@
 var _crmRemFired    = {};   // dedup: `${reminderId}-${todayDate}` → true
 var _crmRemInterval = null; // setInterval handle — cleared on HTMX re-nav
 
+// Recurrence labels shown in UI
+var _REC_LABELS = {
+  none:      'Once',
+  daily:     'Daily 🔁',
+  weekly:    'Weekly 🔁',
+  biweekly:  'Bi-weekly 🔁',
+  monthly:   'Monthly 🔁',
+  yearly:    'Yearly 🔁',
+};
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 /** Called from initCrmPage(). Clears any previous interval (HTMX guard). */
 function initCrmRemindersPolling() {
@@ -38,9 +48,16 @@ async function _checkCrmReminders() {
       _crmRemFired[key] = true;
       var toastText = (item.contact_name ? item.contact_name + ' — ' : '') + item.label;
       if (item.message) toastText += '\n' + item.message;
+      var rec = item.recurrence || 'none';
+      if (rec !== 'none') toastText += ' (' + (_REC_LABELS[rec] || rec) + ')';
       if (typeof _showReminderToast === 'function') _showReminderToast('🔔 ' + toastText);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
         new Notification('🔔 CRM Reminder', { body: toastText, icon: '/static/favicon.ico' });
+      // Advance recurring reminders to their next occurrence
+      if (rec !== 'none' && item.page_id && item.contact_id) {
+        fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/advance',
+          { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+      }
     });
   } catch(e) { /* silent — poll failures must not break the UI */ }
 }
@@ -65,12 +82,17 @@ async function crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dat
 function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldId, fieldLabel, dateVal) {
   var existingRows = reminders.map(function(r) {
     var delArgs = "'" + r.id + "'," + contactId + "," + fieldId + ",'" + _crmEsc(fieldLabel) + "','" + _crmEsc(contactName) + "','" + _crmEsc(dateVal) + "'";
+    var rec = r.recurrence || 'none';
+    var recBadge = rec !== 'none'
+      ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 shrink-0">${_crmEsc(_REC_LABELS[rec] || rec)}</span>`
+      : '';
     return `<div class="py-1.5 border-b border-gray-100 dark:border-zinc-700/60 last:border-0">
       <div class="flex items-start gap-2 text-xs text-gray-700 dark:text-zinc-300">
         <span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>
         <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="font-medium truncate flex-1">${_crmEsc(r.label)}</span>
+            ${recBadge}
             <span class="text-gray-400 shrink-0 tabular-nums">${_crmEsc(r.reminder_date)} ${_crmEsc(r.reminder_time)}</span>
             <button type="button" title="Delete reminder"
               onclick="crmDeleteReminder(${delArgs})"
@@ -152,6 +174,22 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
             </div>
           </div>
 
+          <div>
+            <label class="block text-[10px] font-semibold uppercase tracking-wide
+                          text-gray-400 dark:text-zinc-500 mb-0.5">Repeat</label>
+            <select data-rem-recurrence
+              class="w-full border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1.5 text-xs
+                     bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                     focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+              <option value="none">No repeat (once)</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Every 2 weeks</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+
           <div class="flex gap-2 justify-end pt-1">
             <button type="button" onclick="_crmToggleRemForm(${cancelArgs})"
               class="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-zinc-600
@@ -194,6 +232,7 @@ async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, 
   var message = (section.querySelector('[data-rem-message]')?.value || '').trim();
   var date    = (section.querySelector('[data-rem-date]')?.value    || '').trim();
   var time    = (section.querySelector('[data-rem-time]')?.value    || '09:00').trim();
+  var rec     = (section.querySelector('[data-rem-recurrence]')?.value || 'none').trim();
   if (!date) { section.querySelector('[data-rem-date]')?.focus(); return; }
   if (!label) label = contactName + ' — ' + fieldLabel;
   try {
@@ -204,6 +243,7 @@ async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, 
     fd.append('message',       message);
     fd.append('reminder_date', date);
     fd.append('reminder_time', time);
+    fd.append('recurrence',    rec);
     await fetch('/home/crm/' + _crmPid + '/contacts/' + contactId + '/reminders/add',
       { method: 'POST', body: fd });
     await crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dateVal);
@@ -265,14 +305,21 @@ async function _crmLoadUpcomingPanel() {
         <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500
                     px-1 py-1 sticky top-0 bg-white dark:bg-zinc-900">${_crmEsc(grp)}</div>`;
       groups[grp].forEach(function(r) {
+        var rec = r.recurrence || 'none';
+        var recBadge = rec !== 'none'
+          ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(_REC_LABELS[rec] || rec)}</span>`
+          : '';
         html += `
           <div class="rounded-lg border border-gray-100 dark:border-zinc-700/60
                       bg-gray-50 dark:bg-zinc-800/50 px-3 py-2 mb-1.5">
             <div class="flex items-start gap-2">
               <span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>
               <div class="flex-1 min-w-0">
-                <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100 truncate">
-                  ${_crmEsc(r.label)}</p>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100 truncate flex-1">
+                    ${_crmEsc(r.label)}</p>
+                  ${recBadge}
+                </div>
                 <p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
                   ${_crmEsc(r.contact_name)} &middot; ${_crmEsc(r.reminder_time)}</p>
                 ${r.message ? `<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 break-words">${_crmEsc(r.message)}</p>` : ''}
@@ -289,7 +336,8 @@ async function _crmLoadUpcomingPanel() {
     });
     body.innerHTML = html;
   } catch(e) {
-    body.innerHTML = '<p class="text-xs text-red-400 text-center mt-8">Could not load reminders</p>';
+    console.error('[CRM reminders panel]', e);
+    body.innerHTML = '<p class="text-xs text-red-400 text-center mt-8">Could not load reminders — ' + _crmEsc(e.message || String(e)) + '</p>';
   }
 }
 

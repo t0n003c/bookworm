@@ -23,7 +23,8 @@ from routers.home_crm_db import (
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
     get_contact_reminders, add_contact_reminder,
-    delete_contact_reminder, get_due_crm_reminders, get_upcoming_crm_reminders,
+    delete_contact_reminder, advance_crm_reminder,
+    get_due_crm_reminders, get_upcoming_crm_reminders,
 )
 
 log = logging.getLogger(__name__)
@@ -487,7 +488,9 @@ async def add_reminder(
     message: str = Form(""),
     reminder_date: str = Form(...),
     reminder_time: str = Form("09:00"),
+    recurrence: str = Form("none"),
 ):
+    _VALID_REC = {"none", "daily", "weekly", "biweekly", "monthly", "yearly"}
     try:
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
@@ -497,11 +500,12 @@ async def add_reminder(
             datetime.date.fromisoformat(date_str)
         except ValueError:
             return _err("invalid date — expected YYYY-MM-DD", 400)
+        rec = recurrence.strip() if recurrence.strip() in _VALID_REC else "none"
         return JSONResponse(await add_contact_reminder(
             contact_id, field_id, uid,
             label.strip() or "Reminder",
             date_str, reminder_time.strip() or "09:00",
-            message.strip(),
+            message.strip(), rec,
         ))
     except PermissionError:
         return _err("not logged in", 401)
@@ -523,6 +527,27 @@ async def remove_reminder(
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_reminder reminder_id=%s", reminder_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/reminders/{reminder_id}/advance")
+async def advance_reminder(
+    request: Request,
+    page_id: int,
+    contact_id: int,
+    reminder_id: int,
+):
+    """Advance a recurring reminder to its next occurrence (called after a toast fires)."""
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        advanced = await advance_crm_reminder(reminder_id, uid)
+        return JSONResponse({"advanced": advanced})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("advance_reminder reminder_id=%s", reminder_id)
         return _err(str(e), 500)
 
 

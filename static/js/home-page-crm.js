@@ -155,7 +155,9 @@ function _crmRenderTable() {
       ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
       : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>`;
 
-    return grpHdr + `<tr class="border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition">
+    return grpHdr + `<tr
+      onclick="if(!event.target.closest('button,a'))crmOpenEdit(${c.id})"
+      class="border-b border-gray-100 dark:border-zinc-800 hover:bg-blue-50/40 dark:hover:bg-zinc-800/60 transition cursor-pointer">
       ${avatarCell}${dataCells}
       <td class="px-3 py-2 text-right whitespace-nowrap">
         <button onclick="crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
