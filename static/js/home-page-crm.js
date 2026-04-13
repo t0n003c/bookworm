@@ -251,21 +251,43 @@ function _crmContactModal(c) {
     const val = fv[f.id] || '';
     let control;
     if (f.field_type === 'checkbox') {
-      return `<div class="flex items-center gap-2 pt-4">
-        <input type="checkbox" name="cf_${f.id}" value="1" ${val==='1'?'checked':''} id="cf_chk_${f.id}"
-          class="w-4 h-4 rounded accent-[#0053e2]"/>
-        <label for="cf_chk_${f.id}" class="text-sm text-gray-700 dark:text-zinc-200 cursor-pointer">${_crmEsc(f.label)}</label>
+      // Toggle switch — visually obvious, no JS needed (peer utilities)
+      return `<div class="col-span-2 flex items-center justify-between
+                          rounded-lg border border-gray-200 dark:border-zinc-700
+                          px-3 py-2.5">
+        <span class="text-sm font-medium text-gray-700 dark:text-zinc-200">${_crmEsc(f.label)}</span>
+        <label class="relative flex items-center cursor-pointer shrink-0">
+          <input type="checkbox" name="cf_${f.id}" value="1"
+                 id="cf_chk_${f.id}" ${val==='1'?'checked':''}
+                 class="sr-only peer"/>
+          <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
+                      peer-checked:bg-[#0053e2] transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
+                      transition-transform peer-checked:translate-x-5"></div>
+        </label>
       </div>`;
     }
     if (f.field_type === 'multi_select') {
       var ms = []; try { ms = JSON.parse(val); } catch {}
       const opts = (f.options||'').split('|').filter(Boolean);
-      control = `<div class="flex flex-wrap gap-x-3 gap-y-1">${opts.length
-        ? opts.map(o => `<label class="flex items-center gap-1.5 text-sm cursor-pointer">
-            <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}" ${ms.includes(o)?'checked':''} class="w-3.5 h-3.5 rounded accent-[#0053e2]"/>
-            ${_crmEsc(o)}</label>`).join('')
-        : '<span class="text-xs text-gray-400">No options — edit field to add some.</span>'
-      }</div>`;
+      // Pill/chip toggles — sr-only checkbox + peer-checked styling on visible span
+      control = opts.length
+        ? `<div class="flex flex-wrap gap-1.5">${opts.map(o =>
+            `<label class="cursor-pointer">
+               <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
+                      ${ms.includes(o)?'checked':''} class="sr-only peer"/>
+               <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
+                            border-gray-300 dark:border-zinc-600
+                            text-gray-600 dark:text-zinc-300
+                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
+                            peer-checked:text-white">
+                 ${_crmEsc(o)}
+               </span>
+             </label>`).join('')}
+          </div>`
+        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">
+             No options yet — go to ⚙️ Fields to add some.
+           </p>`;
     } else if (f.field_type === 'file_links') {
       var fl = []; try { fl = JSON.parse(val); } catch {}
       control = `<textarea name="cf_${f.id}" rows="2" placeholder="One URL per line"
@@ -275,15 +297,18 @@ function _crmContactModal(c) {
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
       if (!opts.length) {
-        control = `<p class="text-xs text-gray-400 italic">No options — go to ⚙️ Fields to add some.</p>`;
+        control = `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">
+          No options yet — go to ⚙️ Fields to add some.</p>`;
       } else {
         control = `<select name="cf_${f.id}"
           class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
                  text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
-          <option value="">—</option>${opts.map(o =>
+                 focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+          <option value="" class="text-gray-400" ${!val?'selected':''}>— none —</option>
+          ${opts.map(o =>
             `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
-          ).join('')}</select>`;
+          ).join('')}
+        </select>`;
       }
     } else if (f.field_type === 'date') {
       control = inp(`cf_${f.id}`, val, 'date');
