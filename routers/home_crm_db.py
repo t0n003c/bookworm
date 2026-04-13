@@ -362,6 +362,29 @@ async def add_contact_reminder(
     return await get_contact_reminders(contact_id)
 
 
+async def update_contact_reminder(
+    reminder_id: int,
+    contact_id: int,
+    user_id: int,
+    label: str,
+    reminder_date: str,
+    reminder_time: str,
+    message: str = "",
+    recurrence: str = "none",
+) -> list[dict]:
+    """Update label/date/time/message/recurrence of an existing reminder."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_contact_reminders"
+            " SET label=?, message=?, recurrence=?, reminder_date=?, reminder_time=?"
+            " WHERE id=? AND contact_id=? AND user_id=?",
+            (label, message, recurrence, reminder_date, reminder_time,
+             reminder_id, contact_id, user_id),
+        )
+        await db.commit()
+    return await get_contact_reminders(contact_id)
+
+
 async def delete_contact_reminder(reminder_id: int, contact_id: int) -> list[dict]:
     """Delete a reminder (validates contact ownership) and return updated list."""
     async with get_db() as db:

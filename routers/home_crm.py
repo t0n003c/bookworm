@@ -22,7 +22,7 @@ from routers.home_crm_db import (
     get_fields, add_field, update_field, delete_field,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
-    get_contact_reminders, add_contact_reminder,
+    get_contact_reminders, add_contact_reminder, update_contact_reminder,
     delete_contact_reminder, advance_crm_reminder,
     get_due_crm_reminders, get_upcoming_crm_reminders,
 )
@@ -525,6 +525,48 @@ async def add_reminder(
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("add_reminder contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/reminders/{reminder_id}/update")
+async def edit_reminder(
+    request: Request, page_id: int, contact_id: int, reminder_id: int,
+    label: str = Form(""), message: str = Form(""),
+    reminder_date: str = Form(...), reminder_time: str = Form("09:00"),
+    recurrence: str = Form("none"),
+):
+    _VALID_REC = {"none", "daily", "weekly", "biweekly", "monthly", "yearly"}
+    _VALID_UNITS = {"days", "weeks", "months", "years"}
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        date_str = reminder_date.strip()
+        try:
+            datetime.date.fromisoformat(date_str)
+        except ValueError:
+            return _err("invalid date", 400)
+        rec_raw = recurrence.strip()
+        if rec_raw in _VALID_REC:
+            rec = rec_raw
+        elif rec_raw.startswith("custom:"):
+            parts = rec_raw.split(":")
+            rec = rec_raw if (
+                len(parts) == 3 and parts[2] in _VALID_UNITS
+                and parts[1].isdigit() and int(parts[1]) >= 1
+            ) else "none"
+        else:
+            rec = "none"
+        return JSONResponse(await update_contact_reminder(
+            reminder_id, contact_id, uid,
+            label.strip() or "Reminder",
+            date_str, reminder_time.strip() or "09:00",
+            message.strip(), rec,
+        ))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("edit_reminder reminder_id=%s", reminder_id)
         return _err(str(e), 500)
 
 

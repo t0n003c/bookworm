@@ -40,6 +40,19 @@ function _crmRecLabel(rec) {
   return rec;
 }
 
+/** Serialize a reminder row as HTML-safe JSON for a data attribute. */
+function _remJson(r) {
+  var obj = {
+    id: r.id,
+    label: r.label || '',
+    message: r.message || '',
+    reminder_date: r.reminder_date || '',
+    reminder_time: r.reminder_time || '',
+    recurrence: r.recurrence || 'none'
+  };
+  return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 /** Called from initCrmPage(). Clears any previous interval (HTMX guard). */
 function initCrmRemindersPolling() {
@@ -96,11 +109,13 @@ async function crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dat
 function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldId, fieldLabel, dateVal) {
   var existingRows = reminders.map(function(r) {
     var delArgs = "'" + r.id + "'," + contactId + "," + fieldId + ",'" + _crmEsc(fieldLabel) + "','" + _crmEsc(contactName) + "','" + _crmEsc(dateVal) + "'";
+    var editArgs = r.id + "," + fieldId + "," + contactId + ",'" + _crmEsc(fieldLabel) + "','" + _crmEsc(contactName) + "','" + _crmEsc(dateVal) + "'";
     var rec = r.recurrence || 'none';
     var recBadge = rec !== 'none'
       ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 shrink-0">${_crmEsc(_crmRecLabel(rec))}</span>`
       : '';
-    return `<div class="py-1.5 border-b border-gray-100 dark:border-zinc-700/60 last:border-0">
+    return `<div class="py-1.5 border-b border-gray-100 dark:border-zinc-700/60 last:border-0"
+      data-rem-row-id="${r.id}" data-rem-json="${_remJson(r)}">
       <div class="flex items-start gap-2 text-xs text-gray-700 dark:text-zinc-300">
         <span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>
         <div class="flex-1 min-w-0">
@@ -108,6 +123,9 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
             <span class="font-medium truncate flex-1">${_crmEsc(r.label)}</span>
             ${recBadge}
             <span class="text-gray-400 shrink-0 tabular-nums">${_crmEsc(r.reminder_date)} ${_crmEsc(r.reminder_time)}</span>
+            <button type="button" title="Edit reminder"
+              onclick="crmEditReminder(${editArgs})"
+              class="text-gray-300 hover:text-[#0053e2] transition leading-none shrink-0">✎</button>
             <button type="button" title="Delete reminder"
               onclick="crmDeleteReminder(${delArgs})"
               class="text-gray-300 hover:text-red-500 transition leading-none shrink-0">✕</button>
@@ -230,6 +248,7 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
                      text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
               Cancel</button>
             <button type="button" onclick="crmAddReminder(${addArgs})"
+              data-rem-save-btn
               class="px-3 py-1.5 text-xs rounded-md bg-[#0053e2] text-white font-semibold
                      hover:bg-blue-700 transition">
               Save Reminder</button>
@@ -244,6 +263,13 @@ function _crmToggleRemForm(btn, contactId, fieldId) {
   var form = document.getElementById('crm-rem-form-' + fieldId);
   if (!form) return;
   var isOpening = form.classList.contains('hidden');
+  // Clear edit state whenever the form closes
+  if (!isOpening) {
+    delete form.dataset.editingId;
+    delete form.dataset.editingContactId;
+    var saveBtn = form.querySelector('[data-rem-save-btn]');
+    if (saveBtn) saveBtn.textContent = 'Save Reminder';
+  }
   form.classList.toggle('hidden');
   // Double-rAF: ensures the browser has done a full layout pass after un-hiding
   // before we read scrollHeight. Instant scrollTop (no 'smooth') is reliable;
@@ -274,7 +300,9 @@ async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, 
     rec = 'custom:' + n + ':' + unit;
   }
   if (!date) { section.querySelector('[data-rem-date]')?.focus(); return; }
-  if (!label) label = contactName + ' — ' + fieldLabel;
+  if (!label) label = contactName + ' \u2014 ' + fieldLabel;
+  var editingId = section.dataset.editingId || '';
+  var editingContactId = section.dataset.editingContactId || contactId;
   try {
     btn.disabled = true;
     var fd = new FormData();
@@ -284,14 +312,80 @@ async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, 
     fd.append('reminder_date', date);
     fd.append('reminder_time', time);
     fd.append('recurrence',    rec);
-    await fetch('/home/crm/' + _crmPid + '/contacts/' + contactId + '/reminders/add',
-      { method: 'POST', body: fd });
+    var url = editingId
+      ? '/home/crm/' + _crmPid + '/contacts/' + editingContactId + '/reminders/' + editingId + '/update'
+      : '/home/crm/' + _crmPid + '/contacts/' + contactId + '/reminders/add';
+    await fetch(url, { method: 'POST', body: fd });
+    // Clear edit state + reset button before reloading
+    delete section.dataset.editingId;
+    delete section.dataset.editingContactId;
+    var saveBtn = section.querySelector('[data-rem-save-btn]');
+    if (saveBtn) saveBtn.textContent = 'Save Reminder';
     await crmLoadReminders(contactId, contactName, fieldId, fieldLabel, dateVal);
   } catch(e) {
     alert('Could not save reminder: ' + e.message);
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/**
+ * Populate the reminder form with an existing reminder's data and switch to edit mode.
+ * remId, fieldId, contactId — integers. fieldLabel/contactName/dateVal — strings.
+ */
+function crmEditReminder(remId, fieldId, contactId, fieldLabel, contactName, dateVal) {
+  var section = document.getElementById('crm-rem-form-' + fieldId);
+  if (!section) return;
+
+  // Read stored JSON from the row element
+  var rowEl = section.closest('.mt-2')?.querySelector('[data-rem-row-id="' + remId + '"]');
+  if (!rowEl) return;
+  var raw = {};
+  try { raw = JSON.parse(rowEl.dataset.remJson); } catch(e) { return; }
+
+  // Populate fields
+  var lbl = section.querySelector('[data-rem-label]');
+  var msg = section.querySelector('[data-rem-message]');
+  var dt  = section.querySelector('[data-rem-date]');
+  var tm  = section.querySelector('[data-rem-time]');
+  var rec = section.querySelector('[data-rem-recurrence]');
+  if (lbl) lbl.value = raw.label || '';
+  if (msg) msg.value = raw.message || '';
+  if (dt)  dt.value  = raw.reminder_date || '';
+  if (tm)  tm.value  = raw.reminder_time || '09:00';
+
+  // Restore recurrence (including custom:N:unit)
+  if (rec) {
+    var recVal = raw.recurrence || 'none';
+    var isCustom = recVal.startsWith('custom:');
+    rec.value = isCustom ? 'custom' : recVal;
+    var customRow = section.querySelector('[data-rem-custom-row]');
+    if (customRow) {
+      customRow.style.display = isCustom ? 'flex' : 'none';
+      if (isCustom) {
+        var parts = recVal.split(':');
+        var nIn = section.querySelector('[data-rem-custom-n]');
+        var uIn = section.querySelector('[data-rem-custom-unit]');
+        if (nIn) nIn.value = parts[1] || '1';
+        if (uIn) uIn.value = parts[2] || 'days';
+      }
+    }
+  }
+
+  // Mark edit mode on the form
+  section.dataset.editingId = remId;
+  section.dataset.editingContactId = contactId;
+  var saveBtn = section.querySelector('[data-rem-save-btn]');
+  if (saveBtn) saveBtn.textContent = 'Update Reminder';
+
+  // Show form and scroll into view
+  if (section.classList.contains('hidden')) section.classList.remove('hidden');
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      var modalBody = document.getElementById('crm-modal-body');
+      if (modalBody) modalBody.scrollTop = modalBody.scrollHeight;
+    });
+  });
 }
 
 async function crmDeleteReminder(reminderIdStr, contactId, fieldId, fieldLabel, contactName, dateVal) {
