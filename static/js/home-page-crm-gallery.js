@@ -4,6 +4,7 @@
 // _crmEsc, _crmSetMain, _crmFiltered, _crmRender, _crmFetch, _crmFieldDisplay,
 // crmColVisible, crmOpenEdit, crmDeleteContact) are defined in home-page-crm.js
 // or its sibling modules and share the same global scope.
+'use strict';
 
 // ── Gallery view ──────────────────────────────────────────────────────────────
 var _galDragId = null;
@@ -52,21 +53,33 @@ function _crmRenderGallery() {
           <span class="text-gray-700 dark:text-zinc-200 truncate">${display}</span>
         </div>`;
       }).filter(Boolean).join('');
+    const isSelected = typeof _crmSelected !== 'undefined' && _crmSelected.has(c.id);
+    const bulkMode    = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
+    const cardSelCls  = bulkMode && isSelected ? 'ring-2 ring-[#0053e2]' : 'ring-2 ring-transparent hover:ring-[#0053e2]/20';
     return grpHdr + `
       <div class="crm-gallery-card relative bg-white dark:bg-zinc-900 rounded-2xl shadow-sm
                   hover:shadow-lg transition-all duration-150 overflow-hidden cursor-pointer
-                  border border-gray-100 dark:border-zinc-800
-                  ring-2 ring-transparent hover:ring-[#0053e2]/20"
-           draggable="true" data-cid="${c.id}"
-           onclick="crmOpenEdit(${c.id})"
+                  border border-gray-100 dark:border-zinc-800 ${cardSelCls}"
+           draggable="${bulkMode ? 'false' : 'true'}" data-cid="${c.id}"
+           onclick="typeof _crmBulkMode !== 'undefined' && _crmBulkMode ? crmBulkToggle(${c.id}) : crmOpenDetail(${c.id})"
            ondragstart="crmGalDragStart(event,${c.id})"
            ondragover="crmGalDragOver(event)"
            ondragleave="crmGalDragLeave(event)"
-           ondrop="crmGalDrop(event,${c.id})"
+      ondrop="crmGalDrop(event,${c.id})"
            ondragend="crmGalDragEnd()">
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-        <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete contact"
+        ${bulkMode ? `<label onclick="event.stopPropagation()" title="Select"
+          class="absolute top-2 left-2 z-10 flex items-center justify-center">
+          <input type="checkbox" ${isSelected?'checked':''}
+            onchange="crmBulkToggle(${c.id},this.checked)"
+            class="w-4 h-4 accent-[#0053e2] cursor-pointer"/>
+        </label>` : ''}
+        <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit contact"
           class="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center
+                 text-xs leading-none text-gray-300 dark:text-zinc-600
+                 hover:text-[#0053e2] dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition">✎</button>
+        <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete contact"
+          class="absolute top-2 right-8 w-5 h-5 rounded flex items-center justify-center
                  text-xs leading-none text-gray-300 dark:text-zinc-600
                  hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
           ✕</button>

@@ -19,7 +19,7 @@ var _crmContacts = [];
 var _crmFields   = [];
 var _crmStages   = [];
 var _crmDeals    = [];
-var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar'
+var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar' | 'detail'
 var _crmQuery    = '';
 
 // Calendar state (owned by home-page-crm-calendar.js, declared here for reset)
@@ -29,6 +29,17 @@ var _crmCalYear            = null;
 var _crmCalMonth           = null;
 var _crmCalSelDay          = null;
 
+// Detail view state (owned by home-page-crm-detail.js)
+var _crmDetailContactId = null;
+var _crmPrevView        = 'table';
+
+// Bulk selection state (owned by home-page-crm-bulk.js)
+var _crmBulkMode = false;
+var _crmSelected = new Set();
+
+// Duplicate detection
+var _crmDupOverride = false;
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 function initCrmPage(pid) {
   _crmPid  = pid;
@@ -37,9 +48,15 @@ function initCrmPage(pid) {
   // Reset calendar state on every HTMX re-nav (reminders lazy-reload per session)
   _crmAllReminders       = [];
   _crmCalRemindersLoaded = false;
-  _crmCalYear  = null;
-  _crmCalMonth = null;
+  _crmCalYear   = null;
+  _crmCalMonth  = null;
   _crmCalSelDay = null;
+  // Reset detail + bulk state
+  _crmDetailContactId = null;
+  _crmPrevView        = 'table';
+  _crmBulkMode        = false;
+  _crmSelected        = new Set();
+  _crmDupOverride     = false;
   if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
   if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
   const s = document.getElementById('crm-search');
@@ -72,9 +89,8 @@ function _crmRender() {
   if (_crmView === 'pipeline') {
     const tb = document.getElementById('crm-toolbar');
     if (tb) tb.innerHTML = '';
-    if (typeof initCrmPipeline === 'function') {
+    if (typeof initCrmPipeline === 'function')
       initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts);
-    }
     return;
   }
   if (_crmView === 'calendar') {
@@ -83,11 +99,19 @@ function _crmRender() {
     if (typeof _crmRenderCalendar === 'function') _crmRenderCalendar();
     return;
   }
+  if (_crmView === 'detail') {
+    const tb = document.getElementById('crm-toolbar');
+    if (tb) tb.innerHTML = '';
+    if (typeof _crmRenderDetail === 'function') _crmRenderDetail();
+    return;
+  }
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
+  _crmRenderViewToggle();
   _crmView === 'gallery' ? _crmRenderGallery() : _crmRenderTable();
+  if (typeof _crmRenderBulkBar === 'function') _crmRenderBulkBar();
 }
 
-// ── View toggle ───────────────────────────────────────────────────────────────
+// ── View toggle ──────────────────────────────────────────────────────
 function _crmRenderViewToggle() {
   const el = document.getElementById('crm-view-toggle');
   if (!el) return;
@@ -99,10 +123,26 @@ function _crmRenderViewToggle() {
                   : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}"
     >${label}</button>`;
   };
-  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline') + btn('calendar','📅 Calendar');
+  // Bulk "Select" toggle — only relevant for table & gallery
+  const canBulk = (_crmView === 'table' || _crmView === 'gallery');
+  const bulkBtn = canBulk
+    ? `<span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 self-center mx-0.5"></span>
+       <button onclick="crmToggleBulkMode()"
+         class="text-[11px] px-2.5 py-1 rounded-lg border transition
+                ${_crmBulkMode
+                    ? 'bg-[#ffc220] text-gray-900 border-[#ffc220]'
+                    : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#ffc220]'}"
+       >☑ Select</button>`
+    : '';
+  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline') + btn('calendar','📅 Calendar') + bulkBtn;
 }
 
 function crmSetView(v) {
+  // Exit bulk mode when switching to views that don't support it
+  if (v === 'pipeline' || v === 'calendar') {
+    _crmBulkMode = false;
+    _crmSelected = new Set();
+  }
   _crmView = v;
   localStorage.setItem('bw_crm_view', v);
   _crmRenderViewToggle();
@@ -134,7 +174,11 @@ function _crmRenderTable() {
 
   const thead = `<thead class="bg-gray-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
     <tr>
-      <th class="${thCls} w-10"></th>
+      ${_crmBulkMode ? `<th class="${thCls} w-8">
+        <input type="checkbox" title="Select all"
+          onchange="this.checked ? crmBulkSelectAll() : crmBulkDeselectAll()"
+          class="w-4 h-4 accent-[#0053e2] cursor-pointer"/>
+      </th>` : '<th class="'+thCls+' w-10"></th>'}
       ${cols.map(col =>
         `<th class="${thCls}" data-col="${_crmEsc(col.id)}" draggable="true">
           ${_crmEsc(col.label)}
@@ -155,7 +199,7 @@ function _crmRenderTable() {
       : '';
 
     const dataCells = cols.map(col => {
-      if (col.id === 'name') return `<td class="${tdCls} font-semibold"><button onclick="crmOpenEdit(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button></td>`;
+      if (col.id === 'name') return `<td class="${tdCls} font-semibold"><button onclick="crmOpenDetail(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button></td>`;
       if (col.id === 'company') return `<td class="${tdCls}">${_crmEsc(c.company||'')}</td>`;
       if (col.id === 'email')   return `<td class="${tdCls}"><a href="mailto:${_crmEsc(c.email||'')}" class="hover:text-[#0053e2]">${_crmEsc(c.email||'')}</a></td>`;
       if (col.id === 'phone')   return `<td class="${tdCls}">${_crmEsc(c.phone||'')}</td>`;
@@ -174,16 +218,26 @@ function _crmRenderTable() {
       ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
       : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>`;
 
-    return grpHdr + `<tr
-      onclick="if(!event.target.closest('button,a'))crmOpenEdit(${c.id})"
-      class="border-b border-gray-100 dark:border-zinc-800 hover:bg-blue-50/40 dark:hover:bg-zinc-800/60 transition cursor-pointer">
-      ${avatarCell}${dataCells}
+    const chkCell = _crmBulkMode
+      ? `<td class="px-2 py-2 w-8">
+           <input type="checkbox" ${_crmSelected.has(c.id)?'checked':''}
+             onchange="crmBulkToggle(${c.id},this.checked)"
+             class="w-4 h-4 accent-[#0053e2] cursor-pointer"
+             onclick="event.stopPropagation()"/>
+         </td>` : '';
+    const rowSel = _crmBulkMode && _crmSelected.has(c.id)
+      ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-blue-50/40 dark:hover:bg-zinc-800/60';
+    return grpHdr + `<tr data-cid="${c.id}"
+      onclick="_crmBulkMode ? crmBulkToggle(${c.id}) : (event.target.closest('button,a') ? null : crmOpenDetail(${c.id}))"
+      class="border-b border-gray-100 dark:border-zinc-800 transition cursor-pointer ${rowSel}">
+      ${chkCell}${avatarCell}${dataCells}
       <td class="px-3 py-2 text-right whitespace-nowrap">
-        <button onclick="crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
-        <button onclick="crmDeleteContact(${c.id})" title="Delete" class="text-gray-300 hover:text-red-500 transition">✕</button>
+        <button onclick="event.stopPropagation();crmOpenDetail(${c.id})" title="View" class="text-gray-300 hover:text-[#0053e2] transition mr-1">👁️</button>
+        <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
+        <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete" class="text-gray-300 hover:text-red-500 transition">✕</button>
       </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="${cols.length+2}" class="text-center text-sm text-gray-400 dark:text-zinc-500 py-12">
+  }).join('') : `<tr><td colspan="${cols.length + (_crmBulkMode?3:2)}" class="text-center text-sm text-gray-400 dark:text-zinc-500 py-12">
       ${_crmQuery ? 'No contacts match your search.' : 'No contacts yet — click <strong>+ Contact</strong> to add one.'}
     </td></tr>`;
 
@@ -373,7 +427,8 @@ function _crmContactModal(c) {
           ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
         </div>
         <p id="crm-contact-err" class="hidden text-xs text-red-500 mb-2"></p>
-        <div class="flex gap-2 justify-end pt-2">
+        <div id="crm-dup-warn" class="hidden mb-3"></div>
+        <div id="crm-action-btns" class="flex gap-2 justify-end pt-2">
           <button type="button" onclick="crmCloseModal()"
             class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
                    text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Cancel</button>
@@ -392,15 +447,100 @@ function _crmContactModal(c) {
   }
 }
 
+// ── Duplicate detection ──────────────────────────────────────────────────────
+function _crmNameTokens(name) {
+  return (name||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').split(/\s+/).filter(Boolean);
+}
+
+function _crmNameSimilarity(a, b) {
+  var ta = _crmNameTokens(a), tb = _crmNameTokens(b);
+  if (!ta.length || !tb.length) return 0;
+  var inter = ta.filter(function(t){ return tb.includes(t); }).length;
+  return 2 * inter / (ta.length + tb.length);
+}
+
+/** Returns null (no dup) | {level:'strong'|'soft', match:contact} */
+function _crmCheckDuplicates(name, email, currentId) {
+  var normEmail = (email||'').trim().toLowerCase();
+  for (var i = 0; i < _crmContacts.length; i++) {
+    var c = _crmContacts[i];
+    if (c.id === currentId) continue;
+    if (normEmail && normEmail === (c.email||'').trim().toLowerCase())
+      return {level:'strong', match:c};
+    if (_crmNameSimilarity(name, c.name) >= 0.8)
+      return {level:'soft', match:c};
+  }
+  return null;
+}
+
+function _crmShowDupWarning(dup, contactId, label) {
+  var warn = document.getElementById('crm-dup-warn');
+  var btns = document.getElementById('crm-action-btns');
+  if (!warn || !btns) return;
+  var isStrong = dup.level === 'strong';
+  var title = isStrong ? '⚠️ Duplicate email detected' : '🔍 Possible duplicate name';
+  var reason = isStrong
+    ? 'A contact with this email already exists:'
+    : 'A contact with a similar name already exists:';
+  var cardCls = isStrong
+    ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
+    : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20';
+  var titleCls = isStrong ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400';
+  warn.className = '';
+  warn.innerHTML = `<div class="rounded-lg border p-3 ${cardCls}">
+    <p class="text-xs font-semibold ${titleCls} mb-1">${title}</p>
+    <p class="text-xs text-gray-600 dark:text-zinc-400 mb-1">${reason}</p>
+    <p class="text-xs font-medium text-gray-800 dark:text-zinc-200">${_crmEsc(dup.match.name)}
+      ${dup.match.email ? '<span class="font-normal text-gray-500">· '+_crmEsc(dup.match.email)+'</span>' : ''}</p>
+    <div class="flex gap-2 mt-2">
+      <button type="button" onclick="_crmDupCancel()"
+        class="px-3 py-1 text-xs rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300">
+        ← Edit</button>
+      <button type="button" onclick="_crmDupSaveAnyway(${contactId},'${_crmEsc(label)}')"
+        class="px-3 py-1 text-xs font-semibold rounded-lg bg-gray-700 text-white hover:bg-gray-900 transition">
+        Save Anyway</button>
+    </div>
+  </div>`;
+  btns.classList.add('hidden');
+}
+
+function _crmDupCancel() {
+  var warn = document.getElementById('crm-dup-warn');
+  var btns = document.getElementById('crm-action-btns');
+  if (warn) warn.innerHTML = '';
+  if (btns) btns.classList.remove('hidden');
+  _crmDupOverride = false;
+}
+
+function _crmDupSaveAnyway(contactId, label) {
+  _crmDupOverride = true;
+  var warn = document.getElementById('crm-dup-warn');
+  var btns = document.getElementById('crm-action-btns');
+  if (warn) warn.innerHTML = '';
+  if (btns) btns.classList.remove('hidden');
+  // Re-trigger form submit — the override flag will skip the dup check
+  var form = document.getElementById('crm-contact-form');
+  if (form) form.requestSubmit();
+}
+
 async function crmSaveContact(e, contactId) {
   e.preventDefault();
   const form = e.target;
   const errEl = document.getElementById('crm-contact-err');
   const saveBtn = document.getElementById('crm-contact-save');
-  if (!saveBtn) return; // modal not open (defensive)
+  if (!saveBtn) return;
   if (!form.name.value.trim()) {
     _crmShowErr(errEl, 'Name is required.'); return;
   }
+  // ─ Duplicate detection (client-side, skip if user already chose "Save Anyway") ─
+  if (!_crmDupOverride) {
+    var dup = _crmCheckDuplicates(form.name.value.trim(), (form.email||{}).value||'', contactId||0);
+    if (dup) {
+      _crmShowDupWarning(dup, contactId||0, contactId ? 'Save' : 'Add Contact');
+      return;
+    }
+  }
+  _crmDupOverride = false; // reset after passing
   saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
   try {
     const data = new FormData(form);
