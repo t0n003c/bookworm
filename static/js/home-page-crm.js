@@ -273,7 +273,8 @@ function _crmContactModal(c) {
       var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
       control = inp(`cf_${f.id}`, val, iType);
     }
-    return `<div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>${control}</div>`;
+    var wide = f.field_type === 'file_links' || f.field_type === 'multi_select';
+    return `<div${wide ? ' class="col-span-2"' : ''}><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>${control}</div>`;
   }).join('');
 
   const body = `
