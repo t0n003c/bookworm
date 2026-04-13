@@ -26,6 +26,20 @@ var _REC_LABELS = {
   yearly:    'Yearly 🔁',
 };
 
+/** Return a short display label for any recurrence value (including custom:N:unit). */
+function _crmRecLabel(rec) {
+  if (!rec || rec === 'none') return '';
+  if (_REC_LABELS[rec]) return _REC_LABELS[rec];
+  if (rec.startsWith('custom:')) {
+    var parts = rec.split(':');
+    if (parts.length === 3) {
+      var n = parts[1], unit = parts[2];
+      return 'Every ' + n + ' ' + unit + ' 🔁';
+    }
+  }
+  return rec;
+}
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 /** Called from initCrmPage(). Clears any previous interval (HTMX guard). */
 function initCrmRemindersPolling() {
@@ -49,7 +63,7 @@ async function _checkCrmReminders() {
       var toastText = (item.contact_name ? item.contact_name + ' — ' : '') + item.label;
       if (item.message) toastText += '\n' + item.message;
       var rec = item.recurrence || 'none';
-      if (rec !== 'none') toastText += ' (' + (_REC_LABELS[rec] || rec) + ')';
+      if (rec !== 'none') toastText += ' (' + _crmRecLabel(rec) + ')';
       if (typeof _showReminderToast === 'function') _showReminderToast('🔔 ' + toastText);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
         new Notification('🔔 CRM Reminder', { body: toastText, icon: '/static/favicon.ico' });
@@ -84,7 +98,7 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
     var delArgs = "'" + r.id + "'," + contactId + "," + fieldId + ",'" + _crmEsc(fieldLabel) + "','" + _crmEsc(contactName) + "','" + _crmEsc(dateVal) + "'";
     var rec = r.recurrence || 'none';
     var recBadge = rec !== 'none'
-      ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 shrink-0">${_crmEsc(_REC_LABELS[rec] || rec)}</span>`
+      ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 shrink-0">${_crmEsc(_crmRecLabel(rec))}</span>`
       : '';
     return `<div class="py-1.5 border-b border-gray-100 dark:border-zinc-700/60 last:border-0">
       <div class="flex items-start gap-2 text-xs text-gray-700 dark:text-zinc-300">
@@ -178,6 +192,7 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
             <label class="block text-[10px] font-semibold uppercase tracking-wide
                           text-gray-400 dark:text-zinc-500 mb-0.5">Repeat</label>
             <select data-rem-recurrence
+              onchange="var cw=this.closest('[data-rem-section]').querySelector('[data-rem-custom-row]');cw.style.display=this.value==='custom'?'flex':'none';"
               class="w-full border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1.5 text-xs
                      bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                      focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
@@ -187,7 +202,26 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
               <option value="biweekly">Every 2 weeks</option>
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
+              <option value="custom">Custom…</option>
             </select>
+            <div data-rem-custom-row style="display:none"
+              class="mt-2 flex items-center gap-2">
+              <span class="text-xs text-gray-500 dark:text-zinc-400 shrink-0">Every</span>
+              <input type="number" data-rem-custom-n
+                min="1" max="999" value="1"
+                class="w-16 border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1.5 text-xs
+                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+              <select data-rem-custom-unit
+                class="flex-1 border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1.5 text-xs
+                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+                <option value="days">day(s)</option>
+                <option value="weeks">week(s)</option>
+                <option value="months">month(s)</option>
+                <option value="years">year(s)</option>
+              </select>
+            </div>
           </div>
 
           <div class="flex gap-2 justify-end pt-1">
@@ -233,6 +267,12 @@ async function crmAddReminder(btn, contactId, fieldId, fieldLabel, contactName, 
   var date    = (section.querySelector('[data-rem-date]')?.value    || '').trim();
   var time    = (section.querySelector('[data-rem-time]')?.value    || '09:00').trim();
   var rec     = (section.querySelector('[data-rem-recurrence]')?.value || 'none').trim();
+  if (rec === 'custom') {
+    var n    = parseInt(section.querySelector('[data-rem-custom-n]')?.value || '1', 10);
+    var unit = section.querySelector('[data-rem-custom-unit]')?.value || 'days';
+    n = Math.max(1, Math.min(999, n || 1));
+    rec = 'custom:' + n + ':' + unit;
+  }
   if (!date) { section.querySelector('[data-rem-date]')?.focus(); return; }
   if (!label) label = contactName + ' — ' + fieldLabel;
   try {
@@ -307,7 +347,7 @@ async function _crmLoadUpcomingPanel() {
       groups[grp].forEach(function(r) {
         var rec = r.recurrence || 'none';
         var recBadge = rec !== 'none'
-          ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(_REC_LABELS[rec] || rec)}</span>`
+          ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(_crmRecLabel(rec))}</span>`
           : '';
         html += `
           <div class="rounded-lg border border-gray-100 dark:border-zinc-700/60

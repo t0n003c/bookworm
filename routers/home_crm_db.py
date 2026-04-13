@@ -410,8 +410,12 @@ async def advance_crm_reminder(reminder_id: int, user_id: int) -> bool:
 
     Returns True if the reminder was found and advanced, False if it's
     non-recurring (the caller should delete it instead) or not owned by user_id.
+
+    Standard values: none | daily | weekly | biweekly | monthly | yearly
+    Custom format:   custom:<N>:<unit>  where unit ∈ {days, weeks, months, years}
+    e.g. custom:3:days, custom:2:weeks, custom:6:months
     """
-    import datetime
+    import datetime, calendar
     async with get_db() as db:
         cur = await db.execute(
             "SELECT id, user_id, reminder_date, recurrence FROM crm_contact_reminders WHERE id=?",
@@ -430,6 +434,7 @@ async def advance_crm_reminder(reminder_id: int, user_id: int) -> bool:
             d = datetime.date.fromisoformat(row["reminder_date"])
         except ValueError:
             return False
+
         if rec == "daily":
             d += datetime.timedelta(days=1)
         elif rec == "weekly":
@@ -437,20 +442,45 @@ async def advance_crm_reminder(reminder_id: int, user_id: int) -> bool:
         elif rec == "biweekly":
             d += datetime.timedelta(weeks=2)
         elif rec == "monthly":
-            # Advance by one month, clamping to last day if needed
             m = d.month + 1
             y = d.year + (m - 1) // 12
             m = ((m - 1) % 12) + 1
-            import calendar
-            day = min(d.day, calendar.monthrange(y, m)[1])
-            d = datetime.date(y, m, day)
+            d = datetime.date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
         elif rec == "yearly":
             try:
                 d = d.replace(year=d.year + 1)
-            except ValueError:  # Feb 29 on non-leap year
+            except ValueError:
                 d = d.replace(year=d.year + 1, day=28)
+        elif rec.startswith("custom:"):
+            parts = rec.split(":")
+            if len(parts) != 3:
+                return False
+            try:
+                n = int(parts[1])
+                if n < 1:
+                    return False
+            except ValueError:
+                return False
+            unit = parts[2]
+            if unit == "days":
+                d += datetime.timedelta(days=n)
+            elif unit == "weeks":
+                d += datetime.timedelta(weeks=n)
+            elif unit == "months":
+                total_months = d.month - 1 + n
+                y = d.year + total_months // 12
+                m = total_months % 12 + 1
+                d = datetime.date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+            elif unit == "years":
+                try:
+                    d = d.replace(year=d.year + n)
+                except ValueError:
+                    d = d.replace(year=d.year + n, day=28)
+            else:
+                return False
         else:
             return False
+
         await db.execute(
             "UPDATE crm_contact_reminders SET reminder_date=? WHERE id=?",
             (d.isoformat(), reminder_id),

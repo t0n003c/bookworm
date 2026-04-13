@@ -491,6 +491,7 @@ async def add_reminder(
     recurrence: str = Form("none"),
 ):
     _VALID_REC = {"none", "daily", "weekly", "biweekly", "monthly", "yearly"}
+    _VALID_UNITS = {"days", "weeks", "months", "years"}
     try:
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
@@ -500,7 +501,20 @@ async def add_reminder(
             datetime.date.fromisoformat(date_str)
         except ValueError:
             return _err("invalid date — expected YYYY-MM-DD", 400)
-        rec = recurrence.strip() if recurrence.strip() in _VALID_REC else "none"
+        rec_raw = recurrence.strip()
+        if rec_raw in _VALID_REC:
+            rec = rec_raw
+        elif rec_raw.startswith("custom:"):
+            parts = rec_raw.split(":")
+            valid = (
+                len(parts) == 3
+                and parts[2] in _VALID_UNITS
+                and parts[1].isdigit()
+                and int(parts[1]) >= 1
+            )
+            rec = rec_raw if valid else "none"
+        else:
+            rec = "none"
         return JSONResponse(await add_contact_reminder(
             contact_id, field_id, uid,
             label.strip() or "Reminder",
