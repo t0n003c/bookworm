@@ -42,11 +42,17 @@ function crmOpenFields() {
                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]"
             onchange="crmToggleOptions(this)">${typeOpts}</select>
         </div>
-        <input name="options" id="crm-field-options"
-          placeholder="Options (pipe-separated): Low|Medium|High" style="display:none"
-          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm
-                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+        <div id="crm-field-options-wrap" style="display:none">
+          <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">
+            Options <span class="text-red-400">*</span>
+            <span class="font-normal text-gray-400">(pipe-separated — e.g. Low|Medium|High)</span>
+          </label>
+          <input name="options" id="crm-field-options"
+            placeholder="Low|Medium|High"
+            class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm
+                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+        </div>
         <p id="crm-field-err" class="hidden text-xs text-red-500"></p>
         <div class="flex gap-2 justify-end">
           <button type="button" onclick="crmCloseModal()"
@@ -60,19 +66,20 @@ function crmOpenFields() {
 }
 
 function crmToggleOptions(sel) {
-  const el = document.getElementById('crm-field-options');
-  if (el) el.style.display = ['select','multi_select'].includes(sel.value) ? 'block' : 'none';
+  var wrap = document.getElementById('crm-field-options-wrap');
+  if (wrap) wrap.style.display = ['select','multi_select'].includes(sel.value) ? 'block' : 'none';
 }
 
 async function crmSaveField(e, fieldId) {
   e.preventDefault();
   const form = e.target;
   const errEl = document.getElementById('crm-field-err');
-  const label = form.label.value.trim();
+  const label = form.querySelector('[name="label"]').value.trim();
   if (!label) { _crmShowErr(errEl, 'Label is required.'); return; }
   const body = new URLSearchParams({
-    label, field_type: form.field_type.value,
-    options: (form.options?.value || '').trim(),
+    label,
+    field_type: form.querySelector('[name="field_type"]').value,
+    options: (form.querySelector('[name="options"]')?.value || '').trim(),
   });
   const url = fieldId
     ? `/home/crm/${_crmPid}/fields/${fieldId}/update`
@@ -136,11 +143,12 @@ async function crmSaveFieldEdit(e, fieldId) {
   e.preventDefault();
   const form = e.target;
   const errEl = document.getElementById('crm-field-edit-err');
-  const label = form.label.value.trim();
+  const label = form.querySelector('[name="label"]').value.trim();
   if (!label) { _crmShowErr(errEl, 'Label is required.'); return; }
   const body = new URLSearchParams({
-    label, field_type: form.field_type.value,
-    options: (form.options?.value || '').trim(),
+    label,
+    field_type: form.querySelector('[name="field_type"]').value,
+    options: (form.querySelector('[name="options"]')?.value || '').trim(),
   });
   try {
     _crmFields = await _crmFetch(`/home/crm/${_crmPid}/fields/${fieldId}/update`, {method:'POST', body});

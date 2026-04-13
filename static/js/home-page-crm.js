@@ -252,14 +252,18 @@ function _crmContactModal(c) {
                bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(fl.join('\n'))}</textarea>`;
     } else if (f.field_type === 'select') {
-      const opts = (f.options||'').split('|').filter(Boolean).map(o =>
-        `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
-      ).join('');
-      control = `<select name="cf_${f.id}"
-        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
-               text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-               focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
-        <option value="">—</option>${opts}</select>`;
+      const opts = (f.options||'').split('|').filter(Boolean);
+      if (!opts.length) {
+        control = `<p class="text-xs text-gray-400 italic">No options — go to ⚙️ Fields to add some.</p>`;
+      } else {
+        control = `<select name="cf_${f.id}"
+          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
+                 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
+          <option value="">—</option>${opts.map(o =>
+            `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
+          ).join('')}</select>`;
+      }
     } else if (f.field_type === 'date') {
       control = inp(`cf_${f.id}`, val, 'date');
       var remDiv = isEdit
