@@ -15,10 +15,18 @@ const _BUILTIN_COLS = [
 ];
 
 // ── Module state (var → window-scoped, accessible across sibling modules) ─────
-var _crmColOrder       = [];
-var _crmHiddenCols     = new Set();
-var _crmColWidths      = {};
-var _crmColPrefsLoaded = false;
+var _crmColOrder           = [];
+var _crmHiddenColsTable    = new Set();
+var _crmHiddenColsGallery  = new Set();
+var _crmColWidths          = {};
+var _crmColPrefsLoaded     = false;
+
+/** Return the hidden-cols Set for the currently active view. */
+function _hiddenForView() {
+  return (typeof _crmView !== 'undefined' && _crmView === 'gallery')
+    ? _crmHiddenColsGallery
+    : _crmHiddenColsTable;
+}
 
 // ── Prefs persistence ─────────────────────────────────────────────────────────
 function _colKey(pid) { return `bw_crm_${pid}_cols`; }
@@ -30,8 +38,14 @@ window._crmLoadColPrefs = function(pid) {
     const raw = localStorage.getItem(_colKey(pid));
     if (!raw) return;
     const p = JSON.parse(raw);
-    if (Array.isArray(p.order))  _crmColOrder   = p.order;
-    if (Array.isArray(p.hidden)) _crmHiddenCols  = new Set(p.hidden);
+    if (Array.isArray(p.order))         _crmColOrder        = p.order;
+    if (Array.isArray(p.hiddenTable))   _crmHiddenColsTable   = new Set(p.hiddenTable);
+    if (Array.isArray(p.hiddenGallery)) _crmHiddenColsGallery = new Set(p.hiddenGallery);
+    // Backwards-compat: old format stored a single 'hidden' key — seed both views
+    if (!p.hiddenTable && !p.hiddenGallery && Array.isArray(p.hidden)) {
+      _crmHiddenColsTable   = new Set(p.hidden);
+      _crmHiddenColsGallery = new Set(p.hidden);
+    }
     if (p.widths && typeof p.widths === 'object') _crmColWidths = p.widths;
   } catch {}
 };
@@ -40,9 +54,10 @@ function _saveColPrefs() {
   if (typeof _crmPid === 'undefined' || !_crmPid) return;
   try {
     localStorage.setItem(_colKey(_crmPid), JSON.stringify({
-      order:  _crmColOrder,
-      hidden: [..._crmHiddenCols],
-      widths: _crmColWidths,
+      order:         _crmColOrder,
+      hiddenTable:   [..._crmHiddenColsTable],
+      hiddenGallery: [..._crmHiddenColsGallery],
+      widths:        _crmColWidths,
     }));
   } catch {}
 }
@@ -73,13 +88,14 @@ window.crmAutofitCols = function() {
 };
 
 // ── Public API — column visibility ──────────────────────────────────────────────────
-/** True when the column is NOT hidden. */
-window.crmColVisible = function(id) { return !_crmHiddenCols.has(id); };
+/** True when the column is visible in the current view. */
+window.crmColVisible = function(id) { return !_hiddenForView().has(id); };
 
-/** Toggle a column and re-render. */
+/** Toggle a column in the current view and re-render. */
 window.crmToggleCol = function(id) {
-  if (_crmHiddenCols.has(id)) _crmHiddenCols.delete(id);
-  else _crmHiddenCols.add(id);
+  const hidden = _hiddenForView();
+  if (hidden.has(id)) hidden.delete(id);
+  else hidden.add(id);
   _saveColPrefs();
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
   if (typeof _crmView === 'undefined') return;
@@ -98,7 +114,7 @@ window._crmCols = function() {
   // Apply saved order (unknown IDs are appended at the end)
   const head    = _crmColOrder.filter(id => known.has(id)).map(id => all.find(c => c.id === id));
   const tail    = all.filter(c => !_crmColOrder.includes(c.id));
-  return [...head, ...tail].filter(c => c && !_crmHiddenCols.has(c.id));
+  return [...head, ...tail].filter(c => c && !_hiddenForView().has(c.id));
 };
 
 /** All hideable columns (for the Columns panel). */

@@ -103,11 +103,13 @@ window.crmRenderToolbar = function() {
   // Columns toggle panel (table + gallery)
   const hideableCols = (typeof _crmAllHideableCols === 'function') ? _crmAllHideableCols() : [];
   const colsBtnActive = _colPanelOpen;
+  const viewLabel = (typeof _crmView !== 'undefined' && _crmView === 'gallery') ? 'Gallery view' : 'Table view';
   const colsPanel = _colPanelOpen && hideableCols.length ? `
     <div id="crm-col-panel"
-      class="absolute z-30 top-full left-0 mt-1 bg-white dark:bg-zinc-900 border border-gray-200
+      class="absolute z-30 top-full right-0 mt-1 bg-white dark:bg-zinc-900 border border-gray-200
              dark:border-zinc-700 rounded-xl shadow-xl p-3 min-w-[180px]">
-      <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 mb-2">Show / hide fields</p>
+      <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 mb-1">Show / hide fields</p>
+      <p class="text-[10px] text-[#0053e2] dark:text-blue-400 mb-2">${viewLabel} only</p>
       ${hideableCols.map(col => {
         const vis = (typeof crmColVisible === 'function') ? crmColVisible(col.id) : true;
         return `<label class="flex items-center gap-2 py-1 cursor-pointer group">
