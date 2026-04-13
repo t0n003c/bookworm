@@ -39,8 +39,20 @@ echo [BookWorm] Starting server on http://localhost:8000 ...
 cd /d "%~dp0"
 start "BookWorm Server" /B .venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000
 
-:: 6. Wait for startup and open browser
-timeout /t 3 /nobreak >nul
+:: 6. Poll /health with timeout instead of a blind sleep
+::    Tries up to 12 times (12 s total). Prints status on success.
+echo [BookWorm] Waiting for server to be ready...
+for /L %%i in (1,1,12) do (
+  timeout /t 1 /nobreak >nul
+  .venv\Scripts\python.exe -c ^
+    "import urllib.request,sys;r=urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2);print(r.read().decode())" ^
+    2>nul && goto :ready
+)
+echo [BookWorm] Server took longer than expected — check the window for errors.
+goto :open
+:ready
+echo [BookWorm] Server is ready!
+:open
 start http://localhost:8000
 
 echo [BookWorm] Done! Server running at http://localhost:8000
