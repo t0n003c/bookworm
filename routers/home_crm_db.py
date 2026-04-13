@@ -386,3 +386,19 @@ async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
         )
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
+
+async def get_upcoming_crm_reminders(page_id: int, user_id: int, from_date: str) -> list[dict]:
+    """Return all future reminders for contacts on a CRM page, ordered by date/time."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT r.id, r.contact_id, c.name AS contact_name,"
+            " r.field_id, r.label, r.message, r.reminder_date, r.reminder_time"
+            " FROM crm_contact_reminders r"
+            " JOIN crm_contacts c ON c.id = r.contact_id"
+            " WHERE c.page_id=? AND r.user_id=? AND r.reminder_date>=?"
+            " ORDER BY r.reminder_date, r.reminder_time",
+            (page_id, user_id, from_date),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]

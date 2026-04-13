@@ -265,7 +265,7 @@ function _crmContactModal(c) {
       var remDiv = isEdit
         ? `<div id="crm-rem-${f.id}" class="mt-1.5 text-xs text-gray-400 italic">Loading reminders…</div>`
         : '';
-      return `<div>
+      return `<div class="col-span-2">
         <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>
         ${control}${remDiv}
       </div>`;

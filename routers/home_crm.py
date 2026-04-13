@@ -23,7 +23,7 @@ from routers.home_crm_db import (
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
     get_contact_reminders, add_contact_reminder,
-    delete_contact_reminder, get_due_crm_reminders,
+    delete_contact_reminder, get_due_crm_reminders, get_upcoming_crm_reminders,
 )
 
 log = logging.getLogger(__name__)
@@ -541,4 +541,19 @@ async def crm_reminders_due(
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("crm_reminders_due")
+        return _err(str(e), 500)
+
+
+@router.get("/crm/{page_id}/reminders/upcoming")
+async def crm_upcoming_reminders(request: Request, page_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        today = datetime.date.today().isoformat()
+        return JSONResponse(await get_upcoming_crm_reminders(page_id, uid, today))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_upcoming_reminders page_id=%s", page_id)
         return _err(str(e), 500)

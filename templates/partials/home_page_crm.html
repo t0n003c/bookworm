@@ -32,6 +32,15 @@
     {# View toggle — populated by JS #}
     <div id="crm-view-toggle" class="ml-auto flex items-center gap-1 flex-shrink-0"></div>
 
+    {# Upcoming reminders #}
+    <button id="crm-rem-panel-btn" onclick="crmToggleRemindersPanel()"
+            class="ml-2 text-xs font-medium px-2.5 py-1.5 rounded-lg flex-shrink-0
+                   border border-gray-300 dark:border-zinc-600
+                   text-gray-600 dark:text-zinc-300
+                   hover:border-[#0053e2] hover:text-[#0053e2] transition">
+      🔔 Reminders
+    </button>
+
     {# Manage fields #}
     <button onclick="crmOpenFields()"
             class="ml-2 text-xs font-medium px-2.5 py-1.5 rounded-lg flex-shrink-0
@@ -63,6 +72,25 @@
   <div id="crm-backdrop"
        class="hidden fixed inset-0 bg-black/40 z-40"
        onclick="crmCloseModal()"></div>
+
+  {# ── Upcoming reminders panel (slide-in from right) ───────────────────── #}
+  <div id="crm-rem-panel"
+       class="hidden fixed top-0 right-0 h-full w-80 z-50
+              bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-700
+              shadow-2xl flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3
+                border-b border-gray-200 dark:border-zinc-700 flex-shrink-0">
+      <span class="text-sm font-bold text-gray-800 dark:text-zinc-100">🔔 Upcoming Reminders</span>
+      <button onclick="crmToggleRemindersPanel()"
+              class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition text-lg leading-none">
+        &times;
+      </button>
+    </div>
+    <div id="crm-rem-panel-body"
+         class="flex-1 overflow-y-auto px-3 py-2">
+      <p class="text-xs text-gray-400 dark:text-zinc-500 text-center mt-8">Loading…</p>
+    </div>
+  </div>
 
   {# ── Modal container — body injected by JS ────────────────────────────── #}
   <div id="crm-modal"
