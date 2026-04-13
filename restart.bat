@@ -1,61 +1,60 @@
 @echo off
 :: ─────────────────────────────────────────────────────────────────────────────
-:: BookWorm — clean restart script
-:: Kills ALL previous server instances (including orphan spawn workers and
-:: any rogue "python main.py" processes on port 8001), waits for port 8000
-:: to drain, then starts a single stable server.
-:: Usage:  double-click  OR  run in a terminal
+:: BookWorm — clean restart
+:: Double-click this to restart the server at any time.
+::
+:: The server runs as a HIDDEN background process — no CMD window pops up.
+:: Logs are written to server.log in this folder.
 :: ─────────────────────────────────────────────────────────────────────────────
-echo [BookWorm] Stopping previous server instances...
-
-:: 1. Kill ANYTHING holding port 8000 or 8001 (uvicorn, python main.py, etc.)
-::    This is the most reliable approach — catches every startup style.
-for %%P in (8000 8001) do (
-  for /f "tokens=5" %%i in ('netstat -ano 2^>nul ^| findstr ":%%P "') do (
-    taskkill /PID %%i /F >nul 2>nul
-  )
-)
-
-:: 2. Belt-and-suspenders: kill BookWorm venv Python processes by command-line
-::    NOTE: single backslash in PowerShell -like is literal (no escaping).
-::    The old double-backslash pattern (*BookWorm\\.venv*) never matched — fixed.
-powershell -Command ^
-  "Get-CimInstance Win32_Process ^
-   | Where-Object {$_.CommandLine -like '*BookWorm\.venv*'} ^
-   | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul
-
-:: 3. Kill orphan spawn_main workers that may have inherited the socket
-powershell -Command ^
-  "Get-CimInstance Win32_Process ^
-   | Where-Object {$_.CommandLine -like '*spawn_main*' -and $_.CommandLine -like '*pipe_handle*'} ^
-   | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul
-
-:: 4. Give OS time to release the port socket
-echo [BookWorm] Waiting for port 8000 to clear...
-timeout /t 4 /nobreak >nul
-
-:: 5. Start fresh — single process, no reload (no zombie accumulation)
-echo [BookWorm] Starting server on http://localhost:8000 ...
 cd /d "%~dp0"
-start "BookWorm Server" /B .venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000
 
-:: 6. Poll /health with timeout instead of a blind sleep
-::    Tries up to 12 times (12 s total). Prints status on success.
-echo [BookWorm] Waiting for server to be ready...
-for /L %%i in (1,1,12) do (
-  timeout /t 1 /nobreak >nul
-  .venv\Scripts\python.exe -c ^
-    "import urllib.request,sys;r=urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2);print(r.read().decode())" ^
-    2>nul && goto :ready
+echo [BookWorm] Stopping any running server...
+
+:: Kill anything on port 8000 by PID
+for /f "tokens=5" %%i in ('netstat -ano 2^>nul ^| findstr ":8000 "') do (
+    taskkill /PID %%i /F >nul 2>nul
 )
-echo [BookWorm] Server took longer than expected — check the window for errors.
-goto :open
-:ready
+
+:: Belt-and-suspenders: kill BookWorm venv python processes
+powershell -NoProfile -Command ^
+  "Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -like '*BookWorm*venv*'} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+
+:: Give the OS a moment to release the port
+timeout /t 3 /nobreak >nul
+
+:: ── Start the server (no window, fully detached via _start_server.py) ─────────
+echo [BookWorm] Starting server...
+.venv\Scripts\python.exe _start_server.py
+if errorlevel 1 (
+    echo [BookWorm] ERROR: failed to launch. Check _start_server.py and .venv.
+    pause
+    exit /b 1
+)
+
+:: ── Poll /health up to 15 times (1 s apart) ──────────────────────────────────
+echo [BookWorm] Waiting for server to be ready...
+set /a BW_TRIES=0
+
+:poll
+set /a BW_TRIES+=1
+if %BW_TRIES% gtr 15 goto poll_timeout
+timeout /t 1 /nobreak >nul
+.venv\Scripts\python.exe -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)" >nul 2>nul
+if %errorlevel%==0 goto poll_ok
+goto poll
+
+:poll_timeout
+echo [BookWorm] WARNING: health check timed out — check server.log for errors.
+goto open
+
+:poll_ok
 echo [BookWorm] Server is ready!
+
 :open
 start http://localhost:8000
-
-echo [BookWorm] Done! Server running at http://localhost:8000
-echo            Close this window to keep the server running.
-echo            Run restart.bat again to restart cleanly.
+echo.
+echo  BookWorm running at http://localhost:8000
+echo  Logs: %~dp0server.log
+echo.
+echo  Run restart.bat again at any time to restart cleanly.
 pause
