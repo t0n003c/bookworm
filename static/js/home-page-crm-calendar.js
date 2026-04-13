@@ -52,15 +52,38 @@ function _crmBuildEventMap() {
   }
 
   // (a) Date-type custom field values — purely client-side, zero extra fetches
+  var todayIso = _crmCalTodayStr();
+  var thisYear  = new Date().getFullYear();
+
+  // Detect birthday-like field labels
+  function isBirthdayField(label) {
+    var l = (label || '').toLowerCase();
+    return l === 'birthday' || l === 'birth date' || l === 'dob' ||
+           l === 'date of birth' || l.indexOf('birthday') !== -1;
+  }
+
+  // Project a stored date to the nearest upcoming occurrence this/next year
+  function projectAnnual(storedDate) {
+    // storedDate is 'YYYY-MM-DD'; we want 'THISYEAR-MM-DD' or 'NEXTYEAR-MM-DD'
+    var parts = storedDate.split('-');
+    if (parts.length !== 3) return storedDate;
+    var mmdd = parts[1] + '-' + parts[2];
+    var candidate = thisYear + '-' + mmdd;
+    return candidate < todayIso ? (thisYear + 1) + '-' + mmdd : candidate;
+  }
+
   (_crmFields || []).forEach(function(f) {
     if (f.field_type !== 'date') return;
+    var isBday = isBirthdayField(f.label);
     (_crmContacts || []).forEach(function(c) {
       // field_values keys may be numbers or strings depending on how they were set
       var fv  = c.field_values || {};
       var val = fv[f.id] || fv[String(f.id)] || '';
       if (!val || val.length !== 10) return;
-      add(val, { type:'date-field', label:f.label,
-                 contactName:c.name, contactId:c.id, time:null });
+      var dateStr = isBday ? projectAnnual(val) : val;
+      var label   = isBday ? '\ud83c\udf82 ' + f.label : f.label;
+      add(dateStr, { type: isBday ? 'birthday' : 'date-field', label: label,
+                     contactName:c.name, contactId:c.id, time:null });
     });
   });
 
@@ -212,17 +235,20 @@ function _crmCalRenderDetail(eventMap) {
   if (!evts.length) {
     html += '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-4">No events on this day</p>';
   } else {
-    // Sort: reminders (with time) first, then date-fields; within each group sort by time/label
+    // Sort: reminders first, 🎂 birthdays second, date-fields last
     var sorted = evts.slice().sort(function(a, b) {
-      if (a.type === 'reminder' && b.type !== 'reminder') return -1;
-      if (a.type !== 'reminder' && b.type === 'reminder') return  1;
+      var rank = {reminder:0, birthday:1, 'date-field':2};
+      var ra = (rank[a.type] !== undefined ? rank[a.type] : 3);
+      var rb = (rank[b.type] !== undefined ? rank[b.type] : 3);
+      if (ra !== rb) return ra - rb;
       return (a.time || a.label || '').localeCompare(b.time || b.label || '');
     });
 
     html += '<div class="divide-y divide-gray-100 dark:divide-zinc-800">';
     sorted.forEach(function(ev) {
-      var icon = ev.type === 'reminder' ? '&#128276;' : '&#128204;';
-      html += '<div class="flex items-start gap-3 px-4 py-3">'
+      var icon = ev.type === 'reminder' ? '&#128276;' : ev.type === 'birthday' ? '&#127874;' : '&#128204;';
+      var rowCls = ev.type === 'birthday' ? ' bg-amber-50 dark:bg-amber-900/10' : '';
+      html += '<div class="flex items-start gap-3 px-4 py-3' + rowCls + '">'
             + '<span class="text-base leading-none mt-0.5 shrink-0">' + icon + '</span>'
             + '<span class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"'
             + ' style="background:' + _crmCalColor(ev.contactId) + '"></span>'

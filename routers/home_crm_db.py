@@ -198,6 +198,7 @@ async def get_stages(page_id: int, user_id: int) -> list[dict]:
 
 async def add_stage(
     page_id: int, user_id: int, name: str, color: str,
+    project_id: int | None = None,
 ) -> list[dict]:
     async with get_db() as db:
         cur = await db.execute(
@@ -207,8 +208,8 @@ async def add_stage(
         row = await cur.fetchone()
         sort_order = row[0] if row else 1
         await db.execute(
-            "INSERT INTO crm_stages (page_id, user_id, name, color, sort_order) VALUES (?,?,?,?,?)",
-            (page_id, user_id, name, color, sort_order),
+            "INSERT INTO crm_stages (page_id, user_id, name, color, sort_order, project_id) VALUES (?,?,?,?,?,?)",
+            (page_id, user_id, name, color, sort_order, project_id),
         )
         await db.commit()
     return await get_stages(page_id, user_id)
@@ -216,11 +217,12 @@ async def add_stage(
 
 async def update_stage(
     stage_id: int, page_id: int, user_id: int, name: str, color: str,
+    project_id: int | None = None,
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
-            "UPDATE crm_stages SET name=?,color=? WHERE id=? AND page_id=? AND user_id=?",
-            (name, color, stage_id, page_id, user_id),
+            "UPDATE crm_stages SET name=?,color=?,project_id=? WHERE id=? AND page_id=? AND user_id=?",
+            (name, color, project_id, stage_id, page_id, user_id),
         )
         await db.commit()
     return await get_stages(page_id, user_id)
@@ -325,7 +327,72 @@ async def delete_deal(deal_id: int, page_id: int, user_id: int) -> list[dict]:
     return await get_deals(page_id, user_id)
 
 
-# ── Contact Reminders ─────────────────────────────────────────────────────────────────────
+# ── Projects ──────────────────────────────────────────────────────────────────────────
+
+async def get_projects(page_id: int, user_id: int) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT * FROM crm_projects WHERE page_id=? AND user_id=? ORDER BY sort_order, id",
+            (page_id, user_id),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def add_project(
+    page_id: int, user_id: int, name: str, color: str,
+) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 FROM crm_projects WHERE page_id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        row = await cur.fetchone()
+        sort_order = row[0] if row else 1
+        await db.execute(
+            "INSERT INTO crm_projects (page_id, user_id, name, color, sort_order) VALUES (?,?,?,?,?)",
+            (page_id, user_id, name, color, sort_order),
+        )
+        await db.commit()
+    return await get_projects(page_id, user_id)
+
+
+async def update_project(
+    project_id: int, page_id: int, user_id: int, name: str, color: str,
+) -> list[dict]:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_projects SET name=?,color=? WHERE id=? AND page_id=? AND user_id=?",
+            (name, color, project_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_projects(page_id, user_id)
+
+
+async def delete_project(project_id: int, page_id: int, user_id: int) -> list[dict]:
+    """Deleting a project NULL-ifies stage.project_id (ON DELETE SET NULL in schema)."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_projects WHERE id=? AND page_id=? AND user_id=?",
+            (project_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_projects(page_id, user_id)
+
+
+async def set_stage_project(
+    stage_id: int, page_id: int, user_id: int, project_id: int | None,
+) -> list[dict]:
+    """Assign (or un-assign) a stage to a project."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_stages SET project_id=? WHERE id=? AND page_id=? AND user_id=?",
+            (project_id, stage_id, page_id, user_id),
+        )
+        await db.commit()
+    return await get_stages(page_id, user_id)
+
+
+# ── Contact Reminders ─────────────────────────────────────────────────────────────────────────
 
 async def get_contact_reminders(contact_id: int) -> list[dict]:
     """Return all reminders for a contact ordered by date then time."""

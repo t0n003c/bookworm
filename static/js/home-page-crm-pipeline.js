@@ -6,11 +6,13 @@
  */
 
 // ── Module state ─────────────────────────────────────────────────────────────
-var _ppPid      = null;
-var _ppStages   = [];
-var _ppDeals    = [];
-var _ppContacts = [];
-var _ppDragId   = null;  // deal id currently being dragged
+var _ppPid             = null;
+var _ppStages          = [];
+var _ppDeals           = [];
+var _ppContacts        = [];
+var _ppProjects        = [];
+var _ppActiveProjectId = null;  // null = "All Projects"
+var _ppDragId          = null;  // deal id currently being dragged
 
 // Colour palette for stage picker
 var _PP_COLOURS = [
@@ -19,27 +21,40 @@ var _PP_COLOURS = [
 ];
 
 // ── Entry point ───────────────────────────────────────────────────────────────
-window.initCrmPipeline = function(pid, stages, deals, contacts) {
+window.initCrmPipeline = function(pid, stages, deals, contacts, projects) {
   _ppPid      = pid;
-  _ppStages   = stages  || [];
-  _ppDeals    = deals   || [];
+  _ppStages   = stages   || [];
+  _ppDeals    = deals    || [];
   _ppContacts = contacts || [];
+  _ppProjects = projects || [];
+  // Keep active project if it still exists, else reset to null
+  if (_ppActiveProjectId !== null &&
+      !_ppProjects.find(function(p) { return p.id === _ppActiveProjectId; })) {
+    _ppActiveProjectId = null;
+  }
   _ppRender();
 };
 
-// ── Board render ──────────────────────────────────────────────────────────────
+// ── Board render ─────────────────────────────────────────────────────────────
 function _ppRender() {
+  // Filter stages to the active project (null = show all)
+  const visStages = _ppActiveProjectId === null
+    ? _ppStages
+    : _ppStages.filter(function(s) { return s.project_id === _ppActiveProjectId; });
+
   const byStage = {};
-  for (const s of _ppStages) byStage[s.id] = [];
+  for (const s of visStages) byStage[s.id] = [];
   const unsorted = [];
   for (const d of _ppDeals) {
     if (d.stage_id && byStage[d.stage_id]) byStage[d.stage_id].push(d);
-    else unsorted.push(d);
+    else if (!d.stage_id) unsorted.push(d);
+    // deals in hidden-project stages don't show up (intentional)
   }
 
   let cols = '';
-  if (unsorted.length) cols += _ppColumn(null, 'Unsorted', '#64748b', unsorted, null);
-  for (const s of _ppStages) cols += _ppColumn(s.id, s.name, s.color, byStage[s.id] || [], s);
+  if (unsorted.length || _ppActiveProjectId === null)
+    cols += _ppColumn(null, 'Unsorted', '#64748b', unsorted, null);
+  for (const s of visStages) cols += _ppColumn(s.id, s.name, s.color, byStage[s.id] || [], s);
 
   cols += `
     <div class="flex-shrink-0 flex items-start pt-1">
@@ -50,10 +65,11 @@ function _ppRender() {
       </button>
     </div>`;
 
-  const empty = _ppStages.length === 0 && unsorted.length === 0;
+  const empty = visStages.length === 0 && unsorted.length === 0;
 
   document.getElementById('crm-main').innerHTML = `
     <div class="px-2 pt-1 pb-4">
+      ${_ppProjectBar()}
       ${empty ? _ppEmptyState() : ''}
       <div class="flex gap-4 overflow-x-auto pb-2 items-start" style="min-height:420px">
         ${cols}
@@ -67,6 +83,115 @@ function _ppEmptyState() {
       No stages yet — click <strong>+ Stage</strong> to build your pipeline.
     </p>`;
 }
+
+// ── Project switcher bar ───────────────────────────────────────────────────
+function _ppProjectBar() {
+  const allActive = _ppActiveProjectId === null;
+  const allBtn = `<button onclick="ppSetActiveProject(null)"
+    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition whitespace-nowrap
+           ${allActive ? 'bg-[#0053e2] text-white' : 'border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}">
+    📂 All Projects
+  </button>`;
+
+  const projectPills = _ppProjects.map(function(p) {
+    var isActive = _ppActiveProjectId === p.id;
+    return `<button onclick="ppSetActiveProject(${p.id})"
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition whitespace-nowrap
+             ${isActive
+               ? 'bg-[#0053e2] text-white'
+               : 'border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}">
+      <span class="w-2 h-2 rounded-full inline-block" style="background:${_ppEsc(p.color)}"></span>
+      ${_ppEsc(p.name)}
+      <span onclick="event.stopPropagation();ppOpenProject(${p.id})"
+        class="ml-1 opacity-50 hover:opacity-100 cursor-pointer text-[10px]">✎</span>
+    </button>`;
+  }).join('');
+
+  const addBtn = `<button onclick="ppOpenProject(null)"
+    class="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] border-2 border-dashed
+           border-gray-300 dark:border-zinc-700 text-gray-400 hover:border-[#0053e2] hover:text-[#0053e2] transition whitespace-nowrap">
+    + Project
+  </button>`;
+
+  return `<div class="flex items-center gap-2 flex-wrap mb-3 pb-2 border-b border-gray-100 dark:border-zinc-800">
+    ${allBtn}${projectPills}${addBtn}
+  </div>`;
+}
+
+window.ppSetActiveProject = function(id) {
+  _ppActiveProjectId = id;
+  _ppRender();
+};
+
+// ── Project CRUD modals ──────────────────────────────────────────────────────
+window.ppOpenProject = function(projectId) {
+  const p       = _ppProjects.find(function(x) { return x.id === projectId; }) || null;
+  const title   = p ? 'Edit Project' : 'New Project';
+  const name    = p ? p.name  : '';
+  const color   = p ? p.color : '#0053e2';
+  const action  = p
+    ? `/home/crm/${_ppPid}/projects/${p.id}/update`
+    : `/home/crm/${_ppPid}/projects/add`;
+  const swatches = _PP_COLOURS.map(function(c) {
+    return `<button type="button" onclick="_ppPickProjColor('${c}')"
+      class="w-7 h-7 rounded-full border-2 transition hover:scale-110"
+      style="background:${c};border-color:${c === color ? '#111' : 'transparent'}"
+      data-proj-swatch="${c}"></button>`;
+  }).join('');
+  const deleteBtn = p ? `
+    <button type="button" onclick="ppDeleteProject(${p.id})"
+      class="px-4 py-2 text-sm rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition mr-auto">
+      Delete
+    </button>` : '';
+
+  _ppShowModal(`
+    <form id="pp-project-form" onsubmit="ppSaveProject(event,'${action}')">
+      <h3 class="text-base font-bold mb-4 text-gray-800 dark:text-zinc-100">${title}</h3>
+      <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">Project name</label>
+      <input id="pp-project-name" name="name" type="text" value="${_ppEsc(name)}" required
+        class="w-full rounded-lg border border-gray-300 dark:border-zinc-600 px-3 py-2 text-sm
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 mb-4
+               focus:outline-none focus:ring-2 focus:ring-[#0053e2]"/>
+      <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Colour</label>
+      <input type="hidden" id="pp-project-color" name="color" value="${color}"/>
+      <div class="flex gap-2 flex-wrap mb-5">${swatches}</div>
+      <div class="flex justify-end gap-2">
+        ${deleteBtn}
+        <button type="button" onclick="_ppCloseModal()"
+          class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-700 transition">
+          Cancel</button>
+        <button type="submit"
+          class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#0042b5] transition">
+          Save</button>
+      </div>
+    </form>`);
+  setTimeout(function() {
+    var el = document.getElementById('pp-project-name');
+    if (el) el.focus();
+  }, 50);
+};
+
+window._ppPickProjColor = function(color) {
+  document.getElementById('pp-project-color').value = color;
+  document.querySelectorAll('[data-proj-swatch]').forEach(function(b) {
+    b.style.borderColor = b.dataset.projSwatch === color ? '#111' : 'transparent';
+  });
+};
+
+window.ppSaveProject = function(evt, action) {
+  evt.preventDefault();
+  var fd = new FormData(document.getElementById('pp-project-form'));
+  _ppFetch(action, { method: 'POST', body: new URLSearchParams(fd) })
+    .then(function() { _ppCloseModal(); crmReload(); })
+    .catch(function(err) { alert('Save failed: ' + err.message); });
+};
+
+window.ppDeleteProject = function(projectId) {
+  if (!confirm('Delete this project? Stages in it will become unassigned.')) return;
+  _ppFetch(`/home/crm/${_ppPid}/projects/${projectId}/delete`, { method: 'POST' })
+    .then(function() { _ppCloseModal(); crmReload(); })
+    .catch(function(err) { alert('Delete failed: ' + err.message); });
+};
 
 function _ppColumn(stageId, name, color, deals, stage) {
   const total    = deals.reduce((s, d) => s + (Number(d.value) || 0), 0);
@@ -195,6 +320,12 @@ window.ppOpenStage = function(stageId) {
       style="background:${c};border-color:${c === color ? '#111' : 'transparent'}"
       data-swatch="${c}"></button>`).join('');
   const action  = s ? `/home/crm/${_ppPid}/stages/${s.id}/update` : `/home/crm/${_ppPid}/stages/add`;
+  const projOpts = `<option value="">— None (unassigned) —</option>` +
+    _ppProjects.map(function(p) {
+      var sel = (s && s.project_id === p.id) ||
+                (!s && _ppActiveProjectId === p.id);
+      return `<option value="${p.id}" ${sel ? 'selected' : ''}>${_ppEsc(p.name)}</option>`;
+    }).join('');
 
   _ppShowModal(`
     <form id="pp-stage-form" onsubmit="ppSaveStage(event,'${action}')">
@@ -204,6 +335,13 @@ window.ppOpenStage = function(stageId) {
         class="w-full rounded-lg border border-gray-300 dark:border-zinc-600 px-3 py-2 text-sm
                bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 mb-4
                focus:outline-none focus:ring-2 focus:ring-[#0053e2]"/>
+      <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1 mt-1">Project</label>
+      <select name="project_id"
+        class="w-full rounded-lg border border-gray-300 dark:border-zinc-600 px-3 py-2 text-sm
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 mb-4
+               focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+        ${projOpts}
+      </select>
       <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Colour</label>
       <input type="hidden" id="pp-stage-color" name="color" value="${color}"/>
       <div class="flex gap-2 flex-wrap mb-5">${swatches}</div>

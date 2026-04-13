@@ -518,6 +518,28 @@ async def init_db() -> None:
                 "ALTER TABLE crm_contacts ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''"
             )
 
+        # ── crm_projects (pipeline projects — stages belong to a project) ────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_projects (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                name       TEXT    NOT NULL DEFAULT 'Project',
+                color      TEXT    NOT NULL DEFAULT '#0053e2',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── crm_stages: project_id column (additive migration) ────────────────
+        cur = await db.execute("PRAGMA table_info(crm_stages)")
+        _crm_stage_cols = {r[1] for r in await cur.fetchall()}
+        if "project_id" not in _crm_stage_cols:
+            await db.execute(
+                "ALTER TABLE crm_stages ADD COLUMN "
+                "project_id INTEGER REFERENCES crm_projects(id) ON DELETE SET NULL"
+            )
+
         await db.commit()
 
 @asynccontextmanager

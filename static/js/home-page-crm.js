@@ -19,6 +19,7 @@ var _crmContacts = [];
 var _crmFields   = [];
 var _crmStages   = [];
 var _crmDeals    = [];
+var _crmProjects = [];
 var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar' | 'detail'
 var _crmQuery    = '';
 
@@ -57,6 +58,7 @@ function initCrmPage(pid) {
   _crmBulkMode        = false;
   _crmSelected        = new Set();
   _crmDupOverride     = false;
+  _crmProjects        = [];
   if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
   if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
   const s = document.getElementById('crm-search');
@@ -69,16 +71,18 @@ function initCrmPage(pid) {
 async function _crmLoadAll() {
   _crmSetMain('<p class="text-sm text-gray-400 dark:text-zinc-500 text-center mt-12">Loading…</p>');
   try {
-    const [contacts, fields, stages, deals] = await Promise.all([
+    const [contacts, fields, stages, deals, projects] = await Promise.all([
       _crmFetch(`/home/crm/${_crmPid}/contacts`),
       _crmFetch(`/home/crm/${_crmPid}/fields`),
       _crmFetch(`/home/crm/${_crmPid}/stages`),
       _crmFetch(`/home/crm/${_crmPid}/deals`),
+      _crmFetch(`/home/crm/${_crmPid}/projects`),
     ]);
     _crmContacts = contacts;
     _crmFields   = fields;
     _crmStages   = stages;
     _crmDeals    = deals;
+    _crmProjects = projects;
     _crmRender();
   } catch(e) {
     _crmSetMain(`<p class="text-sm text-red-500 text-center mt-12">Failed to load: ${_crmEsc(e.message)}</p>`);
@@ -90,7 +94,7 @@ function _crmRender() {
     const tb = document.getElementById('crm-toolbar');
     if (tb) tb.innerHTML = '';
     if (typeof initCrmPipeline === 'function')
-      initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts);
+      initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts, _crmProjects);
     return;
   }
   if (_crmView === 'calendar') {
@@ -115,26 +119,32 @@ function _crmRender() {
 function _crmRenderViewToggle() {
   const el = document.getElementById('crm-view-toggle');
   if (!el) return;
-  const btn = (v, label) => {
-    const on = _crmView === v;
-    return `<button onclick="crmSetView('${v}')"
-      class="text-[11px] px-2.5 py-1 rounded-lg border transition
-             ${on ? 'bg-[#0053e2] text-white border-[#0053e2]'
-                  : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}"
-    >${label}</button>`;
-  };
+  const views = [
+    ['table',    '☰ Table'],
+    ['gallery',  '⊞ Gallery'],
+    ['pipeline', '⬜ Pipeline'],
+    ['calendar', '📅 Calendar'],
+  ];
+  const opts = views.map(([v, l]) =>
+    `<option value="${v}" ${_crmView === v ? 'selected' : ''}>${l}</option>`
+  ).join('');
   // Bulk "Select" toggle — only relevant for table & gallery
   const canBulk = (_crmView === 'table' || _crmView === 'gallery');
   const bulkBtn = canBulk
-    ? `<span class="w-px h-4 bg-gray-300 dark:bg-zinc-600 self-center mx-0.5"></span>
-       <button onclick="crmToggleBulkMode()"
+    ? `<button onclick="crmToggleBulkMode()"
          class="text-[11px] px-2.5 py-1 rounded-lg border transition
                 ${_crmBulkMode
                     ? 'bg-[#ffc220] text-gray-900 border-[#ffc220]'
                     : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#ffc220]'}"
        >☑ Select</button>`
     : '';
-  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline') + btn('calendar','📅 Calendar') + bulkBtn;
+  el.innerHTML =
+    `<select onchange="crmSetView(this.value)"
+       class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600
+              bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+              focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+       ${opts}
+     </select>${canBulk ? ' ' + bulkBtn : ''}`;
 }
 
 function crmSetView(v) {
@@ -439,6 +449,13 @@ function _crmContactModal(c) {
       </form>
     </div>`;
   _crmShowModal(body);
+  // Attach slash-command palette to all text fields in the modal
+  if (typeof _crmAttachSlash === 'function') {
+    setTimeout(function() {
+      var form = document.getElementById('crm-contact-form');
+      if (form) _crmAttachSlash(form);
+    }, 0);
+  }
   if (isEdit && typeof crmLoadReminders === 'function') {
     _crmFields.filter(function(f) { return f.field_type === 'date'; })
       .forEach(function(f) {
@@ -665,6 +682,9 @@ function _crmShowModal(html) {
 }
 
 function crmCloseModal() {
+  // Dismiss slash palette before wiping modal DOM — palette blur handler has a
+  // 150ms delay and may not fire reliably when elements are destroyed synchronously.
+  if (typeof _slashHide === 'function') _slashHide();
   document.getElementById('crm-modal').classList.add('hidden');
   document.getElementById('crm-backdrop').classList.add('hidden');
   document.getElementById('crm-modal-body').innerHTML = '';
