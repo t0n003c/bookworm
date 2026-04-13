@@ -25,6 +25,7 @@ from routers.home_crm_db import (
     get_contact_reminders, add_contact_reminder, update_contact_reminder,
     delete_contact_reminder, advance_crm_reminder,
     get_due_crm_reminders, get_upcoming_crm_reminders,
+    get_all_crm_reminders, get_upcoming_birthdays,
 )
 
 log = logging.getLogger(__name__)
@@ -637,4 +638,32 @@ async def crm_upcoming_reminders(request: Request, page_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("crm_upcoming_reminders page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.get("/crm/{page_id}/reminders/all")
+async def crm_all_reminders(request: Request, page_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await get_all_crm_reminders(page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_all_reminders page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+@router.get("/crm/{page_id}/birthdays/upcoming")
+async def crm_upcoming_birthdays(request: Request, page_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await get_upcoming_birthdays(page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_upcoming_birthdays page_id=%s", page_id)
         return _err(str(e), 500)

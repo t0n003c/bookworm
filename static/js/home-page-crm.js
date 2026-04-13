@@ -19,14 +19,27 @@ var _crmContacts = [];
 var _crmFields   = [];
 var _crmStages   = [];
 var _crmDeals    = [];
-var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline'
+var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar'
 var _crmQuery    = '';
+
+// Calendar state (owned by home-page-crm-calendar.js, declared here for reset)
+var _crmAllReminders       = [];
+var _crmCalRemindersLoaded = false;
+var _crmCalYear            = null;
+var _crmCalMonth           = null;
+var _crmCalSelDay          = null;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 function initCrmPage(pid) {
   _crmPid  = pid;
   _crmView = localStorage.getItem('bw_crm_view') || 'table';
   _crmQuery = '';
+  // Reset calendar state on every HTMX re-nav (reminders lazy-reload per session)
+  _crmAllReminders       = [];
+  _crmCalRemindersLoaded = false;
+  _crmCalYear  = null;
+  _crmCalMonth = null;
+  _crmCalSelDay = null;
   if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
   if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
   const s = document.getElementById('crm-search');
@@ -64,6 +77,12 @@ function _crmRender() {
     }
     return;
   }
+  if (_crmView === 'calendar') {
+    const tb = document.getElementById('crm-toolbar');
+    if (tb) tb.innerHTML = '';
+    if (typeof _crmRenderCalendar === 'function') _crmRenderCalendar();
+    return;
+  }
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
   _crmView === 'gallery' ? _crmRenderGallery() : _crmRenderTable();
 }
@@ -80,7 +99,7 @@ function _crmRenderViewToggle() {
                   : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2]'}"
     >${label}</button>`;
   };
-  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline');
+  el.innerHTML = btn('table','☰ Table') + btn('gallery','⊞ Gallery') + btn('pipeline','⬜ Pipeline') + btn('calendar','📅 Calendar');
 }
 
 function crmSetView(v) {

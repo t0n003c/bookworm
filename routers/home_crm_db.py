@@ -8,6 +8,7 @@ Tables:
 ALL access via get_db() -- never raw aiosqlite.connect().
 """
 from __future__ import annotations
+import datetime
 from database import get_db
 
 
@@ -510,3 +511,74 @@ async def advance_crm_reminder(reminder_id: int, user_id: int) -> bool:
         )
         await db.commit()
     return True
+
+
+async def get_all_crm_reminders(page_id: int, user_id: int) -> list[dict]:
+    """All reminders for a CRM page with no date filter — used by calendar view.
+
+    Team-scoped (matches get_upcoming_crm_reminders convention).
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT r.id, r.contact_id, c.name AS contact_name,"
+            " r.field_id, r.label, r.message, r.recurrence,"
+            " r.reminder_date, r.reminder_time"
+            " FROM crm_contact_reminders r"
+            " JOIN crm_contacts c ON c.id = r.contact_id"
+            " WHERE c.page_id=?"
+            " ORDER BY r.reminder_date, r.reminder_time",
+            (page_id,),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_upcoming_birthdays(page_id: int, user_id: int) -> list[dict]:
+    """Next 3 upcoming birthdays for contacts on this CRM page.
+
+    A birthday field = any date-type custom field whose label (case-insensitive)
+    matches 'birthday', 'birth date', or 'dob'.  Next occurrence uses this
+    year's date if not yet passed, else next year's.  Feb-29 on non-leap years
+    falls back to Mar 1.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT c.id AS contact_id, c.name AS contact_name,"
+            " f.label AS field_label, v.value AS birth_date"
+            " FROM crm_custom_fields f"
+            " JOIN crm_contact_field_values v ON v.field_id = f.id"
+            " JOIN crm_contacts c ON c.id = v.contact_id"
+            " WHERE f.page_id=? AND f.field_type='date'"
+            " AND LOWER(f.label) IN ('birthday', 'birth date', 'dob')"
+            " AND v.value != '' AND c.page_id=?",
+            (page_id, page_id),
+        )
+        rows = await cur.fetchall()
+
+    today = datetime.date.today()
+    results = []
+    for r in rows:
+        try:
+            raw = datetime.date.fromisoformat(r["birth_date"])
+        except ValueError:
+            continue
+        # Next occurrence this calendar year
+        try:
+            candidate = raw.replace(year=today.year)
+        except ValueError:          # Feb 29 on non-leap year
+            candidate = datetime.date(today.year, 3, 1)
+        if candidate < today:
+            try:
+                candidate = raw.replace(year=today.year + 1)
+            except ValueError:
+                candidate = datetime.date(today.year + 1, 3, 1)
+        results.append({
+            "contact_id":   r["contact_id"],
+            "contact_name": r["contact_name"],
+            "field_label":  r["field_label"],
+            "date":         candidate.isoformat(),
+            "days_away":    (candidate - today).days,
+        })
+
+    results.sort(key=lambda x: x["days_away"])
+    return results[:3]

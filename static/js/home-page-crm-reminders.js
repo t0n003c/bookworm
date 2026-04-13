@@ -418,60 +418,91 @@ async function _crmLoadUpcomingPanel() {
   if (!body) return;
   body.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center mt-8">Loading…</p>';
   try {
-    var items = await _crmFetch('/home/crm/' + _crmPid + '/reminders/upcoming');
-    if (!Array.isArray(items) || items.length === 0) {
+    var results = await Promise.all([
+      _crmFetch('/home/crm/' + _crmPid + '/reminders/upcoming'),
+      _crmFetch('/home/crm/' + _crmPid + '/birthdays/upcoming'),
+    ]);
+    var items     = Array.isArray(results[0]) ? results[0] : [];
+    var birthdays = Array.isArray(results[1]) ? results[1] : [];
+
+    if (items.length === 0 && birthdays.length === 0) {
       body.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center mt-8">No upcoming reminders 🎉</p>';
       return;
     }
-    // Group by date
-    var today    = new Date().toISOString().slice(0, 10);
-    var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    var groups   = {};
-    items.forEach(function(r) {
-      var d = r.reminder_date;
-      var label = d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : _crmFmtDate(d);
-      if (!groups[label]) groups[label] = [];
-      groups[label].push(r);
-    });
+
     var html = '';
-    Object.keys(groups).forEach(function(grp) {
-      html += `<div class="mb-3">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500
-                    px-1 py-1 sticky top-0 bg-white dark:bg-zinc-900">${_crmEsc(grp)}</div>`;
-      groups[grp].forEach(function(r) {
-        var rec = r.recurrence || 'none';
-        var recBadge = rec !== 'none'
-          ? `<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(_crmRecLabel(rec))}</span>`
-          : '';
-        html += `
-          <div class="rounded-lg border border-gray-100 dark:border-zinc-700/60
-                      bg-gray-50 dark:bg-zinc-800/50 px-3 py-2 mb-1.5">
-            <div class="flex items-start gap-2">
-              <span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100 truncate flex-1">
-                    ${_crmEsc(r.label)}</p>
-                  ${recBadge}
-                </div>
-                <p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
-                  ${_crmEsc(r.contact_name)} &middot; ${_crmEsc(r.reminder_time)}</p>
-                ${r.message ? `<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 break-words">${_crmEsc(r.message)}</p>` : ''}
-              </div>
-              <button type="button"
-                onclick="_crmPanelDelete('${r.id}')"
-                title="Delete reminder"
-                class="text-gray-300 hover:text-red-500 transition text-xs leading-none shrink-0 pt-0.5">
-                ✕</button>
-            </div>
-          </div>`;
+
+    // ── Birthday section ──────────────────────────────────────────────
+    if (birthdays.length > 0) {
+      html += '<div class="mb-3"><div class="text-[10px] font-bold uppercase tracking-wider'
+            + ' text-gray-400 dark:text-zinc-500 px-1 py-1 sticky top-0'
+            + ' bg-white dark:bg-zinc-900">🎂 Upcoming Birthdays</div>';
+      birthdays.forEach(function(b) {
+        var daysLabel = b.days_away === 0 ? 'Today! 🎉'
+                      : b.days_away === 1 ? 'Tomorrow'
+                      : b.days_away + ' days away';
+        html += '<div class="rounded-lg border border-[#ffc220]/40 dark:border-[#ffc220]/20'
+              + ' bg-[#ffc220]/5 dark:bg-[#ffc220]/10 px-3 py-2 mb-1.5">'
+              + '<div class="flex items-start gap-2">'
+              + '<span class="text-sm leading-none mt-0.5 shrink-0">🎂</span>'
+              + '<div class="flex-1 min-w-0">'
+              + '<p class="text-xs font-semibold text-gray-800 dark:text-zinc-100 truncate">'
+              + _crmEsc(b.contact_name) + '</p>'
+              + '<p class="text-[11px] text-[#995213] dark:text-[#ffc220] truncate">'
+              + _crmEsc(b.field_label) + ' &middot; ' + _crmEsc(daysLabel) + '</p>'
+              + '</div></div></div>';
       });
       html += '</div>';
-    });
+    }
+
+    // ── Reminders section (existing grouping logic, preserved verbatim) ───
+    if (items.length > 0) {
+      var today    = new Date().toISOString().slice(0, 10);
+      var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      var groups   = {};
+      items.forEach(function(r) {
+        var d = r.reminder_date;
+        var label = d === today ? 'Today' : d === tomorrow ? 'Tomorrow' : _crmFmtDate(d);
+        if (!groups[label]) groups[label] = [];
+        groups[label].push(r);
+      });
+      Object.keys(groups).forEach(function(grp) {
+        html += '<div class="mb-3"><div class="text-[10px] font-bold uppercase tracking-wider'
+              + ' text-gray-400 dark:text-zinc-500 px-1 py-1 sticky top-0'
+              + ' bg-white dark:bg-zinc-900">' + _crmEsc(grp) + '</div>';
+        groups[grp].forEach(function(r) {
+          var rec = r.recurrence || 'none';
+          var recBadge = rec !== 'none'
+            ? '<span class="px-1 py-0.5 rounded text-[9px] font-semibold bg-blue-50 dark:bg-blue-900/30'
+              + ' text-[#0053e2] dark:text-blue-300">' + _crmEsc(_crmRecLabel(rec)) + '</span>'
+            : '';
+          html += '<div class="rounded-lg border border-gray-100 dark:border-zinc-700/60'
+                + ' bg-gray-50 dark:bg-zinc-800/50 px-3 py-2 mb-1.5">'
+                + '<div class="flex items-start gap-2">'
+                + '<span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>'
+                + '<div class="flex-1 min-w-0">'
+                + '<div class="flex items-center gap-1.5 flex-wrap">'
+                + '<p class="text-xs font-semibold text-gray-800 dark:text-zinc-100 truncate flex-1">'
+                + _crmEsc(r.label) + '</p>' + recBadge + '</div>'
+                + '<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">'
+                + _crmEsc(r.contact_name) + ' &middot; ' + _crmEsc(r.reminder_time) + '</p>'
+                + (r.message ? '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 break-words">'
+                  + _crmEsc(r.message) + '</p>' : '')
+                + '</div>'
+                + '<button type="button" onclick="_crmPanelDelete(\'' + r.id + '\')"'
+                + ' title="Delete reminder" class="text-gray-300 hover:text-red-500 transition'
+                + ' text-xs leading-none shrink-0 pt-0.5">✕</button>'
+                + '</div></div>';
+        });
+        html += '</div>';
+      });
+    }
+
     body.innerHTML = html;
   } catch(e) {
     console.error('[CRM reminders panel]', e);
-    body.innerHTML = '<p class="text-xs text-red-400 text-center mt-8">Could not load reminders — ' + _crmEsc(e.message || String(e)) + '</p>';
+    body.innerHTML = '<p class="text-xs text-red-400 text-center mt-8">Could not load reminders — '
+      + _crmEsc(e.message || String(e)) + '</p>';
   }
 }
 
