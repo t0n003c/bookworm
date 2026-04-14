@@ -67,7 +67,9 @@ function _ppRender() {
 
   const empty = visStages.length === 0 && unsorted.length === 0;
 
-  document.getElementById('crm-main').innerHTML = `
+  var main = document.getElementById('crm-main');
+  if (!main) return; // page navigated away before async render resolved
+  main.innerHTML = `
     <div class="px-2 pt-1 pb-4">
       ${_ppProjectBar()}
       ${empty ? _ppEmptyState() : ''}

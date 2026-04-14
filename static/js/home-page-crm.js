@@ -731,18 +731,23 @@ async function crmHandlePicFile(input, contactId) {
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
 function _crmShowModal(html) {
-  document.getElementById('crm-modal-body').innerHTML = html;
-  document.getElementById('crm-modal').classList.remove('hidden');
-  document.getElementById('crm-backdrop').classList.remove('hidden');
+  var body = document.getElementById('crm-modal-body');
+  var wrap = document.getElementById('crm-modal');
+  var bd   = document.getElementById('crm-backdrop');
+  if (!body || !wrap || !bd) return;
+  body.innerHTML = html;
+  wrap.classList.remove('hidden');
+  bd.classList.remove('hidden');
 }
 
 function crmCloseModal() {
-  // Dismiss slash palette before wiping modal DOM — palette blur handler has a
-  // 150ms delay and may not fire reliably when elements are destroyed synchronously.
   if (typeof _slashHide === 'function') _slashHide();
-  document.getElementById('crm-modal').classList.add('hidden');
-  document.getElementById('crm-backdrop').classList.add('hidden');
-  document.getElementById('crm-modal-body').innerHTML = '';
+  var wrap = document.getElementById('crm-modal');
+  var bd   = document.getElementById('crm-backdrop');
+  var body = document.getElementById('crm-modal-body');
+  if (wrap) wrap.classList.add('hidden');
+  if (bd)   bd.classList.add('hidden');
+  if (body) body.innerHTML = '';
 }
 
 function _crmSetMain(html) {
