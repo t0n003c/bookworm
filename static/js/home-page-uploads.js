@@ -24,6 +24,7 @@ let _uplTagFilter     = '';      // active group/tag tab ('' = none)
 let _uplCurrentDetail = null;    // file object currently shown in detail panel
 let _uplAllTags       = [];      // all user tags (for autocomplete)
 let _uplBusy          = false;   // upload in progress
+let _uplDelPending    = null;    // uploadId waiting for delete confirmation
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 async function initUploadsPage(pid) {
@@ -47,9 +48,11 @@ async function initUploadsPage(pid) {
     });
   }
 
-  // ESC closes the upload modal
+  // ESC closes whichever modal is open (upload modal or delete modal)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') _uplCloseModal();
+    if (e.key !== 'Escape') return;
+    _uplCloseModal();
+    _uplCancelDelete();
   });
 
   await _uplFetch(1);
@@ -334,7 +337,7 @@ function _uplRenderDetail(f) {
                 \uD83D\uDCDD Open in Notes</a>`
            : ''}
        </div>`
-    : `<button onclick="_uplDeleteFile(${f.id})"
+    : `<button onclick="_uplConfirmDelete(${f.id})"
                class="w-full mt-3 py-1.5 text-xs rounded-lg border border-red-200
                       dark:border-red-800 text-red-500 hover:bg-red-50
                       dark:hover:bg-red-900/20 transition">
@@ -366,11 +369,30 @@ function _uplRenderDetail(f) {
 }
 
 // ── Delete standalone file ────────────────────────────────────────────────────
-async function _uplDeleteFile(uploadId) {
-  if (!confirm('Delete this file? This cannot be undone.')) return;
+// ── Delete confirmation modal ────────────────────────────────────────────────
+function _uplConfirmDelete(uploadId) {
+  const f = _uplFiles.find(x => x.src === 'page' && x.id === uploadId);
+  _uplDelPending = uploadId;
+  const modal    = document.getElementById('upl-del-modal');
+  const nameEl   = document.getElementById('upl-del-filename');
+  if (nameEl) nameEl.textContent = f?.original_name || 'this file';
+  if (modal)  modal.classList.remove('hidden');
+  // Focus the confirm button for keyboard users
+  setTimeout(() => document.getElementById('upl-del-confirm-btn')?.focus(), 50);
+}
 
-  const r = await fetch(`/home/uploads/${_uplPid}/files/page/${uploadId}`,
-                        { method: 'DELETE' });
+function _uplCancelDelete() {
+  document.getElementById('upl-del-modal')?.classList.add('hidden');
+  _uplDelPending = null;
+}
+
+async function _uplDoDelete() {
+  const uploadId = _uplDelPending;
+  _uplCancelDelete();          // close modal + clear pending
+  if (!uploadId) return;
+
+  const r  = await fetch(`/home/uploads/${_uplPid}/files/page/${uploadId}`,
+                         { method: 'DELETE' });
   const ct = r.headers.get('content-type') || '';
   if (ct.includes('text/html')) {
     _uplShowToast('Session expired \u2014 please refresh.', true); return;
