@@ -906,6 +906,13 @@ function _initSwappedPage() {
     if (_ta) _ta.innerHTML = '';
     return;
   }
+  // Coming-soon page (media, grid_builder, uploads, …) — no widget canvas
+  const comingSoonRoot = document.getElementById('coming-soon-page-root');
+  if (comingSoonRoot) {
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
   // Dashboard (widget canvas) — Add Widget button already set by showHomePage()
   try { initHomeWidgets(); } catch(e) { console.error('[home] initHomeWidgets:', e); }
 }
