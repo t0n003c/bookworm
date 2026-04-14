@@ -1873,7 +1873,7 @@
 
   /* ---- Note list views: list / gallery / timeline ---- */
   function getNoteView() {
-    if (bwTimeline.isMounted()) return 'timeline';
+    if (typeof bwTimeline !== 'undefined' && bwTimeline.isMounted()) return 'timeline';
     var nl = document.getElementById('note-list');
     return (nl && nl.dataset.view === 'gallery') ? 'gallery' : 'list';
   }
@@ -1886,8 +1886,9 @@
     if (next === 'timeline' && typeof homeExit === 'function') homeExit();
 
     // Mount / unmount timeline
-    if (next === 'timeline' && !bwTimeline.isMounted()) bwTimeline.mount();
-    if (next !== 'timeline' &&  bwTimeline.isMounted()) bwTimeline.unmount();
+    var _tl = typeof bwTimeline !== 'undefined' && bwTimeline;
+    if (next === 'timeline' && _tl && !_tl.isMounted()) _tl.mount();
+    if (next !== 'timeline' && _tl &&  _tl.isMounted()) _tl.unmount();
 
     // Apply gallery data-attr (CSS does the rest; persists across HTMX swaps)
     var nl = document.getElementById('note-list');
