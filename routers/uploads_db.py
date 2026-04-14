@@ -7,7 +7,7 @@ Two data sources are merged:
 Tags are stored in page_upload_tags(upload_src, upload_id, user_id, tag) and
 embedded in the list response via GROUP_CONCAT (Option A — enables grid-level filtering).
 
-MIME-group CASE expression in get_file_counts() mirrors _uplMimeGroup() in JS.
+MIME-group CASE expression in get_uploads_page() mirrors _uplMimeGroup() in JS.
 Keep them in sync if MIME grouping rules ever change.
 
 All functions use get_db() — never raw aiosqlite.connect().
@@ -113,38 +113,17 @@ async def get_uploads_page(user_id: int, page: int = 1) -> dict:
         )
         rows = await cur.fetchall()
 
-    files = []
-    for r in rows:
-        d = dict(r)
-        raw_tags = d.pop("tags", None)
-        d["tags"] = sorted(raw_tags.split(",")) if raw_tags else []
-        files.append(d)
-
-    counts = await get_file_counts(user_id)
-    pages  = max(1, -(-total // _PAGE_SIZE))  # ceiling div
-    return {"files": files, "total": total, "page": page, "pages": pages,
-            "counts": counts}
-
-
-# ── Global MIME-group counts ──────────────────────────────────────────────────
-
-async def get_file_counts(user_id: int) -> dict:
-    """Return total file counts by MIME group across the entire dataset.
-
-    NOTE: The CASE expression here mirrors _uplMimeGroup() in home-page-uploads.js.
-          Keep them in sync if MIME grouping rules ever change.
-    """
-    _CASE = """
-        CASE
-          WHEN mime_type LIKE 'image/%'                                   THEN 'image'
-          WHEN mime_type LIKE 'video/%'                                   THEN 'video'
-          WHEN mime_type LIKE 'audio/%'                                   THEN 'audio'
-          WHEN mime_type LIKE 'text/%' OR mime_type LIKE 'application/%' THEN 'document'
-          ELSE 'other'
-        END
-    """
-    async with get_db() as db:
-        cur = await db.execute(
+        # ── MIME-group counts (same connection — avoids second open/close) ────
+        _CASE = """
+            CASE
+              WHEN mime_type LIKE 'image/%'                                   THEN 'image'
+              WHEN mime_type LIKE 'video/%'                                   THEN 'video'
+              WHEN mime_type LIKE 'audio/%'                                   THEN 'audio'
+              WHEN mime_type LIKE 'text/%' OR mime_type LIKE 'application/%' THEN 'document'
+              ELSE 'other'
+            END
+        """
+        ccur = await db.execute(
             f"""
             SELECT {_CASE} AS grp, COUNT(*) AS cnt
             FROM (
@@ -160,15 +139,23 @@ async def get_file_counts(user_id: int) -> dict:
             """,
             (user_id, user_id),
         )
-        rows = await cur.fetchall()
+        count_rows = await ccur.fetchall()
 
-    counts = {"image": 0, "video": 0, "audio": 0, "document": 0, "other": 0}
-    total  = 0
+    files = []
     for r in rows:
+        d = dict(r)
+        raw_tags = d.pop("tags", None)
+        d["tags"] = sorted(raw_tags.split(",")) if raw_tags else []
+        files.append(d)
+
+    counts: dict = {"image": 0, "video": 0, "audio": 0, "document": 0, "other": 0}
+    for r in count_rows:
         counts[r["grp"]] = r["cnt"]
-        total += r["cnt"]
-    counts["all"] = total
-    return counts
+    counts["all"] = sum(counts.values())
+
+    pages  = max(1, -(-total // _PAGE_SIZE))  # ceiling div
+    return {"files": files, "total": total, "page": page, "pages": pages,
+            "counts": counts}
 
 
 # ── Standalone file CRUD ──────────────────────────────────────────────────────

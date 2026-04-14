@@ -1,9 +1,10 @@
 /* home-page-uploads.js — Uploads Homespace page (BookWorm).
-   Manages: file listing, type filter tabs, group tag filter, pagination,
-            standalone upload, auth-gated download, file delete, detail panel, tags.
+   Manages: file listing, type filter tabs, group-by-type toggle, pagination,
+            standalone upload (with WebP toggle), auth-gated download, file
+            delete, detail panel (media player, PDF embed, text preview), tags.
    Server APIs:
-     GET    /home/uploads/{pid}/files?page=N             → {files, total, page, pages, counts}
-     POST   /home/uploads/{pid}/upload                   → {ok}
+     GET    /home/uploads/{pid}/files?page=N             → {files,total,page,pages,counts}
+     POST   /home/uploads/{pid}/upload?webp=1|0          → {ok}
      DELETE /home/uploads/{pid}/files/page/{id}          → {ok}
      GET    /home/uploads/{pid}/files/note/{id}/download
      GET    /home/uploads/{pid}/files/page/{id}/download
@@ -14,15 +15,16 @@
 */
 'use strict';
 
-// ── Module state ──────────────────────────────────────────────────────────────
+// ── Module state ─────────────────────────────────────────────────────────────────
 let _uplPid           = 0;
 let _uplFiles         = [];      // current page's file list (tags embedded)
 let _uplMeta          = {};      // {total, page, pages}
-let _uplCounts        = {};      // {all, image, video, audio, document, other} — full dataset
+let _uplCounts        = {};      // {all, image, video, audio, document, other}
 let _uplFilter        = 'all';   // active MIME-type tab
 let _uplTagFilter     = '';      // active group/tag tab ('' = none)
+let _uplGrouped       = false;   // group-by-type display mode
 let _uplCurrentDetail = null;    // file object currently shown in detail panel
-let _uplAllTags       = [];      // all user tags (for autocomplete)
+let _uplAllTags       = [];      // all user tags (lazy-loaded once + after mutations)
 let _uplBusy          = false;   // upload in progress
 let _uplDelPending    = null;    // uploadId waiting for delete confirmation
 
@@ -34,11 +36,12 @@ async function initUploadsPage(pid) {
   _uplCounts        = {};
   _uplFilter        = 'all';
   _uplTagFilter     = '';
+  _uplGrouped       = false;
   _uplCurrentDetail = null;
   _uplAllTags       = [];
   _uplBusy          = false;
 
-  // Wire hidden file input once (template no longer uses onchange=)
+  // Wire hidden file input once
   const input = document.getElementById('uploads-file-input');
   if (input) {
     input.addEventListener('change', (e) => {
@@ -48,13 +51,15 @@ async function initUploadsPage(pid) {
     });
   }
 
-  // ESC closes whichever modal is open (upload modal or delete modal)
+  // ESC closes whichever overlay is open
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     _uplCloseModal();
     _uplCancelDelete();
   });
 
+  // Load tags once upfront so filter pills are ready immediately
+  _uplLoadAllTags();
   await _uplFetch(1);
 }
 
@@ -98,8 +103,7 @@ async function _uplFetch(page) {
     }
   }
 
-  // Load all tags once per fetch (lightweight — needed for group-filter pills)
-  _uplLoadAllTags();
+  // Rebuild filter tabs + grid from current state
   _uplRenderFilterTabs();
   _uplRender();
 }
@@ -162,7 +166,14 @@ function _uplRenderFilterTabs() {
         }).join('');
   }
 
-  tabs.innerHTML = mimeTabs + tagPills;
+  tabs.innerHTML = mimeTabs + tagPills
+    + '<span class="flex-1"></span>'
+    + `<button onclick="_uplToggleGrouped()"
+               title="Group by type"
+               class="flex-shrink-0 text-xs px-2.5 py-1 rounded-full border transition
+                      ${_uplGrouped
+                        ? 'bg-gray-800 text-white border-gray-800 dark:bg-zinc-200 dark:text-zinc-900'
+                        : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-gray-500'}">&#9783; Group</button>`;
 
   if (stats) {
     const { total, page, pages } = _uplMeta;
@@ -172,12 +183,11 @@ function _uplRenderFilterTabs() {
   }
 }
 
-// ── Render file grid ──────────────────────────────────────────────────────────
+// ── Render file grid (flat or grouped) ──────────────────────────────────────────────
 function _uplRender() {
   const main = document.getElementById('uploads-main');
   if (!main) return;
 
-  // Apply filters
   let visible = _uplFilter === 'all'
     ? [..._uplFiles]
     : _uplFiles.filter(f => _uplMimeGroup(f.mime_type) === _uplFilter);
@@ -205,30 +215,72 @@ function _uplRender() {
     return;
   }
 
-  main.innerHTML = `
-    <div class="grid gap-3"
-         style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
-      ${visible.map(f => _uplCard(f)).join('')}
-    </div>`;
+  const grid = (items) =>
+    `<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">`
+    + items.map(f => _uplCard(f)).join('') + '</div>';
+
+  if (_uplGrouped) {
+    // Group by MIME type, emit section headers
+    const order = ['image', 'video', 'audio', 'document', 'other'];
+    const groups = {};
+    for (const f of visible) {
+      const g = _uplMimeGroup(f.mime_type);
+      (groups[g] = groups[g] || []).push(f);
+    }
+    const sections = order
+      .filter(g => groups[g]?.length)
+      .map(g => {
+        const meta = _UPL_TAB_META[g];
+        const label = `${meta.emoji ? meta.emoji + ' ' : ''}${meta.label}`;
+        return `<div class="mb-6">
+          <h2 class="text-xs font-bold uppercase tracking-widest text-gray-400
+                     dark:text-zinc-500 mb-3 px-0.5">${label}
+            <span class="font-normal normal-case tracking-normal ml-1">
+              (${groups[g].length})</span>
+          </h2>${grid(groups[g])}
+        </div>`;
+      }).join('');
+    main.innerHTML = sections;
+  } else {
+    main.innerHTML = grid(visible);
+  }
   _uplRenderPager();
 }
 
-// ── Single file card ──────────────────────────────────────────────────────────
+// ── Single file card ──────────────────────────────────────────────────────────────────
 function _uplCard(f) {
   const group   = _uplMimeGroup(f.mime_type);
-  const isImage = group === 'image';
   const emoji   = { image: '\uD83D\uDDBC\uFE0F', video: '\uD83C\uDFAC', audio: '\uD83C\uDFB5',
                     document: '\uD83D\uDCC4', other: '\uD83D\uDCCE' }[group] || '\uD83D\uDCCE';
 
-  const thumb = isImage
-    ? `<img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
-            loading="lazy"
-            class="w-full h-32 object-cover bg-gray-100 dark:bg-zinc-800"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-      + `<div class="w-full h-32 hidden items-center justify-center text-4xl
-                     bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`
-    : `<div class="w-full h-32 flex items-center justify-center text-5xl
-                   bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;
+  // Thumbnail area
+  var thumb;
+  if (group === 'image') {
+    thumb = `<img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
+             loading="lazy"
+             class="w-full h-32 object-cover bg-gray-100 dark:bg-zinc-800"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+           + `<div class="w-full h-32 hidden items-center justify-center text-4xl
+                         bg-gray-100 dark:bg-zinc-800">${emoji}</div>`;
+  } else if (group === 'video') {
+    thumb = `<div class="w-full h-32 flex items-center justify-center
+                         bg-gray-900 dark:bg-zinc-950 relative">
+               <span class="text-4xl opacity-60">${emoji}</span>
+               <span class="absolute inset-0 flex items-center justify-center">
+                 <span class="text-white/70 text-2xl">&#9654;</span></span>
+             </div>`;
+  } else {
+    thumb = `<div class="w-full h-32 flex items-center justify-center text-5xl
+                         bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;
+  }
+
+  // Source badge: note-attached = blue, standalone = gray
+  const srcBadge = f.src === 'note'
+    ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
+                    bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300
+                    truncate max-w-full" title="${_uplEsc(f.note_title || 'Note')}">\uD83D\uDCDD ${_uplEsc((f.note_title || 'Note').substring(0,22))}</span>`
+    : `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
+                    bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Standalone</span>`;
 
   const tagPips = (f.tags || []).slice(0, 3).map(t =>
     `<span class="px-1.5 py-0.5 text-[8px] rounded-full bg-yellow-100
@@ -246,9 +298,8 @@ function _uplCard(f) {
                   truncate group-hover:text-[#0053e2] transition"
            title="${_uplEsc(f.original_name)}">${_uplEsc(f.original_name)}</p>
         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">
-          ${_uplFmtSize(f.size)} &middot; ${_uplFmtDate(f.created_at)}
-        </p>
-        ${tagPips ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagPips}</div>` : ''}
+          ${_uplFmtSize(f.size)} &middot; ${_uplFmtDate(f.created_at)}</p>
+        <div class="flex flex-wrap gap-1 mt-1.5">${srcBadge}${tagPips ? tagPips : ''}</div>
       </div>
     </div>`;
 }
@@ -261,16 +312,13 @@ function _uplRenderPager() {
   if (!main) return;
   const pager = document.createElement('div');
   pager.className = 'flex items-center justify-center gap-3 mt-6 pb-4';
-  pager.innerHTML = `
-    <button onclick="_uplLoadPage(${page - 1})" ${page <= 1 ? 'disabled' : ''}
-            class="px-3 py-1.5 text-xs border rounded-lg border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2]
-                   disabled:opacity-40 disabled:cursor-not-allowed transition">\u2190 Prev</button>
-    <span class="text-xs text-gray-400 dark:text-zinc-500">Page ${page} of ${pages}</span>
-    <button onclick="_uplLoadPage(${page + 1})" ${page >= pages ? 'disabled' : ''}
-            class="px-3 py-1.5 text-xs border rounded-lg border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2]
-                   disabled:opacity-40 disabled:cursor-not-allowed transition">Next \u2192</button>`;
+  const btnCls = 'px-3 py-1.5 text-xs border rounded-lg border-gray-300 dark:border-zinc-600 '
+               + 'text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] '
+               + 'disabled:opacity-40 disabled:cursor-not-allowed transition';
+  pager.innerHTML =
+    `<button onclick="_uplLoadPage(${page-1})" ${page<=1?'disabled':''} class="${btnCls}">\u2190 Prev</button>`
+    + `<span class="text-xs text-gray-400 dark:text-zinc-500">Page ${page} of ${pages}</span>`
+    + `<button onclick="_uplLoadPage(${page+1})" ${page>=pages?'disabled':''} class="${btnCls}">Next \u2192</button>`;
   main.appendChild(pager);
 }
 
@@ -294,6 +342,12 @@ function _uplSetTagFilter(tag) {
   _uplRender();
 }
 
+function _uplToggleGrouped() {
+  _uplGrouped = !_uplGrouped;
+  _uplRenderFilterTabs();
+  _uplRender();
+}
+
 // ── Detail panel ─────────────────────────────────────────────────────────────
 function _uplOpenDetail(src, id) {
   const f = _uplFiles.find(x => x.src === src && x.id === id);
@@ -303,7 +357,6 @@ function _uplOpenDetail(src, id) {
   const panel = document.getElementById('uploads-detail-panel');
   if (panel) panel.classList.remove('translate-x-full');
 }
-
 function _uplCloseDetail() {
   _uplCurrentDetail = null;
   const panel = document.getElementById('uploads-detail-panel');
@@ -314,62 +367,65 @@ function _uplRenderDetail(f) {
   const el = document.getElementById('uploads-detail-content');
   if (!el) return;
 
-  const group   = _uplMimeGroup(f.mime_type);
-  const isImage = group === 'image';
-  const dlUrl   = `/home/uploads/${_uplPid}/files/${f.src}/${f.id}/download`;
+  const group  = _uplMimeGroup(f.mime_type);
+  const dlUrl  = `/home/uploads/${_uplPid}/files/${f.src}/${f.id}/download`;
+  const fUrl   = `/uploads/${_uplEsc(f.filename)}`;
+  const mt     = f.mime_type;
+  const isText = mt.startsWith('text/') || mt === 'application/json';
 
-  const preview = isImage ? `
-    <div class="mb-4 rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800">
-      <img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
-           class="w-full object-contain max-h-48"
-           onerror="this.parentElement.style.display='none'">
-    </div>` : '';
+  // Preview block — native players where possible
+  var preview = '';
+  if (group === 'image') {
+    preview = `<div class="mb-4 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800">
+      <img src="${fUrl}" alt="${_uplEsc(f.original_name)}" class="w-full object-contain max-h-52"
+           onerror="this.parentElement.style.display='none'"></div>`;
+  } else if (group === 'video') {
+    preview = `<div class="mb-4 rounded-xl overflow-hidden bg-black">
+      <video controls preload="metadata" class="w-full max-h-52">
+        <source src="${fUrl}" type="${_uplEsc(mt)}">Your browser doesn\'t support HTML5 video.
+      </video></div>`;
+  } else if (group === 'audio') {
+    preview = `<div class="mb-4 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800">
+      <p class="text-2xl text-center mb-2">\uD83C\uDFB5</p>
+      <audio controls preload="metadata" class="w-full">
+        <source src="${fUrl}" type="${_uplEsc(mt)}">Your browser doesn\'t support HTML5 audio.
+      </audio></div>`;
+  } else if (mt === 'application/pdf') {
+    preview = `<div class="mb-4 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
+      <embed src="${fUrl}" type="application/pdf" class="w-full" style="height:280px"></div>`;
+  } else if (isText) {
+    preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto">
+      <p class="text-[10px] text-gray-400 italic">Loading preview\u2026</p></div>`;
+  }
 
+  // Source section
   const srcSection = f.src === 'note'
-    ? `<div class="mb-3">
-         <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">From Note</p>
-         <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate">
-           ${_uplEsc(f.note_title || 'Untitled')}</p>
-         <p class="text-[10px] text-gray-400 truncate">${_uplEsc(f.workspace_name || '')}</p>
-         ${f.workspace_id
-           ? `<a href="/?ws=${f.workspace_id}"
-                 class="inline-block mt-1.5 text-[10px] text-[#0053e2] hover:underline">
-                \uD83D\uDCDD Open in Notes</a>`
-           : ''}
-       </div>`
-    : `<button onclick="_uplConfirmDelete(${f.id})"
-               class="w-full mt-3 py-1.5 text-xs rounded-lg border border-red-200
-                      dark:border-red-800 text-red-500 hover:bg-red-50
-                      dark:hover:bg-red-900/20 transition">
-         \uD83D\uDDD1\uFE0F Delete file
-       </button>`;
+    ? `<div class="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 mb-3">
+         <p class="text-[10px] uppercase tracking-wide text-blue-400 mb-1 font-bold">\uD83D\uDCDD Attached to Note</p>
+         <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate">${_uplEsc(f.note_title||'Untitled')}</p>
+         <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.workspace_name||'')}</p>
+         ${f.workspace_id?`<a href="/?ws=${f.workspace_id}" class="inline-block mt-1.5 text-[10px] text-[#0053e2] hover:underline">Open workspace</a>`:''}</div>`
+    : `<div class="p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 mb-3">
+         <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-1 font-bold">Standalone Upload</p>
+         <button onclick="_uplConfirmDelete(${f.id})" class="mt-1 w-full py-1.5 text-xs rounded-lg
+                 border border-red-200 dark:border-red-800 text-red-500
+                 hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
 
-  el.innerHTML = `
-    ${preview}
-    <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">
-      ${_uplEsc(f.original_name)}</p>
-    <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">
-      ${_uplFmtSize(f.size)} &middot; ${f.mime_type} &middot; ${_uplFmtDate(f.created_at)}</p>
-
+  el.innerHTML = `${preview}
+    <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
+    <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFmtSize(f.size)} &middot; ${_uplEsc(mt)} &middot; ${_uplFmtDate(f.created_at)}</p>
     <a href="${dlUrl}" download="${_uplEsc(f.original_name)}"
-       class="block w-full text-center py-1.5 text-xs rounded-lg
-              bg-[#0053e2] text-white hover:bg-[#003eb3] transition mb-3">
-      \u2193 Download
-    </a>
-
+       class="block w-full text-center py-1.5 text-xs rounded-lg bg-[#0053e2] text-white hover:bg-[#003eb3] transition mb-3">
+      \u2193 Download</a>
     ${srcSection}
+    <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
+      <div id="upl-tags-area"></div></div>`;
 
-    <div class="mt-4">
-      <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
-      <div id="upl-tags-area"></div>
-    </div>`;
-
-  // Load tags asynchronously
+  if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);
 }
 
-// ── Delete standalone file ────────────────────────────────────────────────────
-// ── Delete confirmation modal ────────────────────────────────────────────────
+// ── Delete confirmation modal ───────────────────────────────────────────────────
 function _uplConfirmDelete(uploadId) {
   const f = _uplFiles.find(x => x.src === 'page' && x.id === uploadId);
   _uplDelPending = uploadId;
@@ -404,96 +460,8 @@ async function _uplDoDelete() {
   await _uplFetch(_uplMeta.page || 1);
 }
 
-// ── Tags ──────────────────────────────────────────────────────────────────────
-async function _uplLoadTags(src, id) {
-  try {
-    const r = await fetch(`/home/uploads/${_uplPid}/files/${src}/${id}/tags`);
-    if (!r.ok) return;
-    const data = await r.json();
-    _uplRenderTags(src, id, data.tags || []);
-  } catch { /* silent */ }
-}
-
-function _uplRenderTags(src, id, tags) {
-  const el = document.getElementById('upl-tags-area');
-  if (!el) return;
-  const pills = tags.map(t => `
-    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full
-                 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300">
-      ${_uplEsc(t)}
-      <button onclick="_uplRemoveTag('${_uplJsStr(src)}',${id},'${_uplJsStr(t)}')"
-              class="hover:text-red-500 transition leading-none">&times;</button>
-    </span>`).join('');
-
-  // Autocomplete datalist
-  const listId = `upl-tags-list-${id}`;
-  const opts   = _uplAllTags.filter(t => !tags.includes(t))
-                             .map(t => `<option value="${_uplEsc(t)}">`).join('');
-
-  el.innerHTML = `
-    <div class="flex flex-wrap gap-1 mb-2">${pills || '<span class="text-[10px] text-gray-400">No tags yet</span>'}</div>
-    <div class="flex gap-1">
-      <input id="upl-tag-input-${id}" list="${listId}" placeholder="Add tag\u2026"
-             class="flex-1 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
-                    text-[10px] bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();_uplAddTag('${_uplJsStr(src)}',${id})}" />
-      <datalist id="${listId}">${opts}</datalist>
-      <button onclick="_uplAddTag('${_uplJsStr(src)}',${id})"
-              class="px-2 py-1 text-[10px] rounded-lg bg-[#0053e2] text-white
-                     hover:bg-[#003eb3] transition">+</button>
-    </div>`;
-}
-
-async function _uplAddTag(src, id) {
-  const input = document.getElementById(`upl-tag-input-${id}`);
-  const tag   = (input ? input.value : '').trim().toLowerCase();
-  if (!tag || tag.length > 50) return;
-  if (input) input.value = '';
-  try {
-    const r = await fetch(`/home/uploads/${_uplPid}/files/${src}/${id}/tags`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag }),
-    });
-    if (!r.ok) return;
-    const data = await r.json();
-    // Update the embedded tags on the file object
-    const f = _uplFiles.find(x => x.src === src && x.id === id);
-    if (f) f.tags = data.tags;
-    _uplRenderTags(src, id, data.tags);
-    _uplLoadAllTags();  // refresh autocomplete + group pills
-    _uplRender();       // update card tag pips
-  } catch { /* silent */ }
-}
-
-async function _uplRemoveTag(src, id, tag) {
-  try {
-    const r = await fetch(
-      `/home/uploads/${_uplPid}/files/${src}/${id}/tags/${encodeURIComponent(tag)}`,
-      { method: 'DELETE' }
-    );
-    if (!r.ok) return;
-    const data = await r.json();
-    const f    = _uplFiles.find(x => x.src === src && x.id === id);
-    if (f) f.tags = data.tags;
-    _uplRenderTags(src, id, data.tags);
-    _uplLoadAllTags();
-    _uplRender();
-  } catch { /* silent */ }
-}
-
-async function _uplLoadAllTags() {
-  try {
-    const r = await fetch(`/home/uploads/${_uplPid}/tags`);
-    if (!r.ok) return;
-    const data  = await r.json();
-    _uplAllTags = data.tags || [];
-    _uplRenderFilterTabs();  // refresh group tag pills
-  } catch { /* silent */ }
-}
-
-// ── Upload modal open / close ────────────────────────────────────────────────
+// Tags CRUD lives in home-page-uploads-tags.js (loaded after this file)
+// ── Upload modal open / close ───────────────────────────────────────────────────────────────
 function uplOpenUploadModal() {
   if (_uplBusy) return;
   const backdrop = document.getElementById('uploads-modal-backdrop');
@@ -520,23 +488,20 @@ function _uplCloseModal() {
   if (btn) btn.disabled = false;
 }
 
-// ── Drop zone drag-over / drag-leave ──────────────────────────────────────────
+// ── Drop zone drag-over / drag-leave ──────────────────────────────────────────────────────────────────
 function _uplDropZoneActive(event, active) {
-  event.preventDefault();
-  event.stopPropagation();
+  event.preventDefault(); event.stopPropagation();
   const zone = document.getElementById('upl-drop-zone');
   const icon = document.getElementById('upl-drop-icon');
   if (!zone) return;
+  const zOn  = ['!border-[#0053e2]', '!bg-blue-50/80', 'dark:!bg-blue-900/20', 'scale-[1.01]'];
+  const iOn  = ['ring-4', 'ring-blue-200', 'dark:ring-blue-800', 'scale-110'];
   if (active) {
-    zone.classList.add('!border-[#0053e2]', '!bg-blue-50/80', 'dark:!bg-blue-900/20',
-                       'scale-[1.01]');
-    if (icon) icon.classList.add('ring-4', 'ring-blue-200', 'dark:ring-blue-800',
-                                 'scale-110');
+    zone.classList.add(...zOn);
+    if (icon) icon.classList.add(...iOn);
   } else {
-    zone.classList.remove('!border-[#0053e2]', '!bg-blue-50/80', 'dark:!bg-blue-900/20',
-                          'scale-[1.01]');
-    if (icon) icon.classList.remove('ring-4', 'ring-blue-200', 'dark:ring-blue-800',
-                                    'scale-110');
+    zone.classList.remove(...zOn);
+    if (icon) icon.classList.remove(...iOn);
   }
 }
 
@@ -554,7 +519,10 @@ async function _uplProcessFiles(files) {
   if (_uplBusy || !files.length) return;
   _uplBusy = true;
 
-  // Show progress area, hide drop zone chrome
+  // Read WebP toggle state at upload time
+  const webp = document.getElementById('upl-webp-toggle')?.checked !== false ? 1 : 0;
+
+  // Show progress area, dim drop zone
   const prog  = document.getElementById('upl-progress-area');
   const bar   = document.getElementById('upl-progress-bar');
   const lbl   = document.getElementById('upl-progress-label');
@@ -564,7 +532,7 @@ async function _uplProcessFiles(files) {
   if (zone) zone.classList.add('opacity-30', 'pointer-events-none');
   if (btn)  btn.disabled = true;
 
-  let done = 0, failed = 0;
+  var done = 0, failed = 0;
   const total = files.length;
 
   for (const file of files) {
@@ -573,7 +541,8 @@ async function _uplProcessFiles(files) {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const r = await fetch(`/home/uploads/${_uplPid}/upload`, { method: 'POST', body: fd });
+      const r = await fetch(`/home/uploads/${_uplPid}/upload?webp=${webp}`,
+                            { method: 'POST', body: fd });
       if (!r.ok) failed++;
     } catch { failed++; }
     done++;
@@ -583,7 +552,6 @@ async function _uplProcessFiles(files) {
   _uplBusy = false;
   if (zone) zone.classList.remove('opacity-30', 'pointer-events-none');
 
-  // Brief "Done!" state before closing
   if (lbl) lbl.textContent = failed
     ? `Done \u2014 ${failed} file${failed !== 1 ? 's' : ''} failed.`
     : `Done! ${total} file${total !== 1 ? 's' : ''} uploaded.`;
@@ -597,15 +565,10 @@ async function _uplProcessFiles(files) {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function _uplShowToast(msg, isErr) {
-  const wrap = document.getElementById('rem-fun-popup-wrap');
-  if (!wrap) return;
-  const card = document.createElement('div');
-  card.className = 'pointer-events-auto w-72 overflow-hidden rounded-xl shadow-lg '
-    + 'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700';
-  card.style.cssText = 'border-left:3px solid ' + (isErr ? '#ea1100' : '#2a8703') + ';';
-  card.innerHTML = `<div class="px-4 py-3 text-sm text-gray-700 dark:text-zinc-200">${_uplEsc(msg)}</div>`;
-  wrap.appendChild(card);
-  setTimeout(() => card.remove(), 4000);
+  // Delegate to the shared BookWorm toast (home-widgets.js _bwToast)
+  if (typeof window._bwToast === 'function') {
+    window._bwToast(msg, isErr ? 'error' : 'success');
+  }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
