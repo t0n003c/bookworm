@@ -69,9 +69,11 @@ function homeExit() {
   // Clear the home-page session so a subsequent F5 lands on the workspace.
   sessionStorage.removeItem('bw-hp');
   document.documentElement.classList.remove('bw-hp-restore');
-  // Restore timeline toggle for normal workspace views.
+  // Restore view-toggle buttons for normal workspace views.
   const _tl = document.getElementById('list-view-toggle');
   if (_tl) _tl.style.display = '';
+  const _gl = document.getElementById('gallery-view-btn');
+  if (_gl) _gl.style.display = '';
   const hc   = document.getElementById('home-content');
   const main = document.getElementById('main-content');
   const nl   = document.getElementById('note-list');
@@ -180,6 +182,8 @@ function showHomePage(pageId) {
   document.documentElement.classList.remove('bw-hp-restore');
   const _tl = document.getElementById('list-view-toggle');
   if (_tl) _tl.style.display = 'none';
+  const _gl = document.getElementById('gallery-view-btn');
+  if (_gl) _gl.style.display = 'none';
   const hc = document.getElementById('home-content');
   if (!hc) return;
   _setHomePageActive(pageId);
