@@ -305,8 +305,8 @@ function _crmTextBulletKey(e) {
   // Only intercept when the current line begins with a bullet
   if (line.charAt(0) !== '\u2022') return;
   e.preventDefault();
-  // Empty bullet line (• or • + space) — pressing Enter escapes the list
-  if (line === '\u2022' || line === '\u2022 ') {
+  // Empty bullet line — pressing Enter escapes the list
+  if (line.trimEnd() === '\u2022') {
     ta.value = val.substring(0, lineStart) + val.substring(pos);
     ta.selectionStart = ta.selectionEnd = lineStart;
   } else {
