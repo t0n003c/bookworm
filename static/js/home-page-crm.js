@@ -293,6 +293,31 @@ function _crmFiltered() {
   });
 }
 
+// ── Text-field textarea: auto-continue bullet points on Enter ───────────────
+function _crmTextBulletKey(e) {
+  if (e.key !== 'Enter') return;
+  var ta        = e.target;
+  var pos       = ta.selectionStart;
+  var val       = ta.value;
+  // Find the start of the line the cursor is on
+  var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+  var line      = val.substring(lineStart, pos);
+  // Only intercept when the current line begins with a bullet
+  if (line.charAt(0) !== '\u2022') return;
+  e.preventDefault();
+  // Empty bullet line (• or • + space) — pressing Enter escapes the list
+  if (line === '\u2022' || line === '\u2022 ') {
+    ta.value = val.substring(0, lineStart) + val.substring(pos);
+    ta.selectionStart = ta.selectionEnd = lineStart;
+  } else {
+    // Non-empty bullet — insert a new bullet on the next line
+    var ins = '\n\u2022 ';
+    ta.value = val.substring(0, pos) + ins + val.substring(pos);
+    ta.selectionStart = ta.selectionEnd = pos + ins.length;
+  }
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function _crmFieldDisplay(f, c) {
   const raw = String((c.field_values || {})[f.id] ?? '');
   if (f.field_type === 'checkbox')     return raw === '1' ? '✅' : '☐';
@@ -409,6 +434,7 @@ function _crmContactModal(c) {
     } else if (f.field_type === 'text') {
       // Multi-line textarea — resize handle matches the file_links box behaviour
       control = `<textarea name="cf_${f.id}" rows="3"
+        onkeydown="_crmTextBulletKey(event)"
         class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
                bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(val)}</textarea>`;
