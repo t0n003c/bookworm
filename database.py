@@ -540,7 +540,7 @@ async def init_db() -> None:
                 "project_id INTEGER REFERENCES crm_projects(id) ON DELETE SET NULL"
             )
 
-        # ── page_uploads (standalone files for Uploads homespace pages) ─────────
+        # ── page_uploads (standalone files for Uploads homespace pages) ─────────────────────────
         await db.execute("""
             CREATE TABLE IF NOT EXISTS page_uploads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -556,6 +556,23 @@ async def init_db() -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_page_uploads_user "
             "ON page_uploads(user_id, created_at)"
+        )
+
+        # ── page_upload_tags (user-defined tags across note + standalone files) ─────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS page_upload_tags (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                upload_src  TEXT    NOT NULL CHECK(upload_src IN ('note', 'page')),
+                upload_id   INTEGER NOT NULL,
+                user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                tag         TEXT    NOT NULL,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(upload_src, upload_id, user_id, tag)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_page_upload_tags_user "
+            "ON page_upload_tags(user_id, tag)"
         )
 
         await db.commit()
