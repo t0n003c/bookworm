@@ -1,0 +1,63 @@
+{# ── Uploads page — partials/home_page_uploads.html ──────────────────────────
+   Rendered by home_page_view() when page.page_type == 'uploads'.
+   Context: page (dict), page_type (str)
+   JS:      static/js/home-page-uploads.js (loaded via base.html static_v tag)
+   All rendering is JS-driven — this is a minimal shell only. No <script> blocks.
+#}
+<div id="uploads-page-root" data-page-id="{{ page.id }}"
+     class="flex flex-col"
+     style="height:calc(100vh - 3.5rem)">
+
+  {# ── Top bar ───────────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
+              border-b border-gray-200 dark:border-zinc-800
+              bg-white dark:bg-zinc-900">
+    <span class="text-lg leading-none">{{ page.emoji }}</span>
+    <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
+      {{ page.name }}
+    </h1>
+    <span class="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
+                 bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+      Uploads
+    </span>
+
+    {# Stats summary — injected by JS #}
+    <span id="uploads-stats"
+          class="ml-2 text-xs text-gray-400 dark:text-zinc-500"></span>
+
+    {# Upload button — wired by JS #}
+    <label id="uploads-drop-label"
+           class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                  bg-[#0053e2] text-white text-xs font-semibold cursor-pointer
+                  hover:bg-[#003eb3] transition select-none"
+           title="Upload a file">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1
+                 M16 10l-4-4m0 0L8 10m4-4v12"/>
+      </svg>
+      Upload
+      <input id="uploads-file-input" type="file" multiple class="sr-only"
+             onchange="uplHandleFileInput(event)" />
+    </label>
+  </div>
+
+  {# ── Filter tabs ───────────────────────────────────────────────────────── #}
+  <div id="uploads-filter-tabs"
+       class="flex items-center gap-1 px-4 py-2 flex-shrink-0 overflow-x-auto
+              border-b border-gray-100 dark:border-zinc-800
+              bg-gray-50 dark:bg-zinc-950">
+    {# Injected by JS #}
+  </div>
+
+  {# ── Main content ──────────────────────────────────────────────────────── #}
+  <div id="uploads-main"
+       class="flex-1 overflow-y-auto p-4">
+    <div class="text-center mt-16 text-gray-300 dark:text-zinc-600
+                animate-pulse text-sm select-none">
+      Loading files…
+    </div>
+  </div>
+
+</div>

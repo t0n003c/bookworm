@@ -540,6 +540,24 @@ async def init_db() -> None:
                 "project_id INTEGER REFERENCES crm_projects(id) ON DELETE SET NULL"
             )
 
+        # ── page_uploads (standalone files for Uploads homespace pages) ─────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS page_uploads (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id       INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id       INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                filename      TEXT    NOT NULL,
+                original_name TEXT    NOT NULL,
+                mime_type     TEXT    NOT NULL DEFAULT 'application/octet-stream',
+                size          INTEGER NOT NULL DEFAULT 0,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_page_uploads_user "
+            "ON page_uploads(user_id, created_at)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

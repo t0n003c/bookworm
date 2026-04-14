@@ -606,6 +606,9 @@ async def home_page_view(request: Request, page_id: int):
         elif p_type == "crm":
             tmpl = "partials/home_page_crm.html"
             # No server-side DB prep — JS fetches contacts + fields after load.
+        elif p_type == "uploads":
+            tmpl = "partials/home_page_uploads.html"
+            # No server-side DB prep — JS fetches file list after load.
         else:
             tmpl = "partials/home_page_coming_soon.html"
 
