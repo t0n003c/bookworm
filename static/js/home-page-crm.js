@@ -312,6 +312,10 @@ function _crmFieldDisplay(f, c) {
     } catch {}
     return raw ? `<a href="${_crmEsc(raw)}" target="_blank" rel="noopener noreferrer" class="text-[#0053e2] hover:underline text-xs truncate">${_crmEsc(raw)}</a>` : '';
   }
+  if (f.field_type === 'text' && raw.includes('\n')) {
+    // Preserve line breaks in display — each line escaped individually
+    return raw.split('\n').map(function(l){ return _crmEsc(l); }).join('<br>');
+  }
   return _crmEsc(raw);
 }
 
@@ -402,6 +406,12 @@ function _crmContactModal(c) {
         <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>
         ${control}${remDiv}
       </div>`;
+    } else if (f.field_type === 'text') {
+      // Multi-line textarea — resize handle matches the file_links box behaviour
+      control = `<textarea name="cf_${f.id}" rows="3"
+        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(val)}</textarea>`;
     } else {
       var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
       control = inp(`cf_${f.id}`, val, iType);
