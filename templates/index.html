@@ -30,20 +30,36 @@
 
   <div class="ml-auto flex items-center gap-2">
 
+    <!-- Gallery view button -->
+    <button
+      id="gallery-view-btn"
+      onclick="setNoteView('gallery')"
+      class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+      aria-label="Gallery view"
+      aria-pressed="false"
+      title="Gallery view"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+      </svg>
+    </button>
+
     <!-- Timeline / Grid toggle -->
     <button
       id="list-view-toggle"
-      onclick="toggleListView()"
+      onclick="setNoteView('timeline')"
       class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
       aria-label="Toggle timeline view"
+      aria-pressed="false"
       title="Switch to timeline view"
     >
-      <!-- Grid icon (shown when in timeline → click to go back to grid) -->
+      <!-- List icon (shown when NOT in list view) -->
       <svg id="icon-grid" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
       </svg>
-      <!-- Timeline icon (shown when in grid → click to switch to timeline) -->
+      <!-- Timeline icon (shown when in list or gallery view) -->
       <svg id="icon-timeline" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -626,6 +642,31 @@
     <div id="ws-breadcrumb">
       {% include "partials/workspace_breadcrumb.html" %}
     </div>
+
+    <!-- ── Gallery view CSS ───────────────────────────────────────────── -->
+    <style>
+      /* Multi-column grid in gallery mode */
+      #note-list[data-view="gallery"] > div.grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+      /* Compact card: slightly less padding */
+      #note-list[data-view="gallery"] article {
+        padding: 1rem;
+      }
+      /* Hide the tall markdown preview — too much text for a gallery card */
+      #note-list[data-view="gallery"] .h-16.overflow-hidden {
+        display: none;
+      }
+      /* Hide custom attributes row — keep gallery cards scannable */
+      #note-list[data-view="gallery"] .gap-x-4.gap-y-1 {
+        display: none;
+      }
+      /* Make categories wrap tightly */
+      #note-list[data-view="gallery"] .flex.flex-wrap.gap-1\.5 {
+        margin-top: 0.5rem;
+      }
+    </style>
 
     <div id="note-list">
       {% include "partials/note_list.html" %}
@@ -1830,36 +1871,68 @@
   }
   syncThemeIcon();
 
-  /* ---- List-view toggle (grid ↔ timeline) ---- */
-  function syncListViewIcon() {
-    const isTl = localStorage.getItem('bw-list-view') === 'timeline';
+  /* ---- Note list views: list / gallery / timeline ---- */
+  function getNoteView() {
+    if (bwTimeline.isMounted()) return 'timeline';
+    var nl = document.getElementById('note-list');
+    return (nl && nl.dataset.view === 'gallery') ? 'gallery' : 'list';
+  }
+  function setNoteView(requested) {
+    var current = getNoteView();
+    // Clicking the active view returns to list
+    var next = (current === requested) ? 'list' : requested;
+
+    // Exit home-page canvas first (timeline sits above it)
+    if (next === 'timeline' && typeof homeExit === 'function') homeExit();
+
+    // Mount / unmount timeline
+    if (next === 'timeline' && !bwTimeline.isMounted()) bwTimeline.mount();
+    if (next !== 'timeline' &&  bwTimeline.isMounted()) bwTimeline.unmount();
+
+    // Apply gallery data-attr (CSS does the rest; persists across HTMX swaps)
+    var nl = document.getElementById('note-list');
+    if (nl) nl.dataset.view = next === 'gallery' ? 'gallery' : 'list';
+
+    localStorage.setItem('bw-list-view', next);
+    syncNoteViewButtons();
+  }
+  function syncNoteViewButtons() {
+    var view = getNoteView();
+    var isTl = (view === 'timeline');
+    var isGl = (view === 'gallery');
+    // Legacy timeline SVG swap (icon-grid = list icon; icon-timeline = calendar icon)
     document.getElementById('icon-timeline').classList.toggle('hidden',  isTl);
     document.getElementById('icon-grid').classList.toggle('hidden',     !isTl);
-    const btn = document.getElementById('list-view-toggle');
-    if (btn) btn.title = isTl ? 'Switch to grid view' : 'Switch to timeline view';
-  }
-  function toggleListView() {
-    const isTl = bwTimeline.isMounted();
-    if (isTl) {
-      bwTimeline.unmount();
-      localStorage.setItem('bw-list-view', 'grid');
-    } else {
-      // Exit home-page canvas if it's currently active — the timeline overlay
-      // sits at z-index:10 over main-content, so it would hide the canvas but
-      // leave home-content visible; unmounting later would expose both at once.
-      if (typeof homeExit === 'function') homeExit();
-      bwTimeline.mount();
-      localStorage.setItem('bw-list-view', 'timeline');
+    var tlBtn = document.getElementById('list-view-toggle');
+    if (tlBtn) {
+      tlBtn.title = isTl ? 'Switch to list view' : 'Switch to timeline view';
+      tlBtn.setAttribute('aria-pressed', isTl ? 'true' : 'false');
+      tlBtn.classList.toggle('bg-white/30', isTl);
+      tlBtn.classList.toggle('ring-2',      isTl);
+      tlBtn.classList.toggle('ring-white/60', isTl);
     }
-    syncListViewIcon();
+    var glBtn = document.getElementById('gallery-view-btn');
+    if (glBtn) {
+      glBtn.title = isGl ? 'Switch to list view' : 'Gallery view';
+      glBtn.setAttribute('aria-pressed', isGl ? 'true' : 'false');
+      glBtn.classList.toggle('bg-white/30', isGl);
+      glBtn.classList.toggle('ring-2',      isGl);
+      glBtn.classList.toggle('ring-white/60', isGl);
+    }
   }
-  // Apply saved preference on page load
+  // Aliases so any external callers (e.g. home-widgets.js) keep working
+  function toggleListView()   { setNoteView('timeline'); }
+  function syncListViewIcon() { syncNoteViewButtons(); }
   (function initListView() {
-    // Always reset to grid on page load — timeline is a session-only view.
-    // This ensures the icon always shows "Switch to timeline" after a reload
-    // instead of being stuck showing "Switch to grid" (stale localStorage).
-    localStorage.setItem('bw-list-view', 'grid');
-    syncListViewIcon();
+    // Gallery persists across reloads; timeline resets (mount state lost on reload)
+    var saved = localStorage.getItem('bw-list-view');
+    if (saved === 'gallery') {
+      var nl = document.getElementById('note-list');
+      if (nl) nl.dataset.view = 'gallery';
+    } else {
+      localStorage.setItem('bw-list-view', 'list');
+    }
+    syncNoteViewButtons();
   })();
 
   /* ---- Settings ---- */
