@@ -906,7 +906,18 @@ function _initSwappedPage() {
     if (_ta) _ta.innerHTML = '';
     return;
   }
-  // Coming-soon page (media, grid_builder, uploads, …) — no widget canvas
+  // Uploads page
+  const uploadsRoot = document.getElementById('uploads-page-root');
+  if (uploadsRoot) {
+    var pid = parseInt(uploadsRoot.dataset.pageId, 10);
+    if (pid && typeof initUploadsPage === 'function') {
+      try { initUploadsPage(pid); } catch(e) { console.error('[home] initUploadsPage:', e); }
+    }
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
+  // Coming-soon page (media, grid_builder, …) — no widget canvas
   const comingSoonRoot = document.getElementById('coming-soon-page-root');
   if (comingSoonRoot) {
     var _ta = document.getElementById('top-action-area');
