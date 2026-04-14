@@ -1,14 +1,13 @@
 {# ── Uploads page — partials/home_page_uploads.html ──────────────────────────
    Rendered by home_page_view() when page.page_type == 'uploads'.
-   Context: page (dict), page_type (str)
-   JS:      static/js/home-page-uploads.js (loaded via base.html static_v tag)
-   All rendering is JS-driven — this is a minimal shell only. No <script> blocks.
+   JS:  static/js/home-page-uploads.js (loaded via base.html ?v= cache-bust tag)
+   All rendering is JS-driven — zero <script> blocks here.
 #}
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
      class="flex flex-col"
      style="height:calc(100vh - 3.5rem)">
 
-  {# ── Top bar ───────────────────────────────────────────────────────────── #}
+  {# ── Top bar ──────────────────────────────────────────────────────────────── #}
   <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-900">
@@ -20,12 +19,8 @@
                  bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
       Uploads
     </span>
-
-    {# Stats summary — injected by JS #}
     <span id="uploads-stats"
           class="ml-2 text-xs text-gray-400 dark:text-zinc-500"></span>
-
-    {# Upload button — opens modal with drop zone #}
     <button id="uploads-upload-btn"
             onclick="uplOpenUploadModal()"
             class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg
@@ -35,31 +30,57 @@
       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
            stroke="currentColor" stroke-width="2.5" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1
-                 M16 10l-4-4m0 0L8 10m4-4v12"/>
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 10l-4-4m0 0L8 10m4-4v12"/>
       </svg>
       Upload
     </button>
-    {# ── Delete Confirmation Modal ───────────────────────────────────────────── #}
+  </div>{# /top bar #}
+
+  {# ── Filter + group-by bar ───────────────────────────────────────────────── #}
+  <div id="uploads-filter-tabs"
+       class="flex items-center gap-1 px-4 py-2 flex-shrink-0 overflow-x-auto
+              border-b border-gray-100 dark:border-zinc-800
+              bg-gray-50 dark:bg-zinc-950">
+    {# Injected by JS (_uplRenderFilterTabs) #}
+  </div>
+
+  {# ── Main content ─────────────────────────────────────────────────────────── #}
+  <div id="uploads-main" class="flex-1 overflow-y-auto p-4">
+    <div class="text-center mt-16 text-gray-300 dark:text-zinc-600
+                animate-pulse text-sm select-none">Loading files…</div>
+  </div>
+
+  {# ── Detail panel (slide-in from right) ──────────────────────────────────── #}
+  <div id="uploads-detail-panel"
+       class="fixed inset-y-0 right-0 w-80 z-40
+              bg-white dark:bg-zinc-900
+              border-l border-gray-200 dark:border-zinc-800
+              shadow-2xl transform transition-transform duration-200 translate-x-full"
+       aria-label="File details">
+    <div class="flex items-center justify-between px-4 py-3
+                border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
+      <span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">File Details</span>
+      <button onclick="_uplCloseDetail()"
+              class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200
+                     transition text-xl leading-none"
+              aria-label="Close">&times;</button>
+    </div>
+    <div id="uploads-detail-content" class="overflow-y-auto p-4"
+         style="height:calc(100% - 3rem)"></div>
+  </div>
+
+  {# ── Delete confirmation modal ────────────────────────────────────────────── #}
   <div id="upl-del-modal"
        class="hidden fixed inset-0 z-50 flex items-center justify-center"
        role="dialog" aria-modal="true" aria-labelledby="upl-del-title"
        onkeydown="if(event.key==='Escape')_uplCancelDelete()">
-
-    {# Backdrop #}
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
          onclick="_uplCancelDelete()" aria-hidden="true"></div>
-
-    {# Card #}
     <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
                 w-full max-w-sm mx-4 p-6">
-
-      {# Icon + Title row #}
       <div class="flex items-center gap-3 mb-4">
-        <span class="flex-shrink-0 w-10 h-10 rounded-full
-                     bg-red-100 dark:bg-red-900/30
-                     flex items-center justify-center text-[#ea1100]"
-              aria-hidden="true">
+        <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                     flex items-center justify-center text-[#ea1100]" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
                viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
             <path stroke-linecap="round" stroke-linejoin="round"
@@ -67,13 +88,10 @@
                      a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
           </svg>
         </span>
-        <h2 id="upl-del-title"
-            class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        <h2 id="upl-del-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
           Delete file?
         </h2>
       </div>
-
-      {# Body #}
       <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
         <span id="upl-del-filename"
               class="font-semibold text-gray-800 dark:text-zinc-200"></span>
@@ -81,30 +99,24 @@
       <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
         This file will be permanently deleted and cannot be recovered.
       </p>
-
-      {# Actions #}
       <div class="flex gap-3 justify-end">
         <button type="button" onclick="_uplCancelDelete()"
-                class="px-4 py-2 text-sm rounded-lg
-                       border border-gray-300 dark:border-zinc-600
-                       text-gray-700 dark:text-zinc-300
-                       hover:bg-gray-50 dark:hover:bg-zinc-800
-                       transition focus:outline-none
-                       focus:ring-2 focus:ring-gray-300">
+                class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                       text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                       transition focus:outline-none focus:ring-2 focus:ring-gray-300">
           Cancel
         </button>
         <button id="upl-del-confirm-btn" type="button" onclick="_uplDoDelete()"
-                class="px-4 py-2 text-sm rounded-lg
-                       bg-[#ea1100] text-white font-semibold
-                       hover:bg-red-700 transition
-                       focus:outline-none focus:ring-2 focus:ring-[#ea1100]">
+                class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                       hover:bg-red-700 transition focus:outline-none
+                       focus:ring-2 focus:ring-[#ea1100]">
           Delete File
         </button>
       </div>
-    </div>{# /card #}
+    </div>
   </div>{# /delete modal #}
 
-──────────────────────────────────────────────────── #}
+  {# ── Upload modal ─────────────────────────────────────────────────────────── #}
   <input id="uploads-file-input" type="file" multiple class="sr-only"
          tabindex="-1" aria-hidden="true" />
 
@@ -123,9 +135,7 @@
                   border-b border-gray-100 dark:border-zinc-800">
         <div>
           <h2 id="upl-modal-title"
-              class="text-sm font-bold text-gray-900 dark:text-zinc-100">
-            Upload Files
-          </h2>
+              class="text-sm font-bold text-gray-900 dark:text-zinc-100">Upload Files</h2>
           <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">
             Drag &amp; drop or browse your computer
           </p>
@@ -137,8 +147,7 @@
                 aria-label="Close upload dialog">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
                stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M6 18L18 6M6 6l12 12"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </button>
       </div>
@@ -158,22 +167,19 @@
            ondragover="_uplDropZoneActive(event,true)"
            ondragleave="_uplDropZoneActive(event,false)"
            ondrop="_uplDropped(event)">
-        <div class="flex flex-col items-center gap-3 py-10 px-6 text-center pointer-events-none">
+        <div class="flex flex-col items-center gap-3 py-8 px-6 text-center pointer-events-none">
           <div id="upl-drop-icon"
-               class="w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-900/30
-                      flex items-center justify-center
-                      ring-0 transition-all duration-150">
-            <svg class="w-7 h-7 text-[#0053e2] dark:text-blue-400" fill="none"
+               class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30
+                      flex items-center justify-center ring-0 transition-all duration-150">
+            <svg class="w-6 h-6 text-[#0053e2] dark:text-blue-400" fill="none"
                  viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6
-                       a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011
+                       9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
             </svg>
           </div>
           <div>
-            <p class="text-sm font-semibold text-gray-700 dark:text-zinc-200">
-              Drop files here
-            </p>
+            <p class="text-sm font-semibold text-gray-700 dark:text-zinc-200">Drop files here</p>
             <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-1">
               Any file type &middot; Multiple files supported
             </p>
@@ -181,7 +187,7 @@
         </div>
       </div>
 
-      {# Divider #}
+      {# Or divider #}
       <div class="flex items-center gap-3 px-5 my-3">
         <div class="flex-1 h-px bg-gray-200 dark:bg-zinc-700"></div>
         <span class="text-[10px] text-gray-400 dark:text-zinc-500 font-medium uppercase
@@ -190,7 +196,7 @@
       </div>
 
       {# Browse button #}
-      <div class="px-5 mb-5">
+      <div class="px-5">
         <button onclick="document.getElementById('uploads-file-input').click()"
                 class="w-full py-2.5 text-sm font-semibold rounded-xl
                        border-2 border-[#0053e2] text-[#0053e2]
@@ -202,13 +208,22 @@
         </button>
       </div>
 
+      {# WebP toggle option #}
+      <label class="flex items-center gap-2.5 px-5 mt-4 mb-1 cursor-pointer select-none">
+        <input type="checkbox" id="upl-webp-toggle" checked
+               class="w-3.5 h-3.5 rounded accent-[#0053e2]" />
+        <span class="text-[11px] text-gray-500 dark:text-zinc-400">
+          Auto-convert images to WebP <span class="text-gray-400">(smaller files, same quality)</span>
+        </span>
+      </label>
+
       {# Progress area (shown while uploading) #}
-      <div id="upl-progress-area" class="hidden px-5 pb-5">
+      <div id="upl-progress-area" class="hidden px-5 pb-5 mt-3">
         <div class="rounded-xl bg-blue-50 dark:bg-blue-900/20
                     border border-blue-100 dark:border-blue-800/40 p-4">
           <div class="flex items-center gap-3 mb-3">
-            <svg class="w-4 h-4 text-[#0053e2] dark:text-blue-400 flex-shrink-0
-                        animate-spin" fill="none" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-[#0053e2] dark:text-blue-400 flex-shrink-0 animate-spin"
+                 fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10"
                       stroke="currentColor" stroke-width="4"/>
               <path class="opacity-75" fill="currentColor"
@@ -216,7 +231,7 @@
             </svg>
             <p id="upl-progress-label"
                class="text-xs font-semibold text-[#0053e2] dark:text-blue-400">
-              Uploading\u2026
+              Uploading…
             </p>
           </div>
           <div class="w-full bg-blue-100 dark:bg-blue-900/40 rounded-full h-1.5 overflow-hidden">
@@ -228,47 +243,6 @@
       </div>
 
     </div>{# /modal card #}
-  </div>{# /modal backdrop #}
+  </div>{# /upload modal #}
 
-</div>
-
-  {# ── Filter tabs ───────────────────────────────────────────────────────── #}
-  <div id="uploads-filter-tabs"
-       class="flex items-center gap-1 px-4 py-2 flex-shrink-0 overflow-x-auto
-              border-b border-gray-100 dark:border-zinc-800
-              bg-gray-50 dark:bg-zinc-950">
-    {# Injected by JS #}
-  </div>
-
-  {# ── Main content ──────────────────────────────────────────────────────────── #}
-  <div id="uploads-main"
-       class="flex-1 overflow-y-auto p-4">
-    <div class="text-center mt-16 text-gray-300 dark:text-zinc-600
-                animate-pulse text-sm select-none">
-      Loading files…
-    </div>
-  </div>
-
-  {# ── Detail panel (slide-in from right) — P2 ───────────────────────────── #}
-  <div id="uploads-detail-panel"
-       class="fixed inset-y-0 right-0 w-80 z-40
-              bg-white dark:bg-zinc-900
-              border-l border-gray-200 dark:border-zinc-800
-              shadow-2xl transform transition-transform duration-200
-              translate-x-full"
-       aria-label="File details">
-    <div class="flex items-center justify-between px-4 py-3
-                border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
-      <span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">File Details</span>
-      <button onclick="_uplCloseDetail()"
-              class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200
-                     transition text-xl leading-none"
-              aria-label="Close">&times;</button>
-    </div>
-    <div id="uploads-detail-content"
-         class="overflow-y-auto p-4"
-         style="height: calc(100% - 3rem)">
-    </div>
-  </div>
-
-</div>
+</div>{# /uploads-page-root #}

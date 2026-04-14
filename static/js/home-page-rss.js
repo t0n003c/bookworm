@@ -219,47 +219,11 @@ function _feedRow(f) {
     </div>`;
 }
 
-// ── BookWorm-styled toast — matches _showReminderToast in home-widgets-render.js ──
+// ── Toast — thin delegator to the shared window._bwToast (home-widgets.js) ──
 function _rssToast(msg, isErr) {
-  var wrap = document.getElementById('rem-fun-popup-wrap');
-  if (!wrap) return;
-  var dur  = 6000;
-  var card = document.createElement('div');
-  card.className = 'pointer-events-auto w-72 overflow-hidden rounded-xl shadow-lg'
-    + ' bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700'
-    + ' animate-[bw-slideup_.3s_cubic-bezier(.17,.67,.38,1.3)_both]';
-  card.style.cssText = 'border-left:3px solid ' + (isErr ? '#ea1100' : '#2a8703') + ';';
-  card.innerHTML =
-    '<div class="flex items-start gap-3 px-4 pt-3 pb-2">'
-    + '<span class="flex-shrink-0 mt-0.5 text-xl" aria-hidden="true">' + (isErr ? '⚠️' : '✅') + '</span>'
-    + '<div class="flex-1 min-w-0">'
-    + '<p class="text-[11px] font-bold uppercase tracking-wider mb-0.5 '
-    + (isErr ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400') + '">'
-    + (isErr ? 'Error' : 'Saved') + '</p>'
-    + '<p class="text-sm text-gray-800 dark:text-zinc-100 leading-snug">' + _esc(msg) + '</p>'
-    + '</div>'
-    + '<button data-rc aria-label="Dismiss" class="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded'
-    + ' text-gray-300 hover:text-gray-600 dark:hover:text-zinc-300 transition">'
-    + '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
-    + '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
-    + '</button></div>'
-    + '<div class="h-0.5 bg-gray-100 dark:bg-zinc-800 mx-4 mb-2 rounded-full overflow-hidden">'
-    + '<div data-rc-bar class="h-full rounded-full" style="width:100%;background:'
-    + (isErr ? '#ea1100' : '#2a8703') + '"></div></div>';
-  var dismiss = function() {
-    card.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
-    card.style.opacity    = '0';
-    card.style.transform  = 'translateX(1rem)';
-    setTimeout(function() { card.remove(); }, 350);
-  };
-  var tid = setTimeout(dismiss, dur);
-  card.querySelector('[data-rc]').addEventListener('click', function() { clearTimeout(tid); dismiss(); });
-  wrap.appendChild(card);
-  requestAnimationFrame(function() { requestAnimationFrame(function() {
-    var bar = card.querySelector('[data-rc-bar]');
-    bar.style.transition = 'width ' + dur + 'ms linear';
-    bar.style.width = '0%';
-  }); });
+  if (typeof window._bwToast === 'function') {
+    window._bwToast(msg, isErr ? 'error' : 'success');
+  }
 }
 
 // ── Feed selection ────────────────────────────────────────────────────────────
@@ -697,23 +661,57 @@ function rssEditFeed(feedId) {
 
 async function rssUpdateFeed(e, feedId) {
   e.preventDefault();
+  const form = e.target;
+  const btn  = form.querySelector('[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  let saveOk = false;
   try {
-    const form     = e.target;
-    const label    = form.label.value.trim();
-    const category = form.category.value.trim();
-    const color    = form.color.value.trim();
+    // Safely read form fields (guards against edge-case naming conflicts)
+    const labelEl    = form.elements.namedItem('label');
+    const categoryEl = form.elements.namedItem('category');
+    const colorEl   = form.elements.namedItem('color');
+    const label    = labelEl    ? labelEl.value.trim()    : '';
+    const category = categoryEl ? categoryEl.value.trim() : '';
+    const color    = colorEl   ? colorEl.value.trim()   : '#0053e2';
+
     const r = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/update`, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ label, category, color }),
     });
     const ct = r.headers.get('Content-Type') || '';
-    // r.redirected = true when auth middleware redirected to /login (fetch follows 302→HTML).
-    // Checking only r.status===401 would miss this case since the redirect resolves as 200.
-    if (r.redirected || !r.ok || !ct.includes('application/json')) {
-      throw new Error((r.redirected || r.status === 401) ? 'session_expired' : 'server_error');
+
+    if (r.redirected) {
+      _rssToast('Session expired — please refresh the page.', true);
+      return;
     }
+    if (!r.ok || !ct.includes('application/json')) {
+      let detail = `HTTP ${r.status}`;
+      try { const j = await r.json(); detail = j.error || detail; } catch (_) {}
+      console.error('[rss] rssUpdateFeed server error:', detail);
+      _rssToast('Could not save changes — ' + detail, true);
+      return;
+    }
+
+    // ✅ HTTP success — show toast immediately so the user gets feedback
+    //    even if the re-render below throws
     _feeds = await r.json();
+    saveOk = true;
+    _rssToast('Feed name saved!', false);
+    rssEditFeed(feedId); // collapse the edit form
+  } catch (err) {
+    // Only reaches here for network errors (fetch itself threw) or unexpected JS errors
+    // before / during the HTTP call.
+    console.error('[rss] rssUpdateFeed fetch error:', err);
+    if (!saveOk) _rssToast('Could not save changes — check your connection.', true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
+
+  // Post-save re-render — in its own try so a rendering bug doesn’t mask a
+  // successful save (the toast above already confirmed success).
+  try {
     _renderFeedList();
     _rawItems = _rawItems.map(it => {
       if (it._feedId !== feedId) return it;
@@ -721,14 +719,8 @@ async function rssUpdateFeed(e, feedId) {
       return f ? { ...it, _color: f.color, _source: f.label || f.url, _feedCategory: f.category || '' } : it;
     });
     _applyDisplay();
-  } catch (err) {
-    console.error('[rss] rssUpdateFeed:', err);
-    _rssToast(
-      err.message === 'session_expired'
-        ? 'Session expired — please refresh the page.'
-        : 'Could not save changes — please try again.',
-      true
-    );
+  } catch (renderErr) {
+    console.error('[rss] rssUpdateFeed render error (save still succeeded):', renderErr);
   }
 }
 

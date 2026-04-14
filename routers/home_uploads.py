@@ -85,7 +85,12 @@ async def list_files(request: Request, page_id: int, page: int = 1):
 # ── Standalone upload (with optional WebP conversion) ────────────────────────
 
 @router.post("/{page_id}/upload")
-async def upload_file(request: Request, page_id: int, file: UploadFile = File(...)):
+async def upload_file(
+    request: Request,
+    page_id: int,
+    file: UploadFile = File(...),
+    webp: bool = True,
+):
     if guard := _demo_guard(request):
         return guard
 
@@ -107,8 +112,8 @@ async def upload_file(request: Request, page_id: int, file: UploadFile = File(..
         or "application/octet-stream"
     )
 
-    # ── P4: WebP conversion (Pillow optional — silent fallback) ──────────────
-    if mime in _WEBP_SOURCE_TYPES:
+    # ── WebP conversion (opt-in via ?webp=true, Pillow optional) ────────────
+    if webp and mime in _WEBP_SOURCE_TYPES:
         try:
             from PIL import Image  # noqa: PLC0415
             img = Image.open(io.BytesIO(data))

@@ -108,7 +108,7 @@ async function _uplFetch(page) {
   _uplRender();
 }
 
-// ── MIME group helper (mirrors get_file_counts() CASE in uploads_db.py) ──────
+// ── MIME group helper (mirrors _CASE SQL in get_uploads_page() in uploads_db.py) ─
 function _uplMimeGroup(mimeType) {
   if (!mimeType) return 'other';
   if (mimeType.startsWith('image/'))  return 'image';

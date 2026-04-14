@@ -18,6 +18,73 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
 
+/**
+ * _bwToast(msg, type, dur)
+ * Shared BookWorm toast — lower-right corner, slide-up animation, auto-dismiss.
+ * type: 'success' | 'error' | 'info'    dur: ms (default 6000)
+ * Exposed globally so all page modules (RSS, Uploads, CRM …) share one impl.
+ */
+window._bwToast = function _bwToast(msg, type, dur) {
+  const isErr  = type === 'error';
+  const isInfo = type === 'info';
+  dur = dur || 6000;
+
+  const wrap = document.getElementById('rem-fun-popup-wrap');
+  if (!wrap) return;
+
+  const borderColor = isErr ? '#ea1100' : isInfo ? '#0053e2' : '#2a8703';
+  const titleColor  = isErr
+    ? 'text-red-600 dark:text-red-400'
+    : isInfo ? 'text-[#0053e2]'
+    : 'text-green-600 dark:text-green-400';
+  const titleText   = isErr ? 'Error' : isInfo ? 'Info' : 'Saved';
+  const icon        = isErr ? '⚠️' : isInfo ? 'ℹ️' : '✅';
+
+  const card = document.createElement('div');
+  card.className = 'pointer-events-auto w-72 overflow-hidden rounded-xl shadow-lg'
+    + ' bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700'
+    + ' animate-[bw-slideup_.3s_cubic-bezier(.17,.67,.38,1.3)_both]';
+  card.style.cssText = 'border-left:3px solid ' + borderColor + ';';
+
+  // Build structure; set message via textContent to avoid XSS
+  card.innerHTML =
+    '<div class="flex items-start gap-3 px-4 pt-3 pb-2">'
+    + '<span class="flex-shrink-0 mt-0.5 text-xl" aria-hidden="true">' + icon + '</span>'
+    + '<div class="flex-1 min-w-0">'
+    + '<p class="text-[11px] font-bold uppercase tracking-wider mb-0.5 ' + titleColor + '">' + titleText + '</p>'
+    + '<p class="text-sm text-gray-800 dark:text-zinc-100 leading-snug bw-toast-msg"></p>'
+    + '</div>'
+    + '<button data-bw-close aria-label="Dismiss" class="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded'
+    + ' text-gray-300 hover:text-gray-600 dark:hover:text-zinc-300 transition">'
+    + '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
+    + '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
+    + '</button></div>'
+    + '<div class="h-0.5 bg-gray-100 dark:bg-zinc-800 mx-4 mb-2 rounded-full overflow-hidden">'
+    + '<div data-bw-bar class="h-full rounded-full" style="width:100%;background:' + borderColor + '"></div></div>';
+
+  // Set message text safely (no XSS)
+  card.querySelector('.bw-toast-msg').textContent = msg;
+
+  const dismiss = function() {
+    card.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+    card.style.opacity    = '0';
+    card.style.transform  = 'translateX(1rem)';
+    setTimeout(function() { card.remove(); }, 350);
+  };
+  const tid = setTimeout(dismiss, dur);
+  card.querySelector('[data-bw-close]').addEventListener('click', function() {
+    clearTimeout(tid); dismiss();
+  });
+  wrap.appendChild(card);
+
+  // Animate the progress bar shrinking (double-rAF so transition kicks in after paint)
+  requestAnimationFrame(function() { requestAnimationFrame(function() {
+    const bar = card.querySelector('[data-bw-bar]');
+    bar.style.transition = 'width ' + dur + 'ms linear';
+    bar.style.width = '0%';
+  }); });
+};
+
 // ── Navigation ───────────────────────────────────────────────────────────────
 function _showHomeCanvas() {
   console.log('[home] _showHomeCanvas start');
