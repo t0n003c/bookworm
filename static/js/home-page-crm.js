@@ -70,23 +70,42 @@ function initCrmPage(pid) {
 
 async function _crmLoadAll() {
   _crmSetMain('<p class="text-sm text-gray-400 dark:text-zinc-500 text-center mt-12">Loading…</p>');
-  try {
-    const [contacts, fields, stages, deals, projects] = await Promise.all([
-      _crmFetch(`/home/crm/${_crmPid}/contacts`),
-      _crmFetch(`/home/crm/${_crmPid}/fields`),
-      _crmFetch(`/home/crm/${_crmPid}/stages`),
-      _crmFetch(`/home/crm/${_crmPid}/deals`),
-      _crmFetch(`/home/crm/${_crmPid}/projects`),
-    ]);
-    _crmContacts = contacts;
-    _crmFields   = fields;
-    _crmStages   = stages;
-    _crmDeals    = deals;
-    _crmProjects = projects;
-    _crmRender();
-  } catch(e) {
-    _crmSetMain(`<p class="text-sm text-red-500 text-center mt-12">Failed to load: ${_crmEsc(e.message)}</p>`);
+
+  // allSettled so one flaky endpoint never kills the whole page.
+  // Each entry: { label, fallback, promise }
+  var _fetches = [
+    { label: 'contacts', fallback: [], promise: _crmFetch(`/home/crm/${_crmPid}/contacts`) },
+    { label: 'fields',   fallback: [], promise: _crmFetch(`/home/crm/${_crmPid}/fields`)   },
+    { label: 'stages',   fallback: [], promise: _crmFetch(`/home/crm/${_crmPid}/stages`)   },
+    { label: 'deals',    fallback: [], promise: _crmFetch(`/home/crm/${_crmPid}/deals`)    },
+    { label: 'projects', fallback: [], promise: _crmFetch(`/home/crm/${_crmPid}/projects`) },
+  ];
+
+  var results = await Promise.allSettled(_fetches.map(function(f){ return f.promise; }));
+
+  var errors = [];
+  var resolved = results.map(function(r, i) {
+    if (r.status === 'fulfilled') return r.value;
+    errors.push(_fetches[i].label + ': ' + r.reason.message);
+    return _fetches[i].fallback;
+  });
+
+  _crmContacts = resolved[0];
+  _crmFields   = resolved[1];
+  _crmStages   = resolved[2];
+  _crmDeals    = resolved[3];
+  _crmProjects = resolved[4];
+
+  if (errors.length && resolved[0].length === 0 && resolved[1].length === 0) {
+    // All or most endpoints failed — show hard error
+    _crmSetMain(`<p class="text-sm text-red-500 text-center mt-12">Failed to load (${_crmEsc(errors.join('; '))})</p>`);
+    return;
   }
+  if (errors.length) {
+    // Partial failure — render anyway, surface a soft warning
+    console.warn('[CRM] partial load errors:', errors);
+  }
+  _crmRender();
 }
 
 function _crmRender() {

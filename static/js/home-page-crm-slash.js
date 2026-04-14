@@ -64,6 +64,15 @@ var _CRM_SLASH_CMDS = [
     label: 'Mark as TBD',
     value: function() { return 'TBD'; },
   },
+  {
+    cmd: 'bullet',
+    icon: '•',
+    label: 'Add bullet point',
+    // The slash palette only activates when the entire field value starts with '/'
+    // so there is never pre-existing content to preserve at execution time.
+    // Always inserts '• ' — the user can keep typing after the palette closes.
+    value: function() { return '\u2022 '; },
+  },
 ];
 
 // ── Module state ──────────────────────────────────────────────────────────────
