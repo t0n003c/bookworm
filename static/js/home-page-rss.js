@@ -418,7 +418,8 @@ async function _loadFeedItems(url) {
 
 async function _loadAllItems() {
   if (!_feeds.length) {
-    document.getElementById('rss-items-panel').innerHTML =
+    var _lip = document.getElementById('rss-items-panel');
+    if (_lip) _lip.innerHTML =
       '<div class="p-4 text-center text-sm text-gray-400 mt-8">' +
       '<div class="text-3xl mb-2">📡</div>Add a feed to get started</div>';
     _rawItems = [];
@@ -445,12 +446,14 @@ async function _loadAllItems() {
 }
 
 function _showItemsLoading() {
-  document.getElementById('rss-items-panel').innerHTML =
-    '<div class="p-4 text-sm text-gray-400 text-center mt-8 animate-pulse">Loading…</div>';
+  var _sil = document.getElementById('rss-items-panel');
+  if (!_sil) return;                          // page navigated away
+  _sil.innerHTML = '<div class="p-4 text-sm text-gray-400 text-center mt-8 animate-pulse">Loading…</div>';
 }
 function _showItemsError(msg) {
-  document.getElementById('rss-items-panel').innerHTML =
-    `<div class="p-4 text-sm text-red-500 text-center mt-4">${_esc(msg)}</div>`;
+  var _sie = document.getElementById('rss-items-panel');
+  if (!_sie) return;                          // page navigated away
+  _sie.innerHTML = `<div class="p-4 text-sm text-red-500 text-center mt-4">${_esc(msg)}</div>`;
 }
 
 // ── Single article card (shared by flat + grouped renders) ──────────────────
@@ -483,6 +486,7 @@ function _itemCard(it, idx) {
 // ── Render item cards (flat or grouped by category) ──────────────────────────
 function _renderItems(items) {
   const panel = document.getElementById('rss-items-panel');
+  if (!panel) return;                         // page navigated away mid-fetch
   if (!items.length) {
     panel.innerHTML = '<div class="p-4 text-sm text-gray-400 text-center mt-4">No articles found.</div>';
     return;
@@ -531,6 +535,7 @@ function rssOpenItem(idx) {
 
 function _showPreview(it) {
   const panel = document.getElementById('rss-preview-panel');
+  if (!panel) return;                         // page navigated away
   const safe = (it.desc || '')
     .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<(script|iframe|object|embed|form)(\s[^>]*)?\/?>/gi, '')
