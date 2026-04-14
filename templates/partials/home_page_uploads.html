@@ -245,4 +245,68 @@
     </div>{# /modal card #}
   </div>{# /upload modal #}
 
+{# ── Combine documents modal ─────────────────────────────────────────────── #}
+<div id="upl-combine-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="upl-combine-title"
+     onkeydown="if(event.key==='Escape')_uplDocCloseCombineModal()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="_uplDocCloseCombineModal()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <h2 id="upl-combine-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">Combine Files</h2>
+    <p id="upl-combine-desc" class="text-xs text-gray-500 dark:text-zinc-400 mb-4"></p>
+    <label class="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1" for="upl-combine-name">Output filename</label>
+    <input id="upl-combine-name"
+           class="w-full border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm
+                  bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                  focus:outline-none focus:ring-2 focus:ring-[#0053e2] mb-4"
+           placeholder="combined"
+           onkeydown="if(event.key==='Enter')_uplDocDoCombine()" />
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="_uplDocCloseCombineModal()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Cancel</button>
+      <button id="upl-combine-confirm-btn" type="button" onclick="_uplDocDoCombine()"
+              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold
+                     hover:bg-[#003eb3] transition">Combine</button>
+    </div>
+  </div>
+</div>
+
+{# ── Signature modal ──────────────────────────────────────────────────────────── #}
+<div id="upl-sig-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="upl-sig-title"
+     onkeydown="if(event.key==='Escape')_uplDocCloseSignModal()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="_uplDocCloseSignModal()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <h2 id="upl-sig-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">Draw Signature</h2>
+    <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">Sign in the box below. The signature will be stamped onto the lower-right of the PDF page.</p>
+    <canvas id="upl-sig-canvas" width="400" height="150"
+            class="w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-600
+                   bg-white cursor-crosshair touch-none"
+            aria-label="Signature drawing area" role="img"></canvas>
+    <div class="flex items-center gap-3 mt-3 mb-4">
+      <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0" for="upl-sig-page-num">PDF page (0 = first):</label>
+      <input id="upl-sig-page-num" type="number" value="0" min="0"
+             class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs
+                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
+      <button type="button" onclick="_uplDocClearCanvas()"
+              class="ml-auto text-xs px-3 py-1 rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100
+                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Clear</button>
+    </div>
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="_uplDocCloseSignModal()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Cancel</button>
+      <button id="upl-sig-confirm-btn" type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold
+                     hover:bg-[#003eb3] transition">Stamp Signature</button>
+    </div>
+  </div>
+</div>
+
 </div>{# /uploads-page-root #}

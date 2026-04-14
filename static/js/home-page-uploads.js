@@ -245,6 +245,7 @@ function _uplRender() {
     main.innerHTML = grid(visible);
   }
   _uplRenderPager();
+  if (typeof _uplDocAfterRender === 'function') _uplDocAfterRender();
 }
 
 // ── Single file card ──────────────────────────────────────────────────────────────────
@@ -419,10 +420,12 @@ function _uplRenderDetail(f) {
       \u2193 Download</a>
     ${srcSection}
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
-      <div id="upl-tags-area"></div></div>`;
+      <div id="upl-tags-area"></div></div>
+    <div id="upl-doc-studio" class="mt-2"></div>`;
 
   if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);
+  if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
 }
 
 // ── Delete confirmation modal ───────────────────────────────────────────────────
@@ -584,17 +587,4 @@ function _uplJsStr(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-function _uplFmtSize(bytes) {
-  if (bytes < 1024)        return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 ** 3)   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function _uplFmtDate(s) {
-  if (!s) return '';
-  try {
-    return new Date(s.replace(' ', 'T') + (s.includes('T') ? '' : 'Z'))
-      .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch { return s.slice(0, 10); }
-}
+// _uplFmtSize and _uplFmtDate live in home-page-uploads-tags.js

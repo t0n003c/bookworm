@@ -87,6 +87,24 @@ async function _uplRemoveTag(src, id, tag) {
   } catch { /* silent */ }
 }
 
+// ── Format helpers (moved from home-page-uploads.js) ────────────────────────
+// Also consumed by home-page-uploads-docs.js via shared global scope.
+
+function _uplFmtSize(bytes) {
+  if (bytes < 1024)        return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 ** 3)   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function _uplFmtDate(s) {
+  if (!s) return '';
+  try {
+    return new Date(s.replace(' ', 'T') + (s.includes('T') ? '' : 'Z'))
+      .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return s.slice(0, 10); }
+}
+
 // ── Text file preview (called from _uplRenderDetail in main file) ────────────
 
 async function _uplFetchTextPreview(url) {

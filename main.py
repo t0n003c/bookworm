@@ -42,6 +42,7 @@ from routers import home as home_router
 from routers import home_rss as home_rss_router
 from routers import home_crm as home_crm_router
 from routers import home_uploads as home_uploads_router
+from routers import home_uploads_docs as home_uploads_docs_router
 from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
 from routers.attachments_db import UPLOAD_DIR
@@ -109,6 +110,7 @@ app.include_router(home_router.router)
 app.include_router(home_rss_router.router)
 app.include_router(home_crm_router.router)
 app.include_router(home_uploads_router.router)
+app.include_router(home_uploads_docs_router.router)
 app.include_router(demo_router.router)
 app.include_router(notes_router.router)
 app.include_router(attachments_router.router)
