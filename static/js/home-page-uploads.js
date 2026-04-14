@@ -36,6 +36,22 @@ async function initUploadsPage(pid) {
   _uplCurrentDetail = null;
   _uplAllTags       = [];
   _uplBusy          = false;
+
+  // Wire hidden file input once (template no longer uses onchange=)
+  const input = document.getElementById('uploads-file-input');
+  if (input) {
+    input.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';
+      if (files.length) _uplProcessFiles(files);
+    });
+  }
+
+  // ESC closes the upload modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _uplCloseModal();
+  });
+
   await _uplFetch(1);
 }
 
@@ -455,42 +471,106 @@ async function _uplLoadAllTags() {
   } catch { /* silent */ }
 }
 
-// ── File upload ───────────────────────────────────────────────────────────────
-async function uplHandleFileInput(event) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-  event.target.value = '';
-
-  const label = document.getElementById('uploads-drop-label');
+// ── Upload modal open / close ────────────────────────────────────────────────
+function uplOpenUploadModal() {
   if (_uplBusy) return;
-  _uplBusy = true;
-  if (label) label.textContent = `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}\u2026`;
+  const backdrop = document.getElementById('uploads-modal-backdrop');
+  if (!backdrop) return;
+  backdrop.classList.remove('hidden');
+  // Focus the drop zone for keyboard users
+  const zone = document.getElementById('upl-drop-zone');
+  if (zone) setTimeout(() => zone.focus(), 50);
+}
 
-  let failed = 0;
+function _uplCloseModal() {
+  const backdrop = document.getElementById('uploads-modal-backdrop');
+  if (!backdrop) return;
+  backdrop.classList.add('hidden');
+  // Reset progress area
+  const prog = document.getElementById('upl-progress-area');
+  const bar  = document.getElementById('upl-progress-bar');
+  const lbl  = document.getElementById('upl-progress-label');
+  if (prog) prog.classList.add('hidden');
+  if (bar)  bar.style.width = '0%';
+  if (lbl)  lbl.textContent = 'Uploading\u2026';
+  // Re-enable the Upload button
+  const btn = document.getElementById('uploads-upload-btn');
+  if (btn) btn.disabled = false;
+}
+
+// ── Drop zone drag-over / drag-leave ──────────────────────────────────────────
+function _uplDropZoneActive(event, active) {
+  event.preventDefault();
+  event.stopPropagation();
+  const zone = document.getElementById('upl-drop-zone');
+  const icon = document.getElementById('upl-drop-icon');
+  if (!zone) return;
+  if (active) {
+    zone.classList.add('!border-[#0053e2]', '!bg-blue-50/80', 'dark:!bg-blue-900/20',
+                       'scale-[1.01]');
+    if (icon) icon.classList.add('ring-4', 'ring-blue-200', 'dark:ring-blue-800',
+                                 'scale-110');
+  } else {
+    zone.classList.remove('!border-[#0053e2]', '!bg-blue-50/80', 'dark:!bg-blue-900/20',
+                          'scale-[1.01]');
+    if (icon) icon.classList.remove('ring-4', 'ring-blue-200', 'dark:ring-blue-800',
+                                    'scale-110');
+  }
+}
+
+// ── Files dropped on the zone ─────────────────────────────────────────────────────
+function _uplDropped(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  _uplDropZoneActive(event, false);
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length) _uplProcessFiles(files);
+}
+
+// ── Core upload logic (fed by file picker ORdrop) ────────────────────
+async function _uplProcessFiles(files) {
+  if (_uplBusy || !files.length) return;
+  _uplBusy = true;
+
+  // Show progress area, hide drop zone chrome
+  const prog  = document.getElementById('upl-progress-area');
+  const bar   = document.getElementById('upl-progress-bar');
+  const lbl   = document.getElementById('upl-progress-label');
+  const zone  = document.getElementById('upl-drop-zone');
+  const btn   = document.getElementById('uploads-upload-btn');
+  if (prog) prog.classList.remove('hidden');
+  if (zone) zone.classList.add('opacity-30', 'pointer-events-none');
+  if (btn)  btn.disabled = true;
+
+  let done = 0, failed = 0;
+  const total = files.length;
+
   for (const file of files) {
+    if (lbl) lbl.textContent =
+      `Uploading ${done + 1} of ${total} \u2014 ${_uplEsc(file.name)}`;
     const fd = new FormData();
     fd.append('file', file);
     try {
       const r = await fetch(`/home/uploads/${_uplPid}/upload`, { method: 'POST', body: fd });
       if (!r.ok) failed++;
     } catch { failed++; }
+    done++;
+    if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`;
   }
 
   _uplBusy = false;
-  if (label) {
-    label.innerHTML = `
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
-           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1 M16 10l-4-4m0 0L8 10m4-4v12"/>
-      </svg>
-      Upload
-      <input id="uploads-file-input" type="file" multiple class="sr-only"
-             onchange="uplHandleFileInput(event)" />`;
-  }
+  if (zone) zone.classList.remove('opacity-30', 'pointer-events-none');
 
-  if (failed) _uplShowToast(`${failed} file${failed !== 1 ? 's' : ''} failed to upload.`, true);
-  await _uplFetch(1);
+  // Brief "Done!" state before closing
+  if (lbl) lbl.textContent = failed
+    ? `Done \u2014 ${failed} file${failed !== 1 ? 's' : ''} failed.`
+    : `Done! ${total} file${total !== 1 ? 's' : ''} uploaded.`;
+
+  setTimeout(() => {
+    _uplCloseModal();
+    if (failed) _uplShowToast(`${failed} file${failed !== 1 ? 's' : ''} failed to upload.`, true);
+    _uplFetch(1);
+  }, 900);
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
