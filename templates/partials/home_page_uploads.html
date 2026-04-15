@@ -116,6 +116,32 @@
     </div>
   </div>{# /delete modal #}
 
+  {# ── Remove stamp confirmation modal ────────────────────────────────────── #}
+  <div id="upl-remove-stamp-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center"
+       role="dialog" aria-modal="true" aria-labelledby="upl-remove-stamp-title"
+       onkeydown="if(event.key==='Escape')_uplCancelRemoveStamp()">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="_uplCancelRemoveStamp()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30
+                     flex items-center justify-center text-xl" aria-hidden="true">✍️</span>
+        <h2 id="upl-remove-stamp-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">Remove signature stamp?</h2>
+      </div>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">This will restore the original unsigned PDF. All stamps will be removed.</p>
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="_uplCancelRemoveStamp()"
+                class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                       text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                       transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>
+        <button id="upl-remove-stamp-confirm-btn" type="button" onclick="_uplConfirmRemoveStamp()"
+                class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                       hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-[#ea1100]">Remove Stamp</button>
+      </div>
+    </div>
+  </div>{# /remove stamp modal #}
+
   {# ── Upload modal ─────────────────────────────────────────────────────────── #}
   <input id="uploads-file-input" type="file" multiple class="sr-only"
          tabindex="-1" aria-hidden="true" />

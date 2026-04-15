@@ -13,10 +13,12 @@ var _uplDocCurrentFile = null;    // f passed to _uplDocStudioInit — needed by
 var _uplDocEditMode    = false;   // textarea edit active?
 
 // Sign-modal state
-var _uplSigXPct   = 0.65;  // placement x fraction (0-1 from left)
-var _uplSigYPct   = 0.80;  // placement y fraction (0-1 from top)
-var _uplSigPlaced = false; // has user clicked to place yet?
-var _uplSigDrawn  = false; // has user drawn anything on canvas?
+var _uplSigXPct         = 0.65;  // placement x fraction (0-1 from left)
+var _uplSigYPct         = 0.80;  // placement y fraction (0-1 from top)
+var _uplSigPlaced       = false; // has user clicked to place yet?
+var _uplSigDrawn        = false; // has user drawn anything on canvas?
+var _uplRemoveStampFile = null;  // file pending stamp-removal confirmation
+var _uplSigStampCount   = 0;     // stamps added this signing session
 
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -375,41 +377,23 @@ function _uplDocOpenSignModal(f) {
 }
 
 function _uplDocShowSignStep1(f) {
+  _uplSigPlaced = false; _uplSigDrawn = false;
   var body = document.getElementById('upl-sig-modal-body');
   if (!body) return;
-  var pageNum = (document.getElementById('upl-sig-page-num-val') || {}).value || '0';
-  body.innerHTML = `
-    <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">
-      Draw your signature below, then click <strong>Next</strong> to place it on the PDF.
-    </p>
-    <canvas id="upl-sig-canvas" width="480" height="160"
-            class="w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-600
-                   bg-white cursor-crosshair touch-none block"
-            aria-label="Signature drawing area" role="img"></canvas>
-    <div class="flex items-center gap-3 mt-3 mb-1">
-      <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0" for="upl-sig-page-num">
-        Page (0 = first):
-      </label>
-      <input id="upl-sig-page-num" type="number" value="${_uplEsc(pageNum)}" min="0"
-             class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs
-                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
-      <button type="button" onclick="_uplDocClearCanvas()"
-              class="ml-auto text-xs px-3 py-1 rounded-lg border border-gray-300
-                     dark:border-zinc-600 text-gray-500 dark:text-zinc-400
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Clear</button>
-    </div>
-    <div class="flex gap-3 justify-end mt-3">
-      <button type="button" onclick="_uplDocCloseSignModal()"
-              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
-                     text-gray-600 dark:text-zinc-300 hover:bg-gray-50
-                     dark:hover:bg-zinc-800 transition">Cancel</button>
-      <button type="button" onclick="_uplDocSignGoStep2()"
-              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold
-                     hover:bg-[#003eb3] transition">
-        Next: Place on PDF &rarr;
-      </button>
-    </div>`;
+  var pn    = (document.getElementById('upl-sig-page-num-val') || {}).value || '0';
+  var btCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
+  body.innerHTML =
+    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">Draw your signature below, then click <strong>Next</strong> to place it on the PDF.</p>' +
+    '<canvas id="upl-sig-canvas" width="480" height="160" class="w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-white cursor-crosshair touch-none block" aria-label="Signature drawing area" role="img"></canvas>' +
+    '<div class="flex items-center gap-3 mt-3 mb-1">' +
+    '  <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0" for="upl-sig-page-num">Page (0=first):</label>' +
+    '  <input id="upl-sig-page-num" type="number" value="' + _uplEsc(pn) + '" min="0" class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />' +
+    '  <button type="button" onclick="_uplDocClearCanvas()" class="ml-auto text-xs px-3 py-1 rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Clear</button>' +
+    '</div>' +
+    '<div class="flex gap-3 justify-end mt-3">' +
+    '  <button type="button" onclick="_uplDocCloseSignModal()" class="' + btCls + '">Cancel</button>' +
+    '  <button type="button" onclick="_uplDocSignGoStep2()" class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition">Next: Place on PDF &rarr;</button>' +
+    '</div>';
   _uplDocInitCanvas();
 }
 
@@ -443,13 +427,22 @@ async function _uplDocShowSignStep2(sigDataUrl, pageNum) {
   } catch(_) {}
   var ratio  = (dims.height_pt / dims.width_pt * 100).toFixed(2);
   var btnCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
+  var dotGrid = 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'1\' cy=\'1\' r=\'1\' fill=\'%23ccc\'/%3E%3C/svg%3E")';
   body.innerHTML =
-    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click the page to place your signature. Click again to reposition.</p>' +
+    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click anywhere on the page outline below to place your signature. Click again to reposition.</p>' +
     '<div class="relative w-full" style="padding-top:' + ratio + '%">' +
     '  <div id="upl-sig-place-wrap" onclick="_uplDocSigPlaceClick(event)"' +
-    '       class="absolute inset-0 bg-white dark:bg-zinc-100 border border-gray-300 dark:border-zinc-600 rounded-lg cursor-crosshair shadow-sm overflow-hidden">' +
+    '       class="absolute inset-0 bg-white dark:bg-zinc-100 border-2 border-dashed border-gray-400 dark:border-zinc-500 rounded-lg cursor-crosshair shadow-inner"' +
+    '       style="background-image:' + dotGrid + ';background-repeat:repeat;">' +
+    '    <span class="absolute top-1 left-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">TL</span>' +
+    '    <span class="absolute top-1 right-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">TR</span>' +
+    '    <span class="absolute bottom-1 left-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">BL</span>' +
+    '    <span class="absolute bottom-1 right-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">BR</span>' +
+    '    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">' +
+    '      <span class="text-[10px] text-gray-300 dark:text-zinc-400 select-none">Click to place signature</span>' +
+    '    </div>' +
     '    <div id="upl-sig-marker" class="hidden absolute pointer-events-none" style="width:25%;transform:translateY(-50%)">' +
-    '      <img id="upl-sig-marker-img" src="" alt="" class="w-full drop-shadow-md" draggable="false">' +
+    '      <img id="upl-sig-marker-img" src="" alt="" class="w-full drop-shadow-lg" draggable="false">' +
     '    </div>' +
     '  </div>' +
     '</div>' +
@@ -548,9 +541,11 @@ async function _uplDocDoSign(f) {
     var cached = _uplFiles.find(function(x) { return x.src === f.src && x.id === f.id; });
     if (cached) { cached.size = data.size; cached.has_backup = true; }
     _uplDocCurrentFile.size = data.size;
-    _uplShowToast('Signature stamped \u2713');
-    _uplDocCloseSignModal();
-    _uplRenderDetail(f);  // full re-render so PDF embed picks up cache-bust ?v=
+    _uplSigStampCount++;
+    // Show success step — user can add more stamps or finish
+    var body = document.getElementById('upl-sig-modal-body');
+    var ac = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
+    if (body) body.innerHTML = '<div class="flex flex-col items-center gap-4 py-6"><span class="text-4xl">\u2705</span><p class="text-sm font-semibold text-gray-800 dark:text-zinc-100">Stamp ' + _uplSigStampCount + ' added!</p><p class="text-xs text-gray-500 dark:text-zinc-400 text-center">Add another, or click Done to finish.</p><div class="flex gap-3 mt-1"><button type="button" onclick="_uplDocShowSignStep1(_uplDocCurrentFile)" class="' + ac + '">\u2795 Add Another</button><button type="button" onclick="_uplDocSignDone(_uplDocCurrentFile)" class="px-4 py-2 text-sm rounded-lg bg-[#2a8703] text-white font-semibold hover:bg-green-700 transition">Done \u2713</button></div></div>';
   } catch(e) {
     _uplShowToast('Signing failed: ' + _uplEsc(String(e)));
   } finally {
@@ -564,20 +559,39 @@ function _uplDocCloseSignModal() {
   if (modal) modal.classList.add('hidden');
   _uplSigPlaced = false;
   _uplSigDrawn  = false;
+  _uplSigStampCount = 0;
+}
+
+function _uplDocSignDone(f) {
+  var n = _uplSigStampCount; _uplDocCloseSignModal();
+  _uplShowToast(n + ' stamp' + (n !== 1 ? 's' : '') + ' added \u2713'); _uplRenderDetail(f);
 }
 
 async function _uplDocRemoveStamp(f) {
-  if (!confirm('Remove the signature stamp and restore the original unsigned PDF?')) return;
+  _uplRemoveStampFile = f;
+  var m = document.getElementById('upl-remove-stamp-modal');
+  if (m) m.classList.remove('hidden');
+}
+
+function _uplCancelRemoveStamp() {
+  _uplRemoveStampFile = null;
+  var m = document.getElementById('upl-remove-stamp-modal');
+  if (m) m.classList.add('hidden');
+}
+
+async function _uplConfirmRemoveStamp() {
+  var f = _uplRemoveStampFile;
+  if (!f) return;
+  var btn = document.getElementById('upl-remove-stamp-confirm-btn');
+  if (btn) btn.disabled = true;
   try {
     var r = await fetch('/home/uploads/' + _uplPid + '/files/page/' + f.id + '/sign', {method: 'DELETE'});
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
     var d = await r.json();
-    f.has_backup = false;
-    f.size = d.size;
+    f.has_backup = false; f.size = d.size;
     var hit = _uplFiles.find(function(x) { return x.src === f.src && x.id === f.id; });
     if (hit) { hit.has_backup = false; hit.size = d.size; }
-    _uplCacheBust[f.id] = Date.now();  // force detail panel to reload the restored PDF
-    _uplShowToast('Stamp removed \u2713');
-    _uplRenderDetail(f);
-  } catch(e) { _uplShowToast('Remove failed: ' + String(e)); }
+    _uplCacheBust[f.id] = Date.now(); _uplCancelRemoveStamp(); _uplShowToast('Stamp removed \u2713'); _uplRenderDetail(f);
+  } catch(e) { _uplShowToast('Remove failed: ' + String(e));
+  } finally { if (btn) btn.disabled = false; }
 }

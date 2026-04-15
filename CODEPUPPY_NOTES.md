@@ -308,6 +308,65 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 - Exposed as Jinja2 global `static_v` → used as `?v={{ static_v }}` query param on asset URLs
 - Recomputed once at server startup — restart server after JS/CSS changes in production
 
+### Confirmation / Info Modals — Standard Pattern
+**Never use `window.confirm()` or `window.alert()`.** All confirmation dialogs must use the
+consistent styled modal structure. Copy this pattern exactly:
+
+```html
+{# ── My action confirmation modal ────────────────────────────────── #}
+<div id="my-action-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="my-action-title"
+     onkeydown="if(event.key==='Escape')_myCancelFn()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="_myCancelFn()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-[#ea1100]" aria-hidden="true">
+        <!-- SVG icon OR emoji -->
+      </span>
+      <h2 id="my-action-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">Title?</h2>
+    </div>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">Body text explaining the action.</p>
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="_myCancelFn()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                     transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>
+      <button id="my-action-confirm-btn" type="button" onclick="_myConfirmFn()"
+              class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                     hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-[#ea1100]">Confirm</button>
+    </div>
+  </div>
+</div>
+```
+
+**Icon colour guide by action type:**
+| Action | Icon bg | Icon colour | Button bg |
+|---|---|---|---|
+| Destructive (delete) | `bg-red-100 dark:bg-red-900/30` | `text-[#ea1100]` | `bg-[#ea1100]` |
+| Warning (undo/revert) | `bg-amber-100 dark:bg-amber-900/30` | `text-amber-600` | `bg-[#ea1100]` |
+| Neutral / info | `bg-blue-100 dark:bg-blue-900/30` | `text-[#0053e2]` | `bg-[#0053e2]` |
+| Success / confirm | `bg-green-100 dark:bg-green-900/30` | `text-[#2a8703]` | `bg-[#2a8703]` |
+
+**JS wiring pattern (always in the companion JS, never inline `<script>`):**
+```javascript
+var _myPendingItem = null;   // store the item needing confirmation
+
+function _myOpenModal(item) { _myPendingItem = item; document.getElementById('my-action-modal').classList.remove('hidden'); }
+function _myCancelFn()      { _myPendingItem = null; document.getElementById('my-action-modal').classList.add('hidden'); }
+async function _myConfirmFn() {
+  if (!_myPendingItem) return;
+  var btn = document.getElementById('my-action-confirm-btn');
+  if (btn) btn.disabled = true;
+  try { /* do the action */ } catch(e) { /* toast error */ } finally { if (btn) btn.disabled = false; }
+  _myCancelFn();
+}
+```
+**Existing modals using this pattern:** `#upl-del-modal`, `#upl-remove-stamp-modal`,
+`evt-del-confirm-modal`. Check those files if you need a real example.
+
 ---
 
 ## ✅ Features Completed (as of 2026-04-14)

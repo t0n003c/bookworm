@@ -27,7 +27,7 @@ let _uplCurrentDetail = null;    // file object currently shown in detail panel
 let _uplAllTags       = [];      // all user tags (lazy-loaded once + after mutations)
 let _uplBusy      = false;   // upload in progress
 let _uplDelPending = null;   // uploadId waiting for delete confirmation
-let _uplCacheBust  = {};     // fileId → timestamp; cache-busts embed after sign
+var _uplCacheBust  = {};     // fileId → timestamp; cache-busts embed after sign
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 async function initUploadsPage(pid) {
