@@ -387,7 +387,6 @@ function _uplDocOpenSignModal(f) {
   modal.focus();  // allow Escape keydown to fire
   _uplDocShowSignStep1(f);
 }
-}
 
 function _uplDocShowSignStep1(f) {
   var body = document.getElementById('upl-sig-modal-body');

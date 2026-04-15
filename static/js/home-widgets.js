@@ -274,7 +274,7 @@ function showHomePage(pageId) {
   // ── Cache MISS: spinner → fetch → fade in ─────────────────────────────────────
   hc.style.opacity = '0';
   hc.innerHTML = '<div class="flex items-center justify-center h-64">'
-    + '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-wblue"></div></div>';
+    + '<div id="bw-page-spinner" class="animate-spin rounded-full h-8 w-8 border-b-2 border-wblue"></div></div>';
   requestAnimationFrame(() => { hc.style.opacity = '1'; });
 
   _hpFetch(pageId, {
@@ -291,9 +291,9 @@ function showHomePage(pageId) {
   const _errTimer = setTimeout(() => {
     // Only show if page is still loading (spinner still in DOM)
     if (Number(sessionStorage.getItem('bw-hp')) !== pageId) return;
-    if (!hc.querySelector('.animate-spin')) return;
+    if (!hc.querySelector('#bw-page-spinner')) return;
     hc.style.opacity = '0';
-    hc.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-3">
+    hc.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-3">`;
       <span class="text-4xl">😵</span>
       <p class="text-sm font-semibold text-gray-700 dark:text-zinc-300">Taking too long…</p>
       <button onclick="showHomePage(${pageId})"
@@ -304,7 +304,7 @@ function showHomePage(pageId) {
   }, 10_000);
   // Clear error timer once content arrives (monkey-patch via a one-shot observer)
   const _obs = new MutationObserver(() => {
-    if (!hc.querySelector('.animate-spin')) { clearTimeout(_errTimer); _obs.disconnect(); }
+    if (!hc.querySelector('#bw-page-spinner')) { clearTimeout(_errTimer); _obs.disconnect(); }
   });
   _obs.observe(hc, { childList: true });
 }
