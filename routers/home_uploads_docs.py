@@ -55,6 +55,8 @@ class ConvertBody(BaseModel):
 class SignBody(BaseModel):
     signature_data: str   # data:image/png;base64,…
     page_num: int = 0
+    x_pct: float = 0.65  # 0‑1 from left edge (click position as fraction of page width)
+    y_pct: float = 0.05  # 0‑1 from top  edge (CSS origin; converted to PDF bottom‑up)
 
 
 # ── GET /{pid}/files/{src}/{id}/content ───────────────────────────────────────
@@ -322,11 +324,13 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
         pg_w = float(target_page.mediabox.width)
         pg_h = float(target_page.mediabox.height)
 
-        # Fixed placement: lower-right, 30% of page width, 0.5 in margins
-        sig_w_pt = pg_w * 0.30
+        # Caller supplies x_pct/y_pct (0‑1 fractions, CSS top‑left origin).
+        # Signature width = 25 % of page; height scales to preserve aspect ratio.
+        sig_w_pt = pg_w * 0.25
         sig_h_pt = sig_w_pt * sig_img.height / sig_img.width
-        x_pt = pg_w - sig_w_pt - 36
-        y_pt = 36
+        # Center sig horizontally on click; PDF y‑origin is bottom‑left.
+        x_pt = max(0.0, min(body.x_pct * pg_w - sig_w_pt / 2, pg_w - sig_w_pt))
+        y_pt = max(0.0, min((1.0 - body.y_pct) * pg_h - sig_h_pt, pg_h - sig_h_pt))
 
         overlay_buf = io.BytesIO()
         c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))

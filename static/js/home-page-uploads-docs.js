@@ -384,8 +384,9 @@ function _uplDocOpenSignModal(f) {
   var modal = document.getElementById('upl-sig-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
-  modal.focus();
+  modal.focus();  // allow Escape keydown to fire
   _uplDocShowSignStep1(f);
+}
 }
 
 function _uplDocShowSignStep1(f) {
@@ -462,7 +463,8 @@ function _uplDocShowSignStep2(sigDataUrl, pageNum) {
       <div id="upl-sig-overlay"
            class="absolute inset-0 cursor-crosshair"
            title="Click to place your signature here"
-           onclick="_uplDocSigPlaceClick(event, '${_uplJsStr(sigDataUrl)}')">
+           onclick="_uplDocSigPlaceClick(event)">
+      </div>
       </div>
       <div id="upl-sig-marker" class="hidden absolute pointer-events-none"
            style="width:26%;transform:translateY(-50%);opacity:0.82">
@@ -490,23 +492,24 @@ function _uplDocShowSignStep2(sigDataUrl, pageNum) {
     </div>`;
 }
 
-function _uplDocSigPlaceClick(e, sigDataUrl) {
-  var wrap = document.getElementById('upl-sig-place-wrap');
+function _uplDocSigPlaceClick(e) {
+  var wrap   = document.getElementById('upl-sig-place-wrap');
   var marker = document.getElementById('upl-sig-marker');
   var img    = document.getElementById('upl-sig-marker-img');
   var hint   = document.getElementById('upl-sig-place-hint');
-  if (!wrap || !marker) return;
+  var store  = document.getElementById('upl-sig-data-store');
+  if (!wrap || !marker || !store) return;
   var r = wrap.getBoundingClientRect();
   _uplSigXPct = (e.clientX - r.left)  / r.width;
   _uplSigYPct = (e.clientY - r.top)   / r.height;
   _uplSigPlaced = true;
-  // Position the marker (centred on click X, top edge at click Y)
+  // Position marker: centred on click X, top edge at click Y
   marker.style.left = (_uplSigXPct * 100 - 13) + '%';
   marker.style.top  = (_uplSigYPct * 100)       + '%';
-  if (img) img.src = sigDataUrl;
+  if (img) img.src = store.value;
   marker.classList.remove('hidden');
   if (hint) hint.textContent =
-    'Signature placed at ' + Math.round(_uplSigXPct * 100) + '% from left, '
+    'Placed at ' + Math.round(_uplSigXPct * 100) + '% from left, '
     + Math.round(_uplSigYPct * 100) + '% from top. Click again to reposition.';
 }
 
