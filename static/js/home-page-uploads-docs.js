@@ -580,7 +580,7 @@ async function _uplDocDoSign(f) {
     _uplDocCurrentFile.size = data.size;
     _uplShowToast('Signature stamped \u2713');
     _uplDocCloseSignModal();
-    _uplDocStudioInit(f);
+    _uplRenderDetail(f);  // full re-render so PDF embed picks up cache-bust ?v=
   } catch(e) {
     _uplShowToast('Signing failed: ' + _uplEsc(String(e)));
   } finally {
