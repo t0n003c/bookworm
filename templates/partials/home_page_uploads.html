@@ -273,39 +273,54 @@
   </div>
 </div>
 
-{# ── Signature modal ──────────────────────────────────────────────────────────── #}
+{# ── Signature modal (two-step: draw → place) ───────────────────────────────────────── #}
 <div id="upl-sig-modal"
-     class="hidden fixed inset-0 z-50 flex items-center justify-center"
-     role="dialog" aria-modal="true" aria-labelledby="upl-sig-title"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="upl-sig-title" tabindex="-1"
      onkeydown="if(event.key==='Escape')_uplDocCloseSignModal()">
-  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"
        onclick="_uplDocCloseSignModal()" aria-hidden="true"></div>
-  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
-    <h2 id="upl-sig-title" class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">Draw Signature</h2>
-    <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">Sign in the box below. The signature will be stamped onto the lower-right of the PDF page.</p>
-    <canvas id="upl-sig-canvas" width="400" height="150"
-            class="w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-600
-                   bg-white cursor-crosshair touch-none"
-            aria-label="Signature drawing area" role="img"></canvas>
-    <div class="flex items-center gap-3 mt-3 mb-4">
-      <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0" for="upl-sig-page-num">PDF page (0 = first):</label>
-      <input id="upl-sig-page-num" type="number" value="0" min="0"
-             class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs
-                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
-      <button type="button" onclick="_uplDocClearCanvas()"
-              class="ml-auto text-xs px-3 py-1 rounded-lg border border-gray-300 dark:border-zinc-600
-                     text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Clear</button>
-    </div>
-    <div class="flex gap-3 justify-end">
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-2xl mx-auto flex flex-col max-h-[92vh] overflow-hidden">
+    <div class="flex items-center justify-between px-6 pt-5 pb-3
+                border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
+      <h2 id="upl-sig-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        Sign PDF
+      </h2>
       <button type="button" onclick="_uplDocCloseSignModal()"
-              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
-                     text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Cancel</button>
-      <button id="upl-sig-confirm-btn" type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold
-                     hover:bg-[#003eb3] transition">Stamp Signature</button>
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200
+                     focus:outline-none focus:ring-1 focus:ring-[#0053e2] rounded-lg p-1"
+              aria-label="Close">
+        &#10005;
+      </button>
     </div>
+    <div id="upl-sig-modal-body" class="px-6 py-4 overflow-y-auto flex-1">
+      {# Populated by JS: _uplDocShowSignStep1 / _uplDocShowSignStep2 #}
+    </div>
+  </div>
+</div>
+
+{# ── PDF fullscreen popup modal ─────────────────────────────────────────────────── #}
+<div id="upl-pdf-popup-modal"
+     class="hidden fixed inset-0 z-50 flex flex-col p-4"
+     role="dialog" aria-modal="true" aria-labelledby="upl-pdf-popup-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplPdfPreviewClose()">
+  <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"
+       onclick="_uplPdfPreviewClose()" aria-hidden="true"></div>
+  <div class="relative flex flex-col w-full max-w-5xl mx-auto h-full">
+    <div class="flex items-center justify-between mb-2 flex-shrink-0">
+      <p id="upl-pdf-popup-title"
+         class="text-sm font-semibold text-white truncate max-w-[80%]"></p>
+      <button type="button" onclick="_uplPdfPreviewClose()"
+              class="text-white/80 hover:text-white bg-white/10 hover:bg-white/20
+                     rounded-xl px-3 py-1.5 text-xs font-medium transition
+                     focus:outline-none focus:ring-1 focus:ring-white"
+              aria-label="Close PDF viewer">
+        &#10005; Close
+      </button>
+    </div>
+    <embed id="upl-pdf-popup-embed" src="" type="application/pdf"
+           class="flex-1 w-full rounded-xl" style="min-height:0">
   </div>
 </div>
 

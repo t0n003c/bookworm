@@ -392,8 +392,20 @@ function _uplRenderDetail(f) {
         <source src="${fUrl}" type="${_uplEsc(mt)}">Your browser doesn\'t support HTML5 audio.
       </audio></div>`;
   } else if (mt === 'application/pdf') {
-    preview = `<div class="mb-4 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">
-      <embed src="${fUrl}" type="application/pdf" class="w-full" style="height:280px"></div>`;
+    var pdfLabel = _uplJsStr(f.original_name);
+    preview = `<div class="mb-4 rounded-xl overflow-hidden border border-gray-200
+        dark:border-zinc-700 relative group cursor-zoom-in"
+        onclick="_uplPdfPreviewOpen('${_uplJsStr(fUrl)}','${pdfLabel}')">
+      <embed src="${fUrl}" type="application/pdf" class="w-full pointer-events-none"
+             style="height:280px" tabindex="-1">
+      <div class="absolute inset-0 flex items-end justify-end p-2
+           opacity-0 group-hover:opacity-100 transition-opacity">
+        <span class="bg-white/90 dark:bg-zinc-900/90 text-[11px] font-semibold
+                     text-gray-700 dark:text-zinc-200 rounded-lg px-2.5 py-1 shadow">
+          &#128269; Expand
+        </span>
+      </div>
+    </div>`;
   } else if (isText) {
     preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto">
       <p class="text-[10px] text-gray-400 italic">Loading preview\u2026</p></div>`;
@@ -566,9 +578,8 @@ async function _uplProcessFiles(files) {
   }, 900);
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+// ── Toast ───────────────────────────────────────────────────────────────────────────────────
 function _uplShowToast(msg, isErr) {
-  // Delegate to the shared BookWorm toast (home-widgets.js _bwToast)
   if (typeof window._bwToast === 'function') {
     window._bwToast(msg, isErr ? 'error' : 'success');
   }
@@ -582,9 +593,6 @@ function _uplEsc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function _uplJsStr(s) {
-  // Backslash-escape for embedding inside a single-quoted JS string in an onclick attr.
+function _uplJsStr(s) { // Escape for single-quoted onclick='...' attrs.
   return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
-
-// _uplFmtSize and _uplFmtDate live in home-page-uploads-tags.js
+} // Note: _uplFmtSize + _uplFmtDate live in home-page-uploads-tags.js
