@@ -471,17 +471,18 @@ powershell -Command "Invoke-WebRequest -Uri 'http://localhost:8000/login' -UseBa
 ## 🚀 How to Start the Server
 
 ```powershell
-# Option 1: restart.bat (interactive only — has a pause at the end, do NOT use from tools)
-restart.bat
+# Option 1: restart.bat — safe for BOTH Eddie's shell tool AND human double-click.
+# Polls /health with timeout=2 up to 30 s. No pause, no freeze risk.
+cmd /c restart.bat
 
-# Option 2: PowerShell Start-Process (correct way from Eddie's shell tool)
+# Option 2: PowerShell two-step (when you need explicit control from Eddie's shell tool)
 # Fully detaches uvicorn from the tool's stdout/stderr capture — no freeze.
 powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-Process -FilePath '.venv\\Scripts\\uvicorn.exe' -ArgumentList 'main:app','--host','127.0.0.1','--port','8000' -NoNewWindow -RedirectStandardOutput 'bookworm.log' -RedirectStandardError 'bookworm_err.log'"
 ```
 
-> ⚠️ NEVER use `start /B` or `cmd /c "start /B ..."` — inherited stdout/stderr handles freeze the shell tool (see Quirk #13).
+> ⚠️ NEVER use `start /B` or `cmd /c "start /B ..."` — inherited stdout/stderr handles freeze the shell tool (see Quirk #15).
 
-> ⚠️ NEVER chain server start + health check in one shell command. Start the server first, then run `_health_check.py` as a separate step (see Quirk #18).
+> ⚠️ NEVER chain server start + health check in one `&&` command. In particular, NEVER use `start /MIN .venv\Scripts\uvicorn.exe ... && ping ... && urlopen(url)` with no timeout — if the server is slow (OneDrive I/O, cold disk), `urlopen` blocks forever (see Quirk #19).
 
 Verify it started:
 ```powershell

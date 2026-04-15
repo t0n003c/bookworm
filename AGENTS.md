@@ -11,7 +11,7 @@ AI agent guidance for the BookWorm codebase.
 
 - **Stack:** FastAPI + HTMX + Tailwind CSS (CDN) + SQLite (aiosqlite)
 - **Local dev:** `http://localhost:8000` via `.venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000`
-- **Start/restart:** `restart.bat` (or `restart.ps1`)
+- **Start/restart:** `cmd /c restart.bat` (Eddie-safe, polls 30 s) or double-click `restart.vbs` (silent)
 - **Docker:** `docker compose up -d` → port **8001**
 - **DB:** `bookworm.db` (local) | `/data/bookworm.db` (Docker via `BW_DATA_DIR`)
 - **Health check:** run `_health_check.py` after any change
@@ -119,20 +119,25 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 ### Ports
 - Local dev: **8000** | Docker: **8001** | Teams: **8080** (never touch)
 
-### Server Start & Health Check (READ THIS — it causes freezes if ignored)
-- **NEVER** chain server-start + health check in one shell command. The freeze culprit is `urlopen` with no timeout — if the server isn't ready it blocks forever.
+### Server Start & Health Check (READ THIS — ignoring it causes Code Puppy to freeze)
+- **NEVER** chain server-start + health check in one shell command with `&&`. The freeze: `urlopen` with no timeout blocks forever if the server is slow (OneDrive I/O, cold start).
 - **NEVER** use `start /B` or `cmd /c "start /B ..."` to launch uvicorn — child inherits stdout/stderr handles, shell tool waits forever for them to close.
 - **NEVER** call `urllib.request.urlopen(url)` without a `timeout=` argument.
-- **ALWAYS** start the server as a detached process first, wait, then call `_health_check.py` as a **separate** shell step:
+- **NEVER** use `start /MIN .venv\Scripts\uvicorn.exe ... && ping -n N ... && urlopen(...)` — the `start /MIN` looks innocent but the chained `urlopen` with no timeout freezes Code Puppy the moment the server is slow.
+
+**✅ CORRECT — use `restart.bat` (safe for both Eddie and humans, no `pause`, polls 30 s):**
+  ```
+  cmd /c restart.bat
+  ```
+  This calls `_start_server.py` (properly detached, hidden window), then polls `/health` with `timeout=2` up to 30 times. Exits cleanly. No freeze risk.
+
+**✅ CORRECT — PowerShell two-step (when you need explicit control):**
   ```
   # Step 1 — start (detached, logs to file)
   powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-Process -FilePath '.venv\\Scripts\\uvicorn.exe' -ArgumentList 'main:app','--host','127.0.0.1','--port','8000' -NoNewWindow -RedirectStandardOutput 'bookworm.log' -RedirectStandardError 'bookworm_err.log'"
-  # Step 2 — wait
-  powershell -Command "Start-Sleep 5"
-  # Step 3 — verify (has timeout=5 built in, safe to run from tools)
+  # Step 2 — verify (polls with timeout=5, safe to run from tools)
   .venv\Scripts\python.exe _health_check.py
   ```
-- `restart.bat` is for **human double-click only** — it has a `pause` at the end that blocks non-interactive shells permanently.
 
 ### Docker & GitHub Safety
 - Every change must be safe for `git clone → docker compose up -d` by strangers
