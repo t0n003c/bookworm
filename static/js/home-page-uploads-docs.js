@@ -360,7 +360,7 @@ function _uplPdfPreviewOpen(url, name) {
   if (!modal) return;
   var embed = document.getElementById('upl-pdf-popup-embed');
   var title = document.getElementById('upl-pdf-popup-title');
-  if (embed) embed.src = url;
+  if (embed) embed.src = url + '#navpanes=0';
   if (title) title.textContent = name || 'PDF Preview';
   modal.classList.remove('hidden');
   modal.focus();
