@@ -25,8 +25,9 @@ let _uplTagFilter     = '';      // active group/tag tab ('' = none)
 let _uplGrouped       = false;   // group-by-type display mode
 let _uplCurrentDetail = null;    // file object currently shown in detail panel
 let _uplAllTags       = [];      // all user tags (lazy-loaded once + after mutations)
-let _uplBusy          = false;   // upload in progress
-let _uplDelPending    = null;    // uploadId waiting for delete confirmation
+let _uplBusy      = false;   // upload in progress
+let _uplDelPending = null;   // uploadId waiting for delete confirmation
+let _uplCacheBust  = {};     // fileId → timestamp; cache-busts embed after sign
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 async function initUploadsPage(pid) {
@@ -40,7 +41,7 @@ async function initUploadsPage(pid) {
   _uplCurrentDetail = null;
   _uplAllTags       = [];
   _uplBusy          = false;
-
+  _uplCacheBust     = {};
   // Wire hidden file input once
   const input = document.getElementById('uploads-file-input');
   if (input) {
@@ -370,7 +371,7 @@ function _uplRenderDetail(f) {
 
   const group  = _uplMimeGroup(f.mime_type);
   const dlUrl  = `/home/uploads/${_uplPid}/files/${f.src}/${f.id}/download`;
-  const fUrl   = `/uploads/${_uplEsc(f.filename)}`;
+  const fUrl   = `/uploads/${_uplEsc(f.filename)}` + (_uplCacheBust[f.id] ? '?v=' + _uplCacheBust[f.id] : '');
   const mt     = f.mime_type;
   const isText = mt.startsWith('text/') || mt === 'application/json';
 

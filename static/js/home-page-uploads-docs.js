@@ -574,6 +574,7 @@ async function _uplDocDoSign(f) {
     });
     if (!r.ok) { var err = await r.json(); throw new Error(err.detail || r.status); }
     var data = await r.json();
+    _uplCacheBust[f.id] = Date.now();  // force embed to reload the updated PDF
     var cached = _uplFiles.find(function(x) { return x.src === f.src && x.id === f.id; });
     if (cached) cached.size = data.size;
     _uplDocCurrentFile.size = data.size;
