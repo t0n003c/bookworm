@@ -3,6 +3,26 @@
    JS:  static/js/home-page-uploads.js (loaded via base.html ?v= cache-bust tag)
    All rendering is JS-driven — zero <script> blocks here.
 #}
+{# ── Document Viewer styles (injected once; scoped to bw- classes) #}
+<style>
+.bw-doc-viewer h1,.bw-doc-viewer h2{font-size:1.4em;font-weight:700;margin:.9em 0 .4em}
+.bw-doc-viewer h3,.bw-doc-viewer h4{font-size:1.15em;font-weight:600;margin:.8em 0 .35em}
+.bw-doc-viewer h5,.bw-doc-viewer h6{font-size:1em;font-weight:600;margin:.7em 0 .3em}
+.bw-doc-viewer p{margin:.4em 0;line-height:1.65}
+.bw-doc-viewer strong{font-weight:700}
+.bw-doc-viewer em{font-style:italic}
+.bw-doc-viewer u{text-decoration:underline}
+.bw-doc-table{width:100%;border-collapse:collapse;font-size:.85em;margin:1em 0}
+.bw-doc-table th,.bw-doc-table td{border:1px solid #d1d5db;padding:.45em .7em;text-align:left;vertical-align:top}
+.bw-doc-table thead th{background:#f3f4f6;font-weight:700}
+.bw-doc-table tbody tr:nth-child(even){background:#f9fafb}
+@media(prefers-color-scheme:dark){
+  .bw-doc-table th,.bw-doc-table td{border-color:#3f3f46}
+  .bw-doc-table thead th{background:#27272a;color:#e4e4e7}
+  .bw-doc-table tbody tr:nth-child(even){background:#1c1c1f}
+}
+.bw-csv-note{font-size:.75em;color:#6b7280;margin-top:.5em;font-style:italic}
+</style>
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
      class="flex flex-col"
      style="height:calc(100vh - 3.5rem)">
@@ -326,27 +346,33 @@
   </div>
 </div>
 
-{# ── PDF fullscreen popup modal ─────────────────────────────────────────────────── #}
-<div id="upl-pdf-popup-modal"
+{# ── Universal file viewer modal (PDF embed + HTML/text content pane) ──────────── #}
+<div id="upl-file-viewer-modal"
      class="hidden fixed inset-0 z-50 flex flex-col p-4"
-     role="dialog" aria-modal="true" aria-labelledby="upl-pdf-popup-title" tabindex="-1"
-     onkeydown="if(event.key==='Escape')_uplPdfPreviewClose()">
+     role="dialog" aria-modal="true" aria-labelledby="upl-viewer-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplFileViewerClose()">
   <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"
-       onclick="_uplPdfPreviewClose()" aria-hidden="true"></div>
+       onclick="_uplFileViewerClose()" aria-hidden="true"></div>
   <div class="relative flex flex-col w-[90vw] max-w-[1400px] mx-auto h-full">
     <div class="flex items-center justify-between mb-2 flex-shrink-0">
-      <p id="upl-pdf-popup-title"
+      <p id="upl-viewer-title"
          class="text-sm font-semibold text-white truncate max-w-[80%]"></p>
-      <button type="button" onclick="_uplPdfPreviewClose()"
+      <button type="button" onclick="_uplFileViewerClose()"
               class="text-white/80 hover:text-white bg-white/10 hover:bg-white/20
                      rounded-xl px-3 py-1.5 text-xs font-medium transition
                      focus:outline-none focus:ring-1 focus:ring-white"
-              aria-label="Close PDF viewer">
+              aria-label="Close file viewer">
         &#10005; Close
       </button>
     </div>
-    <embed id="upl-pdf-popup-embed" src="" type="application/pdf"
+    {# PDF embed — visible for application/pdf #}
+    <embed id="upl-viewer-embed" src="" type="application/pdf"
            class="flex-1 w-full rounded-xl" style="min-height:0">
+    {# HTML / text content pane — visible for DOCX, text, CSV #}
+    <div id="upl-viewer-html"
+         class="hidden flex-1 w-full rounded-xl overflow-y-auto bg-white dark:bg-zinc-900
+                text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer">
+    </div>
   </div>
 </div>
 

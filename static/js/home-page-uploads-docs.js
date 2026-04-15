@@ -1,5 +1,6 @@
 /* home-page-uploads-docs.js — Document Studio for the Uploads Homespace page.
    Loaded after home-page-uploads.js + home-page-uploads-tags.js (load order matters).
+   Sign functions are in home-page-uploads-sign.js (loaded after this file).
    Shared globals from main file: _uplPid, _uplFiles, _uplMeta, _uplFilter, _uplTagFilter,
      _uplEsc, _uplJsStr, _uplShowToast, _uplFetch, _uplMimeGroup, _uplFmtSize.
 */
@@ -11,14 +12,6 @@ var _uplDocSelected    = {};      // key "src:id" → {src,id,mime_type,original
 var _uplDocBusy        = false;   // prevents double-submit
 var _uplDocCurrentFile = null;    // f passed to _uplDocStudioInit — needed by edit/sign
 var _uplDocEditMode    = false;   // textarea edit active?
-
-// Sign-modal state
-var _uplSigXPct         = 0.65;  // placement x fraction (0-1 from left)
-var _uplSigYPct         = 0.80;  // placement y fraction (0-1 from top)
-var _uplSigPlaced       = false; // has user clicked to place yet?
-var _uplSigDrawn        = false; // has user drawn anything on canvas?
-var _uplRemoveStampFile = null;  // file pending stamp-removal confirmation
-var _uplSigStampCount   = 0;     // stamps added this signing session
 
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -34,12 +27,13 @@ async function _uplDocStudioInit(f) {
   if (!el) return;
 
   var canRead    = f.mime_type.startsWith('text/') || f.mime_type === 'application/json' || f.mime_type === _DOCX_MIME;
+  var canView    = canRead || f.mime_type === 'application/pdf' || f.mime_type.startsWith('image/');
   var canEdit    = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === 'application/json');
   var canSign    = f.src === 'page' && f.mime_type === 'application/pdf';
   var canToPdf   = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === _DOCX_MIME);
   var canToTxt   = f.src === 'page' && (f.mime_type === 'application/pdf' || f.mime_type === _DOCX_MIME);
 
-  if (!canRead && !canSign) { el.innerHTML = ''; return; }
+  if (!canView && !canRead && !canSign) { el.innerHTML = ''; return; }
 
   var srcF   = _uplJsStr(f.src);
   var idF    = f.id;
@@ -55,7 +49,7 @@ async function _uplDocStudioInit(f) {
       if (sr.ok) { var sd = await sr.json(); hasBackup = sd.has_backup; f.has_backup = sd.has_backup; }
     } catch(_) {}
   }
-  if (canRead)    btns.push('<button onclick="_uplDocShowFullContent(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📄 View full content</button>');
+  if (canView)    btns.push('<button onclick="_uplFileViewerOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📄 View</button>');
   if (canEdit)    btns.push('<button onclick="_uplDocEnterEditMode(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✏️ Edit</button>');
   if (canSign)    btns.push('<button onclick="_uplDocOpenSignModal(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✍️ Sign PDF</button>');
   if (canToPdf)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'pdf\')" class="' + _STUDIO_BTN + '">→ PDF</button>');
@@ -173,35 +167,6 @@ function _uplDocRenderToolbar() {
       class="${btnCls} border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400
              hover:text-[#ea1100] hover:border-[#ea1100]">\u2715 Clear</button>`;
   main.appendChild(tb);
-}
-
-// ── Full content view ─────────────────────────────────────────────────────────
-
-async function _uplDocShowFullContent(f) {
-  var body = document.getElementById('upl-doc-studio-body');
-  if (!body) return;
-  body.innerHTML = '<p class="text-[10px] text-gray-400 italic">Loading\u2026</p>';
-  try {
-    var r    = await fetch(`/home/uploads/${_uplPid}/files/${_uplEsc(f.src)}/${f.id}/content`);
-    if (!r.ok) throw new Error(await r.text());
-    var data = await r.json();
-    var collapseBtn = `<button onclick="_uplDocStudioInit(_uplDocCurrentFile)"
-      class="text-[10px] text-[#0053e2] hover:underline mt-2 block">Collapse \u25B4</button>`;
-    if (data.content_type === 'text') {
-      var charCount = data.content.length;
-      var lines     = (data.content.match(/\n/g) || []).length + 1;
-      body.innerHTML = `<p class="text-[9px] text-gray-400 mb-1">${lines} lines \u00B7 ${charCount.toLocaleString()} chars</p>
-        <pre class="text-[10px] font-mono text-gray-700 dark:text-zinc-300 whitespace-pre-wrap break-words
-                    bg-gray-50 dark:bg-zinc-800 rounded-xl p-3 max-h-72 overflow-y-auto">${_uplEsc(data.content)}</pre>
-        ${collapseBtn}`;
-    } else {
-      body.innerHTML = `<div class="text-xs text-gray-700 dark:text-zinc-200 rounded-xl p-3
-                           bg-gray-50 dark:bg-zinc-800 max-h-72 overflow-y-auto">${data.content}</div>
-        ${collapseBtn}`;
-    }
-  } catch(e) {
-    body.innerHTML = `<p class="text-[10px] text-red-500">Could not load: ${_uplEsc(String(e))}</p>`;
-  }
 }
 
 // ── Text edit ─────────────────────────────────────────────────────────────────
@@ -341,257 +306,79 @@ function _uplDocCloseCombineModal() {
   if (modal) modal.classList.add('hidden');
 }
 
-// ── PDF fullscreen preview ────────────────────────────────────────────────────
+// ── Universal file viewer ────────────────────────────────────────────────────────────────
 
-function _uplPdfPreviewOpen(url, name) {
-  var modal = document.getElementById('upl-pdf-popup-modal');
+async function _uplFileViewerOpen(f) {
+  var modal    = document.getElementById('upl-file-viewer-modal');
+  var embedEl  = document.getElementById('upl-viewer-embed');
+  var htmlEl   = document.getElementById('upl-viewer-html');
+  var titleEl  = document.getElementById('upl-viewer-title');
   if (!modal) return;
-  var embed = document.getElementById('upl-pdf-popup-embed');
-  var title = document.getElementById('upl-pdf-popup-title');
-  if (embed) embed.src = url + '#navpanes=0';
-  if (title) title.textContent = name || 'PDF Preview';
+
+  if (titleEl) titleEl.textContent = f.original_name || 'File Viewer';
   modal.classList.remove('hidden');
   modal.focus();
+
+  var fUrl = '/uploads/' + _uplEsc(f.filename)
+    + (_uplCacheBust[f.id] ? '?v=' + _uplCacheBust[f.id] : '');
+  var mt   = f.mime_type || '';
+
+  if (mt === 'application/pdf') {
+    // PDF — use embed (browser built-in viewer)
+    if (embedEl) { embedEl.src = fUrl + '#navpanes=0'; embedEl.classList.remove('hidden'); }
+    if (htmlEl)  htmlEl.classList.add('hidden');
+    return;
+  }
+
+  if (mt.startsWith('image/')) {
+    // Image — show at full res in the content pane
+    if (embedEl) { embedEl.src = ''; embedEl.classList.add('hidden'); }
+    if (htmlEl)  {
+      htmlEl.innerHTML = '<div class="flex items-center justify-center h-full min-h-0">' +
+        '<img src="' + _uplEsc(fUrl) + '" alt="' + _uplEsc(f.original_name) + '"' +
+        '     class="max-w-full max-h-full object-contain rounded-lg shadow-lg">' +
+        '</div>';
+      htmlEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  // DOCX / text / CSV — fetch from /content endpoint
+  if (embedEl) { embedEl.src = ''; embedEl.classList.add('hidden'); }
+  if (htmlEl)  {
+    htmlEl.innerHTML = '<p class="text-gray-400 dark:text-zinc-500 text-xs text-center mt-8">Loading…</p>';
+    htmlEl.classList.remove('hidden');
+  }
+  try {
+    var r    = await fetch('/home/uploads/' + _uplPid + '/files/' + _uplEsc(f.src) + '/' + f.id + '/content');
+    var ct   = r.headers.get('content-type') || '';
+    if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
+    var data = await r.json();
+    if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
+  } catch(err) {
+    if (htmlEl) htmlEl.innerHTML = '<p class="text-red-500 text-xs text-center mt-8">' + _uplEsc(String(err)) + '</p>';
+  }
 }
 
-function _uplPdfPreviewClose() {
-  var modal = document.getElementById('upl-pdf-popup-modal');
+function _uplViewerHtmlForType(content, contentType) {
+  if (contentType === 'docx_html') {
+    // Already structured HTML from _docx_body_to_html
+    return '<div class="bw-doc-viewer">' + content + '</div>';
+  }
+  if (contentType === 'csv_html') {
+    // HTML table from _csv_to_html — wrap with overflow-x for wide tables
+    return '<div style="overflow-x:auto">' + content + '</div>';
+  }
+  // Plain text / JSON — monospace pre block
+  var escaped = content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<pre style="font-size:.8em;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + escaped + '</pre>';
+}
+
+function _uplFileViewerClose() {
+  var modal   = document.getElementById('upl-file-viewer-modal');
+  var embedEl = document.getElementById('upl-viewer-embed');
   if (!modal) return;
   modal.classList.add('hidden');
-  var embed = document.getElementById('upl-pdf-popup-embed');
-  if (embed) embed.src = '';
-}
-
-// ── Sign (PDF, page-src only) — tdraw then place ─────────────────────
-function _uplDocOpenSignModal(f) {
-  _uplDocCurrentFile = f;
-  _uplSigPlaced = false;
-  _uplSigDrawn  = false;
-  _uplSigXPct   = 0.65;
-  _uplSigYPct   = 0.80;
-  var modal = document.getElementById('upl-sig-modal');
-  if (!modal) return;
-  modal.classList.remove('hidden');
-  modal.focus();  // allow Escape keydown to fire
-  _uplDocShowSignStep1(f);
-}
-
-function _uplDocShowSignStep1(f) {
-  _uplSigPlaced = false; _uplSigDrawn = false;
-  var body = document.getElementById('upl-sig-modal-body');
-  if (!body) return;
-  var pn    = (document.getElementById('upl-sig-page-num-val') || {}).value || '0';
-  var btCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
-  body.innerHTML =
-    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">Draw your signature below, then click <strong>Next</strong> to place it on the PDF.</p>' +
-    '<canvas id="upl-sig-canvas" width="480" height="160" class="w-full rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-white cursor-crosshair touch-none block" aria-label="Signature drawing area" role="img"></canvas>' +
-    '<div class="flex items-center gap-3 mt-3 mb-1">' +
-    '  <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0" for="upl-sig-page-num">Page (0=first):</label>' +
-    '  <input id="upl-sig-page-num" type="number" value="' + _uplEsc(pn) + '" min="0" class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />' +
-    '  <button type="button" onclick="_uplDocClearCanvas()" class="ml-auto text-xs px-3 py-1 rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Clear</button>' +
-    '</div>' +
-    '<div class="flex gap-3 justify-end mt-3">' +
-    '  <button type="button" onclick="_uplDocCloseSignModal()" class="' + btCls + '">Cancel</button>' +
-    '  <button type="button" onclick="_uplDocSignGoStep2()" class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition">Next: Place on PDF &rarr;</button>' +
-    '</div>';
-  _uplDocInitCanvas();
-}
-
-async function _uplDocSignGoStep2() {
-  var canvas = document.getElementById('upl-sig-canvas');
-  if (!canvas) return;
-  var ctx  = canvas.getContext('2d');
-  var data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  var hasInk = false;
-  for (var i = 3; i < data.length; i += 4) {
-    if (data[i] > 20) { hasInk = true; break; }  // any non-transparent pixel = ink
-  }
-  if (!hasInk) { _uplShowToast('Please draw your signature first.'); return; }
-  _uplSigDrawn = true;
-  var sigUrl  = canvas.toDataURL('image/png');
-  var pageInp = document.getElementById('upl-sig-page-num');
-  var pageNum = pageInp ? parseInt(pageInp.value, 10) || 0 : 0;
-  await _uplDocShowSignStep2(sigUrl, pageNum);
-}
-
-async function _uplDocShowSignStep2(sigDataUrl, pageNum) {
-  var f = _uplDocCurrentFile;
-  if (!f) return;
-  var body = document.getElementById('upl-sig-modal-body');
-  if (!body) return;
-  body.innerHTML = '<p class="text-xs text-center text-gray-400 dark:text-zinc-500 py-6">Loading page info…</p>';
-  var dims = {width_pt: 595, height_pt: 842};  // A4 fallback
-  try {
-    var dr = await fetch('/home/uploads/' + _uplPid + '/files/page/' + f.id + '/page-dims');
-    if (dr.ok) dims = await dr.json();
-  } catch(_) {}
-  var ratio  = (dims.height_pt / dims.width_pt * 100).toFixed(2);
-  var btnCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
-  var dotGrid = 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'1\' cy=\'1\' r=\'1\' fill=\'%23ccc\'/%3E%3C/svg%3E")';
-  body.innerHTML =
-    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click anywhere on the page outline below to place your signature. Click again to reposition.</p>' +
-    '<div class="relative w-full" style="padding-top:' + ratio + '%">' +
-    '  <div id="upl-sig-place-wrap" onclick="_uplDocSigPlaceClick(event)"' +
-    '       class="absolute inset-0 bg-white dark:bg-zinc-100 border-2 border-dashed border-gray-400 dark:border-zinc-500 rounded-lg cursor-crosshair shadow-inner"' +
-    '       style="background-image:' + dotGrid + ';background-repeat:repeat;">' +
-    '    <span class="absolute top-1 left-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">TL</span>' +
-    '    <span class="absolute top-1 right-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">TR</span>' +
-    '    <span class="absolute bottom-1 left-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">BL</span>' +
-    '    <span class="absolute bottom-1 right-1 text-[9px] text-gray-400 pointer-events-none select-none font-mono">BR</span>' +
-    '    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">' +
-    '      <span class="text-[10px] text-gray-300 dark:text-zinc-400 select-none">Click to place signature</span>' +
-    '    </div>' +
-    '    <div id="upl-sig-marker" class="hidden absolute pointer-events-none" style="width:25%;transform:translateY(-50%)">' +
-    '      <img id="upl-sig-marker-img" src="" alt="" class="w-full drop-shadow-lg" draggable="false">' +
-    '    </div>' +
-    '  </div>' +
-    '</div>' +
-    '<p id="upl-sig-place-hint" class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1.5" aria-live="polite">No placement yet — click the page above.</p>' +
-    '<input type="hidden" id="upl-sig-data-store" value="' + _uplJsStr(sigDataUrl) + '">' +
-    '<input type="hidden" id="upl-sig-page-num-val" value="' + pageNum + '">' +
-    '<div class="flex gap-3 justify-end mt-3">' +
-    '  <button type="button" onclick="_uplDocShowSignStep1(_uplDocCurrentFile)" class="' + btnCls + '">&larr; Back</button>' +
-    '  <button type="button" onclick="_uplDocCloseSignModal()" class="' + btnCls + '">Cancel</button>' +
-    '  <button id="upl-sig-confirm-btn" type="button" onclick="_uplDocDoSign(_uplDocCurrentFile)"' +
-    '          class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition">Stamp Signature</button>' +
-    '</div>';
-}
-
-function _uplDocSigPlaceClick(e) {
-  var wrap   = document.getElementById('upl-sig-place-wrap');
-  var marker = document.getElementById('upl-sig-marker');
-  var img    = document.getElementById('upl-sig-marker-img');
-  var hint   = document.getElementById('upl-sig-place-hint');
-  var store  = document.getElementById('upl-sig-data-store');
-  if (!wrap || !marker || !store) return;
-  var r = wrap.getBoundingClientRect();
-  _uplSigXPct = (e.clientX - r.left)  / r.width;
-  _uplSigYPct = (e.clientY - r.top)   / r.height;
-  _uplSigPlaced = true;
-  // Marker is inside wrap (absolute), so % is relative to the page area
-  marker.style.left = (_uplSigXPct * 100 - 12.5) + '%';
-  marker.style.top  = (_uplSigYPct * 100)         + '%';
-  if (img) img.src = store.value;
-  marker.classList.remove('hidden');
-  if (hint) hint.textContent =
-    'Placed at ' + Math.round(_uplSigXPct * 100) + '% from left, '
-    + Math.round(_uplSigYPct * 100) + '% from top. Click again to reposition.';
-}
-
-function _uplDocInitCanvas() {
-  var canvas = document.getElementById('upl-sig-canvas');
-  if (!canvas) return;
-  var ctx    = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth   = 2.5;
-  ctx.lineCap     = 'round';
-  ctx.lineJoin    = 'round';
-  var drawing = false;
-  function pos(e) {
-    var r = canvas.getBoundingClientRect();
-    var scX = canvas.width  / r.width;
-    var scY = canvas.height / r.height;
-    var src = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - r.left) * scX, y: (src.clientY - r.top) * scY };
-  }
-  canvas.onpointerdown = function(e) {
-    drawing = true; canvas.setPointerCapture(e.pointerId);
-    var p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
-  };
-  canvas.onpointermove = function(e) {
-    if (!drawing) return;
-    var p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke();
-  };
-  canvas.onpointerup   = function() { drawing = false; };
-  canvas.onpointerleave = function() { drawing = false; };
-}
-
-function _uplDocClearCanvas() {
-  var canvas = document.getElementById('upl-sig-canvas');
-  if (!canvas) return;
-  var ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-async function _uplDocDoSign(f) {
-  if (_uplDocBusy) return;
-  if (!_uplSigPlaced) { _uplShowToast('Please click the PDF to place your signature first.'); return; }
-  var sigData  = (document.getElementById('upl-sig-data-store') || {}).value || '';
-  var pageNum  = parseInt((document.getElementById('upl-sig-page-num-val') || {}).value || '0', 10) || 0;
-  if (!sigData) { _uplShowToast('Signature data missing — go back and redraw.'); return; }
-  _uplDocBusy = true;
-  var btn = document.getElementById('upl-sig-confirm-btn');
-  if (btn) btn.disabled = true;
-  try {
-    var r = await fetch(`/home/uploads/${_uplPid}/files/page/${f.id}/sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        signature_data: sigData,
-        page_num: pageNum,
-        x_pct: _uplSigXPct,
-        y_pct: _uplSigYPct,
-      }),
-    });
-    if (!r.ok) { var err = await r.json(); throw new Error(err.detail || r.status); }
-    var data = await r.json();
-    _uplCacheBust[f.id] = Date.now();
-    f.has_backup = true;
-    var cached = _uplFiles.find(function(x) { return x.src === f.src && x.id === f.id; });
-    if (cached) { cached.size = data.size; cached.has_backup = true; }
-    _uplDocCurrentFile.size = data.size;
-    _uplSigStampCount++;
-    // Show success step — user can add more stamps or finish
-    var body = document.getElementById('upl-sig-modal-body');
-    var ac = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
-    if (body) body.innerHTML = '<div class="flex flex-col items-center gap-4 py-6"><span class="text-4xl">\u2705</span><p class="text-sm font-semibold text-gray-800 dark:text-zinc-100">Stamp ' + _uplSigStampCount + ' added!</p><p class="text-xs text-gray-500 dark:text-zinc-400 text-center">Add another, or click Done to finish.</p><div class="flex gap-3 mt-1"><button type="button" onclick="_uplDocShowSignStep1(_uplDocCurrentFile)" class="' + ac + '">\u2795 Add Another</button><button type="button" onclick="_uplDocSignDone(_uplDocCurrentFile)" class="px-4 py-2 text-sm rounded-lg bg-[#2a8703] text-white font-semibold hover:bg-green-700 transition">Done \u2713</button></div></div>';
-  } catch(e) {
-    _uplShowToast('Signing failed: ' + _uplEsc(String(e)));
-  } finally {
-    _uplDocBusy = false;
-    if (btn) btn.disabled = false;
-  }
-}
-
-function _uplDocCloseSignModal() {
-  var modal = document.getElementById('upl-sig-modal');
-  if (modal) modal.classList.add('hidden');
-  _uplSigPlaced = false;
-  _uplSigDrawn  = false;
-  _uplSigStampCount = 0;
-}
-
-function _uplDocSignDone(f) {
-  var n = _uplSigStampCount; _uplDocCloseSignModal();
-  _uplShowToast(n + ' stamp' + (n !== 1 ? 's' : '') + ' added \u2713'); _uplRenderDetail(f);
-}
-
-async function _uplDocRemoveStamp(f) {
-  _uplRemoveStampFile = f;
-  var m = document.getElementById('upl-remove-stamp-modal');
-  if (m) m.classList.remove('hidden');
-}
-
-function _uplCancelRemoveStamp() {
-  _uplRemoveStampFile = null;
-  var m = document.getElementById('upl-remove-stamp-modal');
-  if (m) m.classList.add('hidden');
-}
-
-async function _uplConfirmRemoveStamp() {
-  var f = _uplRemoveStampFile;
-  if (!f) return;
-  var btn = document.getElementById('upl-remove-stamp-confirm-btn');
-  if (btn) btn.disabled = true;
-  try {
-    var r = await fetch('/home/uploads/' + _uplPid + '/files/page/' + f.id + '/sign', {method: 'DELETE'});
-    if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
-    var d = await r.json();
-    f.has_backup = false; f.size = d.size;
-    var hit = _uplFiles.find(function(x) { return x.src === f.src && x.id === f.id; });
-    if (hit) { hit.has_backup = false; hit.size = d.size; }
-    _uplCacheBust[f.id] = Date.now(); _uplCancelRemoveStamp(); _uplShowToast('Stamp removed \u2713'); _uplRenderDetail(f);
-  } catch(e) { _uplShowToast('Remove failed: ' + String(e));
-  } finally { if (btn) btn.disabled = false; }
+  if (embedEl) embedEl.src = '';
 }

@@ -1,17 +1,7 @@
 /* home-page-uploads.js — Uploads Homespace page (BookWorm).
-   Manages: file listing, type filter tabs, group-by-type toggle, pagination,
-            standalone upload (with WebP toggle), auth-gated download, file
-            delete, detail panel (media player, PDF embed, text preview), tags.
-   Server APIs:
-     GET    /home/uploads/{pid}/files?page=N             → {files,total,page,pages,counts}
-     POST   /home/uploads/{pid}/upload?webp=1|0          → {ok}
-     DELETE /home/uploads/{pid}/files/page/{id}          → {ok}
-     GET    /home/uploads/{pid}/files/note/{id}/download
-     GET    /home/uploads/{pid}/files/page/{id}/download
-     GET    /home/uploads/{pid}/tags                     → {tags:[]}
-     GET    /home/uploads/{pid}/files/{src}/{id}/tags    → {tags:[]}
-     POST   /home/uploads/{pid}/files/{src}/{id}/tags    body:{tag} → {tags:[]}
-     DELETE /home/uploads/{pid}/files/{src}/{id}/tags/{tag}         → {tags:[]}
+   Manages file listing, filter tabs, pagination, upload, download, delete,
+   detail panel (media/PDF/DOCX/text viewer), tags, and multi-select.
+   Sign functions → home-page-uploads-sign.js | Studio → home-page-uploads-docs.js
 */
 'use strict';
 
@@ -28,6 +18,7 @@ let _uplAllTags       = [];      // all user tags (lazy-loaded once + after muta
 let _uplBusy      = false;   // upload in progress
 let _uplDelPending = null;   // uploadId waiting for delete confirmation
 var _uplCacheBust  = {};     // fileId → timestamp; cache-busts embed after sign
+var _DOCX_MIME     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 async function initUploadsPage(pid) {
@@ -393,10 +384,9 @@ function _uplRenderDetail(f) {
         <source src="${fUrl}" type="${_uplEsc(mt)}">Your browser doesn\'t support HTML5 audio.
       </audio></div>`;
   } else if (mt === 'application/pdf') {
-    var pdfLabel = _uplJsStr(f.original_name);
     preview = `<div class="mb-4 rounded-xl overflow-hidden border border-gray-200
         dark:border-zinc-700 relative group cursor-zoom-in"
-        onclick="_uplPdfPreviewOpen('${_uplJsStr(fUrl)}','${pdfLabel}')">
+        onclick="_uplFileViewerOpen(_uplCurrentDetail)">
       <embed src="${fUrl}" type="application/pdf" class="w-full pointer-events-none"
              style="height:280px" tabindex="-1">
       <div class="absolute inset-0 flex items-end justify-end p-2
@@ -407,6 +397,8 @@ function _uplRenderDetail(f) {
         </span>
       </div>
     </div>`;
+  } else if (mt === _DOCX_MIME || mt === 'text/csv') {
+    preview = _uplDocCsvCard(f, fUrl);
   } else if (isText) {
     preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto">
       <p class="text-[10px] text-gray-400 italic">Loading preview\u2026</p></div>`;
@@ -439,6 +431,12 @@ function _uplRenderDetail(f) {
   if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
+}
+
+function _uplDocCsvCard(f, fUrl) {
+  var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';
+  var label = f.mime_type === _DOCX_MIME ? 'Word Document' : 'CSV Spreadsheet';
+  return '<div class="mb-4 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden cursor-pointer group hover:border-[#0053e2] transition-colors" onclick="_uplFileViewerOpen(_uplCurrentDetail)"><div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-zinc-800"><span class="text-3xl">' + icon + '</span><div class="min-w-0"><p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">' + _uplEsc(f.original_name) + '</p><p class="text-[10px] text-gray-400">' + label + ' &middot; click to view</p></div><span class="ml-auto text-[11px] font-semibold text-[#0053e2] group-hover:underline flex-shrink-0">View &#8594;</span></div></div>';
 }
 
 // ── Delete confirmation modal ───────────────────────────────────────────────────

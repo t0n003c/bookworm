@@ -13,6 +13,7 @@ Phase 4 endpoints (all implemented here):
 from __future__ import annotations
 
 import base64
+import csv
 import io
 import shutil
 import uuid
@@ -53,11 +54,18 @@ class ConvertBody(BaseModel):
     to_format: str  # "pdf" | "txt"
 
 
-class SignBody(BaseModel):
-    signature_data: str   # data:image/png;base64,…
+class SignPlacement(BaseModel):
+    x_pct: float   # 0-1 from left edge
+    y_pct: float   # 0-1 from top edge (CSS origin; flipped to PDF bottom-up)
     page_num: int = 0
-    x_pct: float = 0.65  # 0‑1 from left edge (click position as fraction of page width)
-    y_pct: float = 0.05  # 0‑1 from top  edge (CSS origin; converted to PDF bottom‑up)
+
+
+class SignBody(BaseModel):
+    signature_data: str              # data:image/png;base64,…
+    page_num: int = 0                # legacy single-placement fallback
+    x_pct: float = 0.65             # legacy single-placement fallback
+    y_pct: float = 0.80             # legacy single-placement fallback
+    placements: list[SignPlacement] | None = None  # multi-placement (preferred)
 
 
 # ── GET /{pid}/files/{src}/{id}/content ───────────────────────────────────────
@@ -91,15 +99,94 @@ async def read_content(request: Request, page_id: int, src: str, file_id: int):
 
     if mime == _DOCX_MIME:
         try:
-            from docx import Document  # python-docx — imported lazily to skip startup cost
+            from docx import Document
             doc = Document(disk_path)
-            paras = [escape(p.text) for p in doc.paragraphs if p.text.strip()]
-            html = "<br>".join(f"<p>{p}</p>" for p in paras) or "<p><em>Empty document</em></p>"
+            html = _docx_body_to_html(doc)
         except Exception as exc:
             raise HTTPException(status_code=500, detail="Could not parse Word document") from exc
         return JSONResponse({"content": html, "content_type": "docx_html"})
 
+    if mime == "text/csv" or (mime.startswith("text/") and disk_path.suffix.lower() == ".csv"):
+        try:
+            raw = disk_path.read_text(encoding="utf-8-sig", errors="replace")
+            html = _csv_to_html(raw)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Could not parse CSV") from exc
+        return JSONResponse({"content": html, "content_type": "csv_html"})
+
     raise HTTPException(status_code=400, detail="Content read not supported for this file type")
+
+
+def _docx_body_to_html(doc) -> str:   # type: ignore[annotation-unchecked]
+    """Walk body children in document order → proper heading/bold/italic/table HTML."""
+    from docx.oxml.ns import qn
+
+    _HEADING_MAP = {
+        "Heading 1": "h2", "Heading 2": "h3", "Heading 3": "h4",
+        "Heading 4": "h5", "Heading 5": "h6", "Heading 6": "h6",
+        "Title": "h1", "Subtitle": "h2",
+    }
+
+    def _runs_html(para) -> str:
+        parts = []
+        for run in para.runs:
+            txt = escape(run.text or "")
+            if not txt:
+                continue
+            if run.bold and run.italic:
+                txt = f"<strong><em>{txt}</em></strong>"
+            elif run.bold:
+                txt = f"<strong>{txt}</strong>"
+            elif run.italic:
+                txt = f"<em>{txt}</em>"
+            if run.underline:
+                txt = f"<u>{txt}</u>"
+            parts.append(txt)
+        return "".join(parts)
+
+    def _para_html(para) -> str:
+        style = para.style.name if para.style else ""
+        tag   = _HEADING_MAP.get(style, "p")
+        inner = _runs_html(para) or "&nbsp;"
+        return f"<{tag}>{inner}</{tag}>"
+
+    def _table_html(tbl) -> str:
+        rows = []
+        for i, row in enumerate(tbl.rows):
+            cells = []
+            for cell in row.cells:
+                td = "th" if i == 0 else "td"
+                cells.append(f"<{td}>{escape(cell.text)}</{td}>")
+            rows.append("<tr>" + "".join(cells) + "</tr>")
+        return '<table class="bw-doc-table">' + "".join(rows) + "</table>"
+
+    parts: list[str] = []
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    for child in doc.element.body:
+        if child.tag == qn("w:p"):
+            parts.append(_para_html(Paragraph(child, doc.element.body)))
+        elif child.tag == qn("w:tbl"):
+            parts.append(_table_html(Table(child, doc.element.body)))
+    return "".join(parts) or "<p><em>Empty document</em></p>"
+
+
+def _csv_to_html(raw: str) -> str:
+    """Parse CSV text → styled HTML table (max 500 rows for safety)."""
+    reader = list(csv.reader(io.StringIO(raw)))
+    if not reader:
+        return "<p><em>Empty CSV</em></p>"
+    MAX_ROWS = 500
+    header, rows = reader[0], reader[1:MAX_ROWS + 1]
+    truncated   = len(reader) - 1 > MAX_ROWS
+    th = "".join(f"<th>{escape(c)}</th>" for c in header)
+    body_rows   = []
+    for row in rows:
+        # Pad short rows to header length
+        padded = row + [""] * max(0, len(header) - len(row))
+        body_rows.append("<tr>" + "".join(f"<td>{escape(c)}</td>" for c in padded) + "</tr>")
+    note = f'<p class="bw-csv-note">Showing first {MAX_ROWS} of {len(reader)-1} rows.</p>' if truncated else ""
+    return f'<table class="bw-doc-table"><thead><tr>{th}</tr></thead><tbody>' + "".join(body_rows) + f"</tbody></table>{note}"
 
 
 # ── PUT /{pid}/files/page/{id}/content ────────────────────────────────────────
@@ -375,6 +462,13 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid signature data") from exc
 
+    # Build the list of placements (multi-placement preferred; single legacy fallback)
+    placements = body.placements or [
+        SignPlacement(x_pct=body.x_pct, y_pct=body.y_pct, page_num=body.page_num)
+    ]
+    if not placements:
+        raise HTTPException(status_code=400, detail="No signature placements provided")
+
     try:
         import PIL.Image
         import pypdf
@@ -382,31 +476,32 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
         from reportlab.pdfgen import canvas as rl_canvas
 
         sig_img = PIL.Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
-        reader = pypdf.PdfReader(str(UPLOAD_DIR / row["filename"]))
-        writer = pypdf.PdfWriter()
+        reader  = pypdf.PdfReader(str(UPLOAD_DIR / row["filename"]))
+        writer  = pypdf.PdfWriter()
         writer.append(reader)
+        page_count = len(writer.pages)
 
-        pg_idx = min(body.page_num, len(writer.pages) - 1)
-        target_page = writer.pages[pg_idx]
-        pg_w = float(target_page.mediabox.width)
-        pg_h = float(target_page.mediabox.height)
+        for pl in placements:
+            pg_idx      = min(max(pl.page_num, 0), page_count - 1)
+            target_page = writer.pages[pg_idx]
+            pg_w = float(target_page.mediabox.width)
+            pg_h = float(target_page.mediabox.height)
 
-        # Caller supplies x_pct/y_pct (0‑1 fractions, CSS top‑left origin).
-        # Signature width = 25 % of page; height scales to preserve aspect ratio.
-        sig_w_pt = pg_w * 0.25
-        sig_h_pt = sig_w_pt * sig_img.height / sig_img.width
-        # Center sig horizontally on click; PDF y‑origin is bottom‑left.
-        x_pt = max(0.0, min(body.x_pct * pg_w - sig_w_pt / 2, pg_w - sig_w_pt))
-        y_pt = max(0.0, min((1.0 - body.y_pct) * pg_h - sig_h_pt, pg_h - sig_h_pt))
+            # Signature width = 25 % of page; height scales to preserve aspect ratio.
+            sig_w_pt = pg_w * 0.25
+            sig_h_pt = sig_w_pt * sig_img.height / sig_img.width
+            # Center sig horizontally on click; PDF y-origin is bottom-left.
+            x_pt = max(0.0, min(pl.x_pct * pg_w - sig_w_pt / 2, pg_w - sig_w_pt))
+            y_pt = max(0.0, min((1.0 - pl.y_pct) * pg_h - sig_h_pt, pg_h - sig_h_pt))
 
-        overlay_buf = io.BytesIO()
-        c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))
-        c.drawImage(ImageReader(sig_img), x_pt, y_pt,
-                    width=sig_w_pt, height=sig_h_pt, mask="auto")
-        c.save()
+            overlay_buf = io.BytesIO()
+            c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))
+            c.drawImage(ImageReader(sig_img), x_pt, y_pt,
+                        width=sig_w_pt, height=sig_h_pt, mask="auto")
+            c.save()
 
-        overlay_reader = pypdf.PdfReader(overlay_buf)
-        target_page.merge_page(overlay_reader.pages[0])
+            overlay_reader = pypdf.PdfReader(overlay_buf)
+            target_page.merge_page(overlay_reader.pages[0])
 
         out_buf = io.BytesIO()
         writer.write(out_buf)
@@ -423,4 +518,4 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
 
     (UPLOAD_DIR / row["filename"]).write_bytes(data)
     await update_page_upload_size(file_id, uid, len(data))
-    return JSONResponse({"ok": True, "size": len(data), "has_backup": True})
+    return JSONResponse({"ok": True, "size": len(data), "has_backup": True, "stamps": len(placements)})
