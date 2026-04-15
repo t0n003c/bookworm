@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import io
+import shutil
 import uuid
 from html import escape
 
@@ -288,6 +289,72 @@ def _text_to_pdf_bytes(text: str) -> bytes:
 
 # ── POST /{pid}/files/page/{id}/sign ─────────────────────────────────────────
 
+# ── GET page dimensions (used by placement UI to build a proportioned click-target) ──
+
+@router.get("/{page_id}/files/page/{file_id}/page-dims")
+async def get_page_dims(request: Request, page_id: int, file_id: int):
+    """Return page-0 dimensions in points so the JS can render a correctly-proportioned preview."""
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    row = await get_page_upload_owned(file_id, uid)
+    if not row or row["mime_type"] != "application/pdf":
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(str(UPLOAD_DIR / row["filename"]))
+        pg = reader.pages[0]
+        return JSONResponse({
+            "width_pt": float(pg.mediabox.width),
+            "height_pt": float(pg.mediabox.height),
+            "page_count": len(reader.pages),
+        })
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── GET/DELETE sign — backup status + stamp removal ───────────────────────────
+
+@router.get("/{page_id}/files/page/{file_id}/sign")
+async def sign_status(request: Request, page_id: int, file_id: int):
+    """Return whether an unsigned backup exists for this PDF."""
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    row = await get_page_upload_owned(file_id, uid)
+    if not row:
+        raise HTTPException(status_code=404)
+    bak = UPLOAD_DIR / (row["filename"] + ".bak")
+    return JSONResponse({"has_backup": bak.exists()})
+
+
+@router.delete("/{page_id}/files/page/{file_id}/sign")
+async def remove_stamp(request: Request, page_id: int, file_id: int):
+    """Restore the pre-signature backup, deleting the stamped version."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    row = await get_page_upload_owned(file_id, uid)
+    if not row:
+        raise HTTPException(status_code=404)
+    bak = UPLOAD_DIR / (row["filename"] + ".bak")
+    if not bak.exists():
+        raise HTTPException(status_code=400, detail="No unsigned backup found")
+    pdf_path = UPLOAD_DIR / row["filename"]
+    shutil.copy2(str(bak), str(pdf_path))
+    bak.unlink()
+    size = pdf_path.stat().st_size
+    await update_page_upload_size(file_id, uid, size)
+    return JSONResponse({"ok": True, "size": size})
+
+
+# ── POST sign ─────────────────────────────────────────────────────────────────
+
 @router.post("/{page_id}/files/page/{file_id}/sign")
 async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody):
     """Stamp a drawn signature onto the specified page of a PDF (in-place)."""
@@ -349,6 +416,11 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Signature stamping failed: {exc}") from exc
 
+    # Save unsigned backup before first stamp so the user can undo
+    bak_path = UPLOAD_DIR / (row["filename"] + ".bak")
+    if not bak_path.exists():
+        shutil.copy2(str(UPLOAD_DIR / row["filename"]), str(bak_path))
+
     (UPLOAD_DIR / row["filename"]).write_bytes(data)
     await update_page_upload_size(file_id, uid, len(data))
-    return JSONResponse({"ok": True, "size": len(data)})
+    return JSONResponse({"ok": True, "size": len(data), "has_backup": True})
