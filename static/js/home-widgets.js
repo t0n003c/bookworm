@@ -293,7 +293,7 @@ function showHomePage(pageId) {
     if (Number(sessionStorage.getItem('bw-hp')) !== pageId) return;
     if (!hc.querySelector('#bw-page-spinner')) return;
     hc.style.opacity = '0';
-    hc.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-3">`;
+    hc.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-3">
       <span class="text-4xl">😵</span>
       <p class="text-sm font-semibold text-gray-700 dark:text-zinc-300">Taking too long…</p>
       <button onclick="showHomePage(${pageId})"
