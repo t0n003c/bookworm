@@ -17,6 +17,11 @@ uploads/
 # Logs
 *.log
 
+# Secrets (never bake credentials into the image)
+*.secret
+cookies.txt
+cookies*.txt
+
 # Git history (not needed at runtime)
 .git/
 .gitignore
@@ -25,11 +30,25 @@ uploads/
 .DS_Store
 Thumbs.db
 
-# Dev/test scripts
-smoke_test.py
+# All dev / test / debug scripts
+_check_*.py
+_qa_*.py
+_migrate_*.py
+_test_*.py
+_jscheck.py
+check_*.py
+_tmp*.py
+_debug*.py
+diag*.py
+tail_log.py
+test_*.py
 template_test.py
-_test_routes.py
-_route_test.py
+smoke_test.py
+
+# Temp data dumps
+openapi_tmp.json
+openapi_*.json
+*.tmp.json
 
 # This file itself
 .dockerignore

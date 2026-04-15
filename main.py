@@ -11,10 +11,33 @@ log = logging.getLogger(__name__)
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth_middleware import AuthMiddleware
 from security import load_secret_key
+
+
+# ── Security response headers ─────────────────────────────────────────────────
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject standard security headers on every response.
+
+    Deliberately skips Content-Security-Policy: the app uses Tailwind/HTMX/
+    Chart.js from CDN and has inline <script> blocks throughout the templates.
+    A nonce-based CSP is the right long-term fix but is out of scope here.
+    """
+    _HEADERS = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options":        "SAMEORIGIN",
+        "Referrer-Policy":        "strict-origin-when-cross-origin",
+        "Permissions-Policy":     "camera=(), microphone=(), geolocation=()",
+    }
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        for k, v in self._HEADERS.items():
+            response.headers.setdefault(k, v)
+        return response
 
 
 from database import init_db
@@ -99,6 +122,8 @@ app.add_middleware(
     https_only=os.getenv("BW_HTTPS", "false").lower() == "true",
     max_age=86_400 * 30,  # 30-day cookie TTL; per-session expiry enforced in middleware
 )
+# Outermost — runs last on responses, so it stamps headers on everything.
+app.add_middleware(_SecurityHeadersMiddleware)
 
 app.mount("/static",  StaticFiles(directory="static"),          name="static")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)),   name="uploads")

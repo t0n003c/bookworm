@@ -8,6 +8,7 @@ venv/
 .env
 
 # Eddie debug / temp scripts + scratch files (never commit these)
+# Prefixed patterns (Eddie's naming convention)
 _check_*.py
 _qa_*.py
 _migrate_*.py
@@ -18,6 +19,19 @@ _tmp*.py
 _tmp*.txt
 _debug*.txt
 _debug*.py
+_rss_routes.py
+_qa_*.txt
+# Unprefixed one-off scripts that escaped in the past
+diag*.py
+diag*.txt
+tail_log.py
+test_*.py
+template_test.py
+smoke_test.py
+# Temp data / API exploration dumps
+openapi_tmp.json
+openapi_*.json
+*.tmp.json
 
 # Database (may contain PII)
 *.db
