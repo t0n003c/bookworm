@@ -466,4 +466,91 @@
   <div id="upl-ss-grid" class="hidden flex-1 overflow-auto bg-white"></div>
 </div>
 
+{# ── PDF Annotations modal (Phase 8 / B2) ──────────────────────────────────────── #}
+<div id="upl-annot-modal"
+     class="hidden fixed inset-0 z-[60] flex flex-col"
+     role="dialog" aria-modal="true" aria-labelledby="upl-annot-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplAnnotClose()">
+
+  {# ── Top bar ── #}
+  <div class="flex items-center gap-2 px-4 py-2 flex-shrink-0
+              bg-zinc-900 border-b border-zinc-700 flex-wrap">
+    <span class="text-base leading-none">&#128221;</span>
+    <span id="upl-annot-filename"
+          class="text-sm font-semibold text-zinc-100 truncate flex-1 min-w-0"></span>
+    <span id="upl-annot-title" class="sr-only">PDF Annotations</span>
+
+    {# Tool buttons #}
+    <button type="button" id="upl-annot-tool-highlight"
+            onclick="_uplAnnotAddMode('highlight')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Highlight tool" aria-pressed="false">&#128396; Highlight</button>
+    <button type="button" id="upl-annot-tool-sticky"
+            onclick="_uplAnnotAddMode('sticky')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Sticky note tool" aria-pressed="false">&#128204; Sticky</button>
+    <button type="button" id="upl-annot-tool-textbox"
+            onclick="_uplAnnotAddMode('textbox')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Text box tool" aria-pressed="false">&#128288; Text Box</button>
+
+    {# Page navigation #}
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page - 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Previous page">&#8249;</button>
+    <span id="upl-annot-page-label"
+          class="text-xs text-zinc-400 select-none whitespace-nowrap">Page 1 / 1</span>
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page + 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Next page">&#8250;</button>
+
+    <button type="button" onclick="_uplAnnotClose()"
+            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
+                   rounded-lg px-3 py-1.5 text-xs font-medium transition
+                   focus:outline-none focus:ring-1 focus:ring-white ml-1"
+            aria-label="Close annotation editor">&#x2715; Close</button>
+  </div>
+
+  {# ── Loading state ── #}
+  <div id="upl-annot-loading"
+       class="flex-1 flex items-center justify-center bg-zinc-950 text-zinc-400 text-sm">
+    <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading PDF…
+  </div>
+
+  {# ── Error state ── #}
+  <div id="upl-annot-error"
+       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-950
+              text-red-400 text-sm gap-3">
+    <p id="upl-annot-error-msg"></p>
+    <button type="button" onclick="_uplAnnotClose()"
+            class="text-xs px-3 py-1.5 rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white transition">Close</button>
+  </div>
+
+  {# ── Canvas + overlay ── #}
+  <div id="upl-annot-body"
+       class="hidden flex-1 overflow-auto bg-zinc-950 flex items-start justify-center p-4">
+    <div id="upl-annot-canvas-wrap" style="position:relative;display:inline-block;">
+      <canvas id="upl-annot-canvas"></canvas>
+      <div id="upl-annot-overlay"
+           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"
+           role="presentation"></div>
+    </div>
+  </div>
+
+</div>
+
 </div>{# /uploads-page-root #}

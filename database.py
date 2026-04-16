@@ -575,6 +575,28 @@ async def init_db() -> None:
             "ON page_upload_tags(user_id, tag)"
         )
 
+        # ── pdf_annotations (overlay annotations stored as % coords, no PyMuPDF needed) ────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS pdf_annotations (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id)        ON DELETE CASCADE,
+                file_id     INTEGER NOT NULL REFERENCES page_uploads(id) ON DELETE CASCADE,
+                page_num    INTEGER NOT NULL DEFAULT 0,
+                type        TEXT    NOT NULL,
+                x_pct       REAL    NOT NULL,
+                y_pct       REAL    NOT NULL,
+                width_pct   REAL    NOT NULL DEFAULT 0.2,
+                height_pct  REAL    NOT NULL DEFAULT 0.05,
+                color       TEXT    NOT NULL DEFAULT '#ffc220',
+                content     TEXT    NOT NULL DEFAULT '',
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pdf_annot_file "
+            "ON pdf_annotations(file_id, user_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

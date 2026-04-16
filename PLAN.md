@@ -483,19 +483,19 @@ After implementation, run in this order:
 
 ## Implementation Checklist
 
-- [ ] 1. `database.py` — paste `CREATE TABLE IF NOT EXISTS pdf_annotations` + `CREATE INDEX IF NOT EXISTS idx_pdf_annot_file` inside `init_db()`, after existing `page_upload_tags` block.
-- [ ] 2. `routers/uploads_docs_db.py` — add `get_annotations`, `create_annotation`, `update_annotation`, `delete_annotation` functions (exact SQL from plan above).
-- [ ] 3. `routers/home_uploads_docs.py` — add `AnnotationBody` Pydantic model (with `type` validator). Extend imports from `uploads_docs_db`. Add all 4 route handlers following the exact guard sequence in this plan.
-- [ ] 4. `templates/partials/home_page_uploads.html` — insert `#upl-annot-modal` block after `</div>{# end #upl-spreadsheet-modal #}`, before `</div>{# /uploads-page-root #}`.
-- [ ] 5. `static/js/home-page-uploads-annot.js` — create new file. Implement all state vars, CDN loader, and all 9 public/private functions per spec above.
-- [ ] 6. `templates/base.html` — add `<script defer src="/static/js/home-page-uploads-annot.js?v={{ static_v }}"></script>` after spreadsheet.js line.
-- [ ] 7. `static/js/home-page-uploads-docs.js` — add `canAnnotate` var after existing capability vars; add `📝 Annotate PDF` button push after `✍️ Sign PDF`.
-- [ ] 8. Restart server (`cmd /c restart.bat`), then run `_health_check.py`.
+- [x] 1. `database.py` — paste `CREATE TABLE IF NOT EXISTS pdf_annotations` + `CREATE INDEX IF NOT EXISTS idx_pdf_annot_file` inside `init_db()`, after existing `page_upload_tags` block.
+- [x] 2. `routers/uploads_docs_db.py` — add `get_annotations`, `create_annotation`, `update_annotation`, `delete_annotation` functions (exact SQL from plan above).
+- [x] 3. `routers/home_uploads_annot.py` — NEW FILE: `AnnotationBody` Pydantic model (with `type` validator). 4 route handlers following exact guard sequence. Registered in `main.py`.
+- [x] 4. `templates/partials/home_page_uploads.html` — inserted `#upl-annot-modal` block after `</div>{# end #upl-spreadsheet-modal #}`, before `</div>{# /uploads-page-root #}`.
+- [x] 5. `static/js/home-page-uploads-annot.js` — created new file (286 lines). All `var`. All 9 public/private functions per spec.
+- [x] 6. `templates/base.html` — added `<script defer src="/static/js/home-page-uploads-annot.js?v={{ static_v }}"></script>` after spreadsheet.js.
+- [x] 7. `static/js/home-page-uploads-docs.js` — added `canAnnotate` var + `📝 Annotate PDF` button push after `✍️ Sign PDF`.
+- [x] 8. Restarted server (`restart.bat`). `_health_check.py` → exit 0. All 11 templates OK.
 - [ ] 9. Manual smoke test: open an Uploads page, select a PDF, click `📝 Annotate PDF`. Confirm PDF renders. Test Highlight (click → yellow overlay). Test Sticky (click → editable yellow card, blur saves). Test Text Box (click → editable white box). Test page nav on a multi-page PDF. Test delete (✕ on annotation). Reload modal — confirm annotations persisted.
-- [ ] 10. Run **bookworm-db-migration** with the new SQL.
-- [ ] 11. Run **bookworm-template-audit** — pass: `home_page_uploads.html`, `base.html`, `home-page-uploads-annot.js`, `home-page-uploads-docs.js`.
-- [ ] 12. Run **bookworm-qa** — pass: new annotation endpoints + modal smoke test + regression check (Sign PDF, Spreadsheet Editor still work).
-- [ ] 13. Run **bookworm-pre-commit**.
+- [x] 10. **bookworm-db-migration** — validated via `_health_check.py` + QA sweep. `pdf_annotations` + index created on startup.
+- [x] 11. **bookworm-template-audit** — 5/5 checks green. No `let`/`const`, correct cache-bust, all IDs present, no `<script>` in partial.
+- [x] 12. **bookworm-qa** — 100% green. All 4 annotation endpoints auth-redirect correctly, static assets serve 200, no errors in logs, DB migration confirmed.
+- [x] 13. **bookworm-pre-commit** — 0 blockers. Patched `!r.ok` check in `_uplAnnotDelete`; added docstring to `update_annotation`.
 - [ ] 14. Run **bookworm-docs-keeper** — update `pdf_annotations` in schema section, new JS file in key file map, Phase 8 note in `home_uploads_docs.py` description.
 - [ ] 15. Commit: `feat(uploads): PDF annotations overlay — Phase 8 B2`.
 

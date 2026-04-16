@@ -41,3 +41,67 @@ async def get_page_upload_owned_bulk(
         rows = await cur.fetchall()
     by_id = {r["id"]: dict(r) for r in rows}
     return [by_id[i] for i in ids if i in by_id]
+
+
+# ── pdf_annotations helpers (Phase 8 / B2) ───────────────────────────────────
+
+async def get_annotations(file_id: int, user_id: int) -> list[dict]:
+    """Return all annotations for a file, ordered by creation time."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, page_num, type, x_pct, y_pct, width_pct, height_pct, "
+            "color, content, created_at "
+            "FROM pdf_annotations WHERE file_id=? AND user_id=? ORDER BY created_at",
+            (file_id, user_id),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def create_annotation(file_id: int, user_id: int, data) -> int:
+    """Insert one annotation row. Returns the new row id."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "INSERT INTO pdf_annotations "
+            "(user_id, file_id, page_num, type, x_pct, y_pct, "
+            " width_pct, height_pct, color, content) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                user_id, file_id, data.page_num, data.type,
+                data.x_pct, data.y_pct, data.width_pct, data.height_pct,
+                data.color, data.content,
+            ),
+        )
+        await db.commit()
+    return cur.lastrowid
+
+
+async def update_annotation(annot_id: int, user_id: int, data) -> int:
+    """Update position + content. Returns affected rowcount (0 = not found/not owned).
+
+    Note: page_num and type are intentionally excluded — annotations do not
+    switch pages or change type after creation.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE pdf_annotations "
+            "SET x_pct=?, y_pct=?, width_pct=?, height_pct=?, color=?, content=? "
+            "WHERE id=? AND user_id=?",
+            (
+                data.x_pct, data.y_pct, data.width_pct, data.height_pct,
+                data.color, data.content, annot_id, user_id,
+            ),
+        )
+        await db.commit()
+    return cur.rowcount
+
+
+async def delete_annotation(annot_id: int, user_id: int) -> int:
+    """Delete one annotation. Returns affected rowcount (0 = not found/not owned)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM pdf_annotations WHERE id=? AND user_id=?",
+            (annot_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount
