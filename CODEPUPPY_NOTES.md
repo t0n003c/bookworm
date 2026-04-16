@@ -19,6 +19,9 @@
   | `BW_HTTPS` | `false` | Set `true` behind a TLS proxy to enable Secure cookies |
   | `BW_ALLOW_REGISTRATION` | `true` | Seeds `site_settings.registration_open` on first boot only. After that the DB value is authoritative — toggle live in the superadmin panel. |
   | `BW_DEMO_ENABLED` | `true` | `false` = hide Try Demo button, disable `/demo/start` |
+  | `BW_COLLABORA_URL` | `` (disabled) | Browser-facing URL of the Collabora Online server (e.g. `http://localhost:9980`). Empty = "Edit in Collabora" button hidden everywhere. |
+  | `BW_WOPI_BASE_URL` | `` (disabled) | URL Collabora uses to reach BookWorm's WOPI endpoints (server-to-server). Must be set when `BW_COLLABORA_URL` is set. e.g. `http://bookworm:8001` (Docker bridge) |
+  | `BW_WOPI_TOKEN_EXPIRY` | `3600` | WOPI access-token lifetime in seconds (default 1 hour). |
   | `WORKERS` | `1` | Uvicorn workers (max ~4 with SQLite+WAL) |
 
 - **New env var added?** → also add it to `.env.example` AND `docker-compose.yml` (with comment). No exceptions.
@@ -44,6 +47,7 @@
 - `docker-compose.yml` uses `${VAR:?error message}` for required secrets so Docker fails loudly instead of silently using a default.
 - `*.secret` is gitignored (the auto-generated key file).
 - `*.db`, `uploads/`, `*.log` are gitignored AND dockerignored.
+- **`collabora` service** — `docker-compose.yml` includes an optional `collabora/code:latest` service. It has **no host-port mapping by default** (internal bridge only). To use it, set `BW_COLLABORA_URL=http://<host-ip>:9980` and `BW_WOPI_BASE_URL=http://bookworm:8001`, then uncomment the host-port in `docker-compose.yml`. Leave both env vars empty to skip Collabora entirely — the service can remain defined in the file; it only activates when the vars are set.
 
 ### ✅ Dependencies — `requirements.txt` only
 - All Python deps go in `requirements.txt` with pinned major versions (e.g. `fastapi==0.115.12`).
@@ -88,6 +92,7 @@
 - [ ] Migration in `init_db()` is idempotent (can run 10× safely)
 - [ ] `requirements.txt` updated if new dep added
 - [ ] No PII or user data in committed files
+- [ ] If new WOPI-eligible MIME type added: updated BOTH `WOPI_MIMES` in `routers/wopi.py` AND `_WOPI_MIMES` in `home-page-uploads-wopi.js`
 
 ---
 
@@ -130,7 +135,8 @@
 | `routers/home_crm_db.py` | DB helpers for CRM. Uses single JOIN in `_attach_field_values()` to avoid N+1. |
 | `routers/uploads_db.py` | paginated merged query with embedded tags (GROUP_CONCAT) + workspace_id; MIME-group counts inline in `get_uploads_page()`; `delete_page_upload()` (sweeps tags); 6 tag CRUD helpers; `get_all_user_tags()` |
 | `routers/home_uploads.py` | Uploads page API: list files (50/page), standalone upload (`webp: bool = True` query param), auth-gated download, delete, 4 tag endpoints |
-| `routers/home_uploads_docs.py` | **Document Studio API** (Phase 4). 5 endpoints under `/home/uploads/{pid}`: read content (text/DOCX-as-HTML), save edited text (max 1 MB), combine PDFs / join text (2–20 files), convert (docx/txt→pdf, docx/pdf→txt), sign (stamp drawn PNG signature onto PDF page). Kept separate from `home_uploads.py` for cohesion. |
+| `routers/home_uploads_docs.py` | **Document Studio API** (Phase 4). 5 endpoints under `/home/uploads/{pid}`: read content (text/DOCX-as-HTML), save edited text (max 1 MB), combine PDFs / join text (2–20 files), convert (docx/txt→pdf, docx/pdf→txt), sign (stamp drawn PNG signature onto PDF page). Phase 6 (commit `801ee6a`) adds `GET /{pid}/files/page/{fid}/wopi-token` — issues an `itsdangerous` WOPI token; returns `{collabora_disabled: true}` when `BW_COLLABORA_URL` is unset. Kept separate from `home_uploads.py` for cohesion. |
+| `routers/wopi.py` | **WOPI host router** (Phase 6, commit `801ee6a`). Prefix `/wopi`. Endpoints: `GET /wopi/files/{file_id}` (CheckFileInfo), `GET /wopi/files/{file_id}/contents` (GetFile), `POST /wopi/files/{file_id}/contents` (PutFile — saves bytes back), `POST /wopi/files/{file_id}` (LOCK stub — always 200, Phase 7 TODO). Token auth via `?access_token=` query param using `itsdangerous.URLSafeTimedSerializer` (salt `wopi-token-v1`). No session cookie — purely token-auth. Reads/writes via `UPLOAD_DIR`. Exports: `issue_token()`, `get_editor_url()`, `WOPI_MIMES` (frozenset), `_COLLABORA_URL`, `_WOPI_BASE_URL`. Collabora discovery XML cached in `_discovery_cache` dict to avoid repeated HTTP fetches. |
 | `routers/uploads_docs_db.py` | DB helpers for Document Studio. `update_page_upload_size(id, uid, size)` — UPDATE size after edit/sign. `get_page_upload_owned_bulk(ids, uid)` — single IN-clause query for multiple owned rows (combine/merge flow). |
 | `routers/account.py` | User profile / password change / admin user management |
 | `routers/totp.py` | 2FA (TOTP) setup + verify routes |
@@ -141,7 +147,8 @@
 | `templates/partials/home_page_crm.html` | CRM page shell — `#crm-page-root`, `#crm-main`, modal container. No inline script blocks. |
 | `templates/partials/note_form.html` | Note editor (huge — ~122 KB) |
 | `static/js/home-page-uploads.js` | Uploads page JS module (590 lines). State: `_uplGrouped` (grouped-by-MIME display toggle). Detail panel (image/video/audio/embed/text preview), filter tabs, tag rendering, `_uplJsStr()` / `_uplEsc()` escaping helpers. Tags CRUD delegates to `home-page-uploads-tags.js`. Two defensive hooks at end of `_uplRenderDetail` and `_uplRender` call `_uplDocStudioInit(f)` and `_uplDocAfterRender()` when present. |
-| `static/js/home-page-uploads-docs.js` | **Document Studio companion** (440 lines, Phase 4). Called via hooks in main uploads JS. `_uplDocStudioInit(f)` renders the studio panel inside `#upl-doc-studio` after detail panel HTML is written. `_uplDocAfterRender()` injects the ☐ Select button for multi-select mode. Operations: view full text, inline edit + save, → PDF, → TXT, Sign (drawn signature → PDF), Merge PDFs / Join Text (floating toolbar). Eligibility by file type: note-src = read-only label; page-src text/JSON = view/edit/→PDF; page-src PDF = sign/→TXT; page-src DOCX = view/→PDF/→TXT. |
+| `static/js/home-page-uploads-docs.js` | **Document Studio companion** (440 lines, Phase 4). Called via hooks in main uploads JS. `_uplDocStudioInit(f)` renders the studio panel inside `#upl-doc-studio` after detail panel HTML is written. `_uplDocAfterRender()` injects the ☐ Select button for multi-select mode. Operations: view full text, inline edit + save, → PDF, → TXT, Sign (drawn signature → PDF), Merge PDFs / Join Text (floating toolbar). Eligibility by file type: note-src = read-only label; page-src text/JSON = view/edit/→PDF; page-src PDF = sign/→TXT; page-src DOCX = view/→PDF/→TXT. Also checks `_uplWopiEnabled()` (defined by the wopi companion below) to gate the "✏️ Edit in Collabora" button. |
+| `static/js/home-page-uploads-wopi.js` | **WOPI modal companion** (Phase 6, commit `801ee6a`). Loaded LAST in `base.html` after `home-page-uploads-docs.js` — `_uplWopiEnabled()` must be defined before `_uplDocStudioInit` calls it. API: `_uplWopiOpen(f)` fetches `/wopi-token`, injects Collabora editor URL into `#upl-wopi-frame`, shows `#upl-wopi-modal`; `_uplWopiClose()` clears iframe src + hides modal; `_uplWopiFrameLoaded()` removes loading spinner; `_uplWopiEnabled()` returns bool (true when Collabora is configured); `_uplWopiPageId()` returns current page id; `_uplWopiBindPostMessage()` listens for Collabora PostMessage events (save complete → refresh file list). `_WOPI_MIMES` JS array must stay in sync with `WOPI_MIMES` frozenset in `routers/wopi.py`. |
 | `static/js/home-page-uploads-tags.js` | **Companion to `home-page-uploads.js`** (loaded after it). Tags CRUD (add/remove/filter pills) + `_uplFetchTextPreview()`. Upload modal `#upl-webp-toggle` wired here. |
 | `static/js/home-widgets.js` | Home nav + widget CRUD core; `_initSwappedPage()` dispatches HTMX page boots to 3 page types: rss (`#rss-page-root` → `initRssPage`), crm (`#crm-page-root` → `initCrmPage`), dashboard (fallback → `initHomeWidgets`) |
 | `static/js/home-widgets-render.js` | Widget JS engines (weather, calendar, todo, reminder, etc.) |
@@ -282,6 +289,7 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 - `AuthMiddleware` in `auth_middleware.py` intercepts unauthenticated requests
 - Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`
 - `/static/` prefix is allowed separately via path-prefix check, not via `_PUBLIC`
+- `/wopi/` prefix is also bypassed via the same path-prefix check (alongside `/static/`) — **NOT added to `_PUBLIC`**. This lets Collabora’s server-to-server WOPI callbacks (CheckFileInfo, GetFile, PutFile) reach BookWorm without a session cookie; they carry a short-lived `itsdangerous` token in `?access_token=` instead.
 - First-run: `/setup` creates the first user (role=`superadmin`). Blocked if any user exists.
 - Optional **TOTP 2FA** per user (`routers/totp.py`). QR code setup + verify flow.
 - Role system: `user` (regular) and `superadmin` (can manage all users via admin panel)
@@ -395,24 +403,27 @@ async function _myConfirmFn() {
 - [x] **CRM Homespace page (Phase 1)** — per-page contact database with table + gallery view, custom field definitions (text/select/url/date/number), full CRUD for contacts and fields, field-value upsert (`UNIQUE(contact_id, field_id)`), authz ownership checks via `_get_crm_page()`. Router: `routers/home_crm.py` (9 endpoints). DB: `crm_contacts` + `crm_custom_fields` + `crm_contact_field_values`. JS: `home-page-crm.js` (`initCrmPage`). Template: `home_page_crm.html`.
 - [x] **Uploads Homespace page (Phase 3 complete)** — paginated merged file list (note attachments + standalone, 50/page), type filter tabs (Photos/Videos/Audio/Documents/Other), auth-gated download via `/home/uploads/{pid}/files/{src}/{id}/download`, standalone upload with demo guard. Phase 2 shipped (731c733): standalone file delete (page-src only; note-src shows "Open in Note" link), global filter counts (full-dataset MIME aggregation — **inline in `get_uploads_page()`, no separate `get_file_counts()` function**), slide-in detail panel (image preview, download, delete, note link, tags), custom tags (`page_upload_tags`, 4 endpoints, embedded in list via `GROUP_CONCAT`, group tag filter pills), WebP conversion on upload (Pillow≥10.0.0, graceful fallback), `_uplJsStr()` for JS-string onclick escaping. Phase 3: tags CRUD + `_uplFetchTextPreview` extracted to companion `home-page-uploads-tags.js` (loaded after main file); `_uplGrouped` state variable for grouped-by-MIME-type display mode; detail panel renders native `<video>` / `<audio>` / `<embed>` / text preview for non-image types; upload modal gains `#upl-webp-toggle` checkbox; `upload_file()` accepts `webp: bool = True` query param; `cookies.txt` added to `.gitignore` (security fix). Router: `routers/home_uploads.py`. DB: `page_uploads` + `page_upload_tags`. Helpers: `uploads_db.py`. JS: `home-page-uploads.js` + `home-page-uploads-tags.js`. Template: `home_page_uploads.html`.
 - [x] **Document Studio — Uploads Phase 4 (complete 2026-04-14)** — in-panel file operations for eligible file types on Uploads homespace pages. New router: `routers/home_uploads_docs.py` (350 lines, prefix `/home/uploads`). New DB helpers: `routers/uploads_docs_db.py` (`update_page_upload_size`, `get_page_upload_owned_bulk`). New JS: `static/js/home-page-uploads-docs.js` (440 lines). New Python deps: `pypdf>=4.0.0`, `python-docx>=1.1.0`, `reportlab>=4.0.0`, `lxml==6.0.4` (transitive). Template changes: `#upl-combine-modal` + `#upl-sig-modal` added to `home_page_uploads.html`; `home-page-uploads-docs.js` script tag added to `base.html`. Endpoints: GET content (text or DOCX-as-HTML), PUT save edited text (1 MB guard), POST combine (PDF merge / text join, 2–20 files), POST convert (docx/txt→pdf, docx/pdf→txt), POST sign (drawn PNG signature stamp onto PDF). Eligibility matrix: note-src = read-only; page-src text/JSON = view/edit/→PDF; page-src PDF = sign/→TXT; page-src DOCX = view/→PDF/→TXT. Multi-select mode: ☐ Select button injected into filter bar → floating toolbar for Merge PDFs / Join Text. YAGNI (v1): no LibreOffice, no PKI signing, no PDF.js CDN, no rich DOCX editing, no version history, no collaborative editing. Commit: `06bb6d8`.
+- [x] **Document Studio — Phase 6: Collabora Online WOPI integration (complete 2026-04-15, commit `801ee6a`)** — BookWorm acts as a WOPI host so Collabora Online (`collabora/code` Docker service) can open DOCX, DOC, ODT, TXT, XLSX, CSV, and PPTX files in a full LibreOffice editor embedded in an `<iframe>`. PDF stays with the existing sign/annotate viewer — NOT WOPI-eligible. New files: `routers/wopi.py` (WOPI host router, prefix `/wopi`; CheckFileInfo / GetFile / PutFile / LOCK stub; stateless token auth via `itsdangerous.URLSafeTimedSerializer`, salt `wopi-token-v1`; discovery XML cached in `_discovery_cache`). `static/js/home-page-uploads-wopi.js` (WOPI modal JS: `_uplWopiOpen`, `_uplWopiClose`, `_uplWopiFrameLoaded`, `_uplWopiEnabled`, `_uplWopiPageId`, `_uplWopiBindPostMessage`; `_WOPI_MIMES` array must stay in sync with Python frozenset). New endpoint: `GET /home/uploads/{pid}/files/page/{fid}/wopi-token` in `home_uploads_docs.py`. New env vars: `BW_COLLABORA_URL`, `BW_WOPI_BASE_URL`, `BW_WOPI_TOKEN_EXPIRY` (all optional — feature disabled when empty). Auth middleware change: `/wopi/` prefix bypassed alongside `/static/` (prefix check, NOT `_PUBLIC`). Docker: `collabora` service added (`collabora/code:latest`; no host ports by default; `extra_params` sets SSL off + WOPI allowed hosts). `base.html` load order: `home-page-uploads-docs.js` → `hage-uploads-sign.js` → `home-page-uploads-wopi.js` (LAST — `_uplWopiEnabled` must exist before `_uplDocStudioInit` calls it). Known limitation (Phase 7): WOPI LOCK/UNLOCK not implemented — stub returns 200; acceptable for single-user editing.
 
 ---
 
-## 🚀 Phase 4 Complete (2026-04-14)
+## 🚀 Phase 6 Complete (2026-04-15)
 
-Last commit: **`06bb6d8`** — Document Studio shipped.
+Last commit: **`801ee6a`** — Collabora Online WOPI integration shipped.
 
-**Document Studio (Phase 4) shipped this session:**
+**Document Studio Phase 6 (Feature A) shipped this session:**
 
-- 3 new Python deps installed: `pypdf==6.10.1`, `python-docx==1.2.0`, `reportlab==4.4.10`
-- `routers/home_uploads_docs.py` (350 lines) — 5 new endpoints: GET content, PUT edit, POST combine, POST convert, POST sign
-- `routers/uploads_docs_db.py` (43 lines) — `update_page_upload_size` + `get_page_upload_owned_bulk`
-- `static/js/home-page-uploads-docs.js` (440 lines) — full Document Studio UI module
-- Two new modals in `home_page_uploads.html`: `#upl-combine-modal`, `#upl-sig-modal`
-- `home-page-uploads-tags.js` — `_uplFmtSize` + `_uplFmtDate` moved here from main file
-- `home-page-uploads.js` (590 lines) — hooks + `#upl-doc-studio` div added
+- `routers/wopi.py` (new) — WOPI host router, prefix `/wopi`; CheckFileInfo / GetFile / PutFile / LOCK stub; `itsdangerous` token auth (salt `wopi-token-v1`); discovery XML in `_discovery_cache`; exports `issue_token()`, `get_editor_url()`, `WOPI_MIMES`, `_COLLABORA_URL`, `_WOPI_BASE_URL`
+- `static/js/home-page-uploads-wopi.js` (new) — WOPI modal JS; `_WOPI_MIMES` array must stay in sync with Python frozenset
+- `routers/home_uploads_docs.py` — added `GET /{pid}/files/page/{fid}/wopi-token` endpoint
+- `auth_middleware.py` — `/wopi/` prefix now bypassed alongside `/static/` (prefix check, NOT `_PUBLIC`)
+- `docker-compose.yml` — `collabora` service added (`collabora/code:latest`; internal only by default)
+- `.env.example` / `docker-compose.yml` — three new `BW_*` env vars: `BW_COLLABORA_URL`, `BW_WOPI_BASE_URL`, `BW_WOPI_TOKEN_EXPIRY`
+- WOPI-eligible MIME types: DOCX, DOC, ODT, TXT, XLSX, CSV, PPTX. PDF is **NOT** eligible — stays with sign/annotate viewer.
+- Known limitation (Phase 7): WOPI LOCK/UNLOCK stub — always 200; fine for single-user editing
+- `base.html` load order: `uploads-docs.js` → `uploads-sign.js` → `uploads-wopi.js` (last)
 
-**Current status:** App healthy. All Phase 4 features working. CODEPUPPY_NOTES in sync.
+**Current status:** App healthy. Phase 6 / Feature A working. CODEPUPPY_NOTES in sync.
 
 ---
 
@@ -506,6 +517,8 @@ Eddie is always the outermost layer — agents supplement, not replace.
     start "bw8000" /MIN uvicorn... && ping -n 5 ... && python -c "urlopen('...').read()"
     ```
 20. **`_uplJsStr(s)` in `home-page-uploads.js` — JS-string onclick escaping.** Backslash-escapes `\` and `'` so a value can be safely embedded inside a single-quoted JS string literal inside an `onclick` attribute (e.g. `onclick="fn('${_uplJsStr(name)}')"`). Use this instead of `_uplEsc` when the value goes into a JS string context (not an HTML attribute context). `_uplEsc` HTML-encodes for HTML attribute safety; `_uplJsStr` JS-escapes for JS string-literal safety. Mixing them causes either broken JS or XSS.
+21. **WOPI LOCK/UNLOCK not implemented (Phase 7 TODO).** `routers/wopi.py` handles `POST /wopi/files/{file_id}` (the LOCK action) with a stub that returns HTTP 200. Collabora sends lock requests for collaborative multi-user editing — not a scenario we support. Single-user editing works fine without real locking. Do NOT implement a real LOCK table until Phase 7; adding one now would add DB state (lock tokens, expiry) with no corresponding unlock cleanup path.
+22. **`_WOPI_MIMES` JS array in `home-page-uploads-wopi.js` must stay in sync with `WOPI_MIMES` frozenset in `routers/wopi.py`.** These two lists are intentionally separate (server = frozenset, client = array for fast `.includes()` checks) but must contain identical MIME types. If you add a new WOPI-eligible type, update both. Current set: `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (DOCX), `application/msword` (DOC), `application/vnd.oasis.opendocument.text` (ODT), `text/plain` (TXT), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (XLSX), `text/csv` (CSV), `application/vnd.openxmlformats-officedocument.presentationml.presentation` (PPTX). PDF is explicitly excluded.
 
 ---
 
@@ -556,6 +569,7 @@ powershell -Command "Start-Sleep 5"
 
 | Date | What happened |
 |---|---|
+| 2026-04-15 | **Phase 6 — Collabora Online WOPI integration shipped (commit `801ee6a`).** BookWorm is now a WOPI host. New: `routers/wopi.py` (CheckFileInfo / GetFile / PutFile / LOCK stub; `itsdangerous` token auth, salt `wopi-token-v1`; discovery XML cached in `_discovery_cache`). New: `static/js/home-page-uploads-wopi.js` (`_uplWopiOpen`, `_uplWopiClose`, `_uplWopiFrameLoaded`, `_uplWopiEnabled`, `_uplWopiPageId`, `_uplWopiBindPostMessage`; `_WOPI_MIMES` array). New endpoint: `GET /home/uploads/{pid}/files/page/{fid}/wopi-token` in `home_uploads_docs.py` (returns `{collabora_disabled:true}` when `BW_COLLABORA_URL` unset). Auth middleware: `/wopi/` prefix bypassed alongside `/static/` — NOT added to `_PUBLIC`. Docker: `collabora` service added (`collabora/code:latest`, internal only, `extra_params` disables SSL + allows WOPI hosts). Three new opt-in env vars: `BW_COLLABORA_URL`, `BW_WOPI_BASE_URL`, `BW_WOPI_TOKEN_EXPIRY`. WOPI-eligible MIMEs: DOCX, DOC, ODT, TXT, XLSX, CSV, PPTX — PDF excluded (stays with sign/annotate). `base.html` load order: uploads-docs.js → uploads-sign.js → uploads-wopi.js (last; `_uplWopiEnabled` must exist before `_uplDocStudioInit` calls it). Known limitation (Phase 7): LOCK/UNLOCK stub always 200. |
 | 2026-04-06 | **Fixed event widget losing events on refresh — race condition in `_hpFetch` (stale-flight bug).** Root cause: `showHomePage()` on SPA navigation triggers a background revalidation fetch (`_hpFetch silent=true`) when the cache entry is older than 5 min. If the user then saved a new event (which calls `invalidateHomePageCache`), the in-flight fetch completed AFTER the cache was deleted and re-inserted stale HTML containing no events — overwriting both `_hpCache` and `hc.innerHTML`. Fix: added `_hpMutVer` Map (per-page mutation counter). `invalidateHomePageCache` now increments the counter. `_hpFetch` snapshots `verAtStart` before the fetch; on completion, if `verNow !== verAtStart`, the result is discarded and a fresh fetch is kicked off. This prevents any stale in-flight response from clobbering a mutation that happened mid-flight. File: `static/js/home-widgets.js`. Server restarted as PID 80980. |
 | 2026-04-06 | **Fixed event widget losing events on SPA navigation (cache bug).** Root cause: `_evtSaveItems` in `home-widget-events.js` correctly POSTed to the server (204 OK, DB updated), but never called `invalidateHomePageCache`. So within the 5-min `_hpCache` TTL, navigating away and back served stale HTML with no events. Fix: added `invalidateHomePageCache(pageId)` call after the successful fetch, reading `pageId` from `sessionStorage.getItem('bw-hp')` — same pattern used in `home-widgets-settings.js`. |
 | 2026-04-05 | Eddie brought server online (was down). Health-checked everything. All green. Last session was mid-feature on reminder widget browser notifications — committed clean. Created this notes file. |
