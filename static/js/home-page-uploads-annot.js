@@ -38,6 +38,7 @@ var _AV_BTN = 'font-size:13px;padding:2px 8px;border-radius:4px;border:1px solid
 // Pen tool state — tracks active drawing stroke
 var _uplAnnotPenState = {
   color:   '#111111',  // active pen colour (matches first swatch)
+  size:    3,          // stroke width in pixels at 100% zoom: S=1.5, M=3, L=6
   drawing: false,      // true while pointer is held
   points:  [],         // [{x,y}] normalised to [0,1] of the PDF canvas
 };
@@ -226,17 +227,17 @@ function _uplAnnotZoom(delta) {
   _uplAnnotRenderPage(_uplAnnotState.page);
 }
 
-/** Fit-to-window: scale so the PDF width fills the scroll container. */
+/** AutoFit: scale so the PDF fits the scroll container in both dimensions. */
 function _uplAnnotAutofit() {
   var body = _annotEl('upl-annot-body');
-  var cv   = _annotEl('upl-annot-canvas');
-  if (!body || !cv) return;
-  // Container width minus 2×16px padding (p-4 on each side)
-  var avail = body.clientWidth - 32;
-  if (avail <= 0 || !_uplAnnotPdfDoc) return;
+  if (!body || !_uplAnnotPdfDoc) return;
+  // p-4 padding = 32px each axis
+  var availW = body.clientWidth  - 32;
+  var availH = body.clientHeight - 32;
+  if (availW <= 0 || availH <= 0) return;
   _uplAnnotPdfDoc.getPage(_uplAnnotState.page + 1).then(function(pg) {
-    var vp   = pg.getViewport({ scale: 1 });
-    _uplAnnotScale = avail / vp.width;
+    var vp = pg.getViewport({ scale: 1 });
+    _uplAnnotScale = Math.max(0.25, Math.min(availW / vp.width, availH / vp.height));
     _uplAnnotRenderPage(_uplAnnotState.page);
   });
 }
@@ -331,7 +332,13 @@ function _uplAnnotMakeDiv(a) {
     wrap.style.pointerEvents = 'auto';
     wrap.style.overflow      = 'visible';
     try {
-      var pts = JSON.parse(a.content || '[]');
+      var penData = JSON.parse(a.content || '[]');
+      // Support both old [{x,y}] arrays and new {pts, size} objects
+      var pts  = Array.isArray(penData) ? penData : (penData.pts || []);
+      var swPx = Array.isArray(penData) ? 3 : (penData.size || 3);
+      // stroke-width in viewBox [0,1] units: swPx points / canvas-pixel-height
+      // 0.004 ≈ 3px on a 750-high canvas; scale proportionally
+      var swNorm = swPx / 750;
       if (pts.length > 1) {
         var ns  = 'http://www.w3.org/2000/svg';
         var svg = document.createElementNS(ns, 'svg');
@@ -342,7 +349,7 @@ function _uplAnnotMakeDiv(a) {
         pl.setAttribute('points', pts.map(function(p) { return p.x + ',' + p.y; }).join(' '));
         pl.setAttribute('fill', 'none');
         pl.setAttribute('stroke', a.color || '#111111');
-        pl.setAttribute('stroke-width', '0.004');  // ~2.5px at 100% view
+        pl.setAttribute('stroke-width', String(swNorm));
         pl.setAttribute('stroke-linecap', 'round');
         pl.setAttribute('stroke-linejoin', 'round');
         svg.appendChild(pl);
@@ -359,7 +366,7 @@ function _uplAnnotMakeDiv(a) {
     wrap.onmouseleave = function() { pDel.style.opacity = '0'; };
 
   } else {
-    var txBg = (a.color === 'transparent') ? 'transparent' : 'white';
+    // ── Text box
     wrap.style.display       = 'flex';
     wrap.style.flexDirection = 'column';
     wrap.style.border        = '1.5px solid #0053e2';
@@ -646,6 +653,22 @@ function _uplAnnotPenColor(hex) {
   }
 }
 
+/** Set pen stroke size (px at scale=1). Updates active size-button highlight. */
+function _uplAnnotPenSize(px) {
+  _uplAnnotPenState.size = px;
+  var btns = document.querySelectorAll('.upl-annot-pen-size-btn');
+  for (var i = 0; i < btns.length; i++) {
+    var b = btns[i];
+    if (parseFloat(b.dataset.size) === px) {
+      b.style.borderColor = '#ffc220';
+      b.style.color = '#ffc220';
+    } else {
+      b.style.borderColor = '';
+      b.style.color = '';
+    }
+  }
+}
+
 // ── Pen drawing engine ────────────────────────────────────────────────────
 
 function _uplAnnotPenPt(e) {
@@ -683,7 +706,7 @@ async function _uplAnnotPenUp(e) {
   var dc = _annotEl('upl-annot-draw-canvas');
   if (dc) dc.getContext('2d').clearRect(0, 0, dc.width, dc.height);
   if (pts.length < 2 || !_uplAnnotFile) return;
-  // Serialise as JSON points — full-page bounding box (x,y,w,h all 0/1)
+  // Serialise as JSON {pts, size} — full-page bounding box (x,y,w,h all 0/1)
   try {
     var body = {
       page_num:   _uplAnnotState.page,
@@ -691,7 +714,7 @@ async function _uplAnnotPenUp(e) {
       x_pct:      0, y_pct:     0,
       width_pct:  1, height_pct: 1,
       color:      _uplAnnotPenState.color,
-      content:    JSON.stringify(pts),
+      content:    JSON.stringify({ pts: pts, size: _uplAnnotPenState.size }),
     };
     var res = await _annotReq(_annotUrl('/annotations'), {
       method:  'POST',
@@ -730,8 +753,9 @@ function _uplAnnotPenRedraw() {
   ctx.clearRect(0, 0, dc.width, dc.height);
   var pts = _uplAnnotPenState.points;
   if (pts.length < 2) return;
+  // Scale stroke width to match current zoom (size is in points at scale=1)
   ctx.strokeStyle = _uplAnnotPenState.color;
-  ctx.lineWidth   = 2.5;
+  ctx.lineWidth   = _uplAnnotPenState.size * (_uplAnnotScale || 1);
   ctx.lineCap     = 'round';
   ctx.lineJoin    = 'round';
   ctx.beginPath();
@@ -770,7 +794,7 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
     '    <button onclick="_avZoom(-0.25)" style="' + _AV_BTN + '">&#8722;</button>' +
     '    <span id="_av-zoom" style="font-size:11px;color:#6b7280;min-width:36px;text-align:center;">150%</span>' +
     '    <button onclick="_avZoom(0.25)"  style="' + _AV_BTN + '">&#43;</button>' +
-    '    <button onclick="_avFit()"        style="' + _AV_BTN + '" title="Fit to window">&#8633; Fit</button>' +
+    '    <button onclick="_avFit()"        style="' + _AV_BTN + '" title="AutoFit to window">&#8633; AutoFit</button>' +
     '  </div>' +
     '  <div id="_av-scroll" style="flex:1;overflow:auto;background:#525659;display:flex;' +
     '       justify-content:center;align-items:flex-start;padding:12px;">' +
@@ -838,18 +862,21 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
       d.style.pointerEvents = 'none';
       d.style.overflow = 'visible';
       try {
-        var pts = JSON.parse(a.content || '[]');
-        if (pts.length > 1) {
+        var penData2 = JSON.parse(a.content || '[]');
+        var pts2  = Array.isArray(penData2) ? penData2 : (penData2.pts || []);
+        var sw2   = Array.isArray(penData2) ? 3 : (penData2.size || 3);
+        var swN2  = sw2 / 750;
+        if (pts2.length > 1) {
           var ns2 = 'http://www.w3.org/2000/svg';
           var svg2 = document.createElementNS(ns2, 'svg');
           svg2.setAttribute('viewBox', '0 0 1 1');
           svg2.setAttribute('preserveAspectRatio', 'none');
           svg2.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;';
           var pl2 = document.createElementNS(ns2, 'polyline');
-          pl2.setAttribute('points', pts.map(function(p) { return p.x + ',' + p.y; }).join(' '));
+          pl2.setAttribute('points', pts2.map(function(p) { return p.x + ',' + p.y; }).join(' '));
           pl2.setAttribute('fill', 'none');
           pl2.setAttribute('stroke', a.color || '#111111');
-          pl2.setAttribute('stroke-width', '0.004');
+          pl2.setAttribute('stroke-width', String(swN2));
           pl2.setAttribute('stroke-linecap', 'round');
           pl2.setAttribute('stroke-linejoin', 'round');
           svg2.appendChild(pl2);
@@ -881,10 +908,12 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
   window._avFit  = function() {
     if (!pdfDoc) return;
     pdfDoc.getPage(curPage + 1).then(function(pg) {
-      var vp    = pg.getViewport({ scale: 1 });
-      var scrl  = avEl('_av-scroll');
-      var avail = scrl ? (scrl.clientWidth - 24) : 600;  // minus 2×12px padding
-      scale = Math.max(0.5, avail / vp.width);
+      var vp   = pg.getViewport({ scale: 1 });
+      var scrl = avEl('_av-scroll');
+      // 2×12px padding each axis
+      var aw = scrl ? (scrl.clientWidth  - 24) : 600;
+      var ah = scrl ? (scrl.clientHeight - 24) : 800;
+      scale  = Math.max(0.25, Math.min(aw / vp.width, ah / vp.height));
       var zl = avEl('_av-zoom'); if (zl) zl.textContent = Math.round(scale*100) + '%';
       avRenderPage(curPage);
     });

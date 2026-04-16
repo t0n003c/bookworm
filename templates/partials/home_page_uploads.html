@@ -500,79 +500,101 @@
   </div>
 
   {# ── Row 2: tools bar ── #}
-  <div class="flex items-center gap-1.5 px-3 py-1.5 flex-shrink-0 flex-wrap
-              bg-zinc-800 border-b border-zinc-700">
+  {# Three-column flex: [left spacer | centered tools | right spacer+Clear All]
+     The two flex-1 wings keep the center group truly centred regardless of
+     viewport width, even when pen colour swatches expand the middle. #}
+  <div class="flex items-center flex-shrink-0
+              bg-zinc-800 border-b border-zinc-700 px-3 py-1.5">
 
-    {# Drawing tools #}
-    <button type="button" id="upl-annot-tool-highlight"
-            onclick="_uplAnnotAddMode('highlight')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Highlight tool" aria-pressed="false">&#128396; Highlight</button>
-    <button type="button" id="upl-annot-tool-sticky"
-            onclick="_uplAnnotAddMode('sticky')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Sticky note tool" aria-pressed="false">&#128204; Sticky</button>
-    <button type="button" id="upl-annot-tool-textbox"
-            onclick="_uplAnnotAddMode('textbox')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Text box tool" aria-pressed="false">&#128288; Text Box</button>
-    <button type="button" id="upl-annot-tool-pen"
-            onclick="_uplAnnotAddMode('pen')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Pen / free draw tool" aria-pressed="false">&#9998; Pen</button>
-
-    {# Pen color swatches — visible only when pen is active #}
-    <div id="upl-annot-pen-colors" class="hidden items-center gap-1 ml-1 pl-2
-                                          border-l border-zinc-600">
-      <span class="text-[10px] text-zinc-500 mr-0.5">Color:</span>
-      {% for color, label in [('#111111','Black'),('#ea1100','Red'),('#0053e2','Blue'),
-                               ('#2a8703','Green'),('#ffc220','Yellow'),('#8b5cf6','Purple')] %}
-      <button type="button"
-              onclick="_uplAnnotPenColor('{{ color }}')"
-              class="upl-annot-pen-swatch w-5 h-5 rounded-full border-2 border-transparent
-                     hover:scale-110 transition-transform focus:outline-none
-                     focus:ring-2 focus:ring-white"
-              style="background:{{ color }}"
-              data-color="{{ color }}"
-              aria-label="{{ label }} pen"></button>
-      {% endfor %}
-    </div>
-
-    {# Separator #}
-    <span class="mx-1 h-4 w-px bg-zinc-600 flex-shrink-0" aria-hidden="true"></span>
-
-    {# Zoom controls #}
-    <button type="button" onclick="_uplAnnotZoom(-0.25)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Zoom out">&#8722;</button>
-    <span id="upl-annot-zoom-label"
-          class="text-xs text-zinc-400 select-none whitespace-nowrap w-9 text-center">150%</span>
-    <button type="button" onclick="_uplAnnotZoom(0.25)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Zoom in">&#43;</button>
-    <button type="button" onclick="_uplAnnotAutofit()"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Fit to window">&#8633; Fit</button>
-
-    {# Spacer #}
+    {# Left wing (balance spacer) #}
     <span class="flex-1"></span>
 
-    {# Clear all — red/danger #}
-    <button type="button" onclick="_uplAnnotShowClearModal()"
-            class="px-2.5 py-1 text-xs rounded-lg border border-red-800 text-red-400
-                   hover:text-white hover:bg-red-800 transition focus:outline-none"
-            aria-label="Clear all annotations">&#128465; Clear All</button>
+    {# Center: all tools + zoom + autofit #}
+    <div class="flex items-center gap-1.5 flex-wrap justify-center">
+
+      {# Drawing tools #}
+      <button type="button" id="upl-annot-tool-highlight"
+              onclick="_uplAnnotAddMode('highlight')"
+              class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                     text-zinc-300 hover:text-white hover:border-[#ffc220]
+                     transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+              aria-label="Highlight tool" aria-pressed="false">&#128396; Highlight</button>
+      <button type="button" id="upl-annot-tool-sticky"
+              onclick="_uplAnnotAddMode('sticky')"
+              class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                     text-zinc-300 hover:text-white hover:border-[#ffc220]
+                     transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+              aria-label="Sticky note tool" aria-pressed="false">&#128204; Sticky</button>
+      <button type="button" id="upl-annot-tool-textbox"
+              onclick="_uplAnnotAddMode('textbox')"
+              class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                     text-zinc-300 hover:text-white hover:border-[#ffc220]
+                     transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+              aria-label="Text box tool" aria-pressed="false">&#128288; Text Box</button>
+      <button type="button" id="upl-annot-tool-pen"
+              onclick="_uplAnnotAddMode('pen')"
+              class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                     text-zinc-300 hover:text-white hover:border-[#ffc220]
+                     transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+              aria-label="Pen / free draw tool" aria-pressed="false">&#9998; Pen</button>
+
+      {# Pen options (color + size) — visible only when pen is active #}
+      <div id="upl-annot-pen-colors" class="hidden items-center gap-1.5 pl-2
+                                            border-l border-zinc-600">
+        <span class="text-[10px] text-zinc-500">Color:</span>
+        {% for color, label in [('#111111','Black'),('#ea1100','Red'),('#0053e2','Blue'),
+                                 ('#2a8703','Green'),('#ffc220','Yellow'),('#8b5cf6','Purple')] %}
+        <button type="button"
+                onclick="_uplAnnotPenColor('{{ color }}')"
+                class="upl-annot-pen-swatch w-5 h-5 rounded-full border-2 border-transparent
+                       hover:scale-110 transition-transform focus:outline-none
+                       focus:ring-2 focus:ring-white"
+                style="background:{{ color }}"
+                data-color="{{ color }}"
+                aria-label="{{ label }} pen"></button>
+        {% endfor %}
+        <span class="text-[10px] text-zinc-500 ml-1">Size:</span>
+        {% for sz, lbl in [(1.5,'S'),(3,'M'),(6,'L')] %}
+        <button type="button"
+                onclick="_uplAnnotPenSize({{ sz }})"
+                class="upl-annot-pen-size-btn px-1.5 py-0.5 text-[11px] rounded
+                       border border-zinc-600 text-zinc-300
+                       hover:border-[#ffc220] hover:text-[#ffc220] transition
+                       focus:outline-none"
+                data-size="{{ sz }}"
+                aria-label="Pen size {{ lbl }}">{{ lbl }}</button>
+        {% endfor %}
+      </div>
+
+      {# Separator #}
+      <span class="mx-1 h-4 w-px bg-zinc-600 flex-shrink-0" aria-hidden="true"></span>
+
+      {# Zoom controls #}
+      <button type="button" onclick="_uplAnnotZoom(-0.25)"
+              class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                     hover:text-white transition focus:outline-none"
+              aria-label="Zoom out">&#8722;</button>
+      <span id="upl-annot-zoom-label"
+            class="text-xs text-zinc-400 select-none whitespace-nowrap w-9 text-center">150%</span>
+      <button type="button" onclick="_uplAnnotZoom(0.25)"
+              class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                     hover:text-white transition focus:outline-none"
+              aria-label="Zoom in">&#43;</button>
+      <button type="button" onclick="_uplAnnotAutofit()"
+              class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                     hover:text-white transition focus:outline-none"
+              aria-label="AutoFit to window">&#8633; AutoFit</button>
+
+    </div>{# /center group #}
+
+    {# Right wing: Clear All right-aligned #}
+    <span class="flex-1 flex justify-end">
+      <button type="button" onclick="_uplAnnotShowClearModal()"
+              class="px-2.5 py-1 text-xs rounded-lg border border-red-800 text-red-400
+                     hover:text-white hover:bg-red-800 transition focus:outline-none"
+              aria-label="Clear all annotations">&#128465; Clear All</button>
+    </span>
+
   </div>
 
   {# ── Loading state ── #}

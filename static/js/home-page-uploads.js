@@ -417,6 +417,11 @@ function _uplRenderDetail(f) {
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
 
+  // Flex-column layout so srcSection is pinned to the very bottom
+  // even when the rest of the content is shorter than the panel height.
+  el.style.display       = 'flex';
+  el.style.flexDirection = 'column';
+
   el.innerHTML = `${preview}
     <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
     <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFmtSize(f.size)} &middot; ${_uplEsc(mt)} &middot; ${_uplFmtDate(f.created_at)}</p>
@@ -426,7 +431,9 @@ function _uplRenderDetail(f) {
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
     <div id="upl-doc-studio" class="mt-2"></div>
-    <div class="mt-4">${srcSection}</div>`;
+    <div style="margin-top:auto;padding-top:20px;border-top:1px solid rgba(156,163,175,0.2)">
+      ${srcSection}
+    </div>`;
 
   if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);
