@@ -18,6 +18,7 @@ var _uplViewerCurrentFile = null;  // file object open in the viewer
 var _uplViewerEditMode    = null;  // 'docx' | 'text' | null
 var _uplViewerDocxHtml    = null;  // cached docx HTML for restore on cancel
 var _uplViewerRawText     = null;  // cached raw text for TXT edit/restore
+var _uplWordZoom          = 1.0;   // current paper zoom (0.4 — 2.5)
 // Initial class on #upl-viewer-html — restored on close / cancel
 var _UPL_HTMLEL_CLASS = 'flex-1 w-full rounded-xl overflow-y-auto ' +
   'bg-white dark:bg-zinc-900 text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer';
@@ -403,6 +404,7 @@ async function _uplFileViewerOpen(f) {
     if (htmlEl) {
       if (data.content_type === 'docx_html') {
         _uplViewerDocxSetup(htmlEl, data.content);  // paper canvas for both view + edit
+        setTimeout(_uplWZoomFit, 60);               // fit width once DOM has rendered
       } else {
         htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
       }
@@ -457,6 +459,7 @@ function _uplFileViewerClose() {
   _uplViewerEditMode    = null;
   _uplViewerDocxHtml    = null;
   _uplViewerRawText     = null;
+  _uplWordZoom          = 1.0;
 }
 
 // ── DRY helper: render docx preview + inject sticky “Edit in Preview” bar ─────────
@@ -466,17 +469,46 @@ function _uplViewerDocxRenderEditBar(htmlEl) {
   var bar = document.createElement('div');
   bar.dataset.uplRole = 'docx-edit-bar';
   bar.className = 'bw-word-footer';
+  var S = 'bw-word-btn';
   bar.innerHTML =
-    '<span>Word-like editor with full formatting. ' +
+    '<span class="bw-word-footer-label">Word-like editor. ' +
     'Saves directly back to the <strong>.docx</strong> file.</span>' +
+    '<button class="'+S+'" onclick="_uplWZoom(-0.1)" title="Zoom out">−</button>' +
+    '<span class="bw-wzoom-label bw-word-zoom-label" onclick="_uplWZoomSet(1)" title="Reset zoom">100%</span>' +
+    '<button class="'+S+'" onclick="_uplWZoom(0.1)" title="Zoom in">+</button>' +
+    '<button class="'+S+'" onclick="_uplWZoomFit()" title="Fit to width">⊡ Fit</button>' +
     '<button type="button" onclick="_uplWordEditorMount()" ' +
-    '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
+    '  style="font-size:.75rem;padding:.35rem .9rem;border-radius:.4rem;' +
     '  background:#0053e2;color:#fff;font-weight:600;cursor:pointer;border:none">' +
     '  ✏️ Edit DOCX</button>';
   htmlEl.appendChild(bar);
 }
 
-// ── Word-like DOCX editor ────────────────────────────────────────────────
+// ── Paper zoom (shared by viewer + editor) ────────────────────────────────
+
+/** Apply zoom z (0.4–2.5) to the paper and refresh all zoom labels. */
+function _uplWZoomSet(z) {
+  _uplWordZoom = Math.max(0.4, Math.min(2.5, z));
+  var paper = document.getElementById('bw-word-paper');
+  if (paper) paper.style.zoom = _uplWordZoom;
+  var pct = Math.round(_uplWordZoom * 100) + '%';
+  document.querySelectorAll('.bw-wzoom-label').forEach(function(el) {
+    el.textContent = pct;
+  });
+}
+
+/** Change zoom by delta (e.g. –0.1 to zoom out). */
+function _uplWZoom(delta) { _uplWZoomSet(_uplWordZoom + delta); }
+
+/** Scale paper so its width fills the visible scroll area. */
+function _uplWZoomFit() {
+  var scroll = document.getElementById('bw-word-scroll');
+  if (!scroll) return;
+  var fit = (scroll.clientWidth - 40) / 816;   // 40 = breathing-room margin
+  _uplWZoomSet(Math.max(0.4, Math.min(2.5, fit)));
+}
+
+// ── Word-like DOCX editor ────────────────────────────────────────
 // Called from Doc Studio „✏️ Edit DOCX“ button — opens viewer + immediately
 // mounts the editor so the user never sees the read-only interstitial.
 async function _uplWordEditorOpen(f) {
@@ -507,7 +539,7 @@ function _uplWordEditorMount() {
     '</div>' +
     // ─ Footer bar ─
     '<div class="bw-word-footer">' +
-      '<span>Saves to the original <strong>.docx</strong>. ' +
+      '<span class="bw-word-footer-label">Saves to the original <strong>.docx</strong>. ' +
         'Images &amp; advanced formatting may simplify on save.</span>' +
       '<button type="button" onclick="_uplViewerDocxCancelEdit()"' +
         ' style="font-size:.75rem;padding:.35rem .85rem;border-radius:.4rem;' +
@@ -523,6 +555,8 @@ function _uplWordEditorMount() {
   if (paper) paper.focus();
   document.addEventListener('selectionchange', _uplWordUpdateBar);
   _uplViewerEditMode = 'docx';
+  // Re-apply zoom so editing starts at same level as view mode (or auto-fit on first open)
+  setTimeout(function() { _uplWZoomSet(_uplWordZoom || 1); }, 60);
 }
 
 function _uplWordToolbarHtml() {
@@ -565,6 +599,11 @@ function _uplWordToolbarHtml() {
     '<button class="'+S+'" onclick="_uplWCmd(\'outdent\')" title="Decrease indent">← Out</button>',
     SEP,
     '<button class="'+S+'" onclick="_uplWCmd(\'removeFormat\')" title="Clear formatting">× Clear</button>',
+    SEP,
+    '<button class="'+S+'" onclick="_uplWZoom(-0.1)" title="Zoom out">−</button>',
+    '<span class="bw-wzoom-label bw-word-zoom-label" onclick="_uplWZoomSet(1)" title="Reset zoom">100%</span>',
+    '<button class="'+S+'" onclick="_uplWZoom(0.1)" title="Zoom in">+</button>',
+    '<button class="'+S+'" onclick="_uplWZoomFit()" title="Fit to width">⊡ Fit</button>',
   ].join('');
 }
 

@@ -23,20 +23,19 @@
 .bw-doc-table th,.bw-doc-table td{border:1px solid #d1d5db;padding:.45em .7em;text-align:left;vertical-align:top}
 .bw-doc-table thead th{background:#f3f4f6;font-weight:700}
 .bw-doc-table tbody tr:nth-child(even){background:#f9fafb}
-@media(prefers-color-scheme:dark){
-  .bw-doc-table th,.bw-doc-table td{border-color:#3f3f46}
-  .bw-doc-table thead th{background:#27272a;color:#e4e4e7}
-  .bw-doc-table tbody tr:nth-child(even){background:#1c1c1f}
-}
+/* NOTE: BookWorm uses Tailwind class-based dark mode — .dark on <html>, NOT @media */
+.dark .bw-doc-table th,.dark .bw-doc-table td{border-color:#3f3f46}
+.dark .bw-doc-table thead th{background:#27272a;color:#e4e4e7}
+.dark .bw-doc-table tbody tr:nth-child(even){background:#1c1c1f}
 .bw-csv-note{font-size:.75em;color:#6b7280;margin-top:.5em;font-style:italic}
 /* ── Word editor — structural layout ── */
 .bw-word-host{display:flex;flex-direction:column;overflow:hidden;
   flex:1;min-height:0;border-radius:.75rem}
 .bw-word-scroll{flex:1;overflow-y:auto;min-height:0;
   padding:clamp(12px,2.5vw,28px) clamp(12px,3.5vw,28px);background:#e8e8e8}
-.bw-word-footer{flex-shrink:0;display:flex;align-items:center;gap:8px;
-  padding:8px 16px;background:#f3f4f6;border-top:1px solid #d1d5db}
-.bw-word-footer span{font-size:.68rem;flex:1;color:#6b7280}
+.bw-word-footer{flex-shrink:0;display:flex;align-items:center;gap:6px;
+  padding:6px 12px;background:#f3f4f6;border-top:1px solid #d1d5db}
+.bw-word-footer-label{font-size:.68rem;flex:1;color:#6b7280}
 /* ── Word editor — toolbar ── */
 .bw-word-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:2px;
   padding:4px 8px;background:#f1f3f5;border-bottom:1px solid #d1d5db;
@@ -45,6 +44,8 @@
   border:1px solid transparent;background:transparent;cursor:pointer;
   color:#374151;line-height:1.7;white-space:nowrap;transition:background .1s,border-color .1s}
 .bw-word-btn:hover{background:#e2e8f0;border-color:#cbd5e1}
+.bw-word-zoom-label{font-size:.72rem;min-width:3.2em;text-align:center;
+  color:#374151;line-height:1.7;padding:2px 3px;cursor:default;user-select:none}
 .bw-word-sel{font-size:.72rem;padding:2px 4px;border-radius:3px;
   border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;height:24px}
 .bw-wsize{width:54px}
@@ -61,7 +62,8 @@
   padding:clamp(20px,6%,72px) clamp(16px,9%,96px);
   box-shadow:0 1px 8px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.07);
   border-radius:2px;font-family:"Calibri","Georgia",serif;
-  font-size:12pt;line-height:1.65;color:#111;outline:none}
+  font-size:12pt;line-height:1.65;color:#111;outline:none;
+  transform-origin:top center}
 [contenteditable].bw-word-paper{cursor:text}
 .bw-word-paper:focus{box-shadow:0 2px 12px rgba(0,83,226,.15),0 0 0 2px rgba(0,83,226,.2)}
 .bw-word-paper h1{font-size:2em;font-weight:700;margin:.6em 0 .3em}
@@ -72,24 +74,23 @@
 .bw-word-paper table{border-collapse:collapse;width:100%;margin:1em 0}
 .bw-word-paper td,.bw-word-paper th{border:1px solid #c6c6c6;padding:.4em .7em}
 .bw-word-paper th{background:#f0f0f0;font-weight:700}
-/* ── Dark mode — all word editor elements ── */
-@media(prefers-color-scheme:dark){
-  .bw-word-toolbar{background:#18181b;border-color:#3f3f46}
-  .bw-word-btn{color:#d4d4d8}
-  .bw-word-btn:hover{background:#27272a;border-color:#52525b}
-  .bw-word-sel{background:#27272a;color:#d4d4d8;border-color:#52525b}
-  .bw-word-sep{background:#52525b}
-  .bw-word-color{background:#27272a;color:#d4d4d8;border-color:#52525b}
-  .bw-word-hl{color:#fbbf24}
-  .bw-word-scroll{background:#09090b}
-  .bw-word-paper{background:#1c1c1f;color:#e4e4e7;
-    box-shadow:0 1px 8px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.35)}
-  .bw-word-paper:focus{box-shadow:0 2px 12px rgba(0,83,226,.25),0 0 0 2px rgba(0,83,226,.3)}
-  .bw-word-paper td,.bw-word-paper th{border-color:#3f3f46}
-  .bw-word-paper th{background:#27272a}
-  .bw-word-footer{background:#18181b;border-color:#3f3f46}
-  .bw-word-footer span{color:#a1a1aa}
-}
+/* ── Dark mode — Tailwind .dark class on <html> ── */
+.dark .bw-word-toolbar{background:#18181b;border-color:#3f3f46}
+.dark .bw-word-btn{color:#d4d4d8}
+.dark .bw-word-btn:hover{background:#27272a;border-color:#52525b}
+.dark .bw-word-zoom-label{color:#d4d4d8}
+.dark .bw-word-sel{background:#27272a;color:#d4d4d8;border-color:#52525b}
+.dark .bw-word-sep{background:#52525b}
+.dark .bw-word-color{background:#27272a;color:#d4d4d8;border-color:#52525b}
+.dark .bw-word-hl{color:#fbbf24}
+.dark .bw-word-scroll{background:#09090b}
+.dark .bw-word-paper{background:#1c1c1f;color:#e4e4e7;
+  box-shadow:0 1px 8px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.35)}
+.dark .bw-word-paper:focus{box-shadow:0 2px 12px rgba(0,83,226,.25),0 0 0 2px rgba(0,83,226,.3)}
+.dark .bw-word-paper td,.dark .bw-word-paper th{border-color:#3f3f46}
+.dark .bw-word-paper th{background:#27272a}
+.dark .bw-word-footer{background:#18181b;border-color:#3f3f46}
+.dark .bw-word-footer-label{color:#a1a1aa}
 </style>
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
      data-collabora-enabled="{{ collabora_enabled | tojson | safe }}"
