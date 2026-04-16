@@ -35,6 +35,7 @@ async function _uplDocStudioInit(f) {
   var canRead    = f.mime_type.startsWith('text/') || f.mime_type === 'application/json' || f.mime_type === _DOCX_MIME;
   var canView    = canRead || f.mime_type === 'application/pdf' || f.mime_type.startsWith('image/');
   var canEdit    = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === 'application/json');
+  var canEditDocx = f.src === 'page' && f.mime_type === _DOCX_MIME;
   var canSign     = f.src === 'page' && f.mime_type === 'application/pdf';
   var canAnnotate = f.src === 'page' && f.mime_type === 'application/pdf'
     && typeof _uplAnnotOpen === 'function';
@@ -68,6 +69,7 @@ async function _uplDocStudioInit(f) {
   }
   if (canView)    btns.push('<button onclick="_uplFileViewerOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📄 View</button>');
   if (canEdit)    btns.push('<button onclick="_uplDocEnterEditMode(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✏️ Edit</button>');
+  if (canEditDocx) btns.push('<button onclick="_uplWordEditorOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✏️ Edit DOCX</button>');
   if (canWopi)        btns.push('<button onclick="_uplWopiOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">🖊️ Edit in Collabora</button>');
   if (canSpreadsheet) btns.push('<button onclick="_uplSsOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📊 Edit Spreadsheet</button>');
   if (canSign)    btns.push('<button onclick="_uplDocOpenSignModal(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">&#9997;&#65039; Sign PDF</button>');
@@ -452,83 +454,206 @@ function _uplViewerDocxRenderEditBar(htmlEl) {
     'padding:.75rem 1.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;' +
     'margin-top:2rem';
   bar.innerHTML =
-    '<span style="font-size:.7rem;color:#9ca3af;flex:1">' +
-    '  Click <strong>Edit in Preview</strong> to edit the document text inline.' +
-    '</span>' +
-    '<button type="button" onclick="_uplViewerDocxInlineEdit()" ' +
+    '<span style="font-size:.7rem;color:#9ca3af;flex:1">Word-like editor with full formatting. ' +
+    'Saves directly back to the <strong>.docx</strong> file.</span>' +
+    '<button type="button" onclick="_uplWordEditorMount()" ' +
     '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
-    '  border:1px solid #0053e2;color:#0053e2;background:transparent;cursor:pointer;' +
-    '  transition:background .15s" ' +
-    '  onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'transparent\'">Edit in Preview</button>';
+    '  background:#0053e2;color:#fff;font-weight:600;cursor:pointer;border:none">' +
+    '  ✏️ Edit DOCX</button>';
   htmlEl.appendChild(bar);
 }
 
-// ── Viewer: DOCX in-preview (contenteditable) editing ──────────────────────────
-
-function _uplViewerDocxInlineEdit() {
-  var htmlEl = document.getElementById('upl-viewer-html');
-  if (!htmlEl || !_uplViewerDocxHtml) return;
-  _uplViewerEditMode = 'docx';
-  // Make the rendered doc div directly editable
-  var docDiv = htmlEl.querySelector('.bw-doc-viewer');
-  if (docDiv) {
-    docDiv.contentEditable = 'true';
-    docDiv.style.outline      = '2px solid #0053e2';
-    docDiv.style.borderRadius = '.5rem';
-    docDiv.focus();
-  }
-  // Swap the bar to Save / Cancel
-  var bar = htmlEl.querySelector('[data-upl-role="docx-edit-bar"]');
-  if (bar) {
-    bar.style.background = '#fffbeb';
-    bar.innerHTML =
-      '<span style="font-size:.7rem;color:#b45309;flex:1">' +
-      '  ⚠️ Editing. <em>Save</em> creates a new <strong>.txt</strong> file — original Word doc is unchanged.' +
-      '</span>' +
-      '<button type="button" onclick="_uplViewerDocxCancelEdit()" ' +
-      '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
-      '  border:1px solid #d1d5db;color:#6b7280;background:#fff;cursor:pointer">Cancel</button>' +
-      '<button id="upl-docx-save-btn" type="button" onclick="_uplViewerDocxSaveEdit()" ' +
-      '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
-      '  background:#0053e2;color:#fff;font-weight:600;cursor:pointer;border:none">Save as TXT</button>';
-  }
+// ── Word-like DOCX editor ────────────────────────────────────────────────
+// Called from Doc Studio „✏️ Edit DOCX“ button — opens viewer + immediately
+// mounts the editor so the user never sees the read-only interstitial.
+async function _uplWordEditorOpen(f) {
+  await _uplFileViewerOpen(f);      // load content, build read-only view
+  _uplWordEditorMount();            // swap to editor immediately
 }
 
+// Mount the Word-like editor inside the existing viewer modal.
+// Works whether called from the read-only bar or from Doc Studio directly.
+function _uplWordEditorMount() {
+  var htmlEl = document.getElementById('upl-viewer-html');
+  var f      = _uplViewerCurrentFile;
+  if (!htmlEl || !f || !_uplViewerDocxHtml) return;
+
+  // Repurpose the viewer container as a flex column host
+  htmlEl.className   = '';
+  htmlEl.style.cssText = 'display:flex;flex-direction:column;padding:0;overflow:hidden;' +
+    'background:#e8e8e8;border-radius:0;flex:1;min-height:0;';
+
+  htmlEl.innerHTML =
+    // ─ Toolbar ─
+    '<div id="bw-word-toolbar" class="bw-word-toolbar">' + _uplWordToolbarHtml() + '</div>' +
+    // ─ Scrollable paper area ─
+    '<div id="bw-word-scroll" style="flex:1;overflow-y:auto;padding:24px 32px;">' +
+      '<div id="bw-word-paper" class="bw-word-paper bw-doc-viewer" contenteditable="true" ' +
+           'spellcheck="true" aria-label="Document content" role="textbox" aria-multiline="true">' +
+        _uplViewerDocxHtml +
+      '</div>' +
+    '</div>' +
+    // ─ Footer bar ─
+    '<div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 16px;' +
+         'background:#f3f4f6;border-top:1px solid #d1d5db;">' +
+      '<span style="font-size:.68rem;color:#9ca3af;flex:1">' +
+        'Saves back to the original <strong>.docx</strong> file. ' +
+        'Images and advanced formatting may simplify on save.' +
+      '</span>' +
+      '<button type="button" onclick="_uplViewerDocxCancelEdit()"' +
+        ' style="font-size:.75rem;padding:.35rem .85rem;border-radius:.4rem;' +
+        'border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer">Cancel</button>' +
+      '<button id="bw-word-save-btn" type="button" onclick="_uplWordSave()"' +
+        ' style="font-size:.75rem;padding:.35rem .9rem;border-radius:.4rem;' +
+        'background:#0053e2;color:#fff;font-weight:700;cursor:pointer;border:none">' +
+        '💾 Save DOCX</button>' +
+    '</div>';
+
+  // Wire toolbar buttons — update active states on every selection change
+  var paper = document.getElementById('bw-word-paper');
+  if (paper) paper.focus();
+  document.addEventListener('selectionchange', _uplWordUpdateBar);
+  _uplViewerEditMode = 'docx';
+}
+
+function _uplWordToolbarHtml() {
+  var S = 'bw-word-btn'; // class shorthand
+  var SEP = '<span class="bw-word-sep"></span>';
+  var styleOpts = ['<option value="p">Paragraph</option>',
+    '<option value="h1">Heading 1</option>', '<option value="h2">Heading 2</option>',
+    '<option value="h3">Heading 3</option>', '<option value="h4">Heading 4</option>'].join('');
+  var sizeOpts  = [8,9,10,11,12,14,16,18,20,24,28,36].map(function(n) {
+    return '<option value="' + n + '">' + n + '</option>'; }).join('');
+  return [
+    '<select id="bw-wstyle" class="bw-word-sel" title="Paragraph style"' +
+      ' onchange="_uplWStyle(this.value)">' + styleOpts + '</select>',
+    '<select id="bw-wsize" class="bw-word-sel bw-wsize" title="Font size"' +
+      ' onchange="_uplWFontSize(this.value)"><option value="">pt</option>' + sizeOpts + '</select>',
+    SEP,
+    '<button class="'+S+'" onclick="_uplWCmd(\'undo\')" title="Undo (Ctrl+Z)">↩</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'redo\')" title="Redo (Ctrl+Y)">↪</button>',
+    SEP,
+    '<button class="'+S+'" id="bw-wb" onclick="_uplWCmd(\'bold\')" title="Bold (Ctrl+B)"><b>B</b></button>',
+    '<button class="'+S+'" id="bw-wi" onclick="_uplWCmd(\'italic\')" title="Italic (Ctrl+I)"><i>I</i></button>',
+    '<button class="'+S+'" id="bw-wu" onclick="_uplWCmd(\'underline\')" title="Underline (Ctrl+U)"><u>U</u></button>',
+    '<button class="'+S+'" id="bw-ws" onclick="_uplWCmd(\'strikeThrough\')" title="Strikethrough"><s>S</s></button>',
+    SEP,
+    '<label class="bw-word-color" title="Text color">A' +
+      '<input type="color" value="#000000" oninput="_uplWColor(\'foreColor\',this.value)">' +
+    '</label>',
+    '<label class="bw-word-color bw-word-hl" title="Highlight">█' +
+      '<input type="color" value="#ffff00" oninput="_uplWColor(\'backColor\',this.value)">' +
+    '</label>',
+    SEP,
+    '<button class="'+S+'" onclick="_uplWCmd(\'justifyLeft\')" title="Align left">≡L</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'justifyCenter\')" title="Center">≡C</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'justifyRight\')" title="Align right">≡R</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'justifyFull\')" title="Justify">≡J</button>',
+    SEP,
+    '<button class="'+S+'" onclick="_uplWCmd(\'insertUnorderedList\')" title="Bullet list">• List</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'insertOrderedList\')" title="Numbered list">1. List</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'indent\')" title="Increase indent">→ In</button>',
+    '<button class="'+S+'" onclick="_uplWCmd(\'outdent\')" title="Decrease indent">← Out</button>',
+    SEP,
+    '<button class="'+S+'" onclick="_uplWCmd(\'removeFormat\')" title="Clear formatting">× Clear</button>',
+  ].join('');
+}
+
+/** Execute a contenteditable command inside the paper div. */
+function _uplWCmd(cmd, val) {
+  var paper = document.getElementById('bw-word-paper');
+  if (paper) paper.focus();
+  document.execCommand(cmd, false, val || null);
+  _uplWordUpdateBar();
+}
+
+/** Apply a paragraph/heading block style. */
+function _uplWStyle(val) {
+  _uplWCmd('formatBlock', val === 'p' ? 'p' : val);
+}
+
+/** Apply exact pt font size using fontSize + CSS override. */
+function _uplWFontSize(pt) {
+  if (!pt) return;
+  // execCommand fontSize only accepts 1-7; use a span workaround
+  document.execCommand('fontSize', false, '7');  // marks selection
+  var paper = document.getElementById('bw-word-paper');
+  if (!paper) return;
+  // Replace all font size=7 elements with proper pt spans
+  paper.querySelectorAll('font[size="7"]').forEach(function(el) {
+    var span = document.createElement('span');
+    span.style.fontSize = pt + 'pt';
+    span.innerHTML = el.innerHTML;
+    el.parentNode.replaceChild(span, el);
+  });
+  _uplWordUpdateBar();
+}
+
+/** Apply foreground or background colour. */
+function _uplWColor(cmd, hex) {
+  _uplWCmd(cmd, hex);
+}
+
+/** Sync toolbar button active states to current selection. */
+function _uplWordUpdateBar() {
+  var map = { 'bw-wb': 'bold', 'bw-wi': 'italic', 'bw-wu': 'underline', 'bw-ws': 'strikeThrough' };
+  for (var id in map) {
+    var el = document.getElementById(id);
+    if (!el) continue;
+    try {
+      if (document.queryCommandState(map[id])) {
+        el.style.background = '#dbeafe'; el.style.color = '#0053e2';
+      } else {
+        el.style.background = ''; el.style.color = '';
+      }
+    } catch(e) {}
+  }
+  // Update style dropdown
+  try {
+    var tag = document.queryCommandValue('formatBlock').toLowerCase().replace(/<|>/g, '');
+    var sel = document.getElementById('bw-wstyle');
+    if (sel) sel.value = (['h1','h2','h3','h4'].indexOf(tag) !== -1) ? tag : 'p';
+  } catch(e) {}
+}
+
+/** Cancel edit — restore read-only DOCX view. */
 function _uplViewerDocxCancelEdit() {
+  document.removeEventListener('selectionchange', _uplWordUpdateBar);
   var htmlEl = document.getElementById('upl-viewer-html');
   if (htmlEl && _uplViewerDocxHtml) {
-    // Restore the formatted view (also re-renders the "Edit in Preview" bar)
+    htmlEl.className = 'flex-1 w-full rounded-xl overflow-y-auto bg-white dark:bg-zinc-900 ' +
+      'text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer';
+    htmlEl.style.cssText = '';
     htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerDocxHtml, 'docx_html');
     _uplViewerDocxRenderEditBar(htmlEl);
   }
   _uplViewerEditMode = null;
 }
 
-async function _uplViewerDocxSaveEdit() {
-  var htmlEl  = document.getElementById('upl-viewer-html');
-  var docDiv  = htmlEl && htmlEl.querySelector('.bw-doc-viewer');
-  var saveBtn = document.getElementById('upl-docx-save-btn');
+/** Save the editor HTML back to the .docx file on the server. */
+async function _uplWordSave() {
+  var paper   = document.getElementById('bw-word-paper');
+  var saveBtn = document.getElementById('bw-word-save-btn');
   var f       = _uplViewerCurrentFile;
-  if (!docDiv || !f) return;
-  // Extract user-edited text from the contenteditable div (normalize whitespace)
-  var text = (docDiv.innerText || docDiv.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+  if (!paper || !f) return;
+  var html = paper.innerHTML;
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   try {
     var r = await fetch(
-      '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/save-as-txt',
-      { method: 'POST',
+      '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/docx-content',
+      { method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }) }
+        body: JSON.stringify({ html: html }) }
     );
     var ct = r.headers.get('content-type') || '';
     if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
-    var data = await r.json();
-    _uplShowToast('Saved as ' + _uplEsc(data.file.original_name) + ' ✓');
+    document.removeEventListener('selectionchange', _uplWordUpdateBar);
+    _uplShowToast('Saved to ' + _uplEsc(f.original_name) + ' ✓');
     await _uplFetch(_uplMeta.page || 1);
     _uplFileViewerClose();
   } catch(err) {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save as TXT'; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Save DOCX'; }
     _uplShowToast('Save failed: ' + _uplEsc(String(err)));
   }
 }

@@ -18,9 +18,11 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import re
 import shutil
 import uuid
 from html import escape
+from html.parser import HTMLParser
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -471,6 +473,193 @@ async def convert_file(request: Request, page_id: int, file_id: int, body: Conve
         "id": new_id, "original_name": f"{src_stem}.pdf", "size": len(data),
     }})
 
+
+# ── PUT /{pid}/files/page/{id}/docx-content — save edited HTML back to DOCX ──
+
+class DocxHtmlBody(BaseModel):
+    html: str   # full innerHTML of the editor's contenteditable div
+
+
+@router.put("/{page_id}/files/page/{file_id}/docx-content")
+async def save_docx_content(
+    request: Request, page_id: int, file_id: int, body: DocxHtmlBody
+):
+    """Convert caller-supplied HTML back to DOCX and overwrite the original file."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+
+    row = await get_page_upload_owned(file_id, uid)
+    if not row or row["mime_type"] != _DOCX_MIME:
+        raise HTTPException(status_code=400, detail="File must be a Word document")
+
+    if len(body.html.encode()) > 2_000_000:
+        raise HTTPException(status_code=413, detail="Content too large (max 2 MB)")
+
+    try:
+        data = _html_to_docx_bytes(body.html)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"HTML→DOCX conversion failed: {exc}") from exc
+
+    try:
+        (UPLOAD_DIR / row["filename"]).write_bytes(data)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Could not write file") from exc
+
+    await update_page_upload_size(file_id, uid, len(data))
+    return JSONResponse({"ok": True, "size": len(data)})
+
+
+# ── HTML → DOCX converter — used by the Word-like editor ────────────────────
+
+def _css_color_to_docx(val: str):
+    """Parse CSS colour (rgb/hex) → docx RGBColor or None."""
+    from docx.shared import RGBColor
+    val = val.strip()
+    m = re.match(r'rgb\((\d+),\s*(\d+),\s*(\d+)\)', val)
+    if m:
+        return RGBColor(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    m = re.match(r'#([0-9a-fA-F]{6})', val)
+    if m:
+        h = m.group(1)
+        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    return None
+
+
+def _html_to_docx_bytes(html: str) -> bytes:
+    """Parse HTML from the Word-like editor and emit a python-docx Document."""
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    _HEADING_MAP = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
+    _ALIGN_MAP = {
+        "left":    WD_ALIGN_PARAGRAPH.LEFT,
+        "center":  WD_ALIGN_PARAGRAPH.CENTER,
+        "right":   WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+
+    doc     = Document()
+    para    = doc.add_paragraph()
+    level   = None   # None = Normal; 1-6 = heading
+    li_type: list[str] = []  # stack of 'ul'|'ol'
+    li_idx:  list[int] = []  # counters for ordered lists
+
+    # Inline formatting state
+    bold = italic = under = strike = False
+    fg_color = bg_color = None
+    font_size = None
+    alignment = None
+
+    def _flush_para():
+        nonlocal para, alignment
+        if alignment and para.runs:
+            para.paragraph_format.alignment = alignment
+
+    def _new_block(tag: str, attrs: dict):
+        nonlocal para, level, alignment, bold, italic, under, strike, fg_color, bg_color, font_size
+        _flush_para()
+        alignment = None
+        # extract text-align from style
+        style_str = attrs.get("style", "")
+        m = re.search(r'text-align:\s*(\w+)', style_str)
+        if m:
+            alignment = _ALIGN_MAP.get(m.group(1))
+        if tag in _HEADING_MAP:
+            level = _HEADING_MAP[tag]
+            para  = doc.add_heading(level=level)
+        else:
+            level = None
+            para  = doc.add_paragraph()
+
+    class _Parser(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            nonlocal bold, italic, under, strike, fg_color, bg_color, font_size, alignment
+            nonlocal para, level, li_type, li_idx
+            attrs = dict(attrs)
+            style = attrs.get("style", "")
+            if tag in ("p", "div", *_HEADING_MAP):
+                _new_block(tag, attrs)
+            elif tag in ("ul", "ol"):
+                li_type.append(tag)
+                li_idx.append(0)
+            elif tag == "li":
+                _flush_para()
+                indent = len(li_type)
+                is_ol  = li_type[-1] == "ol" if li_type else False
+                if is_ol:
+                    li_idx[-1] += 1
+                    prefix = f"{li_idx[-1]}. "
+                else:
+                    prefix = "\u2022 "
+                para  = doc.add_paragraph(style="List Bullet" if not is_ol else "List Number")
+                para.paragraph_format.left_indent = Pt(18 * indent)
+            elif tag in ("strong", "b"):  bold   = True
+            elif tag in ("em", "i"):      italic = True
+            elif tag == "u":              under  = True
+            elif tag in ("s", "del", "strike"): strike = True
+            elif tag == "br":             para.add_run("\n")
+            elif tag == "span":
+                m = re.search(r'color:\s*([^;]+)', style)
+                if m and "background" not in style[:m.start()]:
+                    fg_color = _css_color_to_docx(m.group(1))
+                m = re.search(r'background-color:\s*([^;]+)', style)
+                if m:
+                    bg_color = _css_color_to_docx(m.group(1))
+                m = re.search(r'font-size:\s*([\d.]+)pt', style)
+                if m:
+                    font_size = float(m.group(1))
+
+        def handle_endtag(self, tag):
+            nonlocal bold, italic, under, strike, fg_color, bg_color, font_size
+            nonlocal li_type, li_idx
+            if tag in ("strong", "b"):  bold   = False
+            elif tag in ("em", "i"):    italic = False
+            elif tag == "u":            under  = False
+            elif tag in ("s", "del", "strike"): strike = False
+            elif tag == "span":         fg_color = bg_color = font_size = None
+            elif tag in ("ul", "ol") and li_type:
+                li_type.pop(); li_idx.pop()
+
+        def handle_data(self, data):
+            text = data  # preserve whitespace as-is from editor
+            if not text:
+                return
+            run = para.add_run(text)
+            run.bold      = bold
+            run.italic    = italic
+            run.underline = under
+            if strike:
+                run.font.strike = True
+            if fg_color:
+                run.font.color.rgb = fg_color
+            if bg_color:
+                run.font.highlight_color = None  # docx highlight is enum-only; skip bg
+            if font_size:
+                run.font.size = Pt(font_size)
+
+        def handle_entityref(self, name):
+            entities = {"nbsp": " ", "amp": "&", "lt": "<", "gt": ">",
+                        "quot": '"', "apos": "'"}
+            self.handle_data(entities.get(name, ""))
+
+        def handle_charref(self, name):
+            try:
+                ch = chr(int(name[1:], 16) if name.startswith("x") else int(name))
+            except Exception:
+                ch = ""
+            self.handle_data(ch)
+
+    _Parser().feed(html)
+    _flush_para()
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 def _text_to_pdf_bytes(text: str) -> bytes:
     """Render plain text to PDF bytes using reportlab.  Lazy import."""
