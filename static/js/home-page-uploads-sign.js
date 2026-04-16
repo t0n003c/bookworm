@@ -123,22 +123,17 @@ async function _uplDocShowSignStep2(sigDataUrl, pageNum) {
   if (!body) return;
   _uplSigPlacements = [];
 
-  // Fetch page dimensions for aspect-ratio container
-  var dims = { width_pt: 595, height_pt: 842 };
-  try {
-    var dr = await fetch('/home/uploads/' + _uplPid + '/files/page/' + f.id + '/page-dims');
-    if (dr.ok) dims = await dr.json();
-  } catch(_) {}
-  var ratio  = (dims.height_pt / dims.width_pt * 100).toFixed(2);
-  var btCls  = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
+  var btCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
 
   body.innerHTML =
     '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click the PDF page to place your signature. Click multiple times to add more. Use <strong>Clear All</strong> to start over.</p>' +
-    '<div class="relative w-full rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700 shadow-inner" style="padding-top:' + ratio + '%">' +
-    '  <canvas id="upl-pdf-render-canvas" class="absolute inset-0 w-full h-full rounded-lg bg-gray-100 dark:bg-zinc-800"></canvas>' +
+    // canvas is in normal flow (width:100%; height:auto) so its aspect ratio
+    // drives the container height — avoids the padding-top vs buffer mismatch
+    '<div class="relative w-full rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700 shadow-inner">' +
+    '  <canvas id="upl-pdf-render-canvas" style="display:block;width:100%;height:auto" class="rounded-lg bg-gray-100 dark:bg-zinc-800"></canvas>' +
     '  <div id="upl-sig-place-wrap" onclick="_uplDocSigPlaceClick(event)"' +
-    '       class="absolute inset-0 cursor-crosshair z-10" aria-label="Click to place signature">' +
-    '    <div id="upl-sig-markers-container" class="absolute inset-0 pointer-events-none"></div>' +
+    '       style="position:absolute;inset:0" class="cursor-crosshair z-10" aria-label="Click to place signature">' +
+    '    <div id="upl-sig-markers-container" style="position:absolute;inset:0" class="pointer-events-none"></div>' +
     '  </div>' +
     '</div>' +
     '<p id="upl-sig-place-hint" class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1.5" aria-live="polite">Click the page above to place your signature.</p>' +
@@ -187,9 +182,16 @@ async function _uplDocRenderPdfPage(canvasEl, filename, pageNum) {
     var pdf = await pdfjsLib.getDocument({ url: url, withCredentials: false }).promise;
     var pg  = await pdf.getPage(Math.min(pageNum + 1, pdf.numPages));
     var vp  = pg.getViewport({ scale: 1 });
-    // Scale to fill the canvas element width (retina-aware)
-    var dpr   = window.devicePixelRatio || 1;
-    var scale = (canvasEl.offsetWidth || 600) / vp.width * dpr;
+    // Wait up to 5 animation frames for CSS layout to give us a nonzero width.
+    // No DPR scaling — canvas width=100%; height=auto drives the aspect ratio via
+    // the buffer dimensions, so buffer and CSS display stay in sync automatically.
+    var cssW = canvasEl.offsetWidth;
+    for (var i = 0; i < 5 && cssW === 0; i++) {
+      await new Promise(function(r) { requestAnimationFrame(r); });
+      cssW = canvasEl.offsetWidth;
+    }
+    cssW = cssW || 640;
+    var scale = cssW / vp.width;
     var vp2   = pg.getViewport({ scale: scale });
     canvasEl.width  = vp2.width;
     canvasEl.height = vp2.height;
@@ -200,8 +202,9 @@ async function _uplDocRenderPdfPage(canvasEl, filename, pageNum) {
 }
 
 function _uplDrawFallbackText(canvasEl, msg) {
-  canvasEl.width = canvasEl.offsetWidth || 600;
-  canvasEl.height = Math.round((canvasEl.width * 1.414)) || 848; // A4 ratio
+  // Use a fixed buffer size with A4 ratio; CSS width:100% height:auto scales it
+  canvasEl.width  = 640;
+  canvasEl.height = Math.round(640 * 1.414);
   var ctx = canvasEl.getContext('2d');
   ctx.fillStyle = '#f3f4f6';
   ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);

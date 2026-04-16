@@ -13,6 +13,10 @@ var _uplDocBusy        = false;   // prevents double-submit
 var _uplDocCurrentFile = null;    // f passed to _uplDocStudioInit — needed by edit/sign
 var _uplDocEditMode    = false;   // textarea edit active?
 
+// Viewer state (fullscreen modal)
+var _uplViewerCurrentFile = null;  // file object open in the viewer
+var _uplViewerRawText     = null;  // raw text for editable files (null when not text)
+
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── Hook: called by _uplRenderDetail (main) after detail panel HTML is written ─
@@ -313,7 +317,12 @@ async function _uplFileViewerOpen(f) {
   var embedEl  = document.getElementById('upl-viewer-embed');
   var htmlEl   = document.getElementById('upl-viewer-html');
   var titleEl  = document.getElementById('upl-viewer-title');
+  var editBtn  = document.getElementById('upl-viewer-edit-btn');
   if (!modal) return;
+
+  _uplViewerCurrentFile = f;
+  _uplViewerRawText     = null;
+  if (editBtn) editBtn.classList.add('hidden');
 
   if (titleEl) titleEl.textContent = f.original_name || 'File Viewer';
   modal.classList.remove('hidden');
@@ -324,14 +333,12 @@ async function _uplFileViewerOpen(f) {
   var mt   = f.mime_type || '';
 
   if (mt === 'application/pdf') {
-    // PDF — use embed (browser built-in viewer)
     if (embedEl) { embedEl.src = fUrl + '#navpanes=0'; embedEl.classList.remove('hidden'); }
     if (htmlEl)  htmlEl.classList.add('hidden');
     return;
   }
 
   if (mt.startsWith('image/')) {
-    // Image — show at full res in the content pane
     if (embedEl) { embedEl.src = ''; embedEl.classList.add('hidden'); }
     if (htmlEl)  {
       htmlEl.innerHTML = '<div class="flex items-center justify-center h-full min-h-0">' +
@@ -346,7 +353,7 @@ async function _uplFileViewerOpen(f) {
   // DOCX / text / CSV — fetch from /content endpoint
   if (embedEl) { embedEl.src = ''; embedEl.classList.add('hidden'); }
   if (htmlEl)  {
-    htmlEl.innerHTML = '<p class="text-gray-400 dark:text-zinc-500 text-xs text-center mt-8">Loading…</p>';
+    htmlEl.innerHTML = '<p class="text-gray-400 dark:text-zinc-500 text-xs text-center mt-8">…</p>';
     htmlEl.classList.remove('hidden');
   }
   try {
@@ -356,6 +363,12 @@ async function _uplFileViewerOpen(f) {
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
     var data = await r.json();
     if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
+    // Show Edit button only for editable plain-text files on page-src
+    var isEditable = (data.content_type === 'text') && (f.src === 'page');
+    if (editBtn && isEditable) {
+      _uplViewerRawText = data.content;
+      editBtn.classList.remove('hidden');
+    }
   } catch(err) {
     if (htmlEl) htmlEl.innerHTML = '<p class="text-red-500 text-xs text-center mt-8">' + _uplEsc(String(err)) + '</p>';
   }
@@ -378,7 +391,77 @@ function _uplViewerHtmlForType(content, contentType) {
 function _uplFileViewerClose() {
   var modal   = document.getElementById('upl-file-viewer-modal');
   var embedEl = document.getElementById('upl-viewer-embed');
+  var editBtn = document.getElementById('upl-viewer-edit-btn');
   if (!modal) return;
   modal.classList.add('hidden');
   if (embedEl) embedEl.src = '';
+  if (editBtn) editBtn.classList.add('hidden');
+  _uplViewerCurrentFile = null;
+  _uplViewerRawText     = null;
+}
+
+// ── Viewer inline editor (plain text / JSON, page-src only) ──────────────────
+
+function _uplViewerEnterEdit() {
+  var htmlEl  = document.getElementById('upl-viewer-html');
+  var editBtn = document.getElementById('upl-viewer-edit-btn');
+  if (!htmlEl || _uplViewerRawText === null) return;
+  // Build the textarea shell without injecting text into innerHTML — avoids
+  // '</textarea>' in file content breaking out of the element (RCDATA injection).
+  htmlEl.innerHTML =
+    '<div class="flex flex-col h-full gap-2">' +
+    '  <textarea id="upl-viewer-textarea" spellcheck="false"' +
+    '    class="flex-1 font-mono text-xs border border-gray-200 dark:border-zinc-700 rounded-xl' +
+    '           p-3 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100' +
+    '           focus:outline-none focus:ring-2 focus:ring-[#0053e2] resize-none">' +
+    '</textarea>' +
+    '  <div class="flex gap-2 justify-end flex-shrink-0">' +
+    '    <button type="button" onclick="_uplViewerCancelEdit()"' +
+    '            class="px-4 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600' +
+    '                   text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">' +
+    '      Cancel</button>' +
+    '    <button id="upl-viewer-save-btn" type="button" onclick="_uplViewerSaveEdit()"' +
+    '            class="px-4 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white font-semibold' +
+    '                   hover:bg-[#003eb3] transition">' +
+    '      Save</button>' +
+    '  </div>' +
+    '</div>';
+  if (editBtn) editBtn.classList.add('hidden');   // hide while editing
+  var ta = document.getElementById('upl-viewer-textarea');
+  if (ta) { ta.value = _uplViewerRawText; ta.focus(); }  // safe: .value assignment, not innerHTML
+}
+
+function _uplViewerCancelEdit() {
+  var htmlEl  = document.getElementById('upl-viewer-html');
+  var editBtn = document.getElementById('upl-viewer-edit-btn');
+  if (htmlEl && _uplViewerRawText !== null) {
+    htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerRawText, 'text');
+  }
+  if (editBtn) editBtn.classList.remove('hidden');
+}
+
+async function _uplViewerSaveEdit() {
+  var ta  = document.getElementById('upl-viewer-textarea');
+  var btn = document.getElementById('upl-viewer-save-btn');
+  var f   = _uplViewerCurrentFile;
+  if (!ta || !f) return;
+  var text = ta.value;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    var r = await fetch(
+      '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/content',
+      { method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }) }
+    );
+    var ct = r.headers.get('content-type') || '';
+    if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
+    _uplViewerRawText = text;   // update stored copy so Cancel still works
+    _uplShowToast('Saved \u2713');
+    _uplViewerCancelEdit();     // exit edit mode, show updated pre
+  } catch(err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    _uplShowToast('Save failed: ' + _uplEsc(String(err)), true);
+  }
 }

@@ -117,57 +117,86 @@ async def read_content(request: Request, page_id: int, src: str, file_id: int):
     raise HTTPException(status_code=400, detail="Content read not supported for this file type")
 
 
-def _docx_body_to_html(doc) -> str:   # type: ignore[annotation-unchecked]
-    """Walk body children in document order → proper heading/bold/italic/table HTML."""
-    from docx.oxml.ns import qn
+def _docx_body_to_html(doc) -> str:  # type: ignore[annotation-unchecked]
+    """Pure-XML walk of the body — no python-docx proxy constructors, no parent-chain issues."""
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
-    _HEADING_MAP = {
+    def _w(name: str) -> str:
+        return f"{{{W}}}{name}"
+
+    def _local(el) -> str:
+        return el.tag.split("}")[-1] if "}" in el.tag else el.tag
+
+    # Build style-id → display-name from the real style registry (safe, no proxy walk needed)
+    _HEADING_TAGS = {
         "Heading 1": "h2", "Heading 2": "h3", "Heading 3": "h4",
         "Heading 4": "h5", "Heading 5": "h6", "Heading 6": "h6",
-        "Title": "h1", "Subtitle": "h2",
+        "Title": "h1",    "Subtitle": "h2",
     }
+    sid_to_name: dict[str, str] = {s.style_id: s.name for s in doc.styles}
 
-    def _runs_html(para) -> str:
-        parts = []
-        for run in para.runs:
-            txt = escape(run.text or "")
-            if not txt:
-                continue
-            if run.bold and run.italic:
-                txt = f"<strong><em>{txt}</em></strong>"
-            elif run.bold:
-                txt = f"<strong>{txt}</strong>"
-            elif run.italic:
-                txt = f"<em>{txt}</em>"
-            if run.underline:
-                txt = f"<u>{txt}</u>"
-            parts.append(txt)
-        return "".join(parts)
+    def _run_html(r_el) -> str:
+        parts: list[str] = []
+        for el in r_el:
+            loc = _local(el)
+            if loc == "t":
+                parts.append(escape(el.text or ""))
+            elif loc == "br":
+                parts.append("<br>")
+        text = "".join(parts)
+        if not text:
+            return ""
+        rpr = r_el.find(_w("rPr"))
+        if rpr is not None:
+            bold   = rpr.find(_w("b"))  is not None
+            italic = rpr.find(_w("i"))  is not None
+            under  = rpr.find(_w("u"))  is not None
+            if bold and italic:
+                text = f"<strong><em>{text}</em></strong>"
+            elif bold:
+                text = f"<strong>{text}</strong>"
+            elif italic:
+                text = f"<em>{text}</em>"
+            if under:
+                text = f"<u>{text}</u>"
+        return text
 
-    def _para_html(para) -> str:
-        style = para.style.name if para.style else ""
-        tag   = _HEADING_MAP.get(style, "p")
-        inner = _runs_html(para) or "&nbsp;"
+    def _para_html(p_el) -> str:
+        ppr = p_el.find(_w("pPr"))
+        style_name = ""
+        if ppr is not None:
+            ps = ppr.find(_w("pStyle"))
+            if ps is not None:
+                sid = ps.get(_w("val")) or ""
+                style_name = sid_to_name.get(sid, sid)
+        tag   = _HEADING_TAGS.get(style_name, "p")
+        inner = "".join(_run_html(r) for r in p_el.findall(_w("r"))) or "&nbsp;"
         return f"<{tag}>{inner}</{tag}>"
 
-    def _table_html(tbl) -> str:
-        rows = []
-        for i, row in enumerate(tbl.rows):
-            cells = []
-            for cell in row.cells:
-                td = "th" if i == 0 else "td"
-                cells.append(f"<{td}>{escape(cell.text)}</{td}>")
-            rows.append("<tr>" + "".join(cells) + "</tr>")
-        return '<table class="bw-doc-table">' + "".join(rows) + "</table>"
+    def _cell_html(tc_el, is_header: bool) -> str:
+        tag   = "th" if is_header else "td"
+        texts: list[str] = []
+        for p in tc_el.findall(_w("p")):
+            for r in p.findall(_w("r")):
+                t = r.find(_w("t"))
+                if t is not None:
+                    texts.append(t.text or "")
+        return f"<{tag}>{escape(' '.join(texts))}</{tag}>"
+
+    def _table_html(tbl_el) -> str:
+        rows_html: list[str] = []
+        for i, tr in enumerate(tbl_el.findall(_w("tr"))):
+            cells = [_cell_html(tc, i == 0) for tc in tr.findall(_w("tc"))]
+            rows_html.append("<tr>" + "".join(cells) + "</tr>")
+        return '<table class="bw-doc-table">' + "".join(rows_html) + "</table>"
 
     parts: list[str] = []
-    from docx.table import Table
-    from docx.text.paragraph import Paragraph
     for child in doc.element.body:
-        if child.tag == qn("w:p"):
-            parts.append(_para_html(Paragraph(child, doc.element.body)))
-        elif child.tag == qn("w:tbl"):
-            parts.append(_table_html(Table(child, doc.element.body)))
+        loc = _local(child)
+        if loc == "p":
+            parts.append(_para_html(child))
+        elif loc == "tbl":
+            parts.append(_table_html(child))
     return "".join(parts) or "<p><em>Empty document</em></p>"
 
 
