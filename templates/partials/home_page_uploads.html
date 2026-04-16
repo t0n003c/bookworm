@@ -472,15 +472,38 @@
      role="dialog" aria-modal="true" aria-labelledby="upl-annot-title" tabindex="-1"
      onkeydown="if(event.key==='Escape')_uplAnnotClose()">
 
-  {# ── Top bar ── #}
+  {# ── Row 1: title bar ── #}
   <div class="flex items-center gap-2 px-4 py-2 flex-shrink-0
-              bg-zinc-900 border-b border-zinc-700 flex-wrap">
-    <span class="text-base leading-none">&#128221;</span>
+              bg-zinc-900 border-b border-zinc-800">
+    <span class="text-base leading-none" aria-hidden="true">&#128221;</span>
     <span id="upl-annot-filename"
           class="text-sm font-semibold text-zinc-100 truncate flex-1 min-w-0"></span>
     <span id="upl-annot-title" class="sr-only">PDF Annotations</span>
 
-    {# Tool buttons #}
+    {# Page navigation — sits in title row so always visible #}
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page - 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            aria-label="Previous page">&#8249;</button>
+    <span id="upl-annot-page-label"
+          class="text-xs text-zinc-400 select-none whitespace-nowrap">Page 1 / 1</span>
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page + 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            aria-label="Next page">&#8250;</button>
+
+    <button type="button" onclick="_uplAnnotClose()"
+            class="ml-2 text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
+                   rounded-lg px-3 py-1.5 text-xs font-medium transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Close annotation editor">&#x2715; Close</button>
+  </div>
+
+  {# ── Row 2: tools bar ── #}
+  <div class="flex items-center gap-1.5 px-3 py-1.5 flex-shrink-0 flex-wrap
+              bg-zinc-800 border-b border-zinc-700">
+
+    {# Drawing tools #}
     <button type="button" id="upl-annot-tool-highlight"
             onclick="_uplAnnotAddMode('highlight')"
             class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
@@ -499,18 +522,32 @@
                    text-zinc-300 hover:text-white hover:border-[#ffc220]
                    transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
             aria-label="Text box tool" aria-pressed="false">&#128288; Text Box</button>
+    <button type="button" id="upl-annot-tool-pen"
+            onclick="_uplAnnotAddMode('pen')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Pen / free draw tool" aria-pressed="false">&#9998; Pen</button>
 
-    {# Page navigation #}
-    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page - 1)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Previous page">&#8249;</button>
-    <span id="upl-annot-page-label"
-          class="text-xs text-zinc-400 select-none whitespace-nowrap">Page 1 / 1</span>
-    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page + 1)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Next page">&#8250;</button>
+    {# Pen color swatches — visible only when pen is active #}
+    <div id="upl-annot-pen-colors" class="hidden items-center gap-1 ml-1 pl-2
+                                          border-l border-zinc-600">
+      <span class="text-[10px] text-zinc-500 mr-0.5">Color:</span>
+      {% for color, label in [('#111111','Black'),('#ea1100','Red'),('#0053e2','Blue'),
+                               ('#2a8703','Green'),('#ffc220','Yellow'),('#8b5cf6','Purple')] %}
+      <button type="button"
+              onclick="_uplAnnotPenColor('{{ color }}')"
+              class="upl-annot-pen-swatch w-5 h-5 rounded-full border-2 border-transparent
+                     hover:scale-110 transition-transform focus:outline-none
+                     focus:ring-2 focus:ring-white"
+              style="background:{{ color }}"
+              data-color="{{ color }}"
+              aria-label="{{ label }} pen"></button>
+      {% endfor %}
+    </div>
+
+    {# Separator #}
+    <span class="mx-1 h-4 w-px bg-zinc-600 flex-shrink-0" aria-hidden="true"></span>
 
     {# Zoom controls #}
     <button type="button" onclick="_uplAnnotZoom(-0.25)"
@@ -518,23 +555,24 @@
                    hover:text-white transition focus:outline-none"
             aria-label="Zoom out">&#8722;</button>
     <span id="upl-annot-zoom-label"
-          class="text-xs text-zinc-400 select-none whitespace-nowrap">150%</span>
+          class="text-xs text-zinc-400 select-none whitespace-nowrap w-9 text-center">150%</span>
     <button type="button" onclick="_uplAnnotZoom(0.25)"
             class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
                    hover:text-white transition focus:outline-none"
             aria-label="Zoom in">&#43;</button>
+    <button type="button" onclick="_uplAnnotAutofit()"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Fit to window">&#8633; Fit</button>
 
-    {# Clear all button #}
-    <button type="button" onclick="_uplAnnotClearAll()"
-            class="px-2 py-1 text-xs rounded border border-red-700 text-red-400
-                   hover:text-white hover:bg-red-700 transition focus:outline-none"
+    {# Spacer #}
+    <span class="flex-1"></span>
+
+    {# Clear all — red/danger #}
+    <button type="button" onclick="_uplAnnotShowClearModal()"
+            class="px-2.5 py-1 text-xs rounded-lg border border-red-800 text-red-400
+                   hover:text-white hover:bg-red-800 transition focus:outline-none"
             aria-label="Clear all annotations">&#128465; Clear All</button>
-
-    <button type="button" onclick="_uplAnnotClose()"
-            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
-                   rounded-lg px-3 py-1.5 text-xs font-medium transition
-                   focus:outline-none focus:ring-1 focus:ring-white ml-1"
-            aria-label="Close annotation editor">&#x2715; Close</button>
   </div>
 
   {# ── Loading state ── #}
@@ -545,7 +583,7 @@
       <path class="opacity-75" fill="currentColor"
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
     </svg>
-    Loading PDF…
+    Loading PDF&#x2026;
   </div>
 
   {# ── Error state ── #}
@@ -558,7 +596,7 @@
                    text-zinc-300 hover:text-white transition">Close</button>
   </div>
 
-  {# ── Canvas + overlay ── #}
+  {# ── Canvas + overlay + draw canvas ── #}
   <div id="upl-annot-body"
        class="hidden flex-1 overflow-auto bg-zinc-950 flex items-start justify-center p-4">
     <div id="upl-annot-canvas-wrap" style="position:relative;display:inline-block;">
@@ -566,9 +604,53 @@
       <div id="upl-annot-overlay"
            style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"
            role="presentation"></div>
+      {# Draw canvas — sits on top; activated only when pen tool is on #}
+      <canvas id="upl-annot-draw-canvas"
+              style="position:absolute;top:0;left:0;pointer-events:none;touch-action:none;"
+              aria-hidden="true"></canvas>
     </div>
   </div>
 
+</div>
+
+{# ── Clear-all annotations confirm modal ──────────────────────────────────────── #}
+<div id="upl-annot-clear-modal"
+     class="hidden fixed inset-0 z-[70] flex items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="upl-annot-clear-title"
+     onkeydown="if(event.key==='Escape')_uplAnnotCancelClearModal()">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+       onclick="_uplAnnotCancelClearModal()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-[#ea1100]" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </span>
+      <h2 id="upl-annot-clear-title"
+          class="text-base font-bold text-gray-900 dark:text-zinc-100">Clear all annotations?</h2>
+    </div>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+      <span id="upl-annot-clear-count" class="font-semibold text-gray-800 dark:text-zinc-200"></span>
+    </p>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+      All annotations on this PDF will be permanently deleted.
+    </p>
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="_uplAnnotCancelClearModal()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                     transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>
+      <button type="button" onclick="_uplAnnotDoClearAll()"
+              class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                     hover:bg-red-700 transition focus:outline-none focus:ring-2
+                     focus:ring-[#ea1100]">Delete All</button>
+    </div>
+  </div>
 </div>
 
 </div>{# /uploads-page-root #}

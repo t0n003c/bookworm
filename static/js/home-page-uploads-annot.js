@@ -35,6 +35,13 @@ var _annotOverlayMdOnSelf = false;
 var _AV_BTN = 'font-size:13px;padding:2px 8px;border-radius:4px;border:1px solid #d1d5db;' +
   'background:white;color:#374151;cursor:pointer;';
 
+// Pen tool state — tracks active drawing stroke
+var _uplAnnotPenState = {
+  color:   '#111111',  // active pen colour (matches first swatch)
+  drawing: false,      // true while pointer is held
+  points:  [],         // [{x,y}] normalised to [0,1] of the PDF canvas
+};
+
 // ── CDN URLs — pinned; update worker + main together ─────────────────────────
 var _ANNOT_PDFJS_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 var _ANNOT_PDFJS_WRKR = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -134,8 +141,11 @@ async function _uplAnnotOpen(f) {
   try {
     await _uplAnnotLoadLibs();
 
-    // Fetch PDF bytes via the existing auth-gated download route (Quirk #18)
-    var dlUrl = '/home/uploads/' + _uplPid + '/files/' + f.src + '/' + f.id + '/download';
+    // Fetch PDF bytes via the existing auth-gated download route (Quirk #18).
+    // Append cache-bust timestamp so the browser never serves a stale copy after
+    // a signature stamp (which physically replaces the file on disk).
+    var dlUrl = '/home/uploads/' + _uplPid + '/files/' + f.src + '/' + f.id + '/download' +
+                '?v=' + (_uplCacheBust && _uplCacheBust[f.id] ? _uplCacheBust[f.id] : Date.now());
     var dlRes = await fetch(dlUrl, { credentials: 'same-origin' });
     // G4: session expiry redirects to /login (HTML) — check Content-Type first
     if ((dlRes.headers.get('content-type') || '').startsWith('text/html')) {
@@ -164,6 +174,7 @@ function _uplAnnotClose() {
   _annotEl('upl-annot-modal').classList.add('hidden');
   // Cancel any active tool + restore overlay
   if (_uplAnnotState.tool) _uplAnnotAddMode(_uplAnnotState.tool);
+  _uplAnnotPenStop();
   _uplAnnotPdfDoc = null;
   _uplAnnotFile = null;
   _uplAnnotState.page = 0;
@@ -192,6 +203,10 @@ async function _uplAnnotRenderPage(n) {
 
   await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
 
+  // Keep draw canvas perfectly in sync with PDF canvas so pen coords are accurate
+  var dc = _annotEl('upl-annot-draw-canvas');
+  if (dc) { dc.width = viewport.width; dc.height = viewport.height; }
+
   _annotEl('upl-annot-page-label').textContent =
     'Page ' + (n + 1) + ' / ' + _uplAnnotState.total;
   var zl = _annotEl('upl-annot-zoom-label');
@@ -209,6 +224,21 @@ function _uplAnnotSetPage(n) {
 function _uplAnnotZoom(delta) {
   _uplAnnotScale = Math.max(0.5, Math.min(3.0, _uplAnnotScale + delta));
   _uplAnnotRenderPage(_uplAnnotState.page);
+}
+
+/** Fit-to-window: scale so the PDF width fills the scroll container. */
+function _uplAnnotAutofit() {
+  var body = _annotEl('upl-annot-body');
+  var cv   = _annotEl('upl-annot-canvas');
+  if (!body || !cv) return;
+  // Container width minus 2×16px padding (p-4 on each side)
+  var avail = body.clientWidth - 32;
+  if (avail <= 0 || !_uplAnnotPdfDoc) return;
+  _uplAnnotPdfDoc.getPage(_uplAnnotState.page + 1).then(function(pg) {
+    var vp   = pg.getViewport({ scale: 1 });
+    _uplAnnotScale = avail / vp.width;
+    _uplAnnotRenderPage(_uplAnnotState.page);
+  });
 }
 
 // ── Overlay rendering ─────────────────────────────────────────────────────────
@@ -292,8 +322,43 @@ function _uplAnnotMakeDiv(a) {
     sBody.appendChild(_uplAnnotMakeTextarea(a, '#1a1a1a'));
     wrap.appendChild(sBody);
 
+  } else if (a.type === 'pen') {
+    // ── Pen stroke: full-page transparent wrapper holding an SVG polyline ──
+    wrap.style.pointerEvents = 'none';  // SVG captures no clicks by default
+    // Wrapper spans entire canvas (x=0 y=0 w=1 h=1)
+    // We need to detect hover on the SVG to show the delete button,
+    // so we make the wrapper clickable but only for the SVG hit region.
+    wrap.style.pointerEvents = 'auto';
+    wrap.style.overflow      = 'visible';
+    try {
+      var pts = JSON.parse(a.content || '[]');
+      if (pts.length > 1) {
+        var ns  = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 1 1');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;';
+        var pl = document.createElementNS(ns, 'polyline');
+        pl.setAttribute('points', pts.map(function(p) { return p.x + ',' + p.y; }).join(' '));
+        pl.setAttribute('fill', 'none');
+        pl.setAttribute('stroke', a.color || '#111111');
+        pl.setAttribute('stroke-width', '0.004');  // ~2.5px at 100% view
+        pl.setAttribute('stroke-linecap', 'round');
+        pl.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(pl);
+        wrap.appendChild(svg);
+      }
+    } catch (_) {}
+    // Hover to reveal delete
+    var pDel = _annotDelBtn(a.id, false);
+    pDel.style.position = 'absolute';
+    pDel.style.top      = '2px';
+    pDel.style.right    = '2px';
+    wrap.appendChild(pDel);
+    wrap.onmouseenter = function() { pDel.style.opacity = '1'; };
+    wrap.onmouseleave = function() { pDel.style.opacity = '0'; };
+
   } else {
-    // ── Text box: thin header toolbar + editable body ────────────────────
     var txBg = (a.color === 'transparent') ? 'transparent' : 'white';
     wrap.style.display       = 'flex';
     wrap.style.flexDirection = 'column';
@@ -377,41 +442,63 @@ function _uplAnnotMakeTextarea(a, textColor) {
 /** Toggle a tool on/off. Clicking the active tool deactivates it. */
 function _uplAnnotAddMode(type) {
   var overlay = _annotEl('upl-annot-overlay');
-  overlay.removeEventListener('click',     _uplAnnotHandleOverlayClick);
-  overlay.removeEventListener('mousedown', _uplAnnotOverlayMd);
+  var dc      = _annotEl('upl-annot-draw-canvas');
+  overlay.removeEventListener('click',       _uplAnnotHandleOverlayClick);
+  overlay.removeEventListener('mousedown',   _uplAnnotOverlayMd);
+  _uplAnnotPenStop();  // finish any in-progress stroke
 
   _uplAnnotState.tool = (_uplAnnotState.tool === type) ? null : type;
+  _uplAnnotDeactivateTools();
 
-  if (_uplAnnotState.tool) {
-    // G10: flip overlay to auto only when tool is active
-    overlay.style.pointerEvents = 'auto';
-    overlay.style.cursor = 'crosshair';
-    // G11: track mousedown origin so drag-release-outside-textarea
-    // doesn't accidentally fire a new annotation
-    overlay.addEventListener('mousedown', _uplAnnotOverlayMd);
-    overlay.addEventListener('click',     _uplAnnotHandleOverlayClick);
-  } else {
+  if (_uplAnnotState.tool === 'pen') {
+    // Pen mode: draw canvas captures all input; overlay is pass-through
     overlay.style.pointerEvents = 'none';
     overlay.style.cursor = 'default';
-  }
-
-  _uplAnnotDeactivateTools();
-  if (_uplAnnotState.tool) {
-    var btn = _annotEl('upl-annot-tool-' + _uplAnnotState.tool);
-    if (btn) {
-      btn.classList.add('border-[#ffc220]', 'text-[#ffc220]');
-      btn.setAttribute('aria-pressed', 'true');
+    if (dc) {
+      dc.style.pointerEvents = 'all';
+      dc.style.cursor = 'crosshair';
+      dc.addEventListener('pointerdown',  _uplAnnotPenDown);
+      dc.addEventListener('pointermove',  _uplAnnotPenMove);
+      dc.addEventListener('pointerup',    _uplAnnotPenUp);
+      dc.addEventListener('pointerleave', _uplAnnotPenUp);
     }
+    // Show colour swatches
+    var swatches = _annotEl('upl-annot-pen-colors');
+    if (swatches) swatches.classList.replace('hidden', 'flex');
+  } else if (_uplAnnotState.tool) {
+    // Click-to-place tools: overlay captures clicks; draw canvas is inert
+    overlay.style.pointerEvents = 'auto';
+    overlay.style.cursor = 'crosshair';
+    overlay.addEventListener('mousedown', _uplAnnotOverlayMd);
+    overlay.addEventListener('click',     _uplAnnotHandleOverlayClick);
+    if (dc) { dc.style.pointerEvents = 'none'; dc.style.cursor = 'default'; }
+    var swatches2 = _annotEl('upl-annot-pen-colors');
+    if (swatches2) swatches2.classList.replace('flex', 'hidden');
+  } else {
+    // No tool active
+    overlay.style.pointerEvents = 'none';
+    overlay.style.cursor = 'default';
+    if (dc) { dc.style.pointerEvents = 'none'; dc.style.cursor = 'default'; }
+    var swatches3 = _annotEl('upl-annot-pen-colors');
+    if (swatches3) swatches3.classList.replace('flex', 'hidden');
   }
 }
 
 function _uplAnnotDeactivateTools() {
-  var types = ['highlight', 'sticky', 'textbox'];
+  var types = ['highlight', 'sticky', 'textbox', 'pen'];
   for (var i = 0; i < types.length; i++) {
     var b = _annotEl('upl-annot-tool-' + types[i]);
     if (!b) continue;
     b.classList.remove('border-[#ffc220]', 'text-[#ffc220]');
     b.setAttribute('aria-pressed', 'false');
+  }
+  // Highlight active tool
+  if (_uplAnnotState.tool) {
+    var active = _annotEl('upl-annot-tool-' + _uplAnnotState.tool);
+    if (active) {
+      active.classList.add('border-[#ffc220]', 'text-[#ffc220]');
+      active.setAttribute('aria-pressed', 'true');
+    }
   }
 }
 
@@ -508,13 +595,25 @@ async function _uplAnnotDelete(aid) {
 
 // ── Clear all annotations ─────────────────────────────────────────────────────
 
-/** Public — called by the "🗑 Clear All" toolbar button. */
-async function _uplAnnotClearAll() {
+/** Show the BookWorm-styled clear-all confirm modal. */
+function _uplAnnotShowClearModal() {
   if (!_uplAnnotFile) return;
-  var count = _uplAnnotState.annots.length;
-  if (count === 0) { _uplShowToast('No annotations to clear.'); return; }
-  if (!confirm('Delete all ' + count + ' annotation' + (count !== 1 ? 's' : '') +
-               ' on this PDF? This cannot be undone.')) return;
+  var n = _uplAnnotState.annots.length;
+  if (n === 0) { _uplShowToast('No annotations to clear.'); return; }
+  var countEl = _annotEl('upl-annot-clear-count');
+  if (countEl) countEl.textContent = n + ' annotation' + (n !== 1 ? 's' : '') + ' will be deleted.';
+  var m = _annotEl('upl-annot-clear-modal');
+  if (m) m.classList.remove('hidden');
+}
+
+function _uplAnnotCancelClearModal() {
+  var m = _annotEl('upl-annot-clear-modal');
+  if (m) m.classList.add('hidden');
+}
+
+async function _uplAnnotDoClearAll() {
+  _uplAnnotCancelClearModal();
+  if (!_uplAnnotFile) return;
   try {
     var r = await fetch(_annotUrl('/annotations'), {
       method: 'DELETE', credentials: 'same-origin',
@@ -526,6 +625,121 @@ async function _uplAnnotClearAll() {
   } catch (err) {
     _uplShowToast('Clear failed: ' + err.message, true);
   }
+}
+
+// ── Pen colour picker ────────────────────────────────────────────────────
+
+function _uplAnnotPenColor(hex) {
+  _uplAnnotPenState.color = hex;
+  // Update swatch ring: highlight selected
+  var swatches = document.querySelectorAll('.upl-annot-pen-swatch');
+  for (var i = 0; i < swatches.length; i++) {
+    var s = swatches[i];
+    if (s.dataset.color === hex) {
+      s.style.borderColor = '#fff';
+      s.style.outline = '2px solid ' + hex;
+      s.style.outlineOffset = '2px';
+    } else {
+      s.style.borderColor = 'transparent';
+      s.style.outline = 'none';
+    }
+  }
+}
+
+// ── Pen drawing engine ────────────────────────────────────────────────────
+
+function _uplAnnotPenPt(e) {
+  var dc = _annotEl('upl-annot-draw-canvas');
+  var r  = dc.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) / r.width,
+    y: (e.clientY - r.top)  / r.height,
+  };
+}
+
+function _uplAnnotPenDown(e) {
+  e.preventDefault();
+  var dc = _annotEl('upl-annot-draw-canvas');
+  if (!dc) return;
+  dc.setPointerCapture(e.pointerId);
+  _uplAnnotPenState.drawing = true;
+  _uplAnnotPenState.points  = [_uplAnnotPenPt(e)];
+  _uplAnnotPenRedraw();
+}
+
+function _uplAnnotPenMove(e) {
+  if (!_uplAnnotPenState.drawing) return;
+  e.preventDefault();
+  _uplAnnotPenState.points.push(_uplAnnotPenPt(e));
+  _uplAnnotPenRedraw();
+}
+
+async function _uplAnnotPenUp(e) {
+  if (!_uplAnnotPenState.drawing) return;
+  _uplAnnotPenState.drawing = false;
+  var pts = _uplAnnotPenState.points;
+  _uplAnnotPenState.points = [];
+  // Clear draw canvas preview
+  var dc = _annotEl('upl-annot-draw-canvas');
+  if (dc) dc.getContext('2d').clearRect(0, 0, dc.width, dc.height);
+  if (pts.length < 2 || !_uplAnnotFile) return;
+  // Serialise as JSON points — full-page bounding box (x,y,w,h all 0/1)
+  try {
+    var body = {
+      page_num:   _uplAnnotState.page,
+      type:       'pen',
+      x_pct:      0, y_pct:     0,
+      width_pct:  1, height_pct: 1,
+      color:      _uplAnnotPenState.color,
+      content:    JSON.stringify(pts),
+    };
+    var res = await _annotReq(_annotUrl('/annotations'), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (res && res.id) {
+      body.id = res.id;
+      _uplAnnotState.annots.push(body);
+      _uplAnnotDrawOverlay();
+    }
+  } catch (err) {
+    _uplShowToast('Pen save failed: ' + err.message, true);
+  }
+}
+
+function _uplAnnotPenStop() {
+  _uplAnnotPenState.drawing = false;
+  _uplAnnotPenState.points  = [];
+  var dc = _annotEl('upl-annot-draw-canvas');
+  if (dc) {
+    var ctx = dc.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, dc.width, dc.height);
+    dc.removeEventListener('pointerdown',  _uplAnnotPenDown);
+    dc.removeEventListener('pointermove',  _uplAnnotPenMove);
+    dc.removeEventListener('pointerup',    _uplAnnotPenUp);
+    dc.removeEventListener('pointerleave', _uplAnnotPenUp);
+    dc.style.pointerEvents = 'none';
+  }
+}
+
+function _uplAnnotPenRedraw() {
+  var dc = _annotEl('upl-annot-draw-canvas');
+  if (!dc) return;
+  var ctx = dc.getContext('2d');
+  ctx.clearRect(0, 0, dc.width, dc.height);
+  var pts = _uplAnnotPenState.points;
+  if (pts.length < 2) return;
+  ctx.strokeStyle = _uplAnnotPenState.color;
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x * dc.width, pts[0].y * dc.height);
+  for (var i = 1; i < pts.length; i++) {
+    ctx.lineTo(pts[i].x * dc.width, pts[i].y * dc.height);
+  }
+  ctx.stroke();
 }
 
 // ── Read-only PDF+annotation viewer (used by file viewer modal) ───────────────
@@ -554,8 +768,9 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
     '    <button id="_av-next" onclick="_avNav(1)"  style="' + _AV_BTN + '">&#8250;</button>' +
     '    <span style="flex:1"></span>' +
     '    <button onclick="_avZoom(-0.25)" style="' + _AV_BTN + '">&#8722;</button>' +
-    '    <span id="_av-zoom" style="font-size:11px;color:#6b7280">150%</span>' +
+    '    <span id="_av-zoom" style="font-size:11px;color:#6b7280;min-width:36px;text-align:center;">150%</span>' +
     '    <button onclick="_avZoom(0.25)"  style="' + _AV_BTN + '">&#43;</button>' +
+    '    <button onclick="_avFit()"        style="' + _AV_BTN + '" title="Fit to window">&#8633; Fit</button>' +
     '  </div>' +
     '  <div id="_av-scroll" style="flex:1;overflow:auto;background:#525659;display:flex;' +
     '       justify-content:center;align-items:flex-start;padding:12px;">' +
@@ -619,6 +834,28 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
       body.style.cssText='flex:1;overflow:hidden;padding:3px 5px;font-size:12px;color:#1a1a1a;white-space:pre-wrap;word-break:break-word;';
       body.textContent = a.content || '';
       d.appendChild(body);
+    } else if (a.type === 'pen') {
+      d.style.pointerEvents = 'none';
+      d.style.overflow = 'visible';
+      try {
+        var pts = JSON.parse(a.content || '[]');
+        if (pts.length > 1) {
+          var ns2 = 'http://www.w3.org/2000/svg';
+          var svg2 = document.createElementNS(ns2, 'svg');
+          svg2.setAttribute('viewBox', '0 0 1 1');
+          svg2.setAttribute('preserveAspectRatio', 'none');
+          svg2.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;';
+          var pl2 = document.createElementNS(ns2, 'polyline');
+          pl2.setAttribute('points', pts.map(function(p) { return p.x + ',' + p.y; }).join(' '));
+          pl2.setAttribute('fill', 'none');
+          pl2.setAttribute('stroke', a.color || '#111111');
+          pl2.setAttribute('stroke-width', '0.004');
+          pl2.setAttribute('stroke-linecap', 'round');
+          pl2.setAttribute('stroke-linejoin', 'round');
+          svg2.appendChild(pl2);
+          d.appendChild(svg2);
+        }
+      } catch (_) {}
     } else {
       var txBg = (a.color === 'transparent') ? 'transparent' : 'white';
       d.style.cssText += 'border:1.5px solid #0053e2;border-radius:4px;background:' + txBg + ';' +
@@ -634,12 +871,23 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
     return d;
   }
 
-  // Expose nav + zoom as globals so inline onclick works
+  // Expose nav + zoom + fit as globals so inline onclick works
   window._avNav  = function(d) { avRenderPage(curPage + d); };
   window._avZoom = function(d) {
     scale = Math.max(0.5, Math.min(3.0, scale + d));
     var zl = avEl('_av-zoom'); if (zl) zl.textContent = Math.round(scale*100) + '%';
     avRenderPage(curPage);
+  };
+  window._avFit  = function() {
+    if (!pdfDoc) return;
+    pdfDoc.getPage(curPage + 1).then(function(pg) {
+      var vp    = pg.getViewport({ scale: 1 });
+      var scrl  = avEl('_av-scroll');
+      var avail = scrl ? (scrl.clientWidth - 24) : 600;  // minus 2×12px padding
+      scale = Math.max(0.5, avail / vp.width);
+      var zl = avEl('_av-zoom'); if (zl) zl.textContent = Math.round(scale*100) + '%';
+      avRenderPage(curPage);
+    });
   };
 
   // Bootstrap: load PDF.js, fetch PDF bytes, load annotations
@@ -667,5 +915,5 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
   }).catch(function() {});
 
   // Return cleanup function — called by _uplFileViewerClose
-  return function() { stopped = true; pdfDoc = null; delete window._avNav; delete window._avZoom; };
+  return function() { stopped = true; pdfDoc = null; delete window._avNav; delete window._avZoom; delete window._avFit; };
 }

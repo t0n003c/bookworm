@@ -423,10 +423,10 @@ function _uplRenderDetail(f) {
     <a href="${dlUrl}" download="${_uplEsc(f.original_name)}"
        class="block w-full text-center py-1.5 text-xs rounded-lg bg-[#0053e2] text-white hover:bg-[#003eb3] transition mb-3">
       \u2193 Download</a>
-    ${srcSection}
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
-    <div id="upl-doc-studio" class="mt-2"></div>`;
+    <div id="upl-doc-studio" class="mt-2"></div>
+    <div class="mt-4">${srcSection}</div>`;
 
   if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);

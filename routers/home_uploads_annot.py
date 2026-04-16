@@ -31,7 +31,7 @@ from routers.uploads_docs_db import (
 
 router = APIRouter(prefix="/home/uploads", tags=["uploads-annot"])
 
-_VALID_ANNOT_TYPES = {"highlight", "sticky", "textbox"}
+_VALID_ANNOT_TYPES = {"highlight", "sticky", "textbox", "pen"}
 
 
 # ── Pydantic model ────────────────────────────────────────────────────────────
