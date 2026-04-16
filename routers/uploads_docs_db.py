@@ -105,3 +105,14 @@ async def delete_annotation(annot_id: int, user_id: int) -> int:
         )
         await db.commit()
     return cur.rowcount
+
+
+async def delete_all_annotations(file_id: int, user_id: int) -> int:
+    """Delete ALL annotations for a file owned by this user. Returns deleted count."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM pdf_annotations WHERE file_id=? AND user_id=?",
+            (file_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount

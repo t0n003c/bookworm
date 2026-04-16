@@ -328,6 +328,9 @@ function _uplDocCloseCombineModal() {
 
 // ── Universal file viewer ────────────────────────────────────────────────────────────────
 
+// PDF viewer cleanup function — set when _uplAnnotPdfViewer is active, called on close.
+var _uplViewerPdfCleanup = null;
+
 async function _uplFileViewerOpen(f) {
   var modal    = document.getElementById('upl-file-viewer-modal');
   var embedEl  = document.getElementById('upl-viewer-embed');
@@ -346,8 +349,21 @@ async function _uplFileViewerOpen(f) {
   var mt   = f.mime_type || '';
 
   if (mt === 'application/pdf') {
-    if (embedEl) { embedEl.src = fUrl + '#navpanes=0'; embedEl.classList.remove('hidden'); }
-    if (htmlEl)  htmlEl.classList.add('hidden');
+    // G12: Never use <embed> for PDFs — use PDF.js canvas via annot module.
+    // This (a) renders fresh each time (no cached rotation state from browser)
+    // and (b) draws annotation overlays so they’re visible in View mode.
+    if (embedEl) { embedEl.src = ''; embedEl.classList.add('hidden'); }
+    if (htmlEl)  {
+      htmlEl.style.cssText = 'padding:0;overflow:hidden;';
+      htmlEl.classList.remove('hidden');
+      if (typeof _uplAnnotPdfViewer === 'function') {
+        _uplViewerPdfCleanup = _uplAnnotPdfViewer(f, htmlEl, _uplPid);
+      } else {
+        // Annot module not loaded — fall back to embed
+        htmlEl.classList.add('hidden');
+        if (embedEl) { embedEl.src = fUrl + '#navpanes=0'; embedEl.classList.remove('hidden'); }
+      }
+    }
     return;
   }
 
@@ -412,9 +428,13 @@ function _uplViewerHtmlForType(content, contentType) {
 function _uplFileViewerClose() {
   var modal   = document.getElementById('upl-file-viewer-modal');
   var embedEl = document.getElementById('upl-viewer-embed');
+  var htmlEl  = document.getElementById('upl-viewer-html');
   if (!modal) return;
   modal.classList.add('hidden');
   if (embedEl) embedEl.src = '';
+  // G12: run PDF.js cleanup if a canvas viewer was active
+  if (_uplViewerPdfCleanup) { _uplViewerPdfCleanup(); _uplViewerPdfCleanup = null; }
+  if (htmlEl) { htmlEl.style.cssText = ''; htmlEl.innerHTML = ''; }
   _uplViewerCurrentFile = null;
   _uplViewerEditMode    = null;
   _uplViewerDocxHtml    = null;

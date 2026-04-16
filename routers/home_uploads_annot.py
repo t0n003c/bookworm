@@ -10,7 +10,8 @@ Endpoints:
   GET    /{pid}/files/page/{fid}/annotations           list annotations
   POST   /{pid}/files/page/{fid}/annotations           create annotation
   PUT    /{pid}/files/page/{fid}/annotations/{aid}     update position + content
-  DELETE /{pid}/files/page/{fid}/annotations/{aid}     delete annotation
+  DELETE /{pid}/files/page/{fid}/annotations/{aid}     delete one annotation
+  DELETE /{pid}/files/page/{fid}/annotations           delete ALL annotations for file
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from routers.home_uploads import _demo_guard, _require_uploads_page
 from routers.uploads_db import get_page_upload_owned
 from routers.uploads_docs_db import (
     create_annotation,
+    delete_all_annotations,
     delete_annotation,
     get_annotations,
     update_annotation,
@@ -112,3 +114,15 @@ async def remove_annotation(request: Request, page_id: int, file_id: int, annot_
     if n == 0:
         raise HTTPException(status_code=404, detail="Annotation not found")
     return Response(status_code=204)
+
+
+# ── DELETE — clear ALL annotations for a file ─────────────────────────────────
+
+@router.delete("/{page_id}/files/page/{file_id}/annotations")
+async def clear_annotations(request: Request, page_id: int, file_id: int):
+    """Delete every annotation the current user has on this file (all pages)."""
+    if guard := _demo_guard(request):
+        return guard
+    uid, _ = await _annot_auth(request, page_id, file_id)
+    n = await delete_all_annotations(file_id, uid)
+    return JSONResponse({"deleted": n})

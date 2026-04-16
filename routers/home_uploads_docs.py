@@ -633,14 +633,15 @@ def _stamp_one_page(
     pg_w   = float(target_page.mediabox.width)
     pg_h   = float(target_page.mediabox.height)
 
-    # The PDF viewer applies /Rotate CCW when displaying the page.
-    # To keep the signature upright we must pre-rotate it in the OPPOSITE
-    # direction in raw space so the viewer's CCW rotation cancels it out.
-    # Compensation = (360 - rot) % 360 degrees CCW in PIL (PIL +ve = CCW).
-    # Examples:  R=90  → PIL(270) CCW = 90° CW in raw  → viewer +90° CCW = 0°
-    #            R=180 → PIL(180)          (symmetric, same either way)
-    #            R=270 → PIL(90)  CCW = 90° in raw     → viewer +270° CCW = 0°
-    pil_rot = (360 - rot) % 360
+    # The PDF viewer applies /Rotate CW when displaying the page (PDF spec §14.5).
+    # To keep the signature upright in the viewer we must pre-rotate it by the
+    # SAME amount COUNTER-CLOCKWISE in raw space, so the viewer's CW rotation
+    # cancels it out.
+    # PIL positive angles = CCW, so pil_rot = rot directly:
+    #   R=90  → PIL(90)  CCW in raw → viewer +90° CW → 0° (upright) ✓
+    #   R=180 → PIL(180)                                              ✓
+    #   R=270 → PIL(270) CCW in raw → viewer +270° CW → 0° (upright) ✓
+    pil_rot = rot
     if pil_rot:
         draw_img = sig_img.rotate(pil_rot, expand=True)
     else:
@@ -674,19 +675,24 @@ def _stamp_one_page(
         raw_cx = pg_w * x_pct
         raw_cy = pg_h * (1.0 - y_pct)
     elif rot == 90:
-        # CCW 90° display: screen_x = H - ry_pdf, screen_y = rx
-        # Inverse: rx = pg_w*y_pct, ry_pdf = pg_h*(1-x_pct)
+        # R=90 CW: viewer maps raw→screen as: screen_x=ry_pdf, screen_y=rx
+        # Inverse (x_pct=screen_x/vis_w, y_pct=screen_y/vis_h, vis_w=H, vis_h=W):
+        #   ry_pdf = x_pct * H  →  raw_cy = pg_h * x_pct
+        #   rx     = y_pct * W  →  raw_cx = pg_w * y_pct
         raw_cx = pg_w * y_pct
-        raw_cy = pg_h * (1.0 - x_pct)  # ← was x_pct (wrong)
+        raw_cy = pg_h * x_pct
     elif rot == 180:
         # CCW 180° display: both axes flip
         raw_cx = pg_w * (1.0 - x_pct)
         raw_cy = pg_h * y_pct           # correct (y flipped twice = same)
     else:  # 270
-        # CW 90° display: screen_x = ry_pdf, screen_y = W - rx
-        # Inverse: rx = pg_w*(1-y_pct), ry_pdf = pg_h*x_pct
+        # R=270 CW (= 90 CCW): viewer maps raw→screen as:
+        #   screen_x = H - ry_pdf, screen_y = W - rx
+        # Inverse (vis_w=H, vis_h=W):
+        #   ry_pdf = H*(1-x_pct)  →  raw_cy = pg_h*(1-x_pct)
+        #   rx     = W*(1-y_pct)  →  raw_cx = pg_w*(1-y_pct)
         raw_cx = pg_w * (1.0 - y_pct)
-        raw_cy = pg_h * x_pct           # ← was (1-x_pct) (wrong)
+        raw_cy = pg_h * (1.0 - x_pct)
 
     # Bottom-left corner, clamped within page bounds.
     x_pt = max(0.0, min(raw_cx - raw_sig_w / 2.0, pg_w - raw_sig_w))

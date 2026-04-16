@@ -31,6 +31,10 @@ var _uplAnnotState = {
 // Prevents drag-release-outside-textarea from firing a new annotation.
 var _annotOverlayMdOnSelf = false;
 
+// G12: Shared button style string for the read-only PDF viewer toolbar (_uplAnnotPdfViewer).
+var _AV_BTN = 'font-size:13px;padding:2px 8px;border-radius:4px;border:1px solid #d1d5db;' +
+  'background:white;color:#374151;cursor:pointer;';
+
 // ── CDN URLs — pinned; update worker + main together ─────────────────────────
 var _ANNOT_PDFJS_JS   = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 var _ANNOT_PDFJS_WRKR = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -500,4 +504,168 @@ async function _uplAnnotDelete(aid) {
   } catch (err) {
     _uplShowToast('Delete failed: ' + err.message, true);
   }
+}
+
+// ── Clear all annotations ─────────────────────────────────────────────────────
+
+/** Public — called by the "🗑 Clear All" toolbar button. */
+async function _uplAnnotClearAll() {
+  if (!_uplAnnotFile) return;
+  var count = _uplAnnotState.annots.length;
+  if (count === 0) { _uplShowToast('No annotations to clear.'); return; }
+  if (!confirm('Delete all ' + count + ' annotation' + (count !== 1 ? 's' : '') +
+               ' on this PDF? This cannot be undone.')) return;
+  try {
+    var r = await fetch(_annotUrl('/annotations'), {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (!r.ok) throw new Error('Server returned ' + r.status);
+    _uplAnnotState.annots = [];
+    _annotEl('upl-annot-overlay').innerHTML = '';
+    _uplShowToast('All annotations cleared.');
+  } catch (err) {
+    _uplShowToast('Clear failed: ' + err.message, true);
+  }
+}
+
+// ── Read-only PDF+annotation viewer (used by file viewer modal) ───────────────
+
+/**
+ * Render a PDF into `containerEl` using PDF.js with read-only annotation overlays.
+ * Called by _uplFileViewerOpen when opening a PDF in the viewer modal.
+ * Returns a cleanup function to call when the viewer closes.
+ *
+ * G12: We never use <embed> for PDFs — browser rotation state persists across
+ * opens and annotations can’t overlay an <embed>. Canvas via PDF.js solves both.
+ */
+function _uplAnnotPdfViewer(f, containerEl, pid) {
+  var pdfDoc  = null;
+  var curPage = 0;
+  var annots  = [];
+  var scale   = 1.5;
+  var stopped = false;
+
+  containerEl.innerHTML =
+    '<div style="display:flex;flex-direction:column;height:100%;">' +
+    '  <div id="_av-toolbar" style="display:flex;align-items:center;gap:6px;' +
+    '       padding:6px 10px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;">' +
+    '    <button id="_av-prev" onclick="_avNav(-1)" style="' + _AV_BTN + '">&#8249;</button>' +
+    '    <span id="_av-label" style="font-size:11px;color:#6b7280;white-space:nowrap">Page 1</span>' +
+    '    <button id="_av-next" onclick="_avNav(1)"  style="' + _AV_BTN + '">&#8250;</button>' +
+    '    <span style="flex:1"></span>' +
+    '    <button onclick="_avZoom(-0.25)" style="' + _AV_BTN + '">&#8722;</button>' +
+    '    <span id="_av-zoom" style="font-size:11px;color:#6b7280">150%</span>' +
+    '    <button onclick="_avZoom(0.25)"  style="' + _AV_BTN + '">&#43;</button>' +
+    '  </div>' +
+    '  <div id="_av-scroll" style="flex:1;overflow:auto;background:#525659;display:flex;' +
+    '       justify-content:center;align-items:flex-start;padding:12px;">' +
+    '    <div id="_av-wrap" style="position:relative;display:inline-block;">' +
+    '      <canvas id="_av-canvas" style="display:block;"></canvas>' +
+    '      <div id="_av-overlay" style="position:absolute;inset:0;pointer-events:none;"></div>' +
+    '    </div>' +
+    '  </div>' +
+    '  <div id="_av-err" style="display:none;color:#ef4444;font-size:12px;padding:12px;"></div>' +
+    '</div>';
+
+  function avEl(id) { return document.getElementById(id); }
+
+  function avErr(msg) {
+    var e = avEl('_av-err'); if (e) { e.style.display='block'; e.textContent = msg; }
+  }
+
+  function avRenderPage(n) {
+    if (!pdfDoc || stopped) return;
+    curPage = Math.max(0, Math.min(n, pdfDoc.numPages - 1));
+    pdfDoc.getPage(curPage + 1).then(function(pg) {
+      var vp = pg.getViewport({ scale: scale });
+      var cv = avEl('_av-canvas');
+      if (!cv || stopped) return;
+      cv.width  = vp.width;
+      cv.height = vp.height;
+      pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise.then(function() {
+        var lbl = avEl('_av-label');
+        if (lbl) lbl.textContent = 'Page ' + (curPage + 1) + ' / ' + pdfDoc.numPages;
+        avDrawOverlay();
+      });
+    });
+  }
+
+  function avDrawOverlay() {
+    var ov = avEl('_av-overlay');
+    if (!ov) return;
+    ov.innerHTML = '';
+    for (var i = 0; i < annots.length; i++) {
+      if (annots[i].page_num === curPage) ov.appendChild(avMakeDiv(annots[i]));
+    }
+  }
+
+  function avMakeDiv(a) {
+    var d = document.createElement('div');
+    d.style.cssText =
+      'position:absolute;left:' + (a.x_pct*100) + '%;top:' + (a.y_pct*100) + '%;' +
+      'width:' + (a.width_pct*100) + '%;height:' + (a.height_pct*100) + '%;' +
+      'box-sizing:border-box;pointer-events:none;';
+    if (a.type === 'highlight') {
+      d.style.background = 'rgba(255,194,32,0.38)';
+    } else if (a.type === 'sticky') {
+      d.style.cssText += 'display:flex;flex-direction:column;border-radius:2px 8px 8px 8px;' +
+        'overflow:hidden;box-shadow:3px 4px 10px rgba(0,0,0,0.25);transform:rotate(-1.2deg);' +
+        'background:#fef3c7;';
+      var hdr = document.createElement('div');
+      hdr.style.cssText='background:#f59e0b;padding:2px 4px;font-size:11px;flex-shrink:0;';
+      hdr.textContent = '\uD83D\uDCCC';
+      d.appendChild(hdr);
+      var body = document.createElement('div');
+      body.style.cssText='flex:1;overflow:hidden;padding:3px 5px;font-size:12px;color:#1a1a1a;white-space:pre-wrap;word-break:break-word;';
+      body.textContent = a.content || '';
+      d.appendChild(body);
+    } else {
+      var txBg = (a.color === 'transparent') ? 'transparent' : 'white';
+      d.style.cssText += 'border:1.5px solid #0053e2;border-radius:4px;background:' + txBg + ';' +
+        'display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,83,226,0.18);';
+      var txHdr = document.createElement('div');
+      txHdr.style.cssText='background:rgba(0,83,226,0.08);border-bottom:1px solid rgba(0,83,226,0.2);padding:2px 4px;flex-shrink:0;min-height:20px;';
+      d.appendChild(txHdr);
+      var txBody = document.createElement('div');
+      txBody.style.cssText='flex:1;overflow:hidden;padding:3px 5px;font-size:12px;color:#1a1a1a;white-space:pre-wrap;word-break:break-word;';
+      txBody.textContent = a.content || '';
+      d.appendChild(txBody);
+    }
+    return d;
+  }
+
+  // Expose nav + zoom as globals so inline onclick works
+  window._avNav  = function(d) { avRenderPage(curPage + d); };
+  window._avZoom = function(d) {
+    scale = Math.max(0.5, Math.min(3.0, scale + d));
+    var zl = avEl('_av-zoom'); if (zl) zl.textContent = Math.round(scale*100) + '%';
+    avRenderPage(curPage);
+  };
+
+  // Bootstrap: load PDF.js, fetch PDF bytes, load annotations
+  var fUrl = '/uploads/' + encodeURIComponent(f.filename) + '?v=' + Date.now();
+  var annotUrl = '/home/uploads/' + pid + '/files/page/' + f.id + '/annotations';
+
+  _uplAnnotLoadLibs().then(function() {
+    var opts = { url: fUrl, withCredentials: false };
+    return window.pdfjsLib.getDocument(opts).promise;
+  }).then(function(doc) {
+    if (stopped) return;
+    pdfDoc = doc;
+    return avRenderPage(0);
+  }).catch(function(err) {
+    avErr('Could not load PDF: ' + err.message);
+  });
+
+  // Fetch annotations (best-effort, don’t block PDF render)
+  fetch(annotUrl, { credentials: 'same-origin' }).then(function(r) {
+    if (!r.ok || stopped) return;
+    return r.json().then(function(d) {
+      annots = (d && d.annotations) ? d.annotations : [];
+      avDrawOverlay();
+    });
+  }).catch(function() {});
+
+  // Return cleanup function — called by _uplFileViewerClose
+  return function() { stopped = true; pdfDoc = null; delete window._avNav; delete window._avZoom; };
 }
