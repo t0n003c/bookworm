@@ -363,11 +363,18 @@ async function _uplFileViewerOpen(f) {
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
     var data = await r.json();
     if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
-    // Show Edit button only for editable plain-text files on page-src
+    // Show Edit button for editable text (page-src only)
     var isEditable = (data.content_type === 'text') && (f.src === 'page');
     if (editBtn && isEditable) {
       _uplViewerRawText = data.content;
       editBtn.classList.remove('hidden');
+    }
+    // Hint at bottom for non-editable cases
+    if (htmlEl && !isEditable && data.content_type !== 'csv_html') {
+      var hint = data.content_type === 'docx_html'
+        ? 'ℹ️ Word documents are read-only here. Use <strong>→ TXT</strong> in Document Studio to get an editable copy.'
+        : (f.src === 'note' ? '🔒 Note attachments are read-only.' : '');
+      if (hint) htmlEl.innerHTML += '<p style="font-size:.7rem;color:#9ca3af;margin-top:2rem;padding-top:1rem;border-top:1px solid #f3f4f6">' + hint + '</p>';
     }
   } catch(err) {
     if (htmlEl) htmlEl.innerHTML = '<p class="text-red-500 text-xs text-center mt-8">' + _uplEsc(String(err)) + '</p>';
@@ -406,36 +413,47 @@ function _uplViewerEnterEdit() {
   var htmlEl  = document.getElementById('upl-viewer-html');
   var editBtn = document.getElementById('upl-viewer-edit-btn');
   if (!htmlEl || _uplViewerRawText === null) return;
-  // Build the textarea shell without injecting text into innerHTML — avoids
-  // '</textarea>' in file content breaking out of the element (RCDATA injection).
+  // Override parent padding/overflow so the textarea can fill it properly
+  htmlEl.style.overflow = 'hidden';
+  htmlEl.style.padding  = '12px';
+  htmlEl.style.display  = 'flex';
+  htmlEl.style.flexDirection = 'column';
+  htmlEl.style.gap = '8px';
+  // Build shell empty — textarea text set via .value to avoid RCDATA injection
   htmlEl.innerHTML =
-    '<div class="flex flex-col h-full gap-2">' +
-    '  <textarea id="upl-viewer-textarea" spellcheck="false"' +
-    '    class="flex-1 font-mono text-xs border border-gray-200 dark:border-zinc-700 rounded-xl' +
-    '           p-3 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100' +
-    '           focus:outline-none focus:ring-2 focus:ring-[#0053e2] resize-none">' +
+    '<textarea id="upl-viewer-textarea" spellcheck="false"' +
+    '  style="flex:1;min-height:0;font-family:monospace;font-size:.75rem;' +
+    '         border:1px solid #e5e7eb;border-radius:.75rem;padding:12px;' +
+    '         background:#fff;color:#1f2937;outline:none;resize:none;' +
+    '         line-height:1.6" ' +
+    '  class="focus:ring-2 focus:ring-[#0053e2] dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700">' +
     '</textarea>' +
-    '  <div class="flex gap-2 justify-end flex-shrink-0">' +
-    '    <button type="button" onclick="_uplViewerCancelEdit()"' +
-    '            class="px-4 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600' +
-    '                   text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">' +
-    '      Cancel</button>' +
-    '    <button id="upl-viewer-save-btn" type="button" onclick="_uplViewerSaveEdit()"' +
-    '            class="px-4 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white font-semibold' +
-    '                   hover:bg-[#003eb3] transition">' +
-    '      Save</button>' +
-    '  </div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">' +
+    '  <button type="button" onclick="_uplViewerCancelEdit()"' +
+    '          class="px-4 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600' +
+    '                 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">' +
+    '    Cancel</button>' +
+    '  <button id="upl-viewer-save-btn" type="button" onclick="_uplViewerSaveEdit()"' +
+    '          class="px-4 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition">' +
+    '    Save</button>' +
     '</div>';
-  if (editBtn) editBtn.classList.add('hidden');   // hide while editing
+  if (editBtn) editBtn.classList.add('hidden');
   var ta = document.getElementById('upl-viewer-textarea');
-  if (ta) { ta.value = _uplViewerRawText; ta.focus(); }  // safe: .value assignment, not innerHTML
+  if (ta) { ta.value = _uplViewerRawText; ta.focus(); }
 }
 
 function _uplViewerCancelEdit() {
   var htmlEl  = document.getElementById('upl-viewer-html');
   var editBtn = document.getElementById('upl-viewer-edit-btn');
-  if (htmlEl && _uplViewerRawText !== null) {
-    htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerRawText, 'text');
+  // Restore parent to normal read-mode styles
+  if (htmlEl) {
+    htmlEl.style.overflow    = '';
+    htmlEl.style.padding     = '';
+    htmlEl.style.display     = '';
+    htmlEl.style.flexDirection = '';
+    htmlEl.style.gap         = '';
+    if (_uplViewerRawText !== null)
+      htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerRawText, 'text');
   }
   if (editBtn) editBtn.classList.remove('hidden');
 }

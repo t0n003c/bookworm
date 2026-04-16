@@ -469,6 +469,95 @@ async def remove_stamp(request: Request, page_id: int, file_id: int):
     return JSONResponse({"ok": True, "size": size})
 
 
+# ── PDF signing helpers ───────────────────────────────────────────────────────
+
+def _page_rotation(page) -> int:
+    """Return the page's /Rotate value normalised to 0, 90, 180, or 270."""
+    try:
+        rot = int(getattr(page, "rotation", None) or
+                  page.get("/Rotate", 0) or 0)
+    except Exception:
+        rot = 0
+    return rot % 360
+
+
+def _stamp_one_page(
+    sig_img,           # PIL.Image already loaded (RGBA)
+    target_page,       # pypdf page object
+    x_pct: float,      # click x as fraction of visual width  (0-1, left→right)
+    y_pct: float,      # click y as fraction of visual height (0-1, top→bottom)
+):
+    """
+    Build a reportlab overlay for ONE page, handling page rotation so the
+    signature always appears right-side-up at the visual click position.
+
+    Coordinate transforms (derived from PDF /Rotate spec):
+      R=0:   raw_cx = W*x,      raw_cy = H*(1-y)
+      R=90:  raw_cx = W*(1-y),  raw_cy = H*(1-x)   sig pre-rotated CW 90°
+      R=180: raw_cx = W*(1-x),  raw_cy = H*y        sig pre-rotated 180°
+      R=270: raw_cx = W*y,      raw_cy = H*x        sig pre-rotated CCW 90°
+    """
+    import PIL.Image
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas as rl_canvas
+    import io as _io
+
+    rot    = _page_rotation(target_page)
+    pg_w   = float(target_page.mediabox.width)
+    pg_h   = float(target_page.mediabox.height)
+
+    # PIL rotation to counteract the page rotation (PIL +ve = CCW).
+    # For R=90 CCW page: pre-rotate sig CW 90° → PIL(270).
+    pil_rot = {0: 0, 90: 270, 180: 180, 270: 90}.get(rot, 0)
+    if pil_rot:
+        draw_img = sig_img.rotate(pil_rot, expand=True)
+    else:
+        draw_img = sig_img
+
+    # Target sig width = 25% of the *visual* page width.
+    #   For R=90/270 the display swaps (vis_w = pg_h, vis_h = pg_w),
+    #   so sig needs to be 25% of pg_h in those cases.
+    vis_w = pg_h if rot in (90, 270) else pg_w
+    vis_sig_w = vis_w * 0.25
+    # Map that visual width to the actual PDF axis that represents visual-X.
+    # After PIL rotation the draw_img aspect ratio already accounts for the swap.
+    aspect = draw_img.height / draw_img.width  # may be swapped after PIL rotate
+    vis_sig_h = vis_sig_w * aspect
+
+    # Convert visual sig size to raw PDF pts (axis swap for 90°/270°).
+    if rot in (90, 270):
+        raw_sig_w = vis_sig_h   # raw x ↔ visual y
+        raw_sig_h = vis_sig_w   # raw y ↔ visual x
+    else:
+        raw_sig_w = vis_sig_w
+        raw_sig_h = vis_sig_h
+
+    # Compute raw centre of the sig from visual click percentages.
+    if rot == 0:
+        raw_cx = pg_w * x_pct
+        raw_cy = pg_h * (1.0 - y_pct)
+    elif rot == 90:
+        raw_cx = pg_w * (1.0 - y_pct)
+        raw_cy = pg_h * (1.0 - x_pct)
+    elif rot == 180:
+        raw_cx = pg_w * (1.0 - x_pct)
+        raw_cy = pg_h * y_pct
+    else:  # 270
+        raw_cx = pg_w * y_pct
+        raw_cy = pg_h * x_pct
+
+    # Bottom-left corner, clamped within page bounds.
+    x_pt = max(0.0, min(raw_cx - raw_sig_w / 2.0, pg_w - raw_sig_w))
+    y_pt = max(0.0, min(raw_cy - raw_sig_h / 2.0, pg_h - raw_sig_h))
+
+    overlay_buf = _io.BytesIO()
+    c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))
+    c.drawImage(ImageReader(draw_img), x_pt, y_pt,
+                width=raw_sig_w, height=raw_sig_h, mask="auto")
+    c.save()
+    return overlay_buf
+
+
 # ── POST sign ─────────────────────────────────────────────────────────────────
 
 @router.post("/{page_id}/files/page/{file_id}/sign")
@@ -501,8 +590,6 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
     try:
         import PIL.Image
         import pypdf
-        from reportlab.lib.utils import ImageReader
-        from reportlab.pdfgen import canvas as rl_canvas
 
         sig_img = PIL.Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
         reader  = pypdf.PdfReader(str(UPLOAD_DIR / row["filename"]))
@@ -513,21 +600,9 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
         for pl in placements:
             pg_idx      = min(max(pl.page_num, 0), page_count - 1)
             target_page = writer.pages[pg_idx]
-            pg_w = float(target_page.mediabox.width)
-            pg_h = float(target_page.mediabox.height)
 
-            # Signature width = 25 % of page; height scales to preserve aspect ratio.
-            sig_w_pt = pg_w * 0.25
-            sig_h_pt = sig_w_pt * sig_img.height / sig_img.width
-            # Center sig horizontally on click; PDF y-origin is bottom-left.
-            x_pt = max(0.0, min(pl.x_pct * pg_w - sig_w_pt / 2, pg_w - sig_w_pt))
-            y_pt = max(0.0, min((1.0 - pl.y_pct) * pg_h - sig_h_pt, pg_h - sig_h_pt))
-
-            overlay_buf = io.BytesIO()
-            c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))
-            c.drawImage(ImageReader(sig_img), x_pt, y_pt,
-                        width=sig_w_pt, height=sig_h_pt, mask="auto")
-            c.save()
+            # _stamp_one_page handles rotation, coordinate transform, PIL pre-rotate
+            overlay_buf = _stamp_one_page(sig_img, target_page, pl.x_pct, pl.y_pct)
 
             overlay_reader = pypdf.PdfReader(overlay_buf)
             target_page.merge_page(overlay_reader.pages[0])
