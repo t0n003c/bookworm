@@ -18,6 +18,9 @@ var _uplViewerCurrentFile = null;  // file object open in the viewer
 var _uplViewerEditMode    = null;  // 'docx' | 'text' | null
 var _uplViewerDocxHtml    = null;  // cached docx HTML for restore on cancel
 var _uplViewerRawText     = null;  // cached raw text for TXT edit/restore
+// Initial class on #upl-viewer-html — restored on close / cancel
+var _UPL_HTMLEL_CLASS = 'flex-1 w-full rounded-xl overflow-y-auto ' +
+  'bg-white dark:bg-zinc-900 text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer';
 
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -397,7 +400,13 @@ async function _uplFileViewerOpen(f) {
     var isTextEditable = (data.content_type === 'text') && (f.src === 'page');
     var isDocxEditable = (data.content_type === 'docx_html') && (f.src === 'page');
 
-    if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
+    if (htmlEl) {
+      if (data.content_type === 'docx_html') {
+        _uplViewerDocxSetup(htmlEl, data.content);  // paper canvas for both view + edit
+      } else {
+        htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
+      }
+    }
 
     if (isTextEditable) {
       _uplViewerRawText = data.content;
@@ -414,18 +423,25 @@ async function _uplFileViewerOpen(f) {
 }
 
 function _uplViewerHtmlForType(content, contentType) {
-  if (contentType === 'docx_html') {
-    // Already structured HTML from _docx_body_to_html
-    return '<div class="bw-doc-viewer">' + content + '</div>';
-  }
+  // Note: docx_html is handled separately via _uplViewerDocxSetup()
   if (contentType === 'csv_html') {
-    // HTML table from _csv_to_html — wrap with overflow-x for wide tables
     return '<div style="overflow-x:auto">' + content + '</div>';
   }
   // Plain text / JSON — monospace pre block
   var escaped = content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   return '<pre style="font-size:.8em;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + escaped + '</pre>';
 }
+
+/** Set up the paper-canvas view for a DOCX file (read-only OR as base for editor).
+ *  Both the viewer and the editor cancel path run through here so they look identical. */
+function _uplViewerDocxSetup(htmlEl, html) {
+  htmlEl.className   = 'bw-word-host';
+  htmlEl.style.cssText = '';
+  htmlEl.innerHTML =
+    '<div class="bw-word-scroll" id="bw-word-scroll">' +
+      '<div class="bw-word-paper bw-doc-viewer">' + html + '</div>' +
+    '</div>';
+}}
 
 function _uplFileViewerClose() {
   var modal   = document.getElementById('upl-file-viewer-modal');
@@ -436,7 +452,7 @@ function _uplFileViewerClose() {
   if (embedEl) embedEl.src = '';
   // G12: run PDF.js cleanup if a canvas viewer was active
   if (_uplViewerPdfCleanup) { _uplViewerPdfCleanup(); _uplViewerPdfCleanup = null; }
-  if (htmlEl) { htmlEl.style.cssText = ''; htmlEl.innerHTML = ''; }
+  if (htmlEl) { htmlEl.className = _UPL_HTMLEL_CLASS; htmlEl.style.cssText = ''; htmlEl.innerHTML = ''; }
   _uplViewerCurrentFile = null;
   _uplViewerEditMode    = null;
   _uplViewerDocxHtml    = null;
@@ -449,12 +465,9 @@ function _uplViewerDocxRenderEditBar(htmlEl) {
   if (!htmlEl) return;
   var bar = document.createElement('div');
   bar.dataset.uplRole = 'docx-edit-bar';
-  bar.style.cssText =
-    'position:sticky;bottom:0;background:#f9fafb;border-top:1px solid #e5e7eb;' +
-    'padding:.75rem 1.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;' +
-    'margin-top:2rem';
+  bar.className = 'bw-word-footer';
   bar.innerHTML =
-    '<span style="font-size:.7rem;color:#9ca3af;flex:1">Word-like editor with full formatting. ' +
+    '<span>Word-like editor with full formatting. ' +
     'Saves directly back to the <strong>.docx</strong> file.</span>' +
     '<button type="button" onclick="_uplWordEditorMount()" ' +
     '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
@@ -478,31 +491,27 @@ function _uplWordEditorMount() {
   var f      = _uplViewerCurrentFile;
   if (!htmlEl || !f || !_uplViewerDocxHtml) return;
 
-  // Repurpose the viewer container as a flex column host
-  htmlEl.className   = '';
-  htmlEl.style.cssText = 'display:flex;flex-direction:column;padding:0;overflow:hidden;' +
-    'background:#e8e8e8;border-radius:0;flex:1;min-height:0;';
+  // Repurpose the viewer container as a flex column host (shared with read-only view)
+  htmlEl.className   = 'bw-word-host';
+  htmlEl.style.cssText = '';
 
   htmlEl.innerHTML =
-    // ─ Toolbar ─
+    // ─ Toolbar (editor only) ─
     '<div id="bw-word-toolbar" class="bw-word-toolbar">' + _uplWordToolbarHtml() + '</div>' +
     // ─ Scrollable paper area ─
-    '<div id="bw-word-scroll" style="flex:1;overflow-y:auto;padding:24px 32px;">' +
+    '<div id="bw-word-scroll" class="bw-word-scroll">' +
       '<div id="bw-word-paper" class="bw-word-paper bw-doc-viewer" contenteditable="true" ' +
            'spellcheck="true" aria-label="Document content" role="textbox" aria-multiline="true">' +
         _uplViewerDocxHtml +
       '</div>' +
     '</div>' +
     // ─ Footer bar ─
-    '<div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 16px;' +
-         'background:#f3f4f6;border-top:1px solid #d1d5db;">' +
-      '<span style="font-size:.68rem;color:#9ca3af;flex:1">' +
-        'Saves back to the original <strong>.docx</strong> file. ' +
-        'Images and advanced formatting may simplify on save.' +
-      '</span>' +
+    '<div class="bw-word-footer">' +
+      '<span>Saves to the original <strong>.docx</strong>. ' +
+        'Images &amp; advanced formatting may simplify on save.</span>' +
       '<button type="button" onclick="_uplViewerDocxCancelEdit()"' +
         ' style="font-size:.75rem;padding:.35rem .85rem;border-radius:.4rem;' +
-        'border:1px solid #d1d5db;background:#fff;color:#6b7280;cursor:pointer">Cancel</button>' +
+        'border:1px solid #d1d5db;background:transparent;color:inherit;cursor:pointer">Cancel</button>' +
       '<button id="bw-word-save-btn" type="button" onclick="_uplWordSave()"' +
         ' style="font-size:.75rem;padding:.35rem .9rem;border-radius:.4rem;' +
         'background:#0053e2;color:#fff;font-weight:700;cursor:pointer;border:none">' +
@@ -616,15 +625,12 @@ function _uplWordUpdateBar() {
   } catch(e) {}
 }
 
-/** Cancel edit — restore read-only DOCX view. */
+/** Cancel edit — restore read-only paper view (same structure as view mode). */
 function _uplViewerDocxCancelEdit() {
   document.removeEventListener('selectionchange', _uplWordUpdateBar);
   var htmlEl = document.getElementById('upl-viewer-html');
   if (htmlEl && _uplViewerDocxHtml) {
-    htmlEl.className = 'flex-1 w-full rounded-xl overflow-y-auto bg-white dark:bg-zinc-900 ' +
-      'text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer';
-    htmlEl.style.cssText = '';
-    htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerDocxHtml, 'docx_html');
+    _uplViewerDocxSetup(htmlEl, _uplViewerDocxHtml);  // same as initial view
     _uplViewerDocxRenderEditBar(htmlEl);
   }
   _uplViewerEditMode = null;
