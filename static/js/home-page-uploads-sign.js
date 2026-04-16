@@ -32,6 +32,7 @@ function _uplDocOpenSignModal(f) {
 }
 
 function _uplDocCloseSignModal() {
+  _uplSigCancelGhost();
   var modal = document.getElementById('upl-sig-modal');
   if (modal) modal.classList.add('hidden');
   _uplSigPlacements = [];
@@ -50,6 +51,7 @@ function _uplDocSignDone(f) {
 // ── Step 1: draw signature ────────────────────────────────────────────────────
 
 function _uplDocShowSignStep1(f) {
+  _uplSigCancelGhost();  // reset ghost state before re-entering step 1 (e.g. Back button)
   _uplSigPlacements = [];
   _uplSigDrawn      = false;
   var body = document.getElementById('upl-sig-modal-body');
@@ -279,7 +281,8 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
   var ghost = document.createElement('div');
   ghost.id = 'upl-sig-ghost';
   ghost.dataset.pageNum = pageNum;
-  // Centered on click via transform; drag removes the transform and drives px→%
+  // Use transform initially to centre on click — we collapse it right after
+  // appending so all subsequent math uses plain left/top edge percentages.
   ghost.style.cssText =
     'position:absolute;left:' + (xPct * 100).toFixed(2) + '%;top:' + (yPct * 100).toFixed(2) + '%;' +
     'transform:translate(-50%,-50%);width:25%;cursor:move;user-select:none;pointer-events:all;' +
@@ -298,6 +301,20 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
     'background:#0053e2;border-radius:3px;cursor:se-resize;z-index:31;';
   ghost.appendChild(handle);
   container.appendChild(ghost);
+
+  // Collapse transform → explicit left/top (left edge) immediately after mount.
+  // getBoundingClientRect() forces a synchronous layout so the transform is applied.
+  // After this, ALL positional state lives in ghost.style.left/top (left-edge %)
+  // and ghost.dataset.xPct/yPct (centre %) — no getBoundingClientRect in confirm.
+  var wR0 = wrap.getBoundingClientRect();
+  var gR0 = ghost.getBoundingClientRect();
+  ghost.style.transform = 'none';
+  ghost.style.left = ((gR0.left - wR0.left) / wR0.width  * 100).toFixed(2) + '%';
+  ghost.style.top  = ((gR0.top  - wR0.top)  / wR0.height * 100).toFixed(2) + '%';
+  // Centre = click point (by design of translate(-50%,-50%)).
+  ghost.dataset.xPct = xPct.toFixed(4);
+  ghost.dataset.yPct = yPct.toFixed(4);
+
   _uplDocUpdateStampBtn();
 
   // ── Drag ghost body ───────────────────────────────────────────────────────
@@ -305,24 +322,22 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
     if (ev.target === handle) return;
     ev.stopPropagation();
     ghost.setPointerCapture(ev.pointerId);
-    var wRect    = wrap.getBoundingClientRect();
-    var gRect    = ghost.getBoundingClientRect();
-    // Collapse transform to absolute left/top so maths is simple during drag
-    ghost.style.transform = 'none';
-    ghost.style.left = ((gRect.left - wRect.left) / wRect.width  * 100).toFixed(2) + '%';
-    ghost.style.top  = ((gRect.top  - wRect.top)  / wRect.height * 100).toFixed(2) + '%';
+    // Transform already collapsed — read left-edge position directly from style.
+    var wR     = wrap.getBoundingClientRect();
+    var startL = parseFloat(ghost.style.left) / 100 * wR.width;
+    var startT = parseFloat(ghost.style.top)  / 100 * wR.height;
     var startPX = ev.clientX, startPY = ev.clientY;
-    var startL  = gRect.left - wRect.left, startT = gRect.top - wRect.top;
     ghost.onpointermove = function(ev) {
       if (!ev.buttons) return;
-      var wR  = wrap.getBoundingClientRect();
+      var wR2 = wrap.getBoundingClientRect();
       var gW  = ghost.offsetWidth, gH = ghost.offsetHeight;
-      var newL = startL + (ev.clientX - startPX);
-      var newT = startT + (ev.clientY - startPY);
-      newL = Math.max(0, Math.min(wR.width  - gW, newL));
-      newT = Math.max(0, Math.min(wR.height - gH, newT));
-      ghost.style.left = (newL / wR.width  * 100).toFixed(2) + '%';
-      ghost.style.top  = (newT / wR.height * 100).toFixed(2) + '%';
+      var newL = Math.max(0, Math.min(wR2.width  - gW, startL + (ev.clientX - startPX)));
+      var newT = Math.max(0, Math.min(wR2.height - gH, startT + (ev.clientY - startPY)));
+      ghost.style.left = (newL / wR2.width  * 100).toFixed(2) + '%';
+      ghost.style.top  = (newT / wR2.height * 100).toFixed(2) + '%';
+      // Keep centre dataset in sync — used by _uplSigConfirmGhost.
+      ghost.dataset.xPct = ((newL + gW / 2) / wR2.width ).toFixed(4);
+      ghost.dataset.yPct = ((newT + gH / 2) / wR2.height).toFixed(4);
     };
     ghost.onpointerup = function() { ghost.onpointermove = null; ghost.onpointerup = null; };
   };
@@ -332,12 +347,17 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
     ev.stopPropagation();
     handle.setPointerCapture(ev.pointerId);
     var startPX = ev.clientX, startW = ghost.offsetWidth;
-    var wW = wrap.getBoundingClientRect().width;
     handle.onpointermove = function(ev) {
       if (!ev.buttons) return;
-      var newW = startW + (ev.clientX - startPX);
-      newW = Math.max(wW * 0.08, Math.min(wW * 0.60, newW));
-      ghost.style.width = (newW / wW * 100).toFixed(2) + '%';
+      var wR  = wrap.getBoundingClientRect();
+      var newW = Math.max(wR.width * 0.08, Math.min(wR.width * 0.60,
+                          startW + (ev.clientX - startPX)));
+      ghost.style.width = (newW / wR.width * 100).toFixed(2) + '%';
+      // Left edge is fixed; right edge moved — centre X and Y both shift.
+      var leftPx = parseFloat(ghost.style.left) / 100 * wR.width;
+      var topPx  = parseFloat(ghost.style.top)  / 100 * wR.height;
+      ghost.dataset.xPct = ((leftPx + newW              / 2) / wR.width ).toFixed(4);
+      ghost.dataset.yPct = ((topPx  + ghost.offsetHeight / 2) / wR.height).toFixed(4);
     };
     handle.onpointerup = function() { handle.onpointermove = null; handle.onpointerup = null; };
   };
@@ -346,15 +366,14 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
 function _uplSigConfirmGhost() {
   _uplSigGhostActive = false;
   var ghost = document.getElementById('upl-sig-ghost');
-  var wrap  = document.getElementById('upl-sig-place-wrap');
-  if (!ghost || !wrap) { _uplDocUpdateStampBtn(); return; }
-  var gR = ghost.getBoundingClientRect(), wR = wrap.getBoundingClientRect();
-  var x_pct = (gR.left - wR.left + gR.width  / 2) / wR.width;
-  var y_pct = (gR.top  - wR.top  + gR.height / 2) / wR.height;
-  var pageNum = parseInt(ghost.dataset.pageNum || '0', 10) || 0;
+  if (!ghost) { _uplDocUpdateStampBtn(); return; }
+  // Coordinates are maintained in dataset throughout spawn/drag/resize.
+  // Reading here avoids any getBoundingClientRect issues under CSS transforms.
+  var x_pct   = parseFloat(ghost.dataset.xPct   || '0.5');
+  var y_pct   = parseFloat(ghost.dataset.yPct   || '0.5');
+  var pageNum = parseInt(ghost.dataset.pageNum   || '0', 10) || 0;
   _uplSigPlacements.push({ x_pct: x_pct, y_pct: y_pct, page_num: pageNum });
   ghost.parentNode.removeChild(ghost);
-  _uplSigGhostActive = false;
   var store = document.getElementById('upl-sig-data-store');
   _uplDocRenderMarkers(store ? store.value : '');
   _uplDocUpdateStampBtn();
