@@ -512,6 +512,18 @@
                    hover:text-white transition focus:outline-none"
             aria-label="Next page">&#8250;</button>
 
+    {# Zoom controls #}
+    <button type="button" onclick="_uplAnnotZoom(-0.25)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Zoom out">&#8722;</button>
+    <span id="upl-annot-zoom-label"
+          class="text-xs text-zinc-400 select-none whitespace-nowrap">150%</span>
+    <button type="button" onclick="_uplAnnotZoom(0.25)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Zoom in">&#43;</button>
+
     <button type="button" onclick="_uplAnnotClose()"
             class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
                    rounded-lg px-3 py-1.5 text-xs font-medium transition

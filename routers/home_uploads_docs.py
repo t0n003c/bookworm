@@ -150,31 +150,64 @@ def _docx_body_to_html(doc) -> str:  # type: ignore[annotation-unchecked]
     }
     sid_to_name: dict[str, str] = {s.style_id: s.name for s in doc.styles}
 
+    def _drawing_html(drawing_el) -> str:
+        """Extract embedded image from a w:drawing element and return an <img> data-URI tag."""
+        A_NS      = "http://schemas.openxmlformats.org/drawingml/2006/main"
+        R_NS      = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        blip_tag  = f"{{{A_NS}}}blip"
+        embed_key = f"{{{R_NS}}}embed"
+        for child in drawing_el.iter():
+            if child.tag != blip_tag:
+                continue
+            r_id = child.get(embed_key)
+            if not r_id:
+                break
+            try:
+                part = doc.part.related_parts[r_id]
+                blob = part.blob
+                if len(blob) > 2_000_000:   # skip images > 2 MB in the viewer
+                    return ""
+                img_b64 = base64.b64encode(blob).decode()
+                mime    = part.content_type or "image/png"
+                return (
+                    f'<img src="data:{mime};base64,{img_b64}"'
+                    ' style="max-width:100%;height:auto;display:block;margin:0.5em 0;"'
+                    ' alt="embedded image">'
+                )
+            except Exception:
+                return ""
+        return ""
+
     def _run_html(r_el) -> str:
-        parts: list[str] = []
+        html_parts: list[str] = []
+        text_parts: list[str] = []
         for el in r_el:
             loc = _local(el)
             if loc == "t":
-                parts.append(escape(el.text or ""))
+                text_parts.append(escape(el.text or ""))
             elif loc == "br":
-                parts.append("<br>")
-        text = "".join(parts)
-        if not text:
-            return ""
-        rpr = r_el.find(_w("rPr"))
-        if rpr is not None:
-            bold   = rpr.find(_w("b"))  is not None
-            italic = rpr.find(_w("i"))  is not None
-            under  = rpr.find(_w("u"))  is not None
-            if bold and italic:
-                text = f"<strong><em>{text}</em></strong>"
-            elif bold:
-                text = f"<strong>{text}</strong>"
-            elif italic:
-                text = f"<em>{text}</em>"
-            if under:
-                text = f"<u>{text}</u>"
-        return text
+                text_parts.append("<br>")
+            elif loc == "drawing":
+                img = _drawing_html(el)
+                if img:
+                    html_parts.append(img)
+        text = "".join(text_parts)
+        if text:
+            rpr = r_el.find(_w("rPr"))
+            if rpr is not None:
+                bold   = rpr.find(_w("b"))  is not None
+                italic = rpr.find(_w("i"))  is not None
+                under  = rpr.find(_w("u"))  is not None
+                if bold and italic:
+                    text = f"<strong><em>{text}</em></strong>"
+                elif bold:
+                    text = f"<strong>{text}</strong>"
+                elif italic:
+                    text = f"<em>{text}</em>"
+                if under:
+                    text = f"<u>{text}</u>"
+            html_parts.append(text)
+        return "".join(html_parts)
 
     def _para_html(p_el) -> str:
         ppr = p_el.find(_w("pPr"))

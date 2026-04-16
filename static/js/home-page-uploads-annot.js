@@ -17,6 +17,7 @@
 var _uplAnnotFile        = null;  // current file object
 var _uplAnnotPdfDoc      = null;  // pdfjsLib.PDFDocumentProxy
 var _uplAnnotLibsPromise = null;  // cached CDN load promise (re-use across opens)
+var _uplAnnotScale       = 1.5;  // render scale — changed by _uplAnnotZoom()
 
 var _uplAnnotState = {
   page:   0,      // 0-indexed current page
@@ -35,6 +36,26 @@ var _ANNOT_PDFJS_WRKR = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/
 /** Build an annotation endpoint URL for the currently open file. */
 function _annotUrl(suffix) {
   return '/home/uploads/' + _uplPid + '/files/page/' + _uplAnnotFile.id + suffix;
+}
+
+/**
+ * Annotation-specific fetch helper.
+ * NOTE: _uplFetch() from home-page-uploads.js is a FILE-LIST loader (takes a
+ * page number, hits /files?page=N) — do NOT use it here.
+ * This wrapper handles session expiry + non-OK responses consistently.
+ * Returns parsed JSON, or null for 204 No Content.
+ */
+async function _annotReq(url, opts) {
+  var r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+  var ct = r.headers.get('content-type') || '';
+  if (ct.startsWith('text/html')) throw new Error('Session expired — please reload');
+  if (r.status === 204) return null;
+  if (!r.ok) {
+    var detail = '';
+    try { detail = (await r.json()).detail || ''; } catch (_) {}
+    throw new Error('HTTP ' + r.status + (detail ? ': ' + detail : ''));
+  }
+  return r.json();
 }
 
 function _annotEl(id) { return document.getElementById(id); }
@@ -119,7 +140,7 @@ async function _uplAnnotOpen(f) {
     _uplAnnotState.total = _uplAnnotPdfDoc.numPages;
 
     // Load saved annotations (GET — no demo guard needed)
-    var aRes = await _uplFetch(_annotUrl('/annotations'));
+    var aRes = await _annotReq(_annotUrl('/annotations'));
     _uplAnnotState.annots = (aRes && aRes.annotations) ? aRes.annotations : [];
 
     await _uplAnnotRenderPage(0);
@@ -155,7 +176,7 @@ async function _uplAnnotRenderPage(n) {
 
   // G9: getPage() is 1-indexed — always add 1
   var pdfPage = await _uplAnnotPdfDoc.getPage(n + 1);
-  var viewport = pdfPage.getViewport({ scale: 1.5 });
+  var viewport = pdfPage.getViewport({ scale: _uplAnnotScale });
 
   var canvas = _annotEl('upl-annot-canvas');
   canvas.width  = viewport.width;
@@ -165,6 +186,8 @@ async function _uplAnnotRenderPage(n) {
 
   _annotEl('upl-annot-page-label').textContent =
     'Page ' + (n + 1) + ' / ' + _uplAnnotState.total;
+  var zl = _annotEl('upl-annot-zoom-label');
+  if (zl) zl.textContent = Math.round(_uplAnnotScale * 100) + '%';
 
   _uplAnnotDrawOverlay();
 }
@@ -172,6 +195,12 @@ async function _uplAnnotRenderPage(n) {
 /** Public — called by page nav buttons in the toolbar. */
 function _uplAnnotSetPage(n) {
   _uplAnnotRenderPage(Math.max(0, Math.min(n, _uplAnnotState.total - 1)));
+}
+
+/** Public — adjust zoom level by delta (e.g. +0.25 or -0.25) and re-render. */
+function _uplAnnotZoom(delta) {
+  _uplAnnotScale = Math.max(0.5, Math.min(3.0, _uplAnnotScale + delta));
+  _uplAnnotRenderPage(_uplAnnotState.page);
 }
 
 // ── Overlay rendering ─────────────────────────────────────────────────────────
@@ -305,7 +334,7 @@ async function _uplAnnotHandleOverlayClick(e) {
       width_pct: wPct, height_pct: hPct,
       color: '#ffc220', content: '',
     };
-    var result = await _uplFetch(_annotUrl('/annotations'), {
+    var result = await _annotReq(_annotUrl('/annotations'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -327,7 +356,7 @@ async function _uplAnnotHandleOverlayClick(e) {
 async function _uplAnnotSave(aid, content, a) {
   if (!_uplAnnotFile) return;
   try {
-    await _uplFetch(_annotUrl('/annotations/' + aid), {
+    await _annotReq(_annotUrl('/annotations/' + aid), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
