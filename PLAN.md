@@ -1,57 +1,28 @@
-# Plan: Document Studio — Uploads Homespace Phase 4
-Date: 2026-04-14
-Estimated complexity: High
+# Plan: Jspreadsheet CE In-Browser XLSX/CSV Editor (Document Studio Phase 7)
+Date: 2026-04-15
+Estimated complexity: Medium
+
+---
 
 ## Summary
-Add server-side document processing to the Uploads Homespace page: full-content read
-(text files + Word docs), inline text editing with save-back, PDF merge + text
-concatenate (Combine), canvas-drawn visual signature stamping on PDFs (Sign), and
-format conversion (docx→PDF, txt→PDF, PDF→txt, docx→txt). All operations surface in
-an expandable "Document Studio" section inside the existing `#uploads-detail-panel` —
-no new page route, no new homespace type. Multi-select checkboxes on grid cards drive
-the Combine workflow with a floating selection toolbar. All write operations are
-`src='page'` only — note-attached files remain strictly read-only. No LibreOffice, no
-PKI signing, no PDF.js CDN, no Excel support, no version history. Video/audio players
-were already shipped in Phase 3 and are explicitly out of scope here.
+
+Add a fully client-side spreadsheet editor to Document Studio. XLSX and CSV files uploaded to an Uploads homespace page will gain a **📊 Edit Spreadsheet** button in their Document Studio panel. Clicking it opens a fullscreen modal containing a live [Jspreadsheet CE](https://bossanova.uk/jspreadsheet/v4/) grid. [SheetJS (xlsx.js)](https://sheetjs.com/) handles XLSX ↔ JS-array round-tripping; Jspreadsheet CE renders the editable grid. Both libraries are loaded lazily from CDN (injected dynamically in JS at first open, not in `base.html`). A **💾 Save** button serializes the current grid back to the original format (XLSX bytes via SheetJS or CSV text) and PUTs it to a new dedicated endpoint `PUT /home/uploads/{pid}/files/page/{fid}/spreadsheet` which accepts base64-encoded bytes. Closing without saving discards all changes. Read-only mode applies automatically for `note-src` files, matching every other Document Studio editor.
+
+The existing `PUT /{pid}/files/page/{fid}/content` endpoint is **not reused** because it validates `mime.startswith("text/")` before writing and rejects XLSX (binary, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). A unified base64 endpoint is cleaner than special-casing the existing one.
 
 ---
 
 ## Files to Change
-Ordered to resolve dependencies before consumers.
+
+Touch in this sequence to avoid dependency issues.
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `requirements.txt` | Add `pypdf>=4.0.0`, `python-docx>=1.1.0`, `reportlab>=4.0.0` |
-| 2 | `main.py` | Import and `include_router` for the new `home_uploads_docs` router |
-| 3 | `static/js/home-page-uploads.js` | Add 2 hook calls + 1 DOM placeholder; move 2 helpers to tags file (net −4 lines, stays ≤600) |
-| 4 | `templates/partials/home_page_uploads.html` | Add Combine modal + Signature modal HTML (no `<script>` blocks) |
-| 5 | `templates/base.html` or `templates/index.html` | Add `<script src="/static/js/home-page-uploads-docs.js?v={{ static_v }}">` after the tags companion tag |
-
-### Detail on file 3 — `home-page-uploads.js` changes (keep ≤ 600 lines)
-
-**Step A — Move helpers to companion file first (−10 lines):**
-Move `_uplFmtSize(bytes)` and `_uplFmtDate(s)` from the bottom of
-`home-page-uploads.js` to the bottom of `home-page-uploads-tags.js`. Both are pure
-utilities with no dependency on main-file state. Mark with `// moved from main file`.
-
-**Step B — Add hooks (+6 lines):**
-
-In `_uplRenderDetail(f)` — append one placeholder `<div>` to the `el.innerHTML`
-string (inside the existing template literal, after the `upl-tags-area` block):
-```html
-<div id="upl-doc-studio" class="mt-4"></div>
-```
-Then after `_uplLoadTags(f.src, f.id);` at the end of the function body:
-```javascript
-if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
-```
-
-In `_uplRender()` — at the very end of the function body (after `_uplRenderPager()`):
-```javascript
-if (typeof _uplDocAfterRender === 'function') _uplDocAfterRender();
-```
-
-These two defensive guards are zero-cost when the docs JS is absent.
+| 1 | `routers/home_uploads_docs.py` | Add `SpreadsheetBody` Pydantic model + `PUT /{pid}/files/page/{fid}/spreadsheet` endpoint |
+| 2 | `templates/partials/home_page_uploads.html` | Add `#upl-spreadsheet-modal` HTML block (fullscreen, mirrors `#upl-wopi-modal` structure) |
+| 3 | `static/js/home-page-uploads-spreadsheet.js` | **New file** — all spreadsheet editor JS (see New Files below) |
+| 4 | `templates/base.html` | Add `<script>` tag for new JS file at line 587 (after `uploads-wopi.js`) |
+| 5 | `static/js/home-page-uploads-docs.js` | Add `canSpreadsheet` flag + **📊 Edit Spreadsheet** button in `_uplDocStudioInit` |
 
 ---
 
@@ -59,740 +30,378 @@ These two defensive guards are zero-cost when the docs JS is absent.
 
 | File | Purpose |
 |---|---|
-| `routers/home_uploads_docs.py` | 5 new API endpoints (read content, save, combine, sign, convert). Router prefix `/home/uploads`. Kept separate from `home_uploads.py` (already 8.9 KB). |
-| `routers/uploads_docs_db.py` | DB helpers: `update_page_upload_size()`, `get_page_upload_owned_bulk()` |
-| `static/js/home-page-uploads-docs.js` | Document Studio JS module (≤ 600 lines). Entry points: `_uplDocStudioInit(f)` + `_uplDocAfterRender()`. Multi-select, combine toolbar, edit UI, convert UI, sign UI. |
+| `static/js/home-page-uploads-spreadsheet.js` | CDN loader, Jspreadsheet CE + SheetJS integration, modal open/close/save, read-only guard |
 
 ---
 
 ## DB Migrations Needed
 
-**None.** No schema changes are required for Phase 4.
-
-All operations either:
-- Read existing files (no DB write)
-- Overwrite a file on disk + run `UPDATE page_uploads SET size = ? WHERE id = ? AND user_id = ?` (no column additions needed)
-- Create a new derived file via the existing `create_page_upload()` helper already in `uploads_db.py`
-
-The existing tables are fully sufficient:
-```sql
-page_uploads: id, page_id, user_id, filename, original_name, mime_type, size, created_at
-```
-`size` is already present. No `updated_at` column is needed for v1 (out of scope).
+**None.** No schema changes. `update_page_upload_size()` already exists in `routers/uploads_docs_db.py` and is reused by the new endpoint. `page_uploads` table already stores `mime_type`, `filename`, and `size`.
 
 ---
 
-## New Python Dependencies
+## New Backend Endpoint (File 1 detail)
 
-Add to `requirements.txt`:
-```
-pypdf>=4.0.0
-python-docx>=1.1.0
-reportlab>=4.0.0
+### `PUT /{page_id}/files/page/{file_id}/spreadsheet`
+
+**Location:** Add to `routers/home_uploads_docs.py` after the existing `save_content` function (~line 225).
+
+**New Pydantic model** (add with the other models near top of file, after `ContentBody`):
+```python
+class SpreadsheetBody(BaseModel):
+    content_b64: str   # base64-encoded file bytes (SheetJS XLSX or UTF-8 CSV)
+    format: str        # "xlsx" | "csv"
+
+MAX_SPREADSHEET_BYTES = 10_000_000  # 10 MB guard (larger than the 1 MB text guard)
 ```
 
-**⚠️ Verify each on the Walmart PyPI mirror before adding:**
-```
-uv pip index versions pypdf --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple --allow-insecure-host pypi.ci.artifacts.walmart.com
-uv pip index versions python-docx --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple --allow-insecure-host pypi.ci.artifacts.walmart.com
-uv pip index versions reportlab --index-url https://pypi.ci.artifacts.walmart.com/artifactory/api/pypi/external-pypi/simple --allow-insecure-host pypi.ci.artifacts.walmart.com
-```
-If any package is absent from the mirror, stop and escalate — do NOT use a public PyPI fallback on Walmart network.
+**Endpoint logic — exact sequence:**
+1. `if guard := _demo_guard(request): return guard`
+2. `uid = request.session.get("user_id")` → 401 if falsy
+3. `await _require_uploads_page(page_id, uid)`
+4. `row = await get_page_upload_owned(file_id, uid)` → 404 if None
+5. MIME-type gate: only `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `text/csv` → 400 otherwise
+6. Format gate: `body.format` must be `"xlsx"` or `"csv"` → 400 otherwise
+7. `data = base64.b64decode(body.content_b64)` — wrap in try/except → 400 on bad base64
+8. Size gate: `len(data) > MAX_SPREADSHEET_BYTES` → 413
+9. `(UPLOAD_DIR / row["filename"]).write_bytes(data)` — wrap in try/except → 500 on failure
+10. `await update_page_upload_size(file_id, uid, len(data))`
+11. `return JSONResponse({"ok": True, "size": len(data)})`
 
-**Why these three (not others):**
-- `pypdf` — pure-Python PDF read/write/merge/stamp. Replaces deprecated `PyPDF2`. No system dependencies.
-- `python-docx` — pure-Python .docx text extraction and round-trip writing. No LibreOffice.
-- `reportlab` — pure-Python PDF generation from text/paragraph content. No LibreOffice.
-- `Pillow` — already in `requirements.txt` (`Pillow>=10.0.0`). Used for signature image resizing.
-
-**YAGNI — do NOT add:** `mammoth` (docx→HTML overkill), `pikepdf` (needs system QPDF lib),
-`weasyprint` (needs GTK), `fpdf2` (duplicate of reportlab's role).
+**No new Python imports needed** — `base64` is already imported at the top of `home_uploads_docs.py` (used by `sign_pdf`).
 
 ---
 
-## Endpoint Table
+## New Modal HTML (File 2 detail)
 
-All 5 endpoints live in `routers/home_uploads_docs.py` with router prefix `/home/uploads`.
-Full paths are `/home/uploads/{page_id}/...`.
+Add to `templates/partials/home_page_uploads.html` **just before** the closing `</div>{# /uploads-page-root #}` line (i.e., directly after the `#upl-wopi-modal` closing `</div>` block).
 
-| Method | Path (relative to prefix) | Demo Guard | Body | Response |
-|--------|--------------------------|------------|------|----------|
-| `GET` | `/{pid}/files/{src}/{id}/content` | No (read) | — | `{content: str, content_type: "text"\|"docx_html"}` |
-| `PUT` | `/{pid}/files/page/{id}/content` | ✅ Yes | `{content: str}` | `{ok: true, size: int}` |
-| `POST` | `/{pid}/files/page/combine` | ✅ Yes | `{ids: [int], output_name: str, combine_type: "pdf"\|"text"}` | `{ok: true, file: {id, original_name, size}}` |
-| `POST` | `/{pid}/files/page/{id}/sign` | ✅ Yes | `{signature_data: "data:image/png;base64,...", page_num: int}` | `{ok: true, size: int}` |
-| `POST` | `/{pid}/files/page/{id}/convert` | ✅ Yes | `{to_format: "pdf"\|"txt"}` | `{ok: true, file: {id, original_name, size}}` |
-
-### Auth pattern (mirrors existing `home_uploads.py` exactly):
-```python
-from routers.home_uploads import _demo_guard, _require_uploads_page
-
-uid = request.session.get("user_id")
-if not uid:
-    raise HTTPException(status_code=401)
-await _require_uploads_page(page_id, uid)
-```
-
-### GET `/{pid}/files/{src}/{id}/content` — pseudocode
-```python
-# Ownership check (mirrors download endpoints)
-if src == 'note':
-    row = await get_note_attachment_owned(id, uid)   # from uploads_db.py
-else:
-    row = await get_page_upload_owned(id, uid)       # from uploads_db.py
-if not row:
-    raise HTTPException(404)
-
-disk_path = UPLOAD_DIR / row["filename"]
-mime = row["mime_type"]
-
-if mime.startswith("text/") or mime == "application/json":
-    text = disk_path.read_text(errors="replace")
-    return JSONResponse({"content": text, "content_type": "text"})
-
-if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    from docx import Document
-    from html import escape
-    doc = Document(disk_path)
-    paras = [escape(p.text) for p in doc.paragraphs if p.text.strip()]
-    html_content = "<br>".join(f"<p>{p}</p>" for p in paras)
-    return JSONResponse({"content": html_content, "content_type": "docx_html"})
-
-raise HTTPException(400, "Content read not supported for this file type")
-```
-
-### PUT `/{pid}/files/page/{id}/content` — pseudocode
-```python
-if guard := _demo_guard(request): return guard
-row = await get_page_upload_owned(id, uid)
-if not row:
-    raise HTTPException(404)
-mime = row["mime_type"]
-if not (mime.startswith("text/") or mime == "application/json"):
-    raise HTTPException(400, "Only text files are editable")
-data = body.content.encode("utf-8")
-(UPLOAD_DIR / row["filename"]).write_bytes(data)
-await update_page_upload_size(id, uid, len(data))   # uploads_docs_db.py
-return JSONResponse({"ok": True, "size": len(data)})
-```
-
-### POST `/{pid}/files/page/combine` — pseudocode
-```python
-if guard := _demo_guard(request): return guard
-if not 2 <= len(body.ids) <= 20:
-    raise HTTPException(400, "Select 2–20 files")
-rows = await get_page_upload_owned_bulk(body.ids, uid)   # uploads_docs_db.py
-if len(rows) != len(body.ids):
-    raise HTTPException(404, "One or more files not found")
-
-output_name = (body.output_name.strip() or "combined")[:80]
-
-if body.combine_type == "pdf":
-    if any(r["mime_type"] != "application/pdf" for r in rows):
-        raise HTTPException(400, "All files must be PDFs for PDF merge")
-    import pypdf, io
-    writer = pypdf.PdfWriter()
-    for r in rows:
-        reader = pypdf.PdfReader(str(UPLOAD_DIR / r["filename"]))
-        for page in reader.pages:
-            writer.add_page(page)
-    buf = io.BytesIO()
-    writer.write(buf)
-    data = buf.getvalue()
-    stored_name = f"{uuid.uuid4().hex}.pdf"
-    (UPLOAD_DIR / stored_name).write_bytes(data)
-    new_id = await create_page_upload(page_id, uid, stored_name,
-                                       output_name + ".pdf", "application/pdf", len(data))
-    return JSONResponse({"ok": True, "file": {"id": new_id, "original_name": output_name + ".pdf", "size": len(data)}})
-
-if body.combine_type == "text":
-    if any(not r["mime_type"].startswith("text/") for r in rows):
-        raise HTTPException(400, "All files must be text files for text join")
-    parts = []
-    for r in rows:
-        parts.append(f"── {r['original_name']} ──\n")
-        parts.append((UPLOAD_DIR / r["filename"]).read_text(errors="replace"))
-        parts.append("\n\n")
-    data = "".join(parts).encode("utf-8")
-    stored_name = f"{uuid.uuid4().hex}.txt"
-    (UPLOAD_DIR / stored_name).write_bytes(data)
-    new_id = await create_page_upload(page_id, uid, stored_name,
-                                       output_name + ".txt", "text/plain", len(data))
-    return JSONResponse({"ok": True, "file": {"id": new_id, "original_name": output_name + ".txt", "size": len(data)}})
-
-raise HTTPException(400, "combine_type must be 'pdf' or 'text'")
-```
-
-### POST `/{pid}/files/page/{id}/sign` — pseudocode
-```python
-if guard := _demo_guard(request): return guard
-row = await get_page_upload_owned(id, uid)
-if not row or row["mime_type"] != "application/pdf":
-    raise HTTPException(400, "File must be a PDF")
-
-import base64, io, PIL.Image, pypdf
-from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.lib.utils import ImageReader
-
-# Decode base64 PNG from canvas.toDataURL()
-header, b64 = body.signature_data.split(",", 1)
-sig_bytes = base64.b64decode(b64)
-sig_img = PIL.Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
-
-# Build overlay PDF with signature stamped at fixed lower-right position
-reader = pypdf.PdfReader(str(UPLOAD_DIR / row["filename"]))
-writer = pypdf.PdfWriter()
-writer.append(reader)
-
-target_page = writer.pages[min(body.page_num, len(writer.pages) - 1)]
-pg_w = float(target_page.mediabox.width)
-pg_h = float(target_page.mediabox.height)
-
-# Fixed placement: lower-right, signature width = 30% of page width
-sig_w_pt = pg_w * 0.30
-sig_h_pt = sig_w_pt * sig_img.height / sig_img.width
-x_pt = pg_w - sig_w_pt - 36   # 0.5 inch right margin
-y_pt = 36                       # 0.5 inch bottom margin
-
-overlay_buf = io.BytesIO()
-c = rl_canvas.Canvas(overlay_buf, pagesize=(pg_w, pg_h))
-c.drawImage(ImageReader(sig_img), x_pt, y_pt,
-            width=sig_w_pt, height=sig_h_pt, mask='auto')
-c.save()
-
-overlay_reader = pypdf.PdfReader(overlay_buf)
-target_page.merge_page(overlay_reader.pages[0])
-
-out_buf = io.BytesIO()
-writer.write(out_buf)
-data = out_buf.getvalue()
-(UPLOAD_DIR / row["filename"]).write_bytes(data)   # overwrite in-place
-await update_page_upload_size(id, uid, len(data))
-return JSONResponse({"ok": True, "size": len(data)})
-```
-
-### POST `/{pid}/files/page/{id}/convert` — conversion matrix
-
-| Source `mime_type` | `to_format` | Operation | Output mime |
-|---|---|---|---|
-| `text/*` | `pdf` | reportlab paragraph-per-line | `application/pdf` |
-| `.docx` | `pdf` | python-docx extract paragraphs → reportlab | `application/pdf` |
-| `.docx` | `txt` | python-docx extract paragraphs → join | `text/plain` |
-| `application/pdf` | `txt` | `pypdf.PdfReader.pages[n].extract_text()` join | `text/plain` |
-
-All conversions produce a NEW `page_uploads` row (new UUID filename, new DB row). The
-original file is never modified. Output `original_name` = `stem(original) + "." + to_format`.
-
-For text→PDF with reportlab:
-```python
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import pt
-buf = io.BytesIO()
-doc = SimpleDocTemplate(buf, pagesize=A4,
-                         leftMargin=72, rightMargin=72, topMargin=72, bottomMargin=72)
-styles = getSampleStyleSheet()
-story = []
-for line in text.splitlines():
-    story.append(Paragraph(line or "&nbsp;", styles["Normal"]))
-    story.append(Spacer(1, 4 * pt))
-doc.build(story)
-```
-
----
-
-## New DB Helper Functions (`routers/uploads_docs_db.py`)
-
-```python
-"""DB helpers for Document Studio (home_uploads_docs.py).
-Uses get_db() exclusively — never raw aiosqlite.connect().
-"""
-from database import get_db
-
-
-async def update_page_upload_size(upload_id: int, user_id: int, size: int) -> None:
-    """Update stored byte-size after in-place edit or sign stamp."""
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE page_uploads SET size = ? WHERE id = ? AND user_id = ?",
-            (size, upload_id, user_id),
-        )
-        await db.commit()
-
-
-async def get_page_upload_owned_bulk(
-    ids: list[int], user_id: int
-) -> list[dict]:
-    """Fetch multiple page_uploads rows that all belong to user_id.
-
-    Returns rows in the same order as ids.
-    Rows missing from DB (not found or wrong owner) are silently omitted —
-    caller must check len(result) == len(ids) to detect partial misses.
-    """
-    if not ids:
-        return []
-    placeholders = ",".join("?" * len(ids))
-    async with get_db() as db:
-        cur = await db.execute(
-            f"SELECT id, page_id, filename, original_name, mime_type, size "
-            f"FROM page_uploads "
-            f"WHERE id IN ({placeholders}) AND user_id = ?",
-            (*ids, user_id),
-        )
-        rows = await cur.fetchall()
-    by_id = {r["id"]: dict(r) for r in rows}
-    return [by_id[i] for i in ids if i in by_id]
-```
-
-`create_page_upload()` already exists in `uploads_db.py` — import directly in the
-docs router, no duplication.
-
----
-
-## `home-page-uploads-docs.js` Module Plan (≤ 600 lines)
-
-Follows companion-file pattern of `home-page-uploads-tags.js`:
-reads shared state from main file (`_uplPid`, `_uplFiles`, `_uplMeta`, `_uplEsc`,
-`_uplJsStr`, `_uplShowToast`, `_uplFetch`, `_uplMimeGroup`) via global scope.
-
-```
-// ── Module state ─────────────────────────────────────────────────────────────
-var _uplDocSelectMode = false;   // whether multi-select is active in the grid
-var _uplDocSelected   = {};      // key "src:id" → {src, id, mime_type, original_name}
-var _uplDocBusy       = false;   // request in-flight guard
-
-// ── Hook called by _uplRenderDetail (main file) after panel HTML is written ──
-function _uplDocStudioInit(f)          ~65 lines
-  Builds content of #upl-doc-studio based on f.src and f.mime_type.
-  Decision matrix: (see table in UI Design section above)
-  For note-src: shows read-only label, no write controls.
-  For page-src text/*: "View Full Content" + "Edit" + "→ PDF" convert button.
-  For page-src PDF: "Sign" button + "→ TXT" convert button.
-  For page-src .docx: "View Content" + "→ PDF" + "→ TXT" convert buttons.
-  For other types: renders nothing (section stays empty).
-
-// ── Hook called by _uplRender (main file) after grid is rebuilt ──────────────
-function _uplDocAfterRender()          ~35 lines
-  If _uplDocSelectMode:
-    - inject checkboxes on every page-src card (note-src cards get none)
-    - re-tick already-selected cards from _uplDocSelected
-    - inject/update floating toolbar at bottom of #uploads-main
-  Always: inject "☐ Select" toggle button into filter bar if any page-src docs/PDFs exist.
-
-// ── Multi-select ──────────────────────────────────────────────────────────────
-function _uplDocToggleSelectMode()     ~15 lines
-function _uplDocToggleItem(src, id)    ~20 lines
-function _uplDocRenderToolbar()        ~45 lines
-  Floating sticky bar: "N files selected | [Merge PDFs] [Join Text] [✕ Clear]"
-  Merge PDFs = enabled only when ALL selected are application/pdf.
-  Join Text  = enabled only when ALL selected are text/*.
-  If mixed types: both disabled with tooltip "select same-type files".
-
-// ── Full content view ─────────────────────────────────────────────────────────
-async function _uplDocShowFullContent(f)   ~45 lines
-  GET /{pid}/files/{src}/{id}/content
-  Renders in #upl-doc-studio:
-    - text: <pre class="...max-h-96 overflow-y-auto ...">
-    - docx_html: <div class="...max-h-96 overflow-y-auto ..."> rendered HTML
-  Shows char/line count. "Collapse" toggle resets to buttons view.
-
-// ── Text edit ─────────────────────────────────────────────────────────────────
-function _uplDocEnterEditMode(f)       ~35 lines
-  Replaces #upl-doc-studio content with:
-    <textarea> pre-filled with current content (via GET /content if not yet loaded)
-    [Save] [Cancel] buttons
-async function _uplDocSaveEdit(f)      ~30 lines
-  PUT /{pid}/files/page/{id}/content
-  On success: update f.size in _uplFiles, refresh size display, exit edit mode.
-function _uplDocCancelEdit()           ~10 lines
-
-// ── Convert ──────────────────────────────────────────────────────────────────
-async function _uplDocConvert(src, id, toFmt)  ~35 lines
-  POST /{pid}/files/page/{id}/convert
-  On success: _uplShowToast("Converted → filename"), _uplFetch(_uplMeta.page)
-              and open the new file's detail panel.
-
-// ── Combine (multi-select workflow) ──────────────────────────────────────────
-function _uplDocOpenCombineModal(combineType)  ~30 lines
-  Validates selection (min 2), sets #upl-combine-desc, opens #upl-combine-modal.
-async function _uplDocDoCombine()      ~40 lines
-  POST /{pid}/files/page/combine with current _uplDocSelected ids + modal name.
-  On success: exit select mode, refresh grid, toast "Combined → filename".
-function _uplDocCloseCombineModal()    ~8 lines
-
-// ── Sign (PDF, page-src only) ─────────────────────────────────────────────────
-function _uplDocOpenSignModal(f)       ~25 lines
-  Opens #upl-sig-modal. Wires #upl-sig-confirm-btn onclick to _uplDocDoSign(f).
-  Calls _uplDocInitCanvas().
-function _uplDocInitCanvas()           ~45 lines
-  pointerdown / pointermove / pointerup drawing on #upl-sig-canvas.
-  Respects dark mode (dark bg, white stroke or vice-versa — use black on white).
-function _uplDocClearCanvas()          ~6 lines
-async function _uplDocDoSign(f)        ~35 lines
-  canvas.toDataURL("image/png") → POST /{pid}/files/page/{id}/sign
-  On success: update f.size in _uplFiles, _uplShowToast("Signature stamped").
-function _uplDocCloseSignModal()       ~8 lines
-
-// ── Utility (shared with main file globals) ───────────────────────────────────
-// _uplFmtSize and _uplFmtDate are moved HERE from home-page-uploads.js (Step A).
-function _uplFmtSize(bytes)   ~6 lines   // moved
-function _uplFmtDate(s)       ~8 lines   // moved
-```
-
-**Estimated line count:** ~550 lines including comments and blank lines. Safe under 600.
-
----
-
-## Template Changes (`home_page_uploads.html`)
-
-Add two modal `<div>` blocks immediately before the closing `</div>{# /uploads-page-root #}` tag.
-Zero `<script>` blocks. All event wiring via `onclick="..."` attrs or programmatic `.onclick` in JS.
-
-### Combine Modal (`#upl-combine-modal`)
+Follow the WOPI modal structure exactly (same z-index, same dark top bar, same Escape handler pattern):
 
 ```html
-{# ── Combine documents modal ─────────────────────────────────────────────── #}
-<div id="upl-combine-modal"
-     class="hidden fixed inset-0 z-50 flex items-center justify-center"
-     role="dialog" aria-modal="true" aria-labelledby="upl-combine-title"
-     onkeydown="if(event.key==='Escape')_uplDocCloseCombineModal()">
-  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
-       onclick="_uplDocCloseCombineModal()" aria-hidden="true"></div>
-  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
-              w-full max-w-sm mx-4 p-6">
-    <h2 id="upl-combine-title"
-        class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">
-      Combine Files
-    </h2>
-    <p id="upl-combine-desc"
-       class="text-xs text-gray-500 dark:text-zinc-400 mb-4"></p>
-    <label class="block text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-1"
-           for="upl-combine-name">
-      Output filename
-    </label>
-    <input id="upl-combine-name"
-           class="w-full border border-gray-200 dark:border-zinc-700 rounded-lg
-                  px-3 py-2 text-sm bg-white dark:bg-zinc-800
-                  text-gray-800 dark:text-zinc-100
-                  focus:outline-none focus:ring-2 focus:ring-[#0053e2] mb-4"
-           placeholder="combined" />
-    <div class="flex gap-3 justify-end">
-      <button type="button" onclick="_uplDocCloseCombineModal()"
-              class="px-4 py-2 text-sm rounded-lg border border-gray-300
-                     dark:border-zinc-600 text-gray-700 dark:text-zinc-300
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition
-                     focus:outline-none focus:ring-2 focus:ring-gray-300">
-        Cancel
-      </button>
-      <button id="upl-combine-confirm-btn" type="button"
-              onclick="_uplDocDoCombine()"
-              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white
-                     font-semibold hover:bg-[#003eb3] transition
-                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
-        Combine
-      </button>
-    </div>
+{# ── Jspreadsheet CE spreadsheet editor modal ──────────────────────── #}
+<div id="upl-spreadsheet-modal"
+     class="hidden fixed inset-0 z-[60] flex flex-col"
+     role="dialog" aria-modal="true" aria-labelledby="upl-ss-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplSsClose()">
+  {# Top bar #}
+  <div class="flex items-center gap-3 px-4 py-2 flex-shrink-0
+              bg-zinc-900 border-b border-zinc-700">
+    <span class="text-base leading-none">📊</span>
+    <span id="upl-ss-filename"
+          class="text-sm font-semibold text-zinc-100 truncate flex-1"></span>
+    <span id="upl-ss-title" class="text-xs text-zinc-400 select-none">Spreadsheet Editor</span>
+    <button id="upl-ss-save-btn" type="button"
+            onclick="_uplSsSave()"
+            class="hidden text-white bg-[#0053e2] hover:bg-[#003eb3]
+                   rounded-lg px-3 py-1.5 text-xs font-semibold transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Save spreadsheet">
+      💾 Save
+    </button>
+    <button type="button" onclick="_uplSsClose()"
+            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
+                   rounded-lg px-3 py-1.5 text-xs font-medium transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Close spreadsheet editor">
+      ✕ Close
+    </button>
   </div>
+  {# Loading state #}
+  <div id="upl-ss-loading"
+       class="flex-1 flex items-center justify-center bg-zinc-900 text-zinc-400 text-sm">
+    <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading spreadsheet…
+  </div>
+  {# Error state #}
+  <div id="upl-ss-error"
+       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-900
+              text-red-400 text-sm gap-3">
+    <p id="upl-ss-error-msg"></p>
+    <button type="button" onclick="_uplSsClose()"
+            class="text-xs px-3 py-1.5 rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white transition">Close</button>
+  </div>
+  {# Grid mount — Jspreadsheet CE renders here #}
+  <div id="upl-ss-grid" class="hidden flex-1 overflow-auto bg-white"></div>
 </div>
 ```
 
-### Signature Modal (`#upl-sig-modal`)
+---
+
+## New JS File (File 3 detail)
+
+**`static/js/home-page-uploads-spreadsheet.js`** — keep under 600 lines. All variables `var`. No `let`/`const`.
+
+### CDN URLs to use (pin to major version, not `latest`, for stability)
+```
+Jsuites JS  : https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.js
+Jsuites CSS : https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.css
+Jspreadsheet JS : https://cdn.jsdelivr.net/npm/jspreadsheet-ce@5/dist/index.js
+Jspreadsheet CSS: https://cdn.jsdelivr.net/npm/jspreadsheet-ce@5/dist/jspreadsheet.css
+SheetJS     : https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
+```
+
+**Mandatory load order:** Jsuites JS → Jsuites CSS → Jspreadsheet JS → Jspreadsheet CSS → SheetJS.
+Jspreadsheet CE has a hard runtime dependency on Jsuites — reversing order causes `jsuites is not defined`.
+
+### Module-level `var` declarations (at top of file)
+```javascript
+var _uplSsFile        = null;   // current file object { id, filename, mime_type, original_name, src }
+var _uplSsGridEl      = null;   // the #upl-ss-grid DOM element (instance attached via jexcel prop)
+var _uplSsLibsLoaded  = false;  // true after CDN scripts are injected and resolved
+var _uplSsLibsPromise = null;   // cached Promise for in-flight or completed CDN load
+var _uplSsBusy        = false;  // prevents double-save
+var _XLSX_MIME_SS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+```
+
+### Functions — full list and signatures
+
+#### `_uplSsLoadScript(url)` → Promise
+Creates a `<script>` element, sets `.src = url`, appends to `document.head`, returns a Promise that resolves on `onload`, rejects on `onerror`.
+
+#### `_uplSsLoadStyle(url)` → Promise
+Creates a `<link rel="stylesheet">` element, appends to `document.head`, resolves on `onload`.
+
+#### `_uplSsLoadLibs()` → Promise
+- Return `_uplSsLibsPromise` if already set (cached — avoids re-injection on repeat opens).
+- Chain the loads **sequentially** (each `.then()` returns the next load call):
+  `_uplSsLoadScript(jsuites_js)` → `_uplSsLoadStyle(jsuites_css)` → `_uplSsLoadScript(jspreadsheet_js)` → `_uplSsLoadStyle(jspreadsheet_css)` → `_uplSsLoadScript(sheetjs_url)`
+- Set `_uplSsLibsLoaded = true` at the end of the chain.
+- Store the entire Promise in `_uplSsLibsPromise` and return it.
+
+#### `_uplSsOpen(f)` — public entry point (called from `_uplDocStudioInit`)
+1. `_uplSsFile = f`
+2. Show `#upl-spreadsheet-modal` (remove `hidden`)
+3. Show `#upl-ss-loading`, hide `#upl-ss-grid`, hide `#upl-ss-error`, hide `#upl-ss-save-btn`
+4. Set `#upl-ss-filename` text content to `f.original_name`
+5. `_uplSsLoadLibs().then(function() { _uplSsRender(f); }).catch(function(err) { _uplSsShowError('Could not load spreadsheet libraries: ' + err); })`
+
+#### `_uplSsRender(f)` — async, fetch + parse + mount grid
+1. Fetch file bytes:
+   ```javascript
+   // /uploads/<uuid-filename> is served by StaticFiles mount (unguarded — see Quirk #18)
+   // This is consistent with how #upl-viewer-embed src works for PDFs.
+   fetch('/uploads/' + f.filename)
+     .then(function(r) {
+       if (!r.ok) throw new Error('Could not fetch file (' + r.status + ')');
+       return r.arrayBuffer();
+     })
+   ```
+2. Parse with SheetJS:
+   ```javascript
+   var wb = XLSX.read(new Uint8Array(ab), { type: 'array' });
+   var sheetName = wb.SheetNames[0];
+   var ws = wb.Sheets[sheetName];
+   var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+   ```
+3. If `wb.SheetNames.length > 1`: call `_uplShowToast('Showing sheet 1 of ' + wb.SheetNames.length + '. Save will keep only this sheet.')` (non-blocking warning).
+4. Destroy existing instance if any:
+   ```javascript
+   if (_uplSsGridEl && _uplSsGridEl.jexcel) {
+     _uplSsGridEl.jexcel.destroy();
+   }
+   ```
+5. Clear and mount:
+   ```javascript
+   _uplSsGridEl = document.getElementById('upl-ss-grid');
+   _uplSsGridEl.innerHTML = '';
+   jspreadsheet(_uplSsGridEl, {
+     data: data.length ? data : [[]],
+     minDimensions: [26, 50],
+     tableOverflow: true,
+     tableWidth: '100%',
+     tableHeight: '100%'
+   });
+   ```
+6. Hide loading, show grid, show save button.
+7. On any error: `_uplSsShowError(String(err))`.
+
+#### `_uplSsShowError(msg)`
+Hide loading, hide grid, set `#upl-ss-error-msg` text, show `#upl-ss-error`.
+
+#### `_uplSsClose()`
+1. If `_uplSsGridEl && _uplSsGridEl.jexcel`: `_uplSsGridEl.jexcel.destroy()`
+2. Clear `_uplSsGridEl.innerHTML` if set
+3. `_uplSsGridEl = null`, `_uplSsFile = null`, `_uplSsBusy = false`
+4. Hide `#upl-spreadsheet-modal` (add `hidden`)
+5. Reset modal state: show loading, hide grid, hide error, hide save button
+
+#### `_uplSsSave()` — async
+1. Guard: `_uplSsBusy` → return
+2. Guard: `!_uplSsGridEl || !_uplSsGridEl.jexcel || !_uplSsFile` → return
+3. `_uplSsBusy = true`; disable `#upl-ss-save-btn`, set text to `'Saving…'`
+4. Get data: `var rows = _uplSsGridEl.jexcel.getData(false)`
+5. Serialize based on format:
+   - **XLSX** (`_uplSsFile.mime_type === _XLSX_MIME_SS`):
+     ```javascript
+     var ws = XLSX.utils.aoa_to_sheet(rows);
+     var wb = XLSX.utils.book_new();
+     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+     // type:'array' returns a plain Array (not Buffer) — safe in all browsers
+     var arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+     var bytes = new Uint8Array(arr);
+     var fmt = 'xlsx';
+     ```
+   - **CSV** (`mime_type === 'text/csv'`):
+     ```javascript
+     var ws = XLSX.utils.aoa_to_sheet(rows);
+     var csvStr = XLSX.utils.sheet_to_csv(ws);
+     var bytes = new TextEncoder().encode(csvStr);
+     var fmt = 'csv';
+     ```
+6. Base64-encode `bytes` using **chunked loop** (avoids stack overflow on large files):
+   ```javascript
+   var binary = '';
+   var CHUNK = 8192;
+   for (var i = 0; i < bytes.length; i += CHUNK) {
+     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+   }
+   var b64 = btoa(binary);
+   ```
+7. `fetch('/home/uploads/' + _uplPid + '/files/page/' + _uplSsFile.id + '/spreadsheet', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content_b64: b64, format: fmt }) })`
+8. Session-expiry check:
+   ```javascript
+   var ct = r.headers.get('content-type') || '';
+   if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
+   ```
+9. If `!r.ok`: `var e = await r.json(); throw new Error(e.detail || r.status)`
+10. On success: update cached file size:
+    ```javascript
+    var data = await r.json();
+    var cached = _uplFiles.find(function(x) { return x.src === _uplSsFile.src && x.id === _uplSsFile.id; });
+    if (cached) cached.size = data.size;
+    _uplDocCurrentFile.size = data.size;
+    _uplShowToast('Spreadsheet saved ✓');
+    _uplSsClose();
+    ```
+11. On error: `_uplShowToast('Save failed: ' + _uplEsc(String(e)))`, re-enable save button (text back to `'💾 Save'`)
+12. `finally`: `_uplSsBusy = false`
+
+---
+
+## Changes to `_uplDocStudioInit` (File 5 detail)
+
+**In `static/js/home-page-uploads-docs.js`**, inside `async function _uplDocStudioInit(f)`, add **after** the existing `canWopi` variable declaration:
+
+```javascript
+var _XLSXM_DOC = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+var canSpreadsheet = f.src === 'page'
+  && (f.mime_type === _XLSXM_DOC || f.mime_type === 'text/csv')
+  && typeof _uplSsOpen === 'function';
+```
+
+In the button-building block, add **after** the `canWopi` push and **before** the `canSign` push:
+
+```javascript
+if (canSpreadsheet) btns.push(
+  '<button onclick="_uplSsOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📊 Edit Spreadsheet</button>'
+);
+```
+
+The `typeof _uplSsOpen === 'function'` guard is defensive: if the spreadsheet JS file fails to load for any reason (CDN outage, network block), the button simply won't appear rather than producing a broken onclick.
+
+---
+
+## `base.html` Change (File 4 detail)
+
+Add **exactly one line** at line 587, immediately after the existing `uploads-wopi.js` script tag:
 
 ```html
-{# ── Signature modal ─────────────────────────────────────────────────────── #}
-<div id="upl-sig-modal"
-     class="hidden fixed inset-0 z-50 flex items-center justify-center"
-     role="dialog" aria-modal="true" aria-labelledby="upl-sig-title"
-     onkeydown="if(event.key==='Escape')_uplDocCloseSignModal()">
-  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
-       onclick="_uplDocCloseSignModal()" aria-hidden="true"></div>
-  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
-              w-full max-w-md mx-4 p-6">
-    <h2 id="upl-sig-title"
-        class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">
-      Draw Signature
-    </h2>
-    <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">
-      Sign in the box below. The signature will be stamped onto the PDF.
-    </p>
-    <canvas id="upl-sig-canvas" width="400" height="150"
-            class="w-full rounded-xl border-2 border-dashed
-                   border-gray-300 dark:border-zinc-600
-                   bg-white cursor-crosshair touch-none"
-            aria-label="Signature drawing area"
-            role="img"></canvas>
-    <div class="flex items-center gap-3 mt-3 mb-4">
-      <label class="text-xs text-gray-600 dark:text-zinc-400 flex-shrink-0"
-             for="upl-sig-page-num">
-        PDF page (0 = first):
-      </label>
-      <input id="upl-sig-page-num" type="number" value="0" min="0"
-             class="w-16 border border-gray-200 dark:border-zinc-700 rounded-lg
-                    px-2 py-1 text-xs bg-white dark:bg-zinc-800
-                    text-gray-800 dark:text-zinc-100
-                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
-      <button type="button" onclick="_uplDocClearCanvas()"
-              class="ml-auto text-xs px-3 py-1 rounded-lg border
-                     border-gray-300 dark:border-zinc-600
-                     text-gray-500 dark:text-zinc-400
-                     hover:text-gray-800 dark:hover:text-zinc-100
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
-        Clear
-      </button>
-    </div>
-    <div class="flex gap-3 justify-end">
-      <button type="button" onclick="_uplDocCloseSignModal()"
-              class="px-4 py-2 text-sm rounded-lg border border-gray-300
-                     dark:border-zinc-600 text-gray-700 dark:text-zinc-300
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition
-                     focus:outline-none focus:ring-2 focus:ring-gray-300">
-        Cancel
-      </button>
-      <button id="upl-sig-confirm-btn" type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white
-                     font-semibold hover:bg-[#003eb3] transition
-                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
-        Stamp Signature
-      </button>
-    </div>
-  </div>
-</div>
-```
-The `#upl-sig-confirm-btn` `onclick` is wired programmatically by `_uplDocOpenSignModal(f)`
-so it captures the `f` closure. Do not hardcode it in the template.
-
----
-
-## `main.py` Changes
-
-```python
-# After existing line (from routers import home_uploads as home_uploads_router):
-from routers import home_uploads_docs as home_uploads_docs_router
-
-# After existing line (app.include_router(home_uploads_router.router)):
-app.include_router(home_uploads_docs_router.router)
+<script src="/static/js/home-page-uploads-spreadsheet.js?v={{ static_v }}" defer></script>
 ```
 
-No new `_PUBLIC` entries needed — all 5 endpoints require a valid session cookie.
-
----
-
-## `base.html` / `index.html` — Script Tag Addition
-
-Locate the existing `home-page-uploads-tags.js` `<script>` tag (grep to find it):
+Final load order for uploads companions (lines 583–587):
 ```
-grep -n "home-page-uploads-tags" templates/base.html templates/index.html
+583: home-page-uploads-tags.js
+584: home-page-uploads-docs.js
+585: home-page-uploads-sign.js
+586: home-page-uploads-wopi.js
+587: home-page-uploads-spreadsheet.js   ← NEW
 ```
-Add the docs companion immediately after it:
-```html
-<script src="/static/js/home-page-uploads-docs.js?v={{ static_v }}"></script>
-```
-Load order must be: `home-page-uploads.js` → `home-page-uploads-tags.js` → `home-page-uploads-docs.js`.
-The docs file depends on globals from both predecessors.
 
----
-
-## Document Studio UI — Detail Panel Decision Matrix
-
-`_uplDocStudioInit(f)` populates `<div id="upl-doc-studio">` based on file type and source.
-
-| File condition | Read (full) | Edit | Sign | Convert |
-|---|---|---|---|---|
-| `src='note'`, any type | ✅ read-only label | ❌ | ❌ | ❌ |
-| `src='page'`, `text/*` or `application/json` | ✅ | ✅ | ❌ | → PDF |
-| `src='page'`, `application/pdf` | embed already shown | ❌ | ✅ | → TXT |
-| `src='page'`, `.docx` | ✅ extracted text | ❌ v1 | ❌ | → PDF, → TXT |
-| All other types | ❌ | ❌ | ❌ | ❌ (section hidden) |
-
-If no operations are available, `#upl-doc-studio` renders nothing (zero height, invisible).
-
-### Multi-select toolbar (floating, bottom of `#uploads-main`)
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  📄 3 files selected   [Merge PDFs]  [Join Text]   [✕ Clear]     │
-└──────────────────────────────────────────────────────────────────┘
-```
-- Injected by `_uplDocAfterRender()` as a `position:sticky; bottom:0` div at the bottom of
-  `#uploads-main` when `_uplDocSelectMode === true` and `Object.keys(_uplDocSelected).length > 0`.
-- "Merge PDFs" is enabled only when all selected files are `application/pdf`.
-- "Join Text" is enabled only when all selected files are `text/*`.
-- Mixed-type selection: both disabled, tooltip = "Select files of the same type to combine".
-- Multi-select is activated by a "☐ Select" button injected at the end of the filter tab bar.
-  The button is only shown when at least one `src='page'` document or PDF is in the current view.
-- Only `src='page'` cards get checkboxes. `src='note'` cards are never selectable.
-
----
-
-## Rollout Order — Build Sequence
-
-Build in this order to enable incremental testing at each step.
-
-1. **Deps + skeleton** — add 3 deps to `requirements.txt`; create empty
-   `home_uploads_docs.py` (just the `router = APIRouter(...)` line) + `uploads_docs_db.py`
-   with only import stubs; add `include_router` in `main.py`. Restart + health check.
-
-2. **GET /content endpoint** — implement read for `text/*` and `.docx`.
-   Test with curl: `curl -b cookies.txt /home/uploads/1/files/page/1/content`.
-
-3. **Full-content read UI in docs JS** — create `home-page-uploads-docs.js`; implement
-   `_uplDocStudioInit(f)` and `_uplDocShowFullContent(f)` only. Add the hook call to
-   `home-page-uploads.js` (Step B) and the `<script>` tag to base/index. Test: open a
-   text file, click "View Full Content", see untruncated text in the detail panel.
-
-4. **Text editing** — add `PUT /content` endpoint; add `_uplDocEnterEditMode`,
-   `_uplDocSaveEdit`, `_uplDocCancelEdit` to docs JS. Test round-trip.
-
-5. **Template additions** — add Combine + Signature modals to `home_page_uploads.html`.
-   Verify page still loads; modals are hidden by default.
-
-6. **Multi-select + Combine** — implement `_uplDocAfterRender`, `_uplDocToggleSelectMode`,
-   `_uplDocToggleItem`, `_uplDocRenderToolbar`, `_uplDocOpenCombineModal`,
-   `_uplDocDoCombine`. Add `POST /combine` endpoint. Test PDF merge + text join.
-
-7. **Convert** — add `POST /convert` endpoint + `_uplDocConvert` in JS.
-   Test all 4 conversion paths (txt→pdf, docx→pdf, docx→txt, pdf→txt).
-
-8. **Sign** — add `POST /sign` endpoint + canvas drawing JS (`_uplDocOpenSignModal`,
-   `_uplDocInitCanvas`, `_uplDocClearCanvas`, `_uplDocDoSign`). Test last as most complex.
+`_uplSsOpen` must be defined before a user can click the button. Since `defer` executes after DOM parse, and the button only appears after `_uplDocStudioInit` runs (triggered by user clicking a file in the detail panel), load order is safe.
 
 ---
 
 ## Skills to Invoke
 
-- **`bookworm-db-migration`** — run after Step 1 even with no schema changes, to verify
-  `init_db()` is still idempotent and the new deps don't break startup.
-- **`bookworm-template-audit`** — after Step 5 (template modals added) and after the
-  `<script>` tag is added to base/index. Check: `?v={{ static_v }}` on new script tag,
-  no `let`/`const` in any `<script>` blocks (none should exist), WCAG AA on canvas.
-- **`bookworm-pre-commit`** — before every commit. Checks: `_demo_guard` on all 4 write
-  endpoints, `get_db()` only in `uploads_docs_db.py`, no hardcoded paths.
-- **`bookworm-qa`** — after Steps 3, 6, and 8. Endpoints to verify each round:
-  - Step 3: `GET /home/uploads/{pid}/files/page/{id}/content` (text file + .docx)
-  - Step 6: `POST /home/uploads/{pid}/files/page/combine` (2 PDFs; 2 text files)
-  - Step 8: `POST /home/uploads/{pid}/files/page/{id}/sign` (PNG stamp visible in download)
-- **`bookworm-docs-keeper`** — run once at the end to update CODEPUPPY_NOTES.md with
-  the 5 new endpoints, 3 new deps, and Phase 4 completion status.
+- **`bookworm-template-audit`** — after touching `home_page_uploads.html`, `base.html`, and the two JS files. Specifically check: `var` usage in new JS, `?v={{ static_v }}` present, no `<script>` blocks added to the template partial, no broken `hx-target` references.
+- **`bookworm-pre-commit`** — before committing. Key checks: `_demo_guard` on new PUT endpoint, no raw `aiosqlite.connect()`, no hardcoded secrets.
+- **`bookworm-docs-keeper`** — after implementation, to update CODEPUPPY_NOTES.md with the new endpoint (`PUT /spreadsheet`), new JS file, and Phase 7 completion note.
+
+No DB migration skill needed (no schema changes).
+No widget scaffolder needed (not a widget).
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Quirk #11 — UPLOAD_DIR import path**
-`UPLOAD_DIR` is defined in `routers/attachments_db.py`, not at the project root.
-Import it in `home_uploads_docs.py` exactly as `home_uploads.py` does:
-```python
-from routers.attachments_db import UPLOAD_DIR
-```
-Never redefine it or hard-code a path string — it respects `BW_DATA_DIR` for Docker.
+**Quirk #13 — `var` not `let`/`const` in partial `<script>` blocks**
+The new JS file is loaded via `<script defer>` in `base.html`, not re-injected by HTMX, so technically `let`/`const` are safe from the "already declared" re-injection trap. However, house style mandates `var` throughout all uploads companion files for consistency. Use `var` everywhere in the new file.
 
-**Quirk #16 — `tojson | safe` in `<script>` tags**
-The docs JS module uses no Jinja2 `<script>` blocks. But: if any future change
-serialises file metadata into the template, always write `{{ data | tojson | safe }}`.
-Omitting `| safe` produces `&quot;`-escaped JSON that `JSON.parse()` silently mangles.
+**CODEPUPPY_NOTES — "Don't add more CDN script tags to base.html"**
+The notes flag this as tech debt: *"Until then, don't add more CDN script tags."* This plan avoids the prohibition entirely by **dynamically injecting** CDN scripts at runtime via JS when the modal first opens. CDN bytes are never loaded for pages that don't use the spreadsheet editor. Only one new app-local `<script>` tag is added to `base.html`.
 
-**Quirk #18 — unguarded `/uploads/<uuid>` StaticFiles mount**
-The GET /content endpoint MUST serve file bytes through the authenticated FastAPI route
-(read `UPLOAD_DIR / row["filename"]` server-side and return as JSON).
-Do NOT redirect the client to the raw `/uploads/<uuid>` URL for content reads —
-that mount has no auth gate (see Quirk #18 in CODEPUPPY_NOTES.md).
-The raw mount is acceptable only for image thumbnails in the grid (already established).
+**Quirk #18 — `/uploads/<uuid>` StaticFiles mount is unguarded**
+`_uplSsRender` fetches the raw file via `fetch('/uploads/' + f.filename)`. This is intentional — it mirrors how `#upl-viewer-embed` loads PDFs. The UUID filename is unguessable; user is already authenticated. Document this in a comment in the JS file referencing Quirk #18.
 
-**Quirk #20 — `_uplJsStr` vs `_uplEsc` for onclick embedding**
-In `home-page-uploads-docs.js`, when building `onclick="fn('...')"` strings:
-- `_uplJsStr(value)` — for values inside JS string literals (backslash-escapes `\` and `'`)
-- `_uplEsc(value)` — for values inside HTML content or HTML attributes (HTML-encodes `& < > " '`)
-Mixing them causes XSS or broken JS. This is the same rule as Quirk #20 in the main file.
+**Quirk #20 — `_uplJsStr` vs `_uplEsc`**
+The `onclick="_uplSsOpen(_uplDocCurrentFile)"` button passes an object reference — no string escaping needed. If future changes embed a filename in a JS string literal inside an onclick attribute, use `_uplJsStr(name)`, not `_uplEsc(name)`.
 
-**CDN ban — no PDF.js**
-CODEPUPPY_NOTES.md: "don't add more CDN script tags" (Tailwind CDN already flagged as
-tech debt). PDF.js from any CDN (cdnjs, unpkg, jsDelivr) is therefore prohibited for
-Phase 4. The existing `<embed>` tag remains the PDF viewer. PDF editing (which would
-require PDF.js or similar) is explicitly out of scope.
+**`_demo_guard` on the new write endpoint**
+`page_uploads` is a per-user table, but ALL write routes in the uploads router include `_demo_guard`. Add it as the very first statement in the new endpoint body.
 
-**Demo guard — all 4 write endpoints**
-`PUT /content`, `POST /combine`, `POST /sign`, `POST /convert` must each start with:
-```python
-if guard := _demo_guard(request):
-    return guard
-```
-The GET /content endpoint is read-only and does NOT get a demo guard.
+**Session-expiry check before `r.json()`**
+The auth middleware silently follows `302 → /login` redirects inside `fetch()`, delivering HTML to the caller. Always check `r.headers.get('content-type').includes('text/html')` before calling `r.json()`. Pattern is already used throughout `home-page-uploads-docs.js` — copy it exactly in `_uplSsSave`.
 
-**`get_db()` only — no raw connects**
-`uploads_docs_db.py` must import `get_db` from `database`, never `DB_PATH` or raw
-`aiosqlite.connect()`. Enforced by `bookworm-pre-commit`.
+**`btoa` stack overflow on large `Uint8Array`**
+`btoa(String.fromCharCode(...bytes))` with spread syntax will throw `RangeError: Maximum call stack size exceeded` for large XLSX files. Use the chunked loop (CHUNK = 8192) shown in the `_uplSsSave` implementation detail above.
 
-**Note-src is always read-only for write operations**
-The GET /content endpoint accepts `src='note'`. All other endpoints are path-parameterised
-as `.../files/page/...` which structurally prevents note-src access at the URL level.
-The JS must additionally hide all write controls when `f.src === 'note'` to make this
-visible to users (not just enforced silently at the server).
+**Jspreadsheet CE v5 instance API**
+`jspreadsheet(el, opts)` mutates the element: the API is available at `el.jexcel` (not on the return value). Use `el.jexcel.getData(false)` and `el.jexcel.destroy()`. The return value is `[el]`. Verify this against the CDN v5 bundle at implementation time — v4 and v5 have different method names.
 
-**`home-page-uploads.js` at line limit**
-The file is currently at ~600 lines. Step A (move `_uplFmtSize` + `_uplFmtDate` to tags
-file, −10 lines) must happen before Step B (add hooks, +6 lines). Net result: −4 lines.
-Verify with a line count before committing:
-```
-findstr /c:"" static\js\home-page-uploads.js | find /c /v ""
-```
-(Windows equivalent of `wc -l`.)
-
-**WCAG 2.2 AA — signature canvas**
-Canvas-based drawing is not keyboard-accessible. The `<canvas>` element must have:
-- `aria-label="Signature drawing area"`
-- `role="img"` (already in the template above)
-A visible "Clear" button is provided. A keyboard/mouse-free alternative (upload PNG)
-is a Phase 5 stretch goal; note it in the UI near the canvas.
+**SheetJS `XLSX.write` type: 'array'**
+Use `{ bookType: 'xlsx', type: 'array' }` (not `'buffer'` which is Node-only) to get a plain JS `Array`. Wrap with `new Uint8Array(arr)` before base64-encoding.
 
 ---
 
-## YAGNI — Explicitly Out of Scope for Phase 4
+## Implementation Checklist
 
-| Excluded feature | Why |
-|---|---|
-| LibreOffice headless | Breaks Python 3.12-slim Docker image; 500 MB+ binary |
-| PKI / cryptographic PDF signing | Requires HSM or cert authority; visual stamp is sufficient |
-| PDF.js CDN viewer | CDN additions are banned per CODEPUPPY_NOTES.md |
-| Word doc rich editing (tables, images, formatting) | No pure-Python editor without LibreOffice |
-| Excel / PowerPoint conversion | Not requested; no lightweight pure-Python solution |
-| Collaborative / real-time editing | No WebSocket infrastructure in BookWorm |
-| Version history / undo | Out of scope; overwrite is v1 behaviour |
-| Edit note-src files | Note attachments are owned by the note, not the uploads page |
-| Edit PDFs inline | No pure-Python round-trip PDF editor |
-| .docx edit with formatting preserved | python-docx fidelity for complex docs is poor; text-only |
-| Drag-to-position signature placement | Phase 5; v1 stamps at fixed lower-right corner |
-| Upload-a-PNG-signature fallback | Phase 5; canvas is sufficient for v1 |
-| .docx merge (Combine output) | python-docx merge is complex; PDF merge + txt join cover the use case |
-| Convert note-src files to new page-src files | Technically possible; complexity vs benefit too high for v1 |
-| `.txt` → `.docx` conversion | Not requested; low value |
+- [ ] **1 — Pydantic model** — Add `SpreadsheetBody` + `MAX_SPREADSHEET_BYTES = 10_000_000` to `routers/home_uploads_docs.py` alongside existing models. Confirm `base64` is already imported (it is, line 13).
+- [ ] **2 — PUT endpoint** — Add `PUT /{pid}/files/page/{fid}/spreadsheet` to `routers/home_uploads_docs.py` after `save_content`. Full auth + MIME + size guards. Uses existing `update_page_upload_size`.
+- [ ] **3 — Modal HTML** — Add `#upl-spreadsheet-modal` to `templates/partials/home_page_uploads.html` before the closing `/uploads-page-root` div. No `<script>` blocks. Match WOPI modal structure exactly.
+- [ ] **4 — New JS file** — Create `static/js/home-page-uploads-spreadsheet.js`. All `var`. Functions: `_uplSsLoadScript`, `_uplSsLoadStyle`, `_uplSsLoadLibs`, `_uplSsOpen`, `_uplSsRender`, `_uplSsShowError`, `_uplSsClose`, `_uplSsSave`. Under 600 lines.
+- [ ] **5 — base.html** — Add `<script defer src="...home-page-uploads-spreadsheet.js?v={{ static_v }}">` at line 587. One line only.
+- [ ] **6 — `_uplDocStudioInit`** — Add `canSpreadsheet` variable + `📊 Edit Spreadsheet` button push in `home-page-uploads-docs.js`. Place button after Collabora button, before Sign PDF.
+- [ ] **7 — Smoke test: CSV** — Upload a 3-column CSV → click 📊 Edit Spreadsheet → confirm grid renders with correct data → edit cell → Save → re-open → confirm edit persisted on disk.
+- [ ] **8 — Smoke test: XLSX** — Same flow with an XLSX file → confirm bytes written correctly (re-download, open in Excel/LibreOffice, verify edits appear).
+- [ ] **9 — Smoke test: read-only guard** — Open a note-src CSV file → confirm 📊 Edit Spreadsheet button is absent (button only added when `f.src === 'page'`).
+- [ ] **10 — Smoke test: multi-sheet toast** — Upload a 2-sheet XLSX → open editor → confirm toast warns "Showing sheet 1 of 2. Save will keep only this sheet."
+- [ ] **11 — Smoke test: demo mode** — Enable demo user, upload XLSX, try save → confirm `_demo_guard` returns 403 toast, file unchanged on disk.
+- [ ] **12 — bookworm-template-audit** — Pass exact files changed and what was modified. Specifically: new JS file uses `var`, `base.html` has `?v={{ static_v }}`, no `<script>` inside the partial template.
+- [ ] **13 — bookworm-pre-commit** — Pass files staged. Confirm no temp debug files, no hardcoded secrets.
+- [ ] **14 — bookworm-docs-keeper** — Update CODEPUPPY_NOTES.md: new endpoint row in key file map, new JS file row, Phase 7 complete entry in Features Completed section.
 
 ---
 
 ## Open Questions
 
-1. **Walmart PyPI mirror availability** — run the three `uv pip index versions` commands
-   listed in the Deps section before touching any code. If `pypdf`, `python-docx`, or
-   `reportlab` are absent, the entire Phase 4 is blocked and requires IT escalation.
+1. **UX: two buttons for XLSX/CSV when Collabora is configured?**
+   Both XLSX and CSV are already in `_WOPI_MIMES`, so when `BW_COLLABORA_URL` is set, both file types get an "🖊️ Edit in Collabora" button AND (with this feature) a "📊 Edit Spreadsheet" button. **Recommendation: keep both.** Jspreadsheet is zero-config and works offline; Collabora requires server setup and a running Docker service. Users without Collabora get only Jspreadsheet. Users with Collabora can choose. Confirm this UX with the team.
 
-2. **Combine: allow note-src files as combine inputs?** — current plan excludes note-src
-   from multi-select checkboxes. A user might want to merge a note-attached PDF with a
-   standalone one. Decision needed before Step 6. Recommendation: exclude note-src in v1
-   for simplicity; revisit in Phase 5.
+2. **Multi-sheet XLSX preservation**
+   v1 saves only the first sheet, silently discarding sheets 2+. The toast warning mitigates user surprise. If multi-sheet support is needed before ship, flag it now — it requires a sheet-tab switcher UI and tracking which sheet is active. Recommend punting to a future revision.
 
-3. **Signature placement** — v1 stamps at a fixed lower-right position (30% of page width,
-   0.5 inch margins). Should the Signature modal expose X/Y coordinate inputs, or is the
-   fixed placement acceptable for the team's use case?
+3. **Jspreadsheet CE license compatibility**
+   Jspreadsheet CE is MIT-licensed for personal/open-source. Confirm with Walmart open-source policy that MIT-licensed code is acceptable in this internal tool. If a commercial license is required, evaluate [Handsontable Community Edition](https://github.com/handsontable/handsontable) (MIT) or a pure SheetJS + plain `<table>` contenteditable approach as fallback.
 
-4. **Max combine file count** — plan uses 20 as the hard limit. Should this be configurable
-   via a `BW_MAX_COMBINE_FILES` env var? If yes, add it to `.env.example` and
-   `docker-compose.yml` following the existing env var pattern.
+4. **Large files near 10 MB limit**
+   A 10 MB XLSX with thousands of rows may be slow to parse in-browser on older hardware. Consider a client-side row count warning: if SheetJS parses >10,000 rows, show a banner: "Large file — editing may be slow." No action needed unless users report sluggishness.
 
-5. **Edit size limit** — no cap on `PUT /content` body size (unlike the 4 000-char preview).
-   Should there be a maximum edit payload (e.g. 1 MB) to prevent accidental overwrite of
-   very large files via the textarea? Recommendation: yes, add a `MAX_EDIT_BYTES = 1_000_000`
-   guard in the endpoint and show a toast in the JS when exceeded.
-
-6. **WCAG: signature canvas keyboard alternative** — for WCAG 2.2 AA compliance, the
-   canvas-only drawing path is not keyboard-accessible. Phase 4 ships without a keyboard
-   alternative (flagged as known gap). Should this block the Phase 4 ship, or is it
-   acceptable as a known limitation documented in the UI?
+5. **CDN availability behind Walmart proxy**
+   `cdn.jsdelivr.net` and `cdn.sheetjs.com` may be blocked on Eagle WiFi behind the Walmart proxy. Since the CDN scripts are loaded lazily, a CDN outage just means the modal shows an error toast (controlled by `.catch` in `_uplSsOpen`) rather than breaking the rest of Document Studio. For air-gapped environments, the fix is vendoring the JS files into `static/js/vendor/` — out of scope for v1, but worth noting.

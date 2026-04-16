@@ -344,9 +344,10 @@ function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
 }
 
 function _uplSigConfirmGhost() {
+  _uplSigGhostActive = false;
   var ghost = document.getElementById('upl-sig-ghost');
   var wrap  = document.getElementById('upl-sig-place-wrap');
-  if (!ghost || !wrap) return;
+  if (!ghost || !wrap) { _uplDocUpdateStampBtn(); return; }
   var gR = ghost.getBoundingClientRect(), wR = wrap.getBoundingClientRect();
   var x_pct = (gR.left - wR.left + gR.width  / 2) / wR.width;
   var y_pct = (gR.top  - wR.top  + gR.height / 2) / wR.height;
