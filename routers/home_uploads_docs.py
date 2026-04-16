@@ -47,6 +47,14 @@ class ContentBody(BaseModel):
     content: str
 
 
+class SpreadsheetBody(BaseModel):
+    content_b64: str   # base64-encoded file bytes (SheetJS XLSX or UTF-8 CSV)
+    format: str        # "xlsx" | "csv"
+
+
+MAX_SPREADSHEET_BYTES = 10_000_000  # 10 MB guard (larger than the 1 MB text guard)
+
+
 class CombineBody(BaseModel):
     ids: list[int]
     output_name: str = ""
@@ -248,6 +256,50 @@ async def save_content(request: Request, page_id: int, file_id: int, body: Conte
     data = body.content.encode("utf-8")
     if len(data) > MAX_EDIT_BYTES:
         raise HTTPException(status_code=413, detail="Content exceeds the 1 MB edit limit")
+
+    try:
+        (UPLOAD_DIR / row["filename"]).write_bytes(data)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Could not write file") from exc
+
+    await update_page_upload_size(file_id, uid, len(data))
+    return JSONResponse({"ok": True, "size": len(data)})
+
+
+# ── PUT /{pid}/files/page/{id}/spreadsheet ────────────────────────────────────
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+@router.put("/{page_id}/files/page/{file_id}/spreadsheet")
+async def save_spreadsheet(
+    request: Request, page_id: int, file_id: int, body: SpreadsheetBody
+):
+    """Receive base64-encoded XLSX or CSV bytes and overwrite the file on disk."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+
+    row = await get_page_upload_owned(file_id, uid)
+    if not row:
+        raise HTTPException(status_code=404)
+
+    mime = row["mime_type"]
+    if mime not in (_XLSX_MIME, "text/csv"):
+        raise HTTPException(status_code=400, detail="Only XLSX and CSV files can be saved via this endpoint")
+
+    if body.format not in ("xlsx", "csv"):
+        raise HTTPException(status_code=400, detail="format must be 'xlsx' or 'csv'")
+
+    try:
+        data = base64.b64decode(body.content_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 content")
+
+    if len(data) > MAX_SPREADSHEET_BYTES:
+        raise HTTPException(status_code=413, detail="Spreadsheet exceeds the 10 MB limit")
 
     try:
         (UPLOAD_DIR / row["filename"]).write_bytes(data)

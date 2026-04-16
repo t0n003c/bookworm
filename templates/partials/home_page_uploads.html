@@ -419,4 +419,51 @@
           onload="_uplWopiFrameLoaded()"></iframe>
 </div>
 
+{# ── Jspreadsheet CE spreadsheet editor modal ──────────────────────────────── #}
+<div id="upl-spreadsheet-modal"
+     class="hidden fixed inset-0 z-[60] flex flex-col"
+     role="dialog" aria-modal="true" aria-labelledby="upl-ss-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplSsClose()">
+  {# Top bar #}
+  <div class="flex items-center gap-3 px-4 py-2 flex-shrink-0
+              bg-zinc-900 border-b border-zinc-700">
+    <span class="text-base leading-none">📊</span>
+    <span id="upl-ss-filename"
+          class="text-sm font-semibold text-zinc-100 truncate flex-1"></span>
+    <span id="upl-ss-title" class="text-xs text-zinc-400 select-none">Spreadsheet Editor</span>
+    <button id="upl-ss-save-btn" type="button"
+            onclick="_uplSsSave()"
+            class="hidden text-white bg-[#0053e2] hover:bg-[#003eb3]
+                   rounded-lg px-3 py-1.5 text-xs font-semibold transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Save spreadsheet">💾 Save</button>
+    <button type="button" onclick="_uplSsClose()"
+            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
+                   rounded-lg px-3 py-1.5 text-xs font-medium transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Close spreadsheet editor">✕ Close</button>
+  </div>
+  {# Loading state #}
+  <div id="upl-ss-loading"
+       class="flex-1 flex items-center justify-center bg-zinc-900 text-zinc-400 text-sm">
+    <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading spreadsheet…
+  </div>
+  {# Error state #}
+  <div id="upl-ss-error"
+       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-900
+              text-red-400 text-sm gap-3">
+    <p id="upl-ss-error-msg"></p>
+    <button type="button" onclick="_uplSsClose()"
+            class="text-xs px-3 py-1.5 rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white transition">Close</button>
+  </div>
+  {# Grid mount — Jspreadsheet CE renders here #}
+  <div id="upl-ss-grid" class="hidden flex-1 overflow-auto bg-white"></div>
+</div>
+
 </div>{# /uploads-page-root #}

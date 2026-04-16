@@ -12,6 +12,7 @@ var _uplSigDrawn        = false; // has user drawn anything on the canvas?
 var _uplSigStampCount   = 0;     // stamps submitted this session
 var _uplRemoveStampFile = null;  // file pending stamp-removal confirmation
 var _uplPdfJsPromise    = null;  // cached CDN load promise (load once)
+var _uplSigGhostActive  = false; // is an uncommitted ghost currently shown?
 
 var _PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 var _PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -126,7 +127,7 @@ async function _uplDocShowSignStep2(sigDataUrl, pageNum) {
   var btCls = 'px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition';
 
   body.innerHTML =
-    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click the PDF page to place your signature. Click multiple times to add more. Use <strong>Clear All</strong> to start over.</p>' +
+    '<p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">Click the page to drop a signature. <strong>Drag</strong> to reposition, drag the <strong>corner handle</strong> to resize, then click <strong>Confirm</strong>.</p>' +
     // canvas is in normal flow (width:100%; height:auto) so its aspect ratio
     // drives the container height — avoids the padding-top vs buffer mismatch
     '<div class="relative w-full rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700 shadow-inner">' +
@@ -142,7 +143,11 @@ async function _uplDocShowSignStep2(sigDataUrl, pageNum) {
     '<div class="flex gap-2 justify-end mt-3 flex-wrap">' +
     '  <button type="button" onclick="_uplDocShowSignStep1(_uplDocCurrentFile)" class="' + btCls + '">&larr; Back</button>' +
     '  <button type="button" id="upl-sig-clear-btn" onclick="_uplDocClearPlacements()" class="' + btCls + ' hidden">&times; Clear All</button>' +
+    '  <button type="button" id="upl-sig-undo-btn" onclick="_uplSigUndoLast()" class="' + btCls + ' hidden">↩ Undo</button>' +
     '  <button type="button" onclick="_uplDocCloseSignModal()" class="' + btCls + '">Cancel</button>' +
+    '  <button id="upl-sig-ghost-cancel-btn" type="button" onclick="_uplSigCancelGhost()" class="' + btCls + ' hidden">✕ Discard</button>' +
+    '  <button id="upl-sig-ghost-confirm-btn" type="button" onclick="_uplSigConfirmGhost()"' +
+    '          class="px-4 py-2 text-sm rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition hidden">✓ Confirm</button>' +
     '  <button id="upl-sig-confirm-btn" type="button" onclick="_uplDocDoSign(_uplDocCurrentFile)"' +
     '          class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition" disabled>Place a signature first</button>' +
     '</div>';
@@ -215,6 +220,7 @@ function _uplDrawFallbackText(canvasEl, msg) {
 // ── Placement markers ─────────────────────────────────────────────────────────
 
 function _uplDocSigPlaceClick(e) {
+  if (_uplSigGhostActive) return; // one ghost at a time — user must confirm or discard first
   var wrap  = document.getElementById('upl-sig-place-wrap');
   var store = document.getElementById('upl-sig-data-store');
   var pgVal = document.getElementById('upl-sig-page-num-val');
@@ -223,9 +229,7 @@ function _uplDocSigPlaceClick(e) {
   var xPct    = (e.clientX - r.left) / r.width;
   var yPct    = (e.clientY - r.top)  / r.height;
   var pageNum = pgVal ? (parseInt(pgVal.value, 10) || 0) : 0;
-  _uplSigPlacements.push({ x_pct: xPct, y_pct: yPct, page_num: pageNum });
-  _uplDocRenderMarkers(store.value);
-  _uplDocUpdateStampBtn();
+  _uplSigSpawnGhost(wrap, store.value, xPct, yPct, pageNum);
 }
 
 function _uplDocRenderMarkers(sigSrc) {
@@ -256,23 +260,150 @@ function _uplDocRenderMarkers(sigSrc) {
 }
 
 function _uplDocClearPlacements() {
+  _uplSigCancelGhost();
   _uplSigPlacements = [];
   var c = document.getElementById('upl-sig-markers-container');
   if (c) c.innerHTML = '';
   _uplDocUpdateStampBtn();
-  var hint = document.getElementById('upl-sig-place-hint');
-  if (hint) hint.textContent = 'Click the page above to place your signature.';
+}
+
+// ── Ghost placement (drag-before-confirm UX) ──────────────────────────────────
+
+function _uplSigSpawnGhost(wrap, sigSrc, xPct, yPct, pageNum) {
+  _uplSigGhostActive = true;
+  var container = document.getElementById('upl-sig-markers-container');
+  if (!container) return;
+  var old = document.getElementById('upl-sig-ghost');
+  if (old) old.parentNode.removeChild(old);
+
+  var ghost = document.createElement('div');
+  ghost.id = 'upl-sig-ghost';
+  ghost.dataset.pageNum = pageNum;
+  // Centered on click via transform; drag removes the transform and drives px→%
+  ghost.style.cssText =
+    'position:absolute;left:' + (xPct * 100).toFixed(2) + '%;top:' + (yPct * 100).toFixed(2) + '%;' +
+    'transform:translate(-50%,-50%);width:25%;cursor:move;user-select:none;pointer-events:all;' +
+    'z-index:30;opacity:0.8;outline:2px dashed #0053e2;border-radius:4px;box-sizing:border-box;';
+
+  var img = document.createElement('img');
+  img.src = sigSrc; img.alt = 'Signature ghost';
+  img.style.cssText = 'width:100%;display:block;border-radius:4px;pointer-events:none;';
+  ghost.appendChild(img);
+
+  var handle = document.createElement('div');
+  handle.id = 'upl-sig-resize-handle';
+  handle.title = 'Drag to resize';
+  handle.style.cssText =
+    'position:absolute;bottom:-6px;right:-6px;width:14px;height:14px;' +
+    'background:#0053e2;border-radius:3px;cursor:se-resize;z-index:31;';
+  ghost.appendChild(handle);
+  container.appendChild(ghost);
+  _uplDocUpdateStampBtn();
+
+  // ── Drag ghost body ───────────────────────────────────────────────────────
+  ghost.onpointerdown = function(ev) {
+    if (ev.target === handle) return;
+    ev.stopPropagation();
+    ghost.setPointerCapture(ev.pointerId);
+    var wRect    = wrap.getBoundingClientRect();
+    var gRect    = ghost.getBoundingClientRect();
+    // Collapse transform to absolute left/top so maths is simple during drag
+    ghost.style.transform = 'none';
+    ghost.style.left = ((gRect.left - wRect.left) / wRect.width  * 100).toFixed(2) + '%';
+    ghost.style.top  = ((gRect.top  - wRect.top)  / wRect.height * 100).toFixed(2) + '%';
+    var startPX = ev.clientX, startPY = ev.clientY;
+    var startL  = gRect.left - wRect.left, startT = gRect.top - wRect.top;
+    ghost.onpointermove = function(ev) {
+      if (!ev.buttons) return;
+      var wR  = wrap.getBoundingClientRect();
+      var gW  = ghost.offsetWidth, gH = ghost.offsetHeight;
+      var newL = startL + (ev.clientX - startPX);
+      var newT = startT + (ev.clientY - startPY);
+      newL = Math.max(0, Math.min(wR.width  - gW, newL));
+      newT = Math.max(0, Math.min(wR.height - gH, newT));
+      ghost.style.left = (newL / wR.width  * 100).toFixed(2) + '%';
+      ghost.style.top  = (newT / wR.height * 100).toFixed(2) + '%';
+    };
+    ghost.onpointerup = function() { ghost.onpointermove = null; ghost.onpointerup = null; };
+  };
+
+  // ── Resize handle ─────────────────────────────────────────────────────────
+  handle.onpointerdown = function(ev) {
+    ev.stopPropagation();
+    handle.setPointerCapture(ev.pointerId);
+    var startPX = ev.clientX, startW = ghost.offsetWidth;
+    var wW = wrap.getBoundingClientRect().width;
+    handle.onpointermove = function(ev) {
+      if (!ev.buttons) return;
+      var newW = startW + (ev.clientX - startPX);
+      newW = Math.max(wW * 0.08, Math.min(wW * 0.60, newW));
+      ghost.style.width = (newW / wW * 100).toFixed(2) + '%';
+    };
+    handle.onpointerup = function() { handle.onpointermove = null; handle.onpointerup = null; };
+  };
+}
+
+function _uplSigConfirmGhost() {
+  var ghost = document.getElementById('upl-sig-ghost');
+  var wrap  = document.getElementById('upl-sig-place-wrap');
+  if (!ghost || !wrap) return;
+  var gR = ghost.getBoundingClientRect(), wR = wrap.getBoundingClientRect();
+  var x_pct = (gR.left - wR.left + gR.width  / 2) / wR.width;
+  var y_pct = (gR.top  - wR.top  + gR.height / 2) / wR.height;
+  var pageNum = parseInt(ghost.dataset.pageNum || '0', 10) || 0;
+  _uplSigPlacements.push({ x_pct: x_pct, y_pct: y_pct, page_num: pageNum });
+  ghost.parentNode.removeChild(ghost);
+  _uplSigGhostActive = false;
+  var store = document.getElementById('upl-sig-data-store');
+  _uplDocRenderMarkers(store ? store.value : '');
+  _uplDocUpdateStampBtn();
+}
+
+function _uplSigCancelGhost() {
+  var ghost = document.getElementById('upl-sig-ghost');
+  if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+  _uplSigGhostActive = false;
+  _uplDocUpdateStampBtn();
+}
+
+function _uplSigUndoLast() {
+  if (_uplSigGhostActive) { _uplSigCancelGhost(); return; }
+  if (_uplSigPlacements.length === 0) return;
+  _uplSigPlacements.pop();
+  var store = document.getElementById('upl-sig-data-store');
+  _uplDocRenderMarkers(store ? store.value : '');
+  _uplDocUpdateStampBtn();
 }
 
 function _uplDocUpdateStampBtn() {
-  var n   = _uplSigPlacements.length;
-  var btn = document.getElementById('upl-sig-confirm-btn');
-  var clr = document.getElementById('upl-sig-clear-btn');
+  var n            = _uplSigPlacements.length;
+  var btn          = document.getElementById('upl-sig-confirm-btn');
+  var clr          = document.getElementById('upl-sig-clear-btn');
+  var undoBtn      = document.getElementById('upl-sig-undo-btn');
+  var ghostConfirm = document.getElementById('upl-sig-ghost-confirm-btn');
+  var ghostCancel  = document.getElementById('upl-sig-ghost-cancel-btn');
+  var hint         = document.getElementById('upl-sig-place-hint');
+
   if (btn) {
-    btn.disabled    = (n === 0);
+    btn.disabled    = (n === 0 || _uplSigGhostActive);
     btn.textContent = n <= 1 ? 'Stamp Signature' : 'Stamp ' + n + ' Signatures';
   }
-  if (clr) { n > 0 ? clr.classList.remove('hidden') : clr.classList.add('hidden'); }
+  // Show Clear All only when there are committed placements and no ghost floating
+  if (clr)  { n > 0 && !_uplSigGhostActive ? clr.classList.remove('hidden') : clr.classList.add('hidden'); }
+  // Show Undo when there are committed placements and no ghost
+  if (undoBtn) { n > 0 && !_uplSigGhostActive ? undoBtn.classList.remove('hidden') : undoBtn.classList.add('hidden'); }
+  // Ghost buttons visible only while a ghost is floating
+  if (ghostConfirm) { _uplSigGhostActive ? ghostConfirm.classList.remove('hidden') : ghostConfirm.classList.add('hidden'); }
+  if (ghostCancel)  { _uplSigGhostActive ? ghostCancel.classList.remove('hidden')  : ghostCancel.classList.add('hidden'); }
+
+  if (hint) {
+    if (_uplSigGhostActive)
+      hint.textContent = 'Drag to move — corner handle to resize — then click “Confirm”.';
+    else if (n === 0)
+      hint.textContent = 'Click the page above to place your signature.';
+    else
+      hint.textContent = n + ' placement' + (n !== 1 ? 's' : '') + ' confirmed. Click to add more.';
+  }
 }
 
 // ── Submit signature(s) ───────────────────────────────────────────────────────

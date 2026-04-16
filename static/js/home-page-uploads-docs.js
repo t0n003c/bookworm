@@ -42,6 +42,11 @@ async function _uplDocStudioInit(f) {
   var canWopi    = f.src === 'page'
     && (typeof _WOPI_MIMES !== 'undefined') && _WOPI_MIMES.indexOf(f.mime_type) !== -1
     && (typeof _uplWopiEnabled === 'function') && _uplWopiEnabled();
+  // canSpreadsheet: pure-JS XLSX/CSV editor (no server needed)
+  var _XLSXM_SS  = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  var canSpreadsheet = f.src === 'page'
+    && (f.mime_type === _XLSXM_SS || f.mime_type === 'text/csv')
+    && typeof _uplSsOpen === 'function';
 
   if (!canView && !canRead && !canSign) { el.innerHTML = ''; return; }
 
@@ -61,7 +66,8 @@ async function _uplDocStudioInit(f) {
   }
   if (canView)    btns.push('<button onclick="_uplFileViewerOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📄 View</button>');
   if (canEdit)    btns.push('<button onclick="_uplDocEnterEditMode(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✏️ Edit</button>');
-  if (canWopi)    btns.push('<button onclick="_uplWopiOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">🖊️ Edit in Collabora</button>');
+  if (canWopi)        btns.push('<button onclick="_uplWopiOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">🖊️ Edit in Collabora</button>');
+  if (canSpreadsheet) btns.push('<button onclick="_uplSsOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📊 Edit Spreadsheet</button>');
   if (canSign)    btns.push('<button onclick="_uplDocOpenSignModal(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✍️ Sign PDF</button>');
   if (canToPdf)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'pdf\')" class="' + _STUDIO_BTN + '">→ PDF</button>');
   if (canToTxt)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'txt\')" class="' + _STUDIO_BTN + '">→ TXT</button>');
