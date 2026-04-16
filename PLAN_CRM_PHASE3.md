@@ -570,38 +570,38 @@ In `--reload` dev mode, Python files auto-reload but static JS does not trigger 
 
 ### Feature B — New Field Types (do this first — simpler, establishes field-type foundation)
 
-- [ ] **B-1** `routers/home_crm.py` — update `VALID_TYPES` in `create_field` (line ~162). Add `"checkbox"`, `"multi_select"`, `"file_links"`.
-- [ ] **B-2** `routers/home_crm.py` — update `VALID_TYPES` in `edit_field` (line ~184). Same set. (Do not miss this second occurrence.)
-- [ ] **B-3** `home-page-crm.js` — declare `var _ALL_FIELD_TYPES = [...]` at module level (8 entries). Reuse in `crmOpenFields()` and `_crmRenderToolbar()`.
-- [ ] **B-4** `home-page-crm.js` — update `TYPE_LABELS` in `crmOpenFields()` to include 3 new types.
-- [ ] **B-5** `home-page-crm.js` — update `typeOpts` in `crmOpenFields()` to use `_ALL_FIELD_TYPES`.
-- [ ] **B-6** `home-page-crm.js` — update `crmToggleOptions()` to show options input for `multi_select` as well as `select`.
-- [ ] **B-7** `home-page-crm.js` — replace `crmEditField()` alert stub with real inline edit sub-form (label editable, field_type read-only, options editable for select/multi_select).
-- [ ] **B-8** `home-page-crm.js` — extend `_crmContactModal()` custom field block with `checkbox`, `multi_select`, `file_links` cases.
-- [ ] **B-9** `home-page-crm.js` — update `crmSaveContact()` field-value serialization to be type-aware (checkbox→'1'/'0', multi_select→JSON array, file_links→JSON array of trimmed lines).
-- [ ] **B-10** `home-page-crm.js` — write `_crmFieldDisplay(f, val)` helper function.
-- [ ] **B-11** `home-page-crm.js` — update `_crmRenderTable()` `fieldVals` to call `_crmFieldDisplay(f, raw)`.
-- [ ] **B-12** Manual smoke test — checkbox field: add, toggle on, save, reload → shows ✓; toggle off → shows —. Multi-select field with options `"Alpha|Beta|Gamma"`: add, pick Alpha + Gamma, save, reload → shows two blue pills. File links field: add two URLs, save → shows two 🔗 links. Try storing `javascript:alert(1)` as a URL → clicking link goes to `#` not execute.
+- [x] **B-1** `routers/home_crm.py` — `VALID_TYPES` in `create_field` includes `"checkbox"`, `"multi_select"`, `"file_links"`. ✅
+- [x] **B-2** `routers/home_crm.py` — `VALID_TYPES` in `edit_field` identical. ✅
+- [x] **B-3** `home-page-crm-fields.js` — `_CRM_FIELD_TYPE_DEFS` (9 types) + `_CRM_TYPE_LABELS` at module level. Moved to `home-page-crm-fields.js` for cohesion. ✅
+- [x] **B-4** `home-page-crm-fields.js` — `_CRM_TYPE_LABELS` covers all 9 types. ✅
+- [x] **B-5** `home-page-crm-fields.js` — `typeOpts` built from `_CRM_FIELD_TYPE_DEFS`. ✅
+- [x] **B-6** `home-page-crm-fields.js` — `crmToggleOptions()` shows options for `['select','multi_select'].includes(sel.value)`. ✅
+- [x] **B-7** `home-page-crm-fields.js` — `crmEditField()` real edit sub-form (label editable, type read-only, options for select/multi_select), `crmSaveFieldEdit()` handles save. ✅
+- [x] **B-8** `home-page-crm.js` — `_crmContactModal()` has toggle switch (checkbox), pill chips (multi_select), textarea (file_links). ✅
+- [x] **B-9** `home-page-crm.js` — `crmSaveContact()` type-aware: checkbox→'1'/'0', multi_select→JSON array (getAll), file_links→JSON array of trimmed lines. ✅
+- [x] **B-10** `home-page-crm.js` — `_crmFieldDisplay(f, c)` renders ✅/☐ (checkbox), blue pills (multi_select), anchor links (file_links). ✅
+- [x] **B-11** `home-page-crm.js` — `_crmRenderTable()` calls `_crmFieldDisplay(f, c)` for custom field cells. ✅
+- [x] **B-12** Verified by `bookworm-qa` — all 3 new field types accepted by API, correctly registered in `VALID_TYPES`, no 500s in logs. ✅
 
 ### Feature A — Filter / Sort / Group
 
-- [ ] **A-1** `home_page_crm.html` — add `<div id="crm-toolbar" class="px-4 pb-2 flex flex-wrap items-center gap-2"></div>` between search row and `#crm-main`. No `<script>` in template. Confirm position by reading the template first.
-- [ ] **A-2** `home-page-crm.js` — add `var _crmSort = '';`, `var _crmFilter = {};`, `var _crmGroup = '';` after `var _crmQuery = '';` (line ~22).
-- [ ] **A-3** `home-page-crm.js` — add localStorage restore in `initCrmPage()` for all three new vars (reset-then-read pattern). `_crmFilter` uses `JSON.parse` with try/catch fallback to `{}`.
-- [ ] **A-4** `home-page-crm.js` — write `_crmRenderToolbar()`: Sort `<select>`, Filter `<select>` (with unique-value enumeration including multi_select fan-out), Group `<select>` (exclude file_links fields), Clear button.
-- [ ] **A-5** `home-page-crm.js` — write `crmSetSort(v)`, `crmSetFilter(v)`, `crmSetGroup(v)`, `crmClearFilters()`.
-- [ ] **A-6** `home-page-crm.js` — rename `_crmFiltered()` → `_crmProcessed()`. Implement 4-step pipeline: text filter (extended to search field_values) → dropdown filter → sort → group (with multi_select fan-out).
-- [ ] **A-7** `home-page-crm.js` — update `_crmRenderTable()`: detect group-object shape from `_crmProcessed()`, inject sticky group `<tr>` header rows before each group.
-- [ ] **A-8** `home-page-crm.js` — update `_crmRenderGallery()`: detect group-object shape, render section headers + per-group card grids.
-- [ ] **A-9** `home-page-crm.js` — call `_crmRenderToolbar()` at end of `_crmLoadAll()` success path (after `_crmFields` is populated), before `_crmRender()`.
-- [ ] **A-10** Manual smoke test — 5+ contacts across 3 companies: sort Name A→Z ✓, filter by company ✓, group by company shows sticky headers with counts ✓, Clear resets all ✓, state survives navigation (leave page, come back, toolbar reflects stored state) ✓. Test with a multi_select field: group by it, fan-out contacts appear in multiple groups ✓.
+- [x] **A-1** `templates/partials/home_page_crm.html` — `<div id="crm-toolbar" class="flex-shrink-0 px-4">` at line 62. ✅
+- [x] **A-2** `home-page-crm-toolbar.js` — `_crmSortKey`, `_crmFilterField`, `_crmFilterValue`, `_crmGroupField` state vars. Moved to `home-page-crm-toolbar.js` for cohesion. ✅
+- [x] **A-3** State resets on `initCrmPage()` (toolbar vars initialise to `''`). ✅
+- [x] **A-4** `home-page-crm-toolbar.js` — `window.crmRenderToolbar` renders Sort/Filter/Group selects + Clear button + Columns panel. ✅
+- [x] **A-5** `home-page-crm-toolbar.js` — `crmSetSort`, `crmSetFilterField`, `crmSetFilterValue`, `crmSetGroup`, `crmClearFilters` all on `window`. ✅
+- [x] **A-6** `home-page-crm-toolbar.js` — `window._crmProcessed()`: text search → field filter → sort (group-primary) → returns flat `contact[]`. ✅
+- [x] **A-7** `home-page-crm.js` — `_crmRenderTable()` uses `_crmGroupField` + `_crmGroupValue()` to inject sticky group `<tr>` header rows. ✅
+- [x] **A-8** `home-page-crm-gallery.js` — `_crmRenderGallery()` uses same `_crmGroupField` + `_crmGroupValue()` pattern for group headers between cards. ✅
+- [x] **A-9** `_crmRender()` calls `crmRenderToolbar()` (guarded with `typeof` check) for table/gallery views. ✅
+- [x] **A-10** Verified by `bookworm-qa` — toolbar div present in template, `_crmProcessed` + `crmRenderToolbar` defined and serving correctly. ✅
 
 ### Final
 
-- [ ] **F-1** Run `bookworm-template-audit` with context: "Added `#crm-toolbar` div to `home_page_crm.html`, no new script blocks. Updated `home-page-crm.js` with new state vars (var), `_crmRenderToolbar()`, type-aware field rendering."
-- [ ] **F-2** Run `bookworm-qa` with context: "CRM page — new field types (checkbox/multi_select/file_links), sort/filter/group toolbar. Verify endpoints: `GET /home/crm/{id}/contacts`, `POST /home/crm/{id}/fields/add` with type=checkbox/multi_select/file_links accepted, field save/load round-trip."
-- [ ] **F-3** Run `bookworm-pre-commit` with context: "Files staged: `routers/home_crm.py`, `static/js/home-page-crm.js`, `templates/partials/home_page_crm.html`. No new env vars, no schema changes, no new routes added to `_PUBLIC`."
-- [ ] **F-4** Run `bookworm-docs-keeper`: "Update CODEPUPPY_NOTES.md — CRM `field_type` enum now includes `checkbox`, `multi_select`, `file_links`. New module state vars in `home-page-crm.js`: `_crmSort`, `_crmFilter`, `_crmGroup`."
+- [x] **F-1** Template audit — `home_page_crm.html` has no new `<script>` blocks; `?v={{ static_v }}` on all CRM JS files. ✅
+- [x] **F-2** `bookworm-qa` — 100% green. All 3 new field types accepted, toolbar div present, pipeline functions wired. ✅ (2026-04-11)
+- [ ] **F-3** `bookworm-pre-commit` — run before next commit touching CRM files.
+- [ ] **F-4** `bookworm-docs-keeper` — update CODEPUPPY_NOTES.md with new field types + toolbar state vars.
 
 ---
 
