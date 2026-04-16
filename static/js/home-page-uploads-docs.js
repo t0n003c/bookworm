@@ -38,6 +38,10 @@ async function _uplDocStudioInit(f) {
   var canSign    = f.src === 'page' && f.mime_type === 'application/pdf';
   var canToPdf   = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === _DOCX_MIME);
   var canToTxt   = f.src === 'page' && (f.mime_type === 'application/pdf' || f.mime_type === _DOCX_MIME);
+  // canWopi: Collabora is configured + file type is on the WOPI-eligible list
+  var canWopi    = f.src === 'page'
+    && (typeof _WOPI_MIMES !== 'undefined') && _WOPI_MIMES.indexOf(f.mime_type) !== -1
+    && (typeof _uplWopiEnabled === 'function') && _uplWopiEnabled();
 
   if (!canView && !canRead && !canSign) { el.innerHTML = ''; return; }
 
@@ -57,6 +61,7 @@ async function _uplDocStudioInit(f) {
   }
   if (canView)    btns.push('<button onclick="_uplFileViewerOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📄 View</button>');
   if (canEdit)    btns.push('<button onclick="_uplDocEnterEditMode(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✏️ Edit</button>');
+  if (canWopi)    btns.push('<button onclick="_uplWopiOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">🖊️ Edit in Collabora</button>');
   if (canSign)    btns.push('<button onclick="_uplDocOpenSignModal(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">✍️ Sign PDF</button>');
   if (canToPdf)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'pdf\')" class="' + _STUDIO_BTN + '">→ PDF</button>');
   if (canToTxt)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'txt\')" class="' + _STUDIO_BTN + '">→ TXT</button>');

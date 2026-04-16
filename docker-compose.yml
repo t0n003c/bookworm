@@ -15,41 +15,75 @@ services:
       - "8001:8001"
     environment:
       # ── Data location ──────────────────────────────────────────────────────
-      # DB and uploads are stored here, inside the named volume below.
       BW_DATA_DIR: /data
 
-      # ── Secret key (REQUIRED — change before going live!) ─────────────────
-      # Sessions are signed with this key. If unset or left as the placeholder,
-      # all sessions are lost on every restart.
-      # Generate: python -c "import secrets; print(secrets.token_hex(32))"
+      # ── Secret key (REQUIRED) ─────────────────────────────────────────────
       BW_SECRET_KEY: ${BW_SECRET_KEY:?BW_SECRET_KEY must be set — see docker-compose.yml header}
 
       # ── HTTPS cookies ──────────────────────────────────────────────────────
-      # Set to "true" when the app is behind a TLS proxy (nginx, Caddy, etc.)
-      # Leave "false" for plain-HTTP LAN / development use.
       BW_HTTPS: ${BW_HTTPS:-false}
 
       # ── Open registration ──────────────────────────────────────────────────
-      # "true"  → anyone can create an account (good for open communities)
-      # "false" → admin creates accounts manually (good for closed teams)
       BW_ALLOW_REGISTRATION: ${BW_ALLOW_REGISTRATION:-true}
 
       # ── Demo mode ──────────────────────────────────────────────────────────
-      # "true"  → "Try Demo" button appears on the login page
-      # "false" → remove the button; route returns 302 to /login
       BW_DEMO_ENABLED: ${BW_DEMO_ENABLED:-true}
+
+      # ── Collabora Online (LibreOffice in browser) ──────────────────────────
+      # BW_COLLABORA_URL: URL the *browser* uses to reach Collabora (port 9980).
+      #   Docker full-stack:  http://collabora:9980   (service name on Docker bridge)
+      #   Local dev + Docker: http://localhost:9980    (port exposed to host)
+      # Leave empty to hide the "Edit in Collabora" button entirely.
+      BW_COLLABORA_URL: ${BW_COLLABORA_URL:-}
+
+      # BW_WOPI_BASE_URL: URL Collabora uses to call BookWorm's WOPI endpoints
+      #   (server-to-server, from inside the collabora container).
+      #   Docker full-stack:  http://bookworm:8001
+      #   Local dev + Docker: http://host.docker.internal:8000
+      # Must be set when BW_COLLABORA_URL is set.
+      BW_WOPI_BASE_URL: ${BW_WOPI_BASE_URL:-}
+
+      # Short-lived WOPI access token lifetime in seconds (default: 1 hour).
+      BW_WOPI_TOKEN_EXPIRY: ${BW_WOPI_TOKEN_EXPIRY:-3600}
 
     volumes:
       - bookworm_data:/data
     restart: unless-stopped
     healthcheck:
-      # Hits the dedicated /health endpoint — no auth, no redirect, no DB load.
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # ── Collabora Online (LibreOffice in browser) ───────────────────────────────
+  # Enabled when BW_COLLABORA_URL is set in the bookworm service above.
+  # Collabora makes WOPI calls to bookworm over the Docker bridge network.
+  #
+  # BROWSER ACCESS: Collabora is internal-only by default (no host ports).
+  # For LAN / local dev access, uncomment the ports block below and set:
+  #   BW_COLLABORA_URL=http://<your-host-ip>:9980
+  #   BW_WOPI_BASE_URL=http://bookworm:8001   (Docker-to-Docker)
+  collabora:
+    image: collabora/code:latest
+    environment:
+      # Allow Collabora to make WOPI calls to bookworm (Docker service name)
+      # and to host.docker.internal (for local-dev BookWorm outside Docker).
+      aliasgroups: 'bookworm|host\.docker\.internal'
+      # Disable internal TLS — let a reverse proxy handle it.
+      DONT_GEN_SSL_CERT: "YES"
+      extra_params: >-
+        --o:ssl.enable=false
+        --o:ssl.termination=true
+        --o:storage.wopi.host[0]=bookworm
+        --o:storage.wopi.host[1]=host.docker.internal
+    # Uncomment to expose Collabora to the host for browser access:
+    # ports:
+    #   - "9980:9980"
+    restart: unless-stopped
+    depends_on:
+      - bookworm
 
 # Named volume — survives container rebuilds and image updates.
 # Docker stores it in /var/lib/docker/volumes/bookworm_bookworm_data/

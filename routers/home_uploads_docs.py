@@ -9,6 +9,9 @@ Phase 4 endpoints (all implemented here):
   POST /{pid}/files/page/combine          merge PDFs or join text files
   POST /{pid}/files/page/{id}/convert     docx↔pdf, txt→pdf, pdf→txt
   POST /{pid}/files/page/{id}/sign        stamp a drawn signature onto a PDF page
+
+Phase 6 endpoint (Feature A):
+  GET  /{pid}/files/page/{id}/wopi-token  issue short-lived WOPI token for Collabora
 """
 from __future__ import annotations
 
@@ -677,3 +680,67 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
     (UPLOAD_DIR / row["filename"]).write_bytes(data)
     await update_page_upload_size(file_id, uid, len(data))
     return JSONResponse({"ok": True, "size": len(data), "has_backup": True, "stamps": len(placements)})
+
+
+# ── GET /{pid}/files/page/{id}/wopi-token (Phase 6 — Feature A) ───────────────────
+
+@router.get("/{page_id}/files/page/{file_id}/wopi-token")
+async def wopi_token(
+    request: Request, page_id: int, file_id: int,
+):
+    """Issue a short-lived WOPI access token for Collabora Online.
+
+    Returns a JSON payload the JS uses to open the Collabora iframe:
+      { token, wopi_src, editor_url, mime_type, original_name }
+
+    If BW_COLLABORA_URL is not set, returns { collabora_disabled: true }
+    so the JS can show a helpful message instead of a cryptic error.
+    """
+    # Import lazily to avoid circular import at module parse time
+    from routers.wopi import (
+        issue_token, get_editor_url, WOPI_MIMES,
+        _COLLABORA_URL, _WOPI_BASE_URL,
+    )
+
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+
+    if not _COLLABORA_URL:
+        return JSONResponse({"collabora_disabled": True})
+
+    await _require_uploads_page(page_id, uid)
+    row = await get_page_upload_owned(file_id, uid)
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    mime = row.get("mime_type", "")
+    if mime not in WOPI_MIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"MIME type '{mime}' is not supported by Collabora",
+        )
+
+    if not _WOPI_BASE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="BW_WOPI_BASE_URL is not configured — Collabora cannot reach BookWorm",
+        )
+
+    token    = issue_token(file_id, uid, page_id)
+    wopi_src = f"{_WOPI_BASE_URL}/wopi/files/{file_id}"
+
+    try:
+        editor_url = await get_editor_url(mime, wopi_src, token)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Could not build editor URL: {exc}") from exc
+
+    return JSONResponse({
+        "token":         token,
+        "wopi_src":      wopi_src,
+        "editor_url":    editor_url,
+        "mime_type":     mime,
+        "original_name": row.get("original_name", ""),
+    })

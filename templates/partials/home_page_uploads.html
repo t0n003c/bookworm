@@ -24,6 +24,8 @@
 .bw-csv-note{font-size:.75em;color:#6b7280;margin-top:.5em;font-style:italic}
 </style>
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
+     data-collabora-enabled="{{ collabora_enabled | tojson | safe }}"
+     data-collabora-url="{{ collabora_url | tojson | safe }}"
      class="flex flex-col"
      style="height:calc(100vh - 3.5rem)">
 
@@ -376,6 +378,45 @@
                 text-sm text-gray-800 dark:text-zinc-100 p-6 bw-doc-viewer">
     </div>
   </div>
+</div>
+
+{# ── Collabora Online WOPI editor modal (fullscreen iframe) ────────────────── #}
+<div id="upl-wopi-modal"
+     class="hidden fixed inset-0 z-[60] flex flex-col"
+     role="dialog" aria-modal="true" aria-labelledby="upl-wopi-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplWopiClose()">
+  {# Top bar #}
+  <div class="flex items-center gap-3 px-4 py-2 flex-shrink-0
+              bg-zinc-900 border-b border-zinc-700">
+    <span class="text-base leading-none">📄</span>
+    <span id="upl-wopi-filename"
+          class="text-sm font-semibold text-zinc-100 truncate flex-1"></span>
+    <span id="upl-wopi-title" class="text-xs text-zinc-400 select-none">Collabora Online</span>
+    <button type="button" onclick="_uplWopiClose()"
+            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
+                   rounded-lg px-3 py-1.5 text-xs font-medium transition
+                   focus:outline-none focus:ring-1 focus:ring-white"
+            aria-label="Close Collabora editor">
+      ✕ Close
+    </button>
+  </div>
+  {# Loading state — shown while iframe initialises #}
+  <div id="upl-wopi-loading"
+       class="flex-1 flex items-center justify-center bg-zinc-900 text-zinc-400 text-sm">
+    <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading editor…
+  </div>
+  {# The editor iframe — src set by JS; hidden until onload fires #}
+  <iframe id="upl-wopi-frame"
+          src="about:blank"
+          class="hidden flex-1 w-full border-0"
+          allow="fullscreen"
+          title="Collabora Online editor"
+          onload="_uplWopiFrameLoaded()"></iframe>
 </div>
 
 </div>{# /uploads-page-root #}

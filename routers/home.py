@@ -2,6 +2,7 @@
 import html.parser
 import json
 import logging
+import os
 import re
 import traceback
 import urllib.error
@@ -583,6 +584,9 @@ async def home_page_view(request: Request, page_id: int):
         p_type    = page.get("page_type", "dashboard") or "dashboard"
         widgets   = await get_widgets(page_id)
         all_notes = await _user_notes(uid)
+        # Collabora defaults — overwritten in the uploads branch below.
+        collabora_enabled = False
+        collabora_url     = ""
 
         # Route to the correct template per page type.
         # dashboard  → full widget canvas
@@ -608,6 +612,9 @@ async def home_page_view(request: Request, page_id: int):
             # No server-side DB prep — JS fetches contacts + fields after load.
         elif p_type == "uploads":
             tmpl = "partials/home_page_uploads.html"
+            # Collabora Online integration — read config once at render time.
+            collabora_url     = os.getenv("BW_COLLABORA_URL", "").rstrip("/")
+            collabora_enabled = bool(collabora_url)
             # No server-side DB prep — JS fetches file list after load.
         else:
             tmpl = "partials/home_page_coming_soon.html"
@@ -618,6 +625,10 @@ async def home_page_view(request: Request, page_id: int):
                 "page": page, "page_type": p_type,
                 "widgets": widgets, "all_notes": all_notes,
                 "widget_sources": widget_sources if p_type == "rss" else {},
+                # Collabora Online — only populated for uploads pages; safe to pass empty
+                # to other templates since they don’t reference these variables.
+                "collabora_enabled": collabora_enabled,
+                "collabora_url":     collabora_url,
             },
         )
     except Exception as e:

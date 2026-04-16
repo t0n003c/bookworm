@@ -22,6 +22,7 @@ _debug*.py
 _rss_routes.py
 _qa_*.txt
 # Unprefixed one-off scripts that escaped in the past
+qa*.py
 diag*.py
 diag*.txt
 tail_log.py

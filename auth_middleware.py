@@ -52,8 +52,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Always allow static assets and public auth pages
-        if path.startswith("/static/") or path in _PUBLIC:
+        # Always allow static assets, WOPI server-to-server callbacks (token-auth,
+        # no session cookie), and public auth pages.
+        # NOTE: /wopi/ is prefix-checked here (like /static/), NOT added to _PUBLIC.
+        # _PUBLIC is for exact named paths only.
+        if path.startswith("/static/") or path.startswith("/wopi/") or path in _PUBLIC:
             return await call_next(request)
 
         uid     = request.session.get("user_id")
