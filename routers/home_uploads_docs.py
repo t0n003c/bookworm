@@ -554,14 +554,14 @@ def _stamp_one_page(
         draw_img = sig_img
 
     # Target sig width = 25% of the *visual* page width.
-    #   For R=90/270 the display swaps (vis_w = pg_h, vis_h = pg_w),
-    #   so sig needs to be 25% of pg_h in those cases.
+    #   For R=90/270 the display swaps (vis_w = pg_h, vis_h = pg_w).
     vis_w = pg_h if rot in (90, 270) else pg_w
     vis_sig_w = vis_w * 0.25
-    # Map that visual width to the actual PDF axis that represents visual-X.
-    # After PIL rotation the draw_img aspect ratio already accounts for the swap.
-    aspect = draw_img.height / draw_img.width  # may be swapped after PIL rotate
-    vis_sig_h = vis_sig_w * aspect
+    # Keep the signature's original proportions regardless of PIL rotation.
+    # Using draw_img here would give the INVERTED aspect for R=90/270 because
+    # PIL.rotate(90/270, expand=True) swaps image width/height.
+    orig_aspect = sig_img.width / sig_img.height  # always from the unrotated canvas
+    vis_sig_h = vis_sig_w / orig_aspect
 
     # Convert visual sig size to raw PDF pts (axis swap for 90°/270°).
     if rot in (90, 270):
