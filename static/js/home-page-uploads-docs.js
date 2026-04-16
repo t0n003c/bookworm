@@ -15,8 +15,9 @@ var _uplDocEditMode    = false;   // textarea edit active?
 
 // Viewer state (fullscreen modal)
 var _uplViewerCurrentFile = null;  // file object open in the viewer
-var _uplViewerEditMode    = null;  // 'docx' | null — in-preview editing active
+var _uplViewerEditMode    = null;  // 'docx' | 'text' | null
 var _uplViewerDocxHtml    = null;  // cached docx HTML for restore on cancel
+var _uplViewerRawText     = null;  // cached raw text for TXT edit/restore
 
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -361,11 +362,15 @@ async function _uplFileViewerOpen(f) {
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
     var data = await r.json();
 
+    var isTextEditable = (data.content_type === 'text') && (f.src === 'page');
     var isDocxEditable = (data.content_type === 'docx_html') && (f.src === 'page');
 
     if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
 
-    if (isDocxEditable) {
+    if (isTextEditable) {
+      _uplViewerRawText = data.content;
+      _uplViewerTxtRenderEditBar(htmlEl);  // sticky “Edit” bar at bottom
+    } else if (isDocxEditable) {
       _uplViewerDocxHtml = data.content;
       _uplViewerDocxRenderEditBar(htmlEl);  // inject sticky "Edit in Preview" bar
     } else if (f.src === 'note' && (data.content_type === 'text' || data.content_type === 'docx_html')) {
@@ -399,6 +404,7 @@ function _uplFileViewerClose() {
   _uplViewerCurrentFile = null;
   _uplViewerEditMode    = null;
   _uplViewerDocxHtml    = null;
+  _uplViewerRawText     = null;
 }
 
 // ── DRY helper: render docx preview + inject sticky “Edit in Preview” bar ─────────
@@ -489,6 +495,99 @@ async function _uplViewerDocxSaveEdit() {
     _uplFileViewerClose();
   } catch(err) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save as TXT'; }
+    _uplShowToast('Save failed: ' + _uplEsc(String(err)));
+  }
+}
+
+// ── DRY helper: render TXT preview + inject sticky “Edit” bar ───────────────────
+
+function _uplViewerTxtRenderEditBar(htmlEl) {
+  if (!htmlEl) return;
+  var bar = document.createElement('div');
+  bar.dataset.uplRole = 'txt-edit-bar';
+  bar.style.cssText =
+    'position:sticky;bottom:0;background:#f9fafb;border-top:1px solid #e5e7eb;' +
+    'padding:.75rem 1.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;' +
+    'margin-top:2rem';
+  bar.innerHTML =
+    '<span style="font-size:.7rem;color:#9ca3af;flex:1">Click <strong>Edit</strong> to edit this file.</span>' +
+    '<button type="button" onclick="_uplViewerTxtInlineEdit()" ' +
+    '  style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;' +
+    '  border:1px solid #0053e2;color:#0053e2;background:transparent;cursor:pointer;' +
+    '  transition:background .15s" ' +
+    '  onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'transparent\'">Edit</button>';
+  htmlEl.appendChild(bar);
+}
+
+// ── Viewer: TXT inline editing (textarea) ────────────────────────────────
+
+function _uplViewerTxtInlineEdit() {
+  var htmlEl = document.getElementById('upl-viewer-html');
+  if (!htmlEl || _uplViewerRawText === null) return;
+  _uplViewerEditMode = 'text';
+  // Swap pre-view for a flex column: textarea + action bar
+  htmlEl.style.display       = 'flex';
+  htmlEl.style.flexDirection = 'column';
+  htmlEl.style.gap           = '0';
+  htmlEl.style.padding       = '0';
+  htmlEl.innerHTML =
+    '<textarea id="upl-txt-editor" spellcheck="false" ' +
+    '  style="flex:1;min-height:300px;font-family:monospace;font-size:.8rem;line-height:1.6;' +
+    '  border:none;outline:none;resize:none;padding:1.5rem;background:#fff;color:#1f2937;' +
+    '  dark:background:#27272a;dark:color:#e4e4e7">' +
+    '</textarea>' +
+    '<div data-upl-role="txt-edit-bar" ' +
+    '  style="flex-shrink:0;background:#fff;border-top:1px solid #e5e7eb;padding:.75rem 1.5rem;' +
+    '  display:flex;align-items:center;gap:.75rem;position:sticky;bottom:0">' +
+    '  <span style="font-size:.7rem;color:#9ca3af;flex:1">Editing in place — save overwrites the original file.</span>' +
+    '  <button type="button" onclick="_uplViewerTxtCancelEdit()" ' +
+    '    style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;border:1px solid #d1d5db;' +
+    '    color:#6b7280;background:#fff;cursor:pointer">Cancel</button>' +
+    '  <button id="upl-txt-save-btn" type="button" onclick="_uplViewerTxtSaveEdit()" ' +
+    '    style="font-size:.75rem;padding:.4rem .9rem;border-radius:.5rem;background:#0053e2;' +
+    '    color:#fff;font-weight:600;cursor:pointer;border:none">Save</button>' +
+    '</div>';
+  var ta = document.getElementById('upl-txt-editor');
+  if (ta) { ta.value = _uplViewerRawText; ta.focus(); }
+}
+
+function _uplViewerTxtCancelEdit() {
+  var htmlEl = document.getElementById('upl-viewer-html');
+  if (htmlEl) {
+    // Restore normal scrolling container
+    htmlEl.style.display       = '';
+    htmlEl.style.flexDirection = '';
+    htmlEl.style.gap           = '';
+    htmlEl.style.padding       = '';
+    htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerRawText, 'text');
+    _uplViewerTxtRenderEditBar(htmlEl);
+  }
+  _uplViewerEditMode = null;
+}
+
+async function _uplViewerTxtSaveEdit() {
+  var ta      = document.getElementById('upl-txt-editor');
+  var saveBtn = document.getElementById('upl-txt-save-btn');
+  var f       = _uplViewerCurrentFile;
+  if (!ta || !f) return;
+  var text = ta.value;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  try {
+    var r = await fetch(
+      '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/content',
+      { method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }) }
+    );
+    var ct = r.headers.get('content-type') || '';
+    if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
+    // Update cached text so Cancel restores the latest version
+    _uplViewerRawText = text;
+    _uplShowToast('Saved ✓');
+    _uplViewerTxtCancelEdit();  // return to read-only view showing updated text
+  } catch(err) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     _uplShowToast('Save failed: ' + _uplEsc(String(err)));
   }
 }

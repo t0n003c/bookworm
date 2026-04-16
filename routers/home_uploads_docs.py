@@ -545,9 +545,14 @@ def _stamp_one_page(
     pg_w   = float(target_page.mediabox.width)
     pg_h   = float(target_page.mediabox.height)
 
-    # PIL rotation (PIL +ve = CCW) to counteract the CW display rotation.
-    # R=90 CW display → pre-rotate sig 90° CCW in raw space → PIL(90).
-    pil_rot = rot  # 0→0, 90→90, 180→180, 270→270
+    # The PDF viewer applies /Rotate CCW when displaying the page.
+    # To keep the signature upright we must pre-rotate it in the OPPOSITE
+    # direction in raw space so the viewer's CCW rotation cancels it out.
+    # Compensation = (360 - rot) % 360 degrees CCW in PIL (PIL +ve = CCW).
+    # Examples:  R=90  → PIL(270) CCW = 90° CW in raw  → viewer +90° CCW = 0°
+    #            R=180 → PIL(180)          (symmetric, same either way)
+    #            R=270 → PIL(90)  CCW = 90° in raw     → viewer +270° CCW = 0°
+    pil_rot = (360 - rot) % 360
     if pil_rot:
         draw_img = sig_img.rotate(pil_rot, expand=True)
     else:
@@ -581,14 +586,19 @@ def _stamp_one_page(
         raw_cx = pg_w * x_pct
         raw_cy = pg_h * (1.0 - y_pct)
     elif rot == 90:
+        # CCW 90° display: screen_x = H - ry_pdf, screen_y = rx
+        # Inverse: rx = pg_w*y_pct, ry_pdf = pg_h*(1-x_pct)
         raw_cx = pg_w * y_pct
-        raw_cy = pg_h * x_pct
+        raw_cy = pg_h * (1.0 - x_pct)  # ← was x_pct (wrong)
     elif rot == 180:
+        # CCW 180° display: both axes flip
         raw_cx = pg_w * (1.0 - x_pct)
-        raw_cy = pg_h * y_pct
+        raw_cy = pg_h * y_pct           # correct (y flipped twice = same)
     else:  # 270
+        # CW 90° display: screen_x = ry_pdf, screen_y = W - rx
+        # Inverse: rx = pg_w*(1-y_pct), ry_pdf = pg_h*x_pct
         raw_cx = pg_w * (1.0 - y_pct)
-        raw_cy = pg_h * (1.0 - x_pct)
+        raw_cy = pg_h * x_pct           # ← was (1-x_pct) (wrong)
 
     # Bottom-left corner, clamped within page bounds.
     x_pt = max(0.0, min(raw_cx - raw_sig_w / 2.0, pg_w - raw_sig_w))
