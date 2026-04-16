@@ -1,407 +1,509 @@
-# Plan: Jspreadsheet CE In-Browser XLSX/CSV Editor (Document Studio Phase 7)
-Date: 2026-04-15
+# Plan: PDF Annotations — Document Studio Phase 8 (Feature B2)
+Date: 2026-04-16
 Estimated complexity: Medium
-
----
 
 ## Summary
 
-Add a fully client-side spreadsheet editor to Document Studio. XLSX and CSV files uploaded to an Uploads homespace page will gain a **📊 Edit Spreadsheet** button in their Document Studio panel. Clicking it opens a fullscreen modal containing a live [Jspreadsheet CE](https://bossanova.uk/jspreadsheet/v4/) grid. [SheetJS (xlsx.js)](https://sheetjs.com/) handles XLSX ↔ JS-array round-tripping; Jspreadsheet CE renders the editable grid. Both libraries are loaded lazily from CDN (injected dynamically in JS at first open, not in `base.html`). A **💾 Save** button serializes the current grid back to the original format (XLSX bytes via SheetJS or CSV text) and PUTs it to a new dedicated endpoint `PUT /home/uploads/{pid}/files/page/{fid}/spreadsheet` which accepts base64-encoded bytes. Closing without saving discards all changes. Read-only mode applies automatically for `note-src` files, matching every other Document Studio editor.
-
-The existing `PUT /{pid}/files/page/{fid}/content` endpoint is **not reused** because it validates `mime.startswith("text/")` before writing and rejects XLSX (binary, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`). A unified base64 endpoint is cleaner than special-casing the existing one.
+Add a non-destructive PDF annotation layer to the Document Studio. Highlights,
+sticky notes, and text boxes are stored in a new `pdf_annotations` table as
+percentage-based coordinates and rendered as absolutely-positioned `<div>`s over
+a PDF.js canvas inside a dedicated fullscreen modal (`#upl-annot-modal`). No
+PyMuPDF / server-side PDF mutation required — the PDF on disk is never touched.
+The "📝 Annotate PDF" button is injected into the existing Document Studio panel
+by `_uplDocStudioInit` for any `page`-source PDF file.
 
 ---
 
 ## Files to Change
-
-Touch in this sequence to avoid dependency issues.
+Touch in this exact order to avoid missing-import errors.
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `routers/home_uploads_docs.py` | Add `SpreadsheetBody` Pydantic model + `PUT /{pid}/files/page/{fid}/spreadsheet` endpoint |
-| 2 | `templates/partials/home_page_uploads.html` | Add `#upl-spreadsheet-modal` HTML block (fullscreen, mirrors `#upl-wopi-modal` structure) |
-| 3 | `static/js/home-page-uploads-spreadsheet.js` | **New file** — all spreadsheet editor JS (see New Files below) |
-| 4 | `templates/base.html` | Add `<script>` tag for new JS file at line 587 (after `uploads-wopi.js`) |
-| 5 | `static/js/home-page-uploads-docs.js` | Add `canSpreadsheet` flag + **📊 Edit Spreadsheet** button in `_uplDocStudioInit` |
-
----
+| 1 | `database.py` | Add `pdf_annotations` table + index in `init_db()` |
+| 2 | `routers/uploads_docs_db.py` | Add 4 annotation DB helpers |
+| 3 | `routers/home_uploads_docs.py` | Add `AnnotationBody` Pydantic model + 4 REST endpoints |
+| 4 | `templates/partials/home_page_uploads.html` | Add `#upl-annot-modal` block after `#upl-spreadsheet-modal` |
+| 5 | `static/js/home-page-uploads-annot.js` | New file — full annotation module |
+| 6 | `templates/base.html` | Add `<script defer>` for annot.js after spreadsheet.js |
+| 7 | `static/js/home-page-uploads-docs.js` | Add `canAnnotate` + `📝 Annotate PDF` button |
 
 ## New Files to Create
 
 | File | Purpose |
 |---|---|
-| `static/js/home-page-uploads-spreadsheet.js` | CDN loader, Jspreadsheet CE + SheetJS integration, modal open/close/save, read-only guard |
+| `static/js/home-page-uploads-annot.js` | PDF.js loader, canvas renderer, overlay CRUD, all annotation JS |
 
 ---
 
-## DB Migrations Needed
+## DB Migration
 
-**None.** No schema changes. `update_page_upload_size()` already exists in `routers/uploads_docs_db.py` and is reused by the new endpoint. `page_uploads` table already stores `mime_type`, `filename`, and `size`.
+Add to `init_db()` in `database.py` — additive, idempotent, no table-swap needed.
 
----
-
-## New Backend Endpoint (File 1 detail)
-
-### `PUT /{page_id}/files/page/{file_id}/spreadsheet`
-
-**Location:** Add to `routers/home_uploads_docs.py` after the existing `save_content` function (~line 225).
-
-**New Pydantic model** (add with the other models near top of file, after `ContentBody`):
-```python
-class SpreadsheetBody(BaseModel):
-    content_b64: str   # base64-encoded file bytes (SheetJS XLSX or UTF-8 CSV)
-    format: str        # "xlsx" | "csv"
-
-MAX_SPREADSHEET_BYTES = 10_000_000  # 10 MB guard (larger than the 1 MB text guard)
+```sql
+CREATE TABLE IF NOT EXISTS pdf_annotations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  file_id     INTEGER NOT NULL REFERENCES page_uploads(id) ON DELETE CASCADE,
+  page_num    INTEGER NOT NULL DEFAULT 0,
+  type        TEXT    NOT NULL,
+  x_pct       REAL    NOT NULL,
+  y_pct       REAL    NOT NULL,
+  width_pct   REAL    NOT NULL DEFAULT 0.2,
+  height_pct  REAL    NOT NULL DEFAULT 0.05,
+  color       TEXT    NOT NULL DEFAULT '#ffc220',
+  content     TEXT    NOT NULL DEFAULT '',
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pdf_annot_file
+  ON pdf_annotations(file_id, user_id);
 ```
 
-**Endpoint logic — exact sequence:**
-1. `if guard := _demo_guard(request): return guard`
-2. `uid = request.session.get("user_id")` → 401 if falsy
-3. `await _require_uploads_page(page_id, uid)`
-4. `row = await get_page_upload_owned(file_id, uid)` → 404 if None
-5. MIME-type gate: only `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` or `text/csv` → 400 otherwise
-6. Format gate: `body.format` must be `"xlsx"` or `"csv"` → 400 otherwise
-7. `data = base64.b64decode(body.content_b64)` — wrap in try/except → 400 on bad base64
-8. Size gate: `len(data) > MAX_SPREADSHEET_BYTES` → 413
-9. `(UPLOAD_DIR / row["filename"]).write_bytes(data)` — wrap in try/except → 500 on failure
-10. `await update_page_upload_size(file_id, uid, len(data))`
-11. `return JSONResponse({"ok": True, "size": len(data)})`
-
-**No new Python imports needed** — `base64` is already imported at the top of `home_uploads_docs.py` (used by `sign_pdf`).
+`type` accepted values: `'highlight'` | `'sticky'` | `'textbox'`
+`page_num` is 0-indexed (matches PDF.js `pageNumber - 1`).
 
 ---
 
-## New Modal HTML (File 2 detail)
+## Backend Endpoints
 
-Add to `templates/partials/home_page_uploads.html` **just before** the closing `</div>{# /uploads-page-root #}` line (i.e., directly after the `#upl-wopi-modal` closing `</div>` block).
+### Pydantic model — add to `home_uploads_docs.py`
 
-Follow the WOPI modal structure exactly (same z-index, same dark top bar, same Escape handler pattern):
+```python
+class AnnotationBody(BaseModel):
+    page_num:   int   = 0
+    type:       str   = "highlight"   # 'highlight'|'sticky'|'textbox'
+    x_pct:      float = 0.0
+    y_pct:      float = 0.0
+    width_pct:  float = 0.2
+    height_pct: float = 0.05
+    color:      str   = "#ffc220"
+    content:    str   = ""
+```
+
+Add a minimal validator: `type` must be in `{'highlight', 'sticky', 'textbox'}`.
+
+### Route logic (all 4 routes follow the same guard sequence)
+
+**GET** `/{page_id}/files/page/{file_id}/annotations`
+```
+uid = request.session.get("user_id") or raise 401
+await _require_uploads_page(page_id, uid)         # raises 404 if page not owned
+row = await get_page_upload_owned(file_id, uid)   # raises 404 if file not owned
+rows = await get_annotations(file_id, uid)
+return JSONResponse({"annotations": rows})
+```
+*(No `_demo_guard` — reads are safe in demo mode.)*
+
+**POST** `/{page_id}/files/page/{file_id}/annotations`
+```
+if guard := _demo_guard(request): return guard
+uid = request.session.get("user_id") or raise 401
+await _require_uploads_page(page_id, uid)
+await get_page_upload_owned(file_id, uid)         # ownership check
+annot_id = await create_annotation(file_id, uid, body)
+return JSONResponse({"id": annot_id}, status_code=201)
+```
+
+**PUT** `/{page_id}/files/page/{file_id}/annotations/{annot_id}`
+```
+if guard := _demo_guard(request): return guard
+uid = request.session.get("user_id") or raise 401
+await _require_uploads_page(page_id, uid)
+await get_page_upload_owned(file_id, uid)
+n = await update_annotation(annot_id, uid, body)
+if n == 0: raise HTTPException(404)
+return JSONResponse({"ok": True})
+```
+
+**DELETE** `/{page_id}/files/page/{file_id}/annotations/{annot_id}`
+```
+if guard := _demo_guard(request): return guard
+uid = request.session.get("user_id") or raise 401
+await _require_uploads_page(page_id, uid)
+await get_page_upload_owned(file_id, uid)
+n = await delete_annotation(annot_id, uid)
+if n == 0: raise HTTPException(404)
+return Response(status_code=204)
+```
+
+Import additions needed at top of `home_uploads_docs.py`:
+```python
+from routers.uploads_docs_db import (
+    get_page_upload_owned_bulk,
+    update_page_upload_size,
+    get_annotations,        # new
+    create_annotation,      # new
+    update_annotation,      # new
+    delete_annotation,      # new
+)
+```
+
+---
+
+## DB Helpers — `routers/uploads_docs_db.py`
+
+Add all four functions. All use `get_db()`. Row dicts via `db.row_factory = aiosqlite.Row` (already set by `get_db()`).
+
+```python
+async def get_annotations(file_id: int, user_id: int) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, page_num, type, x_pct, y_pct, width_pct, height_pct, "
+            "color, content, created_at "
+            "FROM pdf_annotations WHERE file_id=? AND user_id=? ORDER BY created_at",
+            (file_id, user_id),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def create_annotation(file_id: int, user_id: int, data) -> int:
+    async with get_db() as db:
+        cur = await db.execute(
+            "INSERT INTO pdf_annotations "
+            "(user_id, file_id, page_num, type, x_pct, y_pct, "
+            " width_pct, height_pct, color, content) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (user_id, file_id, data.page_num, data.type,
+             data.x_pct, data.y_pct, data.width_pct, data.height_pct,
+             data.color, data.content),
+        )
+        await db.commit()
+    return cur.lastrowid
+
+
+async def update_annotation(annot_id: int, user_id: int, data) -> int:
+    """Update position + content. Returns affected rowcount (0 = not found/not owned)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE pdf_annotations SET "
+            "x_pct=?, y_pct=?, width_pct=?, height_pct=?, color=?, content=? "
+            "WHERE id=? AND user_id=?",
+            (data.x_pct, data.y_pct, data.width_pct, data.height_pct,
+             data.color, data.content, annot_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount
+
+
+async def delete_annotation(annot_id: int, user_id: int) -> int:
+    """Returns affected rowcount (0 = not found/not owned)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM pdf_annotations WHERE id=? AND user_id=?",
+            (annot_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount
+```
+
+---
+
+## `#upl-annot-modal` HTML Block
+
+Insert in `templates/partials/home_page_uploads.html` immediately after the
+closing `</div>` of `#upl-spreadsheet-modal` (currently line ~465) and before
+`</div>{# /uploads-page-root #}`.
 
 ```html
-{# ── Jspreadsheet CE spreadsheet editor modal ──────────────────────── #}
-<div id="upl-spreadsheet-modal"
+{# ── PDF Annotations modal ─────────────────────────────────────────────────── #}
+<div id="upl-annot-modal"
      class="hidden fixed inset-0 z-[60] flex flex-col"
-     role="dialog" aria-modal="true" aria-labelledby="upl-ss-title" tabindex="-1"
-     onkeydown="if(event.key==='Escape')_uplSsClose()">
-  {# Top bar #}
-  <div class="flex items-center gap-3 px-4 py-2 flex-shrink-0
-              bg-zinc-900 border-b border-zinc-700">
-    <span class="text-base leading-none">📊</span>
-    <span id="upl-ss-filename"
-          class="text-sm font-semibold text-zinc-100 truncate flex-1"></span>
-    <span id="upl-ss-title" class="text-xs text-zinc-400 select-none">Spreadsheet Editor</span>
-    <button id="upl-ss-save-btn" type="button"
-            onclick="_uplSsSave()"
-            class="hidden text-white bg-[#0053e2] hover:bg-[#003eb3]
-                   rounded-lg px-3 py-1.5 text-xs font-semibold transition
-                   focus:outline-none focus:ring-1 focus:ring-white"
-            aria-label="Save spreadsheet">
-      💾 Save
-    </button>
-    <button type="button" onclick="_uplSsClose()"
+     role="dialog" aria-modal="true" aria-labelledby="upl-annot-title" tabindex="-1"
+     onkeydown="if(event.key==='Escape')_uplAnnotClose()">
+
+  {# ── Top bar ── #}
+  <div class="flex items-center gap-2 px-4 py-2 flex-shrink-0
+              bg-zinc-900 border-b border-zinc-700 flex-wrap">
+    <span class="text-base leading-none">📝</span>
+    <span id="upl-annot-filename"
+          class="text-sm font-semibold text-zinc-100 truncate flex-1 min-w-0"></span>
+    <span id="upl-annot-title" class="text-xs text-zinc-400 select-none mr-2">PDF Annotations</span>
+
+    {# Tool buttons #}
+    <button type="button" id="upl-annot-tool-highlight"
+            onclick="_uplAnnotAddMode('highlight')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Highlight tool">🖊 Highlight</button>
+    <button type="button" id="upl-annot-tool-sticky"
+            onclick="_uplAnnotAddMode('sticky')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Sticky note tool">📌 Sticky</button>
+    <button type="button" id="upl-annot-tool-textbox"
+            onclick="_uplAnnotAddMode('textbox')"
+            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
+                   text-zinc-300 hover:text-white hover:border-[#ffc220]
+                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
+            aria-label="Text box tool">🔤 Text Box</button>
+
+    {# Page navigation #}
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page - 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Previous page">‹</button>
+    <span id="upl-annot-page-label"
+          class="text-xs text-zinc-400 select-none whitespace-nowrap">Page 1 / 1</span>
+    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page + 1)"
+            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
+                   hover:text-white transition focus:outline-none"
+            aria-label="Next page">›</button>
+
+    <button type="button" onclick="_uplAnnotClose()"
             class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
                    rounded-lg px-3 py-1.5 text-xs font-medium transition
-                   focus:outline-none focus:ring-1 focus:ring-white"
-            aria-label="Close spreadsheet editor">
-      ✕ Close
-    </button>
+                   focus:outline-none focus:ring-1 focus:ring-white ml-1"
+            aria-label="Close annotation editor">✕ Close</button>
   </div>
-  {# Loading state #}
-  <div id="upl-ss-loading"
-       class="flex-1 flex items-center justify-center bg-zinc-900 text-zinc-400 text-sm">
+
+  {# ── Loading state ── #}
+  <div id="upl-annot-loading"
+       class="flex-1 flex items-center justify-center bg-zinc-950 text-zinc-400 text-sm">
     <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
       <path class="opacity-75" fill="currentColor"
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
     </svg>
-    Loading spreadsheet…
+    Loading PDF…
   </div>
-  {# Error state #}
-  <div id="upl-ss-error"
-       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-900
+
+  {# ── Error state ── #}
+  <div id="upl-annot-error"
+       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-950
               text-red-400 text-sm gap-3">
-    <p id="upl-ss-error-msg"></p>
-    <button type="button" onclick="_uplSsClose()"
+    <p id="upl-annot-error-msg"></p>
+    <button type="button" onclick="_uplAnnotClose()"
             class="text-xs px-3 py-1.5 rounded-lg border border-zinc-600
                    text-zinc-300 hover:text-white transition">Close</button>
   </div>
-  {# Grid mount — Jspreadsheet CE renders here #}
-  <div id="upl-ss-grid" class="hidden flex-1 overflow-auto bg-white"></div>
+
+  {# ── Canvas + overlay ── #}
+  <div id="upl-annot-body"
+       class="hidden flex-1 overflow-auto bg-zinc-950 flex items-start justify-center p-4">
+    <div id="upl-annot-canvas-wrap" style="position:relative;display:inline-block;">
+      <canvas id="upl-annot-canvas"></canvas>
+      <div id="upl-annot-overlay"
+           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></div>
+    </div>
+  </div>
 </div>
 ```
 
 ---
 
-## New JS File (File 3 detail)
+## JS Module Spec — `static/js/home-page-uploads-annot.js`
 
-**`static/js/home-page-uploads-spreadsheet.js`** — keep under 600 lines. All variables `var`. No `let`/`const`.
+All `var`. No `let`/`const`. `'use strict';` at top.
+Depends on shared globals: `_uplPid`, `_uplEsc`, `_uplShowToast`, `_uplFetch`.
 
-### CDN URLs to use (pin to major version, not `latest`, for stability)
-```
-Jsuites JS  : https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.js
-Jsuites CSS : https://cdn.jsdelivr.net/npm/jsuites@5/dist/jsuites.css
-Jspreadsheet JS : https://cdn.jsdelivr.net/npm/jspreadsheet-ce@5/dist/index.js
-Jspreadsheet CSS: https://cdn.jsdelivr.net/npm/jspreadsheet-ce@5/dist/jspreadsheet.css
-SheetJS     : https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
-```
-
-**Mandatory load order:** Jsuites JS → Jsuites CSS → Jspreadsheet JS → Jspreadsheet CSS → SheetJS.
-Jspreadsheet CE has a hard runtime dependency on Jsuites — reversing order causes `jsuites is not defined`.
-
-### Module-level `var` declarations (at top of file)
+### Module-level state variables
 ```javascript
-var _uplSsFile        = null;   // current file object { id, filename, mime_type, original_name, src }
-var _uplSsGridEl      = null;   // the #upl-ss-grid DOM element (instance attached via jexcel prop)
-var _uplSsLibsLoaded  = false;  // true after CDN scripts are injected and resolved
-var _uplSsLibsPromise = null;   // cached Promise for in-flight or completed CDN load
-var _uplSsBusy        = false;  // prevents double-save
-var _XLSX_MIME_SS = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+var _uplAnnotFile         = null;   // current file object
+var _uplAnnotPdfDoc       = null;   // pdf.js PDFDocumentProxy
+var _uplAnnotLibsPromise  = null;   // cached CDN load promise
+var _uplAnnotState = {
+  page:    0,          // 0-indexed current page
+  total:   1,
+  tool:    null,       // 'highlight'|'sticky'|'textbox'|null
+  annots:  [],         // array of annotation objects from server
+  busy:    false,
+};
 ```
 
-### Functions — full list and signatures
+### CDN URLs (pinned)
+```javascript
+var _PDFJS_URL   = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+var _PDFJS_WRKR  = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+```
 
-#### `_uplSsLoadScript(url)` → Promise
-Creates a `<script>` element, sets `.src = url`, appends to `document.head`, returns a Promise that resolves on `onload`, rejects on `onerror`.
+### Public functions
 
-#### `_uplSsLoadStyle(url)` → Promise
-Creates a `<link rel="stylesheet">` element, appends to `document.head`, resolves on `onload`.
+**`_uplAnnotLoadLibs()`** → `Promise`
+- If `_uplAnnotLibsPromise` already set, return it immediately (cache hit).
+- Otherwise: inject `<script src="_PDFJS_URL">`, wait for `load` event, set
+  `pdfjsLib.GlobalWorkerOptions.workerSrc = _PDFJS_WRKR`, store and return promise.
 
-#### `_uplSsLoadLibs()` → Promise
-- Return `_uplSsLibsPromise` if already set (cached — avoids re-injection on repeat opens).
-- Chain the loads **sequentially** (each `.then()` returns the next load call):
-  `_uplSsLoadScript(jsuites_js)` → `_uplSsLoadStyle(jsuites_css)` → `_uplSsLoadScript(jspreadsheet_js)` → `_uplSsLoadStyle(jspreadsheet_css)` → `_uplSsLoadScript(sheetjs_url)`
-- Set `_uplSsLibsLoaded = true` at the end of the chain.
-- Store the entire Promise in `_uplSsLibsPromise` and return it.
+**`_uplAnnotOpen(f)`** → `async`
+1. Store `_uplAnnotFile = f`.
+2. Set `#upl-annot-filename` text to `f.original_name`.
+3. Remove `hidden` from `#upl-annot-modal`; show `#upl-annot-loading`; hide `#upl-annot-body` + `#upl-annot-error`.
+4. Reset `_uplAnnotState`: `page=0, tool=null, annots=[]`.
+5. Clear `#upl-annot-overlay` innerHTML; deactivate all tool buttons (remove active styling).
+6. `await _uplAnnotLoadLibs()`.
+7. Fetch PDF bytes: `GET /home/uploads/{_uplPid}/files/{f.src}/{f.id}/download` with credentials.
+   - Check `Content-Type: text/html` → session expired → show error "Session expired — please reload".
+8. `pdfjsLib.getDocument({data: arrayBuffer})` → store in `_uplAnnotPdfDoc`.
+9. `_uplAnnotState.total = pdfDoc.numPages`.
+10. Fetch annotations: `GET /home/uploads/{_uplPid}/files/page/{f.id}/annotations`.
+    - Store in `_uplAnnotState.annots`.
+11. `await _uplAnnotRenderPage(0)`.
+12. Hide `#upl-annot-loading`; show `#upl-annot-body`.
+13. Catch all errors → hide loading, show `#upl-annot-error` with message.
 
-#### `_uplSsOpen(f)` — public entry point (called from `_uplDocStudioInit`)
-1. `_uplSsFile = f`
-2. Show `#upl-spreadsheet-modal` (remove `hidden`)
-3. Show `#upl-ss-loading`, hide `#upl-ss-grid`, hide `#upl-ss-error`, hide `#upl-ss-save-btn`
-4. Set `#upl-ss-filename` text content to `f.original_name`
-5. `_uplSsLoadLibs().then(function() { _uplSsRender(f); }).catch(function(err) { _uplSsShowError('Could not load spreadsheet libraries: ' + err); })`
+**`_uplAnnotClose()`**
+- Add `hidden` to `#upl-annot-modal`. Null out `_uplAnnotPdfDoc`, `_uplAnnotFile`.
+- Reset state. Do NOT destroy PDF.js worker — reuse across opens.
 
-#### `_uplSsRender(f)` — async, fetch + parse + mount grid
-1. Fetch file bytes:
-   ```javascript
-   // /uploads/<uuid-filename> is served by StaticFiles mount (unguarded — see Quirk #18)
-   // This is consistent with how #upl-viewer-embed src works for PDFs.
-   fetch('/uploads/' + f.filename)
-     .then(function(r) {
-       if (!r.ok) throw new Error('Could not fetch file (' + r.status + ')');
-       return r.arrayBuffer();
-     })
-   ```
-2. Parse with SheetJS:
-   ```javascript
-   var wb = XLSX.read(new Uint8Array(ab), { type: 'array' });
-   var sheetName = wb.SheetNames[0];
-   var ws = wb.Sheets[sheetName];
-   var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-   ```
-3. If `wb.SheetNames.length > 1`: call `_uplShowToast('Showing sheet 1 of ' + wb.SheetNames.length + '. Save will keep only this sheet.')` (non-blocking warning).
-4. Destroy existing instance if any:
-   ```javascript
-   if (_uplSsGridEl && _uplSsGridEl.jexcel) {
-     _uplSsGridEl.jexcel.destroy();
-   }
-   ```
-5. Clear and mount:
-   ```javascript
-   _uplSsGridEl = document.getElementById('upl-ss-grid');
-   _uplSsGridEl.innerHTML = '';
-   jspreadsheet(_uplSsGridEl, {
-     data: data.length ? data : [[]],
-     minDimensions: [26, 50],
-     tableOverflow: true,
-     tableWidth: '100%',
-     tableHeight: '100%'
-   });
-   ```
-6. Hide loading, show grid, show save button.
-7. On any error: `_uplSsShowError(String(err))`.
+**`_uplAnnotRenderPage(n)`** → `async`
+- Guard: `n < 0` or `n >= total` → return.
+- `_uplAnnotState.page = n`.
+- `page = await _uplAnnotPdfDoc.getPage(n + 1)`.  *(PDF.js pages are 1-indexed.)*
+- Compute viewport: `page.getViewport({ scale: 1.5 })`.
+- Size `#upl-annot-canvas` to `viewport.width × viewport.height`.
+- `page.render({ canvasContext, viewport })` → await completion.
+- Update `#upl-annot-page-label` → `"Page N / Total"` (1-indexed for display).
+- Call `_uplAnnotDrawOverlay()`.
 
-#### `_uplSsShowError(msg)`
-Hide loading, hide grid, set `#upl-ss-error-msg` text, show `#upl-ss-error`.
+**`_uplAnnotSetPage(n)`**
+- Clamps to `[0, total-1]`. Calls `_uplAnnotRenderPage(n)`.
 
-#### `_uplSsClose()`
-1. If `_uplSsGridEl && _uplSsGridEl.jexcel`: `_uplSsGridEl.jexcel.destroy()`
-2. Clear `_uplSsGridEl.innerHTML` if set
-3. `_uplSsGridEl = null`, `_uplSsFile = null`, `_uplSsBusy = false`
-4. Hide `#upl-spreadsheet-modal` (add `hidden`)
-5. Reset modal state: show loading, hide grid, hide error, hide save button
+**`_uplAnnotDrawOverlay()`**
+- Clear `#upl-annot-overlay` innerHTML.
+- Get canvas `width` + `height` in px (for CSS `%` → `px` back-conversion if needed — we use `%` directly).
+- For each annotation in `_uplAnnotState.annots` where `a.page_num === _uplAnnotState.page`:
+  call `_uplAnnotMakeDiv(a)` → append to overlay.
 
-#### `_uplSsSave()` — async
-1. Guard: `_uplSsBusy` → return
-2. Guard: `!_uplSsGridEl || !_uplSsGridEl.jexcel || !_uplSsFile` → return
-3. `_uplSsBusy = true`; disable `#upl-ss-save-btn`, set text to `'Saving…'`
-4. Get data: `var rows = _uplSsGridEl.jexcel.getData(false)`
-5. Serialize based on format:
-   - **XLSX** (`_uplSsFile.mime_type === _XLSX_MIME_SS`):
-     ```javascript
-     var ws = XLSX.utils.aoa_to_sheet(rows);
-     var wb = XLSX.utils.book_new();
-     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-     // type:'array' returns a plain Array (not Buffer) — safe in all browsers
-     var arr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-     var bytes = new Uint8Array(arr);
-     var fmt = 'xlsx';
-     ```
-   - **CSV** (`mime_type === 'text/csv'`):
-     ```javascript
-     var ws = XLSX.utils.aoa_to_sheet(rows);
-     var csvStr = XLSX.utils.sheet_to_csv(ws);
-     var bytes = new TextEncoder().encode(csvStr);
-     var fmt = 'csv';
-     ```
-6. Base64-encode `bytes` using **chunked loop** (avoids stack overflow on large files):
-   ```javascript
-   var binary = '';
-   var CHUNK = 8192;
-   for (var i = 0; i < bytes.length; i += CHUNK) {
-     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-   }
-   var b64 = btoa(binary);
-   ```
-7. `fetch('/home/uploads/' + _uplPid + '/files/page/' + _uplSsFile.id + '/spreadsheet', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content_b64: b64, format: fmt }) })`
-8. Session-expiry check:
-   ```javascript
-   var ct = r.headers.get('content-type') || '';
-   if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
-   ```
-9. If `!r.ok`: `var e = await r.json(); throw new Error(e.detail || r.status)`
-10. On success: update cached file size:
-    ```javascript
-    var data = await r.json();
-    var cached = _uplFiles.find(function(x) { return x.src === _uplSsFile.src && x.id === _uplSsFile.id; });
-    if (cached) cached.size = data.size;
-    _uplDocCurrentFile.size = data.size;
-    _uplShowToast('Spreadsheet saved ✓');
-    _uplSsClose();
-    ```
-11. On error: `_uplShowToast('Save failed: ' + _uplEsc(String(e)))`, re-enable save button (text back to `'💾 Save'`)
-12. `finally`: `_uplSsBusy = false`
+**`_uplAnnotMakeDiv(a)`** → DOM element
+- Create `<div>` with `style`:
+  ```
+  position:absolute;
+  left:  (a.x_pct * 100)%;
+  top:   (a.y_pct * 100)%;
+  width: (a.width_pct * 100)%;
+  height:(a.height_pct * 100)%;
+  pointer-events:auto;
+  ```
+- `data-aid` = `a.id`.
+- Visual by type:
+  - **highlight**: `background:rgba(255,194,32,0.35); border:none; cursor:default;`
+    - Delete button (tiny `✕` top-right, visible on hover via CSS class).
+  - **sticky**: `background:#ffc220; border-radius:6px; padding:4px; overflow:hidden;`
+    - Contains `<textarea>` (full width/height minus padding, no border, transparent bg, `font-size:11px`).
+    - `textarea.value = a.content`. `onblur` → `_uplAnnotSave(a.id, textarea.value)`.
+    - Delete button top-right.
+  - **textbox**: `background:white; border:1.5px solid #0053e2; border-radius:4px; padding:4px;`
+    - Contains `<textarea>` same as sticky but white bg.
+    - `textarea.value = a.content`. `onblur` → `_uplAnnotSave(a.id, textarea.value)`.
+    - Delete button top-right.
+- Delete button: `position:absolute; top:2px; right:2px; font-size:9px; background:rgba(0,0,0,0.5); color:white; border:none; border-radius:3px; cursor:pointer; padding:1px 4px; line-height:1;`  `onclick` → `_uplAnnotDelete(a.id)`.
+- Return the div.
+
+**`_uplAnnotAddMode(type)`**
+- Toggle: if `_uplAnnotState.tool === type` → set to `null` (cancel mode), else set to `type`.
+- Update visual state of all 3 tool buttons: active tool gets `border-[#ffc220] text-[#ffc220]` classes, others reset.
+- Set `#upl-annot-overlay` `cursor`: `crosshair` when tool active, `default` when null.
+- Attach or remove click listener on `#upl-annot-overlay` via `_uplAnnotHandleOverlayClick`.
+
+**`_uplAnnotHandleOverlayClick(e)`**
+- If no tool active or busy → return.
+- Compute click position as `%` of overlay dimensions:
+  ```javascript
+  var rect = e.currentTarget.getBoundingClientRect();
+  var xPct = (e.clientX - rect.left) / rect.width;
+  var yPct = (e.clientY - rect.top)  / rect.height;
+  ```
+- Default dimensions: highlight `width=0.25, height=0.04`; sticky/textbox `width=0.2, height=0.12`.
+- POST to `/home/uploads/{pid}/files/page/{fid}/annotations` with JSON body matching `AnnotationBody`.
+- On success: push returned annotation object (with server `id`) into `_uplAnnotState.annots`. Call `_uplAnnotDrawOverlay()`.
+- On error: `_uplShowToast('Could not add annotation', true)`.
+
+**`_uplAnnotSave(aid, content)`** → `async`
+- `PUT /home/uploads/{pid}/files/page/{fid}/annotations/{aid}` with body containing updated `content` plus current `x_pct/y_pct/width_pct/height_pct/color` (read from the stored annot object in `_uplAnnotState.annots`).
+- On error: `_uplShowToast('Save failed', true)`.
+- On success: update the matching entry in `_uplAnnotState.annots`.
+
+**`_uplAnnotDelete(aid)`** → `async`
+- `DELETE /home/uploads/{pid}/files/page/{fid}/annotations/{aid}`.
+- On success: remove from `_uplAnnotState.annots`. Remove the div with `data-aid=aid` from `#upl-annot-overlay`.
+- On error: `_uplShowToast('Delete failed', true)`.
+
+*(Helper: `_uplAnnotAid()` and `_uplAnnotFid()` — private getters that return `_uplAnnotFile.id` and current `_uplPid`.)*
 
 ---
 
-## Changes to `_uplDocStudioInit` (File 5 detail)
+## `home-page-uploads-docs.js` Change
 
-**In `static/js/home-page-uploads-docs.js`**, inside `async function _uplDocStudioInit(f)`, add **after** the existing `canWopi` variable declaration:
+In `_uplDocStudioInit(f)`, add after the existing `canSign` declaration and before the `if (!canView && ...)` guard:
 
 ```javascript
-var _XLSXM_DOC = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-var canSpreadsheet = f.src === 'page'
-  && (f.mime_type === _XLSXM_DOC || f.mime_type === 'text/csv')
-  && typeof _uplSsOpen === 'function';
+var canAnnotate = f.src === 'page'
+  && f.mime_type === 'application/pdf'
+  && typeof _uplAnnotOpen === 'function';
 ```
 
-In the button-building block, add **after** the `canWopi` push and **before** the `canSign` push:
+In the `btns.push(...)` block, insert after the `✍️ Sign PDF` push and before `→ PDF`:
 
 ```javascript
-if (canSpreadsheet) btns.push(
-  '<button onclick="_uplSsOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📊 Edit Spreadsheet</button>'
+if (canAnnotate) btns.push(
+  '<button onclick="_uplAnnotOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📝 Annotate PDF</button>'
 );
 ```
 
-The `typeof _uplSsOpen === 'function'` guard is defensive: if the spreadsheet JS file fails to load for any reason (CDN outage, network block), the button simply won't appear rather than producing a broken onclick.
-
 ---
 
-## `base.html` Change (File 4 detail)
+## `base.html` Change
 
-Add **exactly one line** at line 587, immediately after the existing `uploads-wopi.js` script tag:
+Insert immediately after line 587 (spreadsheet.js `<script>` tag):
 
 ```html
-<script src="/static/js/home-page-uploads-spreadsheet.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-page-uploads-annot.js?v={{ static_v }}" defer></script>
 ```
-
-Final load order for uploads companions (lines 583–587):
-```
-583: home-page-uploads-tags.js
-584: home-page-uploads-docs.js
-585: home-page-uploads-sign.js
-586: home-page-uploads-wopi.js
-587: home-page-uploads-spreadsheet.js   ← NEW
-```
-
-`_uplSsOpen` must be defined before a user can click the button. Since `defer` executes after DOM parse, and the button only appears after `_uplDocStudioInit` runs (triggered by user clicking a file in the detail panel), load order is safe.
 
 ---
 
 ## Skills to Invoke
 
-- **`bookworm-template-audit`** — after touching `home_page_uploads.html`, `base.html`, and the two JS files. Specifically check: `var` usage in new JS, `?v={{ static_v }}` present, no `<script>` blocks added to the template partial, no broken `hx-target` references.
-- **`bookworm-pre-commit`** — before committing. Key checks: `_demo_guard` on new PUT endpoint, no raw `aiosqlite.connect()`, no hardcoded secrets.
-- **`bookworm-docs-keeper`** — after implementation, to update CODEPUPPY_NOTES.md with the new endpoint (`PUT /spreadsheet`), new JS file, and Phase 7 completion note.
-
-No DB migration skill needed (no schema changes).
-No widget scaffolder needed (not a widget).
+After implementation, run in this order:
+1. **bookworm-db-migration** — validate the `pdf_annotations` table + index migration is idempotent on the live DB.
+2. **bookworm-template-audit** — confirm no `let`/`const` crept into the new JS; verify `?v={{ static_v }}` on the new script tag; check `#upl-annot-modal` HTML IDs are unique.
+3. **bookworm-qa** — hit all 4 annotation endpoints; open Annotate PDF modal; test all three tool types; verify page nav; confirm no regressions on Sign PDF / Spreadsheet.
+4. **bookworm-pre-commit** — before committing.
+5. **bookworm-docs-keeper** — update CODEPUPPY_NOTES.md: new table in schema section, new JS file in key file map, new endpoints in `home_uploads_docs.py` description.
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Quirk #13 — `var` not `let`/`const` in partial `<script>` blocks**
-The new JS file is loaded via `<script defer>` in `base.html`, not re-injected by HTMX, so technically `let`/`const` are safe from the "already declared" re-injection trap. However, house style mandates `var` throughout all uploads companion files for consistency. Use `var` everywhere in the new file.
-
-**CODEPUPPY_NOTES — "Don't add more CDN script tags to base.html"**
-The notes flag this as tech debt: *"Until then, don't add more CDN script tags."* This plan avoids the prohibition entirely by **dynamically injecting** CDN scripts at runtime via JS when the modal first opens. CDN bytes are never loaded for pages that don't use the spreadsheet editor. Only one new app-local `<script>` tag is added to `base.html`.
-
-**Quirk #18 — `/uploads/<uuid>` StaticFiles mount is unguarded**
-`_uplSsRender` fetches the raw file via `fetch('/uploads/' + f.filename)`. This is intentional — it mirrors how `#upl-viewer-embed` loads PDFs. The UUID filename is unguessable; user is already authenticated. Document this in a comment in the JS file referencing Quirk #18.
-
-**Quirk #20 — `_uplJsStr` vs `_uplEsc`**
-The `onclick="_uplSsOpen(_uplDocCurrentFile)"` button passes an object reference — no string escaping needed. If future changes embed a filename in a JS string literal inside an onclick attribute, use `_uplJsStr(name)`, not `_uplEsc(name)`.
-
-**`_demo_guard` on the new write endpoint**
-`page_uploads` is a per-user table, but ALL write routes in the uploads router include `_demo_guard`. Add it as the very first statement in the new endpoint body.
-
-**Session-expiry check before `r.json()`**
-The auth middleware silently follows `302 → /login` redirects inside `fetch()`, delivering HTML to the caller. Always check `r.headers.get('content-type').includes('text/html')` before calling `r.json()`. Pattern is already used throughout `home-page-uploads-docs.js` — copy it exactly in `_uplSsSave`.
-
-**`btoa` stack overflow on large `Uint8Array`**
-`btoa(String.fromCharCode(...bytes))` with spread syntax will throw `RangeError: Maximum call stack size exceeded` for large XLSX files. Use the chunked loop (CHUNK = 8192) shown in the `_uplSsSave` implementation detail above.
-
-**Jspreadsheet CE v5 instance API**
-`jspreadsheet(el, opts)` mutates the element: the API is available at `el.jexcel` (not on the return value). Use `el.jexcel.getData(false)` and `el.jexcel.destroy()`. The return value is `[el]`. Verify this against the CDN v5 bundle at implementation time — v4 and v5 have different method names.
-
-**SheetJS `XLSX.write` type: 'array'**
-Use `{ bookType: 'xlsx', type: 'array' }` (not `'buffer'` which is Node-only) to get a plain JS `Array`. Wrap with `new Uint8Array(arr)` before base64-encoding.
+| # | Gotcha |
+|---|---|
+| G1 | **`var` only** in `home-page-uploads-annot.js` — no `let`/`const`. Even though this file is not a Jinja2 partial, house style for all uploads companion files uses `var`. |
+| G2 | **PDF.js CDN load order** — inject script tag, wait for `load` event *before* calling `pdfjsLib.getDocument()`. Do NOT assume `pdfjsLib` is defined at module parse time. |
+| G3 | **PDF.js worker** — must set `pdfjsLib.GlobalWorkerOptions.workerSrc` after the main script loads and before any `getDocument()` call. Same CDN version (`3.11.174`) for both files — version mismatch = silent hang. |
+| G4 | **Session expiry** — the PDF download fetch returns `302 → HTML` when expired. Check `response.headers.get('content-type')` starts with `text/html` *before* calling `.arrayBuffer()`. Show inline error instead of a `JSON.parse` crash. |
+| G5 | **`_demo_guard` first** — POST/PUT/DELETE annotation endpoints must call `_demo_guard(request)` as line 1, before even reading `session["user_id"]`. GET (read) does not need it. |
+| G6 | **`get_db()` only** — new DB helpers in `uploads_docs_db.py` must import and use `get_db` from `database`. Never `aiosqlite.connect()` directly. |
+| G7 | **`?v={{ static_v }}`** — the new `<script defer>` tag in `base.html` must include this cache-buster. |
+| G8 | **`_PUBLIC` unchanged** — all 4 annotation endpoints are auth-gated. Do not add them to `_PUBLIC` in `auth_middleware.py`. |
+| G9 | **PDF.js page numbers** — PDF.js `getPage()` is 1-indexed; our DB stores 0-indexed `page_num`. Always `getPage(page_num + 1)` and display `page_num + 1` to the user. |
+| G10 | **Overlay click target** — `#upl-annot-overlay` has `pointer-events:none` by default. Switch to `pointer-events:auto` when a tool is active; restore to `none` when tool is cancelled, so annotation `<div>`s inside the overlay remain clickable. |
 
 ---
 
 ## Implementation Checklist
 
-- [ ] **1 — Pydantic model** — Add `SpreadsheetBody` + `MAX_SPREADSHEET_BYTES = 10_000_000` to `routers/home_uploads_docs.py` alongside existing models. Confirm `base64` is already imported (it is, line 13).
-- [ ] **2 — PUT endpoint** — Add `PUT /{pid}/files/page/{fid}/spreadsheet` to `routers/home_uploads_docs.py` after `save_content`. Full auth + MIME + size guards. Uses existing `update_page_upload_size`.
-- [ ] **3 — Modal HTML** — Add `#upl-spreadsheet-modal` to `templates/partials/home_page_uploads.html` before the closing `/uploads-page-root` div. No `<script>` blocks. Match WOPI modal structure exactly.
-- [ ] **4 — New JS file** — Create `static/js/home-page-uploads-spreadsheet.js`. All `var`. Functions: `_uplSsLoadScript`, `_uplSsLoadStyle`, `_uplSsLoadLibs`, `_uplSsOpen`, `_uplSsRender`, `_uplSsShowError`, `_uplSsClose`, `_uplSsSave`. Under 600 lines.
-- [ ] **5 — base.html** — Add `<script defer src="...home-page-uploads-spreadsheet.js?v={{ static_v }}">` at line 587. One line only.
-- [ ] **6 — `_uplDocStudioInit`** — Add `canSpreadsheet` variable + `📊 Edit Spreadsheet` button push in `home-page-uploads-docs.js`. Place button after Collabora button, before Sign PDF.
-- [ ] **7 — Smoke test: CSV** — Upload a 3-column CSV → click 📊 Edit Spreadsheet → confirm grid renders with correct data → edit cell → Save → re-open → confirm edit persisted on disk.
-- [ ] **8 — Smoke test: XLSX** — Same flow with an XLSX file → confirm bytes written correctly (re-download, open in Excel/LibreOffice, verify edits appear).
-- [ ] **9 — Smoke test: read-only guard** — Open a note-src CSV file → confirm 📊 Edit Spreadsheet button is absent (button only added when `f.src === 'page'`).
-- [ ] **10 — Smoke test: multi-sheet toast** — Upload a 2-sheet XLSX → open editor → confirm toast warns "Showing sheet 1 of 2. Save will keep only this sheet."
-- [ ] **11 — Smoke test: demo mode** — Enable demo user, upload XLSX, try save → confirm `_demo_guard` returns 403 toast, file unchanged on disk.
-- [ ] **12 — bookworm-template-audit** — Pass exact files changed and what was modified. Specifically: new JS file uses `var`, `base.html` has `?v={{ static_v }}`, no `<script>` inside the partial template.
-- [ ] **13 — bookworm-pre-commit** — Pass files staged. Confirm no temp debug files, no hardcoded secrets.
-- [ ] **14 — bookworm-docs-keeper** — Update CODEPUPPY_NOTES.md: new endpoint row in key file map, new JS file row, Phase 7 complete entry in Features Completed section.
+- [ ] 1. `database.py` — paste `CREATE TABLE IF NOT EXISTS pdf_annotations` + `CREATE INDEX IF NOT EXISTS idx_pdf_annot_file` inside `init_db()`, after existing `page_upload_tags` block.
+- [ ] 2. `routers/uploads_docs_db.py` — add `get_annotations`, `create_annotation`, `update_annotation`, `delete_annotation` functions (exact SQL from plan above).
+- [ ] 3. `routers/home_uploads_docs.py` — add `AnnotationBody` Pydantic model (with `type` validator). Extend imports from `uploads_docs_db`. Add all 4 route handlers following the exact guard sequence in this plan.
+- [ ] 4. `templates/partials/home_page_uploads.html` — insert `#upl-annot-modal` block after `</div>{# end #upl-spreadsheet-modal #}`, before `</div>{# /uploads-page-root #}`.
+- [ ] 5. `static/js/home-page-uploads-annot.js` — create new file. Implement all state vars, CDN loader, and all 9 public/private functions per spec above.
+- [ ] 6. `templates/base.html` — add `<script defer src="/static/js/home-page-uploads-annot.js?v={{ static_v }}"></script>` after spreadsheet.js line.
+- [ ] 7. `static/js/home-page-uploads-docs.js` — add `canAnnotate` var after existing capability vars; add `📝 Annotate PDF` button push after `✍️ Sign PDF`.
+- [ ] 8. Restart server (`cmd /c restart.bat`), then run `_health_check.py`.
+- [ ] 9. Manual smoke test: open an Uploads page, select a PDF, click `📝 Annotate PDF`. Confirm PDF renders. Test Highlight (click → yellow overlay). Test Sticky (click → editable yellow card, blur saves). Test Text Box (click → editable white box). Test page nav on a multi-page PDF. Test delete (✕ on annotation). Reload modal — confirm annotations persisted.
+- [ ] 10. Run **bookworm-db-migration** with the new SQL.
+- [ ] 11. Run **bookworm-template-audit** — pass: `home_page_uploads.html`, `base.html`, `home-page-uploads-annot.js`, `home-page-uploads-docs.js`.
+- [ ] 12. Run **bookworm-qa** — pass: new annotation endpoints + modal smoke test + regression check (Sign PDF, Spreadsheet Editor still work).
+- [ ] 13. Run **bookworm-pre-commit**.
+- [ ] 14. Run **bookworm-docs-keeper** — update `pdf_annotations` in schema section, new JS file in key file map, Phase 8 note in `home_uploads_docs.py` description.
+- [ ] 15. Commit: `feat(uploads): PDF annotations overlay — Phase 8 B2`.
 
 ---
 
 ## Open Questions
 
-1. **UX: two buttons for XLSX/CSV when Collabora is configured?**
-   Both XLSX and CSV are already in `_WOPI_MIMES`, so when `BW_COLLABORA_URL` is set, both file types get an "🖊️ Edit in Collabora" button AND (with this feature) a "📊 Edit Spreadsheet" button. **Recommendation: keep both.** Jspreadsheet is zero-config and works offline; Collabora requires server setup and a running Docker service. Users without Collabora get only Jspreadsheet. Users with Collabora can choose. Confirm this UX with the team.
-
-2. **Multi-sheet XLSX preservation**
-   v1 saves only the first sheet, silently discarding sheets 2+. The toast warning mitigates user surprise. If multi-sheet support is needed before ship, flag it now — it requires a sheet-tab switcher UI and tracking which sheet is active. Recommend punting to a future revision.
-
-3. **Jspreadsheet CE license compatibility**
-   Jspreadsheet CE is MIT-licensed for personal/open-source. Confirm with Walmart open-source policy that MIT-licensed code is acceptable in this internal tool. If a commercial license is required, evaluate [Handsontable Community Edition](https://github.com/handsontable/handsontable) (MIT) or a pure SheetJS + plain `<table>` contenteditable approach as fallback.
-
-4. **Large files near 10 MB limit**
-   A 10 MB XLSX with thousands of rows may be slow to parse in-browser on older hardware. Consider a client-side row count warning: if SheetJS parses >10,000 rows, show a banner: "Large file — editing may be slow." No action needed unless users report sluggishness.
-
-5. **CDN availability behind Walmart proxy**
-   `cdn.jsdelivr.net` and `cdn.sheetjs.com` may be blocked on Eagle WiFi behind the Walmart proxy. Since the CDN scripts are loaded lazily, a CDN outage just means the modal shows an error toast (controlled by `.catch` in `_uplSsOpen`) rather than breaking the rest of Document Studio. For air-gapped environments, the fix is vendoring the JS files into `static/js/vendor/` — out of scope for v1, but worth noting.
+1. **Download endpoint path** — the JS fetches PDF bytes via the existing download route. Confirm the exact path is `/home/uploads/{pid}/files/{src}/{fid}/download` (check `home_uploads.py` `@router.get("/{page_id}/files/{src}/{file_id}/download")`). If the route returns a `FileResponse` (not JSON), `response.arrayBuffer()` is correct — verify it isn't content-negotiated differently.
+2. **Scale factor** — `scale: 1.5` is a reasonable default for 1080p screens. Consider exposing a zoom control (`+` / `-` buttons) in a follow-on. Not needed for Phase 8.
+3. **Multi-user visibility** — current plan scopes annotations to `user_id`. If the team later wants shared annotations, the `user_id` ownership model needs a separate `visibility` column and a query change. Out of scope for Phase 8.
+4. **Highlight resize** — annotation divs are fixed-size on create. Drag-to-resize is a Phase 9 enhancement. Out of scope here.
