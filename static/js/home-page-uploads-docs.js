@@ -441,7 +441,7 @@ function _uplViewerDocxSetup(htmlEl, html) {
     '<div class="bw-word-scroll" id="bw-word-scroll">' +
       '<div class="bw-word-paper bw-doc-viewer">' + html + '</div>' +
     '</div>';
-}}
+}
 
 function _uplFileViewerClose() {
   var modal   = document.getElementById('upl-file-viewer-modal');
