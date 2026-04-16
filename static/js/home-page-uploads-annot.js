@@ -27,6 +27,44 @@ var _uplAnnotState = {
   busy:   false,  // prevent double-submit on click-to-add
 };
 
+// View orientation — rotation degrees (0/90/180/270) + H/V flip flags.
+// Applied as CSS transform on canvas-wrap so canvas + overlay + draw-canvas
+// all transform together. Purely cosmetic; reverts on close.
+var _uplAnnotOrient = { rot: 0, flipH: false, flipV: false };
+
+/** Apply current _uplAnnotOrient as a CSS transform on the canvas wrapper. */
+function _uplAnnotApplyOrient() {
+  var wrap = _annotEl('upl-annot-canvas-wrap');
+  if (!wrap) return;
+  var t = '';
+  if (_uplAnnotOrient.rot)   t += 'rotate(' + _uplAnnotOrient.rot + 'deg) ';
+  if (_uplAnnotOrient.flipH) t += 'scaleX(-1) ';
+  if (_uplAnnotOrient.flipV) t += 'scaleY(-1) ';
+  wrap.style.transform       = t.trim() || '';
+  wrap.style.transformOrigin = '50% 50%';
+}
+
+/** Rotate view by ±90°. */
+function _uplAnnotRotate(delta) {
+  _uplAnnotOrient.rot = ((_uplAnnotOrient.rot + delta) % 360 + 360) % 360;
+  _uplAnnotApplyOrient();
+}
+
+/** Toggle horizontal or vertical flip. axis = 'H' or 'V'. */
+function _uplAnnotFlip(axis) {
+  if (axis === 'H') _uplAnnotOrient.flipH = !_uplAnnotOrient.flipH;
+  else              _uplAnnotOrient.flipV = !_uplAnnotOrient.flipV;
+  _uplAnnotApplyOrient();
+}
+
+/** Reset rotation + flip to original orientation. */
+function _uplAnnotRevertOrient() {
+  _uplAnnotOrient.rot   = 0;
+  _uplAnnotOrient.flipH = false;
+  _uplAnnotOrient.flipV = false;
+  _uplAnnotApplyOrient();
+}
+
 // G11: Track whether the overlay mousedown started ON the overlay itself.
 // Prevents drag-release-outside-textarea from firing a new annotation.
 var _annotOverlayMdOnSelf = false;
@@ -176,6 +214,7 @@ function _uplAnnotClose() {
   // Cancel any active tool + restore overlay
   if (_uplAnnotState.tool) _uplAnnotAddMode(_uplAnnotState.tool);
   _uplAnnotPenStop();
+  _uplAnnotRevertOrient();   // always reset to original orientation on close
   _uplAnnotPdfDoc = null;
   _uplAnnotFile = null;
   _uplAnnotState.page = 0;
@@ -795,6 +834,12 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
     '    <span id="_av-zoom" style="font-size:11px;color:#6b7280;min-width:36px;text-align:center;">150%</span>' +
     '    <button onclick="_avZoom(0.25)"  style="' + _AV_BTN + '">&#43;</button>' +
     '    <button onclick="_avFit()"        style="' + _AV_BTN + '" title="AutoFit to window">&#8633; AutoFit</button>' +
+    '    <span style="width:1px;height:16px;background:#d1d5db;margin:0 2px;"></span>' +
+    '    <button onclick="_avRotate(-90)"  style="' + _AV_BTN + '" title="Rotate left 90°">&#10554;</button>' +
+    '    <button onclick="_avRotate(90)"   style="' + _AV_BTN + '" title="Rotate right 90°">&#10555;</button>' +
+    '    <button onclick="_avFlip(&quot;H&quot;)"    style="' + _AV_BTN + '" title="Flip horizontal">&#8596;</button>' +
+    '    <button onclick="_avFlip(&quot;V&quot;)"    style="' + _AV_BTN + '" title="Flip vertical">&#8597;</button>' +
+    '    <button onclick="_avRevert()"      style="' + _AV_BTN + '" title="Revert to original orientation">&#8617; Revert</button>' +
     '  </div>' +
     '  <div id="_av-scroll" style="flex:1;overflow:auto;background:#525659;display:flex;' +
     '       justify-content:center;align-items:flex-start;padding:12px;">' +
@@ -919,6 +964,30 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
     });
   };
 
+  // View orientation — CSS transform on _av-wrap (canvas + overlay rotate together)
+  var avRot = 0, avFlipH = false, avFlipV = false;
+  function avApplyOrient() {
+    var w = avEl('_av-wrap'); if (!w) return;
+    var t = '';
+    if (avRot)   t += 'rotate(' + avRot + 'deg) ';
+    if (avFlipH) t += 'scaleX(-1) ';
+    if (avFlipV) t += 'scaleY(-1) ';
+    w.style.transform       = t.trim() || '';
+    w.style.transformOrigin = '50% 50%';
+  }
+  window._avRotate = function(d) {
+    avRot = ((avRot + d) % 360 + 360) % 360;
+    avApplyOrient();
+  };
+  window._avFlip = function(axis) {
+    if (axis === 'H') avFlipH = !avFlipH; else avFlipV = !avFlipV;
+    avApplyOrient();
+  };
+  window._avRevert = function() {
+    avRot = 0; avFlipH = false; avFlipV = false;
+    avApplyOrient();
+  };
+
   // Bootstrap: load PDF.js, fetch PDF bytes, load annotations
   var fUrl = '/uploads/' + encodeURIComponent(f.filename) + '?v=' + Date.now();
   var annotUrl = '/home/uploads/' + pid + '/files/page/' + f.id + '/annotations';
@@ -944,5 +1013,9 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
   }).catch(function() {});
 
   // Return cleanup function — called by _uplFileViewerClose
-  return function() { stopped = true; pdfDoc = null; delete window._avNav; delete window._avZoom; delete window._avFit; };
+  return function() {
+    stopped = true; pdfDoc = null;
+    delete window._avNav; delete window._avZoom; delete window._avFit;
+    delete window._avRotate; delete window._avFlip; delete window._avRevert;
+  };
 }

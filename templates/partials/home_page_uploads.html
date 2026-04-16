@@ -492,6 +492,29 @@
                    hover:text-white hover:border-zinc-500 transition focus:outline-none"
             aria-label="Next page">&#8250;</button>
 
+    {# ── Orientation controls ── #}
+    <span class="mx-1 h-4 w-px bg-zinc-700 flex-shrink-0" aria-hidden="true"></span>
+    <button type="button" onclick="_uplAnnotRotate(-90)"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            title="Rotate left 90°" aria-label="Rotate left">&#10554;</button>
+    <button type="button" onclick="_uplAnnotRotate(90)"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            title="Rotate right 90°" aria-label="Rotate right">&#10555;</button>
+    <button type="button" onclick="_uplAnnotFlip('H')"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            title="Flip horizontal" aria-label="Flip horizontal">&#8596;</button>
+    <button type="button" onclick="_uplAnnotFlip('V')"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            title="Flip vertical" aria-label="Flip vertical">&#8597;</button>
+    <button type="button" onclick="_uplAnnotRevertOrient()"
+            class="px-2 py-1 text-xs rounded border border-zinc-700 text-zinc-300
+                   hover:text-white hover:border-zinc-500 transition focus:outline-none"
+            title="Revert to original orientation" aria-label="Revert orientation">&#8617; Revert</button>
+
     <button type="button" onclick="_uplAnnotClose()"
             class="ml-2 text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
                    rounded-lg px-3 py-1.5 text-xs font-medium transition
