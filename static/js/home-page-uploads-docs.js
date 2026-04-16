@@ -16,6 +16,8 @@ var _uplDocEditMode    = false;   // textarea edit active?
 // Viewer state (fullscreen modal)
 var _uplViewerCurrentFile = null;  // file object open in the viewer
 var _uplViewerRawText     = null;  // raw text for editable files (null when not text)
+var _uplViewerEditMode    = null;  // 'text' | 'docx' | null
+var _uplViewerDocxHtml    = null;  // cached docx HTML for cancel-back
 
 var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -317,12 +319,10 @@ async function _uplFileViewerOpen(f) {
   var embedEl  = document.getElementById('upl-viewer-embed');
   var htmlEl   = document.getElementById('upl-viewer-html');
   var titleEl  = document.getElementById('upl-viewer-title');
-  var editBtn  = document.getElementById('upl-viewer-edit-btn');
   if (!modal) return;
 
   _uplViewerCurrentFile = f;
   _uplViewerRawText     = null;
-  if (editBtn) editBtn.classList.add('hidden');
 
   if (titleEl) titleEl.textContent = f.original_name || 'File Viewer';
   modal.classList.remove('hidden');
@@ -362,19 +362,37 @@ async function _uplFileViewerOpen(f) {
     if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
     var data = await r.json();
-    if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
-    // Show Edit button for editable text (page-src only)
-    var isEditable = (data.content_type === 'text') && (f.src === 'page');
-    if (editBtn && isEditable) {
-      _uplViewerRawText = data.content;
-      editBtn.classList.remove('hidden');
+
+    var isTextEditable = (data.content_type === 'text') && (f.src === 'page');
+    var isDocxEditable = (data.content_type === 'docx_html') && (f.src === 'page');
+
+    if (isTextEditable) {
+      // Jump straight into edit mode — no read-only step
+      _uplViewerRawText  = data.content;
+      _uplViewerEditMode = 'text';
+      _uplViewerEnterEdit();
+      return;
     }
-    // Hint at bottom for non-editable cases
-    if (htmlEl && !isEditable && data.content_type !== 'csv_html') {
-      var hint = data.content_type === 'docx_html'
-        ? 'ℹ️ Word documents are read-only here. Use <strong>→ TXT</strong> in Document Studio to get an editable copy.'
-        : (f.src === 'note' ? '🔒 Note attachments are read-only.' : '');
-      if (hint) htmlEl.innerHTML += '<p style="font-size:.7rem;color:#9ca3af;margin-top:2rem;padding-top:1rem;border-top:1px solid #f3f4f6">' + hint + '</p>';
+
+    if (htmlEl) htmlEl.innerHTML = _uplViewerHtmlForType(data.content, data.content_type);
+
+    if (isDocxEditable) {
+      // Cache the formatted HTML so Cancel can restore it
+      _uplViewerDocxHtml = data.content;
+      // Inject an "Edit as TXT" button at the bottom of the content
+      var editBar = document.createElement('div');
+      editBar.style.cssText = 'margin-top:2rem;padding-top:1rem;border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap';
+      editBar.innerHTML =
+        '<span style="font-size:.7rem;color:#9ca3af">✏️ Want to edit this document?</span>' +
+        '<button onclick="_uplViewerDocxEnterEdit()"' +
+        '  style="font-size:.7rem;padding:.3rem .75rem;border-radius:.5rem;border:1px solid #0053e2;' +
+        '         color:#0053e2;background:transparent;cursor:pointer;transition:background .15s"' +
+        '  onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'transparent\'">' +
+        '  Edit as TXT</button>';
+      if (htmlEl) htmlEl.appendChild(editBar);
+    } else if (f.src === 'note' && (data.content_type === 'text' || data.content_type === 'docx_html')) {
+      // Read-only note attachment — just a small label
+      if (htmlEl) htmlEl.innerHTML += '<p style="font-size:.7rem;color:#9ca3af;margin-top:2rem;padding-top:1rem;border-top:1px solid #f3f4f6">🔒 Note attachments are read-only.</p>';
     }
   } catch(err) {
     if (htmlEl) htmlEl.innerHTML = '<p class="text-red-500 text-xs text-center mt-8">' + _uplEsc(String(err)) + '</p>';
@@ -398,20 +416,32 @@ function _uplViewerHtmlForType(content, contentType) {
 function _uplFileViewerClose() {
   var modal   = document.getElementById('upl-file-viewer-modal');
   var embedEl = document.getElementById('upl-viewer-embed');
-  var editBtn = document.getElementById('upl-viewer-edit-btn');
   if (!modal) return;
   modal.classList.add('hidden');
   if (embedEl) embedEl.src = '';
-  if (editBtn) editBtn.classList.add('hidden');
   _uplViewerCurrentFile = null;
   _uplViewerRawText     = null;
+  _uplViewerEditMode    = null;
+  _uplViewerDocxHtml    = null;
 }
 
-// ── Viewer inline editor (plain text / JSON, page-src only) ──────────────────
+// ── Viewer: DOCX → plain-text edit entry point ───────────────────────────────
+
+function _uplViewerDocxEnterEdit() {
+  // Extract plain text from the cached docx_html using a throwaway DOM node.
+  // Safe: docx_html comes from _docx_body_to_html() on the server (no scripts).
+  var tmp = document.createElement('div');
+  tmp.innerHTML = _uplViewerDocxHtml || '';
+  var plain = (tmp.textContent || tmp.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+  _uplViewerRawText  = plain;
+  _uplViewerEditMode = 'docx';
+  _uplViewerEnterEdit();
+}
+
+// ── Viewer inline editor (text / JSON / docx-as-txt, page-src only) ──────────
 
 function _uplViewerEnterEdit() {
-  var htmlEl  = document.getElementById('upl-viewer-html');
-  var editBtn = document.getElementById('upl-viewer-edit-btn');
+  var htmlEl = document.getElementById('upl-viewer-html');
   if (!htmlEl || _uplViewerRawText === null) return;
   // Override parent padding/overflow so the textarea can fill it properly
   htmlEl.style.overflow = 'hidden';
@@ -419,43 +449,60 @@ function _uplViewerEnterEdit() {
   htmlEl.style.display  = 'flex';
   htmlEl.style.flexDirection = 'column';
   htmlEl.style.gap = '8px';
-  // Build shell empty — textarea text set via .value to avoid RCDATA injection
+  var modeNote = _uplViewerEditMode === 'docx'
+    ? '<p style="font-size:.7rem;color:#f59e0b;margin:0;flex-shrink:0">' +
+      '\u26a0\ufe0f Editing as plain text. Save will create a new .txt file — the original Word file is unchanged.</p>'
+    : '';
+  var cancelLabel = _uplViewerEditMode === 'text' ? 'Close' : 'Cancel';
+  // Textarea text is set via .value to avoid RCDATA injection
   htmlEl.innerHTML =
+    modeNote +
     '<textarea id="upl-viewer-textarea" spellcheck="false"' +
     '  style="flex:1;min-height:0;font-family:monospace;font-size:.75rem;' +
     '         border:1px solid #e5e7eb;border-radius:.75rem;padding:12px;' +
-    '         background:#fff;color:#1f2937;outline:none;resize:none;' +
-    '         line-height:1.6" ' +
+    '         background:#fff;color:#1f2937;outline:none;resize:none;line-height:1.6" ' +
     '  class="focus:ring-2 focus:ring-[#0053e2] dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700">' +
     '</textarea>' +
     '<div style="display:flex;gap:8px;justify-content:flex-end;flex-shrink:0">' +
     '  <button type="button" onclick="_uplViewerCancelEdit()"' +
     '          class="px-4 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600' +
     '                 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">' +
-    '    Cancel</button>' +
+    '    ' + cancelLabel + '</button>' +
     '  <button id="upl-viewer-save-btn" type="button" onclick="_uplViewerSaveEdit()"' +
     '          class="px-4 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-[#003eb3] transition">' +
     '    Save</button>' +
     '</div>';
-  if (editBtn) editBtn.classList.add('hidden');
   var ta = document.getElementById('upl-viewer-textarea');
   if (ta) { ta.value = _uplViewerRawText; ta.focus(); }
 }
 
 function _uplViewerCancelEdit() {
-  var htmlEl  = document.getElementById('upl-viewer-html');
-  var editBtn = document.getElementById('upl-viewer-edit-btn');
-  // Restore parent to normal read-mode styles
-  if (htmlEl) {
-    htmlEl.style.overflow    = '';
-    htmlEl.style.padding     = '';
-    htmlEl.style.display     = '';
-    htmlEl.style.flexDirection = '';
-    htmlEl.style.gap         = '';
-    if (_uplViewerRawText !== null)
-      htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerRawText, 'text');
+  var htmlEl = document.getElementById('upl-viewer-html');
+  if (_uplViewerEditMode === 'text') {
+    // Auto-edit mode — nothing to return to, just close the viewer
+    _uplFileViewerClose();
+    return;
   }
-  if (editBtn) editBtn.classList.remove('hidden');
+  // docx mode — restore the formatted HTML view and re-inject the edit button
+  if (htmlEl) {
+    htmlEl.style.overflow = '';
+    htmlEl.style.padding  = '';
+    htmlEl.style.display  = '';
+    htmlEl.style.flexDirection = '';
+    htmlEl.style.gap = '';
+    htmlEl.innerHTML = _uplViewerHtmlForType(_uplViewerDocxHtml, 'docx_html');
+    var editBar = document.createElement('div');
+    editBar.style.cssText = 'margin-top:2rem;padding-top:1rem;border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap';
+    editBar.innerHTML =
+      '<span style="font-size:.7rem;color:#9ca3af">\u270f\ufe0f Want to edit this document?</span>' +
+      '<button onclick="_uplViewerDocxEnterEdit()"' +
+      '  style="font-size:.7rem;padding:.3rem .75rem;border-radius:.5rem;border:1px solid #0053e2;' +
+      '         color:#0053e2;background:transparent;cursor:pointer">' +
+      '  Edit as TXT</button>';
+    htmlEl.appendChild(editBar);
+  }
+  _uplViewerEditMode = null;
+  _uplViewerRawText  = null;
 }
 
 async function _uplViewerSaveEdit() {
@@ -466,20 +513,40 @@ async function _uplViewerSaveEdit() {
   var text = ta.value;
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    var r = await fetch(
-      '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/content',
-      { method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }) }
-    );
+    var r;
+    if (_uplViewerEditMode === 'docx') {
+      // Save extracted text as a new .txt file (leaves original Word file intact)
+      r = await fetch(
+        '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/save-as-txt',
+        { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: text }) }
+      );
+    } else {
+      // Overwrite the existing text file in-place
+      r = await fetch(
+        '/home/uploads/' + _uplPid + '/files/page/' + f.id + '/content',
+        { method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: text }) }
+      );
+    }
     var ct = r.headers.get('content-type') || '';
     if (ct.includes('text/html')) throw new Error('Session expired — please refresh.');
     if (!r.ok) { var e = await r.json(); throw new Error(e.detail || r.status); }
-    _uplViewerRawText = text;   // update stored copy so Cancel still works
-    _uplShowToast('Saved \u2713');
-    _uplViewerCancelEdit();     // exit edit mode, show updated pre
+    var data = await r.json();
+    if (_uplViewerEditMode === 'text') {
+      _uplViewerRawText = text;   // keep for re-entry
+    }
+    var label = _uplViewerEditMode === 'docx'
+      ? 'Saved as ' + _uplEsc(data.file.original_name) + ' ✓'
+      : 'Saved ✓';
+    _uplShowToast(label);
+    // Refresh the file grid so the new / updated file appears
+    await _uplFetch(_uplMeta.page || 1);
+    _uplFileViewerClose();
   } catch(err) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
-    _uplShowToast('Save failed: ' + _uplEsc(String(err)), true);
+    _uplShowToast('Save failed: ' + _uplEsc(String(err)));
   }
 }

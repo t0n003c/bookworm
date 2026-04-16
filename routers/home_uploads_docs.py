@@ -60,6 +60,10 @@ class SignPlacement(BaseModel):
     page_num: int = 0
 
 
+class SaveAsTxtBody(BaseModel):
+    content: str
+
+
 class SignBody(BaseModel):
     signature_data: str              # data:image/png;base64,…
     page_num: int = 0                # legacy single-placement fallback
@@ -469,16 +473,51 @@ async def remove_stamp(request: Request, page_id: int, file_id: int):
     return JSONResponse({"ok": True, "size": size})
 
 
+# ── POST /{pid}/files/page/{id}/save-as-txt ─────────────────────────────────
+
+@router.post("/{page_id}/files/page/{file_id}/save-as-txt")
+async def save_as_txt(request: Request, page_id: int, file_id: int, body: SaveAsTxtBody):
+    """Save caller-supplied text as a brand-new .txt page upload.
+    Used by the viewer's 'Edit as TXT' flow for Word documents.
+    """
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+
+    row = await get_page_upload_owned(file_id, uid)
+    if not row:
+        raise HTTPException(status_code=404)
+
+    if len(body.content.encode()) > MAX_EDIT_BYTES:
+        raise HTTPException(status_code=400, detail="Content too large (max 1 MB)")
+
+    data      = body.content.encode("utf-8")
+    stem      = row["original_name"].rsplit(".", 1)[0]
+    out_name  = f"{stem}.txt"
+    stored    = f"{uuid.uuid4().hex}.txt"
+    (UPLOAD_DIR / stored).write_bytes(data)
+    new_id = await create_page_upload(
+        page_id, uid, stored, out_name, "text/plain", len(data)
+    )
+    return JSONResponse({"ok": True, "file": {
+        "id": new_id, "original_name": out_name, "size": len(data),
+    }})
+
+
 # ── PDF signing helpers ───────────────────────────────────────────────────────
 
 def _page_rotation(page) -> int:
     """Return the page's /Rotate value normalised to 0, 90, 180, or 270."""
     try:
-        rot = int(getattr(page, "rotation", None) or
-                  page.get("/Rotate", 0) or 0)
+        rot = getattr(page, "rotation", None)
+        if rot is None:
+            rot = int(page.get("/Rotate", 0) or 0)
+        return int(rot) % 360
     except Exception:
-        rot = 0
-    return rot % 360
+        return 0
 
 
 def _stamp_one_page(
@@ -491,11 +530,11 @@ def _stamp_one_page(
     Build a reportlab overlay for ONE page, handling page rotation so the
     signature always appears right-side-up at the visual click position.
 
-    Coordinate transforms (derived from PDF /Rotate spec):
+    Coordinate transforms (derived from PDF /Rotate CW rotation matrices):
       R=0:   raw_cx = W*x,      raw_cy = H*(1-y)
-      R=90:  raw_cx = W*(1-y),  raw_cy = H*(1-x)   sig pre-rotated CW 90°
+      R=90:  raw_cx = W*y,      raw_cy = H*x        sig pre-rotated CCW 90°
       R=180: raw_cx = W*(1-x),  raw_cy = H*y        sig pre-rotated 180°
-      R=270: raw_cx = W*y,      raw_cy = H*x        sig pre-rotated CCW 90°
+      R=270: raw_cx = W*(1-y),  raw_cy = H*(1-x)   sig pre-rotated CW 90°
     """
     import PIL.Image
     from reportlab.lib.utils import ImageReader
@@ -506,9 +545,9 @@ def _stamp_one_page(
     pg_w   = float(target_page.mediabox.width)
     pg_h   = float(target_page.mediabox.height)
 
-    # PIL rotation to counteract the page rotation (PIL +ve = CCW).
-    # For R=90 CCW page: pre-rotate sig CW 90° → PIL(270).
-    pil_rot = {0: 0, 90: 270, 180: 180, 270: 90}.get(rot, 0)
+    # PIL rotation (PIL +ve = CCW) to counteract the CW display rotation.
+    # R=90 CW display → pre-rotate sig 90° CCW in raw space → PIL(90).
+    pil_rot = rot  # 0→0, 90→90, 180→180, 270→270
     if pil_rot:
         draw_img = sig_img.rotate(pil_rot, expand=True)
     else:
@@ -532,19 +571,24 @@ def _stamp_one_page(
         raw_sig_w = vis_sig_w
         raw_sig_h = vis_sig_h
 
-    # Compute raw centre of the sig from visual click percentages.
+    # Coordinate transforms (visual CSS % → raw PDF pts).
+    # Derived from PDF /Rotate spec rotation matrices:
+    #   R=0:   standard, just flip y for PDF bottom-up origin
+    #   R=90 CW:  axes swap, no inversion
+    #   R=180:  both axes inverted, but y inverted back by PDF flip
+    #   R=270 CW: axes swap + both inverted
     if rot == 0:
         raw_cx = pg_w * x_pct
         raw_cy = pg_h * (1.0 - y_pct)
     elif rot == 90:
-        raw_cx = pg_w * (1.0 - y_pct)
-        raw_cy = pg_h * (1.0 - x_pct)
+        raw_cx = pg_w * y_pct
+        raw_cy = pg_h * x_pct
     elif rot == 180:
         raw_cx = pg_w * (1.0 - x_pct)
         raw_cy = pg_h * y_pct
     else:  # 270
-        raw_cx = pg_w * y_pct
-        raw_cy = pg_h * x_pct
+        raw_cx = pg_w * (1.0 - y_pct)
+        raw_cy = pg_h * (1.0 - x_pct)
 
     # Bottom-left corner, clamped within page bounds.
     x_pt = max(0.0, min(raw_cx - raw_sig_w / 2.0, pg_w - raw_sig_w))
