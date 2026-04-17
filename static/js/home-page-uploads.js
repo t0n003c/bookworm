@@ -479,16 +479,17 @@ function _uplRenderDetail(f) {
         + expandBtn
         + '</div>';
     } else {
-      // PDF — browser native embed. Fast, shows images and layout accurately.
-      // The browser's built-in viewer can't be CSS-themed (hard browser limit).
-      // In dark mode we add a dark background + inset padding so the white
-      // page looks like a "document on a desk" rather than a harsh white slab.
-      var pdfPad = isDark ? 'padding:6px;box-sizing:border-box;' : '';
-      zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
-        + 'background:' + previewBg + ';' + pdfPad
+      // PDF — render page 1 via PDF.js into a <canvas> (same engine as the
+      // fullscreen viewer). Canvas is a normal DOM element so the container
+      // dark background works, the scrollbar is CSS-styleable, and images/
+      // layout render faithfully. _uplFetchPdfCanvas() does the async work.
+      zone1 = '<div style="flex-shrink:0;height:13rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
-        + '<embed src="' + fUrl + '" type="application/pdf"'
-        + ' style="width:100%;height:100%;border:0;display:block" tabindex="-1">'
+        + '<div id="upl-pdf-canvas-wrap"'
+        + ' style="height:100%;overflow-y:auto;overscroll-behavior-y:contain;'
+        + 'padding:.5rem;background:' + previewBg + '">'
+        + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
+        + '</div>'
         + expandBtn
         + '</div>';
     }
@@ -508,6 +509,7 @@ function _uplRenderDetail(f) {
 
   if (isText) _uplFetchTextPreview(fUrl);
   if (isDocx) _uplFetchDocxPreview(f);
+  if (isPdf)  _uplFetchPdfCanvas(fUrl);
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
 }

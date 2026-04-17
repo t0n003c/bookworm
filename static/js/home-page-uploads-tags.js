@@ -154,8 +154,54 @@ async function _uplFetchDocxPreview(f) {
   }
 }
 
+// Renders PDF page 1 into a <canvas> via PDF.js (same engine as fullscreen
+// viewer). This keeps the preview inside a normal DOM element so dark-mode
+// background, scrollbar theming, and layout all work correctly.
+var _PDFJS_LIB_CDN  = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+var _PDFJS_WRKR_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-async function _uplLoadAllTags() {
+async function _uplFetchPdfCanvas(fileUrl) {
+  var wrap = document.getElementById('upl-pdf-canvas-wrap');
+  if (!wrap) return;
+
+  try {
+    // Lazy-load PDF.js from CDN if not already present
+    if (!window.pdfjsLib) {
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = _PDFJS_LIB_CDN;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = _PDFJS_WRKR_CDN;
+
+    var pdf  = await window.pdfjsLib.getDocument({ url: fileUrl, withCredentials: true }).promise;
+    var page = await pdf.getPage(1);
+
+    // Scale the page so it fills the wrap width
+    var wrapW  = wrap.clientWidth || 260;
+    var vpBase = page.getViewport({ scale: 1 });
+    var scale  = (wrapW - 8) / vpBase.width;   // 8px breathing room
+    var vp     = page.getViewport({ scale: scale });
+
+    var canvas = document.createElement('canvas');
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+    canvas.style.cssText = 'display:block;max-width:100%;border-radius:4px;';
+
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+
+    wrap.innerHTML = '';
+    wrap.appendChild(canvas);
+  } catch(e) {
+    if (wrap) {
+      wrap.innerHTML = '<p style="font-size:10px;color:#9ca3af;font-style:italic">Preview unavailable.</p>';
+    }
+  }
+}
+
   try {
     const r = await fetch(`/home/uploads/${_uplPid}/tags`);
     if (!r.ok) return;
