@@ -149,6 +149,65 @@ async def read_content(request: Request, page_id: int, src: str, file_id: int):
     raise HTTPException(status_code=400, detail="Content read not supported for this file type")
 
 
+# Relationship namespace — attributes that hold rId references inside DOCX XML
+_R_NS   = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_R_ATTRS = [
+    f"{{{_R_NS}}}embed",   # inline images
+    f"{{{_R_NS}}}link",    # linked images / hyperlink targets
+    f"{{{_R_NS}}}id",      # charts, OLE objects, etc.
+]
+_R_IMAGE_RELTYPE = f"{_R_NS}/image"
+
+
+def _docx_remap_rids(element, src_part, dst_part) -> None:
+    """
+    Walk *element* (an lxml Element freshly deepcopy-ed from a source document)
+    and fix every relationship-ID attribute so it points to a valid part inside
+    *dst_part* (the merged document).
+
+    Without this, images/charts copied from a second document keep their
+    original rIds (e.g. rId5) which don't exist in the merged package, causing
+    Word to render them as broken embedded-object placeholders.
+
+    Images are routed through package.get_or_add_image_part() so that identical
+    image blobs are deduplicated by SHA hash — avoiding duplicate ZIP entries
+    that confuse some Word versions.
+    """
+    import io as _io
+    rId_map: dict[str, str] = {}
+
+    for el in element.iter():
+        for attr in _R_ATTRS:
+            old_rId = el.get(attr)
+            if old_rId is None:
+                continue
+            if old_rId in rId_map:
+                el.set(attr, rId_map[old_rId])
+                continue
+            if old_rId not in src_part.rels:
+                continue
+            src_rel = src_part.rels[old_rId]
+            try:
+                if src_rel.is_external:
+                    new_rId = dst_part.relate_to(
+                        src_rel.target_ref, src_rel.reltype, is_external=True
+                    )
+                elif src_rel.reltype == _R_IMAGE_RELTYPE:
+                    # Route images through the package API so SHA-identical blobs
+                    # are deduped and we never get duplicate ZIP entries.
+                    img_part = dst_part.package.get_or_add_image_part(
+                        _io.BytesIO(src_rel.target_part.blob)
+                    )
+                    new_rId = dst_part.relate_to(img_part, src_rel.reltype)
+                else:
+                    new_rId = dst_part.relate_to(src_rel.target_part, src_rel.reltype)
+            except Exception:
+                # Non-fatal: leave the attribute as-is rather than crash the merge
+                continue
+            rId_map[old_rId] = new_rId
+            el.set(attr, new_rId)
+
+
 def _docx_body_to_html(doc) -> str:  # type: ignore[annotation-unchecked]
     """Pure-XML walk of the body — no python-docx proxy constructors, no parent-chain issues."""
     W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -430,15 +489,14 @@ async def combine_files(request: Request, page_id: int, body: CombineBody):
         from docx import Document as _DocxDoc
         merged = _DocxDoc(str(UPLOAD_DIR / rows[0]["filename"]))
         for r in rows[1:]:
-            # Page break between documents
             merged.add_page_break()
             src_doc = _DocxDoc(str(UPLOAD_DIR / r["filename"]))
-            # Copy body elements; skip sectPr (section properties) to preserve
-            # the merged doc's own page size/margins.
             for element in src_doc.element.body:
                 if element.tag.endswith("}sectPr"):
                     continue
-                merged.element.body.append(copy.deepcopy(element))
+                el_copy = copy.deepcopy(element)
+                _docx_remap_rids(el_copy, src_doc.part, merged.part)
+                merged.element.body.append(el_copy)
         buf = io.BytesIO()
         merged.save(buf)
         data = buf.getvalue()
