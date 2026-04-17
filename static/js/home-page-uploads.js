@@ -358,6 +358,20 @@ function _uplCloseDetail() {
   if (panel) panel.classList.add('translate-x-full');
 }
 
+// Switch to wsId, wait for the note-list HTMX swap to finish, then open noteId
+// in the detail panel — all without a page reload.
+function _uplGotoNoteInWorkspace(wsId, noteId) {
+  _uplCloseDetail();
+  var nl = document.getElementById('note-list');
+  if (nl) {
+    nl.addEventListener('htmx:afterSwap', function _once() {
+      nl.removeEventListener('htmx:afterSwap', _once);
+      htmx.ajax('GET', '/notes/' + noteId, { target: '#detail-panel', swap: 'innerHTML' });
+    });
+  }
+  wsSingleClick(wsId);
+}
+
 function _uplRenderDetail(f) {
   const el = document.getElementById('uploads-detail-content');
   if (!el) return;
@@ -405,7 +419,7 @@ function _uplRenderDetail(f) {
          <p class="text-[10px] uppercase tracking-wide text-blue-400 mb-1 font-bold">\uD83D\uDCDD Attached to Note</p>
          <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate">${_uplEsc(f.note_title||'Untitled')}</p>
          <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.workspace_name||'')}</p>
-         ${f.workspace_id?`<button type="button" onclick="_uplCloseDetail();wsSingleClick(${f.workspace_id})" class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-lg font-medium bg-[#0053e2] hover:bg-[#0046c0] text-white transition">&#x1F4C2; Open workspace</button>`:''}
+         ${f.workspace_id?`<button type="button" onclick="_uplGotoNoteInWorkspace(${f.workspace_id},${f.note_id})" class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-lg font-medium bg-[#0053e2] hover:bg-[#0046c0] text-white transition">&#x1F4C2; Open workspace &amp; note</button>`:''}
          <button onclick="_uplDeleteNoteAttachment(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
