@@ -375,8 +375,9 @@ function _uplCatDragOver(event, targetId) {
 
   if (isFile) {
     // Files always land 'inside' a catalog — no 3-zone needed
+    // dropEffect must stay 'move' to match file card's effectAllowed='move'
     _CAT_RING.forEach(function(c) { el.classList.add(c); });
-    event.dataTransfer.dropEffect = 'copy';
+    event.dataTransfer.dropEffect = 'move';
     return;
   }
 
