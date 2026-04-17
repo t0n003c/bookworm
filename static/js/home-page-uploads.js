@@ -442,22 +442,23 @@ function _uplRenderDetail(f) {
         + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
         + '</div>';
     } else {
-      // PDF — embed sits below a transparent overlay.
-      // Overlay captures clicks (→ open viewer) AND hover badge.
-      // On wheel it briefly sets itself pointer-events:none so the next
-      // scroll tick reaches the embed natively — re-enables after scroll settles.
+      // PDF — overlay is pointer-events:none so scroll+click pass straight through
+      // to the embed (PDF viewer handles them natively). Only the small Expand
+      // button in the corner has pointer-events:auto, so it stays clickable
+      // without interfering with anything. No timers, no state.
       zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
         + ' style="width:100%;height:100%;border:0" tabindex="-1">'
-        + '<div id="upl-pdf-overlay"'
-        + ' style="position:absolute;inset:0;cursor:zoom-in;'
-        + 'display:flex;align-items:flex-end;justify-content:flex-end;padding:8px"'
-        + ' onclick="_uplFileViewerOpen(_uplCurrentDetail)">'
-        + '<span id="upl-pdf-expand-badge"'
-        + ' style="opacity:0;transition:opacity .15s;border-radius:8px;padding:3px 10px;'
-        + 'font-size:11px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.15);'
-        + 'background:rgba(255,255,255,.92);color:#1f2937">&#128269; Expand</span>'
+        + '<div style="position:absolute;inset:0;pointer-events:none">'
+        + '<button onclick="_uplFileViewerOpen(_uplCurrentDetail)"'
+        + ' style="position:absolute;bottom:8px;right:8px;pointer-events:auto;'
+        + 'border:0;border-radius:8px;padding:4px 10px;cursor:pointer;'
+        + 'font-size:11px;font-weight:600;'
+        + 'background:rgba(255,255,255,.92);color:#1f2937;'
+        + 'box-shadow:0 1px 4px rgba(0,0,0,.18)">'
+        + '&#128269; Expand'
+        + '</button>'
         + '</div>'
         + '</div>';
     }
@@ -476,33 +477,8 @@ function _uplRenderDetail(f) {
   }
 
   if (isText) _uplFetchTextPreview(fUrl);
-  if (isPdf)   _uplPdfOverlayInit();
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
-}
-
-// Wire the PDF overlay: hover badge + scroll-passthrough trick.
-// On wheel: overlay goes pointer-events:none for 120ms so scroll reaches the embed.
-// After scroll idle: overlay returns to auto so clicks still work.
-function _uplPdfOverlayInit() {
-  var overlay = document.getElementById('upl-pdf-overlay');
-  var badge   = document.getElementById('upl-pdf-expand-badge');
-  if (!overlay) return;
-
-  // Hover — show expand badge
-  overlay.addEventListener('mouseenter', function() { badge.style.opacity = '1'; });
-  overlay.addEventListener('mouseleave', function() { badge.style.opacity = '0'; });
-
-  // Scroll passthrough: briefly disable overlay so wheel reaches embed below,
-  // then re-enable once scroll has settled (150ms idle).
-  var _scrollTimer = null;
-  overlay.addEventListener('wheel', function() {
-    overlay.style.pointerEvents = 'none';
-    clearTimeout(_scrollTimer);
-    _scrollTimer = setTimeout(function() {
-      overlay.style.pointerEvents = 'auto';
-    }, 150);
-  }, { passive: true });
 }
 
 
