@@ -286,8 +286,13 @@ function _uplCard(f) {
     <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
                 dark:border-zinc-800 overflow-hidden shadow-sm cursor-pointer
                 hover:shadow-md hover:border-[#0053e2] dark:hover:border-blue-500 transition group"
-         data-upl-id="${f.id}" data-upl-src="${_uplEsc(f.src)}"
-         onclick="if(_uplDocSelectMode&&'${f.src}'==='page'){_uplDocToggleItem('${_uplJsStr(f.src)}',${f.id})}else{_uplOpenDetail('${_uplJsStr(f.src)}',${f.id})}">
+         data-upl-id="${f.id}" data-upl-src="${f.src}"
+         data-upl-file-key="${f.src}:${f.id}"
+         data-upl-folder-id="${f.folder_id != null ? f.folder_id : ''}"
+         draggable="true"
+         ondragstart="_dndOnFileDragStart(event,'${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'})"
+         ondragend="_dndOnFileDragEnd(event)"
+         onclick="if(event.ctrlKey||event.metaKey){event.stopPropagation();_dndSelToggle('${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'});return;}if(_uplDocSelectMode&&'${f.src}'==='page'){_uplDocToggleItem('${_uplJsStr(f.src)}',${f.id})}else{_uplOpenDetail('${_uplJsStr(f.src)}',${f.id})}">
       <div class="overflow-hidden">${thumb}</div>
       <div class="p-2.5">
         <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100

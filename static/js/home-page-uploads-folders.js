@@ -21,6 +21,9 @@ var _uplFldModalMode   = '';   // 'create' | 'rename'
 var _uplFldModalParent = null; // parent_id for 'create'
 var _uplFldModalTarget = null; // folder id for 'rename'
 
+// Drag state
+var _uplFldDragId = null;  // folder id currently being dragged (null = not dragging)
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 function _uplFolderEnterUploadsPage(pid) {
@@ -35,6 +38,9 @@ function _uplFolderEnterUploadsPage(pid) {
 
   // Switch sidebar to Folders tab
   if (typeof switchSidebarTab === 'function') switchSidebarTab('folders');
+
+  // Clear any prior lasso selection on page re-entry
+  if (typeof _dndReset === 'function') _dndReset();
 
   _uplFolderFetch();
 }
@@ -95,11 +101,14 @@ function _uplFolderRender() {
 
   var html = '';
 
-  // "All files" root node
+  // "All files" root node — also a file-drag drop target (move to root / unfile)
   var allActive = _uplFldActive === null;
   html += '<div class="flex items-center gap-1 group/row rounded-lg px-2 py-1.5 cursor-pointer transition ' +
     (allActive ? 'bg-blue-50 dark:bg-zinc-800 text-[#0053e2]' : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800') +
-    '" onclick="_uplFolderSelect(null)">' +
+    '" id="upl-fld-root-node" onclick="_uplFolderSelect(null)"' +
+    ' ondragover="_uplFldRootDragOver(event)"' +
+    ' ondragleave="_uplFldRootDragLeave(event)"' +
+    ' ondrop="_uplFldRootDrop(event)">' +
     '<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/></svg>' +
     '<span class="flex-1 text-xs font-semibold truncate">All files</span>' +
     '<button class="opacity-0 group-hover/row:opacity-100 transition p-0.5 rounded hover:bg-blue-100 dark:hover:bg-zinc-700 text-[#0053e2]" ' +
@@ -131,10 +140,17 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
     var hasChildren = !!(byParent[childKey] && byParent[childKey].length);
     var indent = depth * 12; // px
 
+    var parentIdArg = (f.parent_id !== null && f.parent_id !== undefined) ? f.parent_id : 'null';
     html += '<div style="padding-left:' + indent + 'px">' +
       '<div class="flex items-center gap-1 group/row rounded-lg px-2 py-1.5 cursor-pointer transition ' +
       (isActive ? 'bg-blue-50 dark:bg-zinc-800 text-[#0053e2]' : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800') +
-      '" onclick="_uplFolderSelect(' + f.id + ')">' +
+      '" data-fld-id="' + f.id + '"' +
+      ' draggable="true"' +
+      ' onclick="_uplFolderSelect(' + f.id + ')"' +
+      ' ondragstart="_uplFldDragStart(event,' + f.id + ')"' +
+      ' ondragover="_uplFldDragOver(event,' + f.id + ',' + parentIdArg + ',' + f.sort_order + ')"' +
+      ' ondragleave="_uplFldDragLeave(event,' + f.id + ')"' +
+      ' ondrop="_uplFldDrop(event,' + f.id + ',' + parentIdArg + ',' + f.sort_order + ')">' +
       '<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
       (isActive
         ? '<path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v1"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 14l-9 5-9-5"/>'
@@ -269,6 +285,180 @@ function _uplFolderAssign(uploadId, folderId) {
       if (typeof _uplFetch === 'function') _uplFetch(1);
     })
     .catch(function(e) { console.error('[folders] assign error', e); });
+}
+
+// ── Folder drag-to-reparent / reorder ────────────────────────────────────────
+
+var _DND_HL = ['ring-2', 'ring-inset', 'ring-[#0053e2]', 'bg-blue-50', 'dark:bg-blue-900/20'];
+
+function _uplFldDragStart(event, id) {
+  _uplFldDragId = id;
+  event.dataTransfer.setData('application/x-upl-folder', String(id));
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+function _uplFldDragOver(event, targetId, targetParentId, targetSortOrder) {
+  event.preventDefault();
+  event.stopPropagation();
+  var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
+  var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
+  if (!isFile && !isFolder) return;
+  if (isFolder && _uplFldDragId === targetId) return;
+  var el = document.querySelector('[data-fld-id="' + targetId + '"]');
+  if (el) _DND_HL.forEach(function(c) { el.classList.add(c); });
+  event.dataTransfer.dropEffect = 'move';
+}
+
+function _uplFldDragLeave(event, targetId) {
+  var el = document.querySelector('[data-fld-id="' + targetId + '"]');
+  if (el) _DND_HL.forEach(function(c) { el.classList.remove(c); });
+}
+
+function _uplFldDrop(event, targetId, targetParentId, targetSortOrder) {
+  event.preventDefault();
+  event.stopPropagation();
+  _uplFldDragLeave(event, targetId);
+  var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
+  var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
+
+  if (isFile) {
+    if (typeof _dndFileDropOnFolder === 'function') _dndFileDropOnFolder(targetId);
+    return;
+  }
+  if (!isFolder || _uplFldDragId === null || _uplFldDragId === targetId) return;
+
+  var dragged    = null;
+  var dragParent = null;
+  _uplFldData.forEach(function(f) { if (f.id === _uplFldDragId) { dragged = f; dragParent = f.parent_id; } });
+  if (!dragged) return;
+
+  var sameParent = (dragged.parent_id === targetParentId) ||
+                   (dragged.parent_id == null && targetParentId == null);
+  if (sameParent) {
+    // Reorder siblings
+    var newOrder = _uplFldMidpointSort(_uplFldDragId, targetId, targetParentId);
+    _uplFolderReorderSort(_uplFldDragId, newOrder);
+  } else {
+    // Reparent — client-side circular guard
+    if (_uplFldIsDescendant(_uplFldDragId, targetId)) {
+      if (typeof _uplShowToast === 'function') _uplShowToast('Cannot move a folder into its own sub-folder.', true);
+      return;
+    }
+    _uplFolderMove(_uplFldDragId, targetId, false);
+  }
+  _uplFldDragId = null;
+}
+
+function _uplFldRootDragOver(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
+  var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
+  if (!isFile && !isFolder) return;
+  var el = document.getElementById('upl-fld-root-node');
+  if (el) _DND_HL.forEach(function(c) { el.classList.add(c); });
+  event.dataTransfer.dropEffect = 'move';
+}
+
+function _uplFldRootDragLeave(event) {
+  var el = document.getElementById('upl-fld-root-node');
+  if (el) _DND_HL.forEach(function(c) { el.classList.remove(c); });
+}
+
+function _uplFldRootDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  _uplFldRootDragLeave(event);
+  var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
+  var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
+
+  if (isFile) {
+    // Drop file onto root = unfile it (folder_id = null)
+    if (typeof _dndFileDropOnFolder === 'function') _dndFileDropOnFolder(null);
+    return;
+  }
+  if (isFolder && _uplFldDragId !== null) {
+    _uplFolderMove(_uplFldDragId, null, true);
+    _uplFldDragId = null;
+  }
+}
+
+function _uplFolderMove(draggedId, newParentId, useRoot) {
+  if (!_uplFldPid) return;
+  var body = useRoot ? { move_to_root: true } : { parent_id: newParentId };
+  fetch('/home/uploads/' + _uplFldPid + '/folders/' + draggedId, {
+    method: 'PATCH', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function() { _uplFolderFetch(); })
+    .catch(function(e) { console.error('[folders] move error', e); });
+}
+
+function _uplFolderReorderSort(draggedId, newSortOrder) {
+  if (!_uplFldPid) return;
+  fetch('/home/uploads/' + _uplFldPid + '/folders/' + draggedId, {
+    method: 'PATCH', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sort_order: newSortOrder }),
+  })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function() { _uplFolderFetch(); })
+    .catch(function(e) { console.error('[folders] reorder error', e); });
+}
+
+function _uplFldMidpointSort(draggedId, targetId, parentId) {
+  // Collect siblings (same parent, excluding dragged), sorted by sort_order
+  var siblings = _uplFldData.filter(function(f) {
+    return f.id !== draggedId &&
+           ((parentId == null && f.parent_id == null) || f.parent_id === parentId);
+  }).sort(function(a, b) { return a.sort_order - b.sort_order; });
+
+  var idx = -1;
+  siblings.forEach(function(f, i) { if (f.id === targetId) idx = i; });
+  if (idx === -1) return 0; // target not found, place at start
+
+  // Drop-before target: midpoint between predecessor and target
+  var prev = idx > 0 ? siblings[idx - 1].sort_order : (siblings[idx].sort_order - 20);
+  var curr = siblings[idx].sort_order;
+  var mid  = Math.floor((prev + curr) / 2);
+
+  if (mid === prev || mid === curr) {
+    // Gap collapsed — renumber all siblings 0, 10, 20, ... then recompute
+    var base = 0;
+    siblings.forEach(function(f, i) {
+      var newOrder = base + i * 10;
+      if (f.id !== draggedId) {
+        fetch('/home/uploads/' + _uplFldPid + '/folders/' + f.id, {
+          method: 'PATCH', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sort_order: newOrder }),
+        }).catch(function() {});
+      }
+    });
+    // Return slot just before re-numbered target
+    return idx === 0 ? -5 : (idx - 1) * 10 + 5;
+  }
+  return mid;
+}
+
+function _uplFldIsDescendant(dragId, candidateParentId) {
+  if (candidateParentId === null || candidateParentId === undefined) return false;
+  if (candidateParentId === dragId) return true;
+  var visited = {};
+  var current = candidateParentId;
+  var byId    = {};
+  _uplFldData.forEach(function(f) { byId[f.id] = f; });
+  while (current !== null && current !== undefined) {
+    if (visited[current]) break;
+    visited[current] = true;
+    var node = byId[current];
+    if (!node) break;
+    if (node.parent_id === dragId) return true;
+    current = node.parent_id;
+  }
+  return false;
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@ class FolderPatchBody(BaseModel):
     name: Optional[str] = None
     parent_id: Optional[int] = None   # present + None = move to root
     move_to_root: bool = False         # explicit flag to unambiguously move to root
+    sort_order: Optional[int] = None   # reorder without reparenting
 
     @field_validator("name")
     @classmethod
@@ -117,7 +118,8 @@ async def edit_folder(
     all_folders = await get_folders_for_page(page_id, uid)
     try:
         folder = await update_folder(
-            folder_id, uid, body.name, resolved_parent, is_parent_set, all_folders
+            folder_id, uid, body.name, resolved_parent, is_parent_set, all_folders,
+            sort_order=body.sort_order,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Folder not found")

@@ -95,6 +95,7 @@ async def update_folder(
     parent_id,        # can be int, None (move to root), or sentinel MISSING
     is_parent_set: bool,
     all_folders: list[dict],
+    sort_order: Optional[int] = None,
 ) -> dict:
     """
     Update name and/or parent_id.  is_parent_set indicates the caller explicitly
@@ -115,6 +116,9 @@ async def update_folder(
         if is_parent_set:
             sets.append("parent_id = ?")
             vals.append(parent_id)
+        if sort_order is not None:
+            sets.append("sort_order = ?")
+            vals.append(sort_order)
 
         if sets:
             vals += [folder_id, user_id]
