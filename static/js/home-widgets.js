@@ -949,8 +949,10 @@ function _initDnD(grid, pageId) {
 // Called after every innerHTML swap so the right module boots for the
 // current page type (dashboard → initHomeWidgets, rss → initRssPage, etc.).
 function _initSwappedPage() {
-  // Restore Search tab if leaving an Uploads page (no-op when not on one)
-  if (typeof _uplFolderExitUploadsPage === 'function') {
+  // Exit the uploads page only when the incoming page is NOT also an uploads page.
+  // Calling exit then enter on the same page type causes a workspaces→folders flash.
+  var nextIsUploads = !!document.getElementById('uploads-page-root');
+  if (!nextIsUploads && typeof _uplFolderExitUploadsPage === 'function') {
     try { _uplFolderExitUploadsPage(); } catch(e) {}
   }
   // RSS Reader page
