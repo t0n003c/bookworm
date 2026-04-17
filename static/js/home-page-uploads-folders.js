@@ -22,7 +22,11 @@ var _uplFldModalParent = null; // parent_id for 'create'
 var _uplFldModalTarget = null; // folder id for 'rename'
 
 // Drag state
-var _uplFldDragId = null;  // folder id currently being dragged (null = not dragging)
+var _uplFldDragId     = null;  // folder id currently being dragged (null = not dragging)
+var _uplFldDropIntent = null;  // 'before' | 'inside' | 'after' — set during dragover
+
+// Collapse state  {[folderId]: true} means that folder's children are hidden
+var _uplFldCollapsed  = {};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -91,7 +95,7 @@ function _uplFolderRender() {
 
   _uplFolderEnsureModal();
 
-  // Build parent→children map
+  // Build parent->children map
   var byParent = { '__root__': [] };
   _uplFldData.forEach(function(f) {
     var key = f.parent_id === null || f.parent_id === undefined ? '__root__' : String(f.parent_id);
@@ -135,12 +139,24 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
   var children = byParent[parentKey] || [];
   var html = '';
   children.forEach(function(f) {
-    var isActive = _uplFldActive === f.id;
-    var childKey = String(f.id);
-    var hasChildren = !!(byParent[childKey] && byParent[childKey].length);
-    var indent = depth * 12; // px
+    var isActive     = _uplFldActive === f.id;
+    var childKey     = String(f.id);
+    var hasChildren  = !!(byParent[childKey] && byParent[childKey].length);
+    var indent       = depth * 12; // px
+    var isCollapsed  = !!_uplFldCollapsed[f.id];
+    var parentIdArg  = (f.parent_id !== null && f.parent_id !== undefined) ? f.parent_id : 'null';
 
-    var parentIdArg = (f.parent_id !== null && f.parent_id !== undefined) ? f.parent_id : 'null';
+    // Chevron toggle — only rendered when folder has children
+    var chevron = hasChildren
+      ? '<button onclick="event.stopPropagation();_uplFolderToggleCollapse(' + f.id + ')"' +
+        ' class="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-[#0053e2] transition"' +
+        ' aria-label="' + (isCollapsed ? 'Expand' : 'Collapse') + ' folder"' +
+        ' title="' + (isCollapsed ? 'Expand' : 'Collapse') + '">' +
+        '<svg class="w-3 h-3 transition-transform ' + (isCollapsed ? '' : 'rotate-90') + '"' +
+        ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">' +
+        '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>'
+      : '<span class="w-4 flex-shrink-0 inline-block"></span>'; // alignment spacer
+
     html += '<div style="padding-left:' + indent + 'px">' +
       '<div class="flex items-center gap-1 group/row rounded-lg px-2 py-1.5 cursor-pointer transition ' +
       (isActive ? 'bg-blue-50 dark:bg-zinc-800 text-[#0053e2]' : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800') +
@@ -148,9 +164,10 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
       ' draggable="true"' +
       ' onclick="_uplFolderSelect(' + f.id + ')"' +
       ' ondragstart="_uplFldDragStart(event,' + f.id + ')"' +
-      ' ondragover="_uplFldDragOver(event,' + f.id + ',' + parentIdArg + ',' + f.sort_order + ')"' +
+      ' ondragover="_uplFldDragOver(event,' + f.id + ',' + parentIdArg + ')"' +
       ' ondragleave="_uplFldDragLeave(event,' + f.id + ')"' +
-      ' ondrop="_uplFldDrop(event,' + f.id + ',' + parentIdArg + ',' + f.sort_order + ')">' +
+      ' ondrop="_uplFldDrop(event,' + f.id + ',' + parentIdArg + ')">' +
+      chevron +
       '<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
       (isActive
         ? '<path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v1"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 14l-9 5-9-5"/>'
@@ -171,13 +188,20 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
       '</span>' +
       '</div>';
 
-    // Recurse children
-    if (hasChildren) {
+    // Recurse children (skip when collapsed)
+    if (hasChildren && !isCollapsed) {
       html += _buildFolderTreeHtml(childKey, depth + 1, byParent);
     }
     html += '</div>';
   });
   return html;
+}
+
+// ── Collapse toggle ───────────────────────────────────────────────────────────
+
+function _uplFolderToggleCollapse(id) {
+  _uplFldCollapsed[id] = !_uplFldCollapsed[id];
+  _uplFolderRender();
 }
 
 // ── Selection ─────────────────────────────────────────────────────────────────
@@ -288,8 +312,24 @@ function _uplFolderAssign(uploadId, folderId) {
 }
 
 // ── Folder drag-to-reparent / reorder ────────────────────────────────────────
+//
+// Drop intent is determined by where on the target row the cursor lands:
+//   top 33%    -> 'before'  (blue top-border line: place dragged ABOVE target)
+//   middle 34% -> 'inside'  (blue ring: nest dragged INSIDE target)
+//   bottom 33% -> 'after'   (blue bottom-border line: place dragged BELOW target)
+//
+// File drags always land 'inside' a folder (files don't reorder the folder tree).
 
-var _DND_HL = ['ring-2', 'ring-inset', 'ring-[#0053e2]', 'bg-blue-50', 'dark:bg-blue-900/20'];
+var _DND_RING   = ['ring-2', 'ring-inset', 'ring-[#0053e2]', 'bg-blue-50', 'dark:bg-blue-900/20'];
+var _DND_BEFORE = ['border-t-2', 'border-[#0053e2]', 'rounded-none'];
+var _DND_AFTER  = ['border-b-2', 'border-[#0053e2]', 'rounded-none'];
+var _DND_ALL    = ['ring-2', 'ring-inset', 'ring-[#0053e2]', 'bg-blue-50', 'dark:bg-blue-900/20',
+                   'border-t-2', 'border-b-2', 'border-[#0053e2]', 'rounded-none'];
+
+function _uplFldClearDndCls(el) {
+  if (!el) return;
+  _DND_ALL.forEach(function(c) { el.classList.remove(c); });
+}
 
 function _uplFldDragStart(event, id) {
   _uplFldDragId = id;
@@ -297,29 +337,56 @@ function _uplFldDragStart(event, id) {
   event.dataTransfer.effectAllowed = 'move';
 }
 
-function _uplFldDragOver(event, targetId, targetParentId, targetSortOrder) {
+function _uplFldDragOver(event, targetId, targetParentId) {
   event.preventDefault();
   event.stopPropagation();
   var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
   var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
   if (!isFile && !isFolder) return;
   if (isFolder && _uplFldDragId === targetId) return;
+
   var el = document.querySelector('[data-fld-id="' + targetId + '"]');
-  if (el) _DND_HL.forEach(function(c) { el.classList.add(c); });
+  if (!el) return;
+  _uplFldClearDndCls(el);
+
+  if (isFile) {
+    // Files always go INSIDE a folder
+    _uplFldDropIntent = 'inside';
+    _DND_RING.forEach(function(c) { el.classList.add(c); });
+  } else {
+    // Folder-on-folder: vertical position decides intent
+    var rect = el.getBoundingClientRect();
+    var relY = (event.clientY - rect.top) / (rect.height || 1);
+    if (relY < 0.33) {
+      _uplFldDropIntent = 'before';
+      _DND_BEFORE.forEach(function(c) { el.classList.add(c); });
+    } else if (relY > 0.67) {
+      _uplFldDropIntent = 'after';
+      _DND_AFTER.forEach(function(c) { el.classList.add(c); });
+    } else {
+      _uplFldDropIntent = 'inside';
+      _DND_RING.forEach(function(c) { el.classList.add(c); });
+    }
+  }
   event.dataTransfer.dropEffect = 'move';
 }
 
 function _uplFldDragLeave(event, targetId) {
   var el = document.querySelector('[data-fld-id="' + targetId + '"]');
-  if (el) _DND_HL.forEach(function(c) { el.classList.remove(c); });
+  _uplFldClearDndCls(el);
+  _uplFldDropIntent = null;
 }
 
-function _uplFldDrop(event, targetId, targetParentId, targetSortOrder) {
+function _uplFldDrop(event, targetId, targetParentId) {
   event.preventDefault();
   event.stopPropagation();
-  _uplFldDragLeave(event, targetId);
+  var el = document.querySelector('[data-fld-id="' + targetId + '"]');
+  _uplFldClearDndCls(el);
+
   var isFile   = event.dataTransfer.types.indexOf('application/x-upl-file')   !== -1;
   var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
+  var intent   = _uplFldDropIntent || 'inside';
+  _uplFldDropIntent = null;
 
   if (isFile) {
     if (typeof _dndFileDropOnFolder === 'function') _dndFileDropOnFolder(targetId);
@@ -327,24 +394,16 @@ function _uplFldDrop(event, targetId, targetParentId, targetSortOrder) {
   }
   if (!isFolder || _uplFldDragId === null || _uplFldDragId === targetId) return;
 
-  var dragged    = null;
-  var dragParent = null;
-  _uplFldData.forEach(function(f) { if (f.id === _uplFldDragId) { dragged = f; dragParent = f.parent_id; } });
-  if (!dragged) return;
-
-  var sameParent = (dragged.parent_id === targetParentId) ||
-                   (dragged.parent_id == null && targetParentId == null);
-  if (sameParent) {
-    // Reorder siblings
-    var newOrder = _uplFldMidpointSort(_uplFldDragId, targetId, targetParentId);
-    _uplFolderReorderSort(_uplFldDragId, newOrder);
-  } else {
-    // Reparent — client-side circular guard
+  if (intent === 'inside') {
+    // Nest dragged folder inside target — circular guard
     if (_uplFldIsDescendant(_uplFldDragId, targetId)) {
       if (typeof _uplShowToast === 'function') _uplShowToast('Cannot move a folder into its own sub-folder.', true);
-      return;
+      _uplFldDragId = null; return;
     }
     _uplFolderMove(_uplFldDragId, targetId, false);
+  } else {
+    // Place dragged as sibling of target (before or after)
+    _uplFolderMoveToSiblingOf(_uplFldDragId, targetId, intent === 'before');
   }
   _uplFldDragId = null;
 }
@@ -356,13 +415,13 @@ function _uplFldRootDragOver(event) {
   var isFolder = event.dataTransfer.types.indexOf('application/x-upl-folder') !== -1;
   if (!isFile && !isFolder) return;
   var el = document.getElementById('upl-fld-root-node');
-  if (el) _DND_HL.forEach(function(c) { el.classList.add(c); });
+  if (el) _DND_RING.forEach(function(c) { el.classList.add(c); });
   event.dataTransfer.dropEffect = 'move';
 }
 
 function _uplFldRootDragLeave(event) {
   var el = document.getElementById('upl-fld-root-node');
-  if (el) _DND_HL.forEach(function(c) { el.classList.remove(c); });
+  if (el) _DND_ALL.forEach(function(c) { el.classList.remove(c); });
 }
 
 function _uplFldRootDrop(event) {
@@ -383,9 +442,87 @@ function _uplFldRootDrop(event) {
   }
 }
 
-function _uplFolderMove(draggedId, newParentId, useRoot) {
+// ── Move / reorder helpers ────────────────────────────────────────────────────
+
+/**
+ * Move `draggedId` so it becomes a sibling of `targetId`, placed before or
+ * after it in the sort order.  Also handles cross-level reparenting: if the
+ * dragged folder is currently in a different parent than the target, it gets
+ * reparented as part of the same PATCH.
+ */
+function _uplFolderMoveToSiblingOf(draggedId, targetId, insertBefore) {
+  if (!_uplFldPid) return;
+
+  // Find target folder to read its parent_id and sort_order
+  var target = null;
+  _uplFldData.forEach(function(f) { if (f.id === targetId) target = f; });
+  if (!target) return;
+
+  var newParentId = target.parent_id;  // null means root-level
+
+  // Collect siblings of the target (excluding the folder being dragged)
+  var siblings = _uplFldData.filter(function(f) {
+    return f.id !== draggedId &&
+           ((newParentId == null && f.parent_id == null) || f.parent_id === newParentId);
+  }).sort(function(a, b) { return a.sort_order - b.sort_order; });
+
+  var idx = -1;
+  siblings.forEach(function(f, i) { if (f.id === targetId) idx = i; });
+  if (idx === -1) return;
+
+  var newOrder;
+  if (insertBefore) {
+    var prev = idx > 0 ? siblings[idx - 1].sort_order : (siblings[idx].sort_order - 20);
+    var curr = siblings[idx].sort_order;
+    newOrder = Math.floor((prev + curr) / 2);
+    if (newOrder === prev || newOrder === curr) {
+      newOrder = _uplFldGapCollapse(siblings, draggedId, idx, newParentId, true);
+    }
+  } else {
+    var curr2 = siblings[idx].sort_order;
+    var next  = idx < siblings.length - 1 ? siblings[idx + 1].sort_order : (curr2 + 20);
+    newOrder  = Math.floor((curr2 + next) / 2);
+    if (newOrder === curr2 || newOrder === next) {
+      newOrder = _uplFldGapCollapse(siblings, draggedId, idx, newParentId, false);
+    }
+  }
+
+  // One PATCH: update parent + sort_order together
+  var body = newParentId === null
+    ? { move_to_root: true, sort_order: newOrder }
+    : { parent_id: newParentId, sort_order: newOrder };
+
+  fetch('/home/uploads/' + _uplFldPid + '/folders/' + draggedId, {
+    method: 'PATCH', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function() { _uplFolderFetch(); })
+    .catch(function(e) { console.error('[folders] reorder error', e); });
+}
+
+/** Renumber siblings to create gap space, return the new slot for the dragged item. */
+function _uplFldGapCollapse(siblings, draggedId, targetIdx, parentId, insertBefore) {
+  var base = 0;
+  siblings.forEach(function(f, i) {
+    var order = base + i * 10;
+    fetch('/home/uploads/' + _uplFldPid + '/folders/' + f.id, {
+      method: 'PATCH', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sort_order: order }),
+    }).catch(function() {});
+  });
+  if (insertBefore) {
+    return targetIdx === 0 ? -5 : (targetIdx - 1) * 10 + 5;
+  }
+  return targetIdx * 10 + 5;
+}
+
+function _uplFolderMove(draggedId, newParentId, useRoot, extraBody) {
   if (!_uplFldPid) return;
   var body = useRoot ? { move_to_root: true } : { parent_id: newParentId };
+  if (extraBody) Object.assign(body, extraBody);
   fetch('/home/uploads/' + _uplFldPid + '/folders/' + draggedId, {
     method: 'PATCH', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -417,28 +554,14 @@ function _uplFldMidpointSort(draggedId, targetId, parentId) {
 
   var idx = -1;
   siblings.forEach(function(f, i) { if (f.id === targetId) idx = i; });
-  if (idx === -1) return 0; // target not found, place at start
+  if (idx === -1) return 0;
 
-  // Drop-before target: midpoint between predecessor and target
   var prev = idx > 0 ? siblings[idx - 1].sort_order : (siblings[idx].sort_order - 20);
   var curr = siblings[idx].sort_order;
   var mid  = Math.floor((prev + curr) / 2);
 
   if (mid === prev || mid === curr) {
-    // Gap collapsed — renumber all siblings 0, 10, 20, ... then recompute
-    var base = 0;
-    siblings.forEach(function(f, i) {
-      var newOrder = base + i * 10;
-      if (f.id !== draggedId) {
-        fetch('/home/uploads/' + _uplFldPid + '/folders/' + f.id, {
-          method: 'PATCH', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sort_order: newOrder }),
-        }).catch(function() {});
-      }
-    });
-    // Return slot just before re-numbered target
-    return idx === 0 ? -5 : (idx - 1) * 10 + 5;
+    return _uplFldGapCollapse(siblings, draggedId, idx, parentId, true);
   }
   return mid;
 }

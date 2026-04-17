@@ -231,8 +231,9 @@ function _uplDocRenderToolbar() {
   var count = sel.length;
   if (!count) return;
 
-  var allPdf  = sel.every(function(x) { return x.mime_type === 'application/pdf'; });
-  var allText = sel.every(function(x) {
+  var allPdf  = count >= 2 && sel.every(function(x) { return x.mime_type === 'application/pdf'; });
+  var allDocx = count >= 2 && sel.every(function(x) { return x.mime_type === _DOCX_MIME; });
+  var allText = count >= 2 && sel.every(function(x) {
     return x.mime_type.startsWith('text/') ||
            x.mime_type === 'application/json' ||
            (x.mime_type === 'application/octet-stream' && _uplIsTextExt(x));
@@ -250,6 +251,9 @@ function _uplDocRenderToolbar() {
     <button onclick="_uplDocOpenCombineModal('pdf')" ${allPdf ? '' : 'disabled'}
       class="${allPdf ? onCls : offCls}" title="${allPdf ? '' : 'Select only PDFs to merge'}">
       Merge PDFs</button>
+    <button onclick="_uplDocOpenCombineModal('docx')" ${allDocx ? '' : 'disabled'}
+      class="${allDocx ? onCls : offCls}" title="${allDocx ? '' : 'Select only DOCX files to merge'}">
+      Merge DOCX</button>
     <button onclick="_uplDocOpenCombineModal('text')" ${allText ? '' : 'disabled'}
       class="${allText ? onCls : offCls}" title="${allText ? '' : 'Select only text files to join'}">
       Join Text</button>
@@ -431,7 +435,7 @@ async function _uplDocConvert(src, id, toFmt) {
 function _uplDocOpenCombineModal(combineType) {
   var sel = Object.values(_uplDocSelected);
   if (sel.length < 2) { _uplShowToast('Select at least 2 files to combine'); return; }
-  var label = combineType === 'pdf' ? 'PDF merge' : 'text join';
+  var label = combineType === 'pdf' ? 'PDF merge' : combineType === 'docx' ? 'DOCX merge' : 'text join';
   var desc  = document.getElementById('upl-combine-desc');
   if (desc) desc.textContent = `${label} of ${sel.length} files`;
   var inp   = document.getElementById('upl-combine-name');
@@ -848,6 +852,8 @@ async function _uplWordSave() {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Save DOCX'; }
     _uplShowToast('Save failed: ' + _uplEsc(String(err)));
   }
+}
+
 // ── DRY helper: render TXT preview + inject sticky „Edit“ footer ─────────────────
 
 function _uplViewerTxtRenderEditBar(htmlEl) {
@@ -861,8 +867,6 @@ function _uplViewerTxtRenderEditBar(htmlEl) {
     '  style="font-size:.75rem;padding:.35rem .9rem;border-radius:.4rem;' +
     '  background:#0053e2;color:#fff;font-weight:600;cursor:pointer;border:none">' +
     '  ✏️ Edit</button>';
-  htmlEl.appendChild(bar);
-}
   htmlEl.appendChild(bar);
 }
 

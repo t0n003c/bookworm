@@ -60,7 +60,7 @@ MAX_SPREADSHEET_BYTES = 10_000_000  # 10 MB guard (larger than the 1 MB text gua
 class CombineBody(BaseModel):
     ids: list[int]
     output_name: str = ""
-    combine_type: str  # "pdf" | "text"
+    combine_type: str  # "pdf" | "text" | "docx"
 
 
 class ConvertBody(BaseModel):
@@ -423,10 +423,38 @@ async def combine_files(request: Request, page_id: int, body: CombineBody):
             "id": new_id, "original_name": f"{out_stem}.txt", "size": len(data),
         }})
 
-    raise HTTPException(status_code=400, detail="combine_type must be 'pdf' or 'text'")
+    if body.combine_type == "docx":
+        if any(r["mime_type"] != _DOCX_MIME for r in rows):
+            raise HTTPException(status_code=400, detail="All selected files must be DOCX for DOCX merge")
+        import copy
+        from docx import Document as _DocxDoc
+        merged = _DocxDoc(str(UPLOAD_DIR / rows[0]["filename"]))
+        for r in rows[1:]:
+            # Page break between documents
+            merged.add_page_break()
+            src_doc = _DocxDoc(str(UPLOAD_DIR / r["filename"]))
+            # Copy body elements; skip sectPr (section properties) to preserve
+            # the merged doc's own page size/margins.
+            for element in src_doc.element.body:
+                if element.tag.endswith("}sectPr"):
+                    continue
+                merged.element.body.append(copy.deepcopy(element))
+        buf = io.BytesIO()
+        merged.save(buf)
+        data = buf.getvalue()
+        stored = f"{uuid.uuid4().hex}.docx"
+        (UPLOAD_DIR / stored).write_bytes(data)
+        new_id = await create_page_upload(
+            page_id, uid, stored, f"{out_stem}.docx", _DOCX_MIME, len(data),
+        )
+        return JSONResponse({"ok": True, "file": {
+            "id": new_id, "original_name": f"{out_stem}.docx", "size": len(data),
+        }})
+
+    raise HTTPException(status_code=400, detail="combine_type must be 'pdf', 'text', or 'docx'")
 
 
-# ── POST /{pid}/files/page/{id}/convert ───────────────────────────────────────
+# ── POST /{pid}/files/page/{id}/convert ───────────────────────────────────
 
 @router.post("/{page_id}/files/page/{file_id}/convert")
 async def convert_file(request: Request, page_id: int, file_id: int, body: ConvertBody):
