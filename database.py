@@ -623,6 +623,38 @@ async def init_db() -> None:
                 "folder_id INTEGER REFERENCES upload_folders(id) ON DELETE SET NULL"
             )
 
+        # ── upload_catalogs (many-to-many label tree for uploads pages) ──────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS upload_catalogs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL REFERENCES home_pages(id)      ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id)            ON DELETE CASCADE,
+                name        TEXT    NOT NULL,
+                parent_id   INTEGER REFERENCES upload_catalogs(id)           ON DELETE SET NULL,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page "
+            "ON upload_catalogs(page_id, user_id, parent_id, sort_order)"
+        )
+
+        # ── upload_catalog_files (M2M junction: catalogs ↔ page_uploads) ────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS upload_catalog_files (
+                catalog_id  INTEGER NOT NULL REFERENCES upload_catalogs(id)  ON DELETE CASCADE,
+                upload_id   INTEGER NOT NULL REFERENCES page_uploads(id)     ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id)            ON DELETE CASCADE,
+                added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (catalog_id, upload_id)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ucf_upload "
+            "ON upload_catalog_files(upload_id, user_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

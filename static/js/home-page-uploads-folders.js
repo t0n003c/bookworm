@@ -47,6 +47,7 @@ function _uplFolderEnterUploadsPage(pid) {
   if (typeof _dndReset === 'function') _dndReset();
 
   _uplFolderFetch();
+  if (typeof _uplCatalogEnterUploadsPage === 'function') _uplCatalogEnterUploadsPage(pid);
 }
 
 function _uplFolderExitUploadsPage() {
@@ -67,6 +68,13 @@ function _uplFolderExitUploadsPage() {
   // Clear tree
   var tree = document.getElementById('upl-folder-tree');
   if (tree) tree.innerHTML = '';
+  if (typeof _uplCatalogExitUploadsPage === 'function') _uplCatalogExitUploadsPage();
+}
+
+// ── Public clear (called by catalog module on catalog selection) ─────────────
+function _uplFolderClearActive() {
+  _uplFldActive = null;
+  _uplFolderRender();
 }
 
 function _uplFolderGetFilter() {
@@ -208,8 +216,8 @@ function _uplFolderToggleCollapse(id) {
 
 function _uplFolderSelect(idOrNull) {
   _uplFldActive = idOrNull;
-  _uplFolderRender(); // re-render to update active highlight
-  // Refresh the uploads grid with the folder filter applied
+  if (typeof _uplCatalogClearActive === 'function') _uplCatalogClearActive();
+  _uplFolderRender();
   if (typeof _uplFetch === 'function') _uplFetch(1);
 }
 

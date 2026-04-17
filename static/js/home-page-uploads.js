@@ -66,7 +66,8 @@ async function _uplFetch(page) {
 
   try {
     var _fldQs = (typeof _uplFolderGetFilter === 'function') ? _uplFolderGetFilter() : '';
-    const r = await fetch('/home/uploads/' + _uplPid + '/files?page=' + page + _fldQs);
+    var _catQs = (typeof _uplCatalogGetFilter === 'function') ? _uplCatalogGetFilter() : '';
+    const r = await fetch('/home/uploads/' + _uplPid + '/files?page=' + page + _fldQs + _catQs);
     const ct = r.headers.get('content-type') || '';
     if (ct.includes('text/html')) {
       main.innerHTML = '<div class="p-6 text-sm text-yellow-600 dark:text-yellow-400 '
@@ -445,6 +446,7 @@ function _uplRenderDetail(f) {
       \u2193 Download</a>
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
+    ${f.src === 'page' ? '<div id="upl-detail-catalogs" class="mt-3"></div>' : ''}
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(156,163,175,0.2)">
       ${srcSection}
     </div>
@@ -533,6 +535,9 @@ function _uplRenderDetail(f) {
   if (isPdf)  _uplFetchPdfCanvas(fUrl);
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
+  if (typeof _uplRenderDetailCatalogs === 'function' && f.src === 'page') {
+    _uplRenderDetailCatalogs(f);
+  }
 }
 
 

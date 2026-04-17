@@ -78,12 +78,14 @@ async def list_files(
     page_id: int,
     page: int = 1,
     folder_id: int = Query(None),   # None=all, 0=unfiled, >0=specific folder
+    catalog_id: int = Query(None),  # filter by catalog (many-to-many)
 ):
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401)
     await _require_uploads_page(page_id, uid)
-    result = await get_uploads_page(uid, page=page, folder_id=folder_id)
+    result = await get_uploads_page(uid, page=page, folder_id=folder_id,
+                                    catalog_id=catalog_id)
     return JSONResponse(result)
 
 

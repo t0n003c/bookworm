@@ -23,6 +23,7 @@ async def get_uploads_page(
     user_id: int,
     page: int = 1,
     folder_id: Optional[int] = None,   # None=all, 0=unfiled page-src, >0=folder
+    catalog_id: Optional[int] = None,  # filter by catalog (many-to-many, page-src only)
 ) -> dict:
     """Return one page of the merged file list for a user, with tags embedded.
 
@@ -53,7 +54,19 @@ async def get_uploads_page(
         folder_where = " AND pu.folder_id = ?"
         folder_params = (folder_id,)
 
-    use_union = folder_id is None  # full merged view vs page-src only
+    # Catalog filter overrides folder filter; suppresses the note-src UNION leg
+    catalog_join: str = ""
+    catalog_join_params: tuple = ()
+    if catalog_id is not None:
+        catalog_join = (
+            " INNER JOIN upload_catalog_files ucf"
+            " ON pu.id = ucf.upload_id AND ucf.catalog_id = ?"
+        )
+        catalog_join_params = (catalog_id,)
+        folder_where = ""   # catalog takes priority; clear any folder filter
+        folder_params = ()
+
+    use_union = folder_id is None and catalog_id is None  # full merged view vs page-src only
 
     async with get_db() as db:
         # ── Total count ───────────────────────────────────────────────────────
@@ -74,8 +87,9 @@ async def get_uploads_page(
         else:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM page_uploads pu "
-                "WHERE pu.user_id = ?" + folder_where,
-                (user_id, *folder_params),
+                + catalog_join
+                + " WHERE pu.user_id = ?" + folder_where,
+                (*catalog_join_params, user_id, *folder_params),
             )
         total = (await cur.fetchone())[0]
 
@@ -155,6 +169,7 @@ async def get_uploads_page(
                     pu.folder_id        AS folder_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM page_uploads pu
+                """ + catalog_join + """
                 LEFT JOIN page_upload_tags t
                        ON t.upload_src = 'page' AND t.upload_id = pu.id
                       AND t.user_id = ?
@@ -163,7 +178,7 @@ async def get_uploads_page(
                 ORDER BY pu.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
-                (user_id, user_id, *folder_params, _PAGE_SIZE, offset),
+                (*catalog_join_params, user_id, user_id, *folder_params, _PAGE_SIZE, offset),
             )
         rows = await cur.fetchall()
 
@@ -198,8 +213,9 @@ async def get_uploads_page(
             ccur = await db.execute(
                 f"SELECT {_CASE} AS grp, COUNT(*) AS cnt "
                 "FROM page_uploads pu "
-                "WHERE pu.user_id = ?" + folder_where + " GROUP BY grp",
-                (user_id, *folder_params),
+                + catalog_join
+                + " WHERE pu.user_id = ?" + folder_where + " GROUP BY grp",
+                (*catalog_join_params, user_id, *folder_params),
             )
         count_rows = await ccur.fetchall()
 
