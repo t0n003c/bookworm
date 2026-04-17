@@ -255,6 +255,28 @@ function showHomePage(pageId) {
   if (!hc) return;
   _setHomePageActive(pageId);
 
+  // ── Pre-switch sidebar tab BEFORE fetch starts so there's no visible flash ──
+  // Read the target page type from the already-rendered sidebar list item.
+  (function() {
+    var li = document.querySelector('#home-page-list li[data-page-id="' + pageId + '"]');
+    var pgType = li ? (li.dataset.pageType || 'dashboard') : 'dashboard';
+    var tabFolders = document.getElementById('sb-tab-folders');
+    var tabSearch  = document.getElementById('sb-tab-search');
+    if (pgType === 'uploads') {
+      // Show the Folders tab button immediately — enter handler will load data later
+      if (tabFolders) { tabFolders.classList.remove('hidden'); tabFolders.classList.add('flex'); }
+      if (tabSearch)  { tabSearch.classList.add('hidden'); }
+      if (typeof switchSidebarTab === 'function') switchSidebarTab('folders');
+    } else {
+      // Non-uploads page: restore workspaces tab and hide folders button if visible
+      if (tabFolders && !tabFolders.classList.contains('hidden')) {
+        tabFolders.classList.add('hidden'); tabFolders.classList.remove('flex');
+        if (tabSearch) tabSearch.classList.remove('hidden');
+        if (typeof switchSidebarTab === 'function') switchSidebarTab('workspaces');
+      }
+    }
+  })();
+
   const _applyHtml = html => {
     hc.innerHTML = html;
     _initSwappedPage();

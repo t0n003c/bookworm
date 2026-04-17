@@ -22,7 +22,7 @@
 <ul class="space-y-0.5" role="list" id="home-page-list">
   {% for pg in pages %}
   {% set is_active = (pg.id == active_pg) %}
-  <li class="flex items-center gap-0.5 group/hpg" data-page-id="{{ pg.id }}">
+  <li class="flex items-center gap-0.5 group/hpg" data-page-id="{{ pg.id }}" data-page-type="{{ pg.get('page_type', 'dashboard') or 'dashboard' }}">
     <button type="button"
       onclick="openHomePage({{ pg.id }})"
       onmouseenter="if(typeof prefetchHomePage==='function') prefetchHomePage({{ pg.id }})"

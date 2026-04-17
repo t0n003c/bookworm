@@ -576,6 +576,11 @@ function _initAddForm() {
     const btn   = document.getElementById('rss-add-btn');
     const url   = urlIn.value.trim();
     if (!url) return;
+    if (!_pid) {
+      errEl.textContent = 'Page not ready — please try again.';
+      errEl.classList.remove('hidden');
+      return;
+    }
     errEl.classList.add('hidden');
     btn.disabled = true; btn.textContent = 'Adding…';
     try {
@@ -627,6 +632,7 @@ async function rssDeleteFeed(e, feedId) {
   bar.querySelector('[data-rss-del-no]').addEventListener('click', () => bar.remove());
   bar.querySelector('[data-rss-del-yes]').addEventListener('click', async () => {
     bar.remove();
+    if (!_pid) { _rssToast('Page not ready — please refresh.', true); return; }
     try {
       const r  = await fetch(`/home/rss-reader/${_pid}/feeds/${feedId}/delete`, {
         method: 'POST', credentials: 'same-origin',
