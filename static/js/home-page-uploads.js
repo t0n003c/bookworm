@@ -402,9 +402,8 @@ function _uplRenderDetail(f) {
   } else if (mt === _DOCX_MIME || mt === 'text/csv') {
     preview = _uplDocCsvCard(f, fUrl);
   } else if (isText) {
-    preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto"
-         style="overscroll-behavior-y:contain">
-      <p class="text-[10px] text-gray-400 italic">Loading preview\u2026</p></div>`;
+    // No wrapper — text preview becomes its own top-level flex zone (see layout below)
+    preview = null;
   }
 
   // Source section
@@ -420,12 +419,8 @@ function _uplRenderDetail(f) {
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
 
-  // Plain block layout — no flex on the scroll container so the inner preview
-  // scroll box doesn't compete with the outer panel's overflow-y: auto.
-  el.style.display       = '';
-  el.style.flexDirection = '';
-
-  el.innerHTML = `${preview}
+  // ── Meta + actions block (shared by all file types) ───────────────────────
+  var metaBlock = `
     <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
     <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFmtSize(f.size)} &middot; ${_uplEsc(mt)} &middot; ${_uplFmtDate(f.created_at)}</p>
     <a href="${dlUrl}" download="${_uplEsc(f.original_name)}"
@@ -437,6 +432,35 @@ function _uplRenderDetail(f) {
     <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(156,163,175,0.2)">
       ${srcSection}
     </div>`;
+
+  if (isText) {
+    // ── Two-zone layout ────────────────────────────────────────────────────────
+    // Zone 1: text preview  — fixed height, scrolls its own content only.
+    // Zone 2: meta / actions — fills remaining height, scrolls independently.
+    // Outer container is overflow:hidden so it NEVER shows its own scrollbar;
+    // that eliminates the "two scrollbars competing" problem entirely.
+    var isDark = document.documentElement.classList.contains('dark');
+    var previewBg = isDark ? '#27272a' : '#f9fafb'; // zinc-800 / gray-50
+    var previewBorder = isDark ? 'rgba(63,63,70,0.6)' : 'rgba(156,163,175,0.25)';
+    el.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:calc(100% - 3rem);padding:0';
+    el.innerHTML =
+      // Zone 1 — text preview
+      '<div id="upl-text-preview"'
+      + ' style="flex-shrink:0;height:13rem;overflow-y:scroll;overscroll-behavior-y:contain;'
+      + 'padding:.75rem;background:' + previewBg + ';border-bottom:1px solid ' + previewBorder + '">'
+      + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
+      + '</div>'
+      // Zone 2 — scrollable meta
+      + '<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:1rem">'
+      + metaBlock
+      + '</div>';
+  } else {
+    // ── Single-zone layout (image / video / audio / PDF / DOCX / unknown) ─────
+    // Outer container scrolls the whole thing — no inner scroll box conflicts.
+    // Restore height; clear any flex state left from a prior text-file open.
+    el.style.cssText = 'height:calc(100% - 3rem)';
+    el.innerHTML = (preview || '') + metaBlock;
+  }
 
   if (isText) _uplFetchTextPreview(fUrl);
   _uplLoadTags(f.src, f.id);
