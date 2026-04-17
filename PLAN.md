@@ -1,509 +1,582 @@
-# Plan: PDF Annotations — Document Studio Phase 8 (Feature B2)
-Date: 2026-04-16
-Estimated complexity: Medium
+# Plan: Uploads Homespace — Catalog Feature
+Date: 2026-04-17
+Estimated complexity: High
+
+---
 
 ## Summary
 
-Add a non-destructive PDF annotation layer to the Document Studio. Highlights,
-sticky notes, and text boxes are stored in a new `pdf_annotations` table as
-percentage-based coordinates and rendered as absolutely-positioned `<div>`s over
-a PDF.js canvas inside a dedicated fullscreen modal (`#upl-annot-modal`). No
-PyMuPDF / server-side PDF mutation required — the PDF on disk is never touched.
-The "📝 Annotate PDF" button is injected into the existing Document Studio panel
-by `_uplDocStudioInit` for any `page`-source PDF file.
+Add a **Catalog** system to the Uploads Homespace sidebar. Catalogs live in the lower
+half of the existing **Folders tab** (`sb-panel-folders`), separated from the virtual
+folder tree by a labeled divider. Unlike virtual folders (one FK on `page_uploads`),
+catalogs are **many-to-many**: any number of files can belong to any number of catalogs
+simultaneously via a junction table — no duplication. Catalogs support **parent/child
+nesting** (same self-referential FK pattern as `upload_folders`) and **drag-and-drop
+reordering + reparenting** (same 3-zone drop logic as the folder module). Clicking a
+catalog filters the file grid to its members. Files are assigned to / removed from
+catalogs via a "Catalogs" badge section added to the existing detail panel. Folder and
+catalog filters are **mutually exclusive** — activating one clears the other.
 
 ---
 
 ## Files to Change
-Touch in this exact order to avoid missing-import errors.
+
+Touch in this order to avoid dependency failures:
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `database.py` | Add `pdf_annotations` table + index in `init_db()` |
-| 2 | `routers/uploads_docs_db.py` | Add 4 annotation DB helpers |
-| 3 | `routers/home_uploads_docs.py` | Add `AnnotationBody` Pydantic model + 4 REST endpoints |
-| 4 | `templates/partials/home_page_uploads.html` | Add `#upl-annot-modal` block after `#upl-spreadsheet-modal` |
-| 5 | `static/js/home-page-uploads-annot.js` | New file — full annotation module |
-| 6 | `templates/base.html` | Add `<script defer>` for annot.js after spreadsheet.js |
-| 7 | `static/js/home-page-uploads-docs.js` | Add `canAnnotate` + `📝 Annotate PDF` button |
+| 1 | `database.py` | Add `upload_catalogs` table + `upload_catalog_files` junction table + indexes |
+| 2 | `routers/uploads_db.py` | Add `catalog_id: Optional[int] = None` param to `get_uploads_page()`; inject JOIN branch; force `use_union = False` when set |
+| 3 | `routers/home_uploads.py` | Add `catalog_id: int = Query(None)` to `list_files()`, pass through to `get_uploads_page()` |
+| 4 | `main.py` | Import + `include_router` for `home_uploads_catalogs_router` after folders router line |
+| 5 | `templates/index.html` | Restructure `sb-panel-folders` div: add Folders section label, catalog divider + label, `#upl-catalog-tree` container |
+| 6 | `templates/base.html` | Add `<script>` tag for `home-page-uploads-catalogs.js?v={{ static_v }}` after folders tag |
+| 7 | `static/js/home-page-uploads-folders.js` | Add `_uplFolderClearActive()`; call catalog enter/exit hooks from Enter/Exit fns; call `_uplCatalogClearActive()` on folder selection |
+| 8 | `static/js/home-page-uploads.js` | Append `_catQs` from `_uplCatalogGetFilter()` to `_uplFetch` URL; add `#upl-detail-catalogs` placeholder div in page-src detail HTML; call `_uplRenderDetailCatalogs(f)` hook after detail render |
+
+---
 
 ## New Files to Create
 
 | File | Purpose |
 |---|---|
-| `static/js/home-page-uploads-annot.js` | PDF.js loader, canvas renderer, overlay CRUD, all annotation JS |
+| `routers/uploads_catalogs_db.py` | All DB helpers for catalog CRUD + junction table CRUD |
+| `routers/home_uploads_catalogs.py` | FastAPI router — 7 endpoints, prefix `/home/uploads` |
+| `static/js/home-page-uploads-catalogs.js` | Catalog tree module: render, CRUD, DnD, filter hook, detail badge panel |
 
 ---
 
-## DB Migration
+## DB Migrations Needed
 
-Add to `init_db()` in `database.py` — additive, idempotent, no table-swap needed.
+All migrations go inside the existing `async with aiosqlite.connect(DB_PATH) as db:`
+block in `init_db()` in `database.py`, **after the `page_uploads.folder_id` additive
+migration block and before `await db.commit()`**. Both are additive (CREATE IF NOT
+EXISTS) — safe to run on a live database 10×.
+
+### 1 — `upload_catalogs` table
 
 ```sql
-CREATE TABLE IF NOT EXISTS pdf_annotations (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  file_id     INTEGER NOT NULL REFERENCES page_uploads(id) ON DELETE CASCADE,
-  page_num    INTEGER NOT NULL DEFAULT 0,
-  type        TEXT    NOT NULL,
-  x_pct       REAL    NOT NULL,
-  y_pct       REAL    NOT NULL,
-  width_pct   REAL    NOT NULL DEFAULT 0.2,
-  height_pct  REAL    NOT NULL DEFAULT 0.05,
-  color       TEXT    NOT NULL DEFAULT '#ffc220',
-  content     TEXT    NOT NULL DEFAULT '',
-  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_pdf_annot_file
-  ON pdf_annotations(file_id, user_id);
+CREATE TABLE IF NOT EXISTS upload_catalogs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id     INTEGER NOT NULL REFERENCES home_pages(id)     ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users(id)          ON DELETE CASCADE,
+    name        TEXT    NOT NULL,
+    parent_id   INTEGER REFERENCES upload_catalogs(id)         ON DELETE SET NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+
+CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page
+ON upload_catalogs(page_id, user_id, parent_id, sort_order)
 ```
 
-`type` accepted values: `'highlight'` | `'sticky'` | `'textbox'`
-`page_num` is 0-indexed (matches PDF.js `pageNumber - 1`).
+### 2 — `upload_catalog_files` junction table
+
+```sql
+CREATE TABLE IF NOT EXISTS upload_catalog_files (
+    catalog_id  INTEGER NOT NULL REFERENCES upload_catalogs(id) ON DELETE CASCADE,
+    upload_id   INTEGER NOT NULL REFERENCES page_uploads(id)    ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users(id)           ON DELETE CASCADE,
+    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (catalog_id, upload_id)
+)
+
+CREATE INDEX IF NOT EXISTS idx_ucf_upload
+ON upload_catalog_files(upload_id, user_id)
+```
+
+> **No table-swap dance needed.** Both tables are brand new. All FKs use `ON DELETE CASCADE`
+> so deleting a catalog cleans up its junction rows automatically; deleting a file cleans
+> up its memberships automatically.
 
 ---
 
-## Backend Endpoints
+## New Files — Detailed Specification
 
-### Pydantic model — add to `home_uploads_docs.py`
+### `routers/uploads_catalogs_db.py`
+
+Mirror the structure of `uploads_folders_db.py`. Import `get_db` from `database` —
+never raw `aiosqlite.connect()`.
+
+| Function | Signature | Notes |
+|---|---|---|
+| `_catalog_owned(catalog_id, user_id, db)` | `async -> dict` | Raise `KeyError` if not found/not owned |
+| `_is_descendant(catalog_id, candidate_parent_id, all_catalogs)` | `-> bool` | Exact copy of folder helper — cycle prevention |
+| `get_catalogs_for_page(page_id, user_id)` | `async -> list[dict]` | `ORDER BY parent_id NULLS FIRST, sort_order, name` |
+| `create_catalog(page_id, user_id, name, parent_id)` | `async -> dict` | INSERT + re-SELECT |
+| `update_catalog(catalog_id, user_id, name, parent_id, is_parent_set, all_catalogs, sort_order)` | `async -> dict` | Same sentinel logic as `update_folder`; raise `ValueError("circular")` on cycle |
+| `delete_catalog(catalog_id, user_id)` | `async -> bool` | DELETE; CASCADE handles junction rows; returns True if row existed |
+| `get_file_catalogs(upload_id, user_id)` | `async -> list[dict]` | JOIN `upload_catalogs` via `upload_catalog_files`; return `[{id, name, parent_id}]` |
+| `add_file_to_catalog(catalog_id, upload_id, user_id)` | `async -> bool` | `INSERT OR IGNORE INTO upload_catalog_files`; return True if new row |
+| `remove_file_from_catalog(catalog_id, upload_id, user_id)` | `async -> bool` | DELETE from junction; return True if row existed |
+
+---
+
+### `routers/home_uploads_catalogs.py`
 
 ```python
-class AnnotationBody(BaseModel):
-    page_num:   int   = 0
-    type:       str   = "highlight"   # 'highlight'|'sticky'|'textbox'
-    x_pct:      float = 0.0
-    y_pct:      float = 0.0
-    width_pct:  float = 0.2
-    height_pct: float = 0.05
-    color:      str   = "#ffc220"
-    content:    str   = ""
+router = APIRouter(prefix="/home/uploads", tags=["uploads-catalogs"])
 ```
 
-Add a minimal validator: `type` must be in `{'highlight', 'sticky', 'textbox'}`.
+All endpoints return JSON. Copy the local `_demo_guard` and `_require_uploads_page`
+guard pattern from `home_uploads_folders.py` — do **NOT** import them cross-router.
 
-### Route logic (all 4 routes follow the same guard sequence)
+#### Pydantic models
 
-**GET** `/{page_id}/files/page/{file_id}/annotations`
-```
-uid = request.session.get("user_id") or raise 401
-await _require_uploads_page(page_id, uid)         # raises 404 if page not owned
-row = await get_page_upload_owned(file_id, uid)   # raises 404 if file not owned
-rows = await get_annotations(file_id, uid)
-return JSONResponse({"annotations": rows})
-```
-*(No `_demo_guard` — reads are safe in demo mode.)*
-
-**POST** `/{page_id}/files/page/{file_id}/annotations`
-```
-if guard := _demo_guard(request): return guard
-uid = request.session.get("user_id") or raise 401
-await _require_uploads_page(page_id, uid)
-await get_page_upload_owned(file_id, uid)         # ownership check
-annot_id = await create_annotation(file_id, uid, body)
-return JSONResponse({"id": annot_id}, status_code=201)
-```
-
-**PUT** `/{page_id}/files/page/{file_id}/annotations/{annot_id}`
-```
-if guard := _demo_guard(request): return guard
-uid = request.session.get("user_id") or raise 401
-await _require_uploads_page(page_id, uid)
-await get_page_upload_owned(file_id, uid)
-n = await update_annotation(annot_id, uid, body)
-if n == 0: raise HTTPException(404)
-return JSONResponse({"ok": True})
-```
-
-**DELETE** `/{page_id}/files/page/{file_id}/annotations/{annot_id}`
-```
-if guard := _demo_guard(request): return guard
-uid = request.session.get("user_id") or raise 401
-await _require_uploads_page(page_id, uid)
-await get_page_upload_owned(file_id, uid)
-n = await delete_annotation(annot_id, uid)
-if n == 0: raise HTTPException(404)
-return Response(status_code=204)
-```
-
-Import additions needed at top of `home_uploads_docs.py`:
 ```python
-from routers.uploads_docs_db import (
-    get_page_upload_owned_bulk,
-    update_page_upload_size,
-    get_annotations,        # new
-    create_annotation,      # new
-    update_annotation,      # new
-    delete_annotation,      # new
+class CatalogCreateBody(BaseModel):
+    name: str            # strip; 1–80 chars; field_validator enforces
+    parent_id: Optional[int] = None
+
+class CatalogPatchBody(BaseModel):
+    name: Optional[str] = None
+    parent_id: Optional[int] = None   # present+None = move to root
+    move_to_root: bool = False         # unambiguous root-move flag
+    sort_order: Optional[int] = None
+
+class CatalogFileBody(BaseModel):
+    upload_id: int
+```
+
+#### Endpoints
+
+| Method | Path | Guard | Body | Success response |
+|---|---|---|---|---|
+| `GET` | `/{page_id}/catalogs` | session uid | — | `{"catalogs": [...]}` 200 |
+| `POST` | `/{page_id}/catalogs` | demo_guard | `CatalogCreateBody` | new catalog dict 201 |
+| `PATCH` | `/{page_id}/catalogs/{catalog_id}` | demo_guard | `CatalogPatchBody` | updated dict 200 |
+| `DELETE` | `/{page_id}/catalogs/{catalog_id}` | demo_guard | — | 204 |
+| `GET` | `/{page_id}/files/page/{upload_id}/catalogs` | session uid | — | `{"catalogs": [...]}` 200 |
+| `POST` | `/{page_id}/catalogs/{catalog_id}/files` | demo_guard | `CatalogFileBody` | `{"ok": true}` 200 |
+| `DELETE` | `/{page_id}/catalogs/{catalog_id}/files/{upload_id}` | demo_guard | — | 204 |
+
+Error behaviour: `404` not found, `400` circular reparent, `401` no session.
+
+---
+
+### `static/js/home-page-uploads-catalogs.js`
+
+**Every variable and function declaration must use `var` / `function` — no `let`/`const`.**
+This file is loaded globally; the uploads page is entered/exited via HTMX re-injection.
+`let`/`const` throw `SyntaxError: Identifier already declared` on the second page visit.
+
+#### Module-level state (all `var`)
+
+```
+_uplCatPid         — active page_id (0 = not on an uploads page)
+_uplCatData        — flat list [{id, name, parent_id, sort_order}]
+_uplCatActive      — selected catalog id (null = "All files")
+_uplCatBusy        — request-in-flight guard (bool)
+_uplCatModalMode   — 'create' | 'rename'
+_uplCatModalParent — parent_id for 'create' mode
+_uplCatModalTarget — catalog id for 'rename' mode
+_uplCatDragId      — catalog id being dragged (null = not dragging)
+_uplCatDropIntent  — 'before' | 'inside' | 'after'
+_uplCatCollapsed   — {[catalogId]: true} collapse state map
+_uplCatDelPending  — catalog id pending delete confirmation
+```
+
+#### Public API (called from other modules)
+
+| Function | Called by | Purpose |
+|---|---|---|
+| `_uplCatalogEnterUploadsPage(pid)` | `home-page-uploads-folders.js` → Enter fn | Set pid, fetch + render tree |
+| `_uplCatalogExitUploadsPage()` | `home-page-uploads-folders.js` → Exit fn | Zero state, clear `#upl-catalog-tree` |
+| `_uplCatalogGetFilter()` | `home-page-uploads.js` → `_uplFetch` | Returns `'&catalog_id=N'` or `''` |
+| `_uplCatalogClearActive()` | `home-page-uploads-folders.js` on folder click | Set `_uplCatActive = null`, re-render tree |
+| `_uplRenderDetailCatalogs(f)` | `home-page-uploads.js` → `_uplRenderDetail` | Fetch file catalogs, render badge list + add/remove UI into `#upl-detail-catalogs` |
+
+#### Internal functions
+
+| Function | Notes |
+|---|---|
+| `_uplCatalogFetch()` | `GET /{pid}/catalogs`; populate `_uplCatData`; call render |
+| `_uplCatalogRender()` | Build parent→children map; recursive render into `#upl-catalog-tree`; call `_uplCatalogEnsureModal()` |
+| `_uplCatalogRenderNode(cat, depth, byParent)` | Return HTML string for one tree row: indent, collapse toggle, drag handle, name, +child / rename / delete icon buttons |
+| `_uplCatalogSelect(id)` | Set `_uplCatActive`; if already active → set `null` (toggle); call `_uplFolderClearActive()` if available; call `_uplFetch(1)`; re-render tree |
+| `_uplCatalogCreate(name, parent_id)` | POST; on success push new dict to `_uplCatData`, re-render |
+| `_uplCatalogRename(id, name)` | PATCH; update local entry in `_uplCatData`, re-render |
+| `_uplCatalogDelete(id)` | Show confirm modal → on confirm DELETE; splice from `_uplCatData`; if deleted was active → `_uplCatActive = null` + `_uplFetch(1)`; re-render |
+| `_uplCatalogDragStart(event, id)` | Set `_uplCatDragId = id`; `event.dataTransfer.effectAllowed = 'move'` |
+| `_uplCatalogDragOver(event, id)` | `event.preventDefault()`; compute zone from `offsetY / el.offsetHeight`: top 25% → 'before', middle 50% → 'inside', bottom 25% → 'after'; set `_uplCatDropIntent`; apply CSS highlight class |
+| `_uplCatalogDragEnd()` | Clear drag state; remove all highlight classes |
+| `_uplCatalogDrop(event, targetId)` | PATCH with resolved `parent_id` + `sort_order`; on `400 circular` show toast error; on success re-fetch |
+| `_uplCatalogEnsureModal()` | Inject rename/create modal HTML once if `#upl-cat-modal` not in DOM |
+| `_uplCatalogOpenModal(mode, catalogId, parentId)` | Show `#upl-cat-modal`; pre-fill name for rename |
+| `_uplCatalogSaveModal()` | Read input value; call create or rename; close modal |
+| `_uplCatalogConfirmDelete(id)` | Set `_uplCatDelPending`; show `#upl-cat-del-modal` |
+| `_uplCatalogDoDelete()` | Call `_uplCatalogDelete(_uplCatDelPending)`; hide modal |
+| `_uplCatalogAddFile(catalogId, uploadId)` | `POST …/catalogs/{cid}/files`; on success refresh detail badge panel |
+| `_uplCatalogRemoveFile(catalogId, uploadId)` | `DELETE …/catalogs/{cid}/files/{uid}`; on success refresh detail badge panel |
+
+#### Confirm-delete modal
+
+Follow the standard BookWorm confirmation modal pattern exactly (see CODEPUPPY_NOTES.md
+§ "Confirmation / Info Modals"). Use destructive (red) styling. ID: `#upl-cat-del-modal`.
+Do NOT use `window.confirm()`. JS wiring uses `var _uplCatDelPending = null` pattern.
+
+---
+
+## Changes to Existing Files — Detailed
+
+### 1 — `database.py`
+
+Add after the `page_uploads.folder_id` additive column migration and before `await db.commit()`:
+
+```python
+# ── upload_catalogs (many-to-many catalog tree for uploads pages) ──────────
+await db.execute("""
+    CREATE TABLE IF NOT EXISTS upload_catalogs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        page_id    INTEGER NOT NULL REFERENCES home_pages(id)    ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
+        name       TEXT    NOT NULL,
+        parent_id  INTEGER REFERENCES upload_catalogs(id)        ON DELETE SET NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page "
+    "ON upload_catalogs(page_id, user_id, parent_id, sort_order)"
+)
+
+# ── upload_catalog_files (M2M junction: catalogs ↔ page_uploads) ───────────
+await db.execute("""
+    CREATE TABLE IF NOT EXISTS upload_catalog_files (
+        catalog_id INTEGER NOT NULL REFERENCES upload_catalogs(id) ON DELETE CASCADE,
+        upload_id  INTEGER NOT NULL REFERENCES page_uploads(id)    ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id)           ON DELETE CASCADE,
+        added_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (catalog_id, upload_id)
+    )
+""")
+await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_ucf_upload "
+    "ON upload_catalog_files(upload_id, user_id)"
 )
 ```
 
----
+### 2 — `routers/uploads_db.py` → `get_uploads_page()`
 
-## DB Helpers — `routers/uploads_docs_db.py`
+Current signature:
+```python
+async def get_uploads_page(user_id, page=1, folder_id=None, ...):
+```
 
-Add all four functions. All use `get_db()`. Row dicts via `db.row_factory = aiosqlite.Row` (already set by `get_db()`).
+New signature:
+```python
+async def get_uploads_page(user_id, page=1, folder_id=None, catalog_id=None, ...):
+```
+
+Logic change — add this block immediately after the existing `folder_id` branching:
 
 ```python
-async def get_annotations(file_id: int, user_id: int) -> list[dict]:
-    async with get_db() as db:
-        cur = await db.execute(
-            "SELECT id, page_num, type, x_pct, y_pct, width_pct, height_pct, "
-            "color, content, created_at "
-            "FROM pdf_annotations WHERE file_id=? AND user_id=? ORDER BY created_at",
-            (file_id, user_id),
-        )
-        rows = await cur.fetchall()
-    return [dict(r) for r in rows]
-
-
-async def create_annotation(file_id: int, user_id: int, data) -> int:
-    async with get_db() as db:
-        cur = await db.execute(
-            "INSERT INTO pdf_annotations "
-            "(user_id, file_id, page_num, type, x_pct, y_pct, "
-            " width_pct, height_pct, color, content) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (user_id, file_id, data.page_num, data.type,
-             data.x_pct, data.y_pct, data.width_pct, data.height_pct,
-             data.color, data.content),
-        )
-        await db.commit()
-    return cur.lastrowid
-
-
-async def update_annotation(annot_id: int, user_id: int, data) -> int:
-    """Update position + content. Returns affected rowcount (0 = not found/not owned)."""
-    async with get_db() as db:
-        cur = await db.execute(
-            "UPDATE pdf_annotations SET "
-            "x_pct=?, y_pct=?, width_pct=?, height_pct=?, color=?, content=? "
-            "WHERE id=? AND user_id=?",
-            (data.x_pct, data.y_pct, data.width_pct, data.height_pct,
-             data.color, data.content, annot_id, user_id),
-        )
-        await db.commit()
-    return cur.rowcount
-
-
-async def delete_annotation(annot_id: int, user_id: int) -> int:
-    """Returns affected rowcount (0 = not found/not owned)."""
-    async with get_db() as db:
-        cur = await db.execute(
-            "DELETE FROM pdf_annotations WHERE id=? AND user_id=?",
-            (annot_id, user_id),
-        )
-        await db.commit()
-    return cur.rowcount
+if catalog_id is not None:
+    use_union = False   # note-src files are not in catalogs — skip the UNION
+    # Override folder_where: JOIN the junction table instead
+    folder_where = (
+        " INNER JOIN upload_catalog_files ucf "
+        "ON pu.id = ucf.upload_id AND ucf.catalog_id = ?"
+    )
+    folder_params = (catalog_id,)
 ```
 
----
+> The JOIN clause must be inserted into the query string at the correct position —
+> after `FROM page_uploads pu` and before any `WHERE` clauses. Review the current
+> query construction carefully before editing.
 
-## `#upl-annot-modal` HTML Block
+### 3 — `routers/home_uploads.py` → `list_files()`
 
-Insert in `templates/partials/home_page_uploads.html` immediately after the
-closing `</div>` of `#upl-spreadsheet-modal` (currently line ~465) and before
-`</div>{# /uploads-page-root #}`.
+```python
+@router.get("/{page_id}/files")
+async def list_files(
+    request: Request,
+    page_id: int,
+    page: int = 1,
+    folder_id: int = Query(None),
+    catalog_id: int = Query(None),   # ← new
+):
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    result = await get_uploads_page(uid, page=page, folder_id=folder_id,
+                                    catalog_id=catalog_id)   # ← pass through
+    return JSONResponse(result)
+```
 
+Also add `catalog_id` to the `get_uploads_page` import call if it is used as a
+keyword argument (update the import from `uploads_db` if the signature changed there).
+
+### 4 — `main.py`
+
+After line 70 (`from routers import home_uploads_folders as home_uploads_folders_router`):
+```python
+from routers import home_uploads_catalogs as home_uploads_catalogs_router
+```
+
+After line 143 (`app.include_router(home_uploads_folders_router.router)`):
+```python
+app.include_router(home_uploads_catalogs_router.router)
+```
+
+### 5 — `templates/index.html` (around line 451)
+
+Replace the current contents of `<div id="sb-panel-folders" ...>` from:
 ```html
-{# ── PDF Annotations modal ─────────────────────────────────────────────────── #}
-<div id="upl-annot-modal"
-     class="hidden fixed inset-0 z-[60] flex flex-col"
-     role="dialog" aria-modal="true" aria-labelledby="upl-annot-title" tabindex="-1"
-     onkeydown="if(event.key==='Escape')_uplAnnotClose()">
-
-  {# ── Top bar ── #}
-  <div class="flex items-center gap-2 px-4 py-2 flex-shrink-0
-              bg-zinc-900 border-b border-zinc-700 flex-wrap">
-    <span class="text-base leading-none">📝</span>
-    <span id="upl-annot-filename"
-          class="text-sm font-semibold text-zinc-100 truncate flex-1 min-w-0"></span>
-    <span id="upl-annot-title" class="text-xs text-zinc-400 select-none mr-2">PDF Annotations</span>
-
-    {# Tool buttons #}
-    <button type="button" id="upl-annot-tool-highlight"
-            onclick="_uplAnnotAddMode('highlight')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Highlight tool">🖊 Highlight</button>
-    <button type="button" id="upl-annot-tool-sticky"
-            onclick="_uplAnnotAddMode('sticky')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Sticky note tool">📌 Sticky</button>
-    <button type="button" id="upl-annot-tool-textbox"
-            onclick="_uplAnnotAddMode('textbox')"
-            class="px-2.5 py-1 text-xs rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white hover:border-[#ffc220]
-                   transition focus:outline-none focus:ring-1 focus:ring-[#ffc220]"
-            aria-label="Text box tool">🔤 Text Box</button>
-
-    {# Page navigation #}
-    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page - 1)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Previous page">‹</button>
-    <span id="upl-annot-page-label"
-          class="text-xs text-zinc-400 select-none whitespace-nowrap">Page 1 / 1</span>
-    <button type="button" onclick="_uplAnnotSetPage(_uplAnnotState.page + 1)"
-            class="px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300
-                   hover:text-white transition focus:outline-none"
-            aria-label="Next page">›</button>
-
-    <button type="button" onclick="_uplAnnotClose()"
-            class="text-zinc-300 hover:text-white bg-zinc-700 hover:bg-zinc-600
-                   rounded-lg px-3 py-1.5 text-xs font-medium transition
-                   focus:outline-none focus:ring-1 focus:ring-white ml-1"
-            aria-label="Close annotation editor">✕ Close</button>
-  </div>
-
-  {# ── Loading state ── #}
-  <div id="upl-annot-loading"
-       class="flex-1 flex items-center justify-center bg-zinc-950 text-zinc-400 text-sm">
-    <svg class="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-      <path class="opacity-75" fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-    </svg>
-    Loading PDF…
-  </div>
-
-  {# ── Error state ── #}
-  <div id="upl-annot-error"
-       class="hidden flex-1 flex flex-col items-center justify-center bg-zinc-950
-              text-red-400 text-sm gap-3">
-    <p id="upl-annot-error-msg"></p>
-    <button type="button" onclick="_uplAnnotClose()"
-            class="text-xs px-3 py-1.5 rounded-lg border border-zinc-600
-                   text-zinc-300 hover:text-white transition">Close</button>
-  </div>
-
-  {# ── Canvas + overlay ── #}
-  <div id="upl-annot-body"
-       class="hidden flex-1 overflow-auto bg-zinc-950 flex items-start justify-center p-4">
-    <div id="upl-annot-canvas-wrap" style="position:relative;display:inline-block;">
-      <canvas id="upl-annot-canvas"></canvas>
-      <div id="upl-annot-overlay"
-           style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></div>
-    </div>
-  </div>
+<div id="upl-folder-tree" class="space-y-0.5"></div>
+```
+To:
+```html
+<!-- Folders section label -->
+<div class="flex items-center justify-between px-1 mb-1">
+  <span class="text-[10px] font-bold uppercase tracking-wider
+               text-gray-400 dark:text-zinc-500 select-none">Folders</span>
 </div>
+<div id="upl-folder-tree" class="space-y-0.5"></div>
+
+<!-- ── Catalog section divider ── -->
+<div class="mt-4 mb-2 border-t border-gray-200 dark:border-zinc-700"></div>
+<div class="flex items-center justify-between px-1 mb-1">
+  <span class="text-[10px] font-bold uppercase tracking-wider
+               text-gray-400 dark:text-zinc-500 select-none">Catalogs</span>
+</div>
+<div id="upl-catalog-tree" class="space-y-0.5"></div>
 ```
 
----
+Both sections scroll together inside the existing `flex-1 overflow-y-auto py-3 px-3`
+panel — no layout changes needed to the outer panel div.
 
-## JS Module Spec — `static/js/home-page-uploads-annot.js`
+### 6 — `templates/base.html` (after line 590)
 
-All `var`. No `let`/`const`. `'use strict';` at top.
-Depends on shared globals: `_uplPid`, `_uplEsc`, `_uplShowToast`, `_uplFetch`.
-
-### Module-level state variables
-```javascript
-var _uplAnnotFile         = null;   // current file object
-var _uplAnnotPdfDoc       = null;   // pdf.js PDFDocumentProxy
-var _uplAnnotLibsPromise  = null;   // cached CDN load promise
-var _uplAnnotState = {
-  page:    0,          // 0-indexed current page
-  total:   1,
-  tool:    null,       // 'highlight'|'sticky'|'textbox'|null
-  annots:  [],         // array of annotation objects from server
-  busy:    false,
-};
-```
-
-### CDN URLs (pinned)
-```javascript
-var _PDFJS_URL   = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-var _PDFJS_WRKR  = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-```
-
-### Public functions
-
-**`_uplAnnotLoadLibs()`** → `Promise`
-- If `_uplAnnotLibsPromise` already set, return it immediately (cache hit).
-- Otherwise: inject `<script src="_PDFJS_URL">`, wait for `load` event, set
-  `pdfjsLib.GlobalWorkerOptions.workerSrc = _PDFJS_WRKR`, store and return promise.
-
-**`_uplAnnotOpen(f)`** → `async`
-1. Store `_uplAnnotFile = f`.
-2. Set `#upl-annot-filename` text to `f.original_name`.
-3. Remove `hidden` from `#upl-annot-modal`; show `#upl-annot-loading`; hide `#upl-annot-body` + `#upl-annot-error`.
-4. Reset `_uplAnnotState`: `page=0, tool=null, annots=[]`.
-5. Clear `#upl-annot-overlay` innerHTML; deactivate all tool buttons (remove active styling).
-6. `await _uplAnnotLoadLibs()`.
-7. Fetch PDF bytes: `GET /home/uploads/{_uplPid}/files/{f.src}/{f.id}/download` with credentials.
-   - Check `Content-Type: text/html` → session expired → show error "Session expired — please reload".
-8. `pdfjsLib.getDocument({data: arrayBuffer})` → store in `_uplAnnotPdfDoc`.
-9. `_uplAnnotState.total = pdfDoc.numPages`.
-10. Fetch annotations: `GET /home/uploads/{_uplPid}/files/page/{f.id}/annotations`.
-    - Store in `_uplAnnotState.annots`.
-11. `await _uplAnnotRenderPage(0)`.
-12. Hide `#upl-annot-loading`; show `#upl-annot-body`.
-13. Catch all errors → hide loading, show `#upl-annot-error` with message.
-
-**`_uplAnnotClose()`**
-- Add `hidden` to `#upl-annot-modal`. Null out `_uplAnnotPdfDoc`, `_uplAnnotFile`.
-- Reset state. Do NOT destroy PDF.js worker — reuse across opens.
-
-**`_uplAnnotRenderPage(n)`** → `async`
-- Guard: `n < 0` or `n >= total` → return.
-- `_uplAnnotState.page = n`.
-- `page = await _uplAnnotPdfDoc.getPage(n + 1)`.  *(PDF.js pages are 1-indexed.)*
-- Compute viewport: `page.getViewport({ scale: 1.5 })`.
-- Size `#upl-annot-canvas` to `viewport.width × viewport.height`.
-- `page.render({ canvasContext, viewport })` → await completion.
-- Update `#upl-annot-page-label` → `"Page N / Total"` (1-indexed for display).
-- Call `_uplAnnotDrawOverlay()`.
-
-**`_uplAnnotSetPage(n)`**
-- Clamps to `[0, total-1]`. Calls `_uplAnnotRenderPage(n)`.
-
-**`_uplAnnotDrawOverlay()`**
-- Clear `#upl-annot-overlay` innerHTML.
-- Get canvas `width` + `height` in px (for CSS `%` → `px` back-conversion if needed — we use `%` directly).
-- For each annotation in `_uplAnnotState.annots` where `a.page_num === _uplAnnotState.page`:
-  call `_uplAnnotMakeDiv(a)` → append to overlay.
-
-**`_uplAnnotMakeDiv(a)`** → DOM element
-- Create `<div>` with `style`:
-  ```
-  position:absolute;
-  left:  (a.x_pct * 100)%;
-  top:   (a.y_pct * 100)%;
-  width: (a.width_pct * 100)%;
-  height:(a.height_pct * 100)%;
-  pointer-events:auto;
-  ```
-- `data-aid` = `a.id`.
-- Visual by type:
-  - **highlight**: `background:rgba(255,194,32,0.35); border:none; cursor:default;`
-    - Delete button (tiny `✕` top-right, visible on hover via CSS class).
-  - **sticky**: `background:#ffc220; border-radius:6px; padding:4px; overflow:hidden;`
-    - Contains `<textarea>` (full width/height minus padding, no border, transparent bg, `font-size:11px`).
-    - `textarea.value = a.content`. `onblur` → `_uplAnnotSave(a.id, textarea.value)`.
-    - Delete button top-right.
-  - **textbox**: `background:white; border:1.5px solid #0053e2; border-radius:4px; padding:4px;`
-    - Contains `<textarea>` same as sticky but white bg.
-    - `textarea.value = a.content`. `onblur` → `_uplAnnotSave(a.id, textarea.value)`.
-    - Delete button top-right.
-- Delete button: `position:absolute; top:2px; right:2px; font-size:9px; background:rgba(0,0,0,0.5); color:white; border:none; border-radius:3px; cursor:pointer; padding:1px 4px; line-height:1;`  `onclick` → `_uplAnnotDelete(a.id)`.
-- Return the div.
-
-**`_uplAnnotAddMode(type)`**
-- Toggle: if `_uplAnnotState.tool === type` → set to `null` (cancel mode), else set to `type`.
-- Update visual state of all 3 tool buttons: active tool gets `border-[#ffc220] text-[#ffc220]` classes, others reset.
-- Set `#upl-annot-overlay` `cursor`: `crosshair` when tool active, `default` when null.
-- Attach or remove click listener on `#upl-annot-overlay` via `_uplAnnotHandleOverlayClick`.
-
-**`_uplAnnotHandleOverlayClick(e)`**
-- If no tool active or busy → return.
-- Compute click position as `%` of overlay dimensions:
-  ```javascript
-  var rect = e.currentTarget.getBoundingClientRect();
-  var xPct = (e.clientX - rect.left) / rect.width;
-  var yPct = (e.clientY - rect.top)  / rect.height;
-  ```
-- Default dimensions: highlight `width=0.25, height=0.04`; sticky/textbox `width=0.2, height=0.12`.
-- POST to `/home/uploads/{pid}/files/page/{fid}/annotations` with JSON body matching `AnnotationBody`.
-- On success: push returned annotation object (with server `id`) into `_uplAnnotState.annots`. Call `_uplAnnotDrawOverlay()`.
-- On error: `_uplShowToast('Could not add annotation', true)`.
-
-**`_uplAnnotSave(aid, content)`** → `async`
-- `PUT /home/uploads/{pid}/files/page/{fid}/annotations/{aid}` with body containing updated `content` plus current `x_pct/y_pct/width_pct/height_pct/color` (read from the stored annot object in `_uplAnnotState.annots`).
-- On error: `_uplShowToast('Save failed', true)`.
-- On success: update the matching entry in `_uplAnnotState.annots`.
-
-**`_uplAnnotDelete(aid)`** → `async`
-- `DELETE /home/uploads/{pid}/files/page/{fid}/annotations/{aid}`.
-- On success: remove from `_uplAnnotState.annots`. Remove the div with `data-aid=aid` from `#upl-annot-overlay`.
-- On error: `_uplShowToast('Delete failed', true)`.
-
-*(Helper: `_uplAnnotAid()` and `_uplAnnotFid()` — private getters that return `_uplAnnotFile.id` and current `_uplPid`.)*
-
----
-
-## `home-page-uploads-docs.js` Change
-
-In `_uplDocStudioInit(f)`, add after the existing `canSign` declaration and before the `if (!canView && ...)` guard:
-
-```javascript
-var canAnnotate = f.src === 'page'
-  && f.mime_type === 'application/pdf'
-  && typeof _uplAnnotOpen === 'function';
-```
-
-In the `btns.push(...)` block, insert after the `✍️ Sign PDF` push and before `→ PDF`:
-
-```javascript
-if (canAnnotate) btns.push(
-  '<button onclick="_uplAnnotOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📝 Annotate PDF</button>'
-);
-```
-
----
-
-## `base.html` Change
-
-Insert immediately after line 587 (spreadsheet.js `<script>` tag):
-
+After:
 ```html
-<script src="/static/js/home-page-uploads-annot.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-page-uploads-folders.js?v={{ static_v }}" defer></script>
+```
+Add:
+```html
+<script src="/static/js/home-page-uploads-catalogs.js?v={{ static_v }}" defer></script>
+```
+
+Load order matters: catalog module references `_uplFolderClearActive` (defined in
+folders module) — catalog must load **after** folders.
+
+### 7 — `static/js/home-page-uploads-folders.js`
+
+**a)** Add `_uplFolderClearActive()` as a new public function (near the existing public
+API functions block):
+```javascript
+function _uplFolderClearActive() {
+  _uplFldActive = null;
+  _uplFolderRender();   // removes active-highlight from all rows
+}
+```
+
+**b)** At the end of `_uplFolderEnterUploadsPage(pid)`, append:
+```javascript
+if (typeof _uplCatalogEnterUploadsPage === 'function') _uplCatalogEnterUploadsPage(pid);
+```
+
+**c)** At the end of `_uplFolderExitUploadsPage()`, append:
+```javascript
+if (typeof _uplCatalogExitUploadsPage === 'function') _uplCatalogExitUploadsPage();
+```
+
+**d)** At the point in the code where `_uplFldActive` is set and `_uplFetch(1)` is
+called in response to a folder row click, add:
+```javascript
+if (typeof _uplCatalogClearActive === 'function') _uplCatalogClearActive();
+```
+
+### 8 — `static/js/home-page-uploads.js`
+
+**a)** In `_uplFetch(page)`, after the existing `_fldQs` line:
+```javascript
+var _fldQs = (typeof _uplFolderGetFilter === 'function') ? _uplFolderGetFilter() : '';
+```
+Add:
+```javascript
+var _catQs = (typeof _uplCatalogGetFilter === 'function') ? _uplCatalogGetFilter() : '';
+```
+Then change the fetch URL to:
+```javascript
+const r = await fetch('/home/uploads/' + _uplPid + '/files?page=' + page + _fldQs + _catQs);
+```
+
+**b)** In the page-src detail panel HTML string built inside `_uplRenderDetail(f)`,
+add an empty placeholder div after the tags section:
+```html
+<div id="upl-detail-catalogs" class="mt-3"></div>
+```
+This is only needed for `src === 'page'` files. Guard it with a conditional in the
+template string builder if detail HTML differs by src type.
+
+**c)** At the end of `_uplRenderDetail(f)`, alongside the existing
+`_uplDocStudioInit(f)` call, add:
+```javascript
+if (typeof _uplRenderDetailCatalogs === 'function' && f.src === 'page') {
+  _uplRenderDetailCatalogs(f);
+}
+```
+
+---
+
+## Detail Panel — Catalog Badge UI
+
+`_uplRenderDetailCatalogs(f)` populates `#upl-detail-catalogs`:
+
+1. Fetch `GET /{pid}/files/page/{f.id}/catalogs` → `{catalogs: [...]}`
+2. If `_uplCatData` is empty: render muted "No catalogs exist yet" note; return
+3. Build HTML:
+   - Section heading: `🏷 Catalogs` (small, bold, gray)
+   - For each catalog the file belongs to: pill badge (catalog name) + `×` remove
+     button → calls `_uplCatalogRemoveFile(cat.id, f.id)` → re-runs function to refresh
+   - `<select>` dropdown listing all `_uplCatData` entries NOT already applied
+     (indented `—` prefix by depth for hierarchy hint) + a small `＋ Add` button →
+     calls `_uplCatalogAddFile(selectedCatalogId, f.id)` → re-runs to refresh
+   - If no catalogs are assigned yet: show muted "None" placeholder before the add
+     dropdown
+
+---
+
+## File Grid Filter Integration — Call Trace
+
+```
+User clicks a catalog row in #upl-catalog-tree
+  → _uplCatalogSelect(id)            [home-page-uploads-catalogs.js]
+      _uplCatActive = id
+      _uplFolderClearActive()         [home-page-uploads-folders.js]  — clears folder qs
+      _uplFetch(1)                    [home-page-uploads.js]
+          _fldQs = ''                 — folder returned ''
+          _catQs = '&catalog_id=N'   — catalog returned active id
+          GET /home/uploads/{pid}/files?page=1&catalog_id=N
+              list_files()            [routers/home_uploads.py]
+                  get_uploads_page(uid, catalog_id=N)
+                      use_union = False
+                      INNER JOIN upload_catalog_files ucf ON pu.id=ucf.upload_id
+                      WHERE ucf.catalog_id = N
+                      → page-src files only, members of catalog N
 ```
 
 ---
 
 ## Skills to Invoke
 
-After implementation, run in this order:
-1. **bookworm-db-migration** — validate the `pdf_annotations` table + index migration is idempotent on the live DB.
-2. **bookworm-template-audit** — confirm no `let`/`const` crept into the new JS; verify `?v={{ static_v }}` on the new script tag; check `#upl-annot-modal` HTML IDs are unique.
-3. **bookworm-qa** — hit all 4 annotation endpoints; open Annotate PDF modal; test all three tool types; verify page nav; confirm no regressions on Sign PDF / Spreadsheet.
-4. **bookworm-pre-commit** — before committing.
-5. **bookworm-docs-keeper** — update CODEPUPPY_NOTES.md: new table in schema section, new JS file in key file map, new endpoints in `home_uploads_docs.py` description.
+- **`bookworm-db-migration`** — after Step 1; verify both tables survive 10× idempotent
+  restarts on a live DB (no `already exists` errors, no data loss)
+- **`bookworm-template-audit`** — after Steps 5–6 (index.html + base.html); check for
+  missing `?v={{ static_v }}`, broken element IDs, stray `let`/`const` in any new JS
+- **`bookworm-template-audit`** — after Step 9 (new JS file); specifically audit
+  `home-page-uploads-catalogs.js` for `let`/`const` usage
+- **`bookworm-qa`** — full pass after all steps; see checklist §14 for exact scenarios
+- **`bookworm-pre-commit`** — before committing; confirm no raw `aiosqlite.connect()`,
+  no `let`/`const` in catalog JS, no hardcoded IDs or secrets
+- **`bookworm-docs-keeper`** — after ship; add both new tables to CODEPUPPY_NOTES.md
+  DB schema section; add new JS module to the key file map
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-| # | Gotcha |
-|---|---|
-| G1 | **`var` only** in `home-page-uploads-annot.js` — no `let`/`const`. Even though this file is not a Jinja2 partial, house style for all uploads companion files uses `var`. |
-| G2 | **PDF.js CDN load order** — inject script tag, wait for `load` event *before* calling `pdfjsLib.getDocument()`. Do NOT assume `pdfjsLib` is defined at module parse time. |
-| G3 | **PDF.js worker** — must set `pdfjsLib.GlobalWorkerOptions.workerSrc` after the main script loads and before any `getDocument()` call. Same CDN version (`3.11.174`) for both files — version mismatch = silent hang. |
-| G4 | **Session expiry** — the PDF download fetch returns `302 → HTML` when expired. Check `response.headers.get('content-type')` starts with `text/html` *before* calling `.arrayBuffer()`. Show inline error instead of a `JSON.parse` crash. |
-| G5 | **`_demo_guard` first** — POST/PUT/DELETE annotation endpoints must call `_demo_guard(request)` as line 1, before even reading `session["user_id"]`. GET (read) does not need it. |
-| G6 | **`get_db()` only** — new DB helpers in `uploads_docs_db.py` must import and use `get_db` from `database`. Never `aiosqlite.connect()` directly. |
-| G7 | **`?v={{ static_v }}`** — the new `<script defer>` tag in `base.html` must include this cache-buster. |
-| G8 | **`_PUBLIC` unchanged** — all 4 annotation endpoints are auth-gated. Do not add them to `_PUBLIC` in `auth_middleware.py`. |
-| G9 | **PDF.js page numbers** — PDF.js `getPage()` is 1-indexed; our DB stores 0-indexed `page_num`. Always `getPage(page_num + 1)` and display `page_num + 1` to the user. |
-| G10 | **Overlay click target** — `#upl-annot-overlay` has `pointer-events:none` by default. Switch to `pointer-events:auto` when a tool is active; restore to `none` when tool is cancelled, so annotation `<div>`s inside the overlay remain clickable. |
+**Gotcha — `var` only in the new JS file (critical for correctness):**
+`home-page-uploads-catalogs.js` is loaded globally into a page that uses HTMX
+re-injection to swap the uploads page in and out. Every visit re-calls
+`_uplCatalogEnterUploadsPage`. Using `let`/`const` at module level will throw
+`SyntaxError: Identifier 'X' has already been declared` on the second visit.
+All declarations must be `var` and all function declarations must use `function` keyword.
+
+**Gotcha — `get_db()`, not raw `aiosqlite.connect()` (schema violation):**
+`uploads_catalogs_db.py` is a new `*_db.py` file. It must `from database import get_db`
+and use `async with get_db() as db:` for every query. Direct `aiosqlite.connect(DB_PATH)`
+skips WAL mode, busy_timeout, and foreign_key enforcement — bookworm-pre-commit will
+catch this but do it right from the start.
+
+**Gotcha — `use_union = False` when `catalog_id` is set:**
+`get_uploads_page()` currently builds a UNION of note-src and page-src rows when
+`folder_id is None`. Note attachment rows have no entry in `upload_catalog_files` —
+the UNION branch must be suppressed when filtering by catalog or the query will be
+broken (the INNER JOIN on `page_uploads` cannot join with note attachment rows from
+the other UNION leg). Explicitly set `use_union = False` when `catalog_id is not None`.
+
+**Gotcha — mutual exclusion of `_fldQs` and `_catQs` in `_uplFetch`:**
+Both query string fragments are appended to the same URL. If both are non-empty, the
+server receives `?folder_id=X&catalog_id=Y` — the server silently lets `catalog_id`
+win (per the new logic order), but the URL is misleading and may confuse future
+debugging. The JS modules must enforce mutual exclusion: `_uplCatalogSelect()` calls
+`_uplFolderClearActive()` (zeroing `_fldQs`), and the folder click handler calls
+`_uplCatalogClearActive()` (zeroing `_catQs`). Both directions must be wired.
+
+**Gotcha — `?v={{ static_v }}` cache-busting:**
+The new `<script>` tag for `home-page-uploads-catalogs.js` in `base.html` **must**
+have `?v={{ static_v }}`. Without it, browsers cache the (initially empty) file and
+users never receive updates.
+
+**Gotcha — demo guard on all write endpoints:**
+`POST /catalogs`, `PATCH /catalogs/{id}`, `DELETE /catalogs/{id}`,
+`POST /catalogs/{id}/files`, `DELETE /catalogs/{id}/files/{uid}` all mutate state.
+Each must call `if guard := _demo_guard(request): return guard` on entry. Read-only
+GETs do not need the guard.
+
+**Gotcha — detail panel catalog section gated by `src === 'page'`:**
+Note attachments (`src === 'note'`) have IDs in `note_attachments`, not `page_uploads`.
+The `upload_catalog_files` FK points only to `page_uploads.id`. Never call
+`_uplRenderDetailCatalogs(f)` or render `#upl-detail-catalogs` for a note-src file.
+Guard in both the JS call site (`f.src === 'page'`) and the detail HTML builder.
+
+**Gotcha — circular reparenting via DnD must be rejected server-side:**
+`_is_descendant()` must run in `update_catalog()` before executing the UPDATE.
+Raise `ValueError("circular")` → caught in the router → returned as HTTP 400. The
+JS `_uplCatalogDrop()` handler must check for a 400 response and show an inline toast
+error. Never rely on client-side cycle detection alone.
 
 ---
 
 ## Implementation Checklist
 
-- [x] 1. `database.py` — paste `CREATE TABLE IF NOT EXISTS pdf_annotations` + `CREATE INDEX IF NOT EXISTS idx_pdf_annot_file` inside `init_db()`, after existing `page_upload_tags` block.
-- [x] 2. `routers/uploads_docs_db.py` — add `get_annotations`, `create_annotation`, `update_annotation`, `delete_annotation` functions (exact SQL from plan above).
-- [x] 3. `routers/home_uploads_annot.py` — NEW FILE: `AnnotationBody` Pydantic model (with `type` validator). 4 route handlers following exact guard sequence. Registered in `main.py`.
-- [x] 4. `templates/partials/home_page_uploads.html` — inserted `#upl-annot-modal` block after `</div>{# end #upl-spreadsheet-modal #}`, before `</div>{# /uploads-page-root #}`.
-- [x] 5. `static/js/home-page-uploads-annot.js` — created new file (286 lines). All `var`. All 9 public/private functions per spec.
-- [x] 6. `templates/base.html` — added `<script defer src="/static/js/home-page-uploads-annot.js?v={{ static_v }}"></script>` after spreadsheet.js.
-- [x] 7. `static/js/home-page-uploads-docs.js` — added `canAnnotate` var + `📝 Annotate PDF` button push after `✍️ Sign PDF`.
-- [x] 8. Restarted server (`restart.bat`). `_health_check.py` → exit 0. All 11 templates OK.
-- [ ] 9. Manual smoke test: open an Uploads page, select a PDF, click `📝 Annotate PDF`. Confirm PDF renders. Test Highlight (click → yellow overlay). Test Sticky (click → editable yellow card, blur saves). Test Text Box (click → editable white box). Test page nav on a multi-page PDF. Test delete (✕ on annotation). Reload modal — confirm annotations persisted.
-- [x] 10. **bookworm-db-migration** — validated via `_health_check.py` + QA sweep. `pdf_annotations` + index created on startup.
-- [x] 11. **bookworm-template-audit** — 5/5 checks green. No `let`/`const`, correct cache-bust, all IDs present, no `<script>` in partial.
-- [x] 12. **bookworm-qa** — 100% green. All 4 annotation endpoints auth-redirect correctly, static assets serve 200, no errors in logs, DB migration confirmed.
-- [x] 13. **bookworm-pre-commit** — 0 blockers. Patched `!r.ok` check in `_uplAnnotDelete`; added docstring to `update_annotation`.
-- [ ] 14. Run **bookworm-docs-keeper** — update `pdf_annotations` in schema section, new JS file in key file map, Phase 8 note in `home_uploads_docs.py` description.
-- [ ] 15. Commit: `feat(uploads): PDF annotations overlay — Phase 8 B2`.
+- [ ] **Step 1** — `database.py`: add `upload_catalogs` CREATE + index; add `upload_catalog_files` CREATE + index; place before `await db.commit()`
+- [ ] **Step 2** — `routers/uploads_catalogs_db.py`: create new file; implement all 9 helper functions; use `get_db()`; mirror folder helper structure
+- [ ] **Step 3** — `routers/home_uploads_catalogs.py`: create new file; `APIRouter(prefix="/home/uploads")`; 7 endpoints; 3 Pydantic models; local `_demo_guard` + `_require_uploads_page` copies; import from `uploads_catalogs_db`
+- [ ] **Step 4** — `routers/uploads_db.py`: add `catalog_id=None` param to `get_uploads_page()`; add INNER JOIN branch; set `use_union = False` when `catalog_id is not None`
+- [ ] **Step 5** — `routers/home_uploads.py`: add `catalog_id: int = Query(None)` to `list_files()`; pass to `get_uploads_page()`
+- [ ] **Step 6** — `main.py`: import `home_uploads_catalogs`; add `app.include_router(home_uploads_catalogs_router.router)` after folders router
+- [ ] **Step 7** — `templates/index.html`: add Folders label above `#upl-folder-tree`; add divider + Catalogs label + `#upl-catalog-tree` div below it
+- [ ] **Step 8** — `templates/base.html`: add `<script src=".../home-page-uploads-catalogs.js?v={{ static_v }}" defer>` after folders tag
+- [ ] **Step 9** — `static/js/home-page-uploads-catalogs.js`: create file; all `var`; full module state; all public API functions; all internal functions; DnD 3-zone logic; confirm-delete modal (standard BookWorm pattern, red/destructive, no `window.confirm()`); detail badge panel
+- [ ] **Step 10** — `static/js/home-page-uploads-folders.js`: add `_uplFolderClearActive()`; append catalog enter/exit hooks to Enter/Exit fns; call `_uplCatalogClearActive()` on folder selection
+- [ ] **Step 11** — `static/js/home-page-uploads.js`: add `_catQs` in `_uplFetch`; append to fetch URL; add `#upl-detail-catalogs` placeholder div in page-src detail HTML; call `_uplRenderDetailCatalogs(f)` hook for page-src files
+- [ ] **Step 12** — Run `bookworm-db-migration` — verify idempotent on live DB
+- [ ] **Step 13** — Run `bookworm-template-audit` — new JS + template changes
+- [ ] **Step 14** — Run `bookworm-qa` — verify: catalog tree renders on uploads page entry; CRUD (create root, create child, rename, delete leaf, delete parent→children become root); DnD flat reorder; DnD nest (before/inside/after zones); DnD un-nest; circular nest rejected with toast; catalog click filters grid; folder click deselects catalog (and vice versa); "All files" shows on deselect; detail panel shows catalog badges for page-src; add file to catalog; remove file from catalog; file appears in multiple catalogs simultaneously; demo guard blocks all writes
+- [ ] **Step 15** — Run `bookworm-pre-commit`
+- [ ] **Step 16** — Run `bookworm-docs-keeper` — add both tables to CODEPUPPY_NOTES.md; add `home-page-uploads-catalogs.js` to key file map
 
 ---
 
 ## Open Questions
 
-1. **Download endpoint path** — the JS fetches PDF bytes via the existing download route. Confirm the exact path is `/home/uploads/{pid}/files/{src}/{fid}/download` (check `home_uploads.py` `@router.get("/{page_id}/files/{src}/{file_id}/download")`). If the route returns a `FileResponse` (not JSON), `response.arrayBuffer()` is correct — verify it isn't content-negotiated differently.
-2. **Scale factor** — `scale: 1.5` is a reasonable default for 1080p screens. Consider exposing a zoom control (`+` / `-` buttons) in a follow-on. Not needed for Phase 8.
-3. **Multi-user visibility** — current plan scopes annotations to `user_id`. If the team later wants shared annotations, the `user_id` ownership model needs a separate `visibility` column and a query change. Out of scope for Phase 8.
-4. **Highlight resize** — annotation divs are fixed-size on create. Drag-to-resize is a Phase 9 enhancement. Out of scope here.
+1. **Should note attachments (`src === 'note'`) ever be assignable to catalogs?**
+   Current plan scopes catalogs to `page_uploads` only. If note attachments should be
+   catalogable, the junction table needs a polymorphic key (like `page_upload_tags` uses
+   `upload_src + upload_id` with no FK). This is a **schema-level fork** — decide before
+   Step 1 begins.
+
+2. **What happens to a file's catalog memberships when the file is deleted?**
+   With `ON DELETE CASCADE` on `upload_catalog_files.upload_id → page_uploads(id)`,
+   deleting the file removes its junction rows automatically. Confirm this is the
+   desired behaviour (vs. keeping membership history).
+
+3. **"Add to catalog" dropdown in the detail panel — flat `<select>` or tree picker?**
+   A flat `<select>` with depth-indented names (`— Child`, `—— Grandchild`) is simplest
+   for V1. A full tree-picker popup is nicer but significantly more JS. Recommend flat
+   select for V1.
+
+4. **Should clicking an already-active catalog deselect it (toggle to "All files")?**
+   The plan includes this (toggle off = `_uplCatActive = null`). Confirm this is
+   desired UX or if a separate "All" item should always appear at the top of the tree.
+
+5. **Catalog name uniqueness — scoped or free?**
+   The folder system has no UNIQUE constraint. Recommend the same policy for catalogs
+   (no uniqueness constraint on `name`). If uniqueness per `(page_id, user_id, name)` is
+   desired, add a `UNIQUE(page_id, user_id, name)` constraint to the CREATE TABLE and
+   handle `UNIQUE constraint failed` in `create_catalog()` by raising a `ValueError`.
