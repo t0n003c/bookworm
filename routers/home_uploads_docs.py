@@ -683,7 +683,6 @@ def _text_to_pdf_bytes(text: str) -> bytes:
     """Render plain text to PDF bytes using reportlab.  Lazy import."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import pt
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
     buf = io.BytesIO()
@@ -695,7 +694,7 @@ def _text_to_pdf_bytes(text: str) -> bytes:
     story = []
     for line in text.splitlines():
         story.append(Paragraph(escape(line) if line.strip() else "&nbsp;", styles["Normal"]))
-        story.append(Spacer(1, 4 * pt))
+        story.append(Spacer(1, 4))   # 4 pt gap — pt IS the native unit in reportlab
     if not story:
         story.append(Paragraph("(empty)", styles["Normal"]))
     doc.build(story)

@@ -317,7 +317,11 @@ async function _uplDocConvert(src, id, toFmt) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to_format: toFmt }),
     });
-    if (!r.ok) { var err = await r.json(); throw new Error(err.detail || r.status); }
+    if (!r.ok) {
+      var detail = r.status + '';
+      try { var errJson = await r.json(); detail = errJson.detail || detail; } catch(_) {}
+      throw new Error(detail);
+    }
     var data = await r.json();
     _uplShowToast(`Converted \u2192 ${_uplEsc(data.file.original_name)}`);
     await _uplFetch(_uplMeta.page || 1);

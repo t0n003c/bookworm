@@ -420,10 +420,10 @@ function _uplRenderDetail(f) {
       \u2193 Download</a>
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
-    <div id="upl-doc-studio" class="mt-2"></div>
-    <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(156,163,175,0.2)">
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(156,163,175,0.2)">
       ${srcSection}
-    </div>`;
+    </div>
+    <div id="upl-doc-studio" class="mt-2"></div>`;
 
   var isPdf  = mt === 'application/pdf';
   var isDocx = mt === _DOCX_MIME;
