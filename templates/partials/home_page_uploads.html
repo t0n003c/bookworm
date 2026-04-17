@@ -240,7 +240,7 @@
       <div class="flex gap-3 justify-end">
         <button type="button" onclick="_uplCancelDelete()"
                 class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
-                       text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                  text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
                        transition focus:outline-none focus:ring-2 focus:ring-gray-300">
           Cancel
         </button>
@@ -253,6 +253,54 @@
       </div>
     </div>
   </div>{# /delete modal #}
+
+  {# ── Remove attachment confirmation modal ────────────────────────────────── #}
+  <div id="upl-rm-att-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center"
+       role="dialog" aria-modal="true" aria-labelledby="upl-rm-att-title"
+       onkeydown="if(event.key==='Escape')_uplCancelRemoveAttachment()">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="_uplCancelRemoveAttachment()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+                w-full max-w-sm mx-4 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                     flex items-center justify-center text-[#ea1100]" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+               viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                     a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+        </span>
+        <h2 id="upl-rm-att-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+          Remove attachment?
+        </h2>
+      </div>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+        <span id="upl-rm-att-filename"
+              class="font-semibold text-gray-800 dark:text-zinc-200"></span>
+      </p>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+        This will also remove the file from the note it&#39;s attached to.
+        This action cannot be undone.
+      </p>
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="_uplCancelRemoveAttachment()"
+                class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                       text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                       transition focus:outline-none focus:ring-2 focus:ring-gray-300">
+          Cancel
+        </button>
+        <button id="upl-rm-att-confirm-btn" type="button" onclick="_uplDoRemoveAttachment()"
+                class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                       hover:bg-red-700 transition focus:outline-none
+                       focus:ring-2 focus:ring-[#ea1100]">
+          Remove
+        </button>
+      </div>
+    </div>
+  </div>{# /remove attachment modal #}
 
   {# ── Remove stamp confirmation modal ────────────────────────────────────── #}
   <div id="upl-remove-stamp-modal"

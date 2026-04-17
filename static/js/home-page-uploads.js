@@ -16,8 +16,9 @@ let _uplGrouped       = false;   // group-by-type display mode
 let _uplCurrentDetail = null;    // file object currently shown in detail panel
 let _uplAllTags       = [];      // all user tags (lazy-loaded once + after mutations)
 let _uplBusy      = false;   // upload in progress
-let _uplDelPending = null;   // uploadId waiting for delete confirmation
-var _uplCacheBust  = {};     // fileId → timestamp; cache-busts embed after sign
+let _uplDelPending    = null;   // uploadId waiting for delete confirmation
+let _uplRmAttPending  = null;   // note-attachment id waiting for remove confirmation
+var _uplCacheBust     = {};     // fileId → timestamp; cache-busts embed after sign
 var _DOCX_MIME     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -530,7 +531,27 @@ function _uplCancelDelete() {
 }
 
 async function _uplDeleteNoteAttachment(attachmentId) {
-  if (!confirm('Remove this attachment from its note? This cannot be undone.')) return;
+  var f     = _uplFiles.find(function(x) { return x.src === 'note' && x.id === attachmentId; });
+  var modal = document.getElementById('upl-rm-att-modal');
+  var nameEl= document.getElementById('upl-rm-att-filename');
+  if (nameEl) nameEl.textContent = f ? f.original_name : 'this file';
+  _uplRmAttPending = attachmentId;
+  if (modal) modal.classList.remove('hidden');
+  setTimeout(function() {
+    var btn = document.getElementById('upl-rm-att-confirm-btn');
+    if (btn) btn.focus();
+  }, 50);
+}
+
+function _uplCancelRemoveAttachment() {
+  document.getElementById('upl-rm-att-modal')?.classList.add('hidden');
+  _uplRmAttPending = null;
+}
+
+async function _uplDoRemoveAttachment() {
+  var attachmentId = _uplRmAttPending;
+  _uplCancelRemoveAttachment();
+  if (!attachmentId) return;
   try {
     var r = await fetch('/notes/attachments/' + attachmentId, { method: 'DELETE' });
     if (!r.ok) throw new Error(r.status);
