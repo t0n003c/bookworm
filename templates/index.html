@@ -1491,8 +1491,10 @@
   // Restore saved tab — 'home' was merged into 'workspaces', migrate old pref
   (function initSidebarTab() {
     var raw   = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
-    // 'home' was merged into 'workspaces'; 'folders' is only valid on uploads pages
-    var saved = (raw === 'home' || raw === 'folders') ? 'workspaces' : raw;
+    // 'home' was merged into 'workspaces'. 'folders' is fine to restore directly —
+    // switchSidebarTab shows the panel but leaves the tab button's hidden class alone,
+    // so the panel pre-loads invisibly and _uplFolderEnterUploadsPage just unhides the button.
+    var saved = (raw === 'home') ? 'workspaces' : raw;
     switchSidebarTab(saved);
   })();
 

@@ -187,6 +187,8 @@ function _uplCatalogSelect(id) {
   }
   _uplCatalogRender();
   if (typeof _uplFetch === 'function') _uplFetch(1);
+  // Refresh selection badge so “Remove from catalog” btn appears/disappears
+  if (typeof _dndSelBadgeUpdate === 'function') _dndSelBadgeUpdate();
 }
 
 function _uplCatToggleCollapse(id) {
@@ -661,4 +663,53 @@ function _uplCatRemoveFile(catalogId, uploadId, pageId) {
       if (f && f.id === uploadId) _uplRenderDetailCatalogs(f);
     })
     .catch(function(e) { console.error('[catalogs] remove file error', e); });
+}
+
+// Bulk remove all Ctrl+click / lasso-selected page-src files from the active catalog
+function _uplCatBulkRemove() {
+  if (!_uplCatActive || !_uplCatPid) return;
+  var sel = (typeof _dndSelected !== 'undefined') ? _dndSelected : {};
+  var keys = Object.keys(sel);
+  if (!keys.length) return;
+
+  var pageIds  = [];
+  var noteCount = 0;
+  keys.forEach(function(k) {
+    var item = sel[k];
+    if (item.src !== 'page') { noteCount++; return; }
+    pageIds.push(item.id);
+  });
+
+  if (noteCount && typeof _uplShowToast === 'function')
+    _uplShowToast(noteCount + ' note attachment' + (noteCount !== 1 ? 's' : '') + ' skipped \u2014 not in catalogs.', true);
+  if (!pageIds.length) return;
+
+  var catId  = _uplCatActive;
+  var pid    = _uplCatPid;
+  var done   = 0;
+  var failed = 0;
+  var total  = pageIds.length;
+
+  pageIds.forEach(function(id) {
+    fetch('/home/uploads/' + pid + '/catalogs/' + catId + '/files/' + id, {
+      method: 'DELETE', credentials: 'same-origin',
+    }).then(function(r) {
+      if (!r.ok) failed++;
+      done++;
+      if (done < total) return;
+      var ok = total - failed;
+      var msg = ok + ' file' + (ok !== 1 ? 's' : '') + ' removed from catalog.';
+      if (failed) msg += ' ' + failed + ' failed.';
+      if (typeof _uplShowToast === 'function') _uplShowToast(msg, !!failed);
+      if (typeof _dndSelClear    === 'function') _dndSelClear();
+      if (typeof _uplFetch       === 'function') _uplFetch(1);
+    }).catch(function() {
+      failed++;
+      done++;
+      if (done < total) return;
+      if (typeof _uplShowToast === 'function') _uplShowToast('Bulk remove failed.', true);
+      if (typeof _dndSelClear  === 'function') _dndSelClear();
+      if (typeof _uplFetch     === 'function') _uplFetch(1);
+    });
+  });
 }

@@ -173,7 +173,7 @@ function _dndSelBadgeUpdate() {
     return;
   }
 
-  // Inject badge as floating pill (bottom-center of uploads-main) if not present
+  // Create container once; rebuild inner HTML every call so action buttons stay fresh
   if (!badge) {
     badge = document.createElement('div');
     badge.id = 'upl-sel-badge';
@@ -183,20 +183,40 @@ function _dndSelBadgeUpdate() {
       'bg-[#0053e2] text-white text-xs font-semibold ' +
       'px-4 py-2 rounded-full shadow-lg ' +
       'select-none pointer-events-auto';
-    badge.innerHTML =
-      '<span id="upl-sel-badge-count"></span>' +
-      '<button onclick="_dndSelClear()" ' +
-        'class="ml-1 opacity-70 hover:opacity-100 transition" ' +
-        'aria-label="Clear selection">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">' +
-          '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>' +
-        '</svg>' +
-      '</button>';
     document.body.appendChild(badge);
   }
 
-  var countEl = document.getElementById('upl-sel-badge-count');
-  if (countEl) countEl.textContent = count + ' file' + (count === 1 ? '' : 's') + ' selected';
+  // Dynamic catalog-remove button (only when a catalog is active)
+  var catBtn = '';
+  if (typeof _uplCatActive !== 'undefined' && _uplCatActive !== null) {
+    var catName = '';
+    if (typeof _uplCatData !== 'undefined') {
+      for (var i = 0; i < _uplCatData.length; i++) {
+        if (_uplCatData[i].id === _uplCatActive) { catName = _uplCatData[i].name; break; }
+      }
+    }
+    var label = catName
+      ? '\u2212 Remove from \u201c' + catName + '\u201d'
+      : '\u2212 Remove from catalog';
+    catBtn =
+      '<button onclick="_uplCatBulkRemove()" ' +
+        'class="flex items-center gap-1 bg-white/20 hover:bg-white/30 ' +
+              'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium">' +
+        label +
+      '</button>';
+  }
+
+  badge.innerHTML =
+    '<span>' + count + ' file' + (count === 1 ? '' : 's') + ' selected</span>' +
+    catBtn +
+    '<button onclick="_dndSelClear()" ' +
+      'class="ml-1 opacity-70 hover:opacity-100 transition" ' +
+      'aria-label="Clear selection">' +
+      '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">' +
+        '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>' +
+      '</svg>' +
+    '</button>';
+
   badge.classList.remove('hidden');
 }
 
