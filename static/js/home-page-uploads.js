@@ -434,32 +434,38 @@ function _uplRenderDetail(f) {
     var previewBg   = isDark ? '#27272a' : '#f9fafb';          // zinc-800 / gray-50
     var previewBord = isDark ? 'rgba(63,63,70,0.6)' : 'rgba(156,163,175,0.25)';
 
+    var expandBtn = '<div style="position:absolute;inset:0;pointer-events:none">'
+      + '<button onclick="_uplFileViewerOpen(_uplCurrentDetail)"'
+      + ' style="position:absolute;bottom:8px;right:8px;pointer-events:auto;'
+      + 'border:0;border-radius:8px;padding:4px 10px;cursor:pointer;'
+      + 'font-size:11px;font-weight:600;'
+      + 'background:rgba(255,255,255,.92);color:#1f2937;'
+      + 'box-shadow:0 1px 4px rgba(0,0,0,.18)">'
+      + '&#128269; Expand'
+      + '</button></div>';
+
     var zone1;
     if (isText) {
-      zone1 = '<div id="upl-text-preview"'
-        + ' style="flex-shrink:0;height:13rem;overflow-y:scroll;overscroll-behavior-y:contain;'
-        + 'padding:.75rem;background:' + previewBg + ';border-bottom:1px solid ' + previewBord + '">'
+      // Outer wrapper holds the fixed height + positions the Expand button.
+      // Inner #upl-text-preview is the actual scroll container so the button
+      // stays pinned while text scrolls underneath it.
+      zone1 = '<div style="flex-shrink:0;height:13rem;overflow:hidden;position:relative;'
+        + 'border-bottom:1px solid ' + previewBord + '">'
+        + '<div id="upl-text-preview"'
+        + ' style="height:100%;overflow-y:scroll;overscroll-behavior-y:contain;'
+        + 'padding:.75rem;background:' + previewBg + '">'
         + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
+        + '</div>'
+        + expandBtn
         + '</div>';
     } else {
       // PDF — overlay is pointer-events:none so scroll+click pass straight through
-      // to the embed (PDF viewer handles them natively). Only the small Expand
-      // button in the corner has pointer-events:auto, so it stays clickable
-      // without interfering with anything. No timers, no state.
+      // to the embed. Only the pinned Expand button stays pointer-events:auto.
       zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
         + ' style="width:100%;height:100%;border:0" tabindex="-1">'
-        + '<div style="position:absolute;inset:0;pointer-events:none">'
-        + '<button onclick="_uplFileViewerOpen(_uplCurrentDetail)"'
-        + ' style="position:absolute;bottom:8px;right:8px;pointer-events:auto;'
-        + 'border:0;border-radius:8px;padding:4px 10px;cursor:pointer;'
-        + 'font-size:11px;font-weight:600;'
-        + 'background:rgba(255,255,255,.92);color:#1f2937;'
-        + 'box-shadow:0 1px 4px rgba(0,0,0,.18)">'
-        + '&#128269; Expand'
-        + '</button>'
-        + '</div>'
+        + expandBtn
         + '</div>';
     }
 
