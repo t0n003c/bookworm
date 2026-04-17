@@ -480,13 +480,15 @@ function _uplRenderDetail(f) {
         + '</div>';
     } else {
       // PDF — browser native embed. Fast, shows images and layout accurately.
-      // The browser's built-in viewer ignores CSS dark mode (hard browser limit —
-      // same behaviour as Google Drive, OneDrive, every other web app).
-      // Dark-aware chrome (previewBg / previewBord) wraps the embed.
+      // The browser's built-in viewer can't be CSS-themed (hard browser limit).
+      // In dark mode we add a dark background + inset padding so the white
+      // page looks like a "document on a desk" rather than a harsh white slab.
+      var pdfPad = isDark ? 'padding:6px;box-sizing:border-box;' : '';
       zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
+        + 'background:' + previewBg + ';' + pdfPad
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
-        + ' style="width:100%;height:100%;border:0" tabindex="-1">'
+        + ' style="width:100%;height:100%;border:0;display:block" tabindex="-1">'
         + expandBtn
         + '</div>';
     }
