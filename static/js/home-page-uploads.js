@@ -402,7 +402,8 @@ function _uplRenderDetail(f) {
   } else if (mt === _DOCX_MIME || mt === 'text/csv') {
     preview = _uplDocCsvCard(f, fUrl);
   } else if (isText) {
-    preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto">
+    preview = `<div id="upl-text-preview" class="mb-4 rounded-xl bg-gray-50 dark:bg-zinc-800 p-3 max-h-52 overflow-y-auto"
+         style="overscroll-behavior-y:contain">
       <p class="text-[10px] text-gray-400 italic">Loading preview\u2026</p></div>`;
   }
 
@@ -419,10 +420,10 @@ function _uplRenderDetail(f) {
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
 
-  // Flex-column layout so srcSection is pinned to the very bottom
-  // even when the rest of the content is shorter than the panel height.
-  el.style.display       = 'flex';
-  el.style.flexDirection = 'column';
+  // Plain block layout — no flex on the scroll container so the inner preview
+  // scroll box doesn't compete with the outer panel's overflow-y: auto.
+  el.style.display       = '';
+  el.style.flexDirection = '';
 
   el.innerHTML = `${preview}
     <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
@@ -433,7 +434,7 @@ function _uplRenderDetail(f) {
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
     <div id="upl-doc-studio" class="mt-2"></div>
-    <div style="margin-top:auto;padding-top:20px;border-top:1px solid rgba(156,163,175,0.2)">
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(156,163,175,0.2)">
       ${srcSection}
     </div>`;
 
