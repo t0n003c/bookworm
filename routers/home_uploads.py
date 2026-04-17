@@ -9,7 +9,7 @@ import mimetypes
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Body, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
@@ -73,12 +73,17 @@ def _valid_src(src: str) -> str:
 # ── List files (paginated + counts) ──────────────────────────────────────────
 
 @router.get("/{page_id}/files")
-async def list_files(request: Request, page_id: int, page: int = 1):
+async def list_files(
+    request: Request,
+    page_id: int,
+    page: int = 1,
+    folder_id: int = Query(None),   # None=all, 0=unfiled, >0=specific folder
+):
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401)
     await _require_uploads_page(page_id, uid)
-    result = await get_uploads_page(uid, page=page)
+    result = await get_uploads_page(uid, page=page, folder_id=folder_id)
     return JSONResponse(result)
 
 

@@ -597,6 +597,32 @@ async def init_db() -> None:
             "ON pdf_annotations(file_id, user_id)"
         )
 
+        # ── upload_folders (virtual folder tree scoped to an uploads home page) ────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS upload_folders (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL REFERENCES home_pages(id)      ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id)            ON DELETE CASCADE,
+                name        TEXT    NOT NULL,
+                parent_id   INTEGER REFERENCES upload_folders(id)            ON DELETE SET NULL,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_upload_folders_page "
+            "ON upload_folders(page_id, user_id, parent_id, sort_order)"
+        )
+
+        # ── page_uploads.folder_id column (additive) ────────────────────────────────────────────
+        cur = await db.execute("PRAGMA table_info(page_uploads)")
+        _pu_cols = {r[1] for r in await cur.fetchall()}
+        if "folder_id" not in _pu_cols:
+            await db.execute(
+                "ALTER TABLE page_uploads ADD COLUMN "
+                "folder_id INTEGER REFERENCES upload_folders(id) ON DELETE SET NULL"
+            )
+
         await db.commit()
 
 @asynccontextmanager

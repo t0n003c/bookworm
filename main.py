@@ -67,6 +67,7 @@ from routers import home_crm as home_crm_router
 from routers import home_uploads as home_uploads_router
 from routers import home_uploads_docs as home_uploads_docs_router
 from routers import home_uploads_annot as home_uploads_annot_router
+from routers import home_uploads_folders as home_uploads_folders_router
 from routers import wopi as wopi_router
 from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
@@ -139,6 +140,7 @@ app.include_router(home_crm_router.router)
 app.include_router(home_uploads_router.router)
 app.include_router(home_uploads_docs_router.router)
 app.include_router(home_uploads_annot_router.router)
+app.include_router(home_uploads_folders_router.router)
 app.include_router(wopi_router.router)
 app.include_router(demo_router.router)
 app.include_router(notes_router.router)

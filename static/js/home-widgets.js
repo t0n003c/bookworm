@@ -949,6 +949,10 @@ function _initDnD(grid, pageId) {
 // Called after every innerHTML swap so the right module boots for the
 // current page type (dashboard → initHomeWidgets, rss → initRssPage, etc.).
 function _initSwappedPage() {
+  // Restore Search tab if leaving an Uploads page (no-op when not on one)
+  if (typeof _uplFolderExitUploadsPage === 'function') {
+    try { _uplFolderExitUploadsPage(); } catch(e) {}
+  }
   // RSS Reader page
   const rssRoot = document.getElementById('rss-page-root');
   if (rssRoot) {
@@ -979,6 +983,9 @@ function _initSwappedPage() {
     var pid = parseInt(uploadsRoot.dataset.pageId, 10);
     if (pid && typeof initUploadsPage === 'function') {
       try { initUploadsPage(pid); } catch(e) { console.error('[home] initUploadsPage:', e); }
+    }
+    if (pid && typeof _uplFolderEnterUploadsPage === 'function') {
+      try { _uplFolderEnterUploadsPage(pid); } catch(e) { console.error('[home] _uplFolderEnterUploadsPage:', e); }
     }
     var _ta = document.getElementById('top-action-area');
     if (_ta) _ta.innerHTML = '';

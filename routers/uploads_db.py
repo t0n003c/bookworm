@@ -19,8 +19,16 @@ _PAGE_SIZE = 50  # files per page
 
 # ── Paginated merged file list ────────────────────────────────────────────────
 
-async def get_uploads_page(user_id: int, page: int = 1) -> dict:
+async def get_uploads_page(
+    user_id: int,
+    page: int = 1,
+    folder_id: Optional[int] = None,   # None=all, 0=unfiled page-src, >0=folder
+) -> dict:
     """Return one page of the merged file list for a user, with tags embedded.
+
+    When folder_id is not None the result is scoped to page-src files only:
+      folder_id == 0  → page-src files with no folder assigned (unfiled)
+      folder_id  > 0  → page-src files assigned to that folder
 
     Returns:
         {
@@ -31,89 +39,135 @@ async def get_uploads_page(user_id: int, page: int = 1) -> dict:
             "counts": {"all": N, "image": N, "video": N, "audio": N,
                        "document": N, "other": N},
         }
-
-    Each file dict:
-        id, src, filename, original_name, mime_type, size, created_at,
-        tags (list[str]),
-        note_id?, note_title?, workspace_id?, workspace_name?,  # note-src
-        page_id?                                                  # page-src
     """
     offset = (max(page, 1) - 1) * _PAGE_SIZE
 
+    # Build folder WHERE clause for page-src subqueries
+    if folder_id is None:
+        folder_where = ""
+        folder_params: tuple = ()
+    elif folder_id == 0:
+        folder_where = " AND pu.folder_id IS NULL"
+        folder_params = ()
+    else:
+        folder_where = " AND pu.folder_id = ?"
+        folder_params = (folder_id,)
+
+    use_union = folder_id is None  # full merged view vs page-src only
+
     async with get_db() as db:
         # ── Total count ───────────────────────────────────────────────────────
-        cur = await db.execute(
-            """
-            SELECT COUNT(*) FROM (
-                SELECT na.id FROM note_attachments na
-                JOIN notes      n ON n.id = na.note_id
-                JOIN workspaces w ON w.id = n.workspace_id
-                WHERE w.user_id = ? AND w.deleted_at IS NULL
-              UNION ALL
-                SELECT id FROM page_uploads WHERE user_id = ?
+        if use_union:
+            cur = await db.execute(
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT na.id FROM note_attachments na
+                    JOIN notes      n ON n.id = na.note_id
+                    JOIN workspaces w ON w.id = n.workspace_id
+                    WHERE w.user_id = ? AND w.deleted_at IS NULL
+                  UNION ALL
+                    SELECT id FROM page_uploads WHERE user_id = ?
+                )
+                """,
+                (user_id, user_id),
             )
-            """,
-            (user_id, user_id),
-        )
+        else:
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM page_uploads pu "
+                "WHERE pu.user_id = ?" + folder_where,
+                (user_id, *folder_params),
+            )
         total = (await cur.fetchone())[0]
 
         # ── Paginated merged rows (tags via GROUP_CONCAT) ─────────────────────
-        cur = await db.execute(
-            """
-            SELECT
-                na.id               AS id,
-                'note'              AS src,
-                na.filename         AS filename,
-                na.original_name    AS original_name,
-                na.mime_type        AS mime_type,
-                na.size             AS size,
-                na.created_at       AS created_at,
-                na.note_id          AS note_id,
-                n.title             AS note_title,
-                w.id                AS workspace_id,
-                w.name              AS workspace_name,
-                NULL                AS page_id,
-                GROUP_CONCAT(t.tag) AS tags
-            FROM note_attachments na
-            JOIN notes      n ON n.id  = na.note_id
-            JOIN workspaces w ON w.id  = n.workspace_id
-            LEFT JOIN page_upload_tags t
-                   ON t.upload_src = 'note' AND t.upload_id = na.id
-                  AND t.user_id = ?
-            WHERE w.user_id = ? AND w.deleted_at IS NULL
-            GROUP BY na.id
+        if use_union:
+            cur = await db.execute(
+                """
+                SELECT
+                    na.id               AS id,
+                    'note'              AS src,
+                    na.filename         AS filename,
+                    na.original_name    AS original_name,
+                    na.mime_type        AS mime_type,
+                    na.size             AS size,
+                    na.created_at       AS created_at,
+                    na.note_id          AS note_id,
+                    n.title             AS note_title,
+                    w.id                AS workspace_id,
+                    w.name              AS workspace_name,
+                    NULL                AS page_id,
+                    NULL                AS folder_id,
+                    GROUP_CONCAT(t.tag) AS tags
+                FROM note_attachments na
+                JOIN notes      n ON n.id  = na.note_id
+                JOIN workspaces w ON w.id  = n.workspace_id
+                LEFT JOIN page_upload_tags t
+                       ON t.upload_src = 'note' AND t.upload_id = na.id
+                      AND t.user_id = ?
+                WHERE w.user_id = ? AND w.deleted_at IS NULL
+                GROUP BY na.id
 
-            UNION ALL
+                UNION ALL
 
-            SELECT
-                pu.id               AS id,
-                'page'              AS src,
-                pu.filename         AS filename,
-                pu.original_name    AS original_name,
-                pu.mime_type        AS mime_type,
-                pu.size             AS size,
-                pu.created_at       AS created_at,
-                NULL                AS note_id,
-                NULL                AS note_title,
-                NULL                AS workspace_id,
-                NULL                AS workspace_name,
-                pu.page_id          AS page_id,
-                GROUP_CONCAT(t.tag) AS tags
-            FROM page_uploads pu
-            LEFT JOIN page_upload_tags t
-                   ON t.upload_src = 'page' AND t.upload_id = pu.id
-                  AND t.user_id = ?
-            WHERE pu.user_id = ?
-            GROUP BY pu.id
+                SELECT
+                    pu.id               AS id,
+                    'page'              AS src,
+                    pu.filename         AS filename,
+                    pu.original_name    AS original_name,
+                    pu.mime_type        AS mime_type,
+                    pu.size             AS size,
+                    pu.created_at       AS created_at,
+                    NULL                AS note_id,
+                    NULL                AS note_title,
+                    NULL                AS workspace_id,
+                    NULL                AS workspace_name,
+                    pu.page_id          AS page_id,
+                    pu.folder_id        AS folder_id,
+                    GROUP_CONCAT(t.tag) AS tags
+                FROM page_uploads pu
+                LEFT JOIN page_upload_tags t
+                       ON t.upload_src = 'page' AND t.upload_id = pu.id
+                      AND t.user_id = ?
+                WHERE pu.user_id = ?
+                GROUP BY pu.id
 
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (user_id, user_id, user_id, user_id, _PAGE_SIZE, offset),
-        )
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (user_id, user_id, user_id, user_id, _PAGE_SIZE, offset),
+            )
+        else:
+            cur = await db.execute(
+                """
+                SELECT
+                    pu.id               AS id,
+                    'page'              AS src,
+                    pu.filename         AS filename,
+                    pu.original_name    AS original_name,
+                    pu.mime_type        AS mime_type,
+                    pu.size             AS size,
+                    pu.created_at       AS created_at,
+                    NULL                AS note_id,
+                    NULL                AS note_title,
+                    NULL                AS workspace_id,
+                    NULL                AS workspace_name,
+                    pu.page_id          AS page_id,
+                    pu.folder_id        AS folder_id,
+                    GROUP_CONCAT(t.tag) AS tags
+                FROM page_uploads pu
+                LEFT JOIN page_upload_tags t
+                       ON t.upload_src = 'page' AND t.upload_id = pu.id
+                      AND t.user_id = ?
+                WHERE pu.user_id = ?""" + folder_where + """
+                GROUP BY pu.id
+                ORDER BY pu.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (user_id, user_id, *folder_params, _PAGE_SIZE, offset),
+            )
         rows = await cur.fetchall()
 
-        # ── MIME-group counts (same connection — avoids second open/close) ────
+        # ── MIME-group counts ─────────────────────────────────────────────────
         _CASE = """
             CASE
               WHEN mime_type LIKE 'image/%'                                   THEN 'image'
@@ -123,22 +177,30 @@ async def get_uploads_page(user_id: int, page: int = 1) -> dict:
               ELSE 'other'
             END
         """
-        ccur = await db.execute(
-            f"""
-            SELECT {_CASE} AS grp, COUNT(*) AS cnt
-            FROM (
-                SELECT na.mime_type
-                FROM note_attachments na
-                JOIN notes      n ON n.id = na.note_id
-                JOIN workspaces w ON w.id = n.workspace_id
-                WHERE w.user_id = ? AND w.deleted_at IS NULL
-              UNION ALL
-                SELECT mime_type FROM page_uploads WHERE user_id = ?
+        if use_union:
+            ccur = await db.execute(
+                f"""
+                SELECT {_CASE} AS grp, COUNT(*) AS cnt
+                FROM (
+                    SELECT na.mime_type
+                    FROM note_attachments na
+                    JOIN notes      n ON n.id = na.note_id
+                    JOIN workspaces w ON w.id = n.workspace_id
+                    WHERE w.user_id = ? AND w.deleted_at IS NULL
+                  UNION ALL
+                    SELECT mime_type FROM page_uploads WHERE user_id = ?
+                )
+                GROUP BY grp
+                """,
+                (user_id, user_id),
             )
-            GROUP BY grp
-            """,
-            (user_id, user_id),
-        )
+        else:
+            ccur = await db.execute(
+                f"SELECT {_CASE} AS grp, COUNT(*) AS cnt "
+                "FROM page_uploads pu "
+                "WHERE pu.user_id = ?" + folder_where + " GROUP BY grp",
+                (user_id, *folder_params),
+            )
         count_rows = await ccur.fetchall()
 
     files = []

@@ -65,7 +65,8 @@ async function _uplFetch(page) {
     + 'animate-pulse text-sm select-none">Loading files\u2026</div>';
 
   try {
-    const r = await fetch(`/home/uploads/${_uplPid}/files?page=${page}`);
+    var _fldQs = (typeof _uplFolderGetFilter === 'function') ? _uplFolderGetFilter() : '';
+    const r = await fetch('/home/uploads/' + _uplPid + '/files?page=' + page + _fldQs);
     const ct = r.headers.get('content-type') || '';
     if (ct.includes('text/html')) {
       main.innerHTML = '<div class="p-6 text-sm text-yellow-600 dark:text-yellow-400 '
