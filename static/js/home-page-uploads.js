@@ -284,7 +284,8 @@ function _uplCard(f) {
     <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
                 dark:border-zinc-800 overflow-hidden shadow-sm cursor-pointer
                 hover:shadow-md hover:border-[#0053e2] dark:hover:border-blue-500 transition group"
-         onclick="_uplOpenDetail('${_uplJsStr(f.src)}', ${f.id})">
+         data-upl-id="${f.id}" data-upl-src="${_uplEsc(f.src)}"
+         onclick="if(_uplDocSelectMode&&'${f.src}'==='page'){_uplDocToggleItem('${_uplJsStr(f.src)}',${f.id})}else{_uplOpenDetail('${_uplJsStr(f.src)}',${f.id})}">
       <div class="overflow-hidden">${thumb}</div>
       <div class="p-2.5">
         <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100
