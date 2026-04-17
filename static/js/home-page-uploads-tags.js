@@ -140,8 +140,8 @@ async function _uplFetchDocxPreview(f) {
       // Render HTML in a sandboxed, scaled-down container.
       // font-size:11px + overflow:hidden on the parent keeps it tidy.
       el.innerHTML =
-        '<div style="font-size:11px;line-height:1.5;color:#374151;pointer-events:none;"'
-        + ' class="dark:text-zinc-300">'
+        '<div style="font-size:11px;line-height:1.5;pointer-events:none;"'
+        + ' class="text-gray-800 dark:text-zinc-100">'
         + data.content
         + '</div>';
     } else {
