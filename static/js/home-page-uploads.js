@@ -364,7 +364,8 @@ function _uplRenderDetail(f) {
   const dlUrl  = `/home/uploads/${_uplPid}/files/${f.src}/${f.id}/download`;
   const fUrl   = `/uploads/${_uplEsc(f.filename)}` + (_uplCacheBust[f.id] ? '?v=' + _uplCacheBust[f.id] : '');
   const mt     = f.mime_type;
-  const isText = mt.startsWith('text/') || mt === 'application/json';
+  const isText = mt.startsWith('text/') || mt === 'application/json' ||
+    (mt === 'application/octet-stream' && _uplIsTextExt(f));
 
   // Preview block — native players where possible
   var preview = '';

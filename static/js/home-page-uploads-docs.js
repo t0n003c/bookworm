@@ -27,6 +27,17 @@ var _DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml
 
 // ── Hook: called by _uplRenderDetail (main) after detail panel HTML is written ─
 
+var _UPL_TEXT_EXTS = new Set([
+  'txt','md','markdown','py','js','mjs','cjs','ts','tsx','jsx',
+  'css','scss','less','html','htm','xml','json','yaml','yml',
+  'sh','bash','zsh','ini','toml','r','sql','log','go','rs','rb',
+  'php','java','c','cpp','h','cs','kt','swift','ps1',
+]);
+function _uplIsTextExt(f) {
+  var ext = ((f && f.original_name) || '').split('.').pop().toLowerCase();
+  return _UPL_TEXT_EXTS.has(ext);
+}
+
 var _STUDIO_BTN = 'px-3 py-1.5 text-[11px] rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition focus:outline-none focus:ring-1 focus:ring-[#0053e2]';
 var _STUDIO_BTN_DANGER = 'px-3 py-1.5 text-[11px] rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition focus:outline-none focus:ring-1 focus:ring-red-400';
 
@@ -38,7 +49,11 @@ async function _uplDocStudioInit(f) {
 
   var canRead    = f.mime_type.startsWith('text/') || f.mime_type === 'application/json' || f.mime_type === _DOCX_MIME;
   var canView    = canRead || f.mime_type === 'application/pdf' || f.mime_type.startsWith('image/');
-  var canEdit    = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === 'application/json');
+  var canEdit    = f.src === 'page' && (
+    f.mime_type.startsWith('text/') ||
+    f.mime_type === 'application/json' ||
+    (f.mime_type === 'application/octet-stream' && _uplIsTextExt(f))
+  );
   var canEditDocx = f.src === 'page' && f.mime_type === _DOCX_MIME;
   var canSign     = f.src === 'page' && f.mime_type === 'application/pdf';
   var canAnnotate = f.src === 'page' && f.mime_type === 'application/pdf'

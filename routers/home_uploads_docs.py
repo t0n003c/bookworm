@@ -131,6 +131,21 @@ async def read_content(request: Request, page_id: int, src: str, file_id: int):
             raise HTTPException(status_code=500, detail="Could not parse CSV") from exc
         return JSONResponse({"content": html, "content_type": "csv_html"})
 
+    # Last resort: file was stored as application/octet-stream but extension is text
+    _TEXT_EXTS = {
+        ".txt", ".md", ".markdown", ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx",
+        ".jsx", ".css", ".scss", ".less", ".html", ".htm", ".xml", ".json",
+        ".yaml", ".yml", ".sh", ".bash", ".zsh", ".ini", ".toml", ".r",
+        ".sql", ".log", ".go", ".rs", ".rb", ".php", ".java", ".c", ".cpp",
+        ".h", ".cs", ".kt", ".swift", ".ps1",
+    }
+    if disk_path.suffix.lower() in _TEXT_EXTS:
+        try:
+            text = disk_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Could not read file") from exc
+        return JSONResponse({"content": text, "content_type": "text"})
+
     raise HTTPException(status_code=400, detail="Content read not supported for this file type")
 
 

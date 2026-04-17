@@ -111,6 +111,11 @@ async def upload_file(
         or mimetypes.guess_type(original_name)[0]
         or "application/octet-stream"
     )
+    # Browsers often send application/octet-stream for text files — prefer extension
+    if mime == "application/octet-stream":
+        guessed = mimetypes.guess_type(original_name)[0]
+        if guessed:
+            mime = guessed
 
     # ── WebP conversion (opt-in via ?webp=true, Pillow optional) ────────────
     if webp and mime in _WEBP_SOURCE_TYPES:
