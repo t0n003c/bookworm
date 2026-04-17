@@ -191,7 +191,7 @@ async function _uplFetchPdfCanvas(fileUrl) {
     canvas.height = vp.height;
     var isDark = document.documentElement.classList.contains('dark');
     canvas.style.cssText = 'display:block;max-width:100%;border-radius:4px;'
-      + (isDark ? 'filter:invert(1) hue-rotate(180deg);' : '');
+      + (isDark ? 'filter:brightness(0.85) invert(1) hue-rotate(180deg);' : '');
 
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
 
