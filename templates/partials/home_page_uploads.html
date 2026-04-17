@@ -91,6 +91,53 @@
 .dark .bw-word-paper th{background:#27272a}
 .dark .bw-word-footer{background:#18181b;border-color:#3f3f46}
 .dark .bw-word-footer-label{color:#a1a1aa}
+/* ── Notepad++-like text editor ── */
+.bw-txt-host{display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:0;border-radius:.75rem}
+/* toolbar */
+.bw-txt-toolbar{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;
+  padding:4px 10px;flex-shrink:0;overflow-x:auto;
+  background:#1e1e1e;border-bottom:1px solid #333}
+.bw-txt-btn{font-size:.72rem;padding:2px 8px;border-radius:3px;
+  border:1px solid transparent;cursor:pointer;white-space:nowrap;
+  background:transparent;color:#ccc;line-height:1.7;
+  transition:background .1s,border-color .1s}
+.bw-txt-btn:hover{background:#2a2a2a;border-color:#555;color:#fff}
+.bw-txt-btn-active{background:#0053e2!important;color:#fff!important;border-color:#0053e2!important}
+.bw-txt-btn-save{background:#0053e2!important;color:#fff!important;font-weight:700;border:none!important}
+.bw-txt-btn-save:hover{background:#003eb3!important}
+.bw-txt-btn-cancel{color:#9ca3af}
+.bw-txt-lang-chip{font-size:.7rem;padding:1px 8px;border-radius:10px;
+  background:#0053e220;color:#60a5fa;border:1px solid #0053e240;white-space:nowrap}
+.bw-txt-tsep{width:1px;height:16px;background:#444;margin:0 2px;flex-shrink:0}
+.bw-txt-tspacer{flex:1}
+/* editor area */
+.bw-txt-editor-wrap{display:flex;flex:1;min-height:0;overflow:hidden;background:#1e1e1e}
+.bw-txt-gutter{padding:14px 10px 14px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:13px;line-height:1.6;color:#858585;text-align:right;
+  background:#1e1e1e;border-right:1px solid #303030;user-select:none;
+  overflow:hidden;white-space:pre;flex-shrink:0;min-width:48px}
+.bw-txt-area{flex:1;min-width:0;min-height:0;border:none;outline:none;resize:none;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;
+  padding:14px 16px;background:#1e1e1e;color:#d4d4d4;
+  white-space:pre;overflow:auto;tab-size:2;caret-color:#fff}
+.bw-txt-area::selection{background:#264f78}
+/* find bar */
+.bw-txt-findbar{flex-shrink:0;display:flex;align-items:center;gap:6px;
+  padding:5px 12px;background:#252526;border-top:1px solid #333}
+.bw-txt-findbar-label{font-size:.72rem;color:#9da5b4;white-space:nowrap}
+.bw-txt-findbar input{flex:1;max-width:260px;font-size:.78rem;padding:3px 8px;
+  border-radius:3px;border:1px solid #555;background:#3c3c3c;color:#d4d4d4;outline:none}
+.bw-txt-findbar input:focus{border-color:#0053e2}
+.bw-txt-findbar-count{font-size:.7rem;color:#858585;min-width:6em;white-space:nowrap}
+/* status bar */
+.bw-txt-status{display:flex;align-items:center;flex-shrink:0;
+  padding:3px 12px;background:#007acc;gap:0}
+.bw-txt-st-item{font-size:.68rem;color:#fff;padding:0 12px;
+  border-right:1px solid rgba(255,255,255,.2);white-space:nowrap}
+.bw-txt-st-right{margin-left:auto;border-right:none;border-left:1px solid rgba(255,255,255,.2)}
+/* light mode overrides — toolbar + find bar lighten slightly */
+:not(.dark) .bw-txt-toolbar{background:#2d2d2d;border-color:#3e3e3e}
+:not(.dark) .bw-txt-findbar{background:#2d2d2d;border-color:#3e3e3e}
 </style>
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
      data-collabora-enabled="{{ collabora_enabled | tojson | safe }}"
