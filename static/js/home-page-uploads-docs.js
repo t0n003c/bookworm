@@ -13,6 +13,10 @@ var _uplDocBusy        = false;   // prevents double-submit
 var _uplDocCurrentFile = null;    // f passed to _uplDocStudioInit — needed by edit/sign
 var _uplDocEditMode    = false;   // textarea edit active?
 
+// Convert-modal state
+var _uplConvertPending = null;    // {src, id}
+var _uplConvertSel     = '';      // currently selected format ('pdf'|'txt'|'docx')
+
 // Viewer state (fullscreen modal)
 var _uplViewerCurrentFile = null;  // file object open in the viewer
 var _uplViewerEditMode    = null;  // 'docx' | 'text' | null
@@ -98,9 +102,13 @@ async function _uplDocStudioInit(f) {
   if (canSpreadsheet) btns.push('<button onclick="_uplSsOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">📊 Edit Spreadsheet</button>');
   if (canSign)    btns.push('<button onclick="_uplDocOpenSignModal(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">&#9997;&#65039; Sign PDF</button>');
   if (canAnnotate) btns.push('<button onclick="_uplAnnotOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">&#128221; Annotate PDF</button>');
-  if (canToPdf)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'pdf\')" class="' + _STUDIO_BTN + '">→ PDF</button>');
-  if (canToTxt)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'txt\')" class="' + _STUDIO_BTN + '">→ TXT</button>');
-  if (canToDocx)  btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'docx\')" class="' + _STUDIO_BTN + '">→ DOCX</button>');
+  var convertFmts = [];
+  if (canToPdf)  convertFmts.push('pdf');
+  if (canToTxt)  convertFmts.push('txt');
+  if (canToDocx) convertFmts.push('docx');
+  if (convertFmts.length > 0) {
+    btns.push('<button onclick="_uplOpenConvertModal()" class="' + _STUDIO_BTN + '">&#x21C4; Convert</button>');
+  }
   if (canSign && hasBackup) btns.push('<button onclick="_uplDocRemoveStamp(_uplDocCurrentFile)" class="' + _STUDIO_BTN_DANGER + '">✕ Remove Stamp</button>');
 
   el.innerHTML = `<div class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-700/60">
@@ -312,7 +320,86 @@ function _uplDocCancelEdit() {
   _uplDocStudioInit(_uplDocCurrentFile);
 }
 
-// ── Convert ───────────────────────────────────────────────────────────────────
+// ── Convert modal ───────────────────────────────────────────────────────────
+
+var _FMT_LABELS = { pdf: 'PDF', txt: 'TXT', docx: 'DOCX' };
+
+function _uplOpenConvertModal() {
+  var f = _uplDocCurrentFile;
+  if (!f) return;
+
+  // Recompute available formats from the current file's mime type
+  var mt = f.mime_type || '';
+  var fmts = [];
+  if (mt.startsWith('text/') || mt === _DOCX_MIME)            fmts.push('pdf');
+  if (mt === 'application/pdf' || mt === _DOCX_MIME)           fmts.push('txt');
+  if (mt === 'application/pdf' || mt.startsWith('text/') ||
+      (mt === 'application/octet-stream' && _uplIsTextExt(f))) fmts.push('docx');
+  if (!fmts.length) return;
+
+  _uplConvertPending = { src: f.src, id: f.id };
+  _uplConvertSel = '';
+
+  var nameEl = document.getElementById('upl-convert-filename');
+  if (nameEl) nameEl.textContent = f.original_name || '';
+
+  var wrap = document.getElementById('upl-convert-formats');
+  if (wrap) {
+    wrap.innerHTML = fmts.map(function(fmt) {
+      return '<button type="button" data-fmt="' + fmt + '"'
+        + ' onclick="_uplSelectConvertFmt(this,\'' + fmt + '\')"'
+        + ' class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600'
+        + ' text-gray-700 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2]'
+        + ' transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">'
+        + _FMT_LABELS[fmt]
+        + '</button>';
+    }).join('');
+  }
+
+  var confirmBtn = document.getElementById('upl-convert-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = true;
+
+  var modal = document.getElementById('upl-convert-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    setTimeout(function() {
+      var first = modal.querySelector('[data-fmt]');
+      if (first) first.focus();
+    }, 50);
+  }
+}
+
+function _uplSelectConvertFmt(btn, fmt) {
+  _uplConvertSel = fmt;
+  // Highlight selected pill, reset others
+  var wrap = document.getElementById('upl-convert-formats');
+  if (wrap) {
+    wrap.querySelectorAll('[data-fmt]').forEach(function(b) {
+      var sel = b === btn;
+      b.className = 'px-4 py-2 text-sm rounded-lg border transition focus:outline-none focus:ring-2 '
+        + (sel
+          ? 'border-[#0053e2] bg-blue-50 dark:bg-blue-900/20 text-[#0053e2] font-semibold focus:ring-[#0053e2]'
+          : 'border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] focus:ring-[#0053e2]');
+    });
+  }
+  var confirmBtn = document.getElementById('upl-convert-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = false;
+}
+
+function _uplCancelConvert() {
+  document.getElementById('upl-convert-modal')?.classList.add('hidden');
+  _uplConvertPending = null;
+  _uplConvertSel = '';
+}
+
+function _uplDoConvert() {
+  if (!_uplConvertPending || !_uplConvertSel) return;
+  var p = _uplConvertPending;
+  _uplCancelConvert();
+  _uplDocConvert(p.src, p.id, _uplConvertSel);
+}
+
+// ── Convert (execute) ─────────────────────────────────────────────────────────
 
 async function _uplDocConvert(src, id, toFmt) {
   if (_uplDocBusy) return;
