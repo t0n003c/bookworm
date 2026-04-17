@@ -386,19 +386,8 @@ function _uplRenderDetail(f) {
         <source src="${fUrl}" type="${_uplEsc(mt)}">Your browser doesn\'t support HTML5 audio.
       </audio></div>`;
   } else if (mt === 'application/pdf') {
-    preview = `<div class="mb-4 rounded-xl overflow-hidden border border-gray-200
-        dark:border-zinc-700 relative group cursor-zoom-in"
-        onclick="_uplFileViewerOpen(_uplCurrentDetail)">
-      <embed src="${fUrl}" type="application/pdf" class="w-full pointer-events-none"
-             style="height:280px" tabindex="-1">
-      <div class="absolute inset-0 flex items-end justify-end p-2
-           opacity-0 group-hover:opacity-100 transition-opacity">
-        <span class="bg-white/90 dark:bg-zinc-900/90 text-[11px] font-semibold
-                     text-gray-700 dark:text-zinc-200 rounded-lg px-2.5 py-1 shadow">
-          &#128269; Expand
-        </span>
-      </div>
-    </div>`;
+    // Handled in two-zone layout below — pointer-events restored so scroll works.
+    preview = null;
   } else if (mt === _DOCX_MIME || mt === 'text/csv') {
     preview = _uplDocCsvCard(f, fUrl);
   } else if (isText) {
@@ -433,26 +422,48 @@ function _uplRenderDetail(f) {
       ${srcSection}
     </div>`;
 
-  if (isText) {
+  var isPdf = mt === 'application/pdf';
+
+  if (isText || isPdf) {
     // ── Two-zone layout ────────────────────────────────────────────────────────
-    // Zone 1: text preview  — fixed height, scrolls its own content only.
-    // Zone 2: meta / actions — fills remaining height, scrolls independently.
-    // Outer container is overflow:hidden so it NEVER shows its own scrollbar;
-    // that eliminates the "two scrollbars competing" problem entirely.
-    var isDark = document.documentElement.classList.contains('dark');
-    var previewBg = isDark ? '#27272a' : '#f9fafb'; // zinc-800 / gray-50
-    var previewBorder = isDark ? 'rgba(63,63,70,0.6)' : 'rgba(156,163,175,0.25)';
+    // Zone 1: preview      — fixed height, scrolls its own content only.
+    // Zone 2: meta/actions — fills remaining height, scrolls independently.
+    // Outer container is overflow:hidden — it NEVER shows its own scrollbar,
+    // eliminating the "two scrollbars competing on the same edge" problem.
+    var isDark      = document.documentElement.classList.contains('dark');
+    var previewBg   = isDark ? '#27272a' : '#f9fafb';          // zinc-800 / gray-50
+    var previewBord = isDark ? 'rgba(63,63,70,0.6)' : 'rgba(156,163,175,0.25)';
+
+    var zone1;
+    if (isText) {
+      zone1 = '<div id="upl-text-preview"'
+        + ' style="flex-shrink:0;height:13rem;overflow-y:scroll;overscroll-behavior-y:contain;'
+        + 'padding:.75rem;background:' + previewBg + ';border-bottom:1px solid ' + previewBord + '">'
+        + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
+        + '</div>';
+    } else {
+      // PDF — embed with pointer-events restored so the PDF viewer receives scroll.
+      // The "Expand" action moves to an explicit button at the top of Zone 2.
+      zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;'
+        + 'border-bottom:1px solid ' + previewBord + '">'
+        + '<embed src="' + fUrl + '" type="application/pdf"'
+        + ' style="width:100%;height:100%;border:0" tabindex="-1">'
+        + '</div>';
+    }
+
+    // For PDFs prepend an explicit open-viewer button so the expand action
+    // isn't lost when the click-anywhere overlay is removed.
+    var pdfBtn = isPdf
+      ? '<button onclick="_uplFileViewerOpen(_uplCurrentDetail)"'
+        + ' style="display:block;width:100%;margin-bottom:.75rem;padding:.375rem 0;'
+        + 'font-size:11px;font-weight:600;border-radius:.5rem;cursor:pointer;'
+        + 'background:#0053e2;color:#fff;border:0;">\u26f6 Open full PDF</button>'
+      : '';
+
     el.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:calc(100% - 3rem);padding:0';
-    el.innerHTML =
-      // Zone 1 — text preview
-      '<div id="upl-text-preview"'
-      + ' style="flex-shrink:0;height:13rem;overflow-y:scroll;overscroll-behavior-y:contain;'
-      + 'padding:.75rem;background:' + previewBg + ';border-bottom:1px solid ' + previewBorder + '">'
-      + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
-      + '</div>'
-      // Zone 2 — scrollable meta
+    el.innerHTML = zone1
       + '<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:1rem">'
-      + metaBlock
+      + pdfBtn + metaBlock
       + '</div>';
   } else {
     // ── Single-zone layout (image / video / audio / PDF / DOCX / unknown) ─────
