@@ -123,6 +123,18 @@ async def read_content(request: Request, page_id: int, src: str, file_id: int):
             raise HTTPException(status_code=500, detail="Could not parse Word document") from exc
         return JSONResponse({"content": html, "content_type": "docx_html"})
 
+    if mime == "application/pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(str(disk_path))
+            pages  = [pg.extract_text() or "" for pg in reader.pages]
+            text   = "\n\n".join(pages).strip()
+            if not text:
+                text = "(No text content — this PDF may be image-based or scanned.)"
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="Could not extract PDF text") from exc
+        return JSONResponse({"content": text, "content_type": "text"})
+
     if mime == "text/csv" or (mime.startswith("text/") and disk_path.suffix.lower() == ".csv"):
         try:
             raw = disk_path.read_text(encoding="utf-8-sig", errors="replace")

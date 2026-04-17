@@ -154,6 +154,29 @@ async function _uplFetchDocxPreview(f) {
   }
 }
 
+// Fetches extracted text from the /content endpoint for PDFs (pypdf)
+// and renders it with the same dark-mode-aware styling as DOCX/text previews.
+async function _uplFetchPdfPreview(f) {
+  const el = document.getElementById('upl-pdf-preview');
+  if (!el) return;
+  try {
+    const r  = await fetch(`/home/uploads/${_uplPid}/files/${_uplEsc(f.src)}/${f.id}/content`);
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('text/html')) throw new Error('session');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    const text = data.content || '';
+    el.innerHTML =
+      '<pre style="font-size:10px;line-height:1.6;white-space:pre-wrap;word-break:break-word;'
+      + 'pointer-events:none;font-family:inherit;margin:0;"'
+      + ' class="text-gray-800 dark:text-zinc-100">'
+      + _uplEsc(text)
+      + '</pre>';
+  } catch(e) {
+    el.innerHTML = '<p style="font-size:10px;color:#9ca3af;font-style:italic">Preview unavailable.</p>';
+  }
+}
+
 
 async function _uplLoadAllTags() {
   try {
