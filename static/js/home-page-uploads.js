@@ -442,28 +442,30 @@ function _uplRenderDetail(f) {
         + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
         + '</div>';
     } else {
-      // PDF — embed with pointer-events restored so the PDF viewer receives scroll.
-      // The "Expand" action moves to an explicit button at the top of Zone 2.
-      zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;'
+      // PDF — embed sits below a transparent overlay.
+      // Overlay captures clicks (→ open viewer) AND hover badge.
+      // On wheel it briefly sets itself pointer-events:none so the next
+      // scroll tick reaches the embed natively — re-enables after scroll settles.
+      zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
         + ' style="width:100%;height:100%;border:0" tabindex="-1">'
+        + '<div id="upl-pdf-overlay"'
+        + ' style="position:absolute;inset:0;cursor:zoom-in;'
+        + 'display:flex;align-items:flex-end;justify-content:flex-end;padding:8px"'
+        + ' onclick="_uplFileViewerOpen(_uplCurrentDetail)">'
+        + '<span id="upl-pdf-expand-badge"'
+        + ' style="opacity:0;transition:opacity .15s;border-radius:8px;padding:3px 10px;'
+        + 'font-size:11px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.15);'
+        + 'background:rgba(255,255,255,.92);color:#1f2937">&#128269; Expand</span>'
+        + '</div>'
         + '</div>';
     }
-
-    // For PDFs prepend an explicit open-viewer button so the expand action
-    // isn't lost when the click-anywhere overlay is removed.
-    var pdfBtn = isPdf
-      ? '<button onclick="_uplFileViewerOpen(_uplCurrentDetail)"'
-        + ' style="display:block;width:100%;margin-bottom:.75rem;padding:.375rem 0;'
-        + 'font-size:11px;font-weight:600;border-radius:.5rem;cursor:pointer;'
-        + 'background:#0053e2;color:#fff;border:0;">\u26f6 Open full PDF</button>'
-      : '';
 
     el.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:calc(100% - 3rem);padding:0';
     el.innerHTML = zone1
       + '<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:1rem">'
-      + pdfBtn + metaBlock
+      + metaBlock
       + '</div>';
   } else {
     // ── Single-zone layout (image / video / audio / PDF / DOCX / unknown) ─────
@@ -474,11 +476,36 @@ function _uplRenderDetail(f) {
   }
 
   if (isText) _uplFetchTextPreview(fUrl);
+  if (isPdf)   _uplPdfOverlayInit();
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
 }
 
-function _uplDocCsvCard(f, fUrl) {
+// Wire the PDF overlay: hover badge + scroll-passthrough trick.
+// On wheel: overlay goes pointer-events:none for 120ms so scroll reaches the embed.
+// After scroll idle: overlay returns to auto so clicks still work.
+function _uplPdfOverlayInit() {
+  var overlay = document.getElementById('upl-pdf-overlay');
+  var badge   = document.getElementById('upl-pdf-expand-badge');
+  if (!overlay) return;
+
+  // Hover — show expand badge
+  overlay.addEventListener('mouseenter', function() { badge.style.opacity = '1'; });
+  overlay.addEventListener('mouseleave', function() { badge.style.opacity = '0'; });
+
+  // Scroll passthrough: briefly disable overlay so wheel reaches embed below,
+  // then re-enable once scroll has settled (150ms idle).
+  var _scrollTimer = null;
+  overlay.addEventListener('wheel', function() {
+    overlay.style.pointerEvents = 'none';
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(function() {
+      overlay.style.pointerEvents = 'auto';
+    }, 150);
+  }, { passive: true });
+}
+
+
   var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';
   var label = f.mime_type === _DOCX_MIME ? 'Word Document' : 'CSV Spreadsheet';
   return '<div class="mb-4 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden cursor-pointer group hover:border-[#0053e2] transition-colors" onclick="_uplFileViewerOpen(_uplCurrentDetail)"><div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-zinc-800"><span class="text-3xl">' + icon + '</span><div class="min-w-0"><p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">' + _uplEsc(f.original_name) + '</p><p class="text-[10px] text-gray-400">' + label + ' &middot; click to view</p></div><span class="ml-auto text-[11px] font-semibold text-[#0053e2] group-hover:underline flex-shrink-0">View &#8594;</span></div></div>';
