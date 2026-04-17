@@ -821,27 +821,38 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
   var annots  = [];
   var scale   = 1.5;
   var stopped = false;
+  var isDark  = document.documentElement.classList.contains('dark');
+
+  // Dark-mode-aware chrome colours
+  var avBtn   = isDark
+    ? 'font-size:13px;padding:2px 8px;border-radius:4px;border:1px solid #52525b;background:#3f3f46;color:#e4e4e7;cursor:pointer;'
+    : _AV_BTN;
+  var avTbBg  = isDark ? '#27272a' : '#f9fafb';
+  var avTbBrd = isDark ? 'rgba(63,63,70,0.6)' : '#e5e7eb';
+  var avLblC  = isDark ? '#a1a1aa' : '#6b7280';
+  var avSepC  = isDark ? '#52525b' : '#d1d5db';
+  var avScrBg = isDark ? '#18181b' : '#525659';
 
   containerEl.innerHTML =
     '<div style="display:flex;flex-direction:column;height:100%;">' +
     '  <div id="_av-toolbar" style="display:flex;align-items:center;gap:6px;' +
-    '       padding:6px 10px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;">' +
-    '    <button id="_av-prev" onclick="_avNav(-1)" style="' + _AV_BTN + '">&#8249;</button>' +
-    '    <span id="_av-label" style="font-size:11px;color:#6b7280;white-space:nowrap">Page 1</span>' +
-    '    <button id="_av-next" onclick="_avNav(1)"  style="' + _AV_BTN + '">&#8250;</button>' +
+    '       padding:6px 10px;background:' + avTbBg + ';border-bottom:1px solid ' + avTbBrd + ';flex-shrink:0;">' +
+    '    <button id="_av-prev" onclick="_avNav(-1)" style="' + avBtn + '">&#8249;</button>' +
+    '    <span id="_av-label" style="font-size:11px;color:' + avLblC + ';white-space:nowrap">Page 1</span>' +
+    '    <button id="_av-next" onclick="_avNav(1)"  style="' + avBtn + '">&#8250;</button>' +
     '    <span style="flex:1"></span>' +
-    '    <button onclick="_avZoom(-0.25)" style="' + _AV_BTN + '">&#8722;</button>' +
-    '    <span id="_av-zoom" style="font-size:11px;color:#6b7280;min-width:36px;text-align:center;">150%</span>' +
-    '    <button onclick="_avZoom(0.25)"  style="' + _AV_BTN + '">&#43;</button>' +
-    '    <button onclick="_avFit()"        style="' + _AV_BTN + '" title="AutoFit to window">&#8633; AutoFit</button>' +
-    '    <span style="width:1px;height:16px;background:#d1d5db;margin:0 2px;"></span>' +
-    '    <button onclick="_avRotate(-90)"  style="' + _AV_BTN + '" title="Rotate left 90°">&#10554;</button>' +
-    '    <button onclick="_avRotate(90)"   style="' + _AV_BTN + '" title="Rotate right 90°">&#10555;</button>' +
-    '    <button onclick="_avFlip(&quot;H&quot;)"    style="' + _AV_BTN + '" title="Flip horizontal">&#8596;</button>' +
-    '    <button onclick="_avFlip(&quot;V&quot;)"    style="' + _AV_BTN + '" title="Flip vertical">&#8597;</button>' +
-    '    <button onclick="_avRevert()"      style="' + _AV_BTN + '" title="Revert to original orientation">&#8617; Revert</button>' +
+    '    <button onclick="_avZoom(-0.25)" style="' + avBtn + '">&#8722;</button>' +
+    '    <span id="_av-zoom" style="font-size:11px;color:' + avLblC + ';min-width:36px;text-align:center;">150%</span>' +
+    '    <button onclick="_avZoom(0.25)"  style="' + avBtn + '">&#43;</button>' +
+    '    <button onclick="_avFit()"        style="' + avBtn + '" title="AutoFit to window">&#8633; AutoFit</button>' +
+    '    <span style="width:1px;height:16px;background:' + avSepC + ';margin:0 2px;"></span>' +
+    '    <button onclick="_avRotate(-90)"  style="' + avBtn + '" title="Rotate left 90°">&#10554;</button>' +
+    '    <button onclick="_avRotate(90)"   style="' + avBtn + '" title="Rotate right 90°">&#10555;</button>' +
+    '    <button onclick="_avFlip(&quot;H&quot;)"    style="' + avBtn + '" title="Flip horizontal">&#8596;</button>' +
+    '    <button onclick="_avFlip(&quot;V&quot;)"    style="' + avBtn + '" title="Flip vertical">&#8597;</button>' +
+    '    <button onclick="_avRevert()"      style="' + avBtn + '" title="Revert to original orientation">&#8617; Revert</button>' +
     '  </div>' +
-    '  <div id="_av-scroll" style="flex:1;overflow:auto;background:#525659;display:flex;' +
+    '  <div id="_av-scroll" style="flex:1;overflow:auto;background:' + avScrBg + ';display:flex;' +
     '       justify-content:center;align-items:flex-start;padding:12px;">' +
     '    <div id="_av-wrap" style="position:relative;display:inline-block;">' +
     '      <canvas id="_av-canvas" style="display:block;"></canvas>' +
@@ -867,6 +878,8 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
       cv.width  = vp.width;
       cv.height = vp.height;
       pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise.then(function() {
+        // Match mini-preview dark mode filter so page colour is consistent
+        cv.style.filter = isDark ? 'brightness(0.85) invert(1) hue-rotate(180deg)' : '';
         var lbl = avEl('_av-label');
         if (lbl) lbl.textContent = 'Page ' + (curPage + 1) + ' / ' + pdfDoc.numPages;
         avDrawOverlay();
