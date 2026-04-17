@@ -479,16 +479,14 @@ function _uplRenderDetail(f) {
         + expandBtn
         + '</div>';
     } else {
-      // PDF — use the same text-preview approach as DOCX/text so dark mode
-      // works consistently. The /content endpoint now extracts PDF text via
-      // pypdf; the Expand button opens the full PDF.js canvas viewer.
-      zone1 = '<div style="flex-shrink:0;height:13rem;overflow:hidden;position:relative;'
+      // PDF — browser native embed. Fast, shows images and layout accurately.
+      // The browser's built-in viewer ignores CSS dark mode (hard browser limit —
+      // same behaviour as Google Drive, OneDrive, every other web app).
+      // Dark-aware chrome (previewBg / previewBord) wraps the embed.
+      zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
-        + '<div id="upl-pdf-preview"'
-        + ' style="height:100%;overflow-y:scroll;overscroll-behavior-y:contain;'
-        + 'padding:.75rem;background:' + previewBg + '">'
-        + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
-        + '</div>'
+        + '<embed src="' + fUrl + '" type="application/pdf"'
+        + ' style="width:100%;height:100%;border:0" tabindex="-1">'
         + expandBtn
         + '</div>';
     }
@@ -508,7 +506,6 @@ function _uplRenderDetail(f) {
 
   if (isText) _uplFetchTextPreview(fUrl);
   if (isDocx) _uplFetchDocxPreview(f);
-  if (isPdf)  _uplFetchPdfPreview(f);
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
 }
