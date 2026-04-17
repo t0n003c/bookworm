@@ -506,6 +506,7 @@ function _uplPdfOverlayInit() {
 }
 
 
+function _uplDocCsvCard(f, fUrl) {
   var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';
   var label = f.mime_type === _DOCX_MIME ? 'Word Document' : 'CSV Spreadsheet';
   return '<div class="mb-4 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden cursor-pointer group hover:border-[#0053e2] transition-colors" onclick="_uplFileViewerOpen(_uplCurrentDetail)"><div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-zinc-800"><span class="text-3xl">' + icon + '</span><div class="min-w-0"><p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">' + _uplEsc(f.original_name) + '</p><p class="text-[10px] text-gray-400">' + label + ' &middot; click to view</p></div><span class="ml-auto text-[11px] font-semibold text-[#0053e2] group-hover:underline flex-shrink-0">View &#8594;</span></div></div>';
