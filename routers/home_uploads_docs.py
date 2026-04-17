@@ -234,8 +234,11 @@ def _docx_body_to_html(doc) -> str:  # type: ignore[annotation-unchecked]
             if ps is not None:
                 sid = ps.get(_w("val")) or ""
                 style_name = sid_to_name.get(sid, sid)
-        tag   = _HEADING_TAGS.get(style_name, "p")
-        inner = "".join(_run_html(r) for r in p_el.findall(_w("r"))) or "&nbsp;"
+        tag = _HEADING_TAGS.get(style_name, "p")
+        # iter() instead of findall() so runs nested inside w:hyperlink (or any
+        # other wrapper) are included — this is the most common reason images
+        # inside linked or pasted content were silently dropped.
+        inner = "".join(_run_html(r) for r in p_el.iter(_w("r"))) or "&nbsp;"
         return f"<{tag}>{inner}</{tag}>"
 
     def _cell_html(tc_el, is_header: bool) -> str:
