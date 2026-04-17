@@ -123,7 +123,37 @@ async function _uplFetchTextPreview(url) {
   }
 }
 
-// ── Load all user tags (autocomplete + filter bar pills) ──────────────────────
+// ── DOCX file preview (called from _uplRenderDetail in main file) ────────────
+// Fetches rendered HTML from /content endpoint (same source as the full viewer)
+// and injects a scaled-down read-only preview into #upl-docx-preview.
+
+async function _uplFetchDocxPreview(f) {
+  const el = document.getElementById('upl-docx-preview');
+  if (!el) return;
+  try {
+    const r  = await fetch(`/home/uploads/${_uplPid}/files/${_uplEsc(f.src)}/${f.id}/content`);
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('text/html')) throw new Error('session');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    if (data.content_type === 'docx_html') {
+      // Render HTML in a sandboxed, scaled-down container.
+      // font-size:11px + overflow:hidden on the parent keeps it tidy.
+      el.innerHTML =
+        '<div style="font-size:11px;line-height:1.5;color:#374151;pointer-events:none;"'
+        + ' class="dark:text-zinc-300">'
+        + data.content
+        + '</div>';
+    } else {
+      // Fallback: plain text content (shouldn\'t happen for docx but be safe)
+      el.innerHTML = `<pre style="font-size:10px;white-space:pre-wrap;word-break:break-word"
+        class="text-gray-700 dark:text-zinc-300 font-mono">${_uplEsc(data.content || '')}</pre>`;
+    }
+  } catch(e) {
+    el.innerHTML = '<p style="font-size:10px;color:#9ca3af;font-style:italic">Preview unavailable.</p>';
+  }
+}
+
 
 async function _uplLoadAllTags() {
   try {

@@ -388,7 +388,10 @@ function _uplRenderDetail(f) {
   } else if (mt === 'application/pdf') {
     // Handled in two-zone layout below — pointer-events restored so scroll works.
     preview = null;
-  } else if (mt === _DOCX_MIME || mt === 'text/csv') {
+  } else if (mt === _DOCX_MIME) {
+    // Handled in two-zone layout below — content fetched from /content endpoint.
+    preview = null;
+  } else if (mt === 'text/csv') {
     preview = _uplDocCsvCard(f, fUrl);
   } else if (isText) {
     // No wrapper — text preview becomes its own top-level flex zone (see layout below)
@@ -422,9 +425,10 @@ function _uplRenderDetail(f) {
       ${srcSection}
     </div>`;
 
-  var isPdf = mt === 'application/pdf';
+  var isPdf  = mt === 'application/pdf';
+  var isDocx = mt === _DOCX_MIME;
 
-  if (isText || isPdf) {
+  if (isText || isPdf || isDocx) {
     // ── Two-zone layout ────────────────────────────────────────────────────────
     // Zone 1: preview      — fixed height, scrolls its own content only.
     // Zone 2: meta/actions — fills remaining height, scrolls independently.
@@ -458,9 +462,19 @@ function _uplRenderDetail(f) {
         + '</div>'
         + expandBtn
         + '</div>';
+    } else if (isDocx) {
+      // DOCX — content comes from the /content endpoint (mammoth-rendered HTML).
+      // Same structure as text: scrollable inner div + pinned Expand button.
+      zone1 = '<div style="flex-shrink:0;height:13rem;overflow:hidden;position:relative;'
+        + 'border-bottom:1px solid ' + previewBord + '">'
+        + '<div id="upl-docx-preview"'
+        + ' style="height:100%;overflow-y:scroll;overscroll-behavior-y:contain;'
+        + 'padding:.75rem;background:' + previewBg + '">'
+        + '<p style="font-size:10px;color:#9ca3af;font-style:italic">Loading preview\u2026</p>'
+        + '</div>'
+        + expandBtn
+        + '</div>';
     } else {
-      // PDF — overlay is pointer-events:none so scroll+click pass straight through
-      // to the embed. Only the pinned Expand button stays pointer-events:auto.
       zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
@@ -483,6 +497,7 @@ function _uplRenderDetail(f) {
   }
 
   if (isText) _uplFetchTextPreview(fUrl);
+  if (isDocx) _uplFetchDocxPreview(f);
   _uplLoadTags(f.src, f.id);
   if (typeof _uplDocStudioInit === 'function') _uplDocStudioInit(f);
 }
