@@ -364,13 +364,23 @@ function _uplCatDragStart(event, id) {
 function _uplCatDragOver(event, targetId) {
   event.preventDefault();
   event.stopPropagation();
-  if (event.dataTransfer.types.indexOf('application/x-upl-catalog') === -1) return;
-  if (_uplCatDragId === targetId) return;
+  var isFile    = event.dataTransfer.types.indexOf('application/x-upl-file')    !== -1;
+  var isCatalog = event.dataTransfer.types.indexOf('application/x-upl-catalog') !== -1;
+  if (!isFile && !isCatalog) return;
+  if (isCatalog && _uplCatDragId === targetId) return;
 
   var el = document.querySelector('[data-cat-id="' + targetId + '"]');
   if (!el) return;
   _uplCatClearDndCls(el);
 
+  if (isFile) {
+    // Files always land 'inside' a catalog — no 3-zone needed
+    _CAT_RING.forEach(function(c) { el.classList.add(c); });
+    event.dataTransfer.dropEffect = 'copy';
+    return;
+  }
+
+  // Catalog-on-catalog: 3-zone reorder / reparent
   var rect = el.getBoundingClientRect();
   var relY = (event.clientY - rect.top) / (rect.height || 1);
   if (relY < 0.33) {
@@ -404,13 +414,20 @@ function _uplCatDrop(event, targetId, targetParentId) {
   var el = document.querySelector('[data-cat-id="' + targetId + '"]');
   _uplCatClearDndCls(el);
 
-  if (event.dataTransfer.types.indexOf('application/x-upl-catalog') === -1) return;
+  var isFile    = event.dataTransfer.types.indexOf('application/x-upl-file')    !== -1;
+  var isCatalog = event.dataTransfer.types.indexOf('application/x-upl-catalog') !== -1;
+
+  if (isFile) {
+    _uplCatDropIntent = null;
+    if (typeof _dndFileDropOnCatalog === 'function') _dndFileDropOnCatalog(targetId);
+    return;
+  }
+
   var intent = _uplCatDropIntent || 'inside';
   _uplCatDropIntent = null;
-  if (_uplCatDragId === null || _uplCatDragId === targetId) { _uplCatDragId = null; return; }
+  if (!isCatalog || _uplCatDragId === null || _uplCatDragId === targetId) { _uplCatDragId = null; return; }
 
   if (intent === 'inside') {
-    // Cycle guard (client-side fast-path; server validates too)
     if (_uplCatIsDescendant(_uplCatDragId, targetId)) {
       if (typeof _uplShowToast === 'function') _uplShowToast('Cannot nest a catalog inside its own child.', true);
       _uplCatDragId = null; return;
@@ -562,14 +579,15 @@ function _uplRenderDetailCatalogs(f) {
       if (fileCats.length === 0) {
         html += '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic mb-2">None</p>';
       } else {
-        html += '<div class="flex flex-wrap gap-1 mb-2">';
+        html += '<div class="flex flex-wrap gap-1.5 mb-2">';
         fileCats.forEach(function(cat) {
-          html += '<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 border border-blue-200 dark:border-blue-800">'
+          html += '<span class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-[10px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 border border-blue-200 dark:border-blue-800 group/badge">'
             + _uplCatEsc(cat.name)
-            + '<button class="ml-0.5 hover:text-red-500 transition leading-none"'
+            + '<button class="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-500 text-blue-400 dark:text-blue-500 transition"'
             + ' onclick="_uplCatRemoveFile(' + cat.id + ',' + f.id + ',' + (f.page_id || _uplCatPid) + ')"'
-            + ' aria-label="Remove from ' + _uplCatEsc(cat.name) + '">&times;</button>'
-            + '</span>';
+            + ' title="Remove from ' + _uplCatEsc(cat.name) + '" aria-label="Remove from ' + _uplCatEsc(cat.name) + '">'
+            + '<svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
+            + '</button></span>';
         });
         html += '</div>';
       }

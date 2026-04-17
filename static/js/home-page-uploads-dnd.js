@@ -305,5 +305,55 @@ function _dndMouseUp(event) {
   _dndSelBadgeUpdate();
 }
 
+// ── Drop on catalog (called by catalog tree drop handlers) ──────────────────
+function _dndFileDropOnCatalog(catalogId) {
+  var keys    = Object.keys(_dndSelected);
+  var pageIds = [];
+
+  if (keys.length === 0) {
+    // Single-file drag
+    if (!_dndDragFileId || _dndDragFileSrc !== 'page') {
+      if (_dndDragFileSrc === 'note' && typeof _uplShowToast === 'function')
+        _uplShowToast('Note attachments cannot be added to catalogs.', true);
+      return;
+    }
+    pageIds.push(_dndDragFileId);
+  } else {
+    var noteCount = 0;
+    keys.forEach(function(k) {
+      var item = _dndSelected[k];
+      if (item.src !== 'page') { noteCount++; return; }
+      pageIds.push(item.id);
+    });
+    if (noteCount && typeof _uplShowToast === 'function')
+      _uplShowToast(noteCount + ' note attachment' + (noteCount === 1 ? '' : 's') +
+        ' skipped \u2014 only standalone files can be added to catalogs.', true);
+  }
+
+  var pid = (typeof _uplCatPid !== 'undefined' && _uplCatPid)
+    ? _uplCatPid
+    : (typeof _uplFldPid !== 'undefined' ? _uplFldPid : 0);
+  if (!pid || !pageIds.length) return;
+
+  pageIds.forEach(function(id) {
+    fetch('/home/uploads/' + pid + '/catalogs/' + catalogId + '/files', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_id: id }),
+    }).catch(function(e) { console.error('[dnd] catalog assign error', e); });
+  });
+
+  _dndSelClear();
+  if (typeof _uplShowToast === 'function')
+    _uplShowToast('\u2713 ' + pageIds.length + ' file' + (pageIds.length === 1 ? '' : 's') + ' added to catalog.', false);
+
+  // Refresh detail panel catalog badges if the open file was one of those assigned
+  if (typeof _uplCurrentDetail !== 'undefined' && _uplCurrentDetail &&
+      pageIds.indexOf(_uplCurrentDetail.id) !== -1 &&
+      typeof _uplRenderDetailCatalogs === 'function') {
+    _uplRenderDetailCatalogs(_uplCurrentDetail);
+  }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 _dndInit();

@@ -433,6 +433,7 @@ function _uplRenderDetail(f) {
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
     : `<div class="p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 mb-3">
          <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-1 font-bold">Standalone Upload</p>
+         ${f.folder_id != null ? '<button onclick="_uplRemoveFromFolder(' + f.id + ')" class="mt-2 w-full py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-700 transition">' + "\uD83D\uDCC2" + ' Remove from folder</button>' : ''}
          <button onclick="_uplConfirmDelete(${f.id})" class="mt-1 w-full py-1.5 text-xs rounded-lg
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
@@ -718,7 +719,27 @@ async function _uplProcessFiles(files) {
   }, 900);
 }
 
-// ── Toast ───────────────────────────────────────────────────────────────────────────────────
+// ── Remove from folder ─────────────────────────────────────────────────────────────────
+async function _uplRemoveFromFolder(uploadId) {
+  if (!_uplPid) return;
+  try {
+    const r = await fetch(`/home/uploads/${_uplPid}/files/page/${uploadId}/folder`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: null }),
+    });
+    if (!r.ok) throw new Error(r.status);
+    _uplShowToast('\u2713 Removed from folder.', false);
+    _uplCloseDetail();
+    _uplFetch(1);
+  } catch (e) {
+    _uplShowToast('Could not remove from folder.', true);
+    console.error('[uploads] remove-from-folder error', e);
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────────────────────
 function _uplShowToast(msg, isErr) {
   if (typeof window._bwToast === 'function') {
     window._bwToast(msg, isErr ? 'error' : 'success');
