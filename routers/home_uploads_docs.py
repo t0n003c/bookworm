@@ -474,14 +474,13 @@ async def convert_file(request: Request, page_id: int, file_id: int, body: Conve
     # to_fmt == "pdf"
     if mime.startswith("text/"):
         text = disk_path.read_text(encoding="utf-8", errors="replace")
+        data = _text_to_pdf_bytes(text)
     elif mime == _DOCX_MIME:
         from docx import Document
         doc = Document(disk_path)
-        text = "\n".join(p.text for p in doc.paragraphs)
+        data = _docx_to_pdf_bytes(doc)
     else:
         raise HTTPException(status_code=400, detail="Only TXT or DOCX can be converted to PDF")
-
-    data = _text_to_pdf_bytes(text)
     stored = f"{uuid.uuid4().hex}.pdf"
     (UPLOAD_DIR / stored).write_bytes(data)
     new_id = await create_page_upload(
@@ -701,7 +700,145 @@ def _text_to_pdf_bytes(text: str) -> bytes:
     return buf.getvalue()
 
 
-# ── POST /{pid}/files/page/{id}/sign ─────────────────────────────────────────
+def _docx_to_pdf_bytes(doc) -> bytes:  # type: ignore[annotation-unchecked]
+    """Convert a python-docx Document to PDF bytes via reportlab, preserving images.
+
+    Walks the body XML in document order so text and images appear in the right
+    sequence.  Each w:p becomes Paragraph story items + any Image items from
+    embedded drawings.  Tables are rendered as plain-text rows (no nested images).
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Image as RLImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+
+    W   = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+    PAGE_W = A4[0] - 144   # usable width in points (72 pt margins each side)
+    styles  = getSampleStyleSheet()
+    normal  = styles["Normal"]
+    h_styles = {
+        "Heading 1": styles["h1"] if "h1" in styles.byName else styles["Heading1"],
+        "Heading 2": styles["h2"] if "h2" in styles.byName else styles["Heading2"],
+        "Heading 3": styles["h3"] if "h3" in styles.byName else styles.get("Heading3", normal),
+    }
+    sid_to_name: dict[str, str] = {s.style_id: s.name for s in doc.styles}
+
+    def _w(name: str) -> str:
+        return f"{{{W}}}{name}"
+
+    def _local(el) -> str:
+        return el.tag.split("}")[-1] if "}" in el.tag else el.tag
+
+    def _extract_image(drawing_el) -> RLImage | None:
+        """Return a reportlab Image from a w:drawing element, or None."""
+        blip_tag  = f"{{{A_NS}}}blip"
+        embed_key = f"{{{R_NS}}}embed"
+        for child in drawing_el.iter():
+            if child.tag != blip_tag:
+                continue
+            r_id = child.get(embed_key)
+            if not r_id:
+                break
+            try:
+                blob = doc.part.related_parts[r_id].blob
+                if len(blob) > 5_000_000:   # skip huge images
+                    return None
+                img_buf = io.BytesIO(blob)
+                rl_img  = RLImage(img_buf)
+                # Scale down to fit page width
+                if rl_img.imageWidth > PAGE_W:
+                    ratio = PAGE_W / rl_img.imageWidth
+                    rl_img._restrictSize(PAGE_W, rl_img.imageHeight * ratio)
+                return rl_img
+            except Exception:
+                return None
+        return None
+
+    def _para_story(p_el) -> list:
+        """Return a list of story items from one w:p (text Paragraph + Images)."""
+        ppr = p_el.find(_w("pPr"))
+        style_name = ""
+        if ppr is not None:
+            ps = ppr.find(_w("pStyle"))
+            if ps is not None:
+                sid = ps.get(_w("val")) or ""
+                style_name = sid_to_name.get(sid, sid)
+        rl_style = h_styles.get(style_name, normal)
+
+        items: list = []
+        text_buf: list[str] = []
+
+        for r_el in p_el.iter(_w("r")):
+            for el in r_el:
+                loc = _local(el)
+                if loc == "t":
+                    text_buf.append(escape(el.text or ""))
+                elif loc == "br":
+                    text_buf.append("<br/>")
+                elif loc == "drawing":
+                    # Flush buffered text before the image
+                    if text_buf:
+                        items.append(Paragraph("".join(text_buf) or "&nbsp;", rl_style))
+                        text_buf = []
+                    img = _extract_image(el)
+                    if img:
+                        items.append(img)
+
+        # Flush remaining text
+        joined = "".join(text_buf)
+        items.append(Paragraph(joined if joined.strip() else "&nbsp;", rl_style))
+        return items
+
+    def _table_story(tbl_el) -> list:
+        data = []
+        for tr in tbl_el.findall(_w("tr")):
+            row = []
+            for tc in tr.findall(_w("tc")):
+                cell_text = " ".join(
+                    t.text or ""
+                    for p in tc.findall(_w("p"))
+                    for r in p.findall(_w("r"))
+                    for t in r.findall(_w("t"))
+                )
+                row.append(escape(cell_text))
+            if row:
+                data.append(row)
+        if not data:
+            return []
+        tbl = Table(data, hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("FONTSIZE",   (0, 0), (-1, -1), 9),
+            ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (-1,  0), colors.lightgrey),
+            ("VALIGN",     (0, 0), (-1, -1), "TOP"),
+        ]))
+        return [tbl]
+
+    story: list = []
+    for child in doc.element.body:
+        loc = _local(child)
+        if loc == "p":
+            story.extend(_para_story(child))
+            story.append(Spacer(1, 4))
+        elif loc == "tbl":
+            story.extend(_table_story(child))
+            story.append(Spacer(1, 6))
+
+    if not story:
+        story.append(Paragraph("(empty document)", normal))
+
+    buf = io.BytesIO()
+    SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=72, rightMargin=72, topMargin=72, bottomMargin=72,
+    ).build(story)
+    return buf.getvalue()
+
+
+
 
 # ── GET page dimensions (used by placement UI to build a proportioned click-target) ──
 

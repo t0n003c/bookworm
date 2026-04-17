@@ -161,6 +161,8 @@ function _uplDocToggleSelectMode() {
   _uplDocSelectMode = !_uplDocSelectMode;
   if (!_uplDocSelectMode) {
     _uplDocSelected = {};
+    // Remove all checkbox elements from the card grid
+    document.querySelectorAll('.upl-doc-cb').forEach(function(cb) { cb.remove(); });
     // Clear all selection rings
     document.querySelectorAll('[data-upl-id][data-upl-src]').forEach(function(c) {
       _uplDocUpdateCardRing(c, false);

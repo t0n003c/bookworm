@@ -404,7 +404,10 @@ function _uplRenderDetail(f) {
          <p class="text-[10px] uppercase tracking-wide text-blue-400 mb-1 font-bold">\uD83D\uDCDD Attached to Note</p>
          <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate">${_uplEsc(f.note_title||'Untitled')}</p>
          <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.workspace_name||'')}</p>
-         ${f.workspace_id?`<a href="/?ws=${f.workspace_id}" class="inline-block mt-1.5 text-[10px] text-[#0053e2] hover:underline">Open workspace</a>`:''}</div>`
+         ${f.workspace_id?`<a href="/?ws=${f.workspace_id}" class="inline-block mt-1.5 text-[10px] text-[#0053e2] hover:underline">Open workspace</a>`:''}
+         <button onclick="_uplDeleteNoteAttachment(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
+                 border border-red-200 dark:border-red-800 text-red-500
+                 hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
     : `<div class="p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 mb-3">
          <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-1 font-bold">Standalone Upload</p>
          <button onclick="_uplConfirmDelete(${f.id})" class="mt-1 w-full py-1.5 text-xs rounded-lg
@@ -524,6 +527,19 @@ function _uplConfirmDelete(uploadId) {
 function _uplCancelDelete() {
   document.getElementById('upl-del-modal')?.classList.add('hidden');
   _uplDelPending = null;
+}
+
+async function _uplDeleteNoteAttachment(attachmentId) {
+  if (!confirm('Remove this attachment from its note? This cannot be undone.')) return;
+  try {
+    var r = await fetch('/notes/attachments/' + attachmentId, { method: 'DELETE' });
+    if (!r.ok) throw new Error(r.status);
+    _uplCloseDetail();
+    await _uplFetch(_uplMeta.page || 1);
+    _uplShowToast('Attachment removed.');
+  } catch(e) {
+    _uplShowToast('Remove failed: ' + _uplEsc(String(e)), true);
+  }
 }
 
 async function _uplDoDelete() {
