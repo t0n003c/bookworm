@@ -479,10 +479,14 @@ function _uplRenderDetail(f) {
         + expandBtn
         + '</div>';
     } else {
+      // PDF — use browser embed for the mini-preview.
+      // The browser's native viewer ignores CSS dark mode, so we apply the
+      // classic invert+hue-rotate trick when the app is in dark mode.
+      var pdfFilter = isDark ? 'filter:invert(1) hue-rotate(180deg);' : '';
       zone1 = '<div style="flex-shrink:0;height:16rem;overflow:hidden;position:relative;'
         + 'border-bottom:1px solid ' + previewBord + '">'
         + '<embed src="' + fUrl + '" type="application/pdf"'
-        + ' style="width:100%;height:100%;border:0" tabindex="-1">'
+        + ' style="width:100%;height:100%;border:0;' + pdfFilter + '" tabindex="-1">'
         + expandBtn
         + '</div>';
     }

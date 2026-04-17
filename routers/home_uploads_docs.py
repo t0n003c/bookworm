@@ -64,7 +64,7 @@ class CombineBody(BaseModel):
 
 
 class ConvertBody(BaseModel):
-    to_format: str  # "pdf" | "txt"
+    to_format: str  # "pdf" | "txt" | "docx"
 
 
 class SignPlacement(BaseModel):
@@ -447,8 +447,8 @@ async def convert_file(request: Request, page_id: int, file_id: int, body: Conve
     src_stem = row["original_name"].rsplit(".", 1)[0]
     to_fmt = body.to_format.lower()
 
-    if to_fmt not in ("pdf", "txt"):
-        raise HTTPException(status_code=400, detail="to_format must be 'pdf' or 'txt'")
+    if to_fmt not in ("pdf", "txt", "docx"):
+        raise HTTPException(status_code=400, detail="to_format must be 'pdf', 'txt', or 'docx'")
 
     if to_fmt == "txt":
         if mime == _DOCX_MIME:
@@ -469,6 +469,23 @@ async def convert_file(request: Request, page_id: int, file_id: int, body: Conve
         )
         return JSONResponse({"ok": True, "file": {
             "id": new_id, "original_name": f"{src_stem}.txt", "size": len(data),
+        }})
+
+    if to_fmt == "docx":
+        if mime.startswith("text/") or (mime == "application/octet-stream"):
+            text = disk_path.read_text(encoding="utf-8", errors="replace")
+            data = _text_to_docx_bytes(text)
+        elif mime == "application/pdf":
+            data = _pdf_to_docx_bytes(disk_path)
+        else:
+            raise HTTPException(status_code=400, detail="Only TXT or PDF can be converted to DOCX")
+        stored = f"{uuid.uuid4().hex}.docx"
+        (UPLOAD_DIR / stored).write_bytes(data)
+        new_id = await create_page_upload(
+            page_id, uid, stored, f"{src_stem}.docx", _DOCX_MIME, len(data),
+        )
+        return JSONResponse({"ok": True, "file": {
+            "id": new_id, "original_name": f"{src_stem}.docx", "size": len(data),
         }})
 
     # to_fmt == "pdf"
@@ -698,6 +715,39 @@ def _text_to_pdf_bytes(text: str) -> bytes:
         story.append(Paragraph("(empty)", styles["Normal"]))
     doc.build(story)
     return buf.getvalue()
+
+
+def _text_to_docx_bytes(text: str) -> bytes:
+    """Convert plain text to DOCX bytes using python-docx."""
+    from docx import Document as DocxDoc
+    doc = DocxDoc()
+    for line in text.splitlines():
+        doc.add_paragraph(line)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _pdf_to_docx_bytes(pdf_path) -> bytes:  # type: ignore[annotation-unchecked]
+    """Convert a PDF file to DOCX bytes using pdf2docx.  Lazy import."""
+    import tempfile
+    from pdf2docx import Converter
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        cv = Converter(str(pdf_path))
+        cv.convert(tmp_path, start=0, end=None)
+        cv.close()
+        with open(tmp_path, "rb") as fh:
+            return fh.read()
+    finally:
+        import os
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _docx_to_pdf_bytes(doc) -> bytes:  # type: ignore[annotation-unchecked]

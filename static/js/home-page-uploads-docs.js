@@ -60,6 +60,11 @@ async function _uplDocStudioInit(f) {
     && typeof _uplAnnotOpen === 'function';
   var canToPdf   = f.src === 'page' && (f.mime_type.startsWith('text/') || f.mime_type === _DOCX_MIME);
   var canToTxt   = f.src === 'page' && (f.mime_type === 'application/pdf' || f.mime_type === _DOCX_MIME);
+  var canToDocx  = f.src === 'page' && (
+    f.mime_type === 'application/pdf' ||
+    f.mime_type.startsWith('text/') ||
+    (f.mime_type === 'application/octet-stream' && _uplIsTextExt(f))
+  );
   // canWopi: Collabora is configured + file type is on the WOPI-eligible list
   var canWopi    = f.src === 'page'
     && (typeof _WOPI_MIMES !== 'undefined') && _WOPI_MIMES.indexOf(f.mime_type) !== -1
@@ -95,6 +100,7 @@ async function _uplDocStudioInit(f) {
   if (canAnnotate) btns.push('<button onclick="_uplAnnotOpen(_uplDocCurrentFile)" class="' + _STUDIO_BTN + '">&#128221; Annotate PDF</button>');
   if (canToPdf)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'pdf\')" class="' + _STUDIO_BTN + '">→ PDF</button>');
   if (canToTxt)   btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'txt\')" class="' + _STUDIO_BTN + '">→ TXT</button>');
+  if (canToDocx)  btns.push('<button onclick="_uplDocConvert(\'' + srcF + '\',' + idF + ',\'docx\')" class="' + _STUDIO_BTN + '">→ DOCX</button>');
   if (canSign && hasBackup) btns.push('<button onclick="_uplDocRemoveStamp(_uplDocCurrentFile)" class="' + _STUDIO_BTN_DANGER + '">✕ Remove Stamp</button>');
 
   el.innerHTML = `<div class="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-700/60">
