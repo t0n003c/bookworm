@@ -878,8 +878,7 @@ function _uplAnnotPdfViewer(f, containerEl, pid) {
       cv.width  = vp.width;
       cv.height = vp.height;
       pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise.then(function() {
-        // Match mini-preview dark mode filter so page colour is consistent
-        cv.style.filter = isDark ? 'brightness(0.85) invert(1) hue-rotate(180deg)' : '';
+        if (isDark && typeof _uplPdfDarkMode === 'function') _uplPdfDarkMode(cv);
         var lbl = avEl('_av-label');
         if (lbl) lbl.textContent = 'Page ' + (curPage + 1) + ' / ' + pdfDoc.numPages;
         avDrawOverlay();

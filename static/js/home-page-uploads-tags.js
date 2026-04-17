@@ -154,6 +154,28 @@ async function _uplFetchDocxPreview(f) {
   }
 }
 
+// Smart PDF dark-mode pixel pass. Inverts only near-grayscale pixels
+// (text, backgrounds) while leaving colourful pixels (photos, charts)
+// completely untouched. Called once per canvas render in dark mode.
+//
+// Maths: saturation = (max-min)/max.  sat < 0.15 → treat as grey.
+// Grey luma remapped linearly: white(255) → zinc-800(39), black(0) → zinc-100(244).
+function _uplPdfDarkMode(canvas) {
+  var ctx = canvas.getContext('2d');
+  var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  var d   = img.data;
+  for (var i = 0; i < d.length; i += 4) {
+    var r  = d[i], g = d[i+1], b = d[i+2];
+    var mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    var mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    if (mx > 0 && (mx - mn) / mx >= 0.15) continue; // colourful pixel — skip
+    var luma = 0.299*r + 0.587*g + 0.114*b;
+    var out  = Math.round(244 - 205 * luma / 255);   // 255→39, 0→244
+    d[i] = d[i+1] = d[i+2] = out;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 // Renders PDF page 1 into a <canvas> via PDF.js (same engine as fullscreen
 // viewer). This keeps the preview inside a normal DOM element so dark-mode
 // background, scrollbar theming, and layout all work correctly.
@@ -190,10 +212,10 @@ async function _uplFetchPdfCanvas(fileUrl) {
     canvas.width  = vp.width;
     canvas.height = vp.height;
     var isDark = document.documentElement.classList.contains('dark');
-    canvas.style.cssText = 'display:block;max-width:100%;border-radius:4px;'
-      + (isDark ? 'filter:brightness(0.85) invert(1) hue-rotate(180deg);' : '');
+    canvas.style.cssText = 'display:block;max-width:100%;border-radius:4px;';
 
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    if (isDark) _uplPdfDarkMode(canvas);
 
     wrap.innerHTML = '';
     wrap.appendChild(canvas);
