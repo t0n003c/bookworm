@@ -29,7 +29,7 @@ async function initUploadsPage(pid) {
   _uplCounts        = {};
   _uplFilter        = 'all';
   _uplTagFilter     = '';
-  _uplGrouped       = false;
+  _uplGrouped       = localStorage.getItem('bw_upl_' + pid + '_grouped') === '1';
   _uplCurrentDetail = null;
   _uplAllTags       = [];
   _uplBusy          = false;
@@ -345,6 +345,7 @@ function _uplSetTagFilter(tag) {
 
 function _uplToggleGrouped() {
   _uplGrouped = !_uplGrouped;
+  localStorage.setItem('bw_upl_' + _uplPid + '_grouped', _uplGrouped ? '1' : '0');
   _uplRenderFilterTabs();
   _uplRender();
 }
