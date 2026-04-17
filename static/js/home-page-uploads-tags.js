@@ -202,6 +202,7 @@ async function _uplFetchPdfCanvas(fileUrl) {
   }
 }
 
+async function _uplLoadAllTags() {
   try {
     const r = await fetch(`/home/uploads/${_uplPid}/tags`);
     if (!r.ok) return;
