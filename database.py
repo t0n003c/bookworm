@@ -614,6 +614,14 @@ async def init_db() -> None:
             "ON upload_folders(page_id, user_id, parent_id, sort_order)"
         )
 
+        # ── upload_folders.deleted_at (soft-delete, additive) ────────────────────────────────
+        cur = await db.execute("PRAGMA table_info(upload_folders)")
+        _uf_cols = {r[1] for r in await cur.fetchall()}
+        if "deleted_at" not in _uf_cols:
+            await db.execute(
+                "ALTER TABLE upload_folders ADD COLUMN deleted_at DATETIME DEFAULT NULL"
+            )
+
         # ── page_uploads.folder_id column (additive) ────────────────────────────────────────────
         cur = await db.execute("PRAGMA table_info(page_uploads)")
         _pu_cols = {r[1] for r in await cur.fetchall()}
@@ -639,6 +647,14 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page "
             "ON upload_catalogs(page_id, user_id, parent_id, sort_order)"
         )
+
+        # ── upload_catalogs.deleted_at (soft-delete, additive) ───────────────────────────────
+        cur = await db.execute("PRAGMA table_info(upload_catalogs)")
+        _uc_cols = {r[1] for r in await cur.fetchall()}
+        if "deleted_at" not in _uc_cols:
+            await db.execute(
+                "ALTER TABLE upload_catalogs ADD COLUMN deleted_at DATETIME DEFAULT NULL"
+            )
 
         # ── upload_catalog_files (M2M junction: catalogs ↔ page_uploads) ────────────────────
         await db.execute("""

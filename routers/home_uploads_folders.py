@@ -10,33 +10,26 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
-from routers.home_db import get_home_page
+from routers.home_uploads import _demo_guard, _require_uploads_page
 from routers.uploads_folders_db import (
     assign_file_folder,
     create_folder,
-    delete_folder,
     get_folders_for_page,
+    get_trashed_folders,
+    hard_delete_folder,
+    purge_expired_folders,
+    restore_folder,
+    soft_delete_folder,
     update_folder,
+)
+from routers.uploads_catalogs_db import (
+    get_trashed_catalogs,
+    hard_delete_catalog,
+    purge_expired_catalogs,
+    restore_catalog,
 )
 
 router = APIRouter(prefix="/home/uploads", tags=["uploads-folders"])
-
-_DEMO_NOOP = Response(status_code=204, headers={"HX-Reswap": "none"})
-
-
-# ── local guards (intentionally not imported cross-router) ─────────────────
-
-def _demo_guard(request: Request):
-    if request.session.get("is_demo"):
-        return _DEMO_NOOP
-    return None
-
-
-async def _require_uploads_page(page_id: int, uid: int) -> dict:
-    page = await get_home_page(page_id, uid)
-    if not page or page.get("page_type") != "uploads":
-        raise HTTPException(status_code=404, detail="Uploads page not found")
-    return page
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────
@@ -134,9 +127,83 @@ async def remove_folder(request: Request, page_id: int, folder_id: int):
         return guard
     uid = request.session.get("user_id")
     await _require_uploads_page(page_id, uid)
-    deleted = await delete_folder(folder_id, uid)
+    deleted = await soft_delete_folder(folder_id, uid)
     if not deleted:
         raise HTTPException(status_code=404, detail="Folder not found")
+    return Response(status_code=204)
+
+
+# ── Trash ───────────────────────────────────────────────────────────────────────────
+
+@router.get("/{page_id}/trash")
+async def get_trash(request: Request, page_id: int):
+    """Return all soft-deleted folders and catalogs for this page.
+    Also purges items older than 7 days before responding."""
+    uid = request.session.get("user_id")
+    await _require_uploads_page(page_id, uid)
+    # Purge expired items first
+    await purge_expired_folders(page_id, uid)
+    await purge_expired_catalogs(page_id, uid)
+    # Collect remaining trash
+    folders  = await get_trashed_folders(page_id, uid)
+    catalogs = await get_trashed_catalogs(page_id, uid)
+    items = [
+        {"id": f["id"], "type": "folder",  "name": f["name"], "deleted_at": f["deleted_at"]}
+        for f in folders
+    ] + [
+        {"id": c["id"], "type": "catalog", "name": c["name"], "deleted_at": c["deleted_at"]}
+        for c in catalogs
+    ]
+    # Sort by deleted_at descending (most recently deleted first)
+    items.sort(key=lambda x: x["deleted_at"] or "", reverse=True)
+    return JSONResponse({"items": items})
+
+
+@router.post("/{page_id}/folders/{folder_id}/restore")
+async def restore_folder_endpoint(request: Request, page_id: int, folder_id: int):
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    await _require_uploads_page(page_id, uid)
+    ok = await restore_folder(folder_id, uid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Folder not found in trash")
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/{page_id}/folders/{folder_id}/purge")
+async def purge_folder_endpoint(request: Request, page_id: int, folder_id: int):
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    await _require_uploads_page(page_id, uid)
+    ok = await hard_delete_folder(folder_id, uid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Folder not found in trash")
+    return Response(status_code=204)
+
+
+@router.post("/{page_id}/catalogs/{catalog_id}/restore")
+async def restore_catalog_endpoint(request: Request, page_id: int, catalog_id: int):
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    await _require_uploads_page(page_id, uid)
+    ok = await restore_catalog(catalog_id, uid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Catalog not found in trash")
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/{page_id}/catalogs/{catalog_id}/purge")
+async def purge_catalog_endpoint(request: Request, page_id: int, catalog_id: int):
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    await _require_uploads_page(page_id, uid)
+    ok = await hard_delete_catalog(catalog_id, uid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Catalog not found in trash")
     return Response(status_code=204)
 
 

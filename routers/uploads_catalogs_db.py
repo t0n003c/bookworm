@@ -56,7 +56,7 @@ async def get_catalogs_for_page(page_id: int, user_id: int) -> list[dict]:
         cur = await db.execute(
             "SELECT id, page_id, user_id, name, parent_id, sort_order "
             "FROM upload_catalogs "
-            "WHERE page_id = ? AND user_id = ? "
+            "WHERE page_id = ? AND user_id = ? AND deleted_at IS NULL "
             "ORDER BY parent_id NULLS FIRST, sort_order, name",
             (page_id, user_id),
         )
@@ -137,20 +137,80 @@ async def update_catalog(
     return dict(row)
 
 
-async def delete_catalog(catalog_id: int, user_id: int) -> bool:
+async def soft_delete_catalog(catalog_id: int, user_id: int) -> bool:
     """
-    Delete the catalog.  ON DELETE CASCADE removes junction rows automatically.
-    Child catalogs get parent_id = NULL (become root) via ON DELETE SET NULL.
-    Returns True if a row was deleted.
+    Soft-delete a catalog: stamp deleted_at and orphan direct children.
+    Junction rows (file ↔ catalog) are left in place so restore can keep them.
+    Returns True if a row was updated.
     """
     async with get_db() as db:
+        # Orphan direct children so they surface as root-level catalogs
+        await db.execute(
+            "UPDATE upload_catalogs SET parent_id = NULL "
+            "WHERE parent_id = ? AND user_id = ? AND deleted_at IS NULL",
+            (catalog_id, user_id),
+        )
         cur = await db.execute(
-            "DELETE FROM upload_catalogs WHERE id = ? AND user_id = ?",
+            "UPDATE upload_catalogs "
+            "SET deleted_at = datetime('now') "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
             (catalog_id, user_id),
         )
         await db.commit()
     return (cur.rowcount or 0) > 0
 
+
+async def get_trashed_catalogs(page_id: int, user_id: int) -> list[dict]:
+    """Return soft-deleted catalogs still within the 7-day window."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, name, deleted_at "
+            "FROM upload_catalogs "
+            "WHERE page_id = ? AND user_id = ? AND deleted_at IS NOT NULL "
+            "ORDER BY deleted_at DESC",
+            (page_id, user_id),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def restore_catalog(catalog_id: int, user_id: int) -> bool:
+    """Clear deleted_at so the catalog reappears in the active tree (at root)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE upload_catalogs SET deleted_at = NULL "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+            (catalog_id, user_id),
+        )
+        await db.commit()
+    return (cur.rowcount or 0) > 0
+
+
+async def hard_delete_catalog(catalog_id: int, user_id: int) -> bool:
+    """Permanently delete a soft-deleted catalog (user-triggered purge).
+    ON DELETE CASCADE removes upload_catalog_files rows automatically."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM upload_catalogs "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+            (catalog_id, user_id),
+        )
+        await db.commit()
+    return (cur.rowcount or 0) > 0
+
+
+async def purge_expired_catalogs(page_id: int, user_id: int) -> int:
+    """Delete catalogs soft-deleted more than 7 days ago.  Returns row count."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM upload_catalogs "
+            "WHERE page_id = ? AND user_id = ? "
+            "AND deleted_at IS NOT NULL "
+            "AND deleted_at < datetime('now', '-7 days')",
+            (page_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount or 0
 
 # ── junction table: file ↔ catalog ────────────────────────────────────────────
 

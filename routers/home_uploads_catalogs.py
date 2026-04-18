@@ -16,10 +16,10 @@ from routers.home_uploads import _demo_guard, _require_uploads_page
 from routers.uploads_catalogs_db import (
     add_file_to_catalog,
     create_catalog,
-    delete_catalog,
     get_catalogs_for_page,
     get_file_catalogs,
     remove_file_from_catalog,
+    soft_delete_catalog,
     update_catalog,
 )
 
@@ -122,7 +122,7 @@ async def remove_catalog(request: Request, page_id: int, catalog_id: int):
         return guard
     uid = request.session.get("user_id")
     await _require_uploads_page(page_id, uid)
-    deleted = await delete_catalog(catalog_id, uid)
+    deleted = await soft_delete_catalog(catalog_id, uid)
     if not deleted:
         raise HTTPException(status_code=404, detail="Catalog not found")
     return Response(status_code=204)

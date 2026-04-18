@@ -57,7 +57,7 @@ async def get_folders_for_page(page_id: int, user_id: int) -> list[dict]:
         cur = await db.execute(
             "SELECT id, page_id, user_id, name, parent_id, sort_order "
             "FROM upload_folders "
-            "WHERE page_id = ? AND user_id = ? "
+            "WHERE page_id = ? AND user_id = ? AND deleted_at IS NULL "
             "ORDER BY parent_id NULLS FIRST, sort_order, name",
             (page_id, user_id),
         )
@@ -138,20 +138,88 @@ async def update_folder(
     return dict(row)
 
 
-async def delete_folder(folder_id: int, user_id: int) -> bool:
+async def soft_delete_folder(folder_id: int, user_id: int) -> bool:
     """
-    Delete the folder.  SQLite FK ON DELETE SET NULL handles:
-    - child folders → parent_id becomes NULL (they become root folders)
-    - page_uploads.folder_id → becomes NULL (files become unfiled)
-    Returns True if a row was deleted.
+    Soft-delete a folder: stamp deleted_at and orphan direct children so they
+    remain visible at root level.  Files assigned to this folder become unfiled.
+    Returns True if a row was updated.
     """
     async with get_db() as db:
+        # Orphan direct children (parent_id → NULL) before stamping the parent.
+        # Only direct children — deeper descendants stay attached to their
+        # immediate parent, which is still active.
+        await db.execute(
+            "UPDATE upload_folders SET parent_id = NULL "
+            "WHERE parent_id = ? AND user_id = ? AND deleted_at IS NULL",
+            (folder_id, user_id),
+        )
+        # Unfile files that were in this folder
+        await db.execute(
+            "UPDATE page_uploads SET folder_id = NULL "
+            "WHERE folder_id = ? AND user_id = ?",
+            (folder_id, user_id),
+        )
+        # Stamp the folder as deleted
         cur = await db.execute(
-            "DELETE FROM upload_folders WHERE id = ? AND user_id = ?",
+            "UPDATE upload_folders "
+            "SET deleted_at = datetime('now') "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
             (folder_id, user_id),
         )
         await db.commit()
     return (cur.rowcount or 0) > 0
+
+
+async def get_trashed_folders(page_id: int, user_id: int) -> list[dict]:
+    """Return soft-deleted folders still within the 7-day window."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, name, deleted_at "
+            "FROM upload_folders "
+            "WHERE page_id = ? AND user_id = ? AND deleted_at IS NOT NULL "
+            "ORDER BY deleted_at DESC",
+            (page_id, user_id),
+        )
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def restore_folder(folder_id: int, user_id: int) -> bool:
+    """Clear deleted_at so the folder reappears in the active tree (at root)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE upload_folders SET deleted_at = NULL "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+            (folder_id, user_id),
+        )
+        await db.commit()
+    return (cur.rowcount or 0) > 0
+
+
+async def hard_delete_folder(folder_id: int, user_id: int) -> bool:
+    """Permanently delete a soft-deleted folder (user-triggered purge)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM upload_folders "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+            (folder_id, user_id),
+        )
+        await db.commit()
+    return (cur.rowcount or 0) > 0
+
+
+async def purge_expired_folders(page_id: int, user_id: int) -> int:
+    """Delete folders soft-deleted more than 7 days ago.  Returns row count."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM upload_folders "
+            "WHERE page_id = ? AND user_id = ? "
+            "AND deleted_at IS NOT NULL "
+            "AND deleted_at < datetime('now', '-7 days')",
+            (page_id, user_id),
+        )
+        await db.commit()
+    return cur.rowcount or 0
 
 
 async def assign_file_folder(

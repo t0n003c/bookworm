@@ -34,6 +34,12 @@ var _uplFldHidden     = {};
 // Manage-hidden mode  — when true the sidebar shows all hidden items greyed out
 var _uplFldHideMode   = false;
 
+// Delete-modal pending folder id
+var _uplFldDelPending = null;
+
+// Trash state
+var _uplTrashData     = [];   // [{id, type, name, deleted_at}]
+
 // ── localStorage helpers ──────────────────────────────────────────────────────
 function _uplFldHiddenKey(pid) { return 'bw_upl_' + pid + '_fld_hidden'; }
 function _uplFldLoadHidden(pid) {
@@ -52,6 +58,7 @@ function _uplFolderEnterUploadsPage(pid) {
   _uplFldLoadHidden(pid);
   _uplFldHideMode = false; // always start with manage-mode off
   _uplFolderUpdateHideModeBtn();  // reset button to OFF appearance
+  _uplTrashFetch();
 
   // Show Folders tab button, hide Search tab button
   var tabFolders = document.getElementById('sb-tab-folders');
@@ -361,13 +368,53 @@ function _uplFolderRename(id, name) {
     .catch(function(e) { console.error('[folders] rename error', e); });
 }
 
+// ── Folder delete modal (matching catalog-delete style) ─────────────────────
+
+function _uplFolderEnsureDelModal() {
+  if (document.getElementById('upl-fld-del-modal')) return;
+  var el = document.createElement('div');
+  el.id = 'upl-fld-del-modal';
+  el.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40';
+  el.innerHTML =
+    '<div class="bg-white dark:bg-zinc-900 rounded-xl shadow-xl p-5 w-80 mx-4">'
+    + '<div class="flex items-center gap-3 mb-3">'
+    + '<div class="flex-shrink-0 w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">'
+    + '<svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
+    + '</div>'
+    + '<div><p class="text-sm font-semibold text-gray-900 dark:text-zinc-100">Move folder to Trash?</p>'
+    + '<p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">Restored within 7 days, or auto-deleted after. Sub-folders move to root. Files become unfiled.</p>'
+    + '</div></div>'
+    + '<div class="flex gap-2 justify-end mt-4">'
+    + '<button onclick="_uplFolderDelCancel()" class="px-3 py-1.5 rounded-lg text-sm border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Cancel</button>'
+    + '<button onclick="_uplFolderDelConfirm()" class="px-3 py-1.5 rounded-lg text-sm bg-red-500 text-white hover:bg-red-600 transition">Move to Trash</button>'
+    + '</div></div>';
+  document.body.appendChild(el);
+}
+
 function _uplFolderOpenDelete(id, name) {
-  if (!confirm(
-    '\uD83D\uDCC1 Delete folder \u201c' + name + '\u201d?\n\n' +
-    'Sub-folders will be moved to the root level.\n' +
-    'Files in this folder will become unfiled.'
-  )) return;
-  _uplFolderDelete(id);
+  _uplFolderEnsureDelModal();
+  _uplFldDelPending = id;
+  // Update the title to include the folder name
+  var modal = document.getElementById('upl-fld-del-modal');
+  if (modal) {
+    var titleEl = modal.querySelector('p.font-semibold');
+    if (titleEl) titleEl.textContent = '\u201c' + name + '\u201d \u2192 Trash?';
+    modal.classList.remove('hidden');
+  }
+}
+
+function _uplFolderDelCancel() {
+  _uplFldDelPending = null;
+  var modal = document.getElementById('upl-fld-del-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function _uplFolderDelConfirm() {
+  var id = _uplFldDelPending;
+  _uplFldDelPending = null;
+  var modal = document.getElementById('upl-fld-del-modal');
+  if (modal) modal.classList.add('hidden');
+  if (id !== null) _uplFolderDelete(id);
 }
 
 function _uplFolderDelete(id) {
@@ -378,9 +425,9 @@ function _uplFolderDelete(id) {
   })
     .then(function(r) {
       if (!r.ok) return Promise.reject(r.status);
-      // If the deleted folder was active, reset to "All files"
       if (_uplFldActive === id) _uplFolderSelect(null);
       else _uplFolderFetch();
+      _uplTrashFetch(); // refresh trash panel
     })
     .catch(function(e) { console.error('[folders] delete error', e); });
 }
@@ -441,6 +488,120 @@ function _uplDeleteZoneDrop(event) {
     _uplCatDragId = null; // _uplCatDragId is a global var — safe to reset here
     if (typeof _uplCatalogConfirmDelete === 'function') _uplCatalogConfirmDelete(draggedId);
   }
+}
+
+// ── Trash panel ──────────────────────────────────────────────────────────────
+
+var _TRASH_7D_MS = 7 * 24 * 60 * 60 * 1000;
+
+function _uplTrashDaysLeft(deletedAt) {
+  var ms = new Date(deletedAt.replace(' ', 'T') + 'Z').getTime();
+  return Math.max(0, Math.ceil((_TRASH_7D_MS - (Date.now() - ms)) / 86400000));
+}
+
+function _uplTrashFetch() {
+  if (!_uplFldPid) return;
+  fetch('/home/uploads/' + _uplFldPid + '/trash', { credentials: 'same-origin' })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(data) {
+      _uplTrashData = data.items || [];
+      _uplTrashRender();
+    })
+    .catch(function(e) { console.error('[trash] fetch error', e); });
+}
+
+function _uplTrashRender() {
+  var list  = document.getElementById('upl-trash-list');
+  var badge = document.getElementById('upl-trash-count');
+  var hdr   = document.getElementById('upl-trash-toggle');
+  if (!list) return;
+
+  var count = _uplTrashData.length;
+
+  // Badge
+  if (badge) {
+    badge.textContent = count;
+    if (count > 0) badge.classList.remove('hidden');
+    else           badge.classList.add('hidden');
+  }
+
+  // Auto-collapse if empty
+  if (count === 0) {
+    list.classList.add('hidden');
+    if (hdr) hdr.setAttribute('aria-expanded', 'false');
+    list.innerHTML = '';
+    return;
+  }
+
+  var html = '';
+  _uplTrashData.forEach(function(item) {
+    var daysLeft = _uplTrashDaysLeft(item.deleted_at);
+    var urgent   = daysLeft <= 1;
+    var isFolder = item.type === 'folder';
+
+    // Type icon: folder SVG or tag SVG
+    var typeIcon = isFolder
+      ? '<svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>'
+      : '<svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>';
+
+    var dayLabel = daysLeft === 1 ? '1d' : daysLeft + 'd';
+    var dayCls   = urgent
+      ? 'text-red-500 dark:text-red-400 font-semibold'
+      : 'text-gray-400 dark:text-zinc-500';
+
+    html +=
+      '<div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
+      + ' text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition group/tr">'
+      + typeIcon
+      + '<span class="flex-1 text-xs truncate" title="' + _uplFldEsc(item.name) + '">' + _uplFldEsc(item.name) + '</span>'
+      + '<span class="text-[9px] ' + dayCls + '">' + dayLabel + '</span>'
+      + '<button onclick="_uplRestoreItem(\'' + item.type + '\',' + item.id + ')"'
+      + ' title="Restore" aria-label="Restore ' + _uplFldEsc(item.name) + '"'
+      + ' class="p-0.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-gray-400 dark:text-zinc-500 hover:text-green-600 dark:hover:text-green-400">'
+      + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>'
+      + '</button>'
+      + '<button onclick="_uplPurgeItem(\'' + item.type + '\',' + item.id + ')"'
+      + ' title="Delete permanently" aria-label="Permanently delete ' + _uplFldEsc(item.name) + '"'
+      + ' class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400">'
+      + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
+      + '</button>'
+      + '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function _uplTrashToggle() {
+  var list = document.getElementById('upl-trash-list');
+  var hdr  = document.getElementById('upl-trash-toggle');
+  if (!list || !_uplTrashData.length) return; // nothing to expand
+  var open = !list.classList.contains('hidden');
+  list.classList.toggle('hidden', open);
+  if (hdr) hdr.setAttribute('aria-expanded', String(!open));
+}
+
+function _uplRestoreItem(type, id) {
+  if (!_uplFldPid) return;
+  var url = '/home/uploads/' + _uplFldPid + '/' + (type === 'folder' ? 'folders' : 'catalogs') + '/' + id + '/restore';
+  fetch(url, { method: 'POST', credentials: 'same-origin' })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function() {
+      _uplTrashFetch();
+      _uplFolderFetch();
+      if (type === 'catalog' && typeof _uplCatalogFetch === 'function') _uplCatalogFetch();
+    })
+    .catch(function(e) { console.error('[trash] restore error', e); });
+}
+
+function _uplPurgeItem(type, id) {
+  if (!_uplFldPid) return;
+  if (!confirm('Permanently delete this ' + type + '? This cannot be undone.')) return;
+  var url = '/home/uploads/' + _uplFldPid + '/' + (type === 'folder' ? 'folders' : 'catalogs') + '/' + id + '/purge';
+  fetch(url, { method: 'DELETE', credentials: 'same-origin' })
+    .then(function(r) {
+      if (!r.ok) return Promise.reject(r.status);
+      _uplTrashFetch();
+    })
+    .catch(function(e) { console.error('[trash] purge error', e); });
 }
 
 // ── Assign file to folder (called from file detail panel) ─────────────────────
