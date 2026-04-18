@@ -168,34 +168,12 @@ function _buildCatalogTreeHtml(parentKey, depth, byParent) {
     // Name
     html += '<span class="flex-1 text-xs truncate">' + _uplCatEsc(c.name) + '</span>';
 
-    // Action buttons (visible on hover)
-    html += '<span class="opacity-0 group-hover/row:opacity-100 transition flex gap-0.5 flex-shrink-0">'
-      + '<button class="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-zinc-700 text-[#0053e2]"'
-      + ' onclick="event.stopPropagation();_uplCatalogOpenModal(\'create\',' + c.id + ',null)"'
-      + ' title="Add sub-catalog" aria-label="Add sub-catalog">'
-      + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></button>'
-      + '<button class="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-zinc-700 text-gray-500 dark:text-zinc-400"'
-      + ' onclick="event.stopPropagation();_uplCatalogOpenModal(\'rename\',' + c.id + ',null)"'
-      + ' title="Rename" aria-label="Rename">✎</button>'
-      // ― hide / unhide toggle ― (only visible in manage-hidden mode)
-      + (typeof _uplFldHideMode !== 'undefined' && _uplFldHideMode
-        ? '<button class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ' + (isHidden ? 'text-[#0053e2]' : 'text-gray-400 dark:text-zinc-500') + '"'
-          + ' onclick="event.stopPropagation();_uplCatToggleHidden(' + c.id + ')"'
-          + ' title="' + (isHidden ? 'Unhide catalog' : 'Hide catalog') + '" aria-label="' + (isHidden ? 'Unhide' : 'Hide') + ' catalog">'
-          + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
-          + (isHidden
-            ? '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'
-            : '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>') +
-          '</svg></button>'
-        : '')
-      // ― Delete button ― always visible on hover (WCAG 2.5.7 pointer alternative)
-      + '<button class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400"'
-      + ' onclick="event.stopPropagation();_uplCatalogConfirmDelete(' + c.id + ')"'
-      + ' title="Delete" aria-label="Delete ' + _uplCatEsc(c.name) + '">'
-      + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
-      + '<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>'
-      + '</svg></button>'
-      + '</span></div>';
+    // ⋮ context menu button — always visible, works on touch
+    html += '<button onclick="event.stopPropagation();_uplRowMenuOpen(event,\'catalog\',' + c.id + ')"'
+      + ' title="Catalog options" aria-label="Options for ' + _uplCatEsc(c.name) + '" aria-haspopup="true"'
+      + ' class="flex-shrink-0 p-1 rounded-lg opacity-40 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-500 dark:text-zinc-400 transition">'
+      + '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>'
+      + '</button></div>';
 
     // Recursively render children (unless collapsed)
     if (hasChildren && !collapsed) {

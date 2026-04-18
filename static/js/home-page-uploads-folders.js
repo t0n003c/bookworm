@@ -40,6 +40,10 @@ var _uplFldDelPending = null;
 // Purge-modal pending item {type, id, name}
 var _uplPurgePending  = null;
 
+// Row context-menu state
+var _uplRowMenuOpen = false;
+var _uplRowMenuCtx  = null;  // {type, id, name, isHidden}
+
 // Trash state
 var _uplTrashData     = [];   // [{id, type, name, deleted_at}]
 
@@ -80,6 +84,7 @@ function _uplFolderEnterUploadsPage(pid) {
 }
 
 function _uplFolderExitUploadsPage() {
+  _uplRowMenuClose();
   if (_uplFldPid === 0) return; // not on an uploads page — nothing to do
   _uplFldPid      = 0;
   _uplFldActive   = null;
@@ -197,7 +202,7 @@ function _uplFolderRender() {
     ' ondrop="_uplFldRootDrop(event)">' +
     '<svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/></svg>' +
     '<span class="flex-1 text-xs font-semibold truncate">All files</span>' +
-    '<button class="opacity-0 group-hover/row:opacity-100 transition p-0.5 rounded hover:bg-blue-100 dark:hover:bg-zinc-700 text-[#0053e2]" ' +
+    '<button class="flex-shrink-0 p-1 rounded-lg opacity-40 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-zinc-700 text-[#0053e2] transition" ' +
     'onclick="event.stopPropagation();_uplFolderOpenCreate(null)" title="New root folder" aria-label="New root folder">' +
     '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>' +
     '</button></div>';
@@ -261,33 +266,12 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
         : '<path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>') +
       '</svg>' +
       '<span class="flex-1 text-xs truncate">' + _uplFldEsc(f.name) + '</span>' +
-      // action buttons (hover-reveal)
-      '<span class="opacity-0 group-hover/row:opacity-100 transition flex gap-0.5">' +
-        '<button onclick="event.stopPropagation();_uplFolderOpenCreate(' + f.id + ')" title="New sub-folder" aria-label="New sub-folder in ' + _uplFldEsc(f.name) + '"' +
-        ' class="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-zinc-700 text-[#0053e2]">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></button>' +
-        '<button onclick="event.stopPropagation();_uplFolderOpenRename(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')" title="Rename" aria-label="Rename ' + _uplFldEsc(f.name) + '"' +
-        ' class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-500 dark:text-zinc-400">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/></svg></button>' +
-        // ― Hide / unhide toggle ― (only visible in manage-hidden mode)
-        (_uplFldHideMode
-          ? '<button onclick="event.stopPropagation();_uplFolderToggleHidden(' + f.id + ')"' +
-            ' title="' + (isHidden ? 'Unhide folder' : 'Hide folder') + '"' +
-            ' aria-label="' + (isHidden ? 'Unhide' : 'Hide') + ' ' + _uplFldEsc(f.name) + '"' +
-            ' class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ' + (isHidden ? 'text-[#0053e2]' : 'text-gray-400 dark:text-zinc-500') + '">' +
-            '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
-            (isHidden
-              ? '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'
-              : '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>') +
-            '</svg></button>'
-          : '') +
-        // ― Delete button ― always visible on hover (WCAG 2.5.7 pointer alternative)
-        '<button onclick="event.stopPropagation();_uplFolderOpenDelete(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')"' +
-        ' title="Delete" aria-label="Delete ' + _uplFldEsc(f.name) + '"' +
-        ' class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
-        '<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
-      '</span>' +
+      // ⋮ context menu button — always visible, works on touch
+      '<button onclick="event.stopPropagation();_uplRowMenuOpen(event,\'folder\',' + f.id + ')"' +
+      ' title="Folder options" aria-label="Options for ' + _uplFldEsc(f.name) + '" aria-haspopup="true"' +
+      ' class="flex-shrink-0 p-1 rounded-lg opacity-40 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-500 dark:text-zinc-400 transition">' +
+      '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>' +
+      '</button>' +
       '</div>';
 
     // Recurse children (skip when collapsed)
@@ -491,6 +475,114 @@ function _uplDeleteZoneDrop(event) {
     _uplCatDragId = null; // _uplCatDragId is a global var — safe to reset here
     if (typeof _uplCatalogConfirmDelete === 'function') _uplCatalogConfirmDelete(draggedId);
   }
+}
+
+// ── Row ⋮ context menu ──────────────────────────────────────────────────────────────────
+
+function _uplRowMenuEnsure() {
+  if (document.getElementById('upl-row-menu')) return;
+  var el = document.createElement('div');
+  el.id = 'upl-row-menu';
+  // Positioned absolute by JS; z-50 to float above tree rows
+  el.className = 'fixed z-40 min-w-[140px] bg-white dark:bg-zinc-900 border border-gray-200'
+    + ' dark:border-zinc-700 rounded-xl shadow-lg py-1 text-xs'
+    + ' text-gray-700 dark:text-zinc-300';
+  el.style.display = 'none';
+  el.setAttribute('role', 'menu');
+  document.body.appendChild(el);
+}
+
+function _uplRowMenuBtn(icon, label, onclick, colorCls) {
+  return '<button role="menuitem" onclick="' + onclick + '"'
+    + ' class="w-full flex items-center gap-2 px-3 py-1.5 text-left'
+    + ' hover:bg-gray-50 dark:hover:bg-zinc-800 transition'
+    + (colorCls ? ' ' + colorCls : '')
+    + '">'
+    + '<span class="w-3.5 flex-shrink-0" aria-hidden="true">' + icon + '</span>'
+    + label
+    + '</button>';
+}
+
+function _uplRowMenuOpen(event, type, id) {
+  event.stopPropagation();
+  _uplRowMenuEnsure();
+
+  // Build context from in-memory data
+  var item = null;
+  if (type === 'folder') {
+    _uplFldData.forEach(function(f) { if (f.id === id) item = f; });
+  } else {
+    if (typeof _uplCatData !== 'undefined') {
+      _uplCatData.forEach(function(c) { if (c.id === id) item = c; });
+    }
+  }
+  var name     = item ? item.name : '';
+  var isHidden = type === 'folder' ? !!_uplFldHidden[id]
+               : (typeof _uplCatHidden !== 'undefined' ? !!_uplCatHidden[id] : false);
+  var parentId = item ? item.parent_id : null;
+  _uplRowMenuCtx = { type: type, id: id, name: name, isHidden: isHidden, parentId: parentId };
+
+  // Build menu HTML
+  var ICON_PLUS = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>';
+  var ICON_PEN  = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/></svg>';
+  var ICON_HIDE = isHidden
+    ? '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>'
+    : '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>';
+  var ICON_TRASH = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
+
+  var html = '';
+  if (type === 'folder') {
+    html += _uplRowMenuBtn(ICON_PLUS,  'New sub-folder', '_uplRowMenuClose();_uplFolderOpenCreate(_uplRowMenuCtx.id)');
+    html += _uplRowMenuBtn(ICON_PEN,   'Rename',         '_uplRowMenuClose();_uplFolderOpenRename(_uplRowMenuCtx.id,_uplRowMenuCtx.name)');
+    if (_uplFldHideMode) {
+      html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplFolderToggleHidden(_uplRowMenuCtx.id)');
+    }
+    html += '<div class="border-t border-gray-100 dark:border-zinc-800 my-1"></div>';
+    html += _uplRowMenuBtn(ICON_TRASH, 'Move to Trash',  '_uplRowMenuClose();_uplFolderOpenDelete(_uplRowMenuCtx.id,_uplRowMenuCtx.name)', 'text-red-500 dark:text-red-400');
+  } else {
+    html += _uplRowMenuBtn(ICON_PLUS,  'New sub-catalog', '_uplRowMenuClose();_uplCatalogOpenModal(\'create\',_uplRowMenuCtx.id,null)');
+    html += _uplRowMenuBtn(ICON_PEN,   'Rename',          '_uplRowMenuClose();_uplCatalogOpenModal(\'rename\',_uplRowMenuCtx.id,null)');
+    if (typeof _uplFldHideMode !== 'undefined' && _uplFldHideMode) {
+      html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplCatToggleHidden(_uplRowMenuCtx.id)');
+    }
+    html += '<div class="border-t border-gray-100 dark:border-zinc-800 my-1"></div>';
+    html += _uplRowMenuBtn(ICON_TRASH, 'Move to Trash',   '_uplRowMenuClose();_uplCatalogConfirmDelete(_uplRowMenuCtx.id)', 'text-red-500 dark:text-red-400');
+  }
+
+  var menu = document.getElementById('upl-row-menu');
+  menu.innerHTML = html;
+
+  // Position the menu near the button
+  var rect = event.currentTarget.getBoundingClientRect();
+  menu.style.display = 'block';
+  var mw = menu.offsetWidth  || 160;
+  var mh = menu.offsetHeight || 120;
+  var left = Math.min(rect.right, window.innerWidth  - mw - 8);
+  var top  = (rect.bottom + mh + 8 > window.innerHeight)
+             ? rect.top - mh - 4
+             : rect.bottom + 4;
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+  _uplRowMenuOpen = true;
+
+  // Close on next outside interaction (mouse or touch)
+  setTimeout(function() {
+    function _outside(e) {
+      if (!document.getElementById('upl-row-menu').contains(e.target)) {
+        _uplRowMenuClose();
+        document.removeEventListener('mousedown', _outside, true);
+        document.removeEventListener('touchstart', _outside, true);
+      }
+    }
+    document.addEventListener('mousedown', _outside, true);
+    document.addEventListener('touchstart', _outside, true);
+  }, 0);
+}
+
+function _uplRowMenuClose() {
+  var menu = document.getElementById('upl-row-menu');
+  if (menu) menu.style.display = 'none';
+  _uplRowMenuOpen = false;
 }
 
 // ── Trash panel ──────────────────────────────────────────────────────────────
