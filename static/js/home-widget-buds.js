@@ -90,49 +90,71 @@ function _budsRender(wid) {
   }
 
   var cards = st.buds.map(function(b) {
-    var h      = Math.round(_budsApplyDecay(b));
-    var tier   = _budsHealthTier(h);
-    var color  = _budsHealthColor(tier);
-    var img    = _budsFlowerImg(b.flower_species, tier);
+    var h       = Math.round(_budsApplyDecay(b));
+    var tier    = _budsHealthTier(h);
+    var color   = _budsHealthColor(tier);
+    var img     = _budsFlowerImg(b.flower_species, tier);
     var watered = (b.last_watered_week === _budsWeekKey());
     var hasPlan = !!(b.pending_plan);
+    var waterCls   = watered
+      ? 'text-gray-300 dark:text-zinc-600 cursor-not-allowed p-1'
+      : 'hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 hover:text-blue-700 p-1.5';
+    var waterTitle = watered ? 'Already watered this week' : 'Water — chat this week';
+    var waterDis   = watered ? 'disabled' : '';
+    var waterBtn = '<button title="'+waterTitle+'" '+waterDis
+      +' onclick="_budsWater(\''+wid+'\','+b.id+')"'
+      +' class="rounded-lg text-sm transition flex-shrink-0 '+waterCls+'">\uD83D\uDCA7</button>';
+
+    if (compact) {
+      // ── Compact: dense list row — fits many buds in a small widget ──────────
+      return '<div class="flex items-center gap-2 py-1 px-1 border-b border-gray-100'
+        + ' dark:border-zinc-800 last:border-0">'
+        + '<img src="'+img+'" class="w-8 h-8 object-contain flex-shrink-0 cursor-pointer opacity-90"'
+        + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
+        + '<div class="flex-1 min-w-0">'
+        + '  <p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate leading-tight">'+_esc(b.name)+'</p>'
+        + '  <div class="h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mt-0.5">'
+        + '    <div class="h-full rounded-full" style="width:'+h+'%;background:'+color+'"></div>'
+        + '  </div>'
+        + '</div>'
+        + waterBtn
+        + '</div>';
+    }
+
+    // ── Full: spacious card with species, HP number, plan badge, all actions ──
     var planLabel = hasPlan
       ? ('<span class="text-xs text-blue-600 dark:text-blue-400">📅 '+_esc(b.pending_plan.planned_date)+'</span>')
       : '';
-    var imgSize = compact ? 'w-10 h-10' : 'w-14 h-14';
-    return '<div class="flex items-center gap-2 rounded-xl border border-gray-100'
-      + ' dark:border-zinc-700 bg-white dark:bg-zinc-800/60 p-2 shadow-sm">'
-      + '<img src="'+img+'" class="'+imgSize+' object-contain flex-shrink-0 cursor-pointer"'
+    var speciesName = _BUDS_NAMES[b.flower_species] || b.flower_species;
+    return '<div class="flex items-center gap-3 rounded-xl border border-gray-100'
+      + ' dark:border-zinc-700 bg-white dark:bg-zinc-800/60 p-3 shadow-sm">'
+      + '<img src="'+img+'" class="w-16 h-16 object-contain flex-shrink-0 cursor-pointer"'
       + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
       + '<div class="flex-1 min-w-0">'
       + '  <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">'+_esc(b.name)+'</p>'
-      + '  <div class="flex items-center gap-1 mt-0.5">'
-      + '    <div class="flex-1 h-1.5 bg-gray-200 dark:bg-zinc-600 rounded-full overflow-hidden">'
+      + '  <p class="text-xs text-gray-400 dark:text-zinc-500 truncate mb-1">'+_esc(speciesName)+'</p>'
+      + '  <div class="flex items-center gap-1">'
+      + '    <div class="flex-1 h-2 bg-gray-200 dark:bg-zinc-600 rounded-full overflow-hidden">'
       + '      <div class="h-full rounded-full transition-all" style="width:'+h+'%;background:'+color+'"></div>'
       + '    </div>'
-      + '    <span class="text-xs font-mono text-gray-400 w-7 text-right">'+h+'</span>'
+      + '    <span class="text-xs font-mono text-gray-400 w-8 text-right">'+h+'</span>'
       + '  </div>'
-      + (planLabel ? '  <div class="mt-0.5">'+planLabel+'</div>' : '')
+      + (planLabel ? '  <div class="mt-1">'+planLabel+'</div>' : '')
       + '</div>'
-      + '<div class="flex items-center gap-1 flex-shrink-0">'
-      + '  <button title="'+(watered?'Already watered this week':'Water (chat this week)')+'"'
-      + '    '+(watered?'disabled':'')+' onclick="_budsWater(\''+wid+'\','+b.id+')"'
-      + '    class="p-1.5 rounded-lg text-sm transition '
-      + (watered ? 'text-gray-300 dark:text-zinc-600 cursor-not-allowed' : 'hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 hover:text-blue-700')
-      + '">💧</button>'
+      + '<div class="flex flex-col items-center gap-1 flex-shrink-0">'
+      + waterBtn
       + '  <button title="'+(hasPlan?'View / complete visit plan':'Plan in-person visit')+'"'
-      + '    onclick="_budsFertilizeOpen(\''+wid+'\','+b.id+')"'
-      + '    class="p-1.5 rounded-lg text-sm hover:bg-green-50 dark:hover:bg-green-900/20'
-      + ' text-green-600 hover:text-green-800 transition '+(hasPlan?'ring-1 ring-green-400 rounded-lg':'')+'"'
-      + '  >🌱</button>'
-      + '  <button title="Edit / delete" onclick="_budsMenuToggle(\''+wid+'\','+b.id+',event)"'
-      + '    class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-700'
-      + ' hover:text-gray-600 transition">⋮</button>'
+      + ' onclick="_budsFertilizeOpen(\''+wid+'\','+b.id+')"'
+      + ' class="p-1.5 rounded-lg text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 hover:text-green-800 transition '+(hasPlan?'ring-1 ring-green-400':'')+'">\uD83C\uDF31</button>'
+      + '  <button title="Edit / delete"'
+      + ' onclick="_budsMenuToggle(\''+wid+'\','+b.id+',event)"'
+      + ' class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-700 hover:text-gray-600 transition">\u22EE</button>'
       + '</div>'
       + '</div>';
   }).join('');
 
-  el.innerHTML = '<div class="flex flex-col gap-1.5 pt-1">'+cards+'</div>'
+  var wrapCls = compact ? 'flex flex-col pt-0.5' : 'flex flex-col gap-2 pt-1';
+  el.innerHTML = '<div class="'+wrapCls+'">'+cards+'</div>'
     + '<div class="mt-2 flex justify-center">'
     + '<button onclick="_budsAddOpen(\''+wid+'\')" class="text-xs text-wblue hover:underline'
     + ' dark:text-blue-400">+ Add Bud</button></div>';

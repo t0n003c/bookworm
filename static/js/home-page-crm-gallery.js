@@ -83,7 +83,7 @@ function _crmRenderGallery() {
                  text-xs leading-none text-gray-300 dark:text-zinc-600
                  hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
           ✕</button>
-        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${JSON.stringify(c.name||'')})" title="Track as Bud"
+        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${_crmEsc(JSON.stringify(c.name||''))})" title="Track as Bud"
           class="absolute top-2 right-14 w-5 h-5 rounded flex items-center justify-center
                  text-xs leading-none text-gray-300 dark:text-zinc-600
                  hover:text-pink-500 dark:hover:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition">🌸</button>

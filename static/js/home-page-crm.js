@@ -283,7 +283,7 @@ function _crmRenderTable() {
       <td class="px-3 py-2 text-right whitespace-nowrap">
         <button onclick="event.stopPropagation();crmOpenDetail(${c.id})" title="View" class="text-gray-300 hover:text-[#0053e2] transition mr-1">👁️</button>
         <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
-        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${JSON.stringify(c.name||'')})" title="Track as Bud" class="text-gray-300 hover:text-pink-500 transition mr-1">🌸</button>
+        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${_crmEsc(JSON.stringify(c.name||''))})" title="Track as Bud" class="text-gray-300 hover:text-pink-500 transition mr-1">🌸</button>
         <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete" class="text-gray-300 hover:text-red-500 transition">✕</button>
       </td>
     </tr>`;
