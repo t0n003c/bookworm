@@ -511,12 +511,16 @@ function _uplTrashFetch() {
 }
 
 function _uplTrashRender() {
-  var list  = document.getElementById('upl-trash-list');
-  var badge = document.getElementById('upl-trash-count');
-  var hdr   = document.getElementById('upl-trash-toggle');
+  var section = document.getElementById('upl-trash-section');
+  var list    = document.getElementById('upl-trash-list');
+  var badge   = document.getElementById('upl-trash-count');
+  var hdr     = document.getElementById('upl-trash-toggle');
   if (!list) return;
 
   var count = _uplTrashData.length;
+
+  // Show / hide the entire trash section
+  if (section) section.classList.toggle('hidden', count === 0);
 
   // Badge
   if (badge) {
