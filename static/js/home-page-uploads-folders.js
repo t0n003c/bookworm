@@ -31,6 +31,9 @@ var _uplFldCollapsed  = {};
 // Hidden state  {[folderId]: true} means that folder row is dimmed in the sidebar
 var _uplFldHidden     = {};
 
+// Manage-hidden mode  — when true the sidebar shows all hidden items greyed out
+var _uplFldHideMode   = false;
+
 // ── localStorage helpers ──────────────────────────────────────────────────────
 function _uplFldHiddenKey(pid) { return 'bw_upl_' + pid + '_fld_hidden'; }
 function _uplFldLoadHidden(pid) {
@@ -47,6 +50,8 @@ function _uplFolderEnterUploadsPage(pid) {
   _uplFldPid    = pid;
   _uplFldActive = null;
   _uplFldLoadHidden(pid);
+  _uplFldHideMode = false; // always start with manage-mode off
+  _uplFolderUpdateHideModeBtn();  // reset button to OFF appearance
 
   // Show Folders tab button, hide Search tab button
   var tabFolders = document.getElementById('sb-tab-folders');
@@ -66,9 +71,10 @@ function _uplFolderEnterUploadsPage(pid) {
 
 function _uplFolderExitUploadsPage() {
   if (_uplFldPid === 0) return; // not on an uploads page — nothing to do
-  _uplFldPid    = 0;
-  _uplFldActive = null;
-  _uplFldData   = [];
+  _uplFldPid      = 0;
+  _uplFldActive   = null;
+  _uplFldData     = [];
+  _uplFldHideMode = false; // always reset manage-hidden mode on page leave
 
   // Restore Search tab, hide Folders tab
   var tabFolders = document.getElementById('sb-tab-folders');
@@ -100,6 +106,39 @@ function _uplFolderToggleHidden(folderId) {
   }
   _uplFldSaveHidden(_uplFldPid);
   _uplFolderRender();
+  if (typeof _uplCatalogRender === 'function') _uplCatalogRender();
+}
+
+/** Toggle manage-hidden mode for both folders and catalogs. */
+function _uplFolderToggleHideMode() {
+  _uplFldHideMode = !_uplFldHideMode;
+  _uplFolderUpdateHideModeBtn();
+  _uplFolderRender();
+  if (typeof _uplCatalogRender === 'function') _uplCatalogRender();
+}
+
+/** Sync the eye button appearance with the current _uplFldHideMode state. */
+function _uplFolderUpdateHideModeBtn() {
+  var btn  = document.getElementById('upl-hide-mode-btn');
+  var icon = document.getElementById('upl-hide-mode-icon');
+  if (!btn) return;
+  var ON_CLS  = ['text-[#0053e2]', 'bg-blue-50', 'dark:bg-zinc-800', 'dark:text-blue-400'];
+  var OFF_CLS = ['text-gray-400', 'dark:text-zinc-500',
+                 'hover:text-gray-600', 'dark:hover:text-zinc-300'];
+  if (_uplFldHideMode) {
+    ON_CLS.forEach(function(c)  { btn.classList.add(c); });
+    OFF_CLS.forEach(function(c) { btn.classList.remove(c); });
+    btn.setAttribute('aria-pressed', 'true');
+    if (icon) icon.innerHTML =
+      '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>';
+  } else {
+    OFF_CLS.forEach(function(c) { btn.classList.add(c); });
+    ON_CLS.forEach(function(c)  { btn.classList.remove(c); });
+    btn.setAttribute('aria-pressed', 'false');
+    if (icon) icon.innerHTML =
+      '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>'
+      + '<path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+  }
 }
 
 function _uplFolderGetFilter() {
@@ -180,6 +219,9 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
     var isHidden     = !!_uplFldHidden[f.id];
     var parentIdArg  = (f.parent_id !== null && f.parent_id !== undefined) ? f.parent_id : 'null';
 
+    // Skip hidden folders entirely unless manage-mode is active or the folder is currently selected
+    if (isHidden && !_uplFldHideMode && !isActive) return;
+
     // Chevron toggle — only rendered when folder has children
     var chevron = hasChildren
       ? '<button onclick="event.stopPropagation();_uplFolderToggleCollapse(' + f.id + ')"' +
@@ -220,16 +262,18 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
         '<button onclick="event.stopPropagation();_uplFolderOpenDelete(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')" title="Delete" aria-label="Delete ' + _uplFldEsc(f.name) + '"' +
         ' class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-400">' +
         '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
-        // ― Hide / unhide toggle ―
-        '<button onclick="event.stopPropagation();_uplFolderToggleHidden(' + f.id + ')"' +
-        ' title="' + (isHidden ? 'Unhide folder' : 'Hide folder') + '"' +
-        ' aria-label="' + (isHidden ? 'Unhide' : 'Hide') + ' ' + _uplFldEsc(f.name) + '"' +
-        ' class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ' + (isHidden ? 'text-[#0053e2]' : 'text-gray-400 dark:text-zinc-500') + '">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
-        (isHidden
-          ? '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'
-          : '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>') +
-        '</svg></button>' +
+        // ― Hide / unhide toggle ― (only visible in manage-hidden mode)
+        (_uplFldHideMode
+          ? '<button onclick="event.stopPropagation();_uplFolderToggleHidden(' + f.id + ')"' +
+            ' title="' + (isHidden ? 'Unhide folder' : 'Hide folder') + '"' +
+            ' aria-label="' + (isHidden ? 'Unhide' : 'Hide') + ' ' + _uplFldEsc(f.name) + '"' +
+            ' class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ' + (isHidden ? 'text-[#0053e2]' : 'text-gray-400 dark:text-zinc-500') + '">' +
+            '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
+            (isHidden
+              ? '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>'
+              : '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>') +
+            '</svg></button>'
+          : '') +
       '</span>' +
       '</div>';
 
