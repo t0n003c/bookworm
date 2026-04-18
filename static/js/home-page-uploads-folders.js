@@ -259,9 +259,6 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
         '<button onclick="event.stopPropagation();_uplFolderOpenRename(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')" title="Rename" aria-label="Rename ' + _uplFldEsc(f.name) + '"' +
         ' class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-500 dark:text-zinc-400">' +
         '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/></svg></button>' +
-        '<button onclick="event.stopPropagation();_uplFolderOpenDelete(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')" title="Delete" aria-label="Delete ' + _uplFldEsc(f.name) + '"' +
-        ' class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-400">' +
-        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
         // ― Hide / unhide toggle ― (only visible in manage-hidden mode)
         (_uplFldHideMode
           ? '<button onclick="event.stopPropagation();_uplFolderToggleHidden(' + f.id + ')"' +
@@ -274,6 +271,12 @@ function _buildFolderTreeHtml(parentKey, depth, byParent) {
               : '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>') +
             '</svg></button>'
           : '') +
+        // ― Delete button ― always visible on hover (WCAG 2.5.7 pointer alternative)
+        '<button onclick="event.stopPropagation();_uplFolderOpenDelete(' + f.id + ',\'' + _uplFldEscQ(f.name) + '\')"' +
+        ' title="Delete" aria-label="Delete ' + _uplFldEsc(f.name) + '"' +
+        ' class="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400">' +
+        '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">' +
+        '<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
       '</span>' +
       '</div>';
 
@@ -380,6 +383,64 @@ function _uplFolderDelete(id) {
       else _uplFolderFetch();
     })
     .catch(function(e) { console.error('[folders] delete error', e); });
+}
+
+// ── Delete drop zone ─────────────────────────────────────────────────────────────────
+
+var _DZ_ON  = ['border-red-400', 'dark:border-red-500', 'bg-red-50',
+               'dark:bg-red-900/20', 'text-red-500', 'dark:text-red-400'];
+var _DZ_OFF = ['border-gray-200', 'dark:border-zinc-700',
+               'text-gray-300', 'dark:text-zinc-600'];
+
+function _uplDzSetActive(on) {
+  var zone = document.getElementById('upl-delete-zone');
+  if (!zone) return;
+  if (on) {
+    _DZ_OFF.forEach(function(c) { zone.classList.remove(c); });
+    _DZ_ON.forEach(function(c)  { zone.classList.add(c); });
+  } else {
+    _DZ_ON.forEach(function(c)  { zone.classList.remove(c); });
+    _DZ_OFF.forEach(function(c) { zone.classList.add(c); });
+  }
+}
+
+function _uplDeleteZoneDragOver(event) {
+  var isFolder  = event.dataTransfer.types.indexOf('application/x-upl-folder')  !== -1;
+  var isCatalog = event.dataTransfer.types.indexOf('application/x-upl-catalog') !== -1;
+  if (!isFolder && !isCatalog) return; // ignore plain-file drags
+  event.preventDefault();
+  event.stopPropagation();
+  _uplDzSetActive(true);
+}
+
+function _uplDeleteZoneDragLeave(event) {
+  var zone = document.getElementById('upl-delete-zone');
+  // Only reset when the pointer truly leaves the zone (not entering a child element)
+  if (zone && zone.contains(event.relatedTarget)) return;
+  _uplDzSetActive(false);
+}
+
+function _uplDeleteZoneDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  _uplDzSetActive(false);
+
+  var isFolder  = event.dataTransfer.types.indexOf('application/x-upl-folder')  !== -1;
+  var isCatalog = event.dataTransfer.types.indexOf('application/x-upl-catalog') !== -1;
+  var draggedId;
+
+  if (isFolder && _uplFldDragId !== null) {
+    draggedId = _uplFldDragId;
+    _uplFldDragId = null;
+    var folder = null;
+    _uplFldData.forEach(function(f) { if (f.id === draggedId) folder = f; });
+    _uplFolderOpenDelete(draggedId, folder ? folder.name : String(draggedId));
+
+  } else if (isCatalog && typeof _uplCatDragId !== 'undefined' && _uplCatDragId !== null) {
+    draggedId = _uplCatDragId;
+    _uplCatDragId = null; // _uplCatDragId is a global var — safe to reset here
+    if (typeof _uplCatalogConfirmDelete === 'function') _uplCatalogConfirmDelete(draggedId);
+  }
 }
 
 // ── Assign file to folder (called from file detail panel) ─────────────────────
