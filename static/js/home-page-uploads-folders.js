@@ -41,7 +41,7 @@ var _uplFldDelPending = null;
 var _uplPurgePending  = null;
 
 // Row context-menu state
-var _uplRowMenuOpen = false;
+var _uplRowMenuIsOpen = false;
 var _uplRowMenuCtx  = null;  // {type, id, name, isHidden}
 
 // Trash state
@@ -563,7 +563,7 @@ function _uplRowMenuOpen(event, type, id) {
              : rect.bottom + 4;
   menu.style.left = left + 'px';
   menu.style.top  = top  + 'px';
-  _uplRowMenuOpen = true;
+  _uplRowMenuIsOpen = true;
 
   // Close on next outside interaction (mouse or touch)
   setTimeout(function() {
@@ -582,7 +582,7 @@ function _uplRowMenuOpen(event, type, id) {
 function _uplRowMenuClose() {
   var menu = document.getElementById('upl-row-menu');
   if (menu) menu.style.display = 'none';
-  _uplRowMenuOpen = false;
+  _uplRowMenuIsOpen = false;
 }
 
 // ── Trash panel ──────────────────────────────────────────────────────────────
