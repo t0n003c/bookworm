@@ -37,6 +37,9 @@ var _uplFldHideMode   = false;
 // Delete-modal pending folder id
 var _uplFldDelPending = null;
 
+// Purge-modal pending item {type, id, name}
+var _uplPurgePending  = null;
+
 // Trash state
 var _uplTrashData     = [];   // [{id, type, name, deleted_at}]
 
@@ -596,10 +599,53 @@ function _uplRestoreItem(type, id) {
     .catch(function(e) { console.error('[trash] restore error', e); });
 }
 
+function _uplPurgeEnsureModal() {
+  if (document.getElementById('upl-purge-modal')) return;
+  var el = document.createElement('div');
+  el.id = 'upl-purge-modal';
+  el.className = 'hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40';
+  el.innerHTML =
+    '<div class="bg-white dark:bg-zinc-900 rounded-xl shadow-xl p-5 w-80 mx-4">'
+    + '<div class="flex items-center gap-3 mb-3">'
+    + '<div class="flex-shrink-0 w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">'
+    + '<svg class="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>'
+    + '</div>'
+    + '<div><p id="upl-purge-title" class="text-sm font-semibold text-gray-900 dark:text-zinc-100">Delete permanently?</p>'
+    + '<p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">This cannot be undone. It will be gone forever.</p>'
+    + '</div></div>'
+    + '<div class="flex gap-2 justify-end mt-4">'
+    + '<button onclick="_uplPurgeCancel()" class="px-3 py-1.5 rounded-lg text-sm border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">Cancel</button>'
+    + '<button onclick="_uplPurgeConfirm()" class="px-3 py-1.5 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700 transition">Delete Forever</button>'
+    + '</div></div>';
+  document.body.appendChild(el);
+}
+
 function _uplPurgeItem(type, id) {
   if (!_uplFldPid) return;
-  if (!confirm('Permanently delete this ' + type + '? This cannot be undone.')) return;
-  var url = '/home/uploads/' + _uplFldPid + '/' + (type === 'folder' ? 'folders' : 'catalogs') + '/' + id + '/purge';
+  _uplPurgeEnsureModal();
+  _uplPurgePending = { type: type, id: id };
+  // Look up the name from in-memory trash data — avoids onclick escaping headaches
+  var item    = _uplTrashData.find(function(x) { return x.type === type && x.id === id; });
+  var name    = item ? item.name : type;
+  var titleEl = document.getElementById('upl-purge-title');
+  if (titleEl) titleEl.textContent = '\u201c' + name + '\u201d \u2014 delete forever?';
+  var modal = document.getElementById('upl-purge-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function _uplPurgeCancel() {
+  _uplPurgePending = null;
+  var modal = document.getElementById('upl-purge-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function _uplPurgeConfirm() {
+  var pending = _uplPurgePending;
+  _uplPurgePending = null;
+  var modal = document.getElementById('upl-purge-modal');
+  if (modal) modal.classList.add('hidden');
+  if (!pending || !_uplFldPid) return;
+  var url = '/home/uploads/' + _uplFldPid + '/' + (pending.type === 'folder' ? 'folders' : 'catalogs') + '/' + pending.id + '/purge';
   fetch(url, { method: 'DELETE', credentials: 'same-origin' })
     .then(function(r) {
       if (!r.ok) return Promise.reject(r.status);
