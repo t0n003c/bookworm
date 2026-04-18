@@ -47,70 +47,22 @@
       {% endif %}
     </button>
 
-    <!-- Edit -->
+    <!-- ⋮ row menu (Rename / Layout / Duplicate / Delete) -->
+    {% set _pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
     <button type="button"
-      onclick="openRenameHomePage({{ pg.id }}, '{{ pg.name | e }}', '{{ pg.emoji | e }}')"
-      title="Rename page"
-      aria-label="Rename {{ pg.name }}"
-      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-wblue
+      onclick="event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, '{{ pg.name | e }}', '{{ pg.emoji | e }}', '{{ _pg_type }}')"
+      title="More actions"
+      aria-label="More actions for {{ pg.name }}"
+      aria-haspopup="menu"
+      aria-expanded="false"
+      class="flex-shrink-0 p-1 rounded-lg text-gray-400
+             hover:text-gray-700 dark:hover:text-zinc-300
              hover:bg-gray-100 dark:hover:bg-zinc-800
-             opacity-0 group-hover/hpg:opacity-100 transition">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
-           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828
-                 2.828L11.828 15.828A2 2 0 0110 16H8v-2a2 2 0 01.586-1.414z"/>
-      </svg>
-    </button>
-
-    <!-- Layout settings (dashboard only) -->
-    {% if pg.get('page_type', 'dashboard') == 'dashboard' %}
-    <button type="button"
-      onclick="(function(){ const needNav=!document.querySelector('[data-page-id=\'{{ pg.id }}\'] [data-col-count]'); if(needNav){ openHomePage({{ pg.id }}); setTimeout(()=>openPageLayout({{ pg.id }}),600); } else { openPageLayout({{ pg.id }}); } })()"
-      title="Page layout settings"
-      aria-label="Layout settings for {{ pg.name }}"
-      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-wblue
-             hover:bg-gray-100 dark:hover:bg-zinc-800
-             opacity-0 group-hover/hpg:opacity-100 transition">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
-           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <rect x="3" y="3" width="7" height="7" rx="1"/>
-        <rect x="14" y="3" width="7" height="7" rx="1"/>
-        <rect x="3" y="14" width="7" height="7" rx="1"/>
-        <rect x="14" y="14" width="7" height="7" rx="1"/>
-      </svg>
-    </button>
-    {% endif %}
-
-    <!-- Duplicate -->
-    <button type="button"
-      onclick="duplicateHomePage({{ pg.id }}, '{{ pg.name | e }}')"
-      title="Duplicate page"
-      aria-label="Duplicate {{ pg.name }}"
-      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-[#0053e2]
-             hover:bg-gray-100 dark:hover:bg-zinc-800
-             opacity-0 group-hover/hpg:opacity-100 transition">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
-           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <rect x="9" y="9" width="13" height="13" rx="2"/>
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-      </svg>
-    </button>
-
-    <!-- Delete -->
-    <button type="button"
-      onclick="deleteHomePage({{ pg.id }}, '{{ pg.name | e }}')"
-      title="Delete page"
-      aria-label="Delete {{ pg.name }}"
-      class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-wred
-             hover:bg-red-50 dark:hover:bg-red-900/20
-             opacity-0 group-hover/hpg:opacity-100 transition">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
-           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
-                 L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+             opacity-40 hover:opacity-100 focus:opacity-100 transition">
+      <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="5" r="1.5"/>
+        <circle cx="12" cy="12" r="1.5"/>
+        <circle cx="12" cy="19" r="1.5"/>
       </svg>
     </button>
   </li>
