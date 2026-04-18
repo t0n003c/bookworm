@@ -1,38 +1,44 @@
-# Plan: Uploads Homespace — Catalog Feature
-Date: 2026-04-17
+# Plan: Buds — Friendship Health Tracker Widget + CRM Integration
+Date: 2026-04-18
 Estimated complexity: High
 
 ---
 
 ## Summary
 
-Add a **Catalog** system to the Uploads Homespace sidebar. Catalogs live in the lower
-half of the existing **Folders tab** (`sb-panel-folders`), separated from the virtual
-folder tree by a labeled divider. Unlike virtual folders (one FK on `page_uploads`),
-catalogs are **many-to-many**: any number of files can belong to any number of catalogs
-simultaneously via a junction table — no duplication. Catalogs support **parent/child
-nesting** (same self-referential FK pattern as `upload_folders`) and **drag-and-drop
-reordering + reparenting** (same 3-zone drop logic as the folder module). Clicking a
-catalog filters the file grid to its members. Files are assigned to / removed from
-catalogs via a "Catalogs" badge section added to the existing detail panel. Folder and
-catalog filters are **mutually exclusive** — activating one clears the other.
+Add a **Buds widget** to BookWorm's dashboard home pages. Each instance of the
+widget maintains a private list of "buds" (friends-as-flowers). Health decays
+daily based on the configured contact interval; two care actions restore it:
+💧 **Water** (once per calendar week, small boost) and 🌱 **Fertilize** (in-person
+visit, planned ahead, larger boost). Flowers are rendered with one of 24 static
+images (8 species × 3 health tiers). The widget lives on any dashboard page as a
+standard drag-and-drop card; it is classified **Advanced** in the add-widget modal
+and gets its own JS engine file (`home-widget-buds.js`).
+
+CRM integration adds two complementary features: a **"Track as Bud"** button on
+CRM contact gallery/table cards (Option A) that creates a linked bud entry in any
+of the user's Buds widgets, and a **health badge** (Option B) on those same CRM
+cards when a contact is already tracked. This gives a team-facing Rolodex and a
+personal friendship-health view that stay loosely in sync without tight coupling.
 
 ---
 
-## Files to Change
-
-Touch in this order to avoid dependency failures:
+## Files to Change (in dependency order)
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `database.py` | Add `upload_catalogs` table + `upload_catalog_files` junction table + indexes |
-| 2 | `routers/uploads_db.py` | Add `catalog_id: Optional[int] = None` param to `get_uploads_page()`; inject JOIN branch; force `use_union = False` when set |
-| 3 | `routers/home_uploads.py` | Add `catalog_id: int = Query(None)` to `list_files()`, pass through to `get_uploads_page()` |
-| 4 | `main.py` | Import + `include_router` for `home_uploads_catalogs_router` after folders router line |
-| 5 | `templates/index.html` | Restructure `sb-panel-folders` div: add Folders section label, catalog divider + label, `#upl-catalog-tree` container |
-| 6 | `templates/base.html` | Add `<script>` tag for `home-page-uploads-catalogs.js?v={{ static_v }}` after folders tag |
-| 7 | `static/js/home-page-uploads-folders.js` | Add `_uplFolderClearActive()`; call catalog enter/exit hooks from Enter/Exit fns; call `_uplCatalogClearActive()` on folder selection |
-| 8 | `static/js/home-page-uploads.js` | Append `_catQs` from `_uplCatalogGetFilter()` to `_uplFetch` URL; add `#upl-detail-catalogs` placeholder div in page-src detail HTML; call `_uplRenderDetailCatalogs(f)` hook after detail render |
+| 1 | `database.py` | Add `buds` + `bud_fertilize_plans` tables + 3 indexes in `init_db()` |
+| 2 | `routers/home_buds_db.py` | **NEW** — all DB helpers for buds |
+| 3 | `routers/home_buds.py` | **NEW** — API router, prefix `/home/buds` |
+| 4 | `main.py` | Import + register `home_buds_router` after `home_crm_router` |
+| 5 | `static/img/buds/` | **NEW DIR** — 24 flower PNG files committed as static assets |
+| 6 | `templates/partials/home_page.html` | Add `render_buds(w)` Jinja2 macro; include it in the widget-dispatch block |
+| 7 | `templates/partials/home_add_widget_modal.html` | Add `('buds', '🌸', 'Buds')` to the ⚡ Advanced grid |
+| 8 | `static/js/home-widget-buds.js` | **NEW** — full buds widget JS engine |
+| 9 | `static/js/home-widgets.js` | Add `WIDGET_STYLES.buds` + `WIDGET_CONFIG_FIELDS.buds` entries |
+| 10 | `static/js/home-widgets-render.js` | Add `initBudsWidgets()` call at the end of `initHomeWidgets()` |
+| 11 | `templates/base.html` | Add `<script src="/static/js/home-widget-buds.js?v={{ static_v }}" defer></script>` after `home-widgets-render.js` |
+| 12 | `static/js/home-page-crm.js` | Add "Track as Bud" button + health badge to gallery + table card renders |
 
 ---
 
@@ -40,543 +46,527 @@ Touch in this order to avoid dependency failures:
 
 | File | Purpose |
 |---|---|
-| `routers/uploads_catalogs_db.py` | All DB helpers for catalog CRUD + junction table CRUD |
-| `routers/home_uploads_catalogs.py` | FastAPI router — 7 endpoints, prefix `/home/uploads` |
-| `static/js/home-page-uploads-catalogs.js` | Catalog tree module: render, CRUD, DnD, filter hook, detail badge panel |
+| `routers/home_buds_db.py` | All async DB helpers: list, add, update, delete, water, fertilize-plan, fertilize-complete, crm-lookup |
+| `routers/home_buds.py` | FastAPI router prefix `/home/buds` — 8 endpoints (see API section) |
+| `static/js/home-widget-buds.js` | Widget JS engine — boot, render, decay, care actions, add/edit/detail modals |
+| `static/img/buds/*.png` | 24 flower images (8 species × 3 health tiers) committed to the repo |
 
 ---
 
 ## DB Migrations Needed
 
-All migrations go inside the existing `async with aiosqlite.connect(DB_PATH) as db:`
-block in `init_db()` in `database.py`, **after the `page_uploads.folder_id` additive
-migration block and before `await db.commit()`**. Both are additive (CREATE IF NOT
-EXISTS) — safe to run on a live database 10×.
+All migrations are **additive** and safe to run multiple times (idempotent). Add
+them to `init_db()` in `database.py` at the bottom of the migration block, after
+the existing CRM/RSS migrations.
 
-### 1 — `upload_catalogs` table
-
-```sql
-CREATE TABLE IF NOT EXISTS upload_catalogs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id     INTEGER NOT NULL REFERENCES home_pages(id)     ON DELETE CASCADE,
-    user_id     INTEGER NOT NULL REFERENCES users(id)          ON DELETE CASCADE,
-    name        TEXT    NOT NULL,
-    parent_id   INTEGER REFERENCES upload_catalogs(id)         ON DELETE SET NULL,
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-
-CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page
-ON upload_catalogs(page_id, user_id, parent_id, sort_order)
-```
-
-### 2 — `upload_catalog_files` junction table
+### 1. `buds` table — additive, safe
 
 ```sql
-CREATE TABLE IF NOT EXISTS upload_catalog_files (
-    catalog_id  INTEGER NOT NULL REFERENCES upload_catalogs(id) ON DELETE CASCADE,
-    upload_id   INTEGER NOT NULL REFERENCES page_uploads(id)    ON DELETE CASCADE,
-    user_id     INTEGER NOT NULL REFERENCES users(id)           ON DELETE CASCADE,
-    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (catalog_id, upload_id)
+CREATE TABLE IF NOT EXISTS buds (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id          INTEGER NOT NULL REFERENCES home_widgets(id) ON DELETE CASCADE,
+    user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name               TEXT    NOT NULL,
+    flower_species     TEXT    NOT NULL DEFAULT 'daisy',
+    see_every_days     INTEGER NOT NULL DEFAULT 7,
+    health             REAL    NOT NULL DEFAULT 100.0,
+    health_updated_at  DATE    NOT NULL DEFAULT (date('now')),
+    last_watered_week  TEXT,
+    crm_contact_id     INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+    notes              TEXT,
+    sort_order         INTEGER NOT NULL DEFAULT 0,
+    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
 )
-
-CREATE INDEX IF NOT EXISTS idx_ucf_upload
-ON upload_catalog_files(upload_id, user_id)
 ```
 
-> **No table-swap dance needed.** Both tables are brand new. All FKs use `ON DELETE CASCADE`
-> so deleting a catalog cleans up its junction rows automatically; deleting a file cleans
-> up its memberships automatically.
+**Column notes:**
+- `widget_id` → CASCADE: bud is destroyed when the widget is deleted.
+- `crm_contact_id` → SET NULL: bud survives if the CRM contact is deleted.
+- `health_updated_at` is the anchor date for decay calculation. It is updated to
+  `date('now')` every time a care action fires, NOT on every read.
+- `last_watered_week` stores the ISO week key `'YYYY-Www'` (e.g. `'2026-W16'`).
+  Compared to the current week key to gate the 💧 Water button.
+- `flower_species` must be one of 8 values:
+  `blue_flower | calla | daffodil | daisy | pink | purple | sunflower | tulip`
+
+### 2. `bud_fertilize_plans` table — additive, safe
+
+```sql
+CREATE TABLE IF NOT EXISTS bud_fertilize_plans (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    bud_id       INTEGER NOT NULL REFERENCES buds(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    planned_date DATE,
+    note         TEXT,
+    completed_at DATETIME,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+**Column notes:**
+- `completed_at IS NULL` = pending plan; `completed_at IS NOT NULL` = done.
+- Only the most recent **pending** plan is shown in the UI.
+  (Query: `WHERE bud_id=? AND completed_at IS NULL ORDER BY planned_date LIMIT 1`)
+
+### 3. Indexes — additive, safe
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_buds_widget
+    ON buds(widget_id, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_buds_user
+    ON buds(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_buds_crm
+    ON buds(crm_contact_id);
+```
+
+`idx_buds_crm` is the key index for the CRM integration reverse-lookup
+(given a contact_id, find its linked bud row quickly).
 
 ---
 
-## New Files — Detailed Specification
+## Flower Image Strategy
 
-### `routers/uploads_catalogs_db.py`
+**Do NOT use the existing `page_uploads` UUIDs for flower images.**
 
-Mirror the structure of `uploads_folders_db.py`. Import `get_db` from `database` —
-never raw `aiosqlite.connect()`.
+The `page_uploads` entry (page_id=74, user_id=1) uses opaque UUID filenames
+served at `/uploads/{uuid}.png`. These UUIDs are install-specific, user-specific,
+and are not queryable by species name without a runtime DB lookup.
 
-| Function | Signature | Notes |
-|---|---|---|
-| `_catalog_owned(catalog_id, user_id, db)` | `async -> dict` | Raise `KeyError` if not found/not owned |
-| `_is_descendant(catalog_id, candidate_parent_id, all_catalogs)` | `-> bool` | Exact copy of folder helper — cycle prevention |
-| `get_catalogs_for_page(page_id, user_id)` | `async -> list[dict]` | `ORDER BY parent_id NULLS FIRST, sort_order, name` |
-| `create_catalog(page_id, user_id, name, parent_id)` | `async -> dict` | INSERT + re-SELECT |
-| `update_catalog(catalog_id, user_id, name, parent_id, is_parent_set, all_catalogs, sort_order)` | `async -> dict` | Same sentinel logic as `update_folder`; raise `ValueError("circular")` on cycle |
-| `delete_catalog(catalog_id, user_id)` | `async -> bool` | DELETE; CASCADE handles junction rows; returns True if row existed |
-| `get_file_catalogs(upload_id, user_id)` | `async -> list[dict]` | JOIN `upload_catalogs` via `upload_catalog_files`; return `[{id, name, parent_id}]` |
-| `add_file_to_catalog(catalog_id, upload_id, user_id)` | `async -> bool` | `INSERT OR IGNORE INTO upload_catalog_files`; return True if new row |
-| `remove_file_from_catalog(catalog_id, upload_id, user_id)` | `async -> bool` | DELETE from junction; return True if row existed |
+**Correct approach: commit all 24 images to `static/img/buds/` with predictable
+filenames.** The image URL pattern becomes:
+
+```
+/static/img/buds/{species}_{tier}.png
+```
+
+Examples:
+```
+/static/img/buds/sunflower_0.png   ← healthy (≥70)
+/static/img/buds/sunflower_1.png   ← warn (50–69)
+/static/img/buds/sunflower_2.png   ← wilting (<50)
+/static/img/buds/daisy_0.png
+...
+```
+
+This keeps the widget self-contained, works across all users and installs, and
+avoids a `page_uploads` DB lookup on every widget render. Copy the 24 images
+from the `page_uploads` folder (identified by page_id=74) using a one-time script
+during development.
 
 ---
 
-### `routers/home_uploads_catalogs.py`
+## API Endpoints (`routers/home_buds.py`, prefix `/home/buds`)
+
+All routes require a valid session. Widget ownership is validated by joining
+`home_widgets → home_pages` and checking `home_pages.user_id == session.user_id`.
+
+| Method | Path | Returns | Purpose |
+|---|---|---|---|
+| `GET`  | `/{widget_id}/list` | JSON `{buds: [...]}` | List buds with live-decayed health |
+| `POST` | `/{widget_id}/add` | JSON updated list | Add a new bud |
+| `POST` | `/{widget_id}/{bud_id}/update` | JSON updated list | Edit bud settings |
+| `DELETE`| `/{widget_id}/{bud_id}` | JSON `{ok: true}` | Delete a bud |
+| `POST` | `/{widget_id}/{bud_id}/water` | JSON `{bud: {...}}` | Water action (week-gated) |
+| `POST` | `/{widget_id}/{bud_id}/fertilize-plan` | JSON `{plan: {...}}` | Create fertilize plan |
+| `POST` | `/{widget_id}/{bud_id}/fertilize-complete/{plan_id}` | JSON `{bud: {...}}` | Mark plan done |
+| `GET`  | `/crm-lookup/{crm_page_id}` | JSON `{contact_id: bud_row}` | CRM badge reverse-lookup |
+
+### Auth pattern (copy from `routers/home_crm.py::_get_crm_page`)
 
 ```python
-router = APIRouter(prefix="/home/uploads", tags=["uploads-catalogs"])
+async def _get_widget_owned(widget_id: int, user_id: int) -> dict | None:
+    """Return widget dict if it belongs to user_id, else None."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT hw.* FROM home_widgets hw "
+            "JOIN home_pages hp ON hp.id = hw.page_id "
+            "WHERE hw.id=? AND hp.user_id=?",
+            (widget_id, user_id),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
 ```
-
-All endpoints return JSON. Copy the local `_demo_guard` and `_require_uploads_page`
-guard pattern from `home_uploads_folders.py` — do **NOT** import them cross-router.
-
-#### Pydantic models
-
-```python
-class CatalogCreateBody(BaseModel):
-    name: str            # strip; 1–80 chars; field_validator enforces
-    parent_id: Optional[int] = None
-
-class CatalogPatchBody(BaseModel):
-    name: Optional[str] = None
-    parent_id: Optional[int] = None   # present+None = move to root
-    move_to_root: bool = False         # unambiguous root-move flag
-    sort_order: Optional[int] = None
-
-class CatalogFileBody(BaseModel):
-    upload_id: int
-```
-
-#### Endpoints
-
-| Method | Path | Guard | Body | Success response |
-|---|---|---|---|---|
-| `GET` | `/{page_id}/catalogs` | session uid | — | `{"catalogs": [...]}` 200 |
-| `POST` | `/{page_id}/catalogs` | demo_guard | `CatalogCreateBody` | new catalog dict 201 |
-| `PATCH` | `/{page_id}/catalogs/{catalog_id}` | demo_guard | `CatalogPatchBody` | updated dict 200 |
-| `DELETE` | `/{page_id}/catalogs/{catalog_id}` | demo_guard | — | 204 |
-| `GET` | `/{page_id}/files/page/{upload_id}/catalogs` | session uid | — | `{"catalogs": [...]}` 200 |
-| `POST` | `/{page_id}/catalogs/{catalog_id}/files` | demo_guard | `CatalogFileBody` | `{"ok": true}` 200 |
-| `DELETE` | `/{page_id}/catalogs/{catalog_id}/files/{upload_id}` | demo_guard | — | 204 |
-
-Error behaviour: `404` not found, `400` circular reparent, `401` no session.
 
 ---
 
-### `static/js/home-page-uploads-catalogs.js`
+## Health Decay Logic (canonical)
 
-**Every variable and function declaration must use `var` / `function` — no `let`/`const`.**
-This file is loaded globally; the uploads page is entered/exited via HTMX re-injection.
-`let`/`const` throw `SyntaxError: Identifier already declared` on the second page visit.
+Implemented in `routers/home_buds_db.py`. Applied on **every read** (not written
+back to DB on GET — only written on care actions).
 
-#### Module-level state (all `var`)
+```python
+import datetime
 
+_LOSS_PER_MISSED_INTERVAL = 25.0  # HP lost for missing one full interval
+
+def _apply_decay(health: float, see_every_days: int, health_updated_at: str) -> float:
+    """Return current health after applying daily decay since health_updated_at."""
+    try:
+        anchor = datetime.date.fromisoformat(health_updated_at)
+    except (ValueError, TypeError):
+        return health
+    days_elapsed = (datetime.date.today() - anchor).days
+    if days_elapsed <= 0:
+        return health
+    loss_per_day = _LOSS_PER_MISSED_INTERVAL / max(see_every_days, 1)
+    decayed = health - (loss_per_day * days_elapsed)
+    return round(max(0.0, min(100.0, decayed)), 2)
 ```
-_uplCatPid         — active page_id (0 = not on an uploads page)
-_uplCatData        — flat list [{id, name, parent_id, sort_order}]
-_uplCatActive      — selected catalog id (null = "All files")
-_uplCatBusy        — request-in-flight guard (bool)
-_uplCatModalMode   — 'create' | 'rename'
-_uplCatModalParent — parent_id for 'create' mode
-_uplCatModalTarget — catalog id for 'rename' mode
-_uplCatDragId      — catalog id being dragged (null = not dragging)
-_uplCatDropIntent  — 'before' | 'inside' | 'after'
-_uplCatCollapsed   — {[catalogId]: true} collapse state map
-_uplCatDelPending  — catalog id pending delete confirmation
+
+The client-side JS mirrors this formula for optimistic rendering.
+
+### Care action health boosts (server-side, written to DB)
+
+| Action | HP gained | Conditions | DB writes |
+|---|---|---|---|
+| 💧 Water | +10 HP | Once per Mon-start week (`last_watered_week != current_week_key`) | `health`, `health_updated_at`, `last_watered_week` |
+| 🌱 Fertilize complete | +25 HP | `completed_at IS NULL` on the plan | `health`, `health_updated_at` on `buds`; `completed_at = NOW()` on `bud_fertilize_plans` |
+
+Health is capped at 100.0 after boost. The `health_updated_at` anchor is reset to
+`date('now')` on every care action so decay restarts from 0 for the next interval.
+
+### ISO Week Key
+
+```python
+def _week_key(d: datetime.date | None = None) -> str:
+    """Return 'YYYY-Www' for Monday-anchored ISO week."""
+    d = d or datetime.date.today()
+    iso = d.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
 ```
 
-#### Public API (called from other modules)
+---
 
-| Function | Called by | Purpose |
-|---|---|---|
-| `_uplCatalogEnterUploadsPage(pid)` | `home-page-uploads-folders.js` → Enter fn | Set pid, fetch + render tree |
-| `_uplCatalogExitUploadsPage()` | `home-page-uploads-folders.js` → Exit fn | Zero state, clear `#upl-catalog-tree` |
-| `_uplCatalogGetFilter()` | `home-page-uploads.js` → `_uplFetch` | Returns `'&catalog_id=N'` or `''` |
-| `_uplCatalogClearActive()` | `home-page-uploads-folders.js` on folder click | Set `_uplCatActive = null`, re-render tree |
-| `_uplRenderDetailCatalogs(f)` | `home-page-uploads.js` → `_uplRenderDetail` | Fetch file catalogs, render badge list + add/remove UI into `#upl-detail-catalogs` |
+## Widget Template Macro (`home_page.html`)
 
-#### Internal functions
+Add a new `render_buds(w)` macro. It renders the card shell and a data-bearing
+root element that the JS engine picks up and hydrates:
 
-| Function | Notes |
+```jinja2
+{% macro render_buds(w) %}
+{%- set cfg = w.config -%}
+{% call card(w) %}
+  {{ widget_header(w, cfg.get('custom_name') or 'Buds', '🌸') }}
+  <div class="bw-buds-widget flex-1 min-h-0 overflow-y-auto"
+       data-widget-id="{{ w.id }}"
+       data-style="{{ w.style }}"
+       data-config='{{ cfg | tojson | e }}'>
+    <span class="text-xs text-gray-400 animate-pulse">Loading buds…</span>
+  </div>
+{% endcall %}
+{% endmacro %}
+```
+
+Then add to the widget-dispatch block (the `{% if w.widget_type == ... %}` chain
+already in `home_page.html`):
+
+```jinja2
+{%- elif w.widget_type == 'buds' -%}
+  {{ render_buds(w) }}
+```
+
+---
+
+## JS Architecture (`static/js/home-widget-buds.js`)
+
+**All module-top-level state uses `var` — never `let`/`const` at module scope.**
+(Quirk #13: `initHomeWidgets()` may be called multiple times via `_initSwappedPage()`.)
+
+### Module state
+
+```javascript
+var _budsState = {};  // {widgetId: {buds: [], busy: false, pendingPlans: {}}}
+```
+
+### Key functions (all `function` declarations — hoisted, safe for re-calls)
+
+| Function | Purpose |
 |---|---|
-| `_uplCatalogFetch()` | `GET /{pid}/catalogs`; populate `_uplCatData`; call render |
-| `_uplCatalogRender()` | Build parent→children map; recursive render into `#upl-catalog-tree`; call `_uplCatalogEnsureModal()` |
-| `_uplCatalogRenderNode(cat, depth, byParent)` | Return HTML string for one tree row: indent, collapse toggle, drag handle, name, +child / rename / delete icon buttons |
-| `_uplCatalogSelect(id)` | Set `_uplCatActive`; if already active → set `null` (toggle); call `_uplFolderClearActive()` if available; call `_uplFetch(1)`; re-render tree |
-| `_uplCatalogCreate(name, parent_id)` | POST; on success push new dict to `_uplCatData`, re-render |
-| `_uplCatalogRename(id, name)` | PATCH; update local entry in `_uplCatData`, re-render |
-| `_uplCatalogDelete(id)` | Show confirm modal → on confirm DELETE; splice from `_uplCatData`; if deleted was active → `_uplCatActive = null` + `_uplFetch(1)`; re-render |
-| `_uplCatalogDragStart(event, id)` | Set `_uplCatDragId = id`; `event.dataTransfer.effectAllowed = 'move'` |
-| `_uplCatalogDragOver(event, id)` | `event.preventDefault()`; compute zone from `offsetY / el.offsetHeight`: top 25% → 'before', middle 50% → 'inside', bottom 25% → 'after'; set `_uplCatDropIntent`; apply CSS highlight class |
-| `_uplCatalogDragEnd()` | Clear drag state; remove all highlight classes |
-| `_uplCatalogDrop(event, targetId)` | PATCH with resolved `parent_id` + `sort_order`; on `400 circular` show toast error; on success re-fetch |
-| `_uplCatalogEnsureModal()` | Inject rename/create modal HTML once if `#upl-cat-modal` not in DOM |
-| `_uplCatalogOpenModal(mode, catalogId, parentId)` | Show `#upl-cat-modal`; pre-fill name for rename |
-| `_uplCatalogSaveModal()` | Read input value; call create or rename; close modal |
-| `_uplCatalogConfirmDelete(id)` | Set `_uplCatDelPending`; show `#upl-cat-del-modal` |
-| `_uplCatalogDoDelete()` | Call `_uplCatalogDelete(_uplCatDelPending)`; hide modal |
-| `_uplCatalogAddFile(catalogId, uploadId)` | `POST …/catalogs/{cid}/files`; on success refresh detail badge panel |
-| `_uplCatalogRemoveFile(catalogId, uploadId)` | `DELETE …/catalogs/{cid}/files/{uid}`; on success refresh detail badge panel |
+| `initBudsWidgets()` | Called by `initHomeWidgets()`. Finds all `.bw-buds-widget` and calls `_budsInit(wid)` for each. |
+| `_budsInit(wid)` | Fetch `GET /home/buds/{wid}/list` → store in `_budsState` → call `_budsRender`. |
+| `_budsRender(wid)` | Build flower-card HTML for all buds in state, inject into the widget root. |
+| `_budsFlowerImg(species, tier)` | Return `/static/img/buds/{species}_{tier}.png`. |
+| `_budsHealthTier(health)` | `health >= 70 → 0`, `50 ≤ h < 70 → 1`, `h < 50 → 2` |
+| `_budsWeekKey()` | Return `'YYYY-Www'` for current Mon-anchored week. |
+| `_budsWater(wid, budId)` | POST `/home/buds/{wid}/{budId}/water`, re-render. Disables button if already watered this week. |
+| `_budsFertilizeOpen(wid, budId)` | Open the fertilize modal (plan a date + note). |
+| `_budsFertilizeSubmit(wid, budId)` | POST plan, close modal, re-render. |
+| `_budsFertilizeComplete(wid, budId, planId)` | POST complete, re-render. |
+| `_budsDetailOpen(wid, budId)` | Open the detail slide-panel (full info + history). |
+| `_budsAddOpen(wid)` | Open add-bud modal. |
+| `_budsAddSubmit(wid)` | POST add, re-render, close modal. |
+| `_budsEditOpen(wid, budId)` | Open edit-bud modal pre-populated with current values. |
+| `_budsEditSubmit(wid, budId)` | POST update, re-render, close modal. |
+| `_budsDelete(wid, budId)` | Standard confirm modal pattern → DELETE, re-render. |
+| `_budsApplyDecay(bud)` | Client-side decay calc (mirrors server formula) for optimistic render. |
 
-#### Confirm-delete modal
+### Modals in `home-widget-buds.js`
 
-Follow the standard BookWorm confirmation modal pattern exactly (see CODEPUPPY_NOTES.md
-§ "Confirmation / Info Modals"). Use destructive (red) styling. ID: `#upl-cat-del-modal`.
-Do NOT use `window.confirm()`. JS wiring uses `var _uplCatDelPending = null` pattern.
+Three modals, all injected once into `document.body` on first `initBudsWidgets()`:
+- `#buds-add-modal` — Add/Edit bud (name, species picker with flower images, interval slider)
+- `#buds-fertilize-modal` — Plan fertilize (date input, note textarea, mark-complete button if plan exists)
+- `#buds-detail-panel` — Slide-in detail (full health bar, last actions, edit/delete buttons)
+
+All modals follow the **standard BookWorm modal pattern** from CODEPUPPY_NOTES.md
+(fixed inset, backdrop blur, Escape key close, ARIA roles).
+
+### Add-widget modal step-2 config fields (in `home-widgets.js`)
+
+```javascript
+WIDGET_STYLES['buds'] = [
+  ['default', '🌸 Full'],
+  ['compact', '🌿 Compact'],
+];
+
+WIDGET_CONFIG_FIELDS['buds'] = (s) => [
+  { id: 'cf-buds-title', label: 'Widget title', type: 'text',
+    placeholder: 'My Buds', name: 'custom_name' },
+  { id: 'cf-buds-crm', label: 'Sync friends from CRM page (optional)',
+    type: 'select-crm-pages', name: 'linked_crm_page_id' },
+];
+```
+
+> **Note:** `'select-crm-pages'` is a new custom field type that must be added to
+> `aw_refreshConfig()` in `home-widgets.js`. It fetches the user's CRM pages via
+> `GET /home/pages` (already returns all pages with `page_type`) and renders a
+> `<select>` of CRM page options (none selected = manual-only bud list).
 
 ---
 
-## Changes to Existing Files — Detailed
+## CRM Integration
 
-### 1 — `database.py`
+### Chosen options: A + B (with D as opt-in via widget config)
 
-Add after the `page_uploads.folder_id` additive column migration and before `await db.commit()`:
+**Why not C (full care interface in CRM detail panel)?** It would require injecting
+Buds widget state and modals into the CRM JS module, creating a hard coupling
+between two independent features. YAGNI — the widget itself is the primary UX;
+CRM is a secondary view.
 
-```python
-# ── upload_catalogs (many-to-many catalog tree for uploads pages) ──────────
-await db.execute("""
-    CREATE TABLE IF NOT EXISTS upload_catalogs (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        page_id    INTEGER NOT NULL REFERENCES home_pages(id)    ON DELETE CASCADE,
-        user_id    INTEGER NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
-        name       TEXT    NOT NULL,
-        parent_id  INTEGER REFERENCES upload_catalogs(id)        ON DELETE SET NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-""")
-await db.execute(
-    "CREATE INDEX IF NOT EXISTS idx_upload_catalogs_page "
-    "ON upload_catalogs(page_id, user_id, parent_id, sort_order)"
-)
+**Why not D as the only source?** Not every user has a CRM page. Manual bud entry
+must always work. D is implemented as an *optional* widget config field
+(`linked_crm_page_id`) that surfaces "Import from CRM" as an action inside the
+widget.
 
-# ── upload_catalog_files (M2M junction: catalogs ↔ page_uploads) ───────────
-await db.execute("""
-    CREATE TABLE IF NOT EXISTS upload_catalog_files (
-        catalog_id INTEGER NOT NULL REFERENCES upload_catalogs(id) ON DELETE CASCADE,
-        upload_id  INTEGER NOT NULL REFERENCES page_uploads(id)    ON DELETE CASCADE,
-        user_id    INTEGER NOT NULL REFERENCES users(id)           ON DELETE CASCADE,
-        added_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (catalog_id, upload_id)
-    )
-""")
-await db.execute(
-    "CREATE INDEX IF NOT EXISTS idx_ucf_upload "
-    "ON upload_catalog_files(upload_id, user_id)"
-)
-```
+### Option A — "Track as Bud" button on CRM contact cards
 
-### 2 — `routers/uploads_db.py` → `get_uploads_page()`
+In `home-page-crm.js`, inside the gallery card and table row render functions,
+add a small 🌸 button after existing action buttons:
 
-Current signature:
-```python
-async def get_uploads_page(user_id, page=1, folder_id=None, ...):
-```
-
-New signature:
-```python
-async def get_uploads_page(user_id, page=1, folder_id=None, catalog_id=None, ...):
-```
-
-Logic change — add this block immediately after the existing `folder_id` branching:
-
-```python
-if catalog_id is not None:
-    use_union = False   # note-src files are not in catalogs — skip the UNION
-    # Override folder_where: JOIN the junction table instead
-    folder_where = (
-        " INNER JOIN upload_catalog_files ucf "
-        "ON pu.id = ucf.upload_id AND ucf.catalog_id = ?"
-    )
-    folder_params = (catalog_id,)
-```
-
-> The JOIN clause must be inserted into the query string at the correct position —
-> after `FROM page_uploads pu` and before any `WHERE` clauses. Review the current
-> query construction carefully before editing.
-
-### 3 — `routers/home_uploads.py` → `list_files()`
-
-```python
-@router.get("/{page_id}/files")
-async def list_files(
-    request: Request,
-    page_id: int,
-    page: int = 1,
-    folder_id: int = Query(None),
-    catalog_id: int = Query(None),   # ← new
-):
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    await _require_uploads_page(page_id, uid)
-    result = await get_uploads_page(uid, page=page, folder_id=folder_id,
-                                    catalog_id=catalog_id)   # ← pass through
-    return JSONResponse(result)
-```
-
-Also add `catalog_id` to the `get_uploads_page` import call if it is used as a
-keyword argument (update the import from `uploads_db` if the signature changed there).
-
-### 4 — `main.py`
-
-After line 70 (`from routers import home_uploads_folders as home_uploads_folders_router`):
-```python
-from routers import home_uploads_catalogs as home_uploads_catalogs_router
-```
-
-After line 143 (`app.include_router(home_uploads_folders_router.router)`):
-```python
-app.include_router(home_uploads_catalogs_router.router)
-```
-
-### 5 — `templates/index.html` (around line 451)
-
-Replace the current contents of `<div id="sb-panel-folders" ...>` from:
 ```html
-<div id="upl-folder-tree" class="space-y-0.5"></div>
-```
-To:
-```html
-<!-- Folders section label -->
-<div class="flex items-center justify-between px-1 mb-1">
-  <span class="text-[10px] font-bold uppercase tracking-wider
-               text-gray-400 dark:text-zinc-500 select-none">Folders</span>
-</div>
-<div id="upl-folder-tree" class="space-y-0.5"></div>
-
-<!-- ── Catalog section divider ── -->
-<div class="mt-4 mb-2 border-t border-gray-200 dark:border-zinc-700"></div>
-<div class="flex items-center justify-between px-1 mb-1">
-  <span class="text-[10px] font-bold uppercase tracking-wider
-               text-gray-400 dark:text-zinc-500 select-none">Catalogs</span>
-</div>
-<div id="upl-catalog-tree" class="space-y-0.5"></div>
+<button onclick="_crmTrackAsBud(${c.id})" title="Track as Bud"
+        class="p-1 rounded text-pink-400 hover:text-pink-600 hover:bg-pink-50
+               dark:hover:bg-pink-900/20 transition text-sm">🌸</button>
 ```
 
-Both sections scroll together inside the existing `flex-1 overflow-y-auto py-3 px-3`
-panel — no layout changes needed to the outer panel div.
+`_crmTrackAsBud(contactId)` function:
+1. Fetches `GET /home/pages` to find user's Buds widgets (filter `widget_type == 'buds'`).
+   If none found → `_bwToast('Add a Buds widget to your dashboard first.', 'info')`.
+2. Opens `#crm-track-bud-modal` — lets user pick which Buds widget + override
+   flower species + interval. Pre-fills name from contact name.
+3. On submit → `POST /home/buds/{widgetId}/add` with `crm_contact_id` set.
+4. Invalidates the buds widget cache (`invalidateHomePageCache`) so next visit
+   reflects the new bud.
 
-### 6 — `templates/base.html` (after line 590)
+New modal to add to `home_page_crm.html` (or inject via JS):
+- `#crm-track-bud-modal` — standard BookWorm modal (neutral/info colour scheme)
 
-After:
-```html
-<script src="/static/js/home-page-uploads-folders.js?v={{ static_v }}" defer></script>
-```
-Add:
-```html
-<script src="/static/js/home-page-uploads-catalogs.js?v={{ static_v }}" defer></script>
-```
+### Option B — Health badge on CRM contact cards
 
-Load order matters: catalog module references `_uplFolderClearActive` (defined in
-folders module) — catalog must load **after** folders.
+When rendering CRM gallery cards and table rows, check if that contact has a
+linked bud. Source of truth: `window._crmBudHealthMap` — a `{contact_id: {health, species, tier}}` 
+map populated at CRM page init time via `GET /home/buds/crm-lookup/{crm_page_id}`.
 
-### 7 — `static/js/home-page-uploads-folders.js`
+In `initCrmPage(pid)` (inside `home-page-crm.js`), add after contacts are fetched:
 
-**a)** Add `_uplFolderClearActive()` as a new public function (near the existing public
-API functions block):
 ```javascript
-function _uplFolderClearActive() {
-  _uplFldActive = null;
-  _uplFolderRender();   // removes active-highlight from all rows
-}
+fetch('/home/buds/crm-lookup/' + pid, {credentials: 'same-origin'})
+  .then(r => r.ok ? r.json() : {})
+  .then(map => { window._crmBudHealthMap = map || {}; _crmRender(); })
+  .catch(() => { window._crmBudHealthMap = {}; });
 ```
 
-**b)** At the end of `_uplFolderEnterUploadsPage(pid)`, append:
+Gallery card render inserts after the avatar:
+
 ```javascript
-if (typeof _uplCatalogEnterUploadsPage === 'function') _uplCatalogEnterUploadsPage(pid);
+var bud = (window._crmBudHealthMap || {})[c.id];
+var budBadge = bud
+  ? '<div class="absolute top-1 right-1 flex items-center gap-1">'
+    + '<img src="/static/img/buds/' + bud.species + '_' + bud.tier + '.png"'
+    + ' class="w-5 h-5 object-contain" title="Health: ' + bud.health + '">'
+    + '<div class="w-10 h-1 bg-gray-200 rounded-full overflow-hidden">'
+    + '<div class="h-full rounded-full" style="width:' + bud.health + '%;'
+    + 'background:' + (bud.tier===0?'#2a8703':bud.tier===1?'#ffc220':'#ea1100') + '"></div>'
+    + '</div></div>'
+  : '';
 ```
 
-**c)** At the end of `_uplFolderExitUploadsPage()`, append:
-```javascript
-if (typeof _uplCatalogExitUploadsPage === 'function') _uplCatalogExitUploadsPage();
-```
+The `/crm-lookup/{crm_page_id}` endpoint returns a map:
+`{contact_id: {health, species, tier, widget_id, bud_id}}`.
 
-**d)** At the point in the code where `_uplFldActive` is set and `_uplFetch(1)` is
-called in response to a folder row click, add:
-```javascript
-if (typeof _uplCatalogClearActive === 'function') _uplCatalogClearActive();
-```
-
-### 8 — `static/js/home-page-uploads.js`
-
-**a)** In `_uplFetch(page)`, after the existing `_fldQs` line:
-```javascript
-var _fldQs = (typeof _uplFolderGetFilter === 'function') ? _uplFolderGetFilter() : '';
-```
-Add:
-```javascript
-var _catQs = (typeof _uplCatalogGetFilter === 'function') ? _uplCatalogGetFilter() : '';
-```
-Then change the fetch URL to:
-```javascript
-const r = await fetch('/home/uploads/' + _uplPid + '/files?page=' + page + _fldQs + _catQs);
-```
-
-**b)** In the page-src detail panel HTML string built inside `_uplRenderDetail(f)`,
-add an empty placeholder div after the tags section:
-```html
-<div id="upl-detail-catalogs" class="mt-3"></div>
-```
-This is only needed for `src === 'page'` files. Guard it with a conditional in the
-template string builder if detail HTML differs by src type.
-
-**c)** At the end of `_uplRenderDetail(f)`, alongside the existing
-`_uplDocStudioInit(f)` call, add:
-```javascript
-if (typeof _uplRenderDetailCatalogs === 'function' && f.src === 'page') {
-  _uplRenderDetailCatalogs(f);
-}
-```
-
----
-
-## Detail Panel — Catalog Badge UI
-
-`_uplRenderDetailCatalogs(f)` populates `#upl-detail-catalogs`:
-
-1. Fetch `GET /{pid}/files/page/{f.id}/catalogs` → `{catalogs: [...]}`
-2. If `_uplCatData` is empty: render muted "No catalogs exist yet" note; return
-3. Build HTML:
-   - Section heading: `🏷 Catalogs` (small, bold, gray)
-   - For each catalog the file belongs to: pill badge (catalog name) + `×` remove
-     button → calls `_uplCatalogRemoveFile(cat.id, f.id)` → re-runs function to refresh
-   - `<select>` dropdown listing all `_uplCatData` entries NOT already applied
-     (indented `—` prefix by depth for hierarchy hint) + a small `＋ Add` button →
-     calls `_uplCatalogAddFile(selectedCatalogId, f.id)` → re-runs to refresh
-   - If no catalogs are assigned yet: show muted "None" placeholder before the add
-     dropdown
-
----
-
-## File Grid Filter Integration — Call Trace
-
-```
-User clicks a catalog row in #upl-catalog-tree
-  → _uplCatalogSelect(id)            [home-page-uploads-catalogs.js]
-      _uplCatActive = id
-      _uplFolderClearActive()         [home-page-uploads-folders.js]  — clears folder qs
-      _uplFetch(1)                    [home-page-uploads.js]
-          _fldQs = ''                 — folder returned ''
-          _catQs = '&catalog_id=N'   — catalog returned active id
-          GET /home/uploads/{pid}/files?page=1&catalog_id=N
-              list_files()            [routers/home_uploads.py]
-                  get_uploads_page(uid, catalog_id=N)
-                      use_union = False
-                      INNER JOIN upload_catalog_files ucf ON pu.id=ucf.upload_id
-                      WHERE ucf.catalog_id = N
-                      → page-src files only, members of catalog N
-```
+It queries `SELECT b.* FROM buds b WHERE b.crm_contact_id IN (SELECT id FROM crm_contacts WHERE page_id=? AND user_id=?) AND b.user_id=?`. Uses `idx_buds_crm` index.
 
 ---
 
 ## Skills to Invoke
 
-- **`bookworm-db-migration`** — after Step 1; verify both tables survive 10× idempotent
-  restarts on a live DB (no `already exists` errors, no data loss)
-- **`bookworm-template-audit`** — after Steps 5–6 (index.html + base.html); check for
-  missing `?v={{ static_v }}`, broken element IDs, stray `let`/`const` in any new JS
-- **`bookworm-template-audit`** — after Step 9 (new JS file); specifically audit
-  `home-page-uploads-catalogs.js` for `let`/`const` usage
-- **`bookworm-qa`** — full pass after all steps; see checklist §14 for exact scenarios
-- **`bookworm-pre-commit`** — before committing; confirm no raw `aiosqlite.connect()`,
-  no `let`/`const` in catalog JS, no hardcoded IDs or secrets
-- **`bookworm-docs-keeper`** — after ship; add both new tables to CODEPUPPY_NOTES.md
-  DB schema section; add new JS module to the key file map
+| Skill / Agent | When |
+|---|---|
+| `bookworm-db-migration` | After updating `database.py` — dry-run the new tables + indexes against live `bookworm.db` |
+| `bookworm-widget-scaffolder` | After writing the macro + JS engine — validates all 9 required touch-points are complete |
+| `bookworm-template-audit` | After editing `home_page.html`, `home_add_widget_modal.html`, `base.html`, `home_page_crm.html` |
+| `bookworm-qa` | After each major milestone (DB done, widget rendering, CRM integration) |
+| `bookworm-pre-commit` | Before final commit |
+| `bookworm-docs-keeper` | After commit — update CODEPUPPY_NOTES.md schema + widget table |
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Gotcha — `var` only in the new JS file (critical for correctness):**
-`home-page-uploads-catalogs.js` is loaded globally into a page that uses HTMX
-re-injection to swap the uploads page in and out. Every visit re-calls
-`_uplCatalogEnterUploadsPage`. Using `let`/`const` at module level will throw
-`SyntaxError: Identifier 'X' has already been declared` on the second visit.
-All declarations must be `var` and all function declarations must use `function` keyword.
+**Quirk #13 — `var` not `let`/`const` in module-scope of `home-widget-buds.js`.**
+`initHomeWidgets()` is called on every `_initSwappedPage()`. Any module-scope
+`let _budsState = {}` will throw `SyntaxError: already declared` on the second
+dashboard navigation. Use `var _budsState = _budsState || {}` or plain `var`.
 
-**Gotcha — `get_db()`, not raw `aiosqlite.connect()` (schema violation):**
-`uploads_catalogs_db.py` is a new `*_db.py` file. It must `from database import get_db`
-and use `async with get_db() as db:` for every query. Direct `aiosqlite.connect(DB_PATH)`
-skips WAL mode, busy_timeout, and foreign_key enforcement — bookworm-pre-commit will
-catch this but do it right from the start.
+**Quirk #16 — `| tojson | safe` in `<script>` blocks, `| tojson | e` in `data-*`.**
+The buds widget macro uses `data-config='{{ cfg | tojson | e }}'` for the data
+attribute (HTML-escaped). If any `<script type="application/json">` block is added,
+it MUST use `| safe`.
 
-**Gotcha — `use_union = False` when `catalog_id` is set:**
-`get_uploads_page()` currently builds a UNION of note-src and page-src rows when
-`folder_id is None`. Note attachment rows have no entry in `upload_catalog_files` —
-the UNION branch must be suppressed when filtering by catalog or the query will be
-broken (the INNER JOIN on `page_uploads` cannot join with note attachment rows from
-the other UNION leg). Explicitly set `use_union = False` when `catalog_id is not None`.
+**Quirk #10 — 5-min `_hpCache` cache.**
+After any bud-modifying action (add, water, fertilize, delete) call
+`invalidateHomePageCache(pid)` with the current page id so the cache is busted.
+Get `pid` from `sessionStorage.getItem('bw-hp')`.
 
-**Gotcha — mutual exclusion of `_fldQs` and `_catQs` in `_uplFetch`:**
-Both query string fragments are appended to the same URL. If both are non-empty, the
-server receives `?folder_id=X&catalog_id=Y` — the server silently lets `catalog_id`
-win (per the new logic order), but the URL is misleading and may confuse future
-debugging. The JS modules must enforce mutual exclusion: `_uplCatalogSelect()` calls
-`_uplFolderClearActive()` (zeroing `_fldQs`), and the folder click handler calls
-`_uplCatalogClearActive()` (zeroing `_catQs`). Both directions must be wired.
+**Quirk #18 — Unguarded `/uploads/` static mount.**
+This is why flower images must live in `static/img/buds/` — the `page_uploads`
+UUID approach would couple the widget to a specific install's DB rows. Static
+assets in `static/` are intentionally public; flower images are non-sensitive.
 
-**Gotcha — `?v={{ static_v }}` cache-busting:**
-The new `<script>` tag for `home-page-uploads-catalogs.js` in `base.html` **must**
-have `?v={{ static_v }}`. Without it, browsers cache the (initially empty) file and
-users never receive updates.
+**Widget scaffolder checklist — 9 required touch-points.**
+Every new widget type must: (1) DB table (if needed), (2) API router, (3) Jinja2
+macro in `home_page.html`, (4) entry in `home_add_widget_modal.html`,
+(5) `WIDGET_STYLES` entry in `home-widgets.js`, (6) `WIDGET_CONFIG_FIELDS` entry
+in `home-widgets.js`, (7) JS engine call in `initHomeWidgets()`, (8) new JS file
+in `static/js/`, (9) `<script>` tag in `base.html` with `?v={{ static_v }}`.
 
-**Gotcha — demo guard on all write endpoints:**
-`POST /catalogs`, `PATCH /catalogs/{id}`, `DELETE /catalogs/{id}`,
-`POST /catalogs/{id}/files`, `DELETE /catalogs/{id}/files/{uid}` all mutate state.
-Each must call `if guard := _demo_guard(request): return guard` on entry. Read-only
-GETs do not need the guard.
+**CRM card re-render after "Track as Bud".**
+`home-page-crm.js` re-renders via `_crmRender()`. After POST `/home/buds/{wid}/add`
+completes, call `_crmBudHealthMap[contactId] = {health: 100, species, tier: 0, ...}`
+optimistically before calling `_crmRender()` — avoids a second HTTP round-trip to
+refresh the badge.
 
-**Gotcha — detail panel catalog section gated by `src === 'page'`:**
-Note attachments (`src === 'note'`) have IDs in `note_attachments`, not `page_uploads`.
-The `upload_catalog_files` FK points only to `page_uploads.id`. Never call
-`_uplRenderDetailCatalogs(f)` or render `#upl-detail-catalogs` for a note-src file.
-Guard in both the JS call site (`f.src === 'page'`) and the detail HTML builder.
-
-**Gotcha — circular reparenting via DnD must be rejected server-side:**
-`_is_descendant()` must run in `update_catalog()` before executing the UPDATE.
-Raise `ValueError("circular")` → caught in the router → returned as HTTP 400. The
-JS `_uplCatalogDrop()` handler must check for a 400 response and show an inline toast
-error. Never rely on client-side cycle detection alone.
+**`select-crm-pages` custom field type in `aw_refreshConfig`.**
+This is a new field type in the add-widget modal config builder. It needs a new
+`if (f.type === 'select-crm-pages')` branch inside `aw_refreshConfig()` in
+`home-widgets.js`. It must fetch `GET /home/pages` (JSON) and filter by
+`page_type === 'crm'`. All-`var` inside the async handler; no `let`/`const`.
 
 ---
 
 ## Implementation Checklist
 
-- [ ] **Step 1** — `database.py`: add `upload_catalogs` CREATE + index; add `upload_catalog_files` CREATE + index; place before `await db.commit()`
-- [ ] **Step 2** — `routers/uploads_catalogs_db.py`: create new file; implement all 9 helper functions; use `get_db()`; mirror folder helper structure
-- [ ] **Step 3** — `routers/home_uploads_catalogs.py`: create new file; `APIRouter(prefix="/home/uploads")`; 7 endpoints; 3 Pydantic models; local `_demo_guard` + `_require_uploads_page` copies; import from `uploads_catalogs_db`
-- [ ] **Step 4** — `routers/uploads_db.py`: add `catalog_id=None` param to `get_uploads_page()`; add INNER JOIN branch; set `use_union = False` when `catalog_id is not None`
-- [ ] **Step 5** — `routers/home_uploads.py`: add `catalog_id: int = Query(None)` to `list_files()`; pass to `get_uploads_page()`
-- [ ] **Step 6** — `main.py`: import `home_uploads_catalogs`; add `app.include_router(home_uploads_catalogs_router.router)` after folders router
-- [ ] **Step 7** — `templates/index.html`: add Folders label above `#upl-folder-tree`; add divider + Catalogs label + `#upl-catalog-tree` div below it
-- [ ] **Step 8** — `templates/base.html`: add `<script src=".../home-page-uploads-catalogs.js?v={{ static_v }}" defer>` after folders tag
-- [ ] **Step 9** — `static/js/home-page-uploads-catalogs.js`: create file; all `var`; full module state; all public API functions; all internal functions; DnD 3-zone logic; confirm-delete modal (standard BookWorm pattern, red/destructive, no `window.confirm()`); detail badge panel
-- [ ] **Step 10** — `static/js/home-page-uploads-folders.js`: add `_uplFolderClearActive()`; append catalog enter/exit hooks to Enter/Exit fns; call `_uplCatalogClearActive()` on folder selection
-- [ ] **Step 11** — `static/js/home-page-uploads.js`: add `_catQs` in `_uplFetch`; append to fetch URL; add `#upl-detail-catalogs` placeholder div in page-src detail HTML; call `_uplRenderDetailCatalogs(f)` hook for page-src files
-- [ ] **Step 12** — Run `bookworm-db-migration` — verify idempotent on live DB
-- [ ] **Step 13** — Run `bookworm-template-audit` — new JS + template changes
-- [ ] **Step 14** — Run `bookworm-qa` — verify: catalog tree renders on uploads page entry; CRUD (create root, create child, rename, delete leaf, delete parent→children become root); DnD flat reorder; DnD nest (before/inside/after zones); DnD un-nest; circular nest rejected with toast; catalog click filters grid; folder click deselects catalog (and vice versa); "All files" shows on deselect; detail panel shows catalog badges for page-src; add file to catalog; remove file from catalog; file appears in multiple catalogs simultaneously; demo guard blocks all writes
-- [ ] **Step 15** — Run `bookworm-pre-commit`
-- [ ] **Step 16** — Run `bookworm-docs-keeper` — add both tables to CODEPUPPY_NOTES.md; add `home-page-uploads-catalogs.js` to key file map
+### Phase 1 — DB + Backend
+
+- [ ] 1.1 Add `buds` table SQL to `CREATE_TABLES_SQL` list in `database.py`
+- [ ] 1.2 Add `bud_fertilize_plans` table SQL in same list
+- [ ] 1.3 Add 3 indexes (`idx_buds_widget`, `idx_buds_user`, `idx_buds_crm`) in `init_db()` after table creation
+- [ ] 1.4 Run `bookworm-db-migration` skill to dry-run and apply to live `bookworm.db`
+- [ ] 1.5 Create `routers/home_buds_db.py` with: `_apply_decay()`, `_week_key()`, `list_buds()`, `add_bud()`, `update_bud()`, `delete_bud()`, `water_bud()`, `create_fertilize_plan()`, `complete_fertilize_plan()`, `crm_lookup()`
+- [ ] 1.6 Create `routers/home_buds.py` with all 8 endpoints; validate widget ownership via `_get_widget_owned()` helper
+- [ ] 1.7 Register `home_buds_router` in `main.py` (import + `app.include_router`)
+- [ ] 1.8 Run `_health_check.py` — confirm server starts, no import errors
+
+### Phase 2 — Flower Images
+
+- [ ] 2.1 Identify the 24 flower UUIDs in `page_uploads` (page_id=74, user_id=1) via direct DB query
+- [ ] 2.2 Create `static/img/buds/` directory
+- [ ] 2.3 Copy all 24 images from `uploads/` to `static/img/buds/{species}_{tier}.png`
+- [ ] 2.4 Verify all 24 filenames exist: `blue_flower_0.png` through `tulip_2.png`
+- [ ] 2.5 Confirm images are served at `http://localhost:8000/static/img/buds/daisy_0.png`
+
+### Phase 3 — Widget Template + Modal
+
+- [ ] 3.1 Add `render_buds(w)` macro to `templates/partials/home_page.html`
+- [ ] 3.2 Add `buds` branch to the widget-dispatch `{% if/elif %}` chain in `home_page.html`
+- [ ] 3.3 Add `('buds', '🌸', 'Buds')` entry to the ⚡ Advanced grid in `home_add_widget_modal.html`
+- [ ] 3.4 Add `WIDGET_STYLES['buds']` to `home-widgets.js`
+- [ ] 3.5 Add `WIDGET_CONFIG_FIELDS['buds']` to `home-widgets.js` (with `select-crm-pages` field)
+- [ ] 3.6 Add `select-crm-pages` branch to `aw_refreshConfig()` in `home-widgets.js`
+
+### Phase 4 — JS Engine
+
+- [ ] 4.1 Create `static/js/home-widget-buds.js` (all `var`, no `let`/`const` at module scope)
+- [ ] 4.2 Implement `initBudsWidgets()` — DOM scan + per-widget boot
+- [ ] 4.3 Implement `_budsRender()` — flower card HTML with health bar, action buttons, tier images
+- [ ] 4.4 Implement `_budsWater()` — POST + optimistic render + week-gate UI
+- [ ] 4.5 Implement fertilize plan flow — open modal, submit plan, mark complete
+- [ ] 4.6 Implement add/edit bud modals — species picker shows flower images, interval field
+- [ ] 4.7 Implement detail panel — slide-in, shows full info + pending fertilize plan
+- [ ] 4.8 Implement delete — standard BookWorm confirm modal pattern
+- [ ] 4.9 Call `initBudsWidgets()` from `initHomeWidgets()` in `home-widgets-render.js`
+- [ ] 4.10 Add `<script src="/static/js/home-widget-buds.js?v={{ static_v }}" defer></script>` to `base.html` after `home-widgets-render.js`
+- [ ] 4.11 Run `bookworm-widget-scaffolder` to validate all 9 touch-points
+- [ ] 4.12 Run `bookworm-template-audit` on changed templates + JS
+- [ ] 4.13 Manually test: add buds widget → add 3 friends → water one → check health bars
+
+### Phase 5 — CRM Integration
+
+- [ ] 5.1 Add `_crmBudHealthMap` initialization (fetch + assign) inside `initCrmPage(pid)` in `home-page-crm.js`
+- [ ] 5.2 Update gallery card render to inject `budBadge` HTML when `_crmBudHealthMap[c.id]` exists
+- [ ] 5.3 Update table row render similarly
+- [ ] 5.4 Add `_crmTrackAsBud(contactId)` function to `home-page-crm.js`
+- [ ] 5.5 Inject `#crm-track-bud-modal` into DOM on first `initCrmPage()` call (or add to `home_page_crm.html`)
+- [ ] 5.6 Wire the 🌸 button into gallery and table card renders
+- [ ] 5.7 Run `bookworm-template-audit` on `home-page-crm.js`
+- [ ] 5.8 Test: create a CRM contact → click 🌸 Track → pick widget → verify badge appears
+
+### Phase 6 — QA + Commit
+
+- [ ] 6.1 Run `bookworm-qa` — pass: new widget endpoints, care actions, CRM badge
+- [ ] 6.2 Run `bookworm-pre-commit` — verify no hardcoded paths, `get_db()` used throughout, no raw `aiosqlite.connect()`
+- [ ] 6.3 Run `bookworm-docs-keeper` — update CODEPUPPY_NOTES.md schema + widget table + `_initSwappedPage` note
+- [ ] 6.4 Commit with message: `feat: Buds friendship-health-tracker widget + CRM integration`
 
 ---
 
 ## Open Questions
 
-1. **Should note attachments (`src === 'note'`) ever be assignable to catalogs?**
-   Current plan scopes catalogs to `page_uploads` only. If note attachments should be
-   catalogable, the junction table needs a polymorphic key (like `page_upload_tags` uses
-   `upload_src + upload_id` with no FK). This is a **schema-level fork** — decide before
-   Step 1 begins.
+**OQ-1 — Flower image source confirmation.**
+Plan assumes copying the 24 images to `static/img/buds/`. If the originals in
+`page_uploads` (page_id=74) are at different paths or filenames, the copy step
+(Phase 2) needs to query the DB first to find the actual file UUIDs. Confirm
+whether the 8 species filenames in `page_uploads.original_name` match the pattern
+`{species}_{tier}.png` exactly.
 
-2. **What happens to a file's catalog memberships when the file is deleted?**
-   With `ON DELETE CASCADE` on `upload_catalog_files.upload_id → page_uploads(id)`,
-   deleting the file removes its junction rows automatically. Confirm this is the
-   desired behaviour (vs. keeping membership history).
+**OQ-2 — Widget-scoped vs user-scoped bud list.**
+Plan scopes buds to `widget_id`. This means: two Buds widgets on different
+dashboard pages have **separate friend lists**. Alternative: one global friend
+list per user, multiple widgets are just different views. Widget-scoped matches
+every other data widget in BookWorm (todo, reminder). Confirm before writing DB
+schema — changing this later requires a table rebuild.
 
-3. **"Add to catalog" dropdown in the detail panel — flat `<select>` or tree picker?**
-   A flat `<select>` with depth-indented names (`— Child`, `—— Grandchild`) is simplest
-   for V1. A full tree-picker popup is nicer but significantly more JS. Recommend flat
-   select for V1.
+**OQ-3 — Water boost amount.**
+Original Buds app does not specify exact HP values. Plan proposes: 💧 Water = +10 HP,
+🌱 Fertilize complete = +25 HP, both capped at 100. Confirm or override before
+implementing `water_bud()` and `complete_fertilize_plan()`.
 
-4. **Should clicking an already-active catalog deselect it (toggle to "All files")?**
-   The plan includes this (toggle off = `_uplCatActive = null`). Confirm this is
-   desired UX or if a separate "All" item should always appear at the top of the tree.
+**OQ-4 — "Track as Bud" widget picker UX.**
+When the user clicks 🌸 on a CRM contact, if they have multiple Buds widgets the
+modal shows a dropdown picker. If they have exactly one, should it skip the picker
+and go straight to the species/interval form? Confirm.
 
-5. **Catalog name uniqueness — scoped or free?**
-   The folder system has no UNIQUE constraint. Recommend the same policy for catalogs
-   (no uniqueness constraint on `name`). If uniqueness per `(page_id, user_id, name)` is
-   desired, add a `UNIQUE(page_id, user_id, name)` constraint to the CREATE TABLE and
-   handle `UNIQUE constraint failed` in `create_catalog()` by raising a `ValueError`.
+**OQ-5 — Demo mode guard.**
+`buds` is per-user-scoped (via `widget_id → home_pages.user_id`). No global table
+is involved. Confirm that `_demo_guard()` is NOT needed for any buds write route.
+(Demo users do have home pages and can add widgets, so their buds data is isolated
+to the demo user account anyway.)
+
+**OQ-6 — `select-crm-pages` field type in settings modal.**
+The `WIDGET_CONFIG_FIELDS.buds` config includes a `select-crm-pages` picker so
+users can optionally link a CRM page as a contact source. The settings modal
+handler (`home-widgets-settings.js`) calls `_buildFieldsForType()` which reads
+from `WIDGET_CONFIG_FIELDS`. A new `select-crm-pages` branch needs to be added
+there too (not just in `aw_refreshConfig`). Confirm this is in scope or defer
+to a follow-up.

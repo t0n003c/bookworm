@@ -273,6 +273,32 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
             Reset
           </button>
         </div>`;
+    } else if (f.type === 'select-crm-pages') {
+      // Async-populated CRM page picker — same pattern as aw_refreshConfig
+      const selId  = f.id;
+      const selKey = f.name;
+      const saved  = String(curVal);
+      wrap.innerHTML = lbl + `<select id="${selId}" data-cfg-key="${selKey}"
+        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-2 focus:ring-wblue"
+        onchange="${saveFn}">
+        <option value="">Loading…</option>
+      </select>`;
+      body.appendChild(wrap);
+      fetch('/home/pages', { credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.ok ? r.json() : { pages: [] })
+        .then(data => {
+          const sel = document.getElementById(selId);
+          if (!sel) return;
+          const pages = (data.pages || []).filter(p => p.page_type === 'crm');
+          sel.innerHTML = '<option value="">— none —</option>'
+            + pages.map(p =>
+                `<option value="${p.id}"${String(p.id) === saved ? ' selected' : ''}>${p.name}</option>`
+              ).join('');
+        }).catch(() => {});
+      return; // early-out — already appended
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"

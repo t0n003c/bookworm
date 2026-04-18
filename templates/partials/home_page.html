@@ -939,6 +939,20 @@
 {% endmacro %}
 
 
+{% macro render_buds(w) %}
+{%- set cfg = w.config -%}
+{% call card(w) %}
+  {{ widget_header(w, cfg.get('custom_name') or 'Buds 🌸', '🌸') }}
+  <div class="bw-buds-widget flex-1 min-h-0 overflow-y-auto px-2 pb-2"
+       data-widget-id="{{ w.id }}"
+       data-style="{{ w.style }}"
+       data-config='{{ cfg | tojson | e }}'>
+    <p class="text-xs text-gray-400 dark:text-zinc-500 animate-pulse pt-2">Loading buds…</p>
+  </div>
+{% endcall %}
+{% endmacro %}
+
+
 <style>
   .bw-sticky { box-shadow: 3px 5px 18px -2px rgba(0,0,0,.2); }
   /* paper — warm cream with faint ruled lines */
@@ -1598,6 +1612,7 @@
       {% elif w.widget_type == 'sticky' %}    {{ render_sticky(w) }}
       {% elif w.widget_type == 'quote' %}     {{ render_quote(w) }}
       {% elif w.widget_type == 'rss_feed' %}  {{ render_rss_feed(w) }}
+      {% elif w.widget_type == 'buds' %}      {{ render_buds(w) }}
       {% endif %}
     {% endfor %}
   </div>

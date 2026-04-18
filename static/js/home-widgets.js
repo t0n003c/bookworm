@@ -708,6 +708,7 @@ const WIDGET_STYLES = {
   quote:   [['classic','〝 Classic'],['editorial','❝ Editorial'],['ruled','〰️ Ruled'],
             ['cinema','🋏️ Cinema'],['polaroid','📸 Polaroid'],['splash','🎨 Splash']],
   rss_feed:[['card','📰 Card'],['compact','📋 Compact'],['minimal','🔗 Minimal']],
+  buds:    [['default','🌸 Full'],['compact','🌿 Compact']],
 };
 
 const WIDGET_CONFIG_FIELDS = {
@@ -828,6 +829,12 @@ const WIDGET_CONFIG_FIELDS = {
         options: [['1','Show label (dot + text)'],['wrap','Bubble each feed'],['0','Hide label']] },
     ] : []),
   ],
+  buds: () => [
+    { id: 'cf-buds-title', label: 'Widget title', type: 'text',
+      placeholder: 'My Buds', name: 'custom_name' },
+    { id: 'cf-buds-crm', label: 'Show health badges on CRM page (optional)',
+      type: 'select-crm-pages', name: 'linked_crm_page_id' },
+  ],
 };
 
 function selectWidgetType(wtype) {
@@ -912,6 +919,32 @@ function aw_refreshConfig(wtype, style) {
     if (f.type === 'feeds-list') {
       // _rssFeedsEditorHtml is defined in home-widget-rss.js (loaded before interaction)
       return `<div>${lbl}${_rssFeedsEditorHtml(f.id, [], f.name)}</div>`;
+    }
+    if (f.type === 'select-crm-pages') {
+      // populated async after the div is inserted
+      var selId = f.id;
+      var selName = f.name;
+      setTimeout(function() {
+        fetch('/home/pages', {credentials: 'same-origin',
+          headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function(r) { return r.ok ? r.json() : {pages:[]}; })
+        .then(function(data) {
+          var pages = (data.pages || []).filter(function(p) { return p.page_type === 'crm'; });
+          var sel = document.getElementById(selId);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— none —</option>'
+            + pages.map(function(p) {
+                return '<option value="'+p.id+'">'+p.name+'</option>';
+              }).join('');
+        }).catch(function() {});
+      }, 50);
+      return `<div>${lbl}
+        <select id="${selId}" data-name="${selName}"
+          class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2
+                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                 focus:outline-none focus:ring-2 focus:ring-wblue">
+          <option value="">Loading…</option>
+        </select></div>`;
     }
     return `<div>${lbl}
       <input id="${f.id}" data-name="${f.name}" type="${f.type}"
@@ -1208,6 +1241,9 @@ function initHomeWidgets() {
   }
   // Text widgets — render markdown and attach editor
   if (typeof initTextWidgets === 'function') initTextWidgets();
+
+  // Buds friendship-health-tracker widgets
+  if (typeof initBudsWidgets === 'function') initBudsWidgets();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

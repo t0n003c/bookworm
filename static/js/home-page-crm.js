@@ -870,7 +870,7 @@ async function _crmBudSave(contactId) {
     if (newBud) {
       window._crmBudHealthMap[String(contactId)] = {
         health:    newBud.health || 100,
-        tier:      newBud.tier != null ? newBud.tier : 0, // new bud starts healthy (tier 0)
+        tier:      newBud.health_tier != null ? newBud.health_tier : 0, // bud objects use health_tier; new buds always tier 0
         bud_id:    newBud.id,
         widget_id: parseInt(widgetId, 10),
         species:   newBud.flower_species,

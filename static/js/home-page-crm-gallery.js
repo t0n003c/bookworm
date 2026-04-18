@@ -83,9 +83,26 @@ function _crmRenderGallery() {
                  text-xs leading-none text-gray-300 dark:text-zinc-600
                  hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
           ✕</button>
+        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${JSON.stringify(c.name||'')})" title="Track as Bud"
+          class="absolute top-2 right-14 w-5 h-5 rounded flex items-center justify-center
+                 text-xs leading-none text-gray-300 dark:text-zinc-600
+                 hover:text-pink-500 dark:hover:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition">🌸</button>
         <div class="p-4 flex gap-3 items-start">
           <div class="flex flex-col items-center gap-1.5 flex-shrink-0 w-20">
-            ${avatar}
+            ${(function(){
+              var bud = (window._crmBudHealthMap||{})[String(c.id)];
+              if (!bud) return avatar;
+              var hp  = bud.health || 0;
+              var col = hp >= 75 ? '#2a8703' : hp >= 40 ? '#ffc220' : '#ea1100';
+              var ico = hp >= 75 ? '🌸' : hp >= 40 ? '🌼' : '🦇';
+              return '<div class="relative">' + avatar
+                + '<div class="absolute bottom-0 right-0 flex items-center gap-0.5'
+                + ' bg-white/90 dark:bg-zinc-900/90 rounded-tl-lg px-1 py-0.5" title="Bud HP ' + hp + '">'
+                + '<span class="text-[10px] leading-none">' + ico + '</span>'
+                + '<div class="w-8 h-1 bg-gray-200 rounded-full overflow-hidden ml-0.5">'
+                + '<div class="h-full rounded-full" style="width:' + hp + '%;background:' + col + '"></div>'
+                + '</div></div></div>';
+            })()}
             ${tags ? `<div class="flex flex-wrap gap-1 w-full">${tags}</div>` : ''}
           </div>
           <div class="flex-1 min-w-0">

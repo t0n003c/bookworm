@@ -671,6 +671,48 @@ async def init_db() -> None:
             "ON upload_catalog_files(upload_id, user_id)"
         )
 
+        # ── Buds widget tables ──────────────────────────────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS buds (
+                id                INTEGER  PRIMARY KEY AUTOINCREMENT,
+                widget_id         INTEGER  NOT NULL REFERENCES home_widgets(id) ON DELETE CASCADE,
+                user_id           INTEGER  NOT NULL REFERENCES users(id)        ON DELETE CASCADE,
+                name              TEXT     NOT NULL,
+                flower_species    TEXT     NOT NULL DEFAULT 'daisy',
+                see_every_days    INTEGER  NOT NULL DEFAULT 7,
+                health            REAL     NOT NULL DEFAULT 100.0,
+                health_updated_at DATE     NOT NULL DEFAULT (date('now')),
+                last_watered_week TEXT,
+                crm_contact_id    INTEGER  REFERENCES crm_contacts(id) ON DELETE SET NULL,
+                notes             TEXT,
+                sort_order        INTEGER  NOT NULL DEFAULT 0,
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bud_fertilize_plans (
+                id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+                bud_id       INTEGER  NOT NULL REFERENCES buds(id) ON DELETE CASCADE,
+                user_id      INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                planned_date DATE,
+                note         TEXT,
+                completed_at DATETIME,
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_buds_widget "
+            "ON buds(widget_id, sort_order)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_buds_user "
+            "ON buds(user_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_buds_crm "
+            "ON buds(crm_contact_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager
