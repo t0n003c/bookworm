@@ -59,11 +59,18 @@ function initCrmPage(pid) {
   _crmSelected        = new Set();
   _crmDupOverride     = false;
   _crmProjects        = [];
+  _crmBudWidgets      = null; // reset so it re-fetches if user changes page
   if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
   if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
   const s = document.getElementById('crm-search');
   if (s) s.value = '';
   _crmRenderViewToggle();
+  // Buds health badge map — async, re-renders when ready
+  window._crmBudHealthMap = {};
+  fetch('/home/buds/crm-lookup/' + pid, {credentials:'same-origin'})
+    .then(function(r){ return r.ok ? r.json() : {}; })
+    .then(function(map){ window._crmBudHealthMap = map || {}; _crmRender(); })
+    .catch(function(){ window._crmBudHealthMap = {}; });
   _crmLoadAll();
   if (typeof initCrmRemindersPolling === 'function') initCrmRemindersPolling();
 }
@@ -243,9 +250,22 @@ function _crmRenderTable() {
       return f ? `<td class="${tdCls}">${_crmFieldDisplay(f, c)}</td>` : `<td></td>`;
     }).join('');
 
-    const avatarCell = `<td class="px-3 py-2">${c.profile_pic
-      ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
-      : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}</td>`;
+    const _budTbl = (window._crmBudHealthMap||{})[String(c.id)];
+    // Use server-computed tier (0=healthy,1=warn,2=wilting) — matches _health_tier() thresholds exactly.
+    const _budDotColor = _budTbl ? (_budTbl.tier===0?'#2a8703':_budTbl.tier===1?'#ffc220':'#ea1100') : '';
+    const _budDot  = _budTbl
+      ? `<span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full
+             border-2 border-white dark:border-zinc-900"
+           style="background:${_budDotColor}"
+           title="Bud HP ${_budTbl.health}"></span>`
+      : '';
+    const avatarCell = `<td class="px-3 py-2">
+      <div class="relative inline-block">
+        ${c.profile_pic
+          ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
+          : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}
+        ${_budDot}
+      </div></td>`;
 
     const chkCell = _crmBulkMode
       ? `<td class="px-2 py-2 w-8">
@@ -263,6 +283,7 @@ function _crmRenderTable() {
       <td class="px-3 py-2 text-right whitespace-nowrap">
         <button onclick="event.stopPropagation();crmOpenDetail(${c.id})" title="View" class="text-gray-300 hover:text-[#0053e2] transition mr-1">👁️</button>
         <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit" class="text-gray-300 hover:text-[#0053e2] transition mr-1">✎</button>
+        <button onclick="event.stopPropagation();_crmTrackAsBud(${c.id},${JSON.stringify(c.name||'')})" title="Track as Bud" class="text-gray-300 hover:text-pink-500 transition mr-1">🌸</button>
         <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete" class="text-gray-300 hover:text-red-500 transition">✕</button>
       </td>
     </tr>`;
@@ -753,6 +774,114 @@ function crmCloseModal() {
 function _crmSetMain(html) {
   const el = document.getElementById('crm-main');
   if (el) el.innerHTML = html;
+}
+
+// ── Buds integration ────────────────────────────────────────────────────────────────
+var _crmBudWidgets = null; // cached widget list
+
+async function _crmTrackAsBud(contactId, contactName) {
+  // Lazy-load widgets list
+  if (!_crmBudWidgets) {
+    try {
+      var r = await fetch('/home/buds/user-widgets', {credentials:'same-origin'});
+      var data = r.ok ? await r.json() : {};
+      _crmBudWidgets = data.widgets || [];
+    } catch(e) { _crmBudWidgets = []; }
+  }
+
+  var budEntry = (window._crmBudHealthMap||{})[String(contactId)];
+  var alreadyTracked = !!budEntry;
+
+  var widgetOpts = (_crmBudWidgets||[]).map(function(w) {
+    var label = w.widget_name || w.page_name || 'Buds widget';
+    return '<option value="' + w.widget_id + '">' + _crmEsc(label) + '</option>';
+  }).join('');
+
+  if (!widgetOpts) {
+    _crmShowModal('<div class="p-6"><p class="text-sm text-gray-600 dark:text-zinc-300">No Buds widgets found on your pages. Add a 🌸 Friendship Health Tracker widget to a home page first.</p>'
+      + '<button onclick="crmCloseModal()" class="mt-4 px-4 py-1.5 rounded bg-gray-100 dark:bg-zinc-700 text-sm">Close</button></div>');
+    return;
+  }
+
+  var speciesOpts = [
+    ['blue_flower','💙 Blue Flower'], ['calla','🤍 Calla'], ['daffodil','📸 Daffodil'],
+    ['daisy','🌼 Daisy'], ['pink','💗 Pink'], ['purple','💜 Purple'],
+    ['sunflower','🌻 Sunflower'], ['tulip','🌷 Tulip']
+  ].map(function(s) {
+    return '<option value="'+s[0]+'">'+s[1]+'</option>';
+  }).join('');
+
+  _crmShowModal(`
+    <div class="p-6 space-y-4">
+      <h3 class="text-base font-semibold text-gray-800 dark:text-zinc-100">🌸 Track as Bud</h3>
+      <p class="text-sm text-gray-500 dark:text-zinc-400">Add <strong>${_crmEsc(contactName)}</strong> to a Friendship Health Tracker widget.</p>
+      ${alreadyTracked ? '<div class="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-3 py-2">⚠️ Already tracked — adding again creates a second entry.</div>' : ''}
+      <div id="crm-bud-err" class="hidden text-xs text-red-500"></div>
+      <label class="block">
+        <span class="text-xs text-gray-500 dark:text-zinc-400">Widget</span>
+        <select id="crm-bud-widget" class="mt-1 w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm px-2 py-1.5 text-gray-800 dark:text-zinc-100">
+          ${widgetOpts}
+        </select>
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-500 dark:text-zinc-400">Name in widget</span>
+        <input id="crm-bud-name" type="text" value="${_crmEsc(contactName)}" maxlength="60"
+          class="mt-1 w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm px-2 py-1.5 text-gray-800 dark:text-zinc-100"/>
+      </label>
+      <label class="block">
+        <span class="text-xs text-gray-500 dark:text-zinc-400">Species</span>
+        <select id="crm-bud-species" class="mt-1 w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm px-2 py-1.5 text-gray-800 dark:text-zinc-100">
+          ${speciesOpts}
+        </select>
+      </label>
+      <div class="flex gap-2 pt-2">
+        <button onclick="_crmBudSave(${contactId})" class="px-4 py-1.5 rounded bg-[#0053e2] text-white text-sm font-medium hover:bg-[#0041b8] transition">🌸 Add Bud</button>
+        <button onclick="crmCloseModal()" class="px-4 py-1.5 rounded bg-gray-100 dark:bg-zinc-700 text-sm hover:bg-gray-200 dark:hover:bg-zinc-600 transition">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+async function _crmBudSave(contactId) {
+  var widgetEl  = document.getElementById('crm-bud-widget');
+  var nameEl    = document.getElementById('crm-bud-name');
+  var speciesEl = document.getElementById('crm-bud-species');
+  var errEl     = document.getElementById('crm-bud-err');
+  if (!widgetEl || !nameEl) return;
+  var widgetId = widgetEl.value;
+  var name     = (nameEl.value||'').trim();
+  var species  = speciesEl ? speciesEl.value : 'flower';
+  if (!name) { if (errEl) { errEl.textContent = 'Name is required'; errEl.classList.remove('hidden'); } return; }
+  try {
+    var fd = new FormData();
+    fd.append('name', name);
+    fd.append('flower_species', species);
+    fd.append('see_every_days', '7');
+    fd.append('crm_contact_id', String(contactId));
+    var r = await fetch('/home/buds/' + widgetId + '/add', {
+      method: 'POST', credentials: 'same-origin', body: fd
+    });
+    if (!r.ok) throw new Error(await r.text());
+    var data = await r.json();
+    // Update local health map so badge appears immediately
+    var buds = data.buds || [];
+    var newBud = buds.find(function(b){ return String(b.crm_contact_id) === String(contactId); });
+    window._crmBudHealthMap = window._crmBudHealthMap || {};
+    if (newBud) {
+      window._crmBudHealthMap[String(contactId)] = {
+        health:    newBud.health || 100,
+        tier:      newBud.tier != null ? newBud.tier : 0, // new bud starts healthy (tier 0)
+        bud_id:    newBud.id,
+        widget_id: parseInt(widgetId, 10),
+        species:   newBud.flower_species,
+      };
+    }
+    crmCloseModal();
+    window._bwToast && window._bwToast('🌸 Bud added!', 'success');
+    _crmRender();
+  } catch(e) {
+    if (errEl) { errEl.textContent = 'Failed: ' + e.message; errEl.classList.remove('hidden'); }
+  }
 }
 
 function _crmShowErr(el, msg) {
