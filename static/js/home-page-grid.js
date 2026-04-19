@@ -25,8 +25,9 @@
 
 /* ── Module state ────────────────────────────────────────────────────── */
 var _gridPid          = 0;      // current page id
-var _gridSize         = 220;    // cell min-width in px (drives auto-fill columns)
-var _gridSaveTimer    = null;   // debounce handle for persisting size
+var _gridCols         = 4;      // 3 | 4 | 5 — grid column count
+var _gridThumb        = 100;    // 30-100 — thumbnail scale % within each column
+var _gridSaveTimer    = null;   // debounce handle for persisting config
 var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
 var _gridBusy         = false;  // optimistic-lock: one mutation at a time
 var _gridEditCellId   = null;   // cell being edited in the caption modal
@@ -41,14 +42,17 @@ var _gridDragId       = null;   // id of the cell being dragged
 function initGridPage(pageId) {
     _gridPid = pageId;
 
-    // Read initial cell size from data attr (seeded by Jinja template)
+    // Read initial settings from data attrs (seeded by Jinja template)
     var root = document.getElementById('grid-page-root');
     if (!root) return;
-    _gridSize = parseInt(root.dataset.gridSize, 10) || 220;
-    _gridApplySize();
+    _gridCols  = parseInt(root.dataset.gridCols,  10) || 4;
+    _gridThumb = parseInt(root.dataset.gridThumb, 10) || 100;
+    _gridHighlightColBtn(_gridCols);
+    _gridApplyCols();
+    _gridApplyThumb();
     // Sync slider thumb to stored value
     var slider = document.getElementById('grid-size-slider');
-    if (slider) slider.value = _gridSize;
+    if (slider) slider.value = _gridThumb;
 
     // Auto-load the first uploads page into the picker selector
     var sel = document.getElementById('grid-media-page-sel');
@@ -102,7 +106,8 @@ function _gridRenderCell(cell) {
     var inner  = _gridRenderCellInner(cell);
     return '<div class="relative group rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800'
          + ' cursor-grab active:cursor-grabbing ring-1 ring-gray-200 dark:ring-zinc-700'
-         + ' hover:ring-[#0053e2] transition-all select-none ' + aspect + '"'
+         + ' hover:ring-[#0053e2] transition-all select-none justify-self-center ' + aspect + '"'
+         + ' style="width:var(--grid-thumb,100%)"'
          + ' data-grid-cell-id="' + cell.id + '"'
          + ' draggable="true">'
          + inner
@@ -209,26 +214,54 @@ async function _gridSwap(a, b) {
     }
 }
 
-/* ── Size slider ─────────────────────────────────────────────────────── */
-function gridSetSize(px) {
-    // Called live on slider input — apply immediately, debounce the DB save
-    _gridSize = parseInt(px, 10) || 220;
-    _gridApplySize();
-    clearTimeout(_gridSaveTimer);
-    _gridSaveTimer = setTimeout(function() {
-        var fd = new FormData();
-        fd.append('config_json', JSON.stringify({grid_size: _gridSize}));
-        fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
-            .catch(function(e) { console.error('[grid] save size failed:', e); });
-    }, 600);
+/* ── Column picker ─────────────────────────────────────────────────────── */
+async function gridSetCols(n) {
+    _gridCols = n;
+    _gridHighlightColBtn(n);
+    _gridApplyCols();
+    _gridSaveConfig();
 }
 
-function _gridApplySize() {
+function _gridApplyCols() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
-    // auto-fill reflows columns automatically as size changes
-    canvas.style.gridTemplateColumns =
-        'repeat(auto-fill, minmax(' + _gridSize + 'px, 1fr))';
+    canvas.style.gridTemplateColumns = 'repeat(' + _gridCols + ', minmax(0, 1fr))';
+}
+
+function _gridHighlightColBtn(n) {
+    [3, 4, 5].forEach(function(c) {
+        var btn = document.getElementById('grid-col-btn-' + c);
+        if (!btn) return;
+        var active = c === n;
+        btn.setAttribute('aria-pressed', String(active));
+        btn.classList.toggle('bg-[#0053e2]',       active);
+        btn.classList.toggle('text-white',          active);
+        btn.classList.toggle('border-[#0053e2]',    active);
+        btn.classList.toggle('border-gray-300',    !active);
+        btn.classList.toggle('dark:border-zinc-600',!active);
+    });
+}
+
+/* ── Thumbnail size slider ────────────────────────────────────────────── */
+function gridSetSize(pct) {
+    // Called live on slider oninput — apply immediately, debounce the DB save
+    _gridThumb = parseInt(pct, 10) || 100;
+    _gridApplyThumb();
+    clearTimeout(_gridSaveTimer);
+    _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
+}
+
+function _gridApplyThumb() {
+    var canvas = document.getElementById('grid-canvas');
+    if (!canvas) return;
+    canvas.style.setProperty('--grid-thumb', _gridThumb + '%');
+}
+
+function _gridSaveConfig() {
+    var fd = new FormData();
+    fd.append('config_json', JSON.stringify({grid_cols: _gridCols, grid_thumb: _gridThumb}));
+    fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
+        .catch(function(e) { console.error('[grid] save config failed:', e); });
 }
 
 /* ── Add media from toolbar (no pre-existing cell) ─────────────────────────── */
