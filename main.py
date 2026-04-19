@@ -65,6 +65,7 @@ from routers import home as home_router
 from routers import home_rss as home_rss_router
 from routers import home_crm as home_crm_router
 from routers import home_buds as home_buds_router
+from routers import home_grid as home_grid_router
 from routers import home_uploads as home_uploads_router
 from routers import home_uploads_docs as home_uploads_docs_router
 from routers import home_uploads_annot as home_uploads_annot_router
@@ -140,6 +141,7 @@ app.include_router(home_router.router)
 app.include_router(home_rss_router.router)
 app.include_router(home_crm_router.router)
 app.include_router(home_buds_router.router)
+app.include_router(home_grid_router.router)
 app.include_router(home_uploads_router.router)
 app.include_router(home_uploads_docs_router.router)
 app.include_router(home_uploads_annot_router.router)

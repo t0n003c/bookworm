@@ -20,6 +20,7 @@ try:
         "partials/home_page_rss.html",
         "partials/home_page_crm.html",
         "partials/home_page_uploads.html",
+"partials/home_page_grid.html",
         "partials/home_sidebar.html",
         "partials/note_form.html",
         "partials/sidebar_workspace_list.html",

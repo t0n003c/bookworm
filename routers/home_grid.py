@@ -1,0 +1,147 @@
+"""Grid Homespace page routes.
+
+Mounted with prefix=/home (same as home.py + home_crm.py).
+Routes live under /home/grid/{page_id}/...
+All endpoints return JSONResponse; the page shell is rendered by home_page_view() in home.py.
+"""
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+from routers.home_db import get_home_page
+from routers.home_grid_db import (
+    add_grid_cell,
+    delete_grid_cell,
+    get_grid_cells,
+    reorder_grid_cells,
+    swap_grid_cells,
+    update_grid_cell,
+)
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/home", tags=["home_grid"])
+
+_VALID_ASPECTS    = frozenset({"1:1", "4:5", "16:9"})
+_VALID_CELL_TYPES = frozenset({"empty", "image", "video", "text"})
+
+
+def _uid(request: Request) -> int:
+    return request.session["user_id"]
+
+
+async def _get_grid_page(page_id: int, uid: int) -> dict | None:
+    """Return page dict or None. Caller returns 404 on None."""
+    page = await get_home_page(page_id, uid)
+    if not page or page.get("page_type") != "grid":
+        return None
+    return page
+
+
+# ── List cells ───────────────────────────────────────────────────────────────
+
+@router.get("/grid/{page_id}/cells")
+async def list_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    cells = await get_grid_cells(page_id)
+    return JSONResponse(cells)
+
+
+# ── Create cell ───────────────────────────────────────────────────────────────
+
+@router.post("/grid/{page_id}/cells")
+async def create_cell(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    aspect = body.get("aspect", "1:1")
+    if aspect not in _VALID_ASPECTS:
+        aspect = "1:1"
+    cell_type = body.get("cell_type", "empty")
+    if cell_type not in _VALID_CELL_TYPES:
+        cell_type = "empty"
+    new_id = await add_grid_cell(
+        page_id=page_id,
+        position=int(body.get("position", 0)),
+        cell_type=cell_type,
+        upload_id=body.get("upload_id"),
+        aspect=aspect,
+        caption=str(body.get("caption", "")),
+    )
+    return JSONResponse({"id": new_id}, status_code=201)
+
+
+# ── Update cell ───────────────────────────────────────────────────────────────
+
+@router.patch("/grid/{page_id}/cells/{cell_id}")
+async def patch_cell(request: Request, page_id: int, cell_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    aspect = body.get("aspect")
+    if aspect is not None and aspect not in _VALID_ASPECTS:
+        aspect = None
+    cell_type = body.get("cell_type")
+    if cell_type is not None and cell_type not in _VALID_CELL_TYPES:
+        cell_type = None
+    try:
+        await update_grid_cell(
+            cell_id=cell_id,
+            page_id=page_id,
+            uid=uid,
+            position=body.get("position"),
+            cell_type=cell_type,
+            upload_id=body.get("upload_id"),
+            clear_upload=bool(body.get("clear_upload", False)),
+            aspect=aspect,
+            caption=body.get("caption"),
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=403)
+    return JSONResponse({"ok": True})
+
+
+# ── Delete cell ───────────────────────────────────────────────────────────────
+
+@router.delete("/grid/{page_id}/cells/{cell_id}")
+async def remove_cell(request: Request, page_id: int, cell_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    await delete_grid_cell(cell_id, page_id)
+    return JSONResponse(None, status_code=204)
+
+
+# ── Reorder cells ─────────────────────────────────────────────────────────────
+
+@router.post("/grid/{page_id}/reorder")
+async def reorder_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    order = [int(x) for x in body.get("order", [])]
+    if order:
+        await reorder_grid_cells(page_id, order)
+    return JSONResponse({"ok": True})
+
+
+# ── Swap two cells ────────────────────────────────────────────────────────────
+
+@router.post("/grid/{page_id}/swap")
+async def swap_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    a = int(body.get("a", 0))
+    b = int(body.get("b", 0))
+    if a and b and a != b:
+        await swap_grid_cells(page_id, a, b)
+    return JSONResponse({"ok": True})

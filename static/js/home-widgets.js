@@ -1162,6 +1162,17 @@ function _initSwappedPage() {
     if (_ta) _ta.innerHTML = '';
     return;
   }
+  // Grid page
+  const gridRoot = document.getElementById('grid-page-root');
+  if (gridRoot) {
+    const pid = parseInt(gridRoot.dataset.pageId, 10);
+    if (pid && typeof initGridPage === 'function') {
+      try { initGridPage(pid); } catch(e) { console.error('[home] initGridPage:', e); }
+    }
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
   // Uploads page
   const uploadsRoot = document.getElementById('uploads-page-root');
   if (uploadsRoot) {

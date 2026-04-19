@@ -587,6 +587,7 @@ async def home_page_view(request: Request, page_id: int):
         # Collabora defaults — overwritten in the uploads branch below.
         collabora_enabled = False
         collabora_url     = ""
+        uploads_pages     = []  # populated for grid pages only
 
         # Route to the correct template per page type.
         # dashboard  → full widget canvas
@@ -616,6 +617,11 @@ async def home_page_view(request: Request, page_id: int):
             collabora_url     = os.getenv("BW_COLLABORA_URL", "").rstrip("/")
             collabora_enabled = bool(collabora_url)
             # No server-side DB prep — JS fetches file list after load.
+        elif p_type == "grid":
+            tmpl = "partials/home_page_grid.html"
+            # Pass all uploads pages so the media-picker modal can list them.
+            all_pages = await get_home_pages(uid)
+            uploads_pages = [p for p in all_pages if p.get("page_type") == "uploads"]
         else:
             tmpl = "partials/home_page_coming_soon.html"
 
@@ -629,6 +635,8 @@ async def home_page_view(request: Request, page_id: int):
                 # to other templates since they don’t reference these variables.
                 "collabora_enabled": collabora_enabled,
                 "collabora_url":     collabora_url,
+                # Grid-only — empty list for all other page types
+                "uploads_pages": uploads_pages if p_type == "grid" else [],
             },
         )
     except Exception as e:

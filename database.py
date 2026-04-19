@@ -713,6 +713,25 @@ async def init_db() -> None:
             "ON buds(crm_contact_id)"
         )
 
+        # ── Grid Homespace page cells ──────────────────────────────────────────────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS home_grid_cells (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                position    INTEGER NOT NULL DEFAULT 0,
+                cell_type   TEXT    NOT NULL DEFAULT 'empty',
+                upload_id   INTEGER REFERENCES page_uploads(id) ON DELETE SET NULL,
+                aspect      TEXT    NOT NULL DEFAULT '1:1',
+                caption     TEXT    NOT NULL DEFAULT '',
+                config_json TEXT    NOT NULL DEFAULT '{}',
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_grid_cells_page "
+            "ON home_grid_cells(page_id, position)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

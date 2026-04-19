@@ -1,0 +1,188 @@
+{# ── Grid Homespace Page ──────────────────────────────────────────────────────
+   Photo/video grid workspace.
+   JS:  static/js/home-page-grid.js (loaded via base.html static_v tag)
+   Data attrs on #grid-page-root drive JS init (page_id + initial grid_cols).
+#}
+
+<div id="grid-page-root"
+     class="h-full flex flex-col min-h-0 overflow-hidden"
+     data-page-id="{{ page.id }}"
+     data-grid-cols="{{ (page.config or {}).get('grid_cols', 4) }}">
+
+  {# ── Toolbar ────────────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0 flex-wrap">
+
+    {# Column picker #}
+    <div class="flex items-center gap-1">
+      <span class="text-xs text-gray-500 dark:text-gray-400 mr-1 hidden sm:inline">Cols</span>
+      {% for n in [3, 4, 5] %}
+      <button id="grid-col-btn-{{ n }}"
+              onclick="gridSetCols({{ n }})"
+              class="px-2.5 py-1 text-xs rounded border border-gray-300 dark:border-zinc-600
+                     hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors"
+              aria-pressed="false">{{ n }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="h-5 w-px bg-gray-200 dark:bg-zinc-700 hidden sm:block"></div>
+
+    {# Add cell button #}
+    <button onclick="gridAddEmptyCell()"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#0053e2] text-white
+                   rounded-lg hover:bg-[#0047c4] active:bg-[#003a9e] transition-colors
+                   focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0053e2]">
+      <span aria-hidden="true">＋</span> Add cell
+    </button>
+  </div>
+
+  {# ── Grid canvas ─────────────────────────────────────────────────────────── #}
+  <div class="flex-1 overflow-y-auto p-4">
+    <div id="grid-canvas" class="grid gap-3"
+         style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+      {# Cells rendered by home-page-grid.js _gridRender() #}
+    </div>
+
+    {# Empty state #}
+    <div id="grid-empty-hint"
+         class="hidden flex-col items-center justify-center text-center py-20 text-gray-400 dark:text-zinc-500">
+      <div class="text-5xl mb-4">🖼️</div>
+      <p class="text-sm font-medium">Your grid is empty</p>
+      <p class="text-xs mt-1">Click <strong>Add cell</strong> to start building your gallery.</p>
+    </div>
+  </div>
+</div>
+
+{# ── Media picker modal ───────────────────────────────────────────────────── #}
+<div id="grid-media-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+     role="dialog" aria-modal="true" aria-labelledby="grid-media-modal-title"
+     onclick="if(event.target===this) gridCloseMediaPicker()"
+     onkeydown="if(event.key==='Escape') gridCloseMediaPicker()">
+  <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh]
+              flex flex-col overflow-hidden mx-4">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-zinc-700">
+      <h3 id="grid-media-modal-title" class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+        Pick media
+      </h3>
+      <button onclick="gridCloseMediaPicker()"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none
+                     focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0053e2] rounded"
+              aria-label="Close">×</button>
+    </div>
+
+    {# Uploads page selector #}
+    <div class="px-5 py-3 border-b border-gray-100 dark:border-zinc-800 flex items-center gap-3">
+      <label class="text-xs text-gray-500 dark:text-gray-400 shrink-0" for="grid-media-page-sel">
+        Source page
+      </label>
+      {% if uploads_pages %}
+      <select id="grid-media-page-sel"
+              onchange="gridMediaLoadPage(this.value)"
+              class="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
+                     bg-white dark:bg-zinc-800 text-gray-800 dark:text-gray-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+        {% for p in uploads_pages %}
+        <option value="{{ p.id }}">{{ p.title | e }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <span class="text-xs text-gray-400 italic">No Uploads pages — create one first.</span>
+      {% endif %}
+    </div>
+
+    {# File grid #}
+    <div id="grid-media-files" class="flex-1 overflow-y-auto min-h-0">
+      <p class="text-sm text-gray-400 p-4">Select a page above to browse files.</p>
+    </div>
+
+    {# Pagination footer #}
+    <div class="px-5 py-3 border-t border-gray-100 dark:border-zinc-800 flex items-center justify-between">
+      <button onclick="gridMediaPrevPage()"
+              class="px-3 py-1 text-xs border border-gray-300 dark:border-zinc-600 rounded-lg
+                     hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors">← Prev</button>
+      <span id="grid-media-page-label" class="text-xs text-gray-500 dark:text-gray-400">Page 1</span>
+      <button onclick="gridMediaNextPage()"
+              class="px-3 py-1 text-xs border border-gray-300 dark:border-zinc-600 rounded-lg
+                     hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors">Next →</button>
+    </div>
+  </div>
+</div>
+
+{# ── Cell edit modal (caption + aspect) ──────────────────────────────────── #}
+<div id="grid-cell-edit-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+     role="dialog" aria-modal="true" aria-labelledby="grid-cell-edit-title"
+     onclick="if(event.target===this) gridCloseCellEdit()"
+     onkeydown="if(event.key==='Escape') gridCloseCellEdit()">
+  <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-zinc-700">
+      <h3 id="grid-cell-edit-title" class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+        Edit cell
+      </h3>
+      <button onclick="gridCloseCellEdit()"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none
+                     focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0053e2] rounded"
+              aria-label="Close">×</button>
+    </div>
+    <div class="px-5 py-4 space-y-4">
+      {# Caption #}
+      <div>
+        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+               for="grid-cell-edit-caption">Caption</label>
+        <input id="grid-cell-edit-caption" type="text" maxlength="200"
+               class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2
+                      bg-white dark:bg-zinc-800 text-gray-800 dark:text-gray-100
+                      focus:outline-none focus:ring-2 focus:ring-[#0053e2]"
+               placeholder="Optional caption…">
+      </div>
+      {# Aspect ratio #}
+      <div>
+        <p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Aspect ratio</p>
+        <div class="flex gap-3">
+          {% for asp, label in [("1:1","Square"), ("4:5","Portrait"), ("16:9","Wide")] %}
+          <label class="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+            <input type="radio" name="grid-aspect" value="{{ asp }}"
+                   class="accent-[#0053e2]">
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-4 border-t border-gray-100 dark:border-zinc-800">
+      <button onclick="gridCloseCellEdit()"
+              class="px-4 py-2 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors">Cancel</button>
+      <button onclick="gridSaveCellEdit()"
+              class="px-4 py-2 text-sm bg-[#0053e2] text-white rounded-lg
+                     hover:bg-[#0047c4] transition-colors">Save</button>
+    </div>
+  </div>
+</div>
+
+{# ── Cell delete confirmation modal ───────────────────────────────────────── #}
+<div id="grid-cell-del-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+     role="dialog" aria-modal="true" aria-labelledby="grid-cell-del-title"
+     onclick="if(event.target===this) _gridCancelDelete()"
+     onkeydown="if(event.key==='Escape') _gridCancelDelete()">
+  <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-xs mx-4 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-200 dark:border-zinc-700">
+      <h3 id="grid-cell-del-title" class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+        Remove cell?
+      </h3>
+    </div>
+    <div class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+      This will remove the cell from the grid. The uploaded file itself is not deleted.
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-4 border-t border-gray-100 dark:border-zinc-800">
+      <button onclick="_gridCancelDelete()"
+              class="px-4 py-2 text-sm border border-gray-300 dark:border-zinc-600 rounded-lg
+                     hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors">Cancel</button>
+      <button id="grid-cell-del-confirm-btn"
+              onclick="_gridConfirmDelete()"
+              class="px-4 py-2 text-sm bg-[#ea1100] text-white rounded-lg
+                     hover:bg-[#c50e00] transition-colors">Remove</button>
+    </div>
+  </div>
+</div>
