@@ -341,6 +341,7 @@ const HP_TYPE_DEFAULTS = {
   dashboard:   { emoji: '📊', placeholder: 'e.g. My Dashboard'  },
   crm:         { emoji: '👥', placeholder: 'e.g. My Contacts'   },
   media:       { emoji: '📅', placeholder: 'e.g. Content Calendar' },
+  grid:        { emoji: '🎨', placeholder: 'e.g. Team Moodboard' },
   grid_builder:{ emoji: '🎨', placeholder: 'e.g. Feed Grid'     },
   uploads:     { emoji: '🖼️', placeholder: 'e.g. Media Library' },
   rss:         { emoji: '📡', placeholder: 'e.g. My Feeds'      },
