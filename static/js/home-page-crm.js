@@ -803,12 +803,23 @@ async function _crmTrackAsBud(contactId, contactName) {
     return;
   }
 
-  var speciesOpts = [
-    ['blue_flower','💙 Blue Flower'], ['calla','🤍 Calla'], ['daffodil','📸 Daffodil'],
-    ['daisy','🌼 Daisy'], ['pink','💗 Pink'], ['purple','💜 Purple'],
-    ['sunflower','🌻 Sunflower'], ['tulip','🌷 Tulip']
-  ].map(function(s) {
-    return '<option value="'+s[0]+'">'+s[1]+'</option>';
+  // Visual species grid — reuse global _BUDS_SPECIES/_BUDS_NAMES from home-widget-buds.js
+  var _SP = (typeof _BUDS_SPECIES !== 'undefined') ? _BUDS_SPECIES
+    : ['blue_flower','calla','daffodil','daisy','pink','purple','sunflower','tulip'];
+  var _SN = (typeof _BUDS_NAMES   !== 'undefined') ? _BUDS_NAMES
+    : {blue_flower:'Blue Flower',calla:'Calla Lily',daffodil:'Daffodil',daisy:'Daisy',
+       pink:'Pink Flower',purple:'Purple Flower',sunflower:'Sunflower',tulip:'Tulip'};
+  var speciesPicker = _SP.map(function(s) {
+    var isDefault = (s === 'daisy');
+    return '<button type="button" data-crm-species="'+s+'"'
+      + ' onclick="_crmSelectSpecies(\''+s+'\')"'
+      + ' class="crm-species-btn flex flex-col items-center gap-0.5 p-1.5 rounded-lg'
+      + ' border border-gray-200 dark:border-zinc-600 hover:border-[#0053e2]'
+      + ' bg-white dark:bg-zinc-800 transition cursor-pointer'
+      + (isDefault ? ' ring-2 ring-[#0053e2] ring-offset-1' : '') + '">'
+      + '<img src="/static/img/buds/'+s+'_0.png" class="w-10 h-10 object-contain" alt="'+(_SN[s]||s)+'">'
+      + '<span class="text-[10px] leading-tight text-center text-gray-600 dark:text-zinc-300">'+(_SN[s]||s)+'</span>'
+      + '</button>';
   }).join('');
 
   _crmShowModal(`
@@ -828,12 +839,11 @@ async function _crmTrackAsBud(contactId, contactName) {
         <input id="crm-bud-name" type="text" value="${_crmEsc(contactName)}" maxlength="60"
           class="mt-1 w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm px-2 py-1.5 text-gray-800 dark:text-zinc-100"/>
       </label>
-      <label class="block">
+      <div>
         <span class="text-xs text-gray-500 dark:text-zinc-400">Species</span>
-        <select id="crm-bud-species" class="mt-1 w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm px-2 py-1.5 text-gray-800 dark:text-zinc-100">
-          ${speciesOpts}
-        </select>
-      </label>
+        <input type="hidden" id="crm-bud-species" value="daisy"/>
+        <div class="grid grid-cols-4 gap-1.5 mt-1">${speciesPicker}</div>
+      </div>
       <div class="flex gap-2 pt-2">
         <button onclick="_crmBudSave(${contactId})" class="px-4 py-1.5 rounded bg-[#0053e2] text-white text-sm font-medium hover:bg-[#0041b8] transition">🌸 Add Bud</button>
         <button onclick="crmCloseModal()" class="px-4 py-1.5 rounded bg-gray-100 dark:bg-zinc-700 text-sm hover:bg-gray-200 dark:hover:bg-zinc-600 transition">Cancel</button>
@@ -882,6 +892,19 @@ async function _crmBudSave(contactId) {
   } catch(e) {
     if (errEl) { errEl.textContent = 'Failed: ' + e.message; errEl.classList.remove('hidden'); }
   }
+}
+
+function _crmSelectSpecies(species) {
+  // Update hidden input
+  var inp = document.getElementById('crm-bud-species');
+  if (inp) inp.value = species;
+  // Toggle ring highlight on picker buttons
+  document.querySelectorAll('.crm-species-btn').forEach(function(btn) {
+    var active = btn.dataset.crmSpecies === species;
+    btn.classList.toggle('ring-2',        active);
+    btn.classList.toggle('ring-[#0053e2]', active);
+    btn.classList.toggle('ring-offset-1', active);
+  });
 }
 
 function _crmShowErr(el, msg) {
