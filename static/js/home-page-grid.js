@@ -158,7 +158,9 @@ function _gridBindDrag(el) {
         e.dataTransfer.dropEffect = 'move';
         el.classList.add('ring-[#ffc220]', 'ring-2');
     });
-    el.addEventListener('dragleave', function() {
+    el.addEventListener('dragleave', function(e) {
+        // Only clear highlight when truly leaving this cell, not entering a child element.
+        if (el.contains(e.relatedTarget)) return;
         el.classList.remove('ring-[#ffc220]', 'ring-2');
     });
     el.addEventListener('drop', function(e) {
@@ -416,9 +418,10 @@ function gridMediaNextPage() {
 
 async function _gridMediaFetch() {
     if (!_gridPickerPageId) return;
-    // Verified: GET /home/uploads/{page_id}/files returns {files:[...], total:int, page:int, pages:int}
+    // Verified: GET /home/uploads/{page_id}/files?scoped=1 returns files scoped
+    // to that specific uploads page.
     // Each file: {id, filename, original_name, mime_type, size}. File URL = '/uploads/' + filename.
-    var url = '/home/uploads/' + _gridPickerPageId + '/files?page=' + _gridPickerPage;
+    var url = '/home/uploads/' + _gridPickerPageId + '/files?scoped=1&page=' + _gridPickerPage;
     var el  = document.getElementById('grid-media-files');
     el.innerHTML = '<p class="text-sm text-gray-400 p-4">Loading…</p>';
     try {

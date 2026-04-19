@@ -24,12 +24,15 @@ async def get_uploads_page(
     page: int = 1,
     folder_id: Optional[int] = None,   # None=all, 0=unfiled page-src, >0=folder
     catalog_id: Optional[int] = None,  # filter by catalog (many-to-many, page-src only)
+    src_page_id: Optional[int] = None, # Grid picker: scope to a single uploads page
 ) -> dict:
     """Return one page of the merged file list for a user, with tags embedded.
 
     When folder_id is not None the result is scoped to page-src files only:
       folder_id == 0  → page-src files with no folder assigned (unfiled)
       folder_id  > 0  → page-src files assigned to that folder
+    When src_page_id is not None the result is scoped to that uploads page only
+      (note-attachments union leg is skipped entirely).
 
     Returns:
         {
@@ -66,7 +69,14 @@ async def get_uploads_page(
         folder_where = ""   # catalog takes priority; clear any folder filter
         folder_params = ()
 
-    use_union = folder_id is None and catalog_id is None  # full merged view vs page-src only
+    use_union = folder_id is None and catalog_id is None and src_page_id is None
+
+    # src_page_id: scope to one specific uploads page — disables union and folder/catalog
+    if src_page_id is not None:
+        folder_where  = " AND pu.page_id = ?"
+        folder_params = (src_page_id,)
+        catalog_join  = ""
+        catalog_join_params = ()
 
     async with get_db() as db:
         # ── Total count ───────────────────────────────────────────────────────

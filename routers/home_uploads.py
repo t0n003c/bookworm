@@ -79,13 +79,16 @@ async def list_files(
     page: int = 1,
     folder_id: int = Query(None),   # None=all, 0=unfiled, >0=specific folder
     catalog_id: int = Query(None),  # filter by catalog (many-to-many)
+    scoped: bool = Query(False),    # Grid picker: scope results to this page only
 ):
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401)
     await _require_uploads_page(page_id, uid)
-    result = await get_uploads_page(uid, page=page, folder_id=folder_id,
-                                    catalog_id=catalog_id)
+    result = await get_uploads_page(
+        uid, page=page, folder_id=folder_id, catalog_id=catalog_id,
+        src_page_id=page_id if scoped else None,
+    )
     return JSONResponse(result)
 
 
