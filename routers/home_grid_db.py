@@ -33,19 +33,27 @@ async def get_grid_cells(page_id: int) -> list[dict]:
 
 async def add_grid_cell(
     page_id: int,
-    position: int,
     cell_type: str = "empty",
     upload_id: int | None = None,
     aspect: str = "1:1",
     caption: str = "",
 ) -> int:
-    """INSERT a new cell; return new id."""
+    """INSERT a new cell at position 0 (newest-first).
+
+    All existing cells for the page are shifted down by 1 first so the
+    new item always appears top-left without disturbing manual drag order.
+    """
     async with get_db() as db:
+        # Shift every existing cell down to make room at position 0
+        await db.execute(
+            "UPDATE home_grid_cells SET position = position + 1 WHERE page_id = ?",
+            (page_id,),
+        )
         cur = await db.execute(
             "INSERT INTO home_grid_cells"
             "(page_id, position, cell_type, upload_id, aspect, caption)"
-            " VALUES (?,?,?,?,?,?)",
-            (page_id, position, cell_type, upload_id, aspect, caption),
+            " VALUES (?,0,?,?,?,?)",
+            (page_id, cell_type, upload_id, aspect, caption),
         )
         await db.commit()
         return cur.lastrowid

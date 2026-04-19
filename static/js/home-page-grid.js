@@ -5,7 +5,7 @@
  *   initGridPage(pageId)
  *
  * Public API (called from template onclick attributes):
- *   gridSetCols(n)
+ *   gridSetSize(px)
  *   gridAddMedia()
  *   gridOpenMediaPicker(cellId)  — cellId may be null (adds new cell)
  *   gridCloseMediaPicker()
@@ -23,29 +23,32 @@
  * Module-level vars use `var` (codebase convention).
  */
 
-/* ── Module state ──────────────────────────────────────────────────────────── */
-var _gridPid         = 0;       // current page id
-var _gridCols        = 4;       // 3 | 4 | 5
-var _gridCells       = [];      // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
-var _gridBusy        = false;   // optimistic-lock: one mutation at a time
-var _gridEditCellId  = null;    // cell being edited in the caption modal
+/* ── Module state ────────────────────────────────────────────────────── */
+var _gridPid          = 0;      // current page id
+var _gridSize         = 220;    // cell min-width in px (drives auto-fill columns)
+var _gridSaveTimer    = null;   // debounce handle for persisting size
+var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
+var _gridBusy         = false;  // optimistic-lock: one mutation at a time
+var _gridEditCellId   = null;   // cell being edited in the caption modal
 var _gridPendingDelId = null;   // cell pending deletion confirmation
-var _gridPickerCell  = null;    // cell waiting for a media pick
+var _gridPickerCell   = null;   // cell waiting for a media pick (null = new from toolbar)
 var _gridPickerPageId = null;   // current uploads page id in the picker
-var _gridPickerPage  = 1;
-var _gridPickerTotal = 0;
-var _gridDragId      = null;    // id of the cell being dragged
+var _gridPickerPage   = 1;
+var _gridPickerTotal  = 0;
+var _gridDragId       = null;   // id of the cell being dragged
 
-/* ── Entry point ───────────────────────────────────────────────────────────── */
+/* ── Entry point ───────────────────────────────────────────────────────── */
 function initGridPage(pageId) {
     _gridPid = pageId;
 
-    // Read initial col count from data attr (seeded by Jinja template)
+    // Read initial cell size from data attr (seeded by Jinja template)
     var root = document.getElementById('grid-page-root');
     if (!root) return;
-    _gridCols = parseInt(root.dataset.gridCols, 10) || 4;
-    _gridHighlightColBtn(_gridCols);
-    _gridApplyCols();
+    _gridSize = parseInt(root.dataset.gridSize, 10) || 220;
+    _gridApplySize();
+    // Sync slider thumb to stored value
+    var slider = document.getElementById('grid-size-slider');
+    if (slider) slider.value = _gridSize;
 
     // Auto-load the first uploads page into the picker selector
     var sel = document.getElementById('grid-media-page-sel');
@@ -206,37 +209,26 @@ async function _gridSwap(a, b) {
     }
 }
 
-/* ── Column picker ─────────────────────────────────────────────────────────── */
-async function gridSetCols(n) {
-    _gridCols = n;
-    _gridHighlightColBtn(n);
-    _gridApplyCols();
-    // Persist to home_pages.config_json
-    var fd = new FormData();
-    fd.append('config_json', JSON.stringify({grid_cols: n}));
-    try {
-        await fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd});
-    } catch(e) { console.error('[grid] save cols failed:', e); }
+/* ── Size slider ─────────────────────────────────────────────────────── */
+function gridSetSize(px) {
+    // Called live on slider input — apply immediately, debounce the DB save
+    _gridSize = parseInt(px, 10) || 220;
+    _gridApplySize();
+    clearTimeout(_gridSaveTimer);
+    _gridSaveTimer = setTimeout(function() {
+        var fd = new FormData();
+        fd.append('config_json', JSON.stringify({grid_size: _gridSize}));
+        fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
+            .catch(function(e) { console.error('[grid] save size failed:', e); });
+    }, 600);
 }
 
-function _gridApplyCols() {
+function _gridApplySize() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
-    canvas.style.gridTemplateColumns = 'repeat(' + _gridCols + ', minmax(0, 1fr))';
-}
-
-function _gridHighlightColBtn(n) {
-    [3, 4, 5].forEach(function(c) {
-        var btn = document.getElementById('grid-col-btn-' + c);
-        if (!btn) return;
-        var active = c === n;
-        btn.setAttribute('aria-pressed', String(active));
-        btn.classList.toggle('bg-[#0053e2]',      active);
-        btn.classList.toggle('text-white',         active);
-        btn.classList.toggle('border-[#0053e2]',   active);
-        btn.classList.toggle('border-gray-300',    !active);
-        btn.classList.toggle('dark:border-zinc-600', !active);
-    });
+    // auto-fill reflows columns automatically as size changes
+    canvas.style.gridTemplateColumns =
+        'repeat(auto-fill, minmax(' + _gridSize + 'px, 1fr))';
 }
 
 /* ── Add media from toolbar (no pre-existing cell) ─────────────────────────── */
@@ -462,7 +454,6 @@ async function gridPickMedia(uploadId, mimeType) {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    position: _gridCells.length,
                     cell_type: cellType,
                     upload_id: uploadId,
                     aspect: '1:1',

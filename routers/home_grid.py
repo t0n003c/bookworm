@@ -67,7 +67,6 @@ async def create_cell(request: Request, page_id: int):
         cell_type = "empty"
     new_id = await add_grid_cell(
         page_id=page_id,
-        position=int(body.get("position", 0)),
         cell_type=cell_type,
         upload_id=body.get("upload_id"),
         aspect=aspect,
