@@ -6,8 +6,8 @@
  *
  * Public API (called from template onclick attributes):
  *   gridSetCols(n)
- *   gridAddEmptyCell()
- *   gridOpenMediaPicker(cellId)
+ *   gridAddMedia()
+ *   gridOpenMediaPicker(cellId)  — cellId may be null (adds new cell)
  *   gridCloseMediaPicker()
  *   gridMediaLoadPage(uploadsPageId)
  *   gridMediaPrevPage()
@@ -81,7 +81,10 @@ function _gridRender() {
     }
     if (hint) { hint.classList.add('hidden'); hint.classList.remove('flex'); }
 
-    canvas.innerHTML = _gridCells.map(function(cell) {
+    canvas.innerHTML = _gridCells.filter(function(c) {
+        // Skip legacy empty cells — grid is media-only now
+        return c.cell_type !== 'empty';
+    }).map(function(cell) {
         return _gridRenderCell(cell);
     }).join('');
 
@@ -236,21 +239,10 @@ function _gridHighlightColBtn(n) {
     });
 }
 
-/* ── Add empty cell ────────────────────────────────────────────────────────── */
-async function gridAddEmptyCell() {
-    if (_gridBusy) return;
-    _gridBusy = true;
-    try {
-        var nextPos = _gridCells.length;
-        var r = await fetch('/home/grid/' + _gridPid + '/cells', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({position: nextPos, cell_type: 'empty', aspect: '1:1', caption: ''})
-        });
-        if (!r.ok) throw new Error('add cell ' + r.status);
-        await _gridLoadCells();
-    } catch(e) { console.error('[grid] add cell:', e); }
-    finally { _gridBusy = false; }
+/* ── Add media from toolbar (no pre-existing cell) ─────────────────────────── */
+function gridAddMedia() {
+    // Open the picker with no target cell — gridPickMedia() will POST a new cell
+    gridOpenMediaPicker(null);
 }
 
 /* ── Cell context menu ─────────────────────────────────────────────────────── */
@@ -268,16 +260,12 @@ function _gridOpenCellMenu(event, cellId) {
                    + 'border-gray-200 dark:border-zinc-700 py-1 text-sm min-w-[160px]';
     menu.innerHTML =
         '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
-        + ' onclick="_gridCtxPickMedia(' + cellId + ')">📷 Pick media</button>'
+        + ' onclick="_gridCtxPickMedia(' + cellId + ')">🔄 Replace media</button>'
         + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
         + ' onclick="gridOpenCellEdit(' + cellId + ')">✏️ Edit caption / aspect</button>'
-        + (cell.upload_id
-           ? '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
-             + ' onclick="_gridCtxClearMedia(' + cellId + ')">🗑️ Clear media</button>'
-           : '')
         + '<hr class="my-1 border-gray-200 dark:border-zinc-700">'
         + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700'
-        + ' text-[#ea1100]" onclick="gridDeleteCell(' + cellId + ')">Remove cell</button>';
+        + ' text-[#ea1100]" onclick="gridDeleteCell(' + cellId + ')">Remove from grid</button>';
 
     var rect = event.target.getBoundingClientRect();
     menu.style.position = 'fixed';
@@ -300,18 +288,7 @@ function _gridCtxPickMedia(cellId) {
     gridOpenMediaPicker(cellId);
 }
 
-async function _gridCtxClearMedia(cellId) {
-    var m = document.getElementById('grid-cell-ctx-menu');
-    if (m) m.remove();
-    try {
-        await fetch('/home/grid/' + _gridPid + '/cells/' + cellId, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({clear_upload: true})
-        });
-        await _gridLoadCells();
-    } catch(e) { console.error('[grid] clear media:', e); }
-}
+
 
 /* ── Cell edit modal ────────────────────────────────────────────────────────── */
 function gridOpenCellEdit(cellId) {
@@ -469,15 +446,31 @@ function _gridRenderMediaFiles(files) {
 }
 
 async function gridPickMedia(uploadId, mimeType) {
-    if (!_gridPickerCell) return;
     var cellType = mimeType.startsWith('video/') ? 'video' : 'image';
     try {
-        var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
-        });
-        if (!r.ok) throw new Error('patch ' + r.status);
+        if (_gridPickerCell) {
+            // Replacing media on an existing cell
+            var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
+            });
+            if (!r.ok) throw new Error('patch ' + r.status);
+        } else {
+            // Adding new media from toolbar — create cell + attach in one shot
+            var r = await fetch('/home/grid/' + _gridPid + '/cells', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    position: _gridCells.length,
+                    cell_type: cellType,
+                    upload_id: uploadId,
+                    aspect: '1:1',
+                    caption: ''
+                })
+            });
+            if (!r.ok) throw new Error('create ' + r.status);
+        }
         gridCloseMediaPicker();
         await _gridLoadCells();
     } catch(e) { console.error('[grid] pick media failed:', e); }
