@@ -1,4 +1,4 @@
-# Plan: Buds — Friendship Health Tracker Widget + CRM Integration
+# Plan: Grid Homespace Page
 Date: 2026-04-18
 Estimated complexity: High
 
@@ -6,39 +6,45 @@ Estimated complexity: High
 
 ## Summary
 
-Add a **Buds widget** to BookWorm's dashboard home pages. Each instance of the
-widget maintains a private list of "buds" (friends-as-flowers). Health decays
-daily based on the configured contact interval; two care actions restore it:
-💧 **Water** (once per calendar week, small boost) and 🌱 **Fertilize** (in-person
-visit, planned ahead, larger boost). Flowers are rendered with one of 24 static
-images (8 species × 3 health tiers). The widget lives on any dashboard page as a
-standard drag-and-drop card; it is classified **Advanced** in the add-widget modal
-and gets its own JS engine file (`home-widget-buds.js`).
-
-CRM integration adds two complementary features: a **"Track as Bud"** button on
-CRM contact gallery/table cards (Option A) that creates a linked bud entry in any
-of the user's Buds widgets, and a **health badge** (Option B) on those same CRM
-cards when a contact is already tracked. This gives a team-facing Rolodex and a
-personal friendship-health view that stay loosely in sync without tight coupling.
+Add a new `page_type = "grid"` Homespace page — a visual moodboard / content grid where the user
+drags, drops, and reorders media cells pulled from their Uploads pages. Each cell carries an
+aspect ratio (`1:1`, `4:5`, `16:9`), an optional caption, and a media reference to a
+`page_uploads` file (image or video). The page-level column count (3 / 4 / 5) is persisted in
+`home_pages.config_json` via the existing `POST /home/pages/{id}/update-config` endpoint.
+All CRUD and reorder operations are handled by a new `routers/home_grid.py` router backed by a
+new `home_grid_cells` DB table. The JS module `home-page-grid.js` uses the HTML5 Drag API
+(no external libs) for swap-on-drop interactions.
 
 ---
 
-## Files to Change (in dependency order)
+## ⚠️ Schema Bug in Pre-Gathered Evidence — Fix Before Coding
+
+The pre-gathered evidence proposes:
+```sql
+upload_id  INTEGER REFERENCES note_attachments(id) ON DELETE SET NULL
+```
+**This is wrong.** Media browsed from Uploads pages lives in `page_uploads`, not
+`note_attachments`. The correct FK is:
+```sql
+upload_id  INTEGER REFERENCES page_uploads(id) ON DELETE SET NULL
+```
+The `page_uploads` table has `id, page_id, user_id, filename, original_name, mime_type, size`.
+Files are served from the static mount as `/uploads/<filename>`.
+
+---
+
+## Files to Change
+
+Touch in this exact order to avoid import errors at startup.
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `database.py` | Add `buds` + `bud_fertilize_plans` tables + 3 indexes in `init_db()` |
-| 2 | `routers/home_buds_db.py` | **NEW** — all DB helpers for buds |
-| 3 | `routers/home_buds.py` | **NEW** — API router, prefix `/home/buds` |
-| 4 | `main.py` | Import + register `home_buds_router` after `home_crm_router` |
-| 5 | `static/img/buds/` | **NEW DIR** — 24 flower PNG files committed as static assets |
-| 6 | `templates/partials/home_page.html` | Add `render_buds(w)` Jinja2 macro; include it in the widget-dispatch block |
-| 7 | `templates/partials/home_add_widget_modal.html` | Add `('buds', '🌸', 'Buds')` to the ⚡ Advanced grid |
-| 8 | `static/js/home-widget-buds.js` | **NEW** — full buds widget JS engine |
-| 9 | `static/js/home-widgets.js` | Add `WIDGET_STYLES.buds` + `WIDGET_CONFIG_FIELDS.buds` entries |
-| 10 | `static/js/home-widgets-render.js` | Add `initBudsWidgets()` call at the end of `initHomeWidgets()` |
-| 11 | `templates/base.html` | Add `<script src="/static/js/home-widget-buds.js?v={{ static_v }}" defer></script>` after `home-widgets-render.js` |
-| 12 | `static/js/home-page-crm.js` | Add "Track as Bud" button + health badge to gallery + table card renders |
+| 1 | `database.py` | Add `home_grid_cells` table + index in `init_db()` |
+| 2 | `routers/home_db.py` | Add `"grid"` to `PAGE_TYPES` frozenset |
+| 3 | `routers/home.py` | Add `elif p_type == "grid"` dispatch branch; build `uploads_pages`; expand context dict |
+| 4 | `main.py` | Import `home_grid as home_grid_router`; `app.include_router` after `home_buds_router` |
+| 5 | `static/js/home-widgets.js` | Add `#grid-page-root` branch in `_initSwappedPage()` before `#coming-soon-page-root` |
+| 6 | `templates/base.html` | Add `<script src="/static/js/home-page-grid.js?v={{ static_v }}" defer>` |
 
 ---
 
@@ -46,366 +52,1111 @@ personal friendship-health view that stay loosely in sync without tight coupling
 
 | File | Purpose |
 |---|---|
-| `routers/home_buds_db.py` | All async DB helpers: list, add, update, delete, water, fertilize-plan, fertilize-complete, crm-lookup |
-| `routers/home_buds.py` | FastAPI router prefix `/home/buds` — 8 endpoints (see API section) |
-| `static/js/home-widget-buds.js` | Widget JS engine — boot, render, decay, care actions, add/edit/detail modals |
-| `static/img/buds/*.png` | 24 flower images (8 species × 3 health tiers) committed to the repo |
+| `routers/home_grid_db.py` | All DB helpers for `home_grid_cells` |
+| `routers/home_grid.py` | FastAPI router — 6 endpoints under `/home/grid/{page_id}/…` |
+| `templates/partials/home_page_grid.html` | Grid page shell: toolbar, CSS-grid canvas, media-picker modal, cell edit modal, delete confirm modal |
+| `static/js/home-page-grid.js` | Full grid JS module: `initGridPage(pid)`, drag-swap, media picker, column saver |
 
 ---
 
-## DB Migrations Needed
+## DB Migration
 
-All migrations are **additive** and safe to run multiple times (idempotent). Add
-them to `init_db()` in `database.py` at the bottom of the migration block, after
-the existing CRM/RSS migrations.
+### New table — additive, safe on live DB
 
-### 1. `buds` table — additive, safe
-
-```sql
-CREATE TABLE IF NOT EXISTS buds (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    widget_id          INTEGER NOT NULL REFERENCES home_widgets(id) ON DELETE CASCADE,
-    user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name               TEXT    NOT NULL,
-    flower_species     TEXT    NOT NULL DEFAULT 'daisy',
-    see_every_days     INTEGER NOT NULL DEFAULT 7,
-    health             REAL    NOT NULL DEFAULT 100.0,
-    health_updated_at  DATE    NOT NULL DEFAULT (date('now')),
-    last_watered_week  TEXT,
-    crm_contact_id     INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
-    notes              TEXT,
-    sort_order         INTEGER NOT NULL DEFAULT 0,
-    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-```
-
-**Column notes:**
-- `widget_id` → CASCADE: bud is destroyed when the widget is deleted.
-- `crm_contact_id` → SET NULL: bud survives if the CRM contact is deleted.
-- `health_updated_at` is the anchor date for decay calculation. It is updated to
-  `date('now')` every time a care action fires, NOT on every read.
-- `last_watered_week` stores the ISO week key `'YYYY-Www'` (e.g. `'2026-W16'`).
-  Compared to the current week key to gate the 💧 Water button.
-- `flower_species` must be one of 8 values:
-  `blue_flower | calla | daffodil | daisy | pink | purple | sunflower | tulip`
-
-### 2. `bud_fertilize_plans` table — additive, safe
-
-```sql
-CREATE TABLE IF NOT EXISTS bud_fertilize_plans (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    bud_id       INTEGER NOT NULL REFERENCES buds(id) ON DELETE CASCADE,
-    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    planned_date DATE,
-    note         TEXT,
-    completed_at DATETIME,
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-```
-
-**Column notes:**
-- `completed_at IS NULL` = pending plan; `completed_at IS NOT NULL` = done.
-- Only the most recent **pending** plan is shown in the UI.
-  (Query: `WHERE bud_id=? AND completed_at IS NULL ORDER BY planned_date LIMIT 1`)
-
-### 3. Indexes — additive, safe
-
-```sql
-CREATE INDEX IF NOT EXISTS idx_buds_widget
-    ON buds(widget_id, sort_order);
-
-CREATE INDEX IF NOT EXISTS idx_buds_user
-    ON buds(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_buds_crm
-    ON buds(crm_contact_id);
-```
-
-`idx_buds_crm` is the key index for the CRM integration reverse-lookup
-(given a contact_id, find its linked bud row quickly).
-
----
-
-## Flower Image Strategy
-
-**Do NOT use the existing `page_uploads` UUIDs for flower images.**
-
-The `page_uploads` entry (page_id=74, user_id=1) uses opaque UUID filenames
-served at `/uploads/{uuid}.png`. These UUIDs are install-specific, user-specific,
-and are not queryable by species name without a runtime DB lookup.
-
-**Correct approach: commit all 24 images to `static/img/buds/` with predictable
-filenames.** The image URL pattern becomes:
-
-```
-/static/img/buds/{species}_{tier}.png
-```
-
-Examples:
-```
-/static/img/buds/sunflower_0.png   ← healthy (≥70)
-/static/img/buds/sunflower_1.png   ← warn (50–69)
-/static/img/buds/sunflower_2.png   ← wilting (<50)
-/static/img/buds/daisy_0.png
-...
-```
-
-This keeps the widget self-contained, works across all users and installs, and
-avoids a `page_uploads` DB lookup on every widget render. Copy the 24 images
-from the `page_uploads` folder (identified by page_id=74) using a one-time script
-during development.
-
----
-
-## API Endpoints (`routers/home_buds.py`, prefix `/home/buds`)
-
-All routes require a valid session. Widget ownership is validated by joining
-`home_widgets → home_pages` and checking `home_pages.user_id == session.user_id`.
-
-| Method | Path | Returns | Purpose |
-|---|---|---|---|
-| `GET`  | `/{widget_id}/list` | JSON `{buds: [...]}` | List buds with live-decayed health |
-| `POST` | `/{widget_id}/add` | JSON updated list | Add a new bud |
-| `POST` | `/{widget_id}/{bud_id}/update` | JSON updated list | Edit bud settings |
-| `DELETE`| `/{widget_id}/{bud_id}` | JSON `{ok: true}` | Delete a bud |
-| `POST` | `/{widget_id}/{bud_id}/water` | JSON `{bud: {...}}` | Water action (week-gated) |
-| `POST` | `/{widget_id}/{bud_id}/fertilize-plan` | JSON `{plan: {...}}` | Create fertilize plan |
-| `POST` | `/{widget_id}/{bud_id}/fertilize-complete/{plan_id}` | JSON `{bud: {...}}` | Mark plan done |
-| `GET`  | `/crm-lookup/{crm_page_id}` | JSON `{contact_id: bud_row}` | CRM badge reverse-lookup |
-
-### Auth pattern (copy from `routers/home_crm.py::_get_crm_page`)
+Add to `init_db()` in `database.py` **after the CRM tables block**, before `await db.commit()`:
 
 ```python
-async def _get_widget_owned(widget_id: int, user_id: int) -> dict | None:
-    """Return widget dict if it belongs to user_id, else None."""
+# ── Grid Homespace page cells ─────────────────────────────────────────────────
+await db.execute("""
+    CREATE TABLE IF NOT EXISTS home_grid_cells (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        page_id     INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+        position    INTEGER NOT NULL DEFAULT 0,
+        cell_type   TEXT    NOT NULL DEFAULT 'empty',
+        upload_id   INTEGER REFERENCES page_uploads(id) ON DELETE SET NULL,
+        aspect      TEXT    NOT NULL DEFAULT '1:1',
+        caption     TEXT    NOT NULL DEFAULT '',
+        config_json TEXT    NOT NULL DEFAULT '{}',
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_grid_cells_page "
+    "ON home_grid_cells(page_id, position)"
+)
+```
+
+**Classification:** Additive — `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`.
+Safe to run 10× on a live database. No table-swap dance needed.
+
+---
+
+## API Contract
+
+All routes live under the existing `/home` prefix (same pattern as `home_crm.py`).
+All routes return `JSONResponse`. The page HTML shell is rendered by `home_page_view()` in
+`home.py` — no separate HTML rendering endpoint is needed.
+
+### Ownership guard (define once in `home_grid.py`, call in every endpoint)
+
+```python
+async def _get_grid_page(page_id: int, uid: int) -> dict | None:
+    """Returns page dict or None. Caller returns 404 on None."""
+    page = await get_home_page(page_id, uid)
+    if not page or page.get("page_type") != "grid":
+        return None
+    return page
+```
+
+### Endpoints
+
+| Method | Path | Request body | Success response |
+|---|---|---|---|
+| `GET` | `/home/grid/{page_id}/cells` | — | `200 [{cell…}, …]` |
+| `POST` | `/home/grid/{page_id}/cells` | JSON `{position, cell_type, upload_id?, aspect, caption}` | `201 {id: int}` |
+| `PATCH` | `/home/grid/{page_id}/cells/{cell_id}` | JSON (any subset of cell fields, plus `clear_upload: bool`) | `200 {ok: true}` |
+| `DELETE` | `/home/grid/{page_id}/cells/{cell_id}` | — | `204` |
+| `POST` | `/home/grid/{page_id}/reorder` | JSON `{order: [cell_id, …]}` | `200 {ok: true}` |
+| `POST` | `/home/grid/{page_id}/swap` | JSON `{a: cell_id, b: cell_id}` | `200 {ok: true}` |
+
+### Cell object shape (returned by `GET /cells`)
+
+Each cell is enriched server-side via a `LEFT JOIN page_uploads pu ON pu.id = c.upload_id`:
+
+```json
+{
+  "id": 12,
+  "page_id": 5,
+  "position": 2,
+  "cell_type": "image",
+  "upload_id": 99,
+  "aspect": "1:1",
+  "caption": "Fresh produce display",
+  "config_json": "{}",
+  "file_url": "/uploads/abc123.webp",
+  "mime_type": "image/webp",
+  "original_name": "photo.jpg"
+}
+```
+
+`file_url` is built server-side as `"/uploads/" + pu.filename`. When `upload_id` is `NULL`,
+`file_url`, `mime_type`, and `original_name` are all `null`.
+
+---
+
+## `routers/home_grid_db.py` — Function Signatures
+
+```python
+"""DB helpers for the Grid Homespace page (home_grid_cells table)."""
+from __future__ import annotations
+import json
+from database import get_db
+
+
+async def get_grid_cells(page_id: int) -> list[dict]:
+    """Return all cells for a page ordered by position.
+    LEFT JOIN page_uploads to add file_url, mime_type, original_name."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT hw.* FROM home_widgets hw "
-            "JOIN home_pages hp ON hp.id = hw.page_id "
-            "WHERE hw.id=? AND hp.user_id=?",
-            (widget_id, user_id),
+            """
+            SELECT c.*,
+                   CASE WHEN pu.filename IS NOT NULL
+                        THEN '/uploads/' || pu.filename
+                        ELSE NULL END AS file_url,
+                   pu.mime_type,
+                   pu.original_name
+            FROM home_grid_cells c
+            LEFT JOIN page_uploads pu ON pu.id = c.upload_id
+            WHERE c.page_id = ?
+            ORDER BY c.position, c.id
+            """,
+            (page_id,),
         )
-        row = await cur.fetchone()
-    return dict(row) if row else None
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def add_grid_cell(
+    page_id: int,
+    position: int,
+    cell_type: str = "empty",
+    upload_id: int | None = None,
+    aspect: str = "1:1",
+    caption: str = "",
+) -> int:
+    """INSERT a new cell; return new id."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "INSERT INTO home_grid_cells"
+            "(page_id, position, cell_type, upload_id, aspect, caption)"
+            " VALUES (?,?,?,?,?,?)",
+            (page_id, position, cell_type, upload_id, aspect, caption),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def update_grid_cell(
+    cell_id: int,
+    page_id: int,          # used in WHERE to prevent cross-page tampering
+    uid: int,              # used to verify upload_id ownership
+    position: int | None = None,
+    cell_type: str | None = None,
+    upload_id: int | None = None,
+    clear_upload: bool = False,   # True → set upload_id = NULL explicitly
+    aspect: str | None = None,
+    caption: str | None = None,
+) -> None:
+    """Partial UPDATE — only touches supplied fields.
+    When clear_upload=True, sets upload_id to NULL regardless of upload_id arg.
+    When upload_id is provided, verifies the page_uploads row belongs to uid."""
+    async with get_db() as db:
+        # Ownership check on the new upload_id
+        if upload_id is not None and not clear_upload:
+            chk = await db.execute(
+                "SELECT id FROM page_uploads WHERE id=? AND user_id=?",
+                (upload_id, uid),
+            )
+            if not await chk.fetchone():
+                raise ValueError("upload not owned by user")
+
+        sets, params = [], []
+        if position is not None:   sets.append("position=?");  params.append(position)
+        if cell_type is not None:  sets.append("cell_type=?"); params.append(cell_type)
+        if clear_upload:
+            sets.append("upload_id=NULL")
+            sets.append("cell_type='empty'")
+        elif upload_id is not None:
+            sets.append("upload_id=?"); params.append(upload_id)
+        if aspect is not None:     sets.append("aspect=?");    params.append(aspect)
+        if caption is not None:    sets.append("caption=?");   params.append(caption)
+        if not sets:
+            return
+        params += [cell_id, page_id]
+        await db.execute(
+            f"UPDATE home_grid_cells SET {', '.join(sets)} WHERE id=? AND page_id=?",
+            params,
+        )
+        await db.commit()
+
+
+async def delete_grid_cell(cell_id: int, page_id: int) -> None:
+    """DELETE WHERE id=? AND page_id=? — page_id guard prevents cross-page ops."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM home_grid_cells WHERE id=? AND page_id=?",
+            (cell_id, page_id),
+        )
+        await db.commit()
+
+
+async def reorder_grid_cells(page_id: int, ordered_ids: list[int]) -> None:
+    """Bulk-update position field according to ordered_ids list."""
+    async with get_db() as db:
+        for idx, cell_id in enumerate(ordered_ids):
+            await db.execute(
+                "UPDATE home_grid_cells SET position=? WHERE id=? AND page_id=?",
+                (idx, cell_id, page_id),
+            )
+        await db.commit()
+
+
+async def swap_grid_cells(page_id: int, a: int, b: int) -> None:
+    """Swap positions of cells a and b atomically."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, position FROM home_grid_cells WHERE id IN (?,?) AND page_id=?",
+            (a, b, page_id),
+        )
+        rows = {r[0]: r[1] for r in await cur.fetchall()}
+        if len(rows) != 2:
+            return  # one or both ids not found / wrong page — silent no-op
+        await db.execute(
+            "UPDATE home_grid_cells SET position=? WHERE id=? AND page_id=?",
+            (rows[b], a, page_id),
+        )
+        await db.execute(
+            "UPDATE home_grid_cells SET position=? WHERE id=? AND page_id=?",
+            (rows[a], b, page_id),
+        )
+        await db.commit()
 ```
+
+**Critical:** every function uses `async with get_db() as db:` — never `aiosqlite.connect()`.
 
 ---
 
-## Health Decay Logic (canonical)
-
-Implemented in `routers/home_buds_db.py`. Applied on **every read** (not written
-back to DB on GET — only written on care actions).
+## `routers/home_grid.py` — Router Skeleton
 
 ```python
-import datetime
+"""Grid Homespace page routes.
 
-_LOSS_PER_MISSED_INTERVAL = 25.0  # HP lost for missing one full interval
+Mounted with prefix=/home (same as home.py + home_crm.py).
+Routes live under /home/grid/{page_id}/...
+All endpoints return JSONResponse; the page shell is rendered by home_page_view() in home.py.
+"""
+from __future__ import annotations
+import logging
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
-def _apply_decay(health: float, see_every_days: int, health_updated_at: str) -> float:
-    """Return current health after applying daily decay since health_updated_at."""
+from routers.home_db import get_home_page
+from routers.home_grid_db import (
+    get_grid_cells, add_grid_cell, update_grid_cell,
+    delete_grid_cell, reorder_grid_cells, swap_grid_cells,
+)
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/home", tags=["home_grid"])
+
+_VALID_ASPECTS = frozenset({"1:1", "4:5", "16:9"})
+_VALID_CELL_TYPES = frozenset({"empty", "image", "video", "text"})
+
+
+def _uid(request: Request) -> int:
+    return request.session["user_id"]
+
+
+async def _get_grid_page(page_id: int, uid: int) -> dict | None:
+    page = await get_home_page(page_id, uid)
+    if not page or page.get("page_type") != "grid":
+        return None
+    return page
+
+
+@router.get("/grid/{page_id}/cells")
+async def list_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    cells = await get_grid_cells(page_id)
+    return JSONResponse(cells)
+
+
+@router.post("/grid/{page_id}/cells")
+async def create_cell(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    aspect = body.get("aspect", "1:1")
+    if aspect not in _VALID_ASPECTS:
+        aspect = "1:1"
+    cell_type = body.get("cell_type", "empty")
+    if cell_type not in _VALID_CELL_TYPES:
+        cell_type = "empty"
+    new_id = await add_grid_cell(
+        page_id=page_id,
+        position=int(body.get("position", 0)),
+        cell_type=cell_type,
+        upload_id=body.get("upload_id"),
+        aspect=aspect,
+        caption=str(body.get("caption", "")),
+    )
+    return JSONResponse({"id": new_id}, 201)
+
+
+@router.patch("/grid/{page_id}/cells/{cell_id}")
+async def patch_cell(request: Request, page_id: int, cell_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    aspect = body.get("aspect")
+    if aspect is not None and aspect not in _VALID_ASPECTS:
+        aspect = None
+    cell_type = body.get("cell_type")
+    if cell_type is not None and cell_type not in _VALID_CELL_TYPES:
+        cell_type = None
     try:
-        anchor = datetime.date.fromisoformat(health_updated_at)
-    except (ValueError, TypeError):
-        return health
-    days_elapsed = (datetime.date.today() - anchor).days
-    if days_elapsed <= 0:
-        return health
-    loss_per_day = _LOSS_PER_MISSED_INTERVAL / max(see_every_days, 1)
-    decayed = health - (loss_per_day * days_elapsed)
-    return round(max(0.0, min(100.0, decayed)), 2)
+        await update_grid_cell(
+            cell_id=cell_id,
+            page_id=page_id,
+            uid=uid,
+            position=body.get("position"),
+            cell_type=cell_type,
+            upload_id=body.get("upload_id"),
+            clear_upload=bool(body.get("clear_upload", False)),
+            aspect=aspect,
+            caption=body.get("caption"),
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, 403)
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/grid/{page_id}/cells/{cell_id}")
+async def remove_cell(request: Request, page_id: int, cell_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    await delete_grid_cell(cell_id, page_id)
+    return JSONResponse(None, 204)
+
+
+@router.post("/grid/{page_id}/reorder")
+async def reorder_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    order = [int(x) for x in body.get("order", [])]
+    if order:
+        await reorder_grid_cells(page_id, order)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/grid/{page_id}/swap")
+async def swap_cells(request: Request, page_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body = await request.json()
+    a, b = int(body.get("a", 0)), int(body.get("b", 0))
+    if a and b and a != b:
+        await swap_grid_cells(page_id, a, b)
+    return JSONResponse({"ok": True})
 ```
 
-The client-side JS mirrors this formula for optimistic rendering.
+---
 
-### Care action health boosts (server-side, written to DB)
+## `routers/home.py` — `home_page_view` Changes
 
-| Action | HP gained | Conditions | DB writes |
-|---|---|---|---|
-| 💧 Water | +10 HP | Once per Mon-start week (`last_watered_week != current_week_key`) | `health`, `health_updated_at`, `last_watered_week` |
-| 🌱 Fertilize complete | +25 HP | `completed_at IS NULL` on the plan | `health`, `health_updated_at` on `buds`; `completed_at = NOW()` on `bud_fertilize_plans` |
+### 1. Add the grid dispatch branch
 
-Health is capped at 100.0 after boost. The `health_updated_at` anchor is reset to
-`date('now')` on every care action so decay restarts from 0 for the next interval.
-
-### ISO Week Key
+Insert **before** the final `else` (coming-soon) clause:
 
 ```python
-def _week_key(d: datetime.date | None = None) -> str:
-    """Return 'YYYY-Www' for Monday-anchored ISO week."""
-    d = d or datetime.date.today()
-    iso = d.isocalendar()
-    return f"{iso.year}-W{iso.week:02d}"
+elif p_type == "grid":
+    tmpl = "partials/home_page_grid.html"
+    # Pass all uploads pages so the in-template media-picker modal can list them.
+    all_pages = await get_home_pages(uid)
+    uploads_pages = [p for p in all_pages if p.get("page_type") == "uploads"]
+```
+
+`get_home_pages` is already imported at the top of `home.py`. No new import needed.
+
+### 2. Expand the `TemplateResponse` context dict
+
+```python
+return templates.TemplateResponse(
+    request, tmpl,
+    {
+        "page": page, "page_type": p_type,
+        "widgets": widgets, "all_notes": all_notes,
+        "widget_sources": widget_sources if p_type == "rss" else {},
+        "collabora_enabled": collabora_enabled,
+        "collabora_url":     collabora_url,
+        # Grid-only — empty list for all other page types (Jinja2 will never see it used)
+        "uploads_pages": uploads_pages if p_type == "grid" else [],
+    },
+)
 ```
 
 ---
 
-## Widget Template Macro (`home_page.html`)
+## `routers/home_db.py` — `PAGE_TYPES` Change
 
-Add a new `render_buds(w)` macro. It renders the card shell and a data-bearing
-root element that the JS engine picks up and hydrates:
+```python
+# Before
+PAGE_TYPES = frozenset({"dashboard", "crm", "media", "grid_builder", "uploads", "rss"})
+
+# After
+PAGE_TYPES = frozenset({"dashboard", "crm", "media", "grid_builder", "uploads", "rss", "grid"})
+```
+
+---
+
+## `main.py` — Router Registration
+
+```python
+# After the existing home_buds import line (~line 67):
+from routers import home_grid as home_grid_router
+
+# After app.include_router(home_buds_router.router) (~line 142):
+app.include_router(home_grid_router.router)
+```
+
+---
+
+## `static/js/home-widgets.js` — `_initSwappedPage()` Change
+
+Add the following block **before** the `#coming-soon-page-root` guard (which is currently the
+last special-case branch before the dashboard fallback):
+
+```javascript
+// Grid page
+var gridRoot = document.getElementById('grid-page-root');
+if (gridRoot) {
+  var pid = parseInt(gridRoot.dataset.pageId, 10);
+  if (pid && typeof initGridPage === 'function') {
+    try { initGridPage(pid); } catch(e) { console.error('[home] initGridPage:', e); }
+  }
+  var _ta = document.getElementById('top-action-area');
+  if (_ta) _ta.innerHTML = '';
+  return;
+}
+```
+
+---
+
+## `templates/partials/home_page_grid.html` — Annotated Structure
 
 ```jinja2
-{% macro render_buds(w) %}
-{%- set cfg = w.config -%}
-{% call card(w) %}
-  {{ widget_header(w, cfg.get('custom_name') or 'Buds', '🌸') }}
-  <div class="bw-buds-widget flex-1 min-h-0 overflow-y-auto"
-       data-widget-id="{{ w.id }}"
-       data-style="{{ w.style }}"
-       data-config='{{ cfg | tojson | e }}'>
-    <span class="text-xs text-gray-400 animate-pulse">Loading buds…</span>
+{# Grid Homespace page shell.
+   Context vars: page, page_type, uploads_pages (list of uploads page dicts)
+#}
+<div id="grid-page-root"
+     data-page-id="{{ page.id }}"
+     data-cols="{{ page.config.get('grid_cols', 4) }}">
+
+  {# ── Toolbar ────────────────────────────────────────────────────────── #}
+  <div id="grid-toolbar" class="flex items-center gap-3 px-4 py-3 border-b …">
+
+    {# Helper text #}
+    <p class="text-sm text-gray-500 dark:text-zinc-400 flex-1">
+      Visually plan your content grid — drag, drop, reorder
+    </p>
+
+    {# Column picker — 3 / 4 / 5 #}
+    <div class="flex gap-1" role="group" aria-label="Columns">
+      <button id="grid-col-btn-3" onclick="gridSetCols(3)" aria-pressed="false"
+              class="px-3 py-1 text-sm rounded-lg …">3</button>
+      <button id="grid-col-btn-4" onclick="gridSetCols(4)" aria-pressed="true"
+              class="px-3 py-1 text-sm rounded-lg …">4</button>
+      <button id="grid-col-btn-5" onclick="gridSetCols(5)" aria-pressed="false"
+              class="px-3 py-1 text-sm rounded-lg …">5</button>
+    </div>
+
+    {# Add cell #}
+    <button onclick="gridAddEmptyCell()"
+            class="px-3 py-1 text-sm rounded-lg bg-[#0053e2] text-white …">
+      + Add Cell
+    </button>
   </div>
-{% endcall %}
-{% endmacro %}
-```
 
-Then add to the widget-dispatch block (the `{% if w.widget_type == ... %}` chain
-already in `home_page.html`):
+  {# ── Empty state (shown by JS when no cells) #}
+  <div id="grid-empty-state" class="hidden flex flex-col items-center py-16 text-gray-400 …">
+    <span class="text-5xl mb-3">🖼️</span>
+    <p class="text-sm">No cells yet. Click <strong>+ Add Cell</strong> or drag media here.</p>
+  </div>
 
-```jinja2
-{%- elif w.widget_type == 'buds' -%}
-  {{ render_buds(w) }}
+  {# ── CSS grid canvas — rendered entirely by JS #}
+  <div id="grid-canvas" class="p-4"></div>
+
+  {# ── Media picker modal ────────────────────────────────────────────── #}
+  <div id="grid-media-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center"
+       role="dialog" aria-modal="true" aria-labelledby="grid-media-modal-title"
+       onkeydown="if(event.key==='Escape')gridCloseMediaPicker()">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="gridCloseMediaPicker()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+                w-full max-w-2xl mx-4 flex flex-col max-h-[80vh]">
+
+      <div class="flex items-center gap-3 p-4 border-b dark:border-zinc-700">
+        <h2 id="grid-media-modal-title" class="font-bold text-gray-900 dark:text-zinc-100 flex-1">
+          Pick media
+        </h2>
+
+        {# Uploads page selector #}
+        {% if uploads_pages %}
+        <select id="grid-media-page-sel"
+                onchange="gridMediaLoadPage(this.value)"
+                class="text-sm rounded-lg border …">
+          {% for up in uploads_pages %}
+          <option value="{{ up.id }}">{{ up.emoji }} {{ up.name }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <p class="text-sm text-gray-400">
+          No Uploads pages found. Create an Uploads page to add photos or videos.
+        </p>
+        {% endif %}
+
+        <button onclick="gridCloseMediaPicker()" aria-label="Close"
+                class="p-1 rounded-lg text-gray-500 hover:bg-gray-100 …">✕</button>
+      </div>
+
+      {# File grid — rendered by JS #}
+      <div id="grid-media-files" class="overflow-y-auto flex-1 min-h-[200px]"></div>
+
+      {# Pagination #}
+      <div class="flex items-center justify-center gap-4 p-3 border-t dark:border-zinc-700">
+        <button onclick="gridMediaPrevPage()" aria-label="Previous page"
+                class="px-3 py-1 rounded-lg border …">‹</button>
+        <span id="grid-media-page-label" class="text-sm text-gray-500"></span>
+        <button onclick="gridMediaNextPage()" aria-label="Next page"
+                class="px-3 py-1 rounded-lg border …">›</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Cell edit modal (caption + aspect ratio) ─────────────────────── #}
+  <div id="grid-cell-edit-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center"
+       role="dialog" aria-modal="true" aria-labelledby="grid-cell-edit-title"
+       onkeydown="if(event.key==='Escape')gridCloseCellEdit()">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="gridCloseCellEdit()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <h2 id="grid-cell-edit-title" class="font-bold mb-4 text-gray-900 dark:text-zinc-100">
+        Edit cell
+      </h2>
+      <label class="block text-sm font-medium mb-1">Caption</label>
+      <input id="grid-cell-edit-caption" type="text" maxlength="200"
+             class="w-full rounded-lg border px-3 py-2 text-sm mb-4 …">
+      <label class="block text-sm font-medium mb-2">Aspect ratio</label>
+      <div class="flex gap-3 mb-6" role="radiogroup" aria-label="Aspect ratio">
+        <label class="flex items-center gap-1 text-sm cursor-pointer">
+          <input type="radio" name="grid-aspect" value="1:1" class="accent-[#0053e2]"> 1∶1
+        </label>
+        <label class="flex items-center gap-1 text-sm cursor-pointer">
+          <input type="radio" name="grid-aspect" value="4:5" class="accent-[#0053e2]"> 4∶5
+        </label>
+        <label class="flex items-center gap-1 text-sm cursor-pointer">
+          <input type="radio" name="grid-aspect" value="16:9" class="accent-[#0053e2]"> 16∶9
+        </label>
+      </div>
+      <div class="flex gap-3 justify-end">
+        <button onclick="gridCloseCellEdit()"
+                class="px-4 py-2 text-sm rounded-lg border … text-gray-700 …">Cancel</button>
+        <button onclick="gridSaveCellEdit()"
+                class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white …">Save</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Cell delete confirm modal — standard destructive pattern ────── #}
+  <div id="grid-cell-del-modal"
+       class="hidden fixed inset-0 z-50 flex items-center justify-center"
+       role="dialog" aria-modal="true" aria-labelledby="grid-cell-del-title"
+       onkeydown="if(event.key==='Escape')_gridCancelDelete()">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="_gridCancelDelete()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                     flex items-center justify-center text-[#ea1100]" aria-hidden="true">🗑️</span>
+        <h2 id="grid-cell-del-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">
+          Remove cell?
+        </h2>
+      </div>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+        The cell will be removed from the grid. The original file is not deleted.
+      </p>
+      <div class="flex gap-3 justify-end">
+        <button onclick="_gridCancelDelete()"
+                class="px-4 py-2 text-sm rounded-lg border … text-gray-700 …">Cancel</button>
+        <button id="grid-cell-del-confirm-btn" onclick="_gridConfirmDelete()"
+                class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold …">
+          Remove
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{# Script loaded from base.html — do NOT add a second <script> tag here #}
 ```
 
 ---
 
-## JS Architecture (`static/js/home-widget-buds.js`)
-
-**All module-top-level state uses `var` — never `let`/`const` at module scope.**
-(Quirk #13: `initHomeWidgets()` may be called multiple times via `_initSwappedPage()`.)
+## `static/js/home-page-grid.js` — Full JS Architecture
 
 ### Module state
 
 ```javascript
-var _budsState = {};  // {widgetId: {buds: [], busy: false, pendingPlans: {}}}
+// ── Module state (var — safe for repeated initGridPage calls) ────────────────
+var _gridPid         = null;   // int   — current page id
+var _gridCells       = [];     // array — cell objects from API
+var _gridCols        = 4;      // int   — 3|4|5 column setting
+var _gridDragSrcId   = null;   // int|null — id of cell being dragged
+var _gridBusy        = false;  // bool  — guards concurrent fetch calls
+
+// Media picker state
+var _gridPickerCell    = null;  // int|null — cell id awaiting media assignment
+var _gridPickerPageId  = null;  // int|null — currently browsed uploads page id
+var _gridPickerPage    = 1;     // int      — pagination cursor (1-based)
+var _gridPickerTotal   = 0;     // int      — total files from last fetch
+
+// Cell edit state
+var _gridEditCellId    = null;  // int|null — cell id open in the edit modal
+
+// Cell delete state
+var _gridPendingDelId  = null;  // int|null — cell id awaiting delete confirm
 ```
 
-### Key functions (all `function` declarations — hoisted, safe for re-calls)
-
-| Function | Purpose |
-|---|---|
-| `initBudsWidgets()` | Called by `initHomeWidgets()`. Finds all `.bw-buds-widget` and calls `_budsInit(wid)` for each. |
-| `_budsInit(wid)` | Fetch `GET /home/buds/{wid}/list` → store in `_budsState` → call `_budsRender`. |
-| `_budsRender(wid)` | Build flower-card HTML for all buds in state, inject into the widget root. |
-| `_budsFlowerImg(species, tier)` | Return `/static/img/buds/{species}_{tier}.png`. |
-| `_budsHealthTier(health)` | `health >= 70 → 0`, `50 ≤ h < 70 → 1`, `h < 50 → 2` |
-| `_budsWeekKey()` | Return `'YYYY-Www'` for current Mon-anchored week. |
-| `_budsWater(wid, budId)` | POST `/home/buds/{wid}/{budId}/water`, re-render. Disables button if already watered this week. |
-| `_budsFertilizeOpen(wid, budId)` | Open the fertilize modal (plan a date + note). |
-| `_budsFertilizeSubmit(wid, budId)` | POST plan, close modal, re-render. |
-| `_budsFertilizeComplete(wid, budId, planId)` | POST complete, re-render. |
-| `_budsDetailOpen(wid, budId)` | Open the detail slide-panel (full info + history). |
-| `_budsAddOpen(wid)` | Open add-bud modal. |
-| `_budsAddSubmit(wid)` | POST add, re-render, close modal. |
-| `_budsEditOpen(wid, budId)` | Open edit-bud modal pre-populated with current values. |
-| `_budsEditSubmit(wid, budId)` | POST update, re-render, close modal. |
-| `_budsDelete(wid, budId)` | Standard confirm modal pattern → DELETE, re-render. |
-| `_budsApplyDecay(bud)` | Client-side decay calc (mirrors server formula) for optimistic render. |
-
-### Modals in `home-widget-buds.js`
-
-Three modals, all injected once into `document.body` on first `initBudsWidgets()`:
-- `#buds-add-modal` — Add/Edit bud (name, species picker with flower images, interval slider)
-- `#buds-fertilize-modal` — Plan fertilize (date input, note textarea, mark-complete button if plan exists)
-- `#buds-detail-panel` — Slide-in detail (full health bar, last actions, edit/delete buttons)
-
-All modals follow the **standard BookWorm modal pattern** from CODEPUPPY_NOTES.md
-(fixed inset, backdrop blur, Escape key close, ARIA roles).
-
-### Add-widget modal step-2 config fields (in `home-widgets.js`)
+### Init sequence
 
 ```javascript
-WIDGET_STYLES['buds'] = [
-  ['default', '🌸 Full'],
-  ['compact', '🌿 Compact'],
-];
+function initGridPage(pid) {
+  _gridPid   = pid;
+  _gridBusy  = false;
+  _gridCells = [];
+  _gridDragSrcId = null;
 
-WIDGET_CONFIG_FIELDS['buds'] = (s) => [
-  { id: 'cf-buds-title', label: 'Widget title', type: 'text',
-    placeholder: 'My Buds', name: 'custom_name' },
-  { id: 'cf-buds-crm', label: 'Sync friends from CRM page (optional)',
-    type: 'select-crm-pages', name: 'linked_crm_page_id' },
-];
+  // Read saved col count from data attribute (server renders page.config.grid_cols)
+  var root = document.getElementById('grid-page-root');
+  _gridCols = parseInt((root && root.dataset.cols) || '4', 10);
+  if ([3,4,5].indexOf(_gridCols) === -1) _gridCols = 4;
+  _gridHighlightColBtn(_gridCols);
+
+  _gridLoadCells();
+}
 ```
 
-> **Note:** `'select-crm-pages'` is a new custom field type that must be added to
-> `aw_refreshConfig()` in `home-widgets.js`. It fetches the user's CRM pages via
-> `GET /home/pages` (already returns all pages with `page_type`) and renders a
-> `<select>` of CRM page options (none selected = manual-only bud list).
+### Data fetch
+
+```javascript
+async function _gridLoadCells() {
+  var r = await fetch('/home/grid/' + _gridPid + '/cells');
+  if (!r.ok) { console.error('[grid] fetch cells failed', r.status); return; }
+  _gridCells = await r.json();
+  _gridRender();
+}
+```
+
+### Render
+
+```javascript
+var _ASPECT_CLASS = {'1:1': 'aspect-square', '4:5': 'aspect-[4/5]', '16:9': 'aspect-video'};
+
+function _gridRender() {
+  var canvas = document.getElementById('grid-canvas');
+  if (!canvas) return;
+
+  var empty = document.getElementById('grid-empty-state');
+  if (empty) empty.classList.toggle('hidden', _gridCells.length > 0);
+
+  canvas.className = 'grid grid-cols-' + _gridCols + ' gap-3 p-4';
+  canvas.innerHTML = _gridCells.map(_gridCellHTML).join('');
+  _gridBindDrag();
+}
+
+function _gridCellHTML(cell) {
+  var aClass = _ASPECT_CLASS[cell.aspect] || 'aspect-square';
+  var inner  = '';
+
+  if (cell.cell_type === 'image' && cell.file_url) {
+    inner = '<img src="' + _gridEsc(cell.file_url) + '"'
+          + ' class="w-full h-full object-cover pointer-events-none"'
+          + ' loading="lazy" alt="' + _gridEsc(cell.original_name || '') + '">';
+  } else if (cell.cell_type === 'video' && cell.file_url) {
+    inner = '<video src="' + _gridEsc(cell.file_url) + '"'
+          + ' class="w-full h-full object-cover pointer-events-none"'
+          + ' muted playsinline loop></video>';
+  } else {
+    inner = '<button onclick="gridOpenMediaPicker(' + cell.id + ')"'
+          + ' class="w-full h-full flex flex-col items-center justify-center'
+          + ' text-gray-300 dark:text-zinc-600 gap-2 focus:outline-none focus:ring-2'
+          + ' focus:ring-[#0053e2]" aria-label="Pick media for this cell">'
+          + '<span class="text-4xl select-none" aria-hidden="true">＋</span>'
+          + '<span class="text-xs">Pick media</span></button>';
+  }
+
+  // Caption overlay
+  var caption = cell.caption
+    ? '<div class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs px-2 py-1 truncate">'
+      + _gridEsc(cell.caption) + '</div>'
+    : '';
+
+  // ⋮ menu (three-dot)
+  var menu = '<div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition">'
+           + '<button onclick="_gridOpenCellMenu(event,' + cell.id + ')"'
+           + ' class="w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center'
+           + ' hover:bg-black/70 focus:outline-none focus:ring-2 focus:ring-white"'
+           + ' aria-label="Cell options" aria-haspopup="true">⋮</button>'
+           + '</div>';
+
+  return '<div class="relative group overflow-hidden rounded-xl bg-gray-100'
+       + ' dark:bg-zinc-800 cursor-grab select-none ' + aClass + '"'
+       + ' data-cell-id="' + cell.id + '" draggable="true">'
+       + inner + caption + menu
+       + '</div>';
+}
+```
+
+### Drag-swap algorithm
+
+```javascript
+function _gridBindDrag() {
+  document.querySelectorAll('#grid-canvas [data-cell-id]').forEach(function(el) {
+
+    el.addEventListener('dragstart', function(e) {
+      _gridDragSrcId = parseInt(el.dataset.cellId, 10);
+      setTimeout(function() { el.style.opacity = '0.4'; }, 0);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    el.addEventListener('dragend', function() {
+      el.style.opacity = '';
+      _gridDragSrcId = null;
+      document.querySelectorAll('#grid-canvas [data-cell-id]').forEach(function(t) {
+        t.classList.remove('ring-2', 'ring-[#0053e2]');
+      });
+    });
+
+    el.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (parseInt(el.dataset.cellId, 10) !== _gridDragSrcId) {
+        el.classList.add('ring-2', 'ring-[#0053e2]');
+      }
+    });
+
+    el.addEventListener('dragleave', function() {
+      el.classList.remove('ring-2', 'ring-[#0053e2]');
+    });
+
+    el.addEventListener('drop', function(e) {
+      e.preventDefault();
+      el.classList.remove('ring-2', 'ring-[#0053e2]');
+      var targetId = parseInt(el.dataset.cellId, 10);
+      if (!_gridDragSrcId || targetId === _gridDragSrcId) return;
+      _gridSwap(_gridDragSrcId, targetId);
+    });
+  });
+}
+
+async function _gridSwap(a, b) {
+  if (_gridBusy) return;
+  _gridBusy = true;
+
+  // Optimistic local swap (instant visual feedback)
+  var ai = _gridCells.findIndex(function(c) { return c.id === a; });
+  var bi = _gridCells.findIndex(function(c) { return c.id === b; });
+  if (ai >= 0 && bi >= 0) {
+    var tmp = _gridCells[ai].position;
+    _gridCells[ai].position = _gridCells[bi].position;
+    _gridCells[bi].position = tmp;
+    _gridCells.sort(function(x, y) { return x.position - y.position; });
+    _gridRender();
+  }
+
+  try {
+    var r = await fetch('/home/grid/' + _gridPid + '/swap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({a: a, b: b})
+    });
+    if (!r.ok) throw new Error('swap ' + r.status);
+  } catch (err) {
+    console.error('[grid] swap failed — rolling back:', err);
+    await _gridLoadCells();   // server state wins
+  } finally {
+    _gridBusy = false;
+  }
+}
+```
+
+### Column picker
+
+```javascript
+async function gridSetCols(n) {
+  _gridCols = n;
+  _gridHighlightColBtn(n);
+  _gridRender();
+  // Persist to home_pages.config_json (existing form-POST endpoint)
+  var fd = new FormData();
+  fd.append('config_json', JSON.stringify({grid_cols: n}));
+  try {
+    await fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd});
+  } catch (e) { console.error('[grid] save cols failed:', e); }
+}
+
+function _gridHighlightColBtn(n) {
+  [3,4,5].forEach(function(c) {
+    var btn = document.getElementById('grid-col-btn-' + c);
+    if (!btn) return;
+    var active = c === n;
+    btn.setAttribute('aria-pressed', String(active));
+    btn.classList.toggle('bg-[#0053e2]', active);
+    btn.classList.toggle('text-white',   active);
+    btn.classList.toggle('border-[#0053e2]', active);
+  });
+}
+```
+
+### Add empty cell
+
+```javascript
+async function gridAddEmptyCell() {
+  if (_gridBusy) return;
+  _gridBusy = true;
+  try {
+    var nextPos = _gridCells.length;
+    var r = await fetch('/home/grid/' + _gridPid + '/cells', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({position: nextPos, cell_type: 'empty', aspect: '1:1', caption: ''})
+    });
+    if (!r.ok) throw new Error('add cell ' + r.status);
+    await _gridLoadCells();
+  } catch (e) { console.error('[grid] add cell:', e); }
+  finally { _gridBusy = false; }
+}
+```
+
+### Cell menu
+
+```javascript
+function _gridOpenCellMenu(event, cellId) {
+  event.stopPropagation();
+  // Close any existing menu
+  var existing = document.getElementById('grid-cell-ctx-menu');
+  if (existing) existing.remove();
+
+  var cell = _gridCells.find(function(c) { return c.id === cellId; });
+  if (!cell) return;
+
+  var menu = document.createElement('div');
+  menu.id = 'grid-cell-ctx-menu';
+  menu.className = 'absolute z-40 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border '
+                 + 'dark:border-zinc-700 py-1 text-sm min-w-[160px]';
+  menu.innerHTML =
+    '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
+    + ' onclick="_gridCtxPickMedia(' + cellId + ')">📷 Pick media</button>'
+    + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
+    + ' onclick="gridOpenCellEdit(' + cellId + ')">✏️ Edit caption / aspect</button>'
+    + (cell.upload_id
+       ? '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
+         + ' onclick="_gridCtxClearMedia(' + cellId + ')">🗑️ Clear media</button>'
+       : '')
+    + '<hr class="my-1 border-gray-200 dark:border-zinc-700">'
+    + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700'
+    + ' text-[#ea1100]" onclick="gridDeleteCell(' + cellId + ')">Remove cell</button>';
+
+  // Position near the button that triggered it
+  var rect = event.target.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+  document.body.appendChild(menu);
+
+  // Click-outside to close
+  setTimeout(function() {
+    document.addEventListener('click', function _close() {
+      var m = document.getElementById('grid-cell-ctx-menu');
+      if (m) m.remove();
+      document.removeEventListener('click', _close);
+    });
+  }, 0);
+}
+
+function _gridCtxPickMedia(cellId)  { var m = document.getElementById('grid-cell-ctx-menu'); if(m) m.remove(); gridOpenMediaPicker(cellId); }
+async function _gridCtxClearMedia(cellId) {
+  var m = document.getElementById('grid-cell-ctx-menu'); if(m) m.remove();
+  await fetch('/home/grid/' + _gridPid + '/cells/' + cellId, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({clear_upload: true})
+  });
+  await _gridLoadCells();
+}
+```
+
+### Cell edit modal
+
+```javascript
+function gridOpenCellEdit(cellId) {
+  var m = document.getElementById('grid-cell-ctx-menu'); if(m) m.remove();
+  var cell = _gridCells.find(function(c) { return c.id === cellId; });
+  if (!cell) return;
+  _gridEditCellId = cellId;
+  document.getElementById('grid-cell-edit-caption').value = cell.caption || '';
+  var radios = document.querySelectorAll('input[name="grid-aspect"]');
+  radios.forEach(function(r) { r.checked = r.value === (cell.aspect || '1:1'); });
+  document.getElementById('grid-cell-edit-modal').classList.remove('hidden');
+  document.getElementById('grid-cell-edit-caption').focus();
+}
+
+function gridCloseCellEdit() {
+  _gridEditCellId = null;
+  document.getElementById('grid-cell-edit-modal').classList.add('hidden');
+}
+
+async function gridSaveCellEdit() {
+  if (!_gridEditCellId) return;
+  var caption = document.getElementById('grid-cell-edit-caption').value.trim();
+  var aspect  = '1:1';
+  document.querySelectorAll('input[name="grid-aspect"]').forEach(function(r) {
+    if (r.checked) aspect = r.value;
+  });
+  var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridEditCellId, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({caption: caption, aspect: aspect})
+  });
+  gridCloseCellEdit();
+  if (r.ok) await _gridLoadCells();
+}
+```
+
+### Cell delete modal
+
+```javascript
+function gridDeleteCell(cellId) {
+  var m = document.getElementById('grid-cell-ctx-menu'); if(m) m.remove();
+  _gridPendingDelId = cellId;
+  document.getElementById('grid-cell-del-modal').classList.remove('hidden');
+}
+
+function _gridCancelDelete() {
+  _gridPendingDelId = null;
+  document.getElementById('grid-cell-del-modal').classList.add('hidden');
+}
+
+async function _gridConfirmDelete() {
+  if (!_gridPendingDelId) return;
+  var btn = document.getElementById('grid-cell-del-confirm-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPendingDelId,
+                {method: 'DELETE'});
+    _gridCancelDelete();
+    await _gridLoadCells();
+  } catch(e) { console.error('[grid] delete failed:', e); }
+  finally { if (btn) btn.disabled = false; }
+}
+```
+
+### Media picker
+
+```javascript
+function gridOpenMediaPicker(cellId) {
+  _gridPickerCell = cellId;
+  _gridPickerPage = 1;
+  document.getElementById('grid-media-modal').classList.remove('hidden');
+  var sel = document.getElementById('grid-media-page-sel');
+  if (sel && sel.value) {
+    _gridPickerPageId = parseInt(sel.value, 10);
+    _gridMediaFetch();
+  } else {
+    document.getElementById('grid-media-files').innerHTML =
+      '<p class="text-sm text-gray-400 p-4">No Uploads pages available.</p>';
+  }
+}
+
+function gridCloseMediaPicker() {
+  _gridPickerCell = null;
+  document.getElementById('grid-media-modal').classList.add('hidden');
+  document.getElementById('grid-media-files').innerHTML = '';
+}
+
+function gridMediaLoadPage(uploadsPageId) {
+  _gridPickerPageId = parseInt(uploadsPageId, 10);
+  _gridPickerPage   = 1;
+  _gridMediaFetch();
+}
+
+function gridMediaPrevPage() {
+  if (_gridPickerPage <= 1) return;
+  _gridPickerPage--;
+  _gridMediaFetch();
+}
+
+function gridMediaNextPage() {
+  var maxPage = Math.ceil(_gridPickerTotal / 50) || 1;
+  if (_gridPickerPage >= maxPage) return;
+  _gridPickerPage++;
+  _gridMediaFetch();
+}
+
+async function _gridMediaFetch() {
+  // ⚠️ VERIFY: confirm the exact response shape of GET /home/uploads/{id}/files
+  //    before finalising. Expected: {files: [...], total: int}
+  //    Each file: {id, filename, original_name, mime_type, size}
+  var url = '/home/uploads/' + _gridPickerPageId + '/files?page=' + _gridPickerPage;
+  var el  = document.getElementById('grid-media-files');
+  el.innerHTML = '<p class="text-sm text-gray-400 p-4">Loading…</p>';
+  try {
+    var r = await fetch(url);
+    if (!r.ok) throw new Error('files ' + r.status);
+    var data = await r.json();
+    _gridPickerTotal = data.total || 0;
+    _gridRenderMediaFiles(data.files || []);
+    var maxPage = Math.max(1, Math.ceil(_gridPickerTotal / 50));
+    var lbl = document.getElementById('grid-media-page-label');
+    if (lbl) lbl.textContent = 'Page ' + _gridPickerPage + ' of ' + maxPage;
+  } catch(e) {
+    el.innerHTML = '<p class="text-sm text-red-400 p-4">Failed to load files.</p>';
+  }
+}
+
+function _gridRenderMediaFiles(files) {
+  var el = document.getElementById('grid-media-files');
+  var media = files.filter(function(f) {
+    return f.mime_type &&
+           (f.mime_type.startsWith('image/') || f.mime_type.startsWith('video/'));
+  });
+  if (!media.length) {
+    el.innerHTML = '<p class="text-sm text-gray-400 p-4">No photos or videos on this page.</p>';
+    return;
+  }
+  el.innerHTML = '<div class="grid grid-cols-4 gap-2 p-3">'
+    + media.map(function(f) {
+        var furl = '/uploads/' + _gridEsc(f.filename);
+        var isImg = f.mime_type.startsWith('image/');
+        return '<button'
+             + ' class="aspect-square rounded-lg overflow-hidden bg-gray-100'
+             + ' dark:bg-zinc-800 hover:ring-2 hover:ring-[#0053e2] focus:outline-none'
+             + ' focus:ring-2 focus:ring-[#0053e2]"'
+             + ' onclick="gridPickMedia(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')"'
+             + ' aria-label="Select ' + _gridEsc(f.original_name || f.filename) + '">'
+             + (isImg
+                ? '<img src="' + furl + '" class="w-full h-full object-cover" loading="lazy" alt="">'
+                : '<div class="w-full h-full flex items-center justify-center text-3xl"'
+                  + ' aria-hidden="true">🎬</div>')
+             + '</button>';
+      }).join('')
+    + '</div>';
+}
+
+async function gridPickMedia(uploadId, mimeType) {
+  if (!_gridPickerCell) return;
+  var cellType = mimeType.startsWith('video/') ? 'video' : 'image';
+  try {
+    var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
+    });
+    if (!r.ok) throw new Error('patch ' + r.status);
+    gridCloseMediaPicker();
+    await _gridLoadCells();
+  } catch(e) { console.error('[grid] pick media failed:', e); }
+}
+```
+
+### HTML escape helper
+
+```javascript
+function _gridEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,  '&amp;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#39;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;');
+}
+```
 
 ---
 
-## CRM Integration
+## `templates/base.html` — Script Tag
 
-### Chosen options: A + B (with D as opt-in via widget config)
-
-**Why not C (full care interface in CRM detail panel)?** It would require injecting
-Buds widget state and modals into the CRM JS module, creating a hard coupling
-between two independent features. YAGNI — the widget itself is the primary UX;
-CRM is a secondary view.
-
-**Why not D as the only source?** Not every user has a CRM page. Manual bud entry
-must always work. D is implemented as an *optional* widget config field
-(`linked_crm_page_id`) that surfaces "Import from CRM" as an action inside the
-widget.
-
-### Option A — "Track as Bud" button on CRM contact cards
-
-In `home-page-crm.js`, inside the gallery card and table row render functions,
-add a small 🌸 button after existing action buttons:
+Determine where the existing page-companion scripts are loaded (search for
+`home-page-crm.js` in `base.html` to find the right block). Add the grid script
+**before** the uploads companion scripts, e.g.:
 
 ```html
-<button onclick="_crmTrackAsBud(${c.id})" title="Track as Bud"
-        class="p-1 rounded text-pink-400 hover:text-pink-600 hover:bg-pink-50
-               dark:hover:bg-pink-900/20 transition text-sm">🌸</button>
+<script src="/static/js/home-page-grid.js?v={{ static_v }}" defer></script>
 ```
 
-`_crmTrackAsBud(contactId)` function:
-1. Fetches `GET /home/pages` to find user's Buds widgets (filter `widget_type == 'buds'`).
-   If none found → `_bwToast('Add a Buds widget to your dashboard first.', 'info')`.
-2. Opens `#crm-track-bud-modal` — lets user pick which Buds widget + override
-   flower species + interval. Pre-fills name from contact name.
-3. On submit → `POST /home/buds/{widgetId}/add` with `crm_contact_id` set.
-4. Invalidates the buds widget cache (`invalidateHomePageCache`) so next visit
-   reflects the new bud.
-
-New modal to add to `home_page_crm.html` (or inject via JS):
-- `#crm-track-bud-modal` — standard BookWorm modal (neutral/info colour scheme)
-
-### Option B — Health badge on CRM contact cards
-
-When rendering CRM gallery cards and table rows, check if that contact has a
-linked bud. Source of truth: `window._crmBudHealthMap` — a `{contact_id: {health, species, tier}}` 
-map populated at CRM page init time via `GET /home/buds/crm-lookup/{crm_page_id}`.
-
-In `initCrmPage(pid)` (inside `home-page-crm.js`), add after contacts are fetched:
-
-```javascript
-fetch('/home/buds/crm-lookup/' + pid, {credentials: 'same-origin'})
-  .then(r => r.ok ? r.json() : {})
-  .then(map => { window._crmBudHealthMap = map || {}; _crmRender(); })
-  .catch(() => { window._crmBudHealthMap = {}; });
-```
-
-Gallery card render inserts after the avatar:
-
-```javascript
-var bud = (window._crmBudHealthMap || {})[c.id];
-var budBadge = bud
-  ? '<div class="absolute top-1 right-1 flex items-center gap-1">'
-    + '<img src="/static/img/buds/' + bud.species + '_' + bud.tier + '.png"'
-    + ' class="w-5 h-5 object-contain" title="Health: ' + bud.health + '">'
-    + '<div class="w-10 h-1 bg-gray-200 rounded-full overflow-hidden">'
-    + '<div class="h-full rounded-full" style="width:' + bud.health + '%;'
-    + 'background:' + (bud.tier===0?'#2a8703':bud.tier===1?'#ffc220':'#ea1100') + '"></div>'
-    + '</div></div>'
-  : '';
-```
-
-The `/crm-lookup/{crm_page_id}` endpoint returns a map:
-`{contact_id: {health, species, tier, widget_id, bud_id}}`.
-
-It queries `SELECT b.* FROM buds b WHERE b.crm_contact_id IN (SELECT id FROM crm_contacts WHERE page_id=? AND user_id=?) AND b.user_id=?`. Uses `idx_buds_crm` index.
+> **Verify:** confirm whether other page companion scripts in `base.html` use `defer` or not.
+> Follow the same convention. The rule is: `home-page-grid.js` must be parsed before
+> `_initSwappedPage()` calls `initGridPage` — ensure the load order satisfies this.
 
 ---
 
@@ -413,160 +1164,105 @@ It queries `SELECT b.* FROM buds b WHERE b.crm_contact_id IN (SELECT id FROM crm
 
 | Skill / Agent | When |
 |---|---|
-| `bookworm-db-migration` | After updating `database.py` — dry-run the new tables + indexes against live `bookworm.db` |
-| `bookworm-widget-scaffolder` | After writing the macro + JS engine — validates all 9 required touch-points are complete |
-| `bookworm-template-audit` | After editing `home_page.html`, `home_add_widget_modal.html`, `base.html`, `home_page_crm.html` |
-| `bookworm-qa` | After each major milestone (DB done, widget rendering, CRM integration) |
-| `bookworm-pre-commit` | Before final commit |
-| `bookworm-docs-keeper` | After commit — update CODEPUPPY_NOTES.md schema + widget table |
+| `bookworm-db-migration` | After editing `database.py` — dry-run to verify `CREATE TABLE IF NOT EXISTS` is idempotent on live DB |
+| `bookworm-template-audit` | After writing `home_page_grid.html` and editing `base.html` — catches broken Jinja2 filters, missing `\| safe`, missing `?v=` cache-bust |
+| `bookworm-qa` | After full implementation — navigate to a grid page, hit all 6 API endpoints, verify drag-swap, column picker, media picker |
+| `bookworm-pre-commit` | Before committing — raw `aiosqlite.connect()` scan, secrets check, `_PUBLIC` audit |
+| `bookworm-docs-keeper` | After committing — update CODEPUPPY_NOTES schema section, file map, features-completed list |
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Quirk #13 — `var` not `let`/`const` in module-scope of `home-widget-buds.js`.**
-`initHomeWidgets()` is called on every `_initSwappedPage()`. Any module-scope
-`let _budsState = {}` will throw `SyntaxError: already declared` on the second
-dashboard navigation. Use `var _budsState = _budsState || {}` or plain `var`.
+**Quirk #10 — `_hpCache` 5-minute client-side cache.**
+After adding `"grid"` to `PAGE_TYPES` and routing the template, navigating to any page that
+the browser previously cached as `page_type = "coming_soon"` will still show stale HTML for up
+to 5 minutes. Rule: always hard-refresh (`Ctrl+Shift+R`) after changing `page_type` in the DB
+or touching the template routing. Call this out explicitly in QA.
 
-**Quirk #16 — `| tojson | safe` in `<script>` blocks, `| tojson | e` in `data-*`.**
-The buds widget macro uses `data-config='{{ cfg | tojson | e }}'` for the data
-attribute (HTML-escaped). If any `<script type="application/json">` block is added,
-it MUST use `| safe`.
+**Quirk #13 — `var` not `let`/`const` at module level.**
+`home-page-grid.js` is a standalone file (not HTMX-reinjected), so the strict HTMX
+re-execution rule doesn't technically apply. However all other companion JS modules in this
+codebase use `var` at module level for consistency — follow that convention throughout.
+`let`/`const` inside function bodies are fine.
 
-**Quirk #10 — 5-min `_hpCache` cache.**
-After any bud-modifying action (add, water, fertilize, delete) call
-`invalidateHomePageCache(pid)` with the current page id so the cache is busted.
-Get `pid` from `sessionStorage.getItem('bw-hp')`.
+**Quirk #16 — `tojson | safe` in any `<script>` block.**
+The current design has JS fetch cells after page load (no SSR JSON), so this may not arise.
+If a future optimisation inlines initial cell data into the template, the rule is mandatory:
+`{{ cells | tojson | safe }}` — never `{{ cells | tojson }}` alone.
 
-**Quirk #18 — Unguarded `/uploads/` static mount.**
-This is why flower images must live in `static/img/buds/` — the `page_uploads`
-UUID approach would couple the widget to a specific install's DB rows. Static
-assets in `static/` are intentionally public; flower images are non-sensitive.
+**Confirmation modal pattern (CODEPUPPY_NOTES Architecture section).**
+All three modals (media picker, cell edit, cell delete) must use the exact documented pattern:
+`role="dialog"`, `aria-modal="true"`, `aria-labelledby`, `onkeydown` Escape handler, backdrop
+`onclick` = close. Never `window.confirm()` or `window.alert()`.
 
-**Widget scaffolder checklist — 9 required touch-points.**
-Every new widget type must: (1) DB table (if needed), (2) API router, (3) Jinja2
-macro in `home_page.html`, (4) entry in `home_add_widget_modal.html`,
-(5) `WIDGET_STYLES` entry in `home-widgets.js`, (6) `WIDGET_CONFIG_FIELDS` entry
-in `home-widgets.js`, (7) JS engine call in `initHomeWidgets()`, (8) new JS file
-in `static/js/`, (9) `<script>` tag in `base.html` with `?v={{ static_v }}`.
+**Schema bug in pre-gathered evidence (see top of this file).**
+`upload_id` FK must be `REFERENCES page_uploads(id)` — not `note_attachments(id)`.
 
-**CRM card re-render after "Track as Bud".**
-`home-page-crm.js` re-renders via `_crmRender()`. After POST `/home/buds/{wid}/add`
-completes, call `_crmBudHealthMap[contactId] = {health: 100, species, tier: 0, ...}`
-optimistically before calling `_crmRender()` — avoids a second HTTP round-trip to
-refresh the badge.
+**`POST /home/pages/{page_id}/update-config` is a form POST, not JSON.**
+`gridSetCols()` must post using `FormData` with field `config_json` (a JSON string).
+The endpoint calls `json.loads(config_json)` on the form field, then merges the patch into
+the existing config dict. Do NOT `fetch` with `Content-Type: application/json`.
 
-**`select-crm-pages` custom field type in `aw_refreshConfig`.**
-This is a new field type in the add-widget modal config builder. It needs a new
-`if (f.type === 'select-crm-pages')` branch inside `aw_refreshConfig()` in
-`home-widgets.js`. It must fetch `GET /home/pages` (JSON) and filter by
-`page_type === 'crm'`. All-`var` inside the async handler; no `let`/`const`.
+**Verify `GET /home/uploads/{page_id}/files` response shape before coding `_gridMediaFetch()`.**
+Read `routers/home_uploads.py` to confirm: exact field names (`file_url` pre-built vs just
+`filename`), `total` field name, and the page-query-param name (`page`). Adjust the JS
+accordingly — do not guess. Mark the `⚠️ VERIFY` comment in `_gridMediaFetch()` as resolved
+before committing.
+
+**Upload ownership in `update_grid_cell`.**
+When a user assigns an `upload_id` from a different Uploads page (same user, different page),
+the DB helper must verify `page_uploads.user_id = uid` before storing the reference. This
+guard is already stubbed in the `update_grid_cell` signature above — do not remove it.
 
 ---
 
 ## Implementation Checklist
 
-### Phase 1 — DB + Backend
-
-- [ ] 1.1 Add `buds` table SQL to `CREATE_TABLES_SQL` list in `database.py`
-- [ ] 1.2 Add `bud_fertilize_plans` table SQL in same list
-- [ ] 1.3 Add 3 indexes (`idx_buds_widget`, `idx_buds_user`, `idx_buds_crm`) in `init_db()` after table creation
-- [ ] 1.4 Run `bookworm-db-migration` skill to dry-run and apply to live `bookworm.db`
-- [ ] 1.5 Create `routers/home_buds_db.py` with: `_apply_decay()`, `_week_key()`, `list_buds()`, `add_bud()`, `update_bud()`, `delete_bud()`, `water_bud()`, `create_fertilize_plan()`, `complete_fertilize_plan()`, `crm_lookup()`
-- [ ] 1.6 Create `routers/home_buds.py` with all 8 endpoints; validate widget ownership via `_get_widget_owned()` helper
-- [ ] 1.7 Register `home_buds_router` in `main.py` (import + `app.include_router`)
-- [ ] 1.8 Run `_health_check.py` — confirm server starts, no import errors
-
-### Phase 2 — Flower Images
-
-- [ ] 2.1 Identify the 24 flower UUIDs in `page_uploads` (page_id=74, user_id=1) via direct DB query
-- [ ] 2.2 Create `static/img/buds/` directory
-- [ ] 2.3 Copy all 24 images from `uploads/` to `static/img/buds/{species}_{tier}.png`
-- [ ] 2.4 Verify all 24 filenames exist: `blue_flower_0.png` through `tulip_2.png`
-- [ ] 2.5 Confirm images are served at `http://localhost:8000/static/img/buds/daisy_0.png`
-
-### Phase 3 — Widget Template + Modal
-
-- [ ] 3.1 Add `render_buds(w)` macro to `templates/partials/home_page.html`
-- [ ] 3.2 Add `buds` branch to the widget-dispatch `{% if/elif %}` chain in `home_page.html`
-- [ ] 3.3 Add `('buds', '🌸', 'Buds')` entry to the ⚡ Advanced grid in `home_add_widget_modal.html`
-- [ ] 3.4 Add `WIDGET_STYLES['buds']` to `home-widgets.js`
-- [ ] 3.5 Add `WIDGET_CONFIG_FIELDS['buds']` to `home-widgets.js` (with `select-crm-pages` field)
-- [ ] 3.6 Add `select-crm-pages` branch to `aw_refreshConfig()` in `home-widgets.js`
-
-### Phase 4 — JS Engine
-
-- [ ] 4.1 Create `static/js/home-widget-buds.js` (all `var`, no `let`/`const` at module scope)
-- [ ] 4.2 Implement `initBudsWidgets()` — DOM scan + per-widget boot
-- [ ] 4.3 Implement `_budsRender()` — flower card HTML with health bar, action buttons, tier images
-- [ ] 4.4 Implement `_budsWater()` — POST + optimistic render + week-gate UI
-- [ ] 4.5 Implement fertilize plan flow — open modal, submit plan, mark complete
-- [ ] 4.6 Implement add/edit bud modals — species picker shows flower images, interval field
-- [ ] 4.7 Implement detail panel — slide-in, shows full info + pending fertilize plan
-- [ ] 4.8 Implement delete — standard BookWorm confirm modal pattern
-- [ ] 4.9 Call `initBudsWidgets()` from `initHomeWidgets()` in `home-widgets-render.js`
-- [ ] 4.10 Add `<script src="/static/js/home-widget-buds.js?v={{ static_v }}" defer></script>` to `base.html` after `home-widgets-render.js`
-- [ ] 4.11 Run `bookworm-widget-scaffolder` to validate all 9 touch-points
-- [ ] 4.12 Run `bookworm-template-audit` on changed templates + JS
-- [ ] 4.13 Manually test: add buds widget → add 3 friends → water one → check health bars
-
-### Phase 5 — CRM Integration
-
-- [ ] 5.1 Add `_crmBudHealthMap` initialization (fetch + assign) inside `initCrmPage(pid)` in `home-page-crm.js`
-- [ ] 5.2 Update gallery card render to inject `budBadge` HTML when `_crmBudHealthMap[c.id]` exists
-- [ ] 5.3 Update table row render similarly
-- [ ] 5.4 Add `_crmTrackAsBud(contactId)` function to `home-page-crm.js`
-- [ ] 5.5 Inject `#crm-track-bud-modal` into DOM on first `initCrmPage()` call (or add to `home_page_crm.html`)
-- [ ] 5.6 Wire the 🌸 button into gallery and table card renders
-- [ ] 5.7 Run `bookworm-template-audit` on `home-page-crm.js`
-- [ ] 5.8 Test: create a CRM contact → click 🌸 Track → pick widget → verify badge appears
-
-### Phase 6 — QA + Commit
-
-- [ ] 6.1 Run `bookworm-qa` — pass: new widget endpoints, care actions, CRM badge
-- [ ] 6.2 Run `bookworm-pre-commit` — verify no hardcoded paths, `get_db()` used throughout, no raw `aiosqlite.connect()`
-- [ ] 6.3 Run `bookworm-docs-keeper` — update CODEPUPPY_NOTES.md schema + widget table + `_initSwappedPage` note
-- [ ] 6.4 Commit with message: `feat: Buds friendship-health-tracker widget + CRM integration`
+- [ ] **Step 1 — `database.py`**: Add `CREATE TABLE IF NOT EXISTS home_grid_cells` + `CREATE INDEX IF NOT EXISTS idx_grid_cells_page` in `init_db()` after the CRM block. Run `bookworm-db-migration` to verify idempotency.
+- [ ] **Step 2 — `routers/home_db.py`**: Add `"grid"` to `PAGE_TYPES` frozenset.
+- [ ] **Step 3 — `routers/home_grid_db.py` (new)**: Implement all 6 helpers (`get_grid_cells` with LEFT JOIN, `add_grid_cell`, `update_grid_cell` with uid ownership check + `clear_upload` flag, `delete_grid_cell`, `reorder_grid_cells`, `swap_grid_cells`). All use `get_db()`.
+- [ ] **Step 4 — `routers/home_grid.py` (new)**: Implement 6 endpoints with `_get_grid_page` ownership guard. Input validation for `aspect` and `cell_type`. Parse bodies via `await request.json()`. Correct HTTP status codes (201 for create, 204 for delete).
+- [ ] **Step 5 — `main.py`**: Import `home_grid as home_grid_router`; `app.include_router(home_grid_router.router)` after `home_buds_router`.
+- [ ] **Step 6 — `routers/home.py`**: Add `elif p_type == "grid":` branch; build `uploads_pages`; add `"uploads_pages"` key to the shared `TemplateResponse` context dict (defaults to `[]` for non-grid types).
+- [ ] **Step 7 — Verify `GET /home/uploads/{page_id}/files` response shape**: Read `routers/home_uploads.py` — confirm field names, pagination param, `total` key. Update `_gridMediaFetch()` accordingly before writing the JS.
+- [ ] **Step 8 — `templates/partials/home_page_grid.html` (new)**: Toolbar (col picker with `id="grid-col-btn-N"`, helper text, Add Cell button), `#grid-empty-state`, `#grid-canvas`, media-picker modal with Jinja2 `uploads_pages` loop, cell-edit modal, cell-delete confirm modal. `data-cols="{{ page.config.get('grid_cols', 4) }}"` on `#grid-page-root`. NO inline `<script>` block. Run `bookworm-template-audit`.
+- [ ] **Step 9 — `static/js/home-page-grid.js` (new)**: Implement all functions listed in the JS architecture section. Use `var` at module level. Include `_gridEsc()` helper. Resolve the `⚠️ VERIFY` comment in `_gridMediaFetch()`. Confirm `defer` convention matches other scripts in `base.html`.
+- [ ] **Step 10 — `static/js/home-widgets.js`**: Add `#grid-page-root` branch in `_initSwappedPage()` before `#coming-soon-page-root`. Pattern is identical to `#crm-page-root` block.
+- [ ] **Step 11 — `templates/base.html`**: Add `<script src="/static/js/home-page-grid.js?v={{ static_v }}" defer>` in correct position. Verify load order doesn't break `initGridPage` availability.
+- [ ] **Step 12 — Smoke test**: Create a new page with `page_type = "grid"`. Navigate to it. Add cells, pick media from an Uploads page, drag-swap two cells, change columns, reload — verify persistence. Test with no Uploads pages (empty state in picker).
+- [ ] **Step 13 — `bookworm-qa`**: Hit all 6 endpoints, navigate to grid page, verify error logs clean.
+- [ ] **Step 14 — `bookworm-pre-commit`**: Run full 10-phase checklist.
+- [ ] **Step 15 — `bookworm-docs-keeper`**: Update CODEPUPPY_NOTES schema table (add `home_grid_cells`), file map (new routers + JS + template), features-completed list.
 
 ---
 
 ## Open Questions
 
-**OQ-1 — Flower image source confirmation.**
-Plan assumes copying the 24 images to `static/img/buds/`. If the originals in
-`page_uploads` (page_id=74) are at different paths or filenames, the copy step
-(Phase 2) needs to query the DB first to find the actual file UUIDs. Confirm
-whether the 8 species filenames in `page_uploads.original_name` match the pattern
-`{species}_{tier}.png` exactly.
+1. **`GET /home/uploads/{page_id}/files` exact response shape** — Must be verified by reading
+   `routers/home_uploads.py` before writing `_gridMediaFetch()`. Specifically: is `file_url`
+   returned pre-built, or only `filename` (requiring `/uploads/` prefix in JS)? What is the
+   exact name of the pagination query param and the `total` response key?
 
-**OQ-2 — Widget-scoped vs user-scoped bud list.**
-Plan scopes buds to `widget_id`. This means: two Buds widgets on different
-dashboard pages have **separate friend lists**. Alternative: one global friend
-list per user, multiple widgets are just different views. Widget-scoped matches
-every other data widget in BookWorm (todo, reminder). Confirm before writing DB
-schema — changing this later requires a table rebuild.
+2. **Empty-state initial cells** — When a grid page is first created, should `initGridPage`
+   auto-create N empty cells (e.g. 12 for a 4-col × 3-row starter), or start completely
+   empty? A pre-populated starter grid makes drop targets visible immediately and improves
+   first-run UX. Recommend: detect `_gridCells.length === 0` and offer a "Bootstrap grid"
+   button rather than auto-creating silently (avoids polluting DB with placeholder rows the
+   user may never fill). Needs a product decision before Step 9.
 
-**OQ-3 — Water boost amount.**
-Original Buds app does not specify exact HP values. Plan proposes: 💧 Water = +10 HP,
-🌱 Fertilize complete = +25 HP, both capped at 100. Confirm or override before
-implementing `water_bud()` and `complete_fertilize_plan()`.
+3. **`defer` vs synchronous load for `home-page-grid.js`** — Check whether existing companion
+   scripts in `base.html` use `defer`. If they do not, adding `defer` here could cause a race
+   where `_initSwappedPage()` fires before `initGridPage` is defined. Read `base.html` load
+   order before deciding.
 
-**OQ-4 — "Track as Bud" widget picker UX.**
-When the user clicks 🌸 on a CRM contact, if they have multiple Buds widgets the
-modal shows a dropdown picker. If they have exactly one, should it skip the picker
-and go straight to the species/interval form? Confirm.
+4. **Tailwind arbitrary-value class availability** — `aspect-[4/5]` uses Tailwind's
+   JIT arbitrary-value syntax. Since BookWorm uses the Tailwind CDN (JIT mode), this should
+   work. Confirm `aspect-[4/5]` renders correctly in the browser before shipping — if not,
+   fall back to inline style `style="aspect-ratio: 4/5"`.
 
-**OQ-5 — Demo mode guard.**
-`buds` is per-user-scoped (via `widget_id → home_pages.user_id`). No global table
-is involved. Confirm that `_demo_guard()` is NOT needed for any buds write route.
-(Demo users do have home pages and can add widgets, so their buds data is isolated
-to the demo user account anyway.)
-
-**OQ-6 — `select-crm-pages` field type in settings modal.**
-The `WIDGET_CONFIG_FIELDS.buds` config includes a `select-crm-pages` picker so
-users can optionally link a CRM page as a contact source. The settings modal
-handler (`home-widgets-settings.js`) calls `_buildFieldsForType()` which reads
-from `WIDGET_CONFIG_FIELDS`. A new `select-crm-pages` branch needs to be added
-there too (not just in `aw_refreshConfig`). Confirm this is in scope or defer
-to a follow-up.
+5. **Cross-page uploads page access** — The media picker fetches files from *any* of the
+   user's Uploads pages. If the user has 0 Uploads pages, the picker shows an empty state.
+   Should the grid page's `home_page_view` branch also handle the case where `uploads_pages`
+   is empty by passing a `no_media_source` flag to the template for a more prominent
+   empty-state CTA? Or is the in-picker message sufficient?
