@@ -883,6 +883,39 @@
   </div>
 </div>
 
+<!-- ===== REMOVE BUD MODAL ===== -->
+<div
+  id="buds-del-modal"
+  class="hidden fixed inset-0 z-50 flex items-center justify-center"
+  role="dialog" aria-modal="true" aria-labelledby="buds-del-title"
+  onkeydown="if(event.key==='Escape') _closeBudsDelModal()"
+>
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="_closeBudsDelModal()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                   flex items-center justify-center text-2xl" aria-hidden="true">🌸</span>
+      <h2 id="buds-del-title" class="text-base font-bold text-gray-900 dark:text-zinc-100">Remove bud?</h2>
+    </div>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+      <span id="buds-del-name" class="font-semibold text-gray-800 dark:text-zinc-200"></span>
+    </p>
+    <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">This bud will be removed from the widget. Their health history will be lost.</p>
+    <div class="flex gap-3 justify-end">
+      <button type="button" onclick="_closeBudsDelModal()"
+        class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+               text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+               transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+      >Cancel</button>
+      <button id="buds-del-confirm-btn" type="button" onclick="_confirmBudsDel()"
+        class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
+               hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
+      >Remove</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== DELETE HOMESPACE PAGE MODAL ===== -->
 <div
   id="del-page-modal"

@@ -342,10 +342,41 @@ function _budsAddEditSubmit() {
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
+var _budsDelPending = null; // {wid, budId}
+
 function _budsDelete(wid, budId) {
   document.getElementById('buds-inline-menu') && document.getElementById('buds-inline-menu').remove();
-  var bud = _budsFindBud(wid, budId);
-  if (!confirm('Remove ' + (bud ? bud.name : 'this bud') + '?')) return;
+  var bud   = _budsFindBud(wid, budId);
+  var modal = document.getElementById('buds-del-modal');
+  if (!modal) {
+    // safety fallback — modal missing from template, use native confirm
+    if (!confirm('Remove ' + (bud ? bud.name : 'this bud') + '?')) return;
+    _budsDoPermanentDelete(wid, budId);
+    return;
+  }
+  _budsDelPending = {wid: wid, budId: budId};
+  document.getElementById('buds-del-name').textContent = bud ? bud.name : 'this bud';
+  modal.classList.remove('hidden');
+  setTimeout(function() {
+    var btn = document.getElementById('buds-del-confirm-btn');
+    if (btn) btn.focus();
+  }, 50);
+}
+
+function _closeBudsDelModal() {
+  var modal = document.getElementById('buds-del-modal');
+  if (modal) modal.classList.add('hidden');
+  _budsDelPending = null;
+}
+
+function _confirmBudsDel() {
+  var pending = _budsDelPending;
+  _closeBudsDelModal();
+  if (!pending) return;
+  _budsDoPermanentDelete(pending.wid, pending.budId);
+}
+
+function _budsDoPermanentDelete(wid, budId) {
   fetch('/home/buds/'+wid+'/'+budId,
     {method:'DELETE', credentials:'same-origin'})
   .then(function(r) { return r.ok ? r.json() : null; })
