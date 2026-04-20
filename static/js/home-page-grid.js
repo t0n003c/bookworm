@@ -6,6 +6,7 @@
  *
  * Public API (called from template onclick attributes):
  *   gridSetCols(n)       — preset: 3/4/5 columns (snaps size slider)
+ *   gridSetAspect(a)      — page-wide aspect override ('' | '1:1' | '4:5' | '16:9')
  *   gridSetSize(px)       — live size slider
  *   gridSetGap(px)        — live gap slider
  *   gridAddMedia()
@@ -31,6 +32,7 @@ var _gridMin          = 240;    // cell min-width px for auto-fill (80-400); use
 var _gridGap          = 8;      // gap between cells in px (0-20)
 var _gridZoom         = 100;    // zoom level 30-100%: scales physical cell size, column count unchanged
 var _gridFixedCols    = null;   // null=auto-fill (slider), 3/4/5=exact fixed columns
+var _gridAspectOverride = '';   // ''=per-cell, '1:1'|'4:5'|'16:9'=page-wide override
 var _gridSaveTimer    = null;   // debounce handle for persisting config
 var _gridResizeTimer  = null;   // debounce handle for window-resize reapply
 var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
@@ -59,6 +61,9 @@ function initGridPage(pageId) {
     if (isNaN(_gridGap)) _gridGap = 8;
     var fc = parseInt(root.dataset.gridFixedCols, 10);
     _gridFixedCols = (fc >= 2 && fc <= 10) ? fc : null;
+    // Aspect override: page-wide ratio preference, '' = use per-cell setting.
+    var ga = root.dataset.gridAspect || '';
+    _gridAspectOverride = ['1:1', '4:5', '16:9'].includes(ga) ? ga : '';
     // Zoom: 30–100%. Saved in config as grid_zoom (integer percent).
     var zv = parseInt(root.dataset.gridZoom, 10);
     _gridZoom = (zv >= 30 && zv <= 100) ? zv : 100;
@@ -66,6 +71,7 @@ function initGridPage(pageId) {
     if (zoomSlider) zoomSlider.value = _gridZoom;
     _gridApplyLayout();
     _gridHighlightColBtn();
+    _gridHighlightAspectBtn();
     var sizeSlider = document.getElementById('grid-size-slider');
     if (sizeSlider) sizeSlider.value = _gridMin;
     var gapSlider = document.getElementById('grid-gap-slider');
@@ -167,7 +173,7 @@ var _BTN_PILL = 'w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-zi
     + ' focus-visible:ring-2 focus-visible:ring-[#0053e2]';
 
 function _gridRenderCell(cell) {
-    var aspect  = _gridAspectClass(cell.aspect || '1:1');
+    var aspect  = _gridAspectClass(_gridAspectOverride || cell.aspect || '1:1');
     var inner   = _gridRenderCellInner(cell);
     var hasFile = (cell.cell_type === 'image' || cell.cell_type === 'video') && cell.file_url;
 
@@ -481,7 +487,14 @@ async function _gridReorder(dragId, targetId, insertBefore) {
 /* ── Column presets + size/gap sliders ────────────────────────────────── */
 
 // 3/4/5 preset buttons: EXACT column count — click active preset again to toggle off
-function gridSetCols(n) {
+
+function gridSetAspect(a) {
+    _gridAspectOverride = (_gridAspectOverride === a) ? '' : a;  // toggle off if already active
+    _gridHighlightAspectBtn();
+    _gridRender();
+    clearTimeout(_gridSaveTimer);
+    _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
+}
     _gridFixedCols = (_gridFixedCols === n) ? null : n;  // toggle
     _gridApplyLayout();
     _gridHighlightColBtn();
@@ -586,13 +599,28 @@ function _gridHighlightColBtn() {
     });
 }
 
+function _gridHighlightAspectBtn() {
+    ['1:1', '4:5', '16:9'].forEach(function(a) {
+        var btn = document.getElementById('grid-asp-btn-' + a.replace(':', '-'));
+        if (!btn) return;
+        var active = (_gridAspectOverride === a);
+        btn.setAttribute('aria-pressed', String(active));
+        btn.classList.toggle('bg-[#0053e2]',         active);
+        btn.classList.toggle('text-white',            active);
+        btn.classList.toggle('border-[#0053e2]',      active);
+        btn.classList.toggle('border-gray-300',      !active);
+        btn.classList.toggle('dark:border-zinc-600', !active);
+    });
+}
+
 function _gridSaveConfig() {
     var fd = new FormData();
     fd.append('config_json', JSON.stringify({
         grid_min:        _gridMin,
         grid_gap:        _gridGap,
         grid_zoom:       _gridZoom,
-        grid_fixed_cols: _gridFixedCols   // null clears the preset
+        grid_fixed_cols: _gridFixedCols,   // null clears the preset
+        grid_aspect:     _gridAspectOverride
     }));
     fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
         .catch(function(e) { console.error('[grid] save config failed:', e); });
