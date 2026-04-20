@@ -198,8 +198,8 @@ function _gridAspectClass(aspect) {
 /* ── Drag auto-scroll ───────────────────────────────────────────────────────── */
 // Activation zone: how many px from the top/bottom edge starts scrolling.
 // Speed: proportional to depth inside the zone, max px per rAF frame.
-var _GRID_SCROLL_ZONE = 150;  // px from container edge that activates scroll
-var _GRID_SCROLL_MAX  = 25;   // px/frame at peak (cursor right at the edge)
+var _GRID_SCROLL_ZONE = 200;  // px from viewport edge that activates scroll
+var _GRID_SCROLL_MAX  = 40;   // px/frame at peak (cursor right at the edge)
 
 // Named function so we can remove + re-add on every HTMX page swap
 // without stacking duplicate listeners on document.
@@ -219,9 +219,12 @@ function _gridAutoScrollStep() {
 
 function _gridScrollUpdate(clientY) {
     if (!_gridScrollEl) return;
-    var rect         = _gridScrollEl.getBoundingClientRect();
-    var fromBottom   = rect.bottom - clientY;
-    var fromTop      = clientY - rect.top;
+    // Use viewport dimensions, not element bounds.
+    // Element getBoundingClientRect().bottom can be smaller than expected
+    // (toolbar / app chrome above it), making the zone feel tiny.
+    // window.innerHeight is always exactly where the screen ends.
+    var fromBottom = window.innerHeight - clientY;
+    var fromTop    = clientY;
 
     if (fromBottom < _GRID_SCROLL_ZONE) {
         _gridScrollDir   = 1;
