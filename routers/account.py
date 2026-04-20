@@ -13,6 +13,8 @@ from routers.auth_db import (
     get_user_by_username,
     get_registration_open,
     set_registration_open,
+    get_unlimited_uploads,
+    set_unlimited_uploads,
     update_username,
     update_password,
 )
@@ -88,7 +90,9 @@ async def list_users(request: Request):
     me    = request.session.get("user_id")
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": await get_registration_open()},
+        {"users": users, "me": me,
+         "registration_open": await get_registration_open(),
+         "unlimited_uploads": await get_unlimited_uploads()},
     )
 
 
@@ -110,7 +114,32 @@ async def toggle_registration(
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": new_value,
+         "unlimited_uploads": await get_unlimited_uploads(),
          "success": f"Public registration is now {label}."},
+    )
+
+
+# ── admin: toggle unlimited uploads ───────────────────────────────
+
+@router.post("/settings/unlimited-uploads", response_class=HTMLResponse)
+async def toggle_unlimited_uploads(
+    request: Request,
+    enabled: str = Form(default=""),
+):
+    """Superadmin-only: lift (or restore) the per-file upload size cap."""
+    if not _is_superadmin(request):
+        return HTMLResponse("", status_code=403)
+    new_value = enabled.strip().lower() == "on"
+    await set_unlimited_uploads(new_value)
+    users = await get_all_users()
+    me    = request.session.get("user_id")
+    label = "enabled" if new_value else "disabled"
+    return templates.TemplateResponse(
+        request, "partials/admin_users.html",
+        {"users": users, "me": me,
+         "registration_open": await get_registration_open(),
+         "unlimited_uploads": new_value,
+         "success": f"Unlimited file uploads {label}."},
     )
 
 

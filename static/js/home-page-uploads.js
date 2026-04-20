@@ -268,12 +268,26 @@ function _uplCard(f) {
            + `<div class="w-full h-32 hidden items-center justify-center text-4xl
                          bg-gray-100 dark:bg-zinc-800">${emoji}</div>`;
   } else if (group === 'video') {
-    thumb = `<div class="w-full h-32 flex items-center justify-center
-                         bg-gray-900 dark:bg-zinc-950 relative">
-               <span class="text-4xl opacity-60">${emoji}</span>
-               <span class="absolute inset-0 flex items-center justify-center">
-                 <span class="text-white/70 text-2xl">&#9654;</span></span>
-             </div>`;
+    // #t=0.5 tells the browser to seek to 0.5 s so we get a real frame, not a black box.
+    // preload="metadata" keeps it lightweight — only the first chunk is fetched.
+    // onerror fallback shows the emoji play-button if the video can't load.
+    const vSrc = `/uploads/${_uplEsc(f.filename)}`;
+    const vType = _uplEsc(f.mime_type);
+    thumb = `<div class="relative w-full h-32 bg-gray-900 dark:bg-zinc-950 overflow-hidden">`
+           + `<video preload="metadata" muted playsinline
+                    class="w-full h-full object-cover"
+                    onerror="this.parentElement.querySelector('.upl-vid-fallback').style.display='flex';this.remove()">
+                <source src="${vSrc}#t=0.5" type="${vType}">
+              </video>`
+           + `<div class="upl-vid-fallback absolute inset-0 hidden items-center justify-center">`
+           + `  <span class="text-4xl opacity-60">${emoji}</span>`
+           + `</div>`
+           + `<div class="absolute inset-0 flex items-center justify-center pointer-events-none">`
+           + `  <span class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center">`
+           + `    <span class="text-white text-sm pl-0.5">&#9654;</span>`
+           + `  </span>`
+           + `</div>`
+           + `</div>`;
   } else {
     thumb = `<div class="w-full h-32 flex items-center justify-center text-5xl
                          bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;

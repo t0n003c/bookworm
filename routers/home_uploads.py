@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
 from routers.attachments_db import UPLOAD_DIR
+from routers.auth_db import get_unlimited_uploads
 from routers.home_db import get_home_page
 from routers.uploads_db import (
     add_tag_to_file,
@@ -114,11 +115,11 @@ async def upload_file(
     await _require_uploads_page(page_id, uid)
 
     data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
+    if len(data) > MAX_UPLOAD_BYTES and not await get_unlimited_uploads():
         raise HTTPException(
             status_code=413,
             detail=f"File too large — max {_MAX_MB} MB per file. "
-                   f"Ask your admin to raise BW_MAX_UPLOAD_MB if you need larger uploads.",
+                   f"Ask your admin to raise BW_MAX_UPLOAD_MB or enable Unlimited Uploads.",
         )
 
     original_name = file.filename or "unnamed"

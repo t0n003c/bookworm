@@ -165,3 +165,23 @@ async def set_registration_open(value: bool) -> None:
             ("true" if value else "false",),
         )
         await db.commit()
+
+
+async def get_unlimited_uploads() -> bool:
+    """Return True when superadmin has lifted the per-file upload size cap."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT value FROM site_settings WHERE key = 'unlimited_uploads'"
+        )
+        row = await cur.fetchone()
+        return row is not None and row["value"] == "true"
+
+
+async def set_unlimited_uploads(value: bool) -> None:
+    """Persist unlimited_uploads toggle to site_settings."""
+    async with get_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO site_settings (key, value) VALUES ('unlimited_uploads', ?)",
+            ("true" if value else "false",),
+        )
+        await db.commit()
