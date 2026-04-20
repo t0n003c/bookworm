@@ -188,10 +188,14 @@ async function _saveWidgetFullConfig(widgetId, config) {
       }
     }
 
-    // Upload Preview: re-render tile immediately when upload_ids changes
+    // Upload Preview: re-render tile when upload_ids OR caption changes.
+    // Both dataset attrs must be kept in sync — _loadUploadPreview reads both.
     const uplEl = card.querySelector('[data-upload-ids]');
-    if (uplEl && config.upload_ids !== undefined) {
-      uplEl.dataset.uploadIds = JSON.stringify(config.upload_ids);
+    if (uplEl && (config.upload_ids !== undefined || config.caption !== undefined)) {
+      if (config.upload_ids !== undefined)
+        uplEl.dataset.uploadIds = JSON.stringify(config.upload_ids);
+      if (config.caption !== undefined)
+        uplEl.dataset.caption = String(config.caption);
       if (typeof _loadUploadPreview === 'function') _loadUploadPreview(uplEl);
     }
   }
@@ -313,7 +317,8 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
       const hiddenVal = JSON.stringify(Array.isArray(curVal) ? curVal : []);
       wrap.innerHTML  = lbl
         + '<div class="flex items-center gap-3 mt-1">'
-        + '<span class="text-sm text-gray-500 dark:text-zinc-400">' + count + ' file(s) pinned</span>'
+        + '<span id="upl-prev-settings-count" class="text-sm text-gray-500 dark:text-zinc-400">'
+        + count + ' file(s) pinned</span>'
         + '<button type="button" onclick="_uplPrevOpenPicker(' + widgetId + ')"'
         + ' class="px-3 py-1.5 text-xs bg-wblue text-white rounded-lg'
         + ' hover:bg-blue-700 transition">Pick Files…</button>'

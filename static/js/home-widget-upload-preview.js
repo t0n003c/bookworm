@@ -154,7 +154,7 @@ function _loadUploadPreview(el) {
         .catch(function() { _uplPrevRender(el, [], style, showCaption); });
 }
 
-// ── Open the file-picker modal ────────────────────────────────────────────────
+// ── Open the file-picker modal ──────────────────────────────────────────────────
 function _uplPrevOpenPicker(widgetId) {
     _uplPrevWidgetId = widgetId;
     _uplPrevBusy     = false;
@@ -168,16 +168,32 @@ function _uplPrevOpenPicker(widgetId) {
 
     _uplPrevUpdateCount();
 
+    // Hide the settings modal so it doesn't block click events on the picker.
+    // We restore it when the picker closes (or the user confirms).
+    var settingsModal = document.getElementById('ws-settings-modal');
+    if (settingsModal && !settingsModal.classList.contains('hidden')) {
+        settingsModal.dataset.uplPrevHidden = '1';
+        settingsModal.classList.add('hidden');
+    }
+
     var modal = document.getElementById('upl-prev-picker-modal');
     if (modal) modal.classList.remove('hidden');
 
     _uplPrevFetchPages();
 }
 
-// ── Close the file-picker modal ───────────────────────────────────────────────
+// ── Close the file-picker modal ─────────────────────────────────────────────────
 function _uplPrevClosePicker() {
     var modal = document.getElementById('upl-prev-picker-modal');
     if (modal) modal.classList.add('hidden');
+
+    // Restore the settings modal if we hid it when opening the picker.
+    var settingsModal = document.getElementById('ws-settings-modal');
+    if (settingsModal && settingsModal.dataset.uplPrevHidden) {
+        settingsModal.classList.remove('hidden');
+        delete settingsModal.dataset.uplPrevHidden;
+    }
+
     _uplPrevWidgetId   = null;
     _uplPrevSelected   = [];
     _uplPrevPickerPid  = null;
@@ -347,13 +363,17 @@ function _uplPrevUpdateCount() {
     if (cnt) cnt.textContent = _uplPrevSelected.length;
 }
 
-// ── Confirm: merge selection into widget config and re-render tile ────────────
+// ── Confirm: merge selection into widget config and re-render tile ────────────────
 async function _uplPrevConfirm() {
     if (_uplPrevWidgetId === null) return;
     var widgetId = _uplPrevWidgetId;
     var ids      = _uplPrevSelected.slice();
 
-    _uplPrevClosePicker();
+    _uplPrevClosePicker();  // hides picker + restores settings modal
+
+    // Update the count badge in the settings modal so it reflects the new selection
+    var countBadge = document.getElementById('upl-prev-settings-count');
+    if (countBadge) countBadge.textContent = ids.length + ' file(s) pinned';
 
     // Update the preview div dataset immediately for instant render
     var card = document.getElementById('hw-card-' + widgetId);
