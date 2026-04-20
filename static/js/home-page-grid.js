@@ -29,9 +29,10 @@
 var _gridPid          = 0;      // current page id
 var _gridMin          = 240;    // cell min-width px for auto-fill (80-400); used when _gridFixedCols is null
 var _gridGap          = 8;      // gap between cells in px (0-20)
-var _gridZoom         = 100;    // zoom level 30-100%; scales canvas so more rows fit on screen
+var _gridZoom         = 100;    // zoom level 30-100%: scales physical cell size, column count unchanged
 var _gridFixedCols    = null;   // null=auto-fill (slider), 3/4/5=exact fixed columns
 var _gridSaveTimer    = null;   // debounce handle for persisting config
+var _gridResizeTimer  = null;   // debounce handle for window-resize reapply
 var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
 var _gridBusy         = false;  // optimistic-lock: one mutation at a time
 var _gridEditCellId   = null;   // cell being edited in the caption modal
@@ -72,7 +73,20 @@ function initGridPage(pageId) {
         _gridPickerPageId = parseInt(sel.value, 10) || null;
     }
 
+    // Keep px-based columns accurate when window is resized.
+    // Remove first so HTMX re-swaps don’t stack duplicate listeners.
+    window.removeEventListener('resize', _gridOnWindowResize);
+    window.addEventListener('resize', _gridOnWindowResize);
+
     _gridLoadCells();
+}
+
+// Window resize handler: when using explicit px columns (fixed cols + zoom < 100%)
+// the px values go stale if the window is resized — reapply with fresh measurements.
+function _gridOnWindowResize() {
+    if (!_gridFixedCols || _gridZoom >= 100) return;
+    clearTimeout(_gridResizeTimer);
+    _gridResizeTimer = setTimeout(_gridApplyLayout, 120);
 }
 
 /* ── Data load ─────────────────────────────────────────────────────────────── */
@@ -279,30 +293,43 @@ function gridSetGap(px) {
 function _gridApplyLayout() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
-    if (_gridFixedCols) {
-        canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
-    } else {
-        canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + _gridMin + 'px)';
-    }
-    canvas.style.gap = _gridGap + 'px';
-    canvas.style.justifyContent = _gridFixedCols ? '' : 'center';
 
-    // Zoom: shrink the canvas so more rows fit on screen without changing column count.
-    // We apply CSS zoom to the canvas with NO width compensation so the column
-    // layout is calculated against the natural 100%-wide canvas, then the whole
-    // canvas is scaled down. The parent `flex justify-center` centres the smaller
-    // canvas automatically.
-    //   fixed cols  → repeat(3,1fr) keeps 3 cols; cells appear smaller ✓
-    //   auto-fill   → 240px min stays 240px; same column count, smaller cells ✓
-    // CSS zoom IS layout-affecting (unlike transform:scale), so the scrollable
-    // area compresses and more rows become visible in the same viewport height.
-    if (_gridZoom < 100) {
-        canvas.style.zoom  = String(_gridZoom / 100);
-        canvas.style.width = '';   // let Tailwind w-full stay at 100% (pre-zoom)
+    // Never use CSS zoom or transform — both cause the grid engine to re-measure
+    // column widths on the scaled canvas, which changes the column count.
+    // Instead we drive everything through explicit pixel column widths.
+    canvas.style.zoom  = '';
+    canvas.style.width = '';
+
+    var z = _gridZoom / 100;  // 0.30 – 1.00
+
+    if (_gridFixedCols) {
+        if (z < 1) {
+            // Zoom < 100% with a column preset:
+            //   Switch 1fr → explicit px so cell SIZE shrinks with zoom while
+            //   COLUMN COUNT stays exactly _gridFixedCols.
+            //
+            //   parentW: p-4 wrapper has 16px padding each side (32px total);
+            //   subtract so px cells match the actual visible space.
+            //   Falls back to 800 on first render before layout is calculated.
+            var parent  = canvas.parentElement;
+            var parentW = parent ? Math.max(0, parent.clientWidth - 32) : 0;
+            if (parentW <= 0) parentW = 800;
+            var totalGap = _gridGap * (_gridFixedCols - 1);
+            var cellPx   = Math.max(40, Math.round((parentW - totalGap) / _gridFixedCols * z));
+            canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', ' + cellPx + 'px)';
+        } else {
+            // 100% zoom: 1fr fills the container responsively (original behaviour)
+            canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
+        }
     } else {
-        canvas.style.zoom  = '';
-        canvas.style.width = '';
+        // Auto-fill (size slider): scale min-width by zoom.
+        // Column count naturally shifts with zoom in auto-fill — that’s fine.
+        var minPx = Math.max(40, Math.round(_gridMin * z));
+        canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + minPx + 'px)';
     }
+
+    canvas.style.gap            = _gridGap + 'px';
+    canvas.style.justifyContent = 'center';  // centres px-cols when narrower than container
 
     // gap=0: strip ring box-shadow + border-radius so cells truly touch.
     var zeroGap = (_gridGap === 0);
