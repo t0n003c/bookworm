@@ -260,7 +260,7 @@ function gridSetCols(n) {
 // (Dragging the slider means the user wants flexible sizing, not locked columns.)
 function gridSetSize(px) {
     // NOTE: parseInt('80') = 80, fine to use || fallback here since min is 80
-    _gridMin = Math.max(80, Math.min(400, parseInt(px, 10) || 240));
+    _gridMin = Math.max(80, Math.min(800, parseInt(px, 10) || 240));
     _gridFixedCols = null;   // slider always exits preset mode
     _gridApplyLayout();
     _gridHighlightColBtn();
