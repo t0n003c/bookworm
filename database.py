@@ -732,6 +732,14 @@ async def init_db() -> None:
             "ON home_grid_cells(page_id, position)"
         )
 
+        # ── users.unlimited_uploads (per-user upload cap bypass, 2026-04) ──────────────────
+        cur = await db.execute("PRAGMA table_info(users)")
+        _u_cols = {r[1] for r in await cur.fetchall()}
+        if "unlimited_uploads" not in _u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN unlimited_uploads INTEGER NOT NULL DEFAULT 0"
+            )
+
         await db.commit()
 
 @asynccontextmanager

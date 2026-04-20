@@ -115,7 +115,7 @@ async def upload_file(
     await _require_uploads_page(page_id, uid)
 
     data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES and not await get_unlimited_uploads():
+    if len(data) > MAX_UPLOAD_BYTES and not await get_unlimited_uploads(uid):
         raise HTTPException(
             status_code=413,
             detail=f"File too large — max {_MAX_MB} MB per file. "

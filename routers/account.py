@@ -92,7 +92,7 @@ async def list_users(request: Request):
         request, "partials/admin_users.html",
         {"users": users, "me": me,
          "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads()},
+         "unlimited_uploads": await get_unlimited_uploads(me)},
     )
 
 
@@ -114,7 +114,7 @@ async def toggle_registration(
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": new_value,
-         "unlimited_uploads": await get_unlimited_uploads(),
+         "unlimited_uploads": await get_unlimited_uploads(me),
          "success": f"Public registration is now {label}."},
     )
 
@@ -130,16 +130,16 @@ async def toggle_unlimited_uploads(
     if not _is_superadmin(request):
         return HTMLResponse("", status_code=403)
     new_value = enabled.strip().lower() == "on"
-    await set_unlimited_uploads(new_value)
-    users = await get_all_users()
     me    = request.session.get("user_id")
+    await set_unlimited_uploads(me, new_value)
+    users = await get_all_users()
     label = "enabled" if new_value else "disabled"
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
         {"users": users, "me": me,
          "registration_open": await get_registration_open(),
          "unlimited_uploads": new_value,
-         "success": f"Unlimited file uploads {label}."},
+         "success": f"Unlimited file uploads {label} for your account."},
     )
 
 
@@ -174,6 +174,7 @@ async def create_user_handler(
         request,
         "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "unlimited_uploads": await get_unlimited_uploads(me),
          "success": f'User "{new_username}" created.'},
     )
 
@@ -213,6 +214,7 @@ async def delete_user_handler(request: Request, target_id: int):
         request,
         "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "unlimited_uploads": await get_unlimited_uploads(me),
          "success": f'User "{tname}" and all their data deleted.'},
     )
 
@@ -233,6 +235,7 @@ async def delete_all_demo_handler(request: Request):
         return templates.TemplateResponse(
             request, "partials/admin_users.html",
             {"users": users, "me": me, "registration_open": await get_registration_open(),
+             "unlimited_uploads": await get_unlimited_uploads(me),
              "success": "No demo users to delete."},
         )
 
@@ -245,6 +248,7 @@ async def delete_all_demo_handler(request: Request):
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "unlimited_uploads": await get_unlimited_uploads(me),
          "success": f"{len(demo_users)} demo user(s) and all their data deleted."},
     )
 
@@ -280,5 +284,6 @@ async def reset_user_password(
         request,
         "partials/admin_users.html",
         {"users": users, "me": me, "registration_open": await get_registration_open(),
+         "unlimited_uploads": await get_unlimited_uploads(me),
          "success": f'Password reset for "{tname}".'},
     )
