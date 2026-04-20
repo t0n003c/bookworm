@@ -287,15 +287,18 @@ function _gridApplyLayout() {
     canvas.style.gap = _gridGap + 'px';
     canvas.style.justifyContent = _gridFixedCols ? '' : 'center';
 
-    // Zoom: scale the canvas so more rows fit on screen at once.
-    // CSS `zoom` IS layout-affecting (unlike transform:scale), so the scrollable
-    // area shrinks proportionally and more rows become visible without scrolling.
-    // Width compensation: at z%, canvas layout-width = 100/z * 100% so that
-    // after zoom the rendered width is 100% of the parent.
+    // Zoom: shrink the canvas so more rows fit on screen without changing column count.
+    // We apply CSS zoom to the canvas with NO width compensation so the column
+    // layout is calculated against the natural 100%-wide canvas, then the whole
+    // canvas is scaled down. The parent `flex justify-center` centres the smaller
+    // canvas automatically.
+    //   fixed cols  → repeat(3,1fr) keeps 3 cols; cells appear smaller ✓
+    //   auto-fill   → 240px min stays 240px; same column count, smaller cells ✓
+    // CSS zoom IS layout-affecting (unlike transform:scale), so the scrollable
+    // area compresses and more rows become visible in the same viewport height.
     if (_gridZoom < 100) {
-        var z = _gridZoom / 100;
-        canvas.style.zoom  = String(z);
-        canvas.style.width = (100 / z) + '%';
+        canvas.style.zoom  = String(_gridZoom / 100);
+        canvas.style.width = '';   // let Tailwind w-full stay at 100% (pre-zoom)
     } else {
         canvas.style.zoom  = '';
         canvas.style.width = '';
