@@ -42,6 +42,8 @@ var _gridPickerPageId = null;   // current uploads page id in the picker
 var _gridPickerPage   = 1;
 var _gridPickerTotal  = 0;
 var _gridDragId       = null;   // id of the cell being dragged
+var _gridDragOverEl   = null;   // DOM element currently under the drag cursor
+var _gridDropBefore   = true;   // true = insert before target, false = insert after
 
 /* ── Entry point ───────────────────────────────────────────────────────── */
 function initGridPage(pageId) {
@@ -180,66 +182,98 @@ function _gridAspectClass(aspect) {
     return 'aspect-square';
 }
 
-/* ── Drag-to-swap ───────────────────────────────────────────────────────────── */
+/* ── Drag-to-reorder ────────────────────────────────────────────────────────── */
+// Shows a blue insertion line on the left/right edge of the hovered cell.
+// On drop, removes the dragged cell from its current slot and inserts it
+// before or after the target, then PATCHes the server with the new order.
+
+function _gridClearDropIndicator() {
+    if (_gridDragOverEl) {
+        _gridDragOverEl.style.boxShadow = '';
+        _gridDragOverEl.style.borderRadius = '';
+        _gridDragOverEl = null;
+    }
+}
+
+function _gridSetDropIndicator(el, before) {
+    if (_gridDragOverEl && _gridDragOverEl !== el) _gridClearDropIndicator();
+    _gridDragOverEl = el;
+    _gridDropBefore = before;
+    // Thick blue inset stripe on the insert edge; right side when inserting after.
+    el.style.boxShadow = before
+        ? 'inset 4px 0 0 0 #0053e2'
+        : 'inset -4px 0 0 0 #0053e2';
+}
+
 function _gridBindDrag(el) {
     el.addEventListener('dragstart', function(e) {
         _gridDragId = parseInt(el.dataset.gridCellId, 10);
         e.dataTransfer.effectAllowed = 'move';
-        el.classList.add('opacity-50');
+        // Defer opacity so the drag ghost captures the normal appearance.
+        setTimeout(function() { el.classList.add('opacity-40'); }, 0);
     });
+
     el.addEventListener('dragend', function() {
+        el.classList.remove('opacity-40');
+        _gridClearDropIndicator();
         _gridDragId = null;
-        el.classList.remove('opacity-50');
-        // Remove all drop-highlight classes
-        document.querySelectorAll('[data-grid-cell-id]').forEach(function(c) {
-            c.classList.remove('ring-[#ffc220]', 'ring-2');
-        });
     });
+
     el.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        el.classList.add('ring-[#ffc220]', 'ring-2');
+        if (!_gridDragId) return;
+        var targetId = parseInt(el.dataset.gridCellId, 10);
+        if (targetId === _gridDragId) return;  // hovering own cell — no indicator
+        // Left half of cell = insert before; right half = insert after.
+        var rect   = el.getBoundingClientRect();
+        var before = (e.clientX - rect.left) < rect.width / 2;
+        _gridSetDropIndicator(el, before);
     });
+
     el.addEventListener('dragleave', function(e) {
-        // Only clear highlight when truly leaving this cell, not entering a child element.
+        // Only clear when truly leaving this cell (not entering a child element).
         if (el.contains(e.relatedTarget)) return;
-        el.classList.remove('ring-[#ffc220]', 'ring-2');
+        if (_gridDragOverEl === el) _gridClearDropIndicator();
     });
+
     el.addEventListener('drop', function(e) {
         e.preventDefault();
-        el.classList.remove('ring-[#ffc220]', 'ring-2');
         var targetId = parseInt(el.dataset.gridCellId, 10);
+        var before   = _gridDropBefore;
+        _gridClearDropIndicator();
         if (_gridDragId && targetId && _gridDragId !== targetId) {
-            _gridSwap(_gridDragId, targetId);
+            _gridReorder(_gridDragId, targetId, before);
         }
     });
 }
 
-async function _gridSwap(a, b) {
+async function _gridReorder(dragId, targetId, insertBefore) {
     if (_gridBusy) return;
     _gridBusy = true;
 
-    // Optimistic local swap (instant visual feedback)
-    var ai = _gridCells.findIndex(function(c) { return c.id === a; });
-    var bi = _gridCells.findIndex(function(c) { return c.id === b; });
-    if (ai >= 0 && bi >= 0) {
-        var tmp = _gridCells[ai].position;
-        _gridCells[ai].position = _gridCells[bi].position;
-        _gridCells[bi].position = tmp;
-        _gridCells.sort(function(x, y) { return x.position - y.position; });
-        _gridRender();
-    }
+    // Build new order array locally for instant visual feedback.
+    var newCells = _gridCells.slice();  // shallow copy
+    var dragIdx  = newCells.findIndex(function(c) { return c.id === dragId; });
+    var dragged  = newCells.splice(dragIdx, 1)[0];
+    var targetIdx = newCells.findIndex(function(c) { return c.id === targetId; });
+    newCells.splice(insertBefore ? targetIdx : targetIdx + 1, 0, dragged);
+
+    // Re-assign positions 0, 1, 2, … to match new array order.
+    newCells.forEach(function(c, i) { c.position = i; });
+    _gridCells = newCells;
+    _gridRender();
 
     try {
-        var r = await fetch('/home/grid/' + _gridPid + '/swap', {
+        var r = await fetch('/home/grid/' + _gridPid + '/reorder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({a: a, b: b})
+            body: JSON.stringify({order: _gridCells.map(function(c) { return c.id; })})
         });
-        if (!r.ok) throw new Error('swap ' + r.status);
+        if (!r.ok) throw new Error('reorder ' + r.status);
     } catch(err) {
-        console.error('[grid] swap failed — rolling back:', err);
-        await _gridLoadCells();  // server state wins
+        console.error('[grid] reorder failed — reloading from server:', err);
+        await _gridLoadCells();  // server state wins on failure
     } finally {
         _gridBusy = false;
     }
