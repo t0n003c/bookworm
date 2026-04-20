@@ -53,6 +53,11 @@ async function initUploadsPage(pid) {
 
   // Load tags once upfront so filter pills are ready immediately
   _uplLoadAllTags();
+  // Backfill grid: tags for ALL grid pages this user owns, so the “📸 Grid” badge
+  // appears on files that were added before per-file tagging was introduced.
+  // Fire-and-forget, errors are non-fatal.
+  fetch('/home/grid/backfill-all-tags', {method: 'POST'})
+      .catch(function() {});
   await _uplFetch(1);
 }
 
@@ -853,7 +858,16 @@ async function _uplGridBadgeClick(gridPageId, btnEl) {
 
     try {
         var r = await fetch('/home/pages/' + gridPageId + '/meta');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+            var detail = '';
+            try { var body = await r.json(); detail = body.error || ''; } catch(_) {}
+            throw new Error('HTTP ' + r.status + (detail ? ': ' + detail : ''));
+        }
+        var ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            // Auth redirect returned HTML — session expired
+            throw new Error('Not JSON (session may have expired — try refreshing)');
+        }
         var meta = await r.json();
         pop.innerHTML =
             '<p style="font-weight:600;margin-bottom:.4rem">'
@@ -863,7 +877,6 @@ async function _uplGridBadgeClick(gridPageId, btnEl) {
             + ' style="background:#0053e2;color:white;border:none;border-radius:.35rem;'
             + 'padding:.3rem .75rem;font-size:.72rem;cursor:pointer;width:100%">'
             + 'Go to Grid page &rarr;</button>';
-        // Attach listener cleanly (avoid inline onclick quote-hell)
         var goBtn = pop.querySelector('#upl-grid-pop-goto');
         if (goBtn) {
             goBtn.addEventListener('click', function() {
@@ -872,6 +885,7 @@ async function _uplGridBadgeClick(gridPageId, btnEl) {
             });
         }
     } catch(e) {
-        pop.innerHTML = '<p style="color:#ef4444">Could not load page info.</p>';
+        pop.innerHTML = '<p style="color:#ef4444;font-size:.7rem">'
+            + _uplEsc(e.message || 'Could not load page info.') + '</p>';
     }
 }

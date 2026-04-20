@@ -147,31 +147,58 @@ async def swap_cells(request: Request, page_id: int):
     return JSONResponse({"ok": True})
 
 
-# ── Backfill grid: tag on Uploads page ────────────────────────────────────────
+# ── Backfill grid: tags on Uploads page ────────────────────────────────────────
 
 @router.post("/grid/{page_id}/backfill-tags")
 async def backfill_tags(request: Request, page_id: int):
-    """Idempotent: tag every file currently in this grid with grid:{page_id}.
+    """Idempotent: tag every file in THIS grid page with grid:{page_id}.
 
-    Called silently on page load so Uploads-page badge appears for files that
-    were picked before the auto-tagging logic was added.
+    Called silently from the grid page JS on load.
     """
     uid = _uid(request)
     if not await _get_grid_page(page_id, uid):
         return JSONResponse({"error": "not found"}, 404)
     tag = f"grid:{page_id}"
     async with get_db() as db:
-        # INSERT OR IGNORE keeps it idempotent
         await db.execute(
             """
-            INSERT OR IGNORE INTO page_upload_tags (upload_id, user_id, tag)
-            SELECT c.upload_id, pu.user_id, ?
+            INSERT OR IGNORE INTO page_upload_tags (upload_src, upload_id, user_id, tag)
+            SELECT 'page', c.upload_id, pu.user_id, ?
             FROM   home_grid_cells c
             JOIN   page_uploads pu ON pu.id = c.upload_id
             WHERE  c.page_id = ?
               AND  c.upload_id IS NOT NULL
             """,
             (tag, page_id),
+        )
+        await db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/grid/backfill-all-tags")
+async def backfill_all_tags(request: Request):
+    """Idempotent: tag files for ALL grid pages owned by this user.
+
+    Called silently from the Uploads page JS on init, so the grid badge
+    appears even if the user has never opened the Grid page in this session.
+    """
+    uid = _uid(request)
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO page_upload_tags (upload_src, upload_id, user_id, tag)
+            SELECT 'page',
+                   c.upload_id,
+                   pu.user_id,
+                   'grid:' || c.page_id
+            FROM   home_grid_cells c
+            JOIN   page_uploads pu ON pu.id = c.upload_id
+            JOIN   home_pages   hp ON hp.id = c.page_id
+            WHERE  hp.user_id = ?
+              AND  hp.page_type = 'grid'
+              AND  c.upload_id IS NOT NULL
+            """,
+            (uid,),
         )
         await db.commit()
     return JSONResponse({"ok": True})

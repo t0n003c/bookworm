@@ -236,10 +236,12 @@ function gridSetCols(n) {
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
 
-// Size slider: saves _gridMin, does NOT clear fixed preset.
-// Dragging the slider in fixed-col mode has no visual effect until preset is toggled off.
+// Size slider: exits preset mode → auto-fill with the new px width.
+// (Dragging the slider means the user wants flexible sizing, not locked columns.)
 function gridSetSize(px) {
+    // NOTE: parseInt('80') = 80, fine to use || fallback here since min is 80
     _gridMin = Math.max(80, Math.min(400, parseInt(px, 10) || 240));
+    _gridFixedCols = null;   // slider always exits preset mode
     _gridApplyLayout();
     _gridHighlightColBtn();
     clearTimeout(_gridSaveTimer);
@@ -248,7 +250,9 @@ function gridSetSize(px) {
 
 // Gap slider (0–20 px)
 function gridSetGap(px) {
-    _gridGap = Math.max(0, Math.min(20, parseInt(px, 10) || 8));
+    // NOTE: parseInt('0') = 0 which is falsy — must NOT use `|| fallback` here
+    var n = parseInt(px, 10);
+    _gridGap = isNaN(n) ? 8 : Math.max(0, Math.min(20, n));
     _gridApplyLayout();
     clearTimeout(_gridSaveTimer);
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
