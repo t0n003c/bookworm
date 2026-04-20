@@ -520,6 +520,23 @@ async def img_proxy(url: str = Query(...)):
         return Response(status_code=502)
 
 
+@router.get("/pages")
+async def list_pages_json(request: Request):
+    """Return a JSON list of all home pages for the current user.
+
+    Used by the add-widget modal (select-crm-pages, upload-picker fields) and
+    the upload-preview file-picker to populate page-selector dropdowns.
+    Must be declared before /pages/{page_id} so Starlette matches it first.
+    """
+    uid   = _uid(request)
+    pages = await get_home_pages(uid)
+    return JSONResponse({"pages": [
+        {"id": p["id"], "name": p["name"], "emoji": p.get("emoji", ""),
+         "page_type": p.get("page_type") or "dashboard"}
+        for p in pages
+    ]})
+
+
 @router.post("/pages/create", response_class=HTMLResponse)
 async def create_page(
     request:   Request,

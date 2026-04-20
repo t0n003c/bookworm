@@ -710,6 +710,7 @@ const WIDGET_STYLES = {
             ['cinema','🋏️ Cinema'],['polaroid','📸 Polaroid'],['splash','🎨 Splash']],
   rss_feed:[['card','📰 Card'],['compact','📋 Compact'],['minimal','🔗 Minimal']],
   buds:    [['default','🌸 Full'],['compact','🌿 Compact']],
+  upload_preview: [['grid', '🙌 Grid'], ['carousel', '🎠 Carousel']],
 };
 
 const WIDGET_CONFIG_FIELDS = {
@@ -836,6 +837,15 @@ const WIDGET_CONFIG_FIELDS = {
     { id: 'cf-buds-crm', label: 'Show health badges on CRM page (optional)',
       type: 'select-crm-pages', name: 'linked_crm_page_id' },
   ],
+  upload_preview: () => [
+    // upload-picker is handled specially in aw_refreshConfig / _buildFieldsForType.
+    // At add-widget time we just show an informational placeholder.
+    { id: 'cf-upl-caption', label: 'Show filenames under thumbnails',
+      type: 'select', name: 'caption',
+      options: [['0','No'],['1','Yes']] },
+    { id: 'cf-upl-ids', label: 'Pinned files', type: 'upload-picker',
+      name: 'upload_ids' },
+  ],
 };
 
 function selectWidgetType(wtype) {
@@ -946,6 +956,15 @@ function aw_refreshConfig(wtype, style) {
                  focus:outline-none focus:ring-2 focus:ring-wblue">
           <option value="">Loading…</option>
         </select></div>`;
+    }
+    if (f.type === 'upload-picker') {
+      // No widgetId exists yet (widget hasn’t been saved). Show a hint.
+      return `<div>${lbl}
+        <p class="text-xs text-gray-400 dark:text-zinc-500 py-2">
+          ✅ Add the widget, then open its <strong>⚙️ Settings</strong> gear to pick files.
+        </p>
+        <input type="hidden" id="${f.id}" data-name="${f.name}"
+               data-json="1" value="[]"></div>`;
     }
     return `<div>${lbl}
       <input id="${f.id}" data-name="${f.name}" type="${f.type}"
@@ -1256,6 +1275,11 @@ function initHomeWidgets() {
 
   // Buds friendship-health-tracker widgets
   if (typeof initBudsWidgets === 'function') initBudsWidgets();
+
+  // Upload Preview widgets
+  document.querySelectorAll('[data-upload-ids]').forEach(function(el) {
+    if (typeof _loadUploadPreview === 'function') _loadUploadPreview(el);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

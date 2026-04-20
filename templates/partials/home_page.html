@@ -1562,8 +1562,34 @@
   </div>
 </div>
 {% endmacro %}
+
+{# ════════════════════════════════════════════════════════════════════════════
+   UPLOAD PREVIEW widget
+   Shell div only; _loadUploadPreview() in home-widget-upload-preview.js
+   fetches pinned file metadata and renders thumbnails client-side.
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% macro render_upload_preview(w) %}
+{%- set cfg     = w.get('config', {}) -%}
+{%- set ids     = cfg.get('upload_ids', []) -%}
+{%- set caption = '1' if cfg.get('caption') == '1' or cfg.get('caption') == true else '0' -%}
+{% call card(w) %}
+  {{ widget_header(w, 'File Preview', '🖼️') }}
+  <div class="flex-1 min-h-0 overflow-hidden"
+       id="upl-prev-{{ w.id }}"
+       data-upload-ids="{{ ids | tojson | e }}"
+       data-style="{{ w.style }}"
+       data-caption="{{ caption }}"
+       data-widget-id="{{ w.id }}">
+    <div class="flex items-center justify-center h-full text-gray-300 dark:text-zinc-600
+                text-xs select-none">
+      Loading…
+    </div>
+  </div>
+{% endcall %}
+{% endmacro %}
+
 {#
-  ── Page-type gate ──────────────────────────────────────────────────────────
+  ── Page-type gate ───────────────────────────────────────────────────────────────────────────────────────── ──────────────────────────────────────────────────────────
   Non-dashboard types show a rich coming-soon card instead of the widget canvas.
   Works with both old server code (page dict always has page_type from SELECT *)
   and new server code (explicit tmpl routing). This way no server restart needed.
@@ -1613,6 +1639,7 @@
       {% elif w.widget_type == 'quote' %}     {{ render_quote(w) }}
       {% elif w.widget_type == 'rss_feed' %}  {{ render_rss_feed(w) }}
       {% elif w.widget_type == 'buds' %}      {{ render_buds(w) }}
+      {% elif w.widget_type == 'upload_preview' %} {{ render_upload_preview(w) }}
       {% endif %}
     {% endfor %}
   </div>
@@ -1621,6 +1648,86 @@
 
 {# ── Add-Widget Modal (extracted to keep this file ≤600 lines) ─── #}
 {% include 'partials/home_add_widget_modal.html' %}
+
+{# ── Upload Preview — file-picker modal ─────────────────────────────── #}
+{# NOTE: No <script> block inside this modal. All JS lives in             #}
+{# home-widget-upload-preview.js (a static file, not HTMX-reinjected).   #}
+<div id="upl-prev-picker-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="upl-prev-picker-title"
+     onkeydown="if(event.key==='Escape') _uplPrevClosePicker()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="_uplPrevClosePicker()" aria-hidden="true"></div>
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+    {# Header #}
+    <div class="flex items-center justify-between px-5 py-4 border-b
+                border-gray-200 dark:border-zinc-700 flex-shrink-0">
+      <h2 id="upl-prev-picker-title"
+          class="text-base font-bold text-gray-900 dark:text-zinc-100">
+        🖼️ Pick Files to Pin
+      </h2>
+      <button onclick="_uplPrevClosePicker()" aria-label="Close"
+              class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700
+                     hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    {# Toolbar: page selector + pagination #}
+    <div class="flex items-center gap-2 px-4 py-2.5 border-b
+                border-gray-100 dark:border-zinc-800 flex-shrink-0 flex-wrap">
+      <select id="upl-prev-page-sel"
+              onchange="_uplPrevLoadFiles(this.value)"
+              class="flex-1 min-w-0 text-sm border border-gray-200 dark:border-zinc-700
+                     rounded-lg px-2 py-1.5 bg-white dark:bg-zinc-800
+                     text-gray-700 dark:text-zinc-200
+                     focus:outline-none focus:ring-2 focus:ring-wblue">
+        <option value="">Loading pages…</option>
+      </select>
+      <span class="text-xs text-gray-400 dark:text-zinc-500 ml-1"
+            id="upl-prev-page-label">Page 1</span>
+      <button onclick="_uplPrevPrevPage()"
+              class="px-2.5 py-1 text-xs rounded border border-gray-200
+                     dark:border-zinc-700 hover:bg-gray-50
+                     dark:hover:bg-zinc-800 transition" aria-label="Previous page">
+        &#8592;
+      </button>
+      <button onclick="_uplPrevNextPage()"
+              class="px-2.5 py-1 text-xs rounded border border-gray-200
+                     dark:border-zinc-700 hover:bg-gray-50
+                     dark:hover:bg-zinc-800 transition" aria-label="Next page">
+        &#8594;
+      </button>
+    </div>
+    {# File grid (populated by JS) #}
+    <div id="upl-prev-files" class="flex-1 overflow-y-auto min-h-0">
+      <p class="text-sm text-gray-400 p-4">Loading…</p>
+    </div>
+    {# Footer: count + actions #}
+    <div class="flex items-center justify-between px-5 py-3 border-t
+                border-gray-200 dark:border-zinc-700 flex-shrink-0">
+      <span class="text-xs text-gray-500 dark:text-zinc-400">
+        <span id="upl-prev-count">0</span> file(s) selected
+      </span>
+      <div class="flex gap-2">
+        <button onclick="_uplPrevClosePicker()"
+                class="px-4 py-2 text-sm rounded-lg border border-gray-300
+                       dark:border-zinc-600 text-gray-700 dark:text-zinc-300
+                       hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+          Cancel
+        </button>
+        <button onclick="_uplPrevConfirm()"
+                class="px-5 py-2 bg-wblue text-white text-sm font-semibold
+                       rounded-lg hover:bg-blue-700 transition">
+          Pin Selected
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 {# ── Note Preview Popup ─────────────────────────────────────────── #}
 <div id="note-preview-overlay"

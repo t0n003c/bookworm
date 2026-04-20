@@ -187,6 +187,13 @@ async function _saveWidgetFullConfig(widgetId, config) {
         if (typeof _rssRerender === 'function') _rssRerender(rssEl);
       }
     }
+
+    // Upload Preview: re-render tile immediately when upload_ids changes
+    const uplEl = card.querySelector('[data-upload-ids]');
+    if (uplEl && config.upload_ids !== undefined) {
+      uplEl.dataset.uploadIds = JSON.stringify(config.upload_ids);
+      if (typeof _loadUploadPreview === 'function') _loadUploadPreview(uplEl);
+    }
   }
 
   const pid = Number(sessionStorage.getItem('bw-hp'));
@@ -299,6 +306,23 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
               ).join('');
         }).catch(() => {});
       return; // early-out — already appended
+    } else if (f.type === 'upload-picker') {
+      // Shows current count + a button that opens the file-picker modal.
+      // The hidden input carries upload_ids through saveWidgetSettings.
+      const count     = Array.isArray(curVal) ? curVal.length : 0;
+      const hiddenVal = JSON.stringify(Array.isArray(curVal) ? curVal : []);
+      wrap.innerHTML  = lbl
+        + '<div class="flex items-center gap-3 mt-1">'
+        + '<span class="text-sm text-gray-500 dark:text-zinc-400">' + count + ' file(s) pinned</span>'
+        + '<button type="button" onclick="_uplPrevOpenPicker(' + widgetId + ')"'
+        + ' class="px-3 py-1.5 text-xs bg-wblue text-white rounded-lg'
+        + ' hover:bg-blue-700 transition">Pick Files…</button>'
+        + '</div>'
+        + '<input type="hidden" id="' + f.id + '"'
+        + ' data-cfg-key="' + f.name + '" data-json="1"'
+        + ' value=\'' + hiddenVal.replace(/'/g, "&#39;") + '\'>';
+      body.appendChild(wrap);
+      return;  // do not fall through to generic body.appendChild at end of loop
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
