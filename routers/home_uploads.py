@@ -357,6 +357,8 @@ async def bulk_delete_files(request: Request, page_id: int, body: BulkDeleteBody
                     deleted += 1
                 else:
                     errors += 1
+            else:
+                errors += 1  # unknown src — count it, don't silently swallow
         except Exception:
             errors += 1
     return JSONResponse({"ok": True, "deleted": deleted, "errors": errors})

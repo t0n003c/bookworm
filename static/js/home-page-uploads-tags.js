@@ -414,6 +414,7 @@ async function _uplBulkDoDelete() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
+    if (!r.ok) { _uplShowToast('Bulk delete failed. Please refresh and try again.', true); return; }
     const data = await r.json().catch(function() { return {}; });
     _dndSelClear();
     await _uplFetch(_uplMeta?.page || 1);

@@ -200,7 +200,7 @@ function _dndSelBadgeUpdate() {
       }
     }
     var label = catName
-      ? '\u2212 Remove from \u201c' + catName + '\u201d'
+      ? '\u2212 Remove from \u201c' + _uplEsc(catName) + '\u201d'
       : '\u2212 Remove from catalog';
     catBtn =
       '<button onclick="_uplCatBulkRemove()" ' +
