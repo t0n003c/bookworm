@@ -29,6 +29,9 @@ services:
       # ── Demo mode ──────────────────────────────────────────────────────────
       BW_DEMO_ENABLED: ${BW_DEMO_ENABLED:-true}
 
+        # Max upload size in MB (images + videos). Default 200 MB.
+        BW_MAX_UPLOAD_MB: ${BW_MAX_UPLOAD_MB:-200}
+
       # ── Collabora Online (LibreOffice in browser) ──────────────────────────
       # BW_COLLABORA_URL: URL the *browser* uses to reach Collabora (port 9980).
       #   Docker full-stack:  http://collabora:9980   (service name on Docker bridge)

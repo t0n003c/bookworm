@@ -6,6 +6,7 @@ The page shell is rendered by home_page_view() in home.py.
 """
 import io
 import mimetypes
+import os
 import uuid
 from pathlib import Path
 
@@ -29,7 +30,10 @@ from routers.uploads_db import (
 
 router = APIRouter(prefix="/home/uploads", tags=["uploads"])
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+# Configurable via BW_MAX_UPLOAD_MB env var (default 200 MB).
+# Bump to 500+ for large video libraries; keep at 20 for image-only teams.
+_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "200"))
+MAX_UPLOAD_BYTES = _MAX_MB * 1024 * 1024
 _WEBP_SOURCE_TYPES = {"image/jpeg", "image/png", "image/gif"}
 
 _DEMO_NOOP = Response(status_code=204, headers={"HX-Reswap": "none"})
@@ -111,7 +115,11 @@ async def upload_file(
 
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large — max {_MAX_MB} MB per file. "
+                   f"Ask your admin to raise BW_MAX_UPLOAD_MB if you need larger uploads.",
+        )
 
     original_name = file.filename or "unnamed"
     suffix = Path(original_name).suffix.lower()

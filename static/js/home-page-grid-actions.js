@@ -22,13 +22,24 @@ async function gridUploadFiles(input) {
     if (status) { status.textContent = 'Uploading…'; status.classList.remove('hidden'); }
 
     var ok = 0; var failed = 0;
+    var lastErr = '';
     for (var i = 0; i < files.length; i++) {
         var fd = new FormData();
         fd.append('file', files[i]);
         try {
             var r = await fetch('/home/uploads/' + _gridPickerPageId + '/upload',
                                 {method: 'POST', body: fd});
-            if (!r.ok) { failed++; continue; }
+            if (!r.ok) {
+                // Surface the server's detail message so the user knows WHY it failed
+                try {
+                    var errBody = await r.json();
+                    lastErr = errBody.detail || ('HTTP ' + r.status);
+                } catch(_) {
+                    lastErr = 'HTTP ' + r.status;
+                }
+                failed++;
+                continue;
+            }
             var data = await r.json();
             var uploadId = data.upload_id;
             await fetch('/home/uploads/' + _gridPickerPageId
@@ -45,10 +56,18 @@ async function gridUploadFiles(input) {
 
     input.value = '';
     if (status) {
-        status.textContent = failed
-            ? ok + ' uploaded, ' + failed + ' failed.'
-            : ok + ' file' + (ok === 1 ? '' : 's') + ' uploaded!';
-        setTimeout(function() { status.classList.add('hidden'); }, 3500);
+        if (failed && ok === 0) {
+            // All failed — show the actual reason
+            status.textContent = '\u274c Upload failed: ' + (lastErr || 'unknown error');
+            status.classList.remove('hidden');
+            setTimeout(function() { status.classList.add('hidden'); }, 7000);
+        } else if (failed) {
+            status.textContent = ok + ' uploaded, ' + failed + ' failed (' + lastErr + ')';
+            setTimeout(function() { status.classList.add('hidden'); }, 5000);
+        } else {
+            status.textContent = ok + ' file' + (ok === 1 ? '' : 's') + ' uploaded!';
+            setTimeout(function() { status.classList.add('hidden'); }, 3500);
+        }
     }
     await _gridMediaFetch();
 }
