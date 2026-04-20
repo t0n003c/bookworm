@@ -19,7 +19,8 @@ async def get_grid_cells(page_id: int) -> list[dict]:
                         THEN '/uploads/' || pu.filename
                         ELSE NULL END AS file_url,
                    pu.mime_type,
-                   pu.original_name
+                   pu.original_name,
+                   pu.page_id AS uploads_page_id
             FROM home_grid_cells c
             LEFT JOIN page_uploads pu ON pu.id = c.upload_id
             WHERE c.page_id = ?

@@ -540,6 +540,28 @@ async def create_page(
 
 # ── Page canvas (parameterized — registered AFTER all fixed-path routes) ──────
 
+@router.get("/pages/{page_id}/meta")
+async def home_page_meta(request: Request, page_id: int):
+    """Lightweight JSON metadata for a single home page (name, emoji, type).
+    Used by the Uploads page grid-badge popover to resolve page name from tag.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        from fastapi.responses import JSONResponse as _JR
+        return _JR({"error": "not found"}, status_code=404)
+    from fastapi.responses import JSONResponse as _JR
+    return _JR({
+        "id":        page["id"],
+        "name":      page["name"],
+        "emoji":     page.get("emoji") or "🖼️",
+        "page_type": page["page_type"],
+    })
+
+
 @router.get("/pages/{page_id}", response_class=HTMLResponse)
 async def home_page_view(request: Request, page_id: int):
     """Render a single home-page canvas.

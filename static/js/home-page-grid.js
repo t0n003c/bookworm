@@ -76,6 +76,10 @@ async function _gridLoadCells() {
         if (!r.ok) throw new Error('load cells ' + r.status);
         _gridCells = await r.json();
         _gridRender();
+        // Silently backfill grid: tags on Uploads page for any pre-existing cells
+        // that were added before auto-tagging was introduced. Idempotent.
+        fetch('/home/grid/' + _gridPid + '/backfill-tags', {method: 'POST'})
+            .catch(function() {});  // fire-and-forget, errors are non-fatal
     } catch(e) {
         console.error('[grid] load cells failed:', e);
     }
@@ -105,6 +109,8 @@ function _gridRender() {
     canvas.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
         _gridBindDrag(el);
     });
+    // Re-apply layout (inline gap=0 ring-strip depends on children existing)
+    _gridApplyLayout();
 }
 
 function _gridRenderCell(cell) {
@@ -221,19 +227,19 @@ async function _gridSwap(a, b) {
 
 /* ── Column presets + size/gap sliders ────────────────────────────────── */
 
-// 3/4/5 preset buttons: EXACT column count via repeat(N, 1fr)
+// 3/4/5 preset buttons: EXACT column count — click active preset again to toggle off
 function gridSetCols(n) {
-    _gridFixedCols = n;
+    _gridFixedCols = (_gridFixedCols === n) ? null : n;  // toggle
     _gridApplyLayout();
     _gridHighlightColBtn();
     clearTimeout(_gridSaveTimer);
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
 
-// Size slider: switches back to auto-fill mode (clears fixed preset)
+// Size slider: saves _gridMin, does NOT clear fixed preset.
+// Dragging the slider in fixed-col mode has no visual effect until preset is toggled off.
 function gridSetSize(px) {
     _gridMin = Math.max(80, Math.min(400, parseInt(px, 10) || 240));
-    _gridFixedCols = null;  // leave preset mode
     _gridApplyLayout();
     _gridHighlightColBtn();
     clearTimeout(_gridSaveTimer);
@@ -260,12 +266,15 @@ function _gridApplyLayout() {
     }
     canvas.style.gap = _gridGap + 'px';
     canvas.style.justifyContent = _gridFixedCols ? '' : 'center';
-    // At gap=0, ring-1 box-shadows create a visible line between adjacent cells.
-    if (_gridGap === 0) {
-        canvas.setAttribute('data-grid-zero-gap', '1');
-    } else {
-        canvas.removeAttribute('data-grid-zero-gap');
-    }
+
+    // gap=0: strip ring box-shadow + border-radius on every child so cells truly touch.
+    // We do this in JS (not <style>) because browsers silently ignore <style> blocks
+    // injected via innerHTML (HTMX partial swap target).
+    var zeroGap = (_gridGap === 0);
+    Array.from(canvas.children).forEach(function(cell) {
+        cell.style.boxShadow    = zeroGap ? 'none' : '';
+        cell.style.borderRadius = zeroGap ? '0'    : '';
+    });
 }
 
 function _gridHighlightColBtn() {

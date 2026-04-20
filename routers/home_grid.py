@@ -20,6 +20,7 @@ from routers.home_grid_db import (
     swap_grid_cells,
     update_grid_cell,
 )
+from database import get_db
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home", tags=["home_grid"])
@@ -143,4 +144,34 @@ async def swap_cells(request: Request, page_id: int):
     b = int(body.get("b", 0))
     if a and b and a != b:
         await swap_grid_cells(page_id, a, b)
+    return JSONResponse({"ok": True})
+
+
+# ── Backfill grid: tag on Uploads page ────────────────────────────────────────
+
+@router.post("/grid/{page_id}/backfill-tags")
+async def backfill_tags(request: Request, page_id: int):
+    """Idempotent: tag every file currently in this grid with grid:{page_id}.
+
+    Called silently on page load so Uploads-page badge appears for files that
+    were picked before the auto-tagging logic was added.
+    """
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    tag = f"grid:{page_id}"
+    async with get_db() as db:
+        # INSERT OR IGNORE keeps it idempotent
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO page_upload_tags (upload_id, user_id, tag)
+            SELECT c.upload_id, pu.user_id, ?
+            FROM   home_grid_cells c
+            JOIN   page_uploads pu ON pu.id = c.upload_id
+            WHERE  c.page_id = ?
+              AND  c.upload_id IS NOT NULL
+            """,
+            (tag, page_id),
+        )
+        await db.commit()
     return JSONResponse({"ok": True})

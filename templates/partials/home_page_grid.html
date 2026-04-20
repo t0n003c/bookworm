@@ -3,13 +3,6 @@
    JS:  static/js/home-page-grid.js (loaded via base.html static_v tag)
    Data attrs on #grid-page-root drive JS init (page_id + initial grid_cols).
 #}
-{# Gap=0 ring fix: strip box-shadow + border-radius from direct cell children #}
-<style>
-#grid-canvas[data-grid-zero-gap] > * {
-  box-shadow: none !important;
-  border-radius: 0 !important;
-}
-</style>
 
 <div id="grid-page-root"
      class="h-full flex flex-col min-h-0 overflow-hidden"

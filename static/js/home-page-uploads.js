@@ -270,16 +270,21 @@ function _uplCard(f) {
                          bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;
   }
 
-  // Source badge: note-attached = blue, grid-linked = green, standalone = gray
+  // Source badge: note-attached = blue, grid-linked = green (clickable), standalone = gray
   const gridTag = Array.isArray(f.tags) && f.tags.find(function(t){ return t.startsWith('grid:'); });
+  const gridPid = gridTag ? parseInt(gridTag.split(':')[1], 10) : null;
   const srcBadge = f.src === 'note'
     ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300
                     truncate max-w-full" title="${_uplEsc(f.note_title || 'Note')}">\uD83D\uDCDD ${_uplEsc((f.note_title || 'Note').substring(0,22))}</span>`
-    : gridTag
-    ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
-                    bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-              title="Linked to a Grid page">&#128248; Grid</span>`
+    : gridPid
+    ? `<button onclick="event.stopPropagation();_uplGridBadgeClick(${gridPid},this)"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded
+                       font-semibold bg-green-50 text-green-700 dark:bg-green-900/40
+                       dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/60
+                       transition-colors cursor-pointer"
+                title="Click to see which grid page this belongs to"
+                aria-haspopup="true">&#128248; Grid &#9660;</button>`
     : `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Standalone</span>`;
 
@@ -810,4 +815,63 @@ function _uplOpenLightbox(src, altText) {
         }
     };
     document.addEventListener('keydown', overlay._kh);
+}
+
+/* ── Grid-badge popover: click → show grid page name + Go-to link ───────────────── */
+
+async function _uplGridBadgeClick(gridPageId, btnEl) {
+    // Close any existing popover
+    var old = document.getElementById('upl-grid-popover');
+    if (old) { old.remove(); if (old._pid === gridPageId) return; }  // toggle
+
+    var pop = document.createElement('div');
+    pop.id = 'upl-grid-popover';
+    pop._pid = gridPageId;
+    pop.style.cssText = [
+        'position:absolute', 'z-index:200',
+        'background:white', 'border:1px solid #e5e7eb',
+        'border-radius:.5rem', 'box-shadow:0 4px 20px rgba(0,0,0,.12)',
+        'padding:.75rem 1rem', 'min-width:180px', 'max-width:260px',
+        'font-size:.75rem', 'color:#374151'
+    ].join(';');
+    pop.innerHTML = '<p style="color:#9ca3af;font-size:.65rem;margin-bottom:.35rem">Loading…</p>';
+
+    // Position below the badge button
+    var rect = btnEl.getBoundingClientRect();
+    pop.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
+    pop.style.left = (rect.left  + window.scrollX)     + 'px';
+    document.body.appendChild(pop);
+
+    // Close on outside click
+    var outside = function(e) {
+        if (!pop.contains(e.target) && e.target !== btnEl) {
+            pop.remove();
+            document.removeEventListener('click', outside);
+        }
+    };
+    setTimeout(function() { document.addEventListener('click', outside); }, 0);
+
+    try {
+        var r = await fetch('/home/pages/' + gridPageId + '/meta');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var meta = await r.json();
+        pop.innerHTML =
+            '<p style="font-weight:600;margin-bottom:.4rem">'
+            + _uplEsc(meta.emoji) + '\u00a0' + _uplEsc(meta.name) + '</p>'
+            + '<p style="color:#6b7280;font-size:.65rem;margin-bottom:.6rem">Grid page</p>'
+            + '<button id="upl-grid-pop-goto"'
+            + ' style="background:#0053e2;color:white;border:none;border-radius:.35rem;'
+            + 'padding:.3rem .75rem;font-size:.72rem;cursor:pointer;width:100%">'
+            + 'Go to Grid page &rarr;</button>';
+        // Attach listener cleanly (avoid inline onclick quote-hell)
+        var goBtn = pop.querySelector('#upl-grid-pop-goto');
+        if (goBtn) {
+            goBtn.addEventListener('click', function() {
+                pop.remove();
+                if (typeof showHomePage === 'function') showHomePage(gridPageId);
+            });
+        }
+    } catch(e) {
+        pop.innerHTML = '<p style="color:#ef4444">Could not load page info.</p>';
+    }
 }
