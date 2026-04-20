@@ -219,9 +219,24 @@ function _gridScrollStop() {
 }
 
 function _gridScrollTick_fn() {
-    if (_gridLastCursorY < 0) return;
-    // Re-query each tick — guards against stale references after HTMX swaps.
+    // ── TEMP DEBUG ─ remove after confirming scroll works ──
+    var dbg = document.getElementById('_gridScrollDbg');
+    if (!dbg) {
+        dbg = document.createElement('div');
+        dbg.id = '_gridScrollDbg';
+        dbg.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;'
+            + 'background:rgba(0,0,0,.82);color:#ffc220;font:12px/1.6 monospace;'
+            + 'padding:6px 10px;border-radius:6px;pointer-events:none';
+        document.body.appendChild(dbg);
+    }
     var el = document.getElementById('grid-scroll-area');
+    dbg.innerHTML = 'TICK running: YES<br>'
+        + 'lastY: ' + _gridLastCursorY + '<br>'
+        + 'el found: ' + (el ? 'YES' : 'NO') + '<br>'
+        + 'scrollTop: ' + (el ? el.scrollTop : '—') + '<br>'
+        + 'innerH: ' + window.innerHeight;
+    // ── END TEMP DEBUG ──
+    if (_gridLastCursorY < 0) return;
     if (!el) return;
     var fromBottom = window.innerHeight - _gridLastCursorY;
     var fromTop    = _gridLastCursorY;
