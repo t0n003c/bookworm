@@ -1735,25 +1735,25 @@
   </div>
 </div>
 
-{# ── Upload Preview — docx preview modal ──────────────────────────────── #}
+{# ── Upload Preview — file preview modal (docx / txt / image / pdf) ──── #}
 {# NOTE: No <script> block. All JS lives in home-widget-upload-preview.js.  #}
-<div id="upl-docx-preview-modal"
+<div id="upl-file-preview-modal"
      class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-     role="dialog" aria-modal="true" aria-labelledby="upl-docx-preview-title"
-     onkeydown="if(event.key==='Escape') _uplDocxClosePreview()">
+     role="dialog" aria-modal="true" aria-labelledby="upl-file-preview-title"
+     onkeydown="if(event.key==='Escape') _uplFileClosePreview()">
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
-       onclick="_uplDocxClosePreview()" aria-hidden="true"></div>
+       onclick="_uplFileClosePreview()" aria-hidden="true"></div>
   <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
-              w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+              w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
     {# Header #}
     <div class="flex items-center gap-2 px-5 py-4 border-b
                 border-gray-200 dark:border-zinc-700 flex-shrink-0">
-      <span class="text-base" aria-hidden="true">📄</span>
-      <h2 id="upl-docx-preview-title"
+      <span id="upl-file-preview-icon" class="text-base" aria-hidden="true">📄</span>
+      <h2 id="upl-file-preview-title"
           class="flex-1 text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">
-        Document Preview
+        Preview
       </h2>
-      <button onclick="_uplDocxClosePreview()" aria-label="Close"
+      <button onclick="_uplFileClosePreview()" aria-label="Close"
               class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700
                      hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
@@ -1763,21 +1763,21 @@
       </button>
     </div>
     {# Body (populated by JS) #}
-    <div id="upl-docx-preview-body"
-         class="flex-1 overflow-y-auto px-6 py-5 min-h-0 text-sm">
+    <div id="upl-file-preview-body"
+         class="flex-1 overflow-auto px-6 py-5 min-h-[60vh] text-sm">
       <p class="text-gray-400">Loading…</p>
     </div>
     {# Footer #}
     <div class="flex items-center justify-end gap-3 px-5 py-3 border-t
                 border-gray-200 dark:border-zinc-700 flex-shrink-0">
-      <a id="upl-docx-preview-dl"
+      <a id="upl-file-preview-dl"
          href="#" target="_blank" rel="noopener noreferrer"
          class="px-4 py-2 text-sm rounded-lg border border-gray-300
                 dark:border-zinc-600 text-gray-700 dark:text-zinc-300
                 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
         ↓ Download
       </a>
-      <button onclick="_uplDocxClosePreview()"
+      <button onclick="_uplFileClosePreview()"
               class="px-5 py-2 bg-wblue text-white text-sm font-semibold
                      rounded-lg hover:bg-blue-700 transition">
         Close

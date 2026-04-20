@@ -98,20 +98,43 @@ def _valid_src(src: str) -> str:
     return src
 
 
+import base64
 import html as _html
 from pathlib import Path
 
+# File-type sets used by the preview endpoint
+_IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}
+_TEXT_EXTS  = {"txt", "md", "csv", "log", "json", "xml",
+               "yaml", "yml", "ini", "cfg", "toml", "rst"}
+_PREVIEW_MAX_CHARS = 50_000  # truncate large text files in the popup
+
+
+def _file_ext(name: str) -> str:
+    """Lower-cased extension without the dot, or '' if none."""
+    return name.lower().rsplit(".", 1)[-1] if "." in name else ""
+
 
 def _docx_to_html(filepath: Path) -> str:
-    """Convert a .docx file to simple display HTML (headings, bold, italic, underline)."""
-    import docx as _docx  # python-docx; already in venv
+    """Convert .docx → HTML, preserving headings, bold/italic/underline, inline images."""
+    import docx as _docx
+    from docx.oxml.ns import qn
+
     doc = _docx.Document(str(filepath))
+
+    # Pre-build {rId: data-URI} for every image relationship in the document part.
+    _EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+    img_map: dict[str, str] = {}
+    for rId, rel in doc.part.rels.items():
+        if "image" in rel.reltype.lower():
+            try:
+                blob = rel.target_part.blob
+                ct   = rel.target_part.content_type or "image/png"
+                img_map[rId] = f"data:{ct};base64,{base64.b64encode(blob).decode()}"
+            except Exception:
+                pass  # skip unreadable parts
+
     parts: list[str] = []
     for para in doc.paragraphs:
-        raw = para.text
-        if not raw.strip():
-            parts.append("<br>")
-            continue
         style = (para.style.name or "") if para.style else ""
         if "Heading 1" in style:
             tag, cls = "h2", "text-xl font-bold mt-4 mb-2 text-gray-900 dark:text-zinc-100"
@@ -121,29 +144,57 @@ def _docx_to_html(filepath: Path) -> str:
             tag, cls = "h4", "text-base font-semibold mt-2 mb-1 text-gray-700 dark:text-zinc-300"
         else:
             tag, cls = "p", "mb-1.5 leading-relaxed text-gray-700 dark:text-zinc-300"
+
         inner = ""
+        has_image = False
         for run in para.runs:
+            # Inline image? Check for <w:drawing> inside the run element.
+            drawing = run._r.find(qn("w:drawing"))
+            if drawing is not None:
+                # Full namespace — same as qn("a:blip") but no extra import needed
+                blip = drawing.find(
+                    ".//{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+                )
+                if blip is not None:
+                    rId = blip.get(_EMBED)
+                    if rId and rId in img_map:
+                        inner += (
+                            f'<img src="{img_map[rId]}" alt="embedded image"'
+                            f' class="max-w-full my-2 rounded block" loading="lazy">'
+                        )
+                        has_image = True
+                        continue
+            # Plain text run
             t = _html.escape(run.text)
             if run.bold:      t = f"<strong>{t}</strong>"
             if run.italic:    t = f"<em>{t}</em>"
             if run.underline: t = f"<u>{t}</u>"
             inner += t
-        if not inner:          # runs were empty — fall back to plain text
-            inner = _html.escape(raw)
+
+        if not inner and not has_image:
+            raw = para.text
+            if raw.strip():
+                inner = _html.escape(raw)   # fallback: plain text
+            else:
+                parts.append("<br>")
+                continue
+
         parts.append(f'<{tag} class="{cls}">{inner}</{tag}>')
+
     return "\n".join(parts)
 
 
-# ── Document preview (upload_preview widget) ──────────────────────────────────
+# ── File preview (upload_preview widget) ────────────────────────────────────
 # Fixed route — above /{page_id}/… to avoid Starlette routing conflicts.
 
 
 @router.get("/preview")
 async def preview_file(request: Request, id: int = Query(...)):
-    """Return rendered HTML preview of a supported file (currently .docx).
+    """Return a type-tagged preview payload for docx / txt / image / pdf files.
 
-    Auth-gated + ownership-verified via get_page_uploads_by_ids.
-    Response: {supported, html?, title, filename} or {supported: false, mime}.
+    Auth-gated + ownership-verified.  Response shape:
+      {type, title, filename, ...type-specific fields}
+    where type ∈ {docx, text, image, pdf, unsupported}.
     """
     uid = request.session.get("user_id")
     if not uid:
@@ -156,22 +207,47 @@ async def preview_file(request: Request, id: int = Query(...)):
     original = row.get("original_name") or filename
     mime     = row.get("mime_type") or ""
     filepath = UPLOAD_DIR / filename
+    ext      = _file_ext(original)
+    base     = {"title": original, "filename": filename}
 
+    # ── Image: let the browser render it ───────────────────────────────────────
+    if mime.startswith("image/") or ext in _IMAGE_EXTS:
+        return JSONResponse({**base, "type": "image", "url": f"/uploads/{filename}"})
+
+    # ── PDF: iframe ──────────────────────────────────────────────────────────
+    if mime == "application/pdf" or ext == "pdf":
+        return JSONResponse({**base, "type": "pdf", "url": f"/uploads/{filename}"})
+
+    # ── Plain text / code / markdown / CSV / etc. ───────────────────────────
+    if mime.startswith("text/") or ext in _TEXT_EXTS:
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        try:
+            try:
+                text = filepath.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                text = filepath.read_text(encoding="latin-1")
+            truncated = len(text) > _PREVIEW_MAX_CHARS
+            return JSONResponse({**base, "type": "text",
+                                  "text": text[:_PREVIEW_MAX_CHARS], "truncated": truncated})
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not read file: {exc}")
+
+    # ── Docx ─────────────────────────────────────────────────────────────────
     is_docx = (
         mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        or original.lower().endswith(".docx")
+        or ext == "docx"
     )
-    if not is_docx:
-        return JSONResponse({"supported": False, "mime": mime,
-                             "title": original, "filename": filename})
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-    try:
-        body_html = _docx_to_html(filepath)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Could not read document: {exc}")
-    return JSONResponse({"supported": True, "html": body_html,
-                         "title": original, "filename": filename})
+    if is_docx:
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        try:
+            body_html = _docx_to_html(filepath)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not read document: {exc}")
+        return JSONResponse({**base, "type": "docx", "html": body_html})
+
+    return JSONResponse({**base, "type": "unsupported", "mime": mime})
 
 
 

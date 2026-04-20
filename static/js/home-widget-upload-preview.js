@@ -3,8 +3,8 @@
 
    Public API:
      _loadUploadPreview(el)         — init / re-render one widget tile
-     _uplDocxPreview(fileId)        — open docx preview popup from tile click
-     _uplDocxClosePreview()         — close docx preview popup
+     _uplFilePreview(fileId)        — open file preview popup (img/pdf/txt/docx)
+     _uplFileClosePreview()         — close file preview popup
      _uplPrevOpenPicker(widgetId)   — open the file-picker modal
      _uplPrevClosePicker()          — close the file-picker modal
      _uplPrevLoadFiles(pageId)      — browse a specific uploads page
@@ -24,12 +24,36 @@ var _uplPrevPickerPid   = null;   // current uploads-page ID being browsed
 var _uplPrevBusy        = false;  // guard against concurrent fetches
 var _uplPrevPageFiles   = [];     // files currently shown in picker grid (for badge refresh)
 
-// ── Docx detection ───────────────────────────────────────────────────────────
+// ── File type helpers ────────────────────────────────────────────────────────────
 function _uplIsDocx(file) {
     var mime = file.mime_type || '';
     var name = (file.original_name || file.filename || '').toLowerCase();
     return mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         || name.endsWith('.docx');
+}
+
+var _UPL_PREVIEWABLE_EXTS = [
+    'jpg','jpeg','png','gif','webp','bmp','svg',  // images
+    'pdf',                                         // pdf
+    'txt','md','csv','log','json','xml',            // text
+    'yaml','yml','ini','cfg','toml','rst',
+    'docx'                                          // docx
+];
+function _uplIsPreviewable(file) {
+    var mime = file.mime_type || '';
+    var name = (file.original_name || file.filename || '').toLowerCase();
+    var ext  = name.includes('.') ? name.split('.').pop() : '';
+    return mime.startsWith('image/')
+        || mime === 'application/pdf'
+        || mime.startsWith('text/')
+        || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || _UPL_PREVIEWABLE_EXTS.indexOf(ext) !== -1;
+}
+
+// Pick the right emoji for the modal header icon
+function _uplPreviewHeaderIcon(type) {
+    var icons = { image: '🖼️', pdf: '📕', text: '📝', docx: '📄' };
+    return icons[type] || '📄';
 }
 
 // ── MIME → icon (returns null for images so we render a real <img>) ───────────
@@ -69,50 +93,57 @@ function _uplThumbHtml(file, style) {
     var name = _uplEsc(_uplTrunc(file.original_name || file.filename, 26));
     var url  = '/uploads/' + _uplEsc(file.filename);
 
-    // .docx: open preview popup instead of downloading
-    if (_uplIsDocx(file)) {
-        return '<button type="button"'
-            + ' onclick="_uplDocxPreview(' + file.id + ')"'
+    if (_uplIsPreviewable(file)) {
+        var inner;
+        if (icon === null) {
+            // Image: keep the thumbnail but add a hover overlay + popup on click
+            inner = '<img src="' + url + '" alt="' + name + '" loading="lazy" decoding="async"'
+                + ' class="w-full h-full object-cover pointer-events-none">'
+                + '<div class="absolute inset-0 flex items-end justify-center pb-1.5'
+                + ' opacity-0 hover:opacity-100 bg-gradient-to-t from-black/50 to-transparent'
+                + ' transition-opacity pointer-events-none">'
+                + '<span class="text-white text-[9px] font-medium">Click to enlarge</span>'
+                + '</div>';
+        } else {
+            // Doc / PDF / text: icon + name + "Preview" label
+            var displayIcon = _uplIsDocx(file) ? '📄'
+                : (file.mime_type === 'application/pdf' || (file.original_name||"").toLowerCase().endsWith('.pdf')) ? '📕'
+                : (icon || '📝');
+            inner = '<div class="flex flex-col items-center justify-center gap-1 p-2 h-full">'
+                + '<span class="text-3xl leading-none" aria-hidden="true">' + displayIcon + '</span>'
+                + '<span class="text-[10px] text-center text-gray-600 dark:text-zinc-400'
+                + ' leading-tight break-all">' + name + '</span>'
+                + '<span class="text-[9px] text-[#0053e2] mt-0.5">Preview</span>'
+                + '</div>';
+        }
+        return '<button type="button" onclick="_uplFilePreview(' + file.id + ')"'
             + ' class="relative block w-full overflow-hidden rounded-lg'
             + ' bg-gray-100 dark:bg-zinc-800 aspect-square'
             + ' hover:opacity-90 transition-opacity cursor-pointer"'
             + ' title="' + name + ' \u2014 click to preview">'
-            + '<div class="flex flex-col items-center justify-center gap-1 p-2 h-full">'
-            + '<span class="text-3xl leading-none" aria-hidden="true">📄</span>'
-            + '<span class="text-[10px] text-center text-gray-600 dark:text-zinc-400'
-            + ' leading-tight break-all">' + name + '</span>'
-            + '<span class="text-[9px] text-[#0053e2] mt-0.5">Preview</span>'
-            + '</div></button>';
+            + inner + '</button>';
     }
 
-    var inner = '';
-    if (icon === null) {
-        // Real image preview
-        inner = '<img src="' + url + '" alt="' + name + '"'
-            + ' loading="lazy" decoding="async"'
-            + ' class="w-full h-full object-cover">';
-    } else if (file.mime_type && file.mime_type.startsWith('video/')) {
-        // Video: native element for poster frame + play icon overlay
-        inner = '<video src="' + url + '" preload="metadata" muted playsinline'
+    // Non-previewable: link opens the file directly
+    var inner2;
+    if (file.mime_type && file.mime_type.startsWith('video/')) {
+        inner2 = '<video src="' + url + '" preload="metadata" muted playsinline'
             + ' class="w-full h-full object-cover pointer-events-none"></video>'
             + '<div class="absolute inset-0 flex items-center justify-center'
             + ' bg-black/30 pointer-events-none">'
             + '<span class="text-3xl">' + icon + '</span></div>';
     } else {
-        // Icon + name for docs/audio/etc.
-        inner = '<div class="flex flex-col items-center justify-center gap-1 p-2 h-full">'
-            + '<span class="text-3xl leading-none" aria-hidden="true">' + icon + '</span>'
+        inner2 = '<div class="flex flex-col items-center justify-center gap-1 p-2 h-full">'
+            + '<span class="text-3xl leading-none" aria-hidden="true">' + (icon||'📎') + '</span>'
             + '<span class="text-[10px] text-center text-gray-600 dark:text-zinc-400'
             + ' leading-tight break-all">' + name + '</span>'
             + '</div>';
     }
-
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer"'
         + ' class="relative block overflow-hidden rounded-lg bg-gray-100'
         + ' dark:bg-zinc-800 aspect-square hover:opacity-90 transition-opacity"'
         + ' title="' + name + '">'
-        + inner
-        + '</a>';
+        + inner2 + '</a>';
 }
 
 // ── Render tile contents ──────────────────────────────────────────────────────
@@ -182,16 +213,18 @@ function _loadUploadPreview(el) {
         .catch(function() { _uplPrevRender(el, [], style, showCaption); });
 }
 
-// ── Docx preview popup (widget tile click) ───────────────────────────────────
-function _uplDocxPreview(fileId) {
-    var modal = document.getElementById('upl-docx-preview-modal');
-    var title = document.getElementById('upl-docx-preview-title');
-    var body  = document.getElementById('upl-docx-preview-body');
-    var dlBtn = document.getElementById('upl-docx-preview-dl');
+// ── File preview popup (widget tile click) ───────────────────────────────────
+function _uplFilePreview(fileId) {
+    var modal  = document.getElementById('upl-file-preview-modal');
+    var titleEl = document.getElementById('upl-file-preview-title');
+    var iconEl  = document.getElementById('upl-file-preview-icon');
+    var body   = document.getElementById('upl-file-preview-body');
+    var dlBtn  = document.getElementById('upl-file-preview-dl');
     if (!modal || !body) return;
-    if (title) title.textContent = 'Loading…';
-    body.innerHTML = '<p class="text-gray-400 animate-pulse">Loading document…</p>';
+    if (titleEl) titleEl.textContent = 'Loading…';
+    body.innerHTML = '<p class="text-gray-400 animate-pulse">Loading…</p>';
     modal.classList.remove('hidden');
+    modal.focus();  // capture keyboard for Escape
 
     fetch('/home/uploads/preview?id=' + fileId, { credentials: 'same-origin' })
         .then(function(r) { return r.ok ? r.json() : null; })
@@ -200,25 +233,59 @@ function _uplDocxPreview(fileId) {
                 body.innerHTML = '<p class="text-red-400 text-sm">Could not load preview.</p>';
                 return;
             }
-            if (title) title.textContent = data.title || 'Document Preview';
-            if (dlBtn) dlBtn.href = '/uploads/' + encodeURIComponent(data.filename || '');
-            if (!data.supported) {
-                body.innerHTML = '<p class="text-gray-500 text-sm">'
-                    + 'In-browser preview isn\'t available for this file type ('
-                    + (data.mime || 'unknown') + '). Use the Download button below.</p>';
-                return;
+            var type = data.type || 'unsupported';
+            if (titleEl) titleEl.textContent = data.title || 'Preview';
+            if (iconEl)  iconEl.textContent  = _uplPreviewHeaderIcon(type);
+            if (dlBtn)   dlBtn.href          = '/uploads/' + encodeURIComponent(data.filename || '');
+
+            if (type === 'docx') {
+                body.innerHTML = '<div class="leading-relaxed">' + data.html + '</div>';
+
+            } else if (type === 'image') {
+                body.innerHTML =
+                    '<div class="flex items-center justify-center h-full py-2">'
+                    + '<img src="' + _uplEsc(data.url) + '"'
+                    + ' alt="' + _uplEsc(data.title || '') + '"'
+                    + ' class="max-w-full max-h-[70vh] object-contain rounded shadow-md"'
+                    + ' loading="lazy"></div>';
+
+            } else if (type === 'pdf') {
+                body.innerHTML =
+                    '<iframe src="' + _uplEsc(data.url) + '#toolbar=1"'
+                    + ' class="w-full border-0 rounded" style="height:65vh"'
+                    + ' title="' + _uplEsc(data.title || 'PDF') + '"></iframe>';
+
+            } else if (type === 'text') {
+                var escaped = (data.text || '').replace(/&/g,'&amp;')
+                    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                body.innerHTML =
+                    '<pre class="text-xs font-mono whitespace-pre-wrap break-words'
+                    + ' leading-relaxed text-gray-800 dark:text-zinc-200">' + escaped + '</pre>'
+                    + (data.truncated
+                        ? '<p class="text-xs text-amber-500 mt-3 italic">⚠️'
+                          + ' Truncated at 50 000 chars — download for the full file.</p>'
+                        : '');
+
+            } else {
+                body.innerHTML =
+                    '<p class="text-gray-500 text-sm">'
+                    + 'In-browser preview isn\'t available for this file type'
+                    + (data.mime ? ' (' + _uplEsc(data.mime) + ')' : '') + '.<br>'
+                    + 'Use the ↓ Download button below.</p>';
             }
-            body.innerHTML = '<div class="leading-relaxed">' + data.html + '</div>';
         })
         .catch(function() {
-            body.innerHTML = '<p class="text-red-400 text-sm">Error loading document.</p>';
+            body.innerHTML = '<p class="text-red-400 text-sm">Error loading preview.</p>';
         });
 }
 
-function _uplDocxClosePreview() {
-    var modal = document.getElementById('upl-docx-preview-modal');
+function _uplFileClosePreview() {
+    var modal = document.getElementById('upl-file-preview-modal');
     if (modal) modal.classList.add('hidden');
 }
+// Backward-compat aliases (template attr references updated but kept for safety)
+var _uplDocxPreview      = _uplFilePreview;
+var _uplDocxClosePreview = _uplFileClosePreview;
 
 // ── Open the file-picker modal ────────────────────────────────────────────────────
 function _uplPrevOpenPicker(widgetId) {
