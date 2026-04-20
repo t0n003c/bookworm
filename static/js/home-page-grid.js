@@ -495,6 +495,8 @@ function gridSetAspect(a) {
     clearTimeout(_gridSaveTimer);
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
+
+function gridSetCols(n) {
     _gridFixedCols = (_gridFixedCols === n) ? null : n;  // toggle
     _gridApplyLayout();
     _gridHighlightColBtn();
