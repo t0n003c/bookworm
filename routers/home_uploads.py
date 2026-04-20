@@ -98,7 +98,83 @@ def _valid_src(src: str) -> str:
     return src
 
 
-# ── Pinned-file lookup (upload_preview widget) ────────────────────────────────
+import html as _html
+from pathlib import Path
+
+
+def _docx_to_html(filepath: Path) -> str:
+    """Convert a .docx file to simple display HTML (headings, bold, italic, underline)."""
+    import docx as _docx  # python-docx; already in venv
+    doc = _docx.Document(str(filepath))
+    parts: list[str] = []
+    for para in doc.paragraphs:
+        raw = para.text
+        if not raw.strip():
+            parts.append("<br>")
+            continue
+        style = (para.style.name or "") if para.style else ""
+        if "Heading 1" in style:
+            tag, cls = "h2", "text-xl font-bold mt-4 mb-2 text-gray-900 dark:text-zinc-100"
+        elif "Heading 2" in style:
+            tag, cls = "h3", "text-lg font-semibold mt-3 mb-1 text-gray-800 dark:text-zinc-200"
+        elif "Heading" in style:
+            tag, cls = "h4", "text-base font-semibold mt-2 mb-1 text-gray-700 dark:text-zinc-300"
+        else:
+            tag, cls = "p", "mb-1.5 leading-relaxed text-gray-700 dark:text-zinc-300"
+        inner = ""
+        for run in para.runs:
+            t = _html.escape(run.text)
+            if run.bold:      t = f"<strong>{t}</strong>"
+            if run.italic:    t = f"<em>{t}</em>"
+            if run.underline: t = f"<u>{t}</u>"
+            inner += t
+        if not inner:          # runs were empty — fall back to plain text
+            inner = _html.escape(raw)
+        parts.append(f'<{tag} class="{cls}">{inner}</{tag}>')
+    return "\n".join(parts)
+
+
+# ── Document preview (upload_preview widget) ──────────────────────────────────
+# Fixed route — above /{page_id}/… to avoid Starlette routing conflicts.
+
+
+@router.get("/preview")
+async def preview_file(request: Request, id: int = Query(...)):
+    """Return rendered HTML preview of a supported file (currently .docx).
+
+    Auth-gated + ownership-verified via get_page_uploads_by_ids.
+    Response: {supported, html?, title, filename} or {supported: false, mime}.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    rows = await get_page_uploads_by_ids([id], uid)
+    if not rows:
+        raise HTTPException(status_code=404)
+    row      = rows[0]
+    filename = row["filename"]
+    original = row.get("original_name") or filename
+    mime     = row.get("mime_type") or ""
+    filepath = UPLOAD_DIR / filename
+
+    is_docx = (
+        mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        or original.lower().endswith(".docx")
+    )
+    if not is_docx:
+        return JSONResponse({"supported": False, "mime": mime,
+                             "title": original, "filename": filename})
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    try:
+        body_html = _docx_to_html(filepath)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read document: {exc}")
+    return JSONResponse({"supported": True, "html": body_html,
+                         "title": original, "filename": filename})
+
+
+
 # Fixed route — declared before /{page_id}/… so Starlette never mistakes
 # the string "pinned-files" for a page_id int.
 

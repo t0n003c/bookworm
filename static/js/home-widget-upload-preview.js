@@ -3,12 +3,15 @@
 
    Public API:
      _loadUploadPreview(el)         — init / re-render one widget tile
+     _uplDocxPreview(fileId)        — open docx preview popup from tile click
+     _uplDocxClosePreview()         — close docx preview popup
      _uplPrevOpenPicker(widgetId)   — open the file-picker modal
      _uplPrevClosePicker()          — close the file-picker modal
      _uplPrevLoadFiles(pageId)      — browse a specific uploads page
      _uplPrevPrevPage()             — picker: go to prev file page
      _uplPrevNextPage()             — picker: go to next file page
      _uplPrevToggleFile(fileId)     — picker: toggle file selection
+     _uplPrevMoveFile(fileId, dir)  — picker: shift file −1/+1 in order
      _uplPrevConfirm()              — picker: save selection to widget
 */
 
@@ -19,6 +22,15 @@ var _uplPrevPickerPage  = 1;      // current page in the file picker
 var _uplPrevPickerTotal = 0;      // total pages for current uploads-page
 var _uplPrevPickerPid   = null;   // current uploads-page ID being browsed
 var _uplPrevBusy        = false;  // guard against concurrent fetches
+var _uplPrevPageFiles   = [];     // files currently shown in picker grid (for badge refresh)
+
+// ── Docx detection ───────────────────────────────────────────────────────────
+function _uplIsDocx(file) {
+    var mime = file.mime_type || '';
+    var name = (file.original_name || file.filename || '').toLowerCase();
+    return mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || name.endsWith('.docx');
+}
 
 // ── MIME → icon (returns null for images so we render a real <img>) ───────────
 function _uplMimeIcon(mime) {
@@ -56,6 +68,22 @@ function _uplThumbHtml(file, style) {
     var icon = _uplMimeIcon(file.mime_type || '');
     var name = _uplEsc(_uplTrunc(file.original_name || file.filename, 26));
     var url  = '/uploads/' + _uplEsc(file.filename);
+
+    // .docx: open preview popup instead of downloading
+    if (_uplIsDocx(file)) {
+        return '<button type="button"'
+            + ' onclick="_uplDocxPreview(' + file.id + ')"'
+            + ' class="relative block w-full overflow-hidden rounded-lg'
+            + ' bg-gray-100 dark:bg-zinc-800 aspect-square'
+            + ' hover:opacity-90 transition-opacity cursor-pointer"'
+            + ' title="' + name + ' \u2014 click to preview">'
+            + '<div class="flex flex-col items-center justify-center gap-1 p-2 h-full">'
+            + '<span class="text-3xl leading-none" aria-hidden="true">📄</span>'
+            + '<span class="text-[10px] text-center text-gray-600 dark:text-zinc-400'
+            + ' leading-tight break-all">' + name + '</span>'
+            + '<span class="text-[9px] text-[#0053e2] mt-0.5">Preview</span>'
+            + '</div></button>';
+    }
 
     var inner = '';
     if (icon === null) {
@@ -154,7 +182,45 @@ function _loadUploadPreview(el) {
         .catch(function() { _uplPrevRender(el, [], style, showCaption); });
 }
 
-// ── Open the file-picker modal ──────────────────────────────────────────────────
+// ── Docx preview popup (widget tile click) ───────────────────────────────────
+function _uplDocxPreview(fileId) {
+    var modal = document.getElementById('upl-docx-preview-modal');
+    var title = document.getElementById('upl-docx-preview-title');
+    var body  = document.getElementById('upl-docx-preview-body');
+    var dlBtn = document.getElementById('upl-docx-preview-dl');
+    if (!modal || !body) return;
+    if (title) title.textContent = 'Loading…';
+    body.innerHTML = '<p class="text-gray-400 animate-pulse">Loading document…</p>';
+    modal.classList.remove('hidden');
+
+    fetch('/home/uploads/preview?id=' + fileId, { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+            if (!data) {
+                body.innerHTML = '<p class="text-red-400 text-sm">Could not load preview.</p>';
+                return;
+            }
+            if (title) title.textContent = data.title || 'Document Preview';
+            if (dlBtn) dlBtn.href = '/uploads/' + encodeURIComponent(data.filename || '');
+            if (!data.supported) {
+                body.innerHTML = '<p class="text-gray-500 text-sm">'
+                    + 'In-browser preview isn\'t available for this file type ('
+                    + (data.mime || 'unknown') + '). Use the Download button below.</p>';
+                return;
+            }
+            body.innerHTML = '<div class="leading-relaxed">' + data.html + '</div>';
+        })
+        .catch(function() {
+            body.innerHTML = '<p class="text-red-400 text-sm">Error loading document.</p>';
+        });
+}
+
+function _uplDocxClosePreview() {
+    var modal = document.getElementById('upl-docx-preview-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// ── Open the file-picker modal ────────────────────────────────────────────────────
 function _uplPrevOpenPicker(widgetId) {
     _uplPrevWidgetId = widgetId;
     _uplPrevBusy     = false;
@@ -200,6 +266,7 @@ function _uplPrevClosePicker() {
     _uplPrevPickerPage = 1;
     _uplPrevPickerTotal = 0;
     _uplPrevBusy       = false;
+    _uplPrevPageFiles  = [];
 }
 
 // ── Fetch available uploads pages for the page-selector dropdown ───────────────
@@ -261,21 +328,108 @@ function _uplPrevFetch() {
         });
 }
 
-// ── Render the 4-column thumbnail grid inside the picker ─────────────────────
+// ── Numbered badge HTML for picker grid cells ─────────────────────────────────
+function _uplBadgeHtml(fileId) {
+    var pos = _uplPrevSelected.indexOf(fileId);
+    if (pos === -1) return '';
+    return '<div class="absolute top-1 right-1 min-w-[20px] h-5 px-1.5 rounded-full'
+        + ' bg-[#0053e2] flex items-center justify-center shadow pointer-events-none">'
+        + '<span class="text-white text-[10px] font-bold leading-none">' + (pos + 1) + '</span>'
+        + '</div>';
+}
+
+// ── Refresh all badge overlays for cells on the current picker page ────────────
+function _uplPrevRefreshBadges() {
+    _uplPrevPageFiles.forEach(function(f) {
+        var btn = document.querySelector('[data-upl-id="' + f.id + '"]');
+        if (!btn) return;
+        var pos     = _uplPrevSelected.indexOf(f.id);
+        var selected = pos !== -1;
+        btn.classList.toggle('ring-2',         selected);
+        btn.classList.toggle('ring-[#0053e2]', selected);
+        var existing = btn.querySelector('.absolute.top-1');
+        if (existing) existing.remove();
+        if (selected) {
+            var badge = document.createElement('div');
+            badge.className = 'absolute top-1 right-1 min-w-[20px] h-5 px-1.5 rounded-full'
+                + ' bg-[#0053e2] flex items-center justify-center shadow pointer-events-none';
+            badge.innerHTML = '<span class="text-white text-[10px] font-bold leading-none">'
+                + (pos + 1) + '</span>';
+            btn.appendChild(badge);
+        }
+    });
+    _uplPrevUpdateCount();
+}
+
+// ── Refresh the order strip below the file grid ───────────────────────────────
+function _uplPrevRefreshOrderStrip() {
+    var strip = document.getElementById('upl-prev-order-strip');
+    if (!strip) return;
+    if (!_uplPrevSelected.length) {
+        strip.innerHTML = '<p class="text-xs text-gray-400 italic">No files selected</p>';
+        return;
+    }
+    // Build a name-lookup from the cached page files
+    var nameMap = {};
+    _uplPrevPageFiles.forEach(function(f) {
+        nameMap[f.id] = f.original_name || f.filename;
+    });
+    var html = '<div class="flex gap-1.5 flex-wrap">';
+    _uplPrevSelected.forEach(function(fid, i) {
+        var label = nameMap[fid] ? _uplTrunc(nameMap[fid], 18) : '#' + fid;
+        html += '<div class="flex items-center gap-0.5 bg-blue-50 dark:bg-[#0053e2]/10'
+            + ' border border-[#0053e2]/25 rounded-lg px-2 py-0.5 text-xs">'
+            + '<span class="text-[#0053e2] font-bold mr-0.5 tabular-nums">' + (i + 1) + '</span>'
+            + '<span class="text-gray-700 dark:text-zinc-300 max-w-[90px] truncate">'
+            + _uplEsc(label) + '</span>';
+        if (i > 0) {
+            html += '<button onclick="_uplPrevMoveFile(' + fid + ',-1)" title="Move earlier"'
+                + ' class="ml-1 text-gray-400 hover:text-[#0053e2] leading-none text-sm">&lsaquo;</button>';
+        }
+        if (i < _uplPrevSelected.length - 1) {
+            html += '<button onclick="_uplPrevMoveFile(' + fid + ',1)" title="Move later"'
+                + ' class="text-gray-400 hover:text-[#0053e2] leading-none text-sm">&rsaquo;</button>';
+        }
+        html += '<button onclick="_uplPrevToggleFile(' + fid + ')" title="Remove"'
+            + ' class="ml-0.5 text-gray-300 hover:text-red-400 leading-none">&#215;</button>'
+            + '</div>';
+    });
+    html += '</div>';
+    strip.innerHTML = html;
+}
+
+// ── Shift a file earlier (−1) or later (+1) in the selection order ───────────────
+function _uplPrevMoveFile(fileId, dir) {
+    var idx = _uplPrevSelected.indexOf(fileId);
+    if (idx === -1) return;
+    var newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= _uplPrevSelected.length) return;
+    // Swap the two entries
+    var tmp = _uplPrevSelected[idx];
+    _uplPrevSelected[idx]    = _uplPrevSelected[newIdx];
+    _uplPrevSelected[newIdx] = tmp;
+    _uplPrevRefreshBadges();
+    _uplPrevRefreshOrderStrip();
+}
+
+// ── Render the 4-column thumbnail grid inside the picker ─────────────────────────
 function _uplPrevRenderPickerGrid(files) {
     var box = document.getElementById('upl-prev-files');
     if (!box) return;
+    _uplPrevPageFiles = files;  // cache for badge refresh without re-fetch
     if (!files.length) {
         box.innerHTML = '<p class="text-sm text-gray-400 p-4">No files on this page.</p>';
+        _uplPrevRefreshOrderStrip();
         return;
     }
 
-    var html = '<div class="grid grid-cols-4 gap-2 p-1">';
+    var html = '<div class="grid grid-cols-4 gap-2 p-2">';
     files.forEach(function(f) {
         var icon    = _uplMimeIcon(f.mime_type || '');
         var name    = _uplEsc(_uplTrunc(f.original_name || f.filename, 20));
         var url     = '/uploads/' + _uplEsc(f.filename);
-        var checked = _uplPrevSelected.indexOf(f.id) !== -1;
+        var pos     = _uplPrevSelected.indexOf(f.id);
+        var checked = pos !== -1;
         var ring    = checked ? ' ring-2 ring-[#0053e2]' : '';
 
         var thumb = '';
@@ -294,26 +448,18 @@ function _uplPrevRenderPickerGrid(files) {
                 + name + '</span></div>';
         }
 
-        var checkmark = checked
-            ? '<div class="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#0053e2]'
-              + ' flex items-center justify-center shadow">'
-              + '<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24"'
-              + ' stroke="currentColor" stroke-width="3">'
-              + '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>'
-              + '</svg></div>'
-            : '';
-
         html += '<button type="button" onclick="_uplPrevToggleFile(' + f.id + ')"'
             + ' class="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800'
             + ' aspect-square cursor-pointer hover:opacity-80 transition-opacity'
             + ring + '" title="' + name + '" data-upl-id="' + f.id + '">'
-            + thumb + checkmark + '</button>';
+            + thumb + _uplBadgeHtml(f.id) + '</button>';
     });
     html += '</div>';
     box.innerHTML = html;
+    _uplPrevRefreshOrderStrip();
 }
 
-// ── Toggle a file in / out of the selection ───────────────────────────────────
+// ── Toggle a file in / out of the selection ───────────────────────────────────────
 function _uplPrevToggleFile(fileId) {
     var idx = _uplPrevSelected.indexOf(fileId);
     if (idx === -1) {
@@ -321,26 +467,10 @@ function _uplPrevToggleFile(fileId) {
     } else {
         _uplPrevSelected.splice(idx, 1);
     }
-    // Update the checkmark overlay on the clicked cell without re-fetching
-    var btn = document.querySelector('[data-upl-id="' + fileId + '"]');
-    if (btn) {
-        var checked = idx === -1;  // idx was -1 means we just added it
-        btn.classList.toggle('ring-2',          checked);
-        btn.classList.toggle('ring-[#0053e2]',  checked);
-        var existing = btn.querySelector('div.absolute.top-1');
-        if (existing) existing.remove();
-        if (checked) {
-            var ck = document.createElement('div');
-            ck.className = 'absolute top-1 right-1 w-5 h-5 rounded-full bg-[#0053e2]'
-                + ' flex items-center justify-center shadow';
-            ck.innerHTML = '<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24"'
-                + ' stroke="currentColor" stroke-width="3">'
-                + '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>'
-                + '</svg>';
-            btn.appendChild(ck);
-        }
-    }
-    _uplPrevUpdateCount();
+    // Refresh all badges on the current page (numbers shift when any item is removed)
+    _uplPrevRefreshBadges();
+    // Refresh the order strip below the grid
+    _uplPrevRefreshOrderStrip();
 }
 
 // ── Pagination controls ───────────────────────────────────────────────────────
