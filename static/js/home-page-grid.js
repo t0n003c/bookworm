@@ -84,16 +84,14 @@ function initGridPage(pageId) {
     window.removeEventListener('resize', _gridOnWindowResize);
     window.addEventListener('resize', _gridOnWindowResize);
 
-    // Auto-scroll during drag: grab the scroll container and attach a dragover
-    // listener so scroll activates even when the cursor is in the padding /
-    // empty space below the last row (not over any cell).
+    // Auto-scroll during drag.
+    // Attach to document (not the scroll container) so the handler fires for
+    // every dragover event in the page — including when the cursor is
+    // stationary over a cell that isn’t re-dispatching its own dragover.
+    // remove+add prevents duplicate listeners on HTMX re-swaps.
     _gridScrollEl = document.getElementById('grid-scroll-area');
-    if (_gridScrollEl) {
-        _gridScrollEl.addEventListener('dragover', function(e) {
-            e.preventDefault();  // required so the container accepts drops
-            _gridScrollUpdate(e.clientY);
-        });
-    }
+    document.removeEventListener('dragover', _gridOnDragScroll);
+    document.addEventListener('dragover', _gridOnDragScroll);
 
     _gridLoadCells();
 }
@@ -200,8 +198,15 @@ function _gridAspectClass(aspect) {
 /* ── Drag auto-scroll ───────────────────────────────────────────────────────── */
 // Activation zone: how many px from the top/bottom edge starts scrolling.
 // Speed: proportional to depth inside the zone, max px per rAF frame.
-var _GRID_SCROLL_ZONE = 120;  // px  — larger = activates earlier
-var _GRID_SCROLL_MAX  = 18;   // px/frame — higher = faster peak speed
+var _GRID_SCROLL_ZONE = 150;  // px from container edge that activates scroll
+var _GRID_SCROLL_MAX  = 25;   // px/frame at peak (cursor right at the edge)
+
+// Named function so we can remove + re-add on every HTMX page swap
+// without stacking duplicate listeners on document.
+function _gridOnDragScroll(e) {
+    if (!_gridDragId) return;   // no drag in progress — bail fast
+    _gridScrollUpdate(e.clientY);
+}
 
 function _gridAutoScrollStep() {
     if (!_gridDragId || _gridScrollDir === 0 || !_gridScrollEl) {
@@ -288,7 +293,6 @@ function _gridBindDrag(el) {
     el.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        _gridScrollUpdate(e.clientY);
         if (!_gridDragId) return;
         var targetId = parseInt(el.dataset.gridCellId, 10);
         if (targetId === _gridDragId) return;  // hovering own cell — no indicator
