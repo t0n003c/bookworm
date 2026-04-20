@@ -44,7 +44,6 @@ var _gridPickerTotal  = 0;
 var _gridDragId       = null;   // id of the cell being dragged
 var _gridDragOverEl   = null;   // DOM element currently under the drag cursor
 var _gridDropBefore   = true;   // true = insert before target, false = insert after
-var _gridScrollEl     = null;   // the overflow-y-auto scroll container
 var _gridScrollTick   = null;   // setInterval handle — runs from dragstart to dragend
 var _gridLastCursorY  = -1;     // last clientY seen from any dragover event
 
@@ -83,12 +82,9 @@ function initGridPage(pageId) {
     window.removeEventListener('resize', _gridOnWindowResize);
     window.addEventListener('resize', _gridOnWindowResize);
 
-    // Auto-scroll during drag.
-    // Attach to document (not the scroll container) so the handler fires for
-    // every dragover event in the page — including when the cursor is
-    // stationary over a cell that isn’t re-dispatching its own dragover.
+    // Auto-scroll during drag: document-level listener records cursor Y;
+    // setInterval tick (started on dragstart) does the actual scrolling.
     // remove+add prevents duplicate listeners on HTMX re-swaps.
-    _gridScrollEl = document.getElementById('grid-scroll-area');
     document.removeEventListener('dragover', _gridOnDragScroll);
     document.addEventListener('dragover', _gridOnDragScroll);
 
@@ -223,7 +219,10 @@ function _gridScrollStop() {
 }
 
 function _gridScrollTick_fn() {
-    if (!_gridScrollEl || _gridLastCursorY < 0) return;
+    if (_gridLastCursorY < 0) return;
+    // Re-query each tick — guards against stale references after HTMX swaps.
+    var el = document.getElementById('grid-scroll-area');
+    if (!el) return;
     var fromBottom = window.innerHeight - _gridLastCursorY;
     var fromTop    = _gridLastCursorY;
     var dir = 0, speed = 0;
@@ -234,7 +233,7 @@ function _gridScrollTick_fn() {
         dir   = -1;
         speed = Math.max(2, Math.round(_GRID_SCROLL_MAX * (1 - fromTop / _GRID_SCROLL_ZONE)));
     }
-    if (dir !== 0) _gridScrollEl.scrollTop += dir * speed;
+    if (dir !== 0) el.scrollTop += dir * speed;
 }
 
 /* ── Drag-to-reorder ────────────────────────────────────────────────────────── */

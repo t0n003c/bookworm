@@ -85,10 +85,8 @@
     {# Outer flex wrapper centers the grid block horizontally #}
     <div class="flex justify-center min-h-full p-4">
       <div id="grid-canvas" class="grid w-full">
-        {# Cells rendered by home-page-grid.js _gridRender() #}
+        {# Cells injected by home-page-grid.js _gridRender() #}
       </div>
-    </div>
-      {# Cells rendered by home-page-grid.js _gridRender() #}
     </div>
 
     {# Empty state #}
@@ -98,8 +96,7 @@
       <p class="text-sm font-medium">No photos or videos yet</p>
       <p class="text-xs mt-1">Hit <strong>Add photos &amp; videos</strong> to start building your grid.</p>
     </div>
-  </div>  {# /flex justify-center #}
-  </div>  {# /overflow-y-auto #}
+  </div>  {# /grid-scroll-area #}
 </div>
 
 {# ── Media picker modal ───────────────────────────────────────────────────── #}
