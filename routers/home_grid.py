@@ -19,6 +19,7 @@ from routers.home_grid_db import (
     reorder_grid_cells,
     swap_grid_cells,
     update_grid_cell,
+    update_grid_cell_caption,
 )
 from database import get_db
 
@@ -201,4 +202,20 @@ async def backfill_all_tags(request: Request):
             (uid,),
         )
         await db.commit()
+    return JSONResponse({"ok": True})
+
+
+# ── Update cell caption ─────────────────────────────────────────────────────
+
+@router.patch("/grid/{page_id}/cell/{cell_id}/caption")
+async def set_cell_caption(request: Request, page_id: int, cell_id: int):
+    uid = _uid(request)
+    if not await _get_grid_page(page_id, uid):
+        return JSONResponse({"error": "not found"}, 404)
+    body   = await request.json()
+    caption = str(body.get("caption", ""))
+    ok = await update_grid_cell_caption(cell_id, page_id, caption)
+    if not ok:
+        return JSONResponse({"error": "cell not found"}, 404)
+    return JSONResponse({"ok": True, "caption": caption.strip()[:120]})
     return JSONResponse({"ok": True})

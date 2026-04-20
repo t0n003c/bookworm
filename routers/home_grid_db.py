@@ -57,6 +57,18 @@ async def add_grid_cell(
             (page_id, cell_type, upload_id, aspect, caption),
         )
         await db.commit()
+
+
+async def update_grid_cell_caption(cell_id: int, page_id: int, caption: str) -> bool:
+    """Update caption for a single cell. Returns False if cell not found."""
+    caption = caption.strip()[:120]  # max 120 chars
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE home_grid_cells SET caption=? WHERE id=? AND page_id=?",
+            (caption, cell_id, page_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
         return cur.lastrowid
 
 

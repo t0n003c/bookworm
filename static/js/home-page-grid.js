@@ -135,49 +135,114 @@ function _gridRender() {
         return _gridRenderCell(cell);
     }).join('');
 
-    // Attach drag listeners after DOM injection
+    // Attach drag + hover listeners after DOM injection
     canvas.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
         _gridBindDrag(el);
+        _gridBindHover(el);
     });
     // Re-apply layout (inline gap=0 ring-strip depends on children existing)
     _gridApplyLayout();
 }
 
+// ─ SVG icons (inlined, no external dep) ─────────────────────────────────────────────
+var _SVG_DOWNLOAD = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"'
+    + ' viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M12 4v12m0 0-3.5-3.5M12 16l3.5-3.5M4 20h16"/></svg>';
+
+var _SVG_EXPAND = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"'
+    + ' viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4"/></svg>';
+
+var _SVG_PENCIL = '<svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5" fill="none"'
+    + ' viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M15.232 5.232 18.768 8.768M9 15l-4 1 1-4L15.232 5.232a2.121 2.121 0 0 1 3 3L9 15Z"/></svg>';
+
+// ─ Shared button class strings ─────────────────────────────────────────────
+var _BTN_PILL = 'w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-zinc-800/80'
+    + ' backdrop-blur-sm rounded-full text-gray-600 dark:text-gray-300 shadow'
+    + ' hover:bg-white dark:hover:bg-zinc-700 focus:outline-none'
+    + ' focus-visible:ring-2 focus-visible:ring-[#0053e2]';
+
 function _gridRenderCell(cell) {
-    var aspect = _gridAspectClass(cell.aspect || '1:1');
-    var inner  = _gridRenderCellInner(cell);
+    var aspect  = _gridAspectClass(cell.aspect || '1:1');
+    var inner   = _gridRenderCellInner(cell);
+    var hasFile = (cell.cell_type === 'image' || cell.cell_type === 'video') && cell.file_url;
+
+    // ─ Top-right action row ─────────────────────────────────────────────
+    var dlBtn = '';
+    if (hasFile) {
+        var fname = cell.original_name ? _gridEsc(cell.original_name) : '';
+        dlBtn = '<a href="' + _gridEsc(cell.file_url) + '" download="' + fname + '"'
+            + ' draggable="false" onclick="event.stopPropagation()"'
+            + ' class="' + _BTN_PILL + '" aria-label="Download">'
+            + _SVG_DOWNLOAD + '</a>';
+    }
+
+    // Expand button only for video (images open lightbox on click directly)
+    var expandBtn = '';
+    if (cell.cell_type === 'video' && cell.file_url) {
+        expandBtn = '<button onclick="event.stopPropagation();gridLightboxOpen(' + cell.id + ')"'
+            + ' draggable="false" class="' + _BTN_PILL + '" aria-label="Expand">'
+            + _SVG_EXPAND + '</button>';
+    }
+
+    var menuBtn = '<button onclick="_gridOpenCellMenu(event,' + cell.id + ')"'
+        + ' class="' + _BTN_PILL + ' text-xs leading-none" aria-label="Cell options">⋯</button>';
+
+    // ─ Bottom caption bar ──────────────────────────────────────────────
+    var captionBar = cell.caption
+        ? '<p data-caption-id="' + cell.id + '" class="absolute bottom-0 inset-x-0 z-10'
+          + ' bg-black/50 text-white text-xs px-2 py-1 truncate pointer-events-none">'
+          + _gridEsc(cell.caption) + '</p>'
+        : '';
+
+    // Pencil edit button (bottom-left, visible on hover)
+    var editBtn = hasFile
+        ? '<button onclick="event.stopPropagation();_gridEditCaption(' + cell.id + ')"'
+          + ' draggable="false"'
+          + ' class="absolute bottom-1 left-1 z-20 opacity-0 group-hover:opacity-100'
+          + ' transition-opacity w-5 h-5 flex items-center justify-center'
+          + ' bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-full'
+          + ' text-gray-600 dark:text-gray-300 shadow hover:bg-white'
+          + ' dark:hover:bg-zinc-700 focus:outline-none'
+          + ' focus-visible:ring-2 focus-visible:ring-[#0053e2]"'
+          + ' aria-label="Edit caption">' + _SVG_PENCIL + '</button>'
+        : '';
+
     return '<div class="relative group rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800'
          + ' cursor-grab active:cursor-grabbing ring-1 ring-gray-200 dark:ring-zinc-700'
          + ' hover:ring-[#0053e2] transition-all select-none ' + aspect + '"'
          + ' data-grid-cell-id="' + cell.id + '"'
          + ' draggable="true">'
          + inner
-         + '<div class="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100'
+         + '<div class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100'
          + ' transition-opacity z-10">'
-         + '<button onclick="_gridOpenCellMenu(event,' + cell.id + ')"'
-         + ' class="w-6 h-6 flex items-center justify-center bg-white/80 dark:bg-zinc-800/80'
-         + ' backdrop-blur-sm rounded-full text-gray-600 dark:text-gray-300 shadow'
-         + ' hover:bg-white dark:hover:bg-zinc-700 text-xs leading-none'
-         + ' focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0053e2]"'
-         + ' aria-label="Cell options">⋯</button>'
+         + dlBtn + expandBtn + menuBtn
          + '</div>'
+         + captionBar
+         + editBtn
          + '</div>';
 }
 
 function _gridRenderCellInner(cell) {
     if (cell.cell_type === 'image' && cell.file_url) {
-        var caption = cell.caption ? '<p class="absolute bottom-0 inset-x-0 bg-black/50 text-white'
-            + ' text-xs px-2 py-1 truncate">' + _gridEsc(cell.caption) + '</p>' : '';
+        // Click opens lightbox; draggable=false prevents ghost drag from img itself
         return '<img src="' + _gridEsc(cell.file_url) + '"'
-             + ' class="w-full h-full object-cover" loading="lazy" alt="' + _gridEsc(cell.caption || '') + '">'
-             + caption;
+             + ' class="w-full h-full object-cover cursor-pointer" loading="lazy"'
+             + ' alt="' + _gridEsc(cell.caption || '') + '"'
+             + ' draggable="false"'
+             + ' onclick="gridLightboxOpen(' + cell.id + ')">';
     }
     if (cell.cell_type === 'video' && cell.file_url) {
+        // data-hover-preview flags this for _gridBindHover
         return '<video src="' + _gridEsc(cell.file_url) + '"'
              + ' class="w-full h-full object-cover" muted playsinline preload="metadata"'
+             + ' data-hover-preview'
              + ' onclick="this.paused?this.play():this.pause()" style="cursor:pointer"></video>';
     }
-    // Empty cell
     return '<div class="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400 dark:text-zinc-600">'
          + '<span class="text-3xl" aria-hidden="true">🖼️</span>'
          + '<span class="text-xs">Empty</span>'
@@ -301,6 +366,85 @@ function _gridBindDrag(el) {
             _gridReorder(_gridDragId, targetId, before);
         }
     });
+}
+
+/* ── Video hover-preview ───────────────────────────────────────────────────── */
+
+function _gridBindHover(el) {
+    var vid = el.querySelector('[data-hover-preview]');
+    if (!vid) return;   // image / empty cells — nothing to do
+
+    el.addEventListener('mouseenter', function() {
+        if (_gridDragId) return;   // don’t play during drag
+        vid.currentTime = 0;
+        vid.play().catch(function() {});  // catch autoplay policy rejections silently
+    });
+    el.addEventListener('mouseleave', function() {
+        vid.pause();
+        vid.currentTime = 0;
+    });
+}
+
+/* ── Caption inline editing ────────────────────────────────────────────────── */
+
+function _gridEditCaption(cellId) {
+    var cell = _gridCells.find(function(c) { return c.id === cellId; });
+    if (!cell) return;
+    var cellEl = document.querySelector('[data-grid-cell-id="' + cellId + '"]');
+    if (!cellEl) return;
+
+    // Replace caption bar + pencil button with an input
+    var captEl  = cellEl.querySelector('[data-caption-id]');
+    var pencilEl = cellEl.querySelector('[aria-label="Edit caption"]');
+    if (captEl)   captEl.classList.add('hidden');
+    if (pencilEl) pencilEl.classList.add('hidden');
+
+    var inp = document.createElement('input');
+    inp.type  = 'text';
+    inp.value = cell.caption || '';
+    inp.maxLength = 120;
+    inp.placeholder = 'Add a caption…';
+    inp.setAttribute('draggable', 'false');
+    inp.className = 'absolute bottom-0 inset-x-0 z-20 bg-black/70 text-white'
+        + ' text-xs px-2 py-1.5 placeholder-white/40 focus:outline-none'
+        + ' focus:ring-1 focus:ring-[#ffc220]';
+
+    function _save() {
+        var newCaption = inp.value.trim().slice(0, 120);
+        inp.remove();
+        // Update local state
+        cell.caption = newCaption;
+        // Re-render just this cell
+        var freshHtml = _gridRenderCell(cell);
+        var tmp = document.createElement('div');
+        tmp.innerHTML = freshHtml;
+        var newEl = tmp.firstElementChild;
+        cellEl.replaceWith(newEl);
+        _gridBindDrag(newEl);
+        _gridBindHover(newEl);
+        _gridApplyLayout();
+        // Persist to server (fire-and-forget with error toast)
+        fetch('/home/grid/' + _gridPid + '/cell/' + cellId + '/caption', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({caption: newCaption}),
+        }).catch(function() {
+            console.error('[grid] caption save failed for cell', cellId);
+        });
+    }
+
+    inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter')  { e.preventDefault(); _save(); }
+        if (e.key === 'Escape') { inp.remove(); if (captEl) captEl.classList.remove('hidden'); if (pencilEl) pencilEl.classList.remove('hidden'); }
+    });
+    inp.addEventListener('blur', _save);
+    inp.addEventListener('click',   function(e) { e.stopPropagation(); });
+    inp.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    inp.addEventListener('dragstart', function(e) { e.stopPropagation(); e.preventDefault(); });
+
+    cellEl.appendChild(inp);
+    inp.focus();
+    inp.select();
 }
 
 async function _gridReorder(dragId, targetId, insertBefore) {
@@ -452,323 +596,6 @@ function _gridSaveConfig() {
     }));
     fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
         .catch(function(e) { console.error('[grid] save config failed:', e); });
-}
-
-/* ── Add media from toolbar (no pre-existing cell) ─────────────────────────── */
-function gridAddMedia() {
-    // Open the picker with no target cell — gridPickMedia() will POST a new cell
-    gridOpenMediaPicker(null);
-}
-
-/* ── Direct upload from picker ────────────────────────────────────────────── */
-async function gridUploadFiles(input) {
-    var files = Array.from(input.files || []);
-    if (!files.length) return;
-    if (!_gridPickerPageId) {
-        alert('Select an Uploads page first so we know where to save the file.');
-        return;
-    }
-    var status = document.getElementById('grid-upload-status');
-    if (status) { status.textContent = 'Uploading…'; status.classList.remove('hidden'); }
-
-    var ok = 0; var failed = 0;
-    for (var i = 0; i < files.length; i++) {
-        var fd = new FormData();
-        fd.append('file', files[i]);
-        try {
-            var r = await fetch('/home/uploads/' + _gridPickerPageId + '/upload',
-                                {method: 'POST', body: fd});
-            if (!r.ok) { failed++; continue; }
-            var data = await r.json();
-            var uploadId = data.upload_id;
-            // Tag with grid page so Uploads page can show the connection
-            await fetch('/home/uploads/' + _gridPickerPageId
-                        + '/files/page/' + uploadId + '/tags',
-                        {method: 'POST',
-                         headers: {'Content-Type': 'application/json'},
-                         body: JSON.stringify({tag: 'grid:' + _gridPid})});
-            ok++;
-        } catch(e) {
-            console.error('[grid] upload error:', e);
-            failed++;
-        }
-    }
-
-    input.value = '';  // allow re-selecting the same file next time
-    if (status) {
-        status.textContent = failed
-            ? ok + ' uploaded, ' + failed + ' failed.'
-            : ok + ' file' + (ok === 1 ? '' : 's') + ' uploaded!';
-        setTimeout(function() { status.classList.add('hidden'); }, 3500);
-    }
-    await _gridMediaFetch();  // refresh gallery to show newly uploaded files
-}
-
-/* ── Cell context menu ─────────────────────────────────────────────────────── */
-function _gridOpenCellMenu(event, cellId) {
-    event.stopPropagation();
-    var existing = document.getElementById('grid-cell-ctx-menu');
-    if (existing) existing.remove();
-
-    var cell = _gridCells.find(function(c) { return c.id === cellId; });
-    if (!cell) return;
-
-    var menu = document.createElement('div');
-    menu.id = 'grid-cell-ctx-menu';
-    menu.className = 'absolute z-40 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border '
-                   + 'border-gray-200 dark:border-zinc-700 py-1 text-sm min-w-[160px]';
-    menu.innerHTML =
-        '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
-        + ' onclick="_gridCtxPickMedia(' + cellId + ')">🔄 Replace media</button>'
-        + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700"'
-        + ' onclick="gridOpenCellEdit(' + cellId + ')">✏️ Edit caption / aspect</button>'
-        + '<hr class="my-1 border-gray-200 dark:border-zinc-700">'
-        + '<button class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700'
-        + ' text-[#ea1100]" onclick="gridDeleteCell(' + cellId + ')">Remove from grid</button>';
-
-    var rect = event.target.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top  = (rect.bottom + 4) + 'px';
-    menu.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
-    document.body.appendChild(menu);
-
-    setTimeout(function() {
-        document.addEventListener('click', function _close() {
-            var m = document.getElementById('grid-cell-ctx-menu');
-            if (m) m.remove();
-            document.removeEventListener('click', _close);
-        });
-    }, 0);
-}
-
-function _gridCtxPickMedia(cellId) {
-    var m = document.getElementById('grid-cell-ctx-menu');
-    if (m) m.remove();
-    gridOpenMediaPicker(cellId);
-}
-
-
-
-/* ── Cell edit modal ────────────────────────────────────────────────────────── */
-function gridOpenCellEdit(cellId) {
-    var m = document.getElementById('grid-cell-ctx-menu');
-    if (m) m.remove();
-    var cell = _gridCells.find(function(c) { return c.id === cellId; });
-    if (!cell) return;
-    _gridEditCellId = cellId;
-    document.getElementById('grid-cell-edit-caption').value = cell.caption || '';
-    document.querySelectorAll('input[name="grid-aspect"]').forEach(function(r) {
-        r.checked = r.value === (cell.aspect || '1:1');
-    });
-    document.getElementById('grid-cell-edit-modal').classList.remove('hidden');
-    document.getElementById('grid-cell-edit-caption').focus();
-}
-
-function gridCloseCellEdit() {
-    _gridEditCellId = null;
-    document.getElementById('grid-cell-edit-modal').classList.add('hidden');
-}
-
-async function gridSaveCellEdit() {
-    if (!_gridEditCellId) return;
-    var caption = document.getElementById('grid-cell-edit-caption').value.trim();
-    var aspect  = '1:1';
-    document.querySelectorAll('input[name="grid-aspect"]').forEach(function(r) {
-        if (r.checked) aspect = r.value;
-    });
-    try {
-        var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridEditCellId, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({caption: caption, aspect: aspect})
-        });
-        gridCloseCellEdit();
-        if (r.ok) await _gridLoadCells();
-    } catch(e) { console.error('[grid] save edit:', e); }
-}
-
-/* ── Cell delete modal ──────────────────────────────────────────────────────── */
-function gridDeleteCell(cellId) {
-    var m = document.getElementById('grid-cell-ctx-menu');
-    if (m) m.remove();
-    _gridPendingDelId = cellId;
-    document.getElementById('grid-cell-del-modal').classList.remove('hidden');
-}
-
-function _gridCancelDelete() {
-    _gridPendingDelId = null;
-    document.getElementById('grid-cell-del-modal').classList.add('hidden');
-}
-
-async function _gridConfirmDelete() {
-    if (!_gridPendingDelId) return;
-    var btn = document.getElementById('grid-cell-del-confirm-btn');
-    if (btn) btn.disabled = true;
-    try {
-        await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPendingDelId,
-                    {method: 'DELETE'});
-        _gridCancelDelete();
-        await _gridLoadCells();
-    } catch(e) { console.error('[grid] delete failed:', e); }
-    finally { if (btn) btn.disabled = false; }
-}
-
-/* ── Media picker ───────────────────────────────────────────────────────────── */
-function gridOpenMediaPicker(cellId) {
-    _gridPickerCell = cellId;
-    _gridPickerPage = 1;
-    document.getElementById('grid-media-modal').classList.remove('hidden');
-    // If a page is already selected in the <select>, load it immediately
-    if (_gridPickerPageId) {
-        _gridMediaFetch();
-    } else {
-        document.getElementById('grid-media-files').innerHTML =
-            '<p class="text-sm text-gray-400 p-4">No Uploads pages available.</p>';
-    }
-}
-
-function gridCloseMediaPicker() {
-    _gridPickerCell = null;
-    document.getElementById('grid-media-modal').classList.add('hidden');
-    document.getElementById('grid-media-files').innerHTML = '';
-}
-
-function gridMediaLoadPage(uploadsPageId) {
-    _gridPickerPageId = parseInt(uploadsPageId, 10);
-    _gridPickerPage   = 1;
-    _gridMediaFetch();
-}
-
-function gridMediaPrevPage() {
-    if (_gridPickerPage <= 1) return;
-    _gridPickerPage--;
-    _gridMediaFetch();
-}
-
-function gridMediaNextPage() {
-    var maxPage = Math.ceil(_gridPickerTotal / 50) || 1;
-    if (_gridPickerPage >= maxPage) return;
-    _gridPickerPage++;
-    _gridMediaFetch();
-}
-
-async function _gridMediaFetch() {
-    if (!_gridPickerPageId) return;
-    // Verified: GET /home/uploads/{page_id}/files?scoped=1 returns files scoped
-    // to that specific uploads page.
-    // Each file: {id, filename, original_name, mime_type, size}. File URL = '/uploads/' + filename.
-    var url = '/home/uploads/' + _gridPickerPageId + '/files?scoped=1&page=' + _gridPickerPage;
-    var el  = document.getElementById('grid-media-files');
-    el.innerHTML = '<p class="text-sm text-gray-400 p-4">Loading…</p>';
-    try {
-        var r = await fetch(url);
-        if (!r.ok) throw new Error('files ' + r.status);
-        var data = await r.json();
-        _gridPickerTotal = data.total || 0;
-        _gridRenderMediaFiles(data.files || []);
-        var maxPage = Math.max(1, data.pages || Math.ceil(_gridPickerTotal / 50));
-        var lbl = document.getElementById('grid-media-page-label');
-        if (lbl) lbl.textContent = 'Page ' + _gridPickerPage + ' of ' + maxPage;
-    } catch(e) {
-        el.innerHTML = '<p class="text-sm text-red-400 p-4">Failed to load files.</p>';
-        console.error('[grid] media fetch:', e);
-    }
-}
-
-function _gridRenderMediaFiles(files) {
-    var el = document.getElementById('grid-media-files');
-    var media = files.filter(function(f) {
-        return f.mime_type &&
-               (f.mime_type.startsWith('image/') || f.mime_type.startsWith('video/'));
-    });
-    if (!media.length) {
-        el.innerHTML = '<p class="text-sm text-gray-400 p-4">No photos or videos on this page.</p>';
-        return;
-    }
-    // Build a Set of upload_ids already placed in this grid
-    var inGrid = {};
-    _gridCells.forEach(function(c) { if (c.upload_id) inGrid[c.upload_id] = true; });
-
-    el.innerHTML = '<div class="grid grid-cols-4 gap-2 p-3">'
-        + media.map(function(f) {
-            var furl    = '/uploads/' + _gridEsc(f.filename);
-            var isImg   = f.mime_type.startsWith('image/');
-            var already = inGrid[f.id] || false;
-            // Already-in-grid overlay: checkmark + blue tint, button still clickable for replace
-            var overlay = already
-                ? '<div class="absolute inset-0 bg-[#0053e2]/30 flex items-center justify-center'
-                  + ' pointer-events-none" aria-hidden="true">'
-                  + '<span class="bg-[#0053e2] text-white text-xs font-bold rounded-full'
-                  + ' w-6 h-6 flex items-center justify-center">&#10003;</span></div>'
-                : '';
-            var label = _gridEsc(f.original_name || f.filename)
-                      + (already ? ' (already in grid)' : '');
-            return '<button'
-                 + ' class="relative aspect-square rounded-lg overflow-hidden bg-gray-100'
-                 + ' dark:bg-zinc-800 hover:ring-2 hover:ring-[#0053e2] focus:outline-none'
-                 + ' focus:ring-2 focus:ring-[#0053e2] transition-all"'
-                 + ' onclick="gridPickMedia(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')"'
-                 + ' aria-label="Select ' + label + '">'
-                 + (isImg
-                    ? '<img src="' + furl + '" class="w-full h-full object-cover" loading="lazy" alt="">'
-                    : '<div class="w-full h-full flex items-center justify-center text-3xl"'
-                      + ' aria-hidden="true">&#127916;</div>')
-                 + overlay
-                 + '</button>';
-          }).join('')
-        + '</div>';
-}
-
-async function gridPickMedia(uploadId, mimeType) {
-    var cellType = mimeType.startsWith('video/') ? 'video' : 'image';
-    try {
-        if (_gridPickerCell) {
-            // Replacing media on an existing cell
-            var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
-            });
-            if (!r.ok) throw new Error('patch ' + r.status);
-        } else {
-            // Adding new media — block duplicate upload_ids
-            var alreadyIn = _gridCells.some(function(c) { return c.upload_id === uploadId; });
-            if (alreadyIn) {
-                var warnEl = document.getElementById('grid-media-files');
-                var old = warnEl.querySelector('.grid-dupe-warn');
-                if (old) old.remove();
-                warnEl.insertAdjacentHTML('afterbegin',
-                    '<p class="grid-dupe-warn text-xs text-amber-600 dark:text-amber-400'
-                    + ' px-3 pt-3 pb-1 select-none">'
-                    + '&#9888;&#xFE0F; That photo is already in the grid. '
-                    + 'Pick a different one, or click an existing grid cell to replace it.</p>');
-                return;
-            }
-            var r = await fetch('/home/grid/' + _gridPid + '/cells', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    cell_type: cellType,
-                    upload_id: uploadId,
-                    aspect: '1:1',
-                    caption: ''
-                })
-            });
-            if (!r.ok) throw new Error('create ' + r.status);
-        }
-        // Tag the picked file so Uploads page shows the grid connection
-        // INSERT OR IGNORE — safe to call multiple times
-        if (_gridPickerPageId) {
-            fetch('/home/uploads/' + _gridPickerPageId
-                  + '/files/page/' + uploadId + '/tags',
-                  {method: 'POST',
-                   headers: {'Content-Type': 'application/json'},
-                   body: JSON.stringify({tag: 'grid:' + _gridPid})
-                  }).catch(function(e) { console.warn('[grid] tag failed:', e); });
-        }
-        gridCloseMediaPicker();
-        await _gridLoadCells();
-    } catch(e) { console.error('[grid] pick media failed:', e); }
 }
 
 /* ── HTML escape helper ────────────────────────────────────────────────────── */

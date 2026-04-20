@@ -172,6 +172,50 @@
   </div>
 </div>
 
+{# ── Lightbox ───────────────────────────────────────────────────────────────── #}
+<div id="grid-lightbox"
+     class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center
+            bg-black/90 backdrop-blur-sm"
+     role="dialog" aria-modal="true" aria-label="Media viewer"
+     onclick="if(event.target===this) gridLightboxClose()">
+
+  {# Close #}
+  <button onclick="gridLightboxClose()"
+          class="absolute top-4 right-4 w-9 h-9 flex items-center justify-center
+                 rounded-full bg-white/10 hover:bg-white/20 text-white text-lg
+                 transition-colors focus:outline-none focus-visible:ring-2
+                 focus-visible:ring-white" aria-label="Close">
+    ✕
+  </button>
+
+  {# Prev #}
+  <button id="lb-prev" onclick="gridLightboxNav(-1)"
+          class="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center
+                 justify-center rounded-full bg-white/10 hover:bg-white/20 text-white
+                 text-xl transition-colors focus:outline-none focus-visible:ring-2
+                 focus-visible:ring-white" aria-label="Previous">
+    ‹
+  </button>
+
+  {# Media area #}
+  <div class="flex flex-col items-center gap-3 px-16 w-full">
+    <div id="lb-media" class="flex items-center justify-center w-full"></div>
+    <p id="lb-caption"
+       class="hidden text-white/80 text-sm text-center max-w-xl px-4"></p>
+    <p id="lb-counter"
+       class="text-white/40 text-xs"></p>
+  </div>
+
+  {# Next #}
+  <button id="lb-next" onclick="gridLightboxNav(1)"
+          class="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center
+                 justify-center rounded-full bg-white/10 hover:bg-white/20 text-white
+                 text-xl transition-colors focus:outline-none focus-visible:ring-2
+                 focus-visible:ring-white" aria-label="Next">
+    ›
+  </button>
+</div>
+
 {# ── Cell edit modal (caption + aspect) ──────────────────────────────────── #}
 <div id="grid-cell-edit-modal"
      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
