@@ -219,24 +219,34 @@ function _gridScrollStop() {
 }
 
 function _gridScrollTick_fn() {
-    // ── TEMP DEBUG ─ remove after confirming scroll works ──
+    // ── TEMP DEBUG ─ finding real scroll container ──
     var dbg = document.getElementById('_gridScrollDbg');
     if (!dbg) {
         dbg = document.createElement('div');
         dbg.id = '_gridScrollDbg';
         dbg.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;'
-            + 'background:rgba(0,0,0,.82);color:#ffc220;font:12px/1.6 monospace;'
-            + 'padding:6px 10px;border-radius:6px;pointer-events:none';
+            + 'background:rgba(0,0,0,.85);color:#ffc220;font:11px/1.7 monospace;'
+            + 'padding:6px 10px;border-radius:6px;pointer-events:none;max-width:340px';
         document.body.appendChild(dbg);
     }
-    var el = document.getElementById('grid-scroll-area');
-    dbg.innerHTML = 'TICK running: YES<br>'
-        + 'lastY: ' + _gridLastCursorY + '<br>'
-        + 'el found: ' + (el ? 'YES' : 'NO') + '<br>'
-        + 'scrollTop: ' + (el ? el.scrollTop : '—') + '<br>'
-        + 'innerH: ' + window.innerHeight;
+    // Walk up from grid-scroll-area; find every ancestor that can scroll
+    var lines = [];
+    var node = document.getElementById('grid-scroll-area');
+    var depth = 0;
+    while (node && node !== document.body && depth < 12) {
+        var sh = node.scrollHeight, ch = node.clientHeight, st = node.scrollTop;
+        var canScroll = sh > ch;
+        var id = node.id ? '#' + node.id : node.tagName.toLowerCase();
+        lines.push((canScroll ? '✅ ' : '❌ ') + id
+            + ' sh=' + sh + ' ch=' + ch + ' st=' + st);
+        node = node.parentElement;
+        depth++;
+    }
+    dbg.innerHTML = 'lastY=' + _gridLastCursorY + ' innerH=' + window.innerHeight
+        + '<br>' + lines.join('<br>');
     // ── END TEMP DEBUG ──
     if (_gridLastCursorY < 0) return;
+    var el = document.getElementById('grid-scroll-area');
     if (!el) return;
     var fromBottom = window.innerHeight - _gridLastCursorY;
     var fromTop    = _gridLastCursorY;
