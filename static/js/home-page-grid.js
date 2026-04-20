@@ -45,9 +45,8 @@ var _gridDragId       = null;   // id of the cell being dragged
 var _gridDragOverEl   = null;   // DOM element currently under the drag cursor
 var _gridDropBefore   = true;   // true = insert before target, false = insert after
 var _gridScrollEl     = null;   // the overflow-y-auto scroll container
-var _gridScrollRAF    = null;   // requestAnimationFrame handle for auto-scroll
-var _gridScrollDir    = 0;      // -1 = scroll up, 0 = idle, +1 = scroll down
-var _gridScrollSpeed  = 0;      // px to scroll per animation frame
+var _gridScrollTick   = null;   // setInterval handle — runs from dragstart to dragend
+var _gridLastCursorY  = -1;     // last clientY seen from any dragover event
 
 /* ── Entry point ───────────────────────────────────────────────────────── */
 function initGridPage(pageId) {
@@ -196,63 +195,46 @@ function _gridAspectClass(aspect) {
 }
 
 /* ── Drag auto-scroll ───────────────────────────────────────────────────────── */
-// Activation zone: how many px from the top/bottom edge starts scrolling.
-// Speed: proportional to depth inside the zone, max px per rAF frame.
-var _GRID_SCROLL_ZONE = 200;  // px from viewport edge that activates scroll
-var _GRID_SCROLL_MAX  = 40;   // px/frame at peak (cursor right at the edge)
+// Strategy: setInterval ticks at ~60 fps from dragstart to dragend.
+// dragover events only record the last cursor Y — they don’t drive scrolling.
+// This way scrolling is continuous even when dragover fires at 250 ms intervals
+// or stalls entirely (stationary mouse on Windows/Chrome).
+//
+// The rAF approach failed because _gridScrollDir was reset to 0 by every
+// dragover event on a cell *outside* the scroll zone — killing the loop.
 
-// Named function so we can remove + re-add on every HTMX page swap
-// without stacking duplicate listeners on document.
+var _GRID_SCROLL_ZONE = 220;  // px from viewport top/bottom edge
+var _GRID_SCROLL_MAX  = 60;   // px per tick at peak (cursor at the very edge)
+
 function _gridOnDragScroll(e) {
-    if (!_gridDragId) return;   // no drag in progress — bail fast
-    _gridScrollUpdate(e.clientY);
+    // Just record position; the interval tick does the actual scrolling.
+    if (_gridDragId) _gridLastCursorY = e.clientY;
 }
 
-function _gridAutoScrollStep() {
-    if (!_gridDragId || _gridScrollDir === 0 || !_gridScrollEl) {
-        _gridScrollRAF = null;
-        return;
-    }
-    _gridScrollEl.scrollTop += _gridScrollDir * _gridScrollSpeed;
-    _gridScrollRAF = requestAnimationFrame(_gridAutoScrollStep);
-}
-
-function _gridScrollUpdate(clientY) {
-    if (!_gridScrollEl) return;
-    // Use viewport dimensions, not element bounds.
-    // Element getBoundingClientRect().bottom can be smaller than expected
-    // (toolbar / app chrome above it), making the zone feel tiny.
-    // window.innerHeight is always exactly where the screen ends.
-    var fromBottom = window.innerHeight - clientY;
-    var fromTop    = clientY;
-
-    if (fromBottom < _GRID_SCROLL_ZONE) {
-        _gridScrollDir   = 1;
-        _gridScrollSpeed = Math.max(1, Math.round(
-            _GRID_SCROLL_MAX * (1 - fromBottom / _GRID_SCROLL_ZONE)
-        ));
-    } else if (fromTop < _GRID_SCROLL_ZONE) {
-        _gridScrollDir   = -1;
-        _gridScrollSpeed = Math.max(1, Math.round(
-            _GRID_SCROLL_MAX * (1 - fromTop / _GRID_SCROLL_ZONE)
-        ));
-    } else {
-        _gridScrollDir   = 0;
-        _gridScrollSpeed = 0;
-    }
-
-    if (_gridScrollDir !== 0 && !_gridScrollRAF) {
-        _gridScrollRAF = requestAnimationFrame(_gridAutoScrollStep);
-    }
+function _gridScrollStart() {
+    if (_gridScrollTick) return;   // already running
+    _gridScrollTick = setInterval(_gridScrollTick_fn, 16);
 }
 
 function _gridScrollStop() {
-    if (_gridScrollRAF) {
-        cancelAnimationFrame(_gridScrollRAF);
-        _gridScrollRAF = null;
+    clearInterval(_gridScrollTick);
+    _gridScrollTick  = null;
+    _gridLastCursorY = -1;
+}
+
+function _gridScrollTick_fn() {
+    if (!_gridScrollEl || _gridLastCursorY < 0) return;
+    var fromBottom = window.innerHeight - _gridLastCursorY;
+    var fromTop    = _gridLastCursorY;
+    var dir = 0, speed = 0;
+    if (fromBottom < _GRID_SCROLL_ZONE) {
+        dir   =  1;
+        speed = Math.max(2, Math.round(_GRID_SCROLL_MAX * (1 - fromBottom / _GRID_SCROLL_ZONE)));
+    } else if (fromTop < _GRID_SCROLL_ZONE) {
+        dir   = -1;
+        speed = Math.max(2, Math.round(_GRID_SCROLL_MAX * (1 - fromTop / _GRID_SCROLL_ZONE)));
     }
-    _gridScrollDir   = 0;
-    _gridScrollSpeed = 0;
+    if (dir !== 0) _gridScrollEl.scrollTop += dir * speed;
 }
 
 /* ── Drag-to-reorder ────────────────────────────────────────────────────────── */
@@ -284,6 +266,7 @@ function _gridBindDrag(el) {
         e.dataTransfer.effectAllowed = 'move';
         // Defer opacity so the drag ghost captures the normal appearance.
         setTimeout(function() { el.classList.add('opacity-40'); }, 0);
+        _gridScrollStart();
     });
 
     el.addEventListener('dragend', function() {
