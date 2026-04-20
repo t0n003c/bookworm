@@ -53,11 +53,15 @@ async function initUploadsPage(pid) {
 
   // Load tags once upfront so filter pills are ready immediately
   _uplLoadAllTags();
-  // Backfill grid: tags for ALL grid pages this user owns, so the “📸 Grid” badge
+  // Backfill grid: tags for ALL grid pages this user owns, so the "📸 Grid" badge
   // appears on files that were added before per-file tagging was introduced.
-  // Fire-and-forget, errors are non-fatal.
-  fetch('/home/grid/backfill-all-tags', {method: 'POST'})
-      .catch(function() {});
+  // Awaited (not fire-and-forget) so tags are in DB before _uplFetch renders the list.
+  try {
+    var _bfr = await fetch('/home/grid/backfill-all-tags', {method: 'POST'});
+    if (!_bfr.ok) console.warn('[uploads] backfill-all-tags returned', _bfr.status);
+  } catch (_bfe) {
+    console.warn('[uploads] backfill-all-tags failed:', _bfe);
+  }
   await _uplFetch(1);
 }
 

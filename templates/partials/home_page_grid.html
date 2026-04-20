@@ -9,6 +9,7 @@
      data-page-id="{{ page.id }}"
      data-grid-min="{{ (page.config or {}).get('grid_min', 240) }}"
      data-grid-gap="{{ (page.config or {}).get('grid_gap', 8) }}"
+     data-grid-zoom="{{ (page.config or {}).get('grid_zoom', 100) }}"
      data-grid-fixed-cols="{{ (page.config or {}).get('grid_fixed_cols', '') }}">
 
   {# ── Toolbar ────────────────────────────────────────────────────────────── #}
@@ -51,6 +52,20 @@
              oninput="gridSetGap(this.value)"
              class="w-20 sm:w-28 accent-[#0053e2] cursor-pointer"
              aria-label="Gap between photos">
+      <span class="text-xs select-none text-gray-400" aria-hidden="true">&#43;</span>
+    </div>
+
+    <div class="h-5 w-px bg-gray-200 dark:bg-zinc-700 hidden sm:block"></div>
+
+    {# Zoom slider — 30–100% (shrinks the whole canvas so more rows fit on screen) #}
+    <div class="flex items-center gap-1.5" title="Zoom: shrink photos to see more rows at once">
+      <span class="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">🔍</span>
+      <span class="text-xs select-none text-gray-400" aria-hidden="true">&#8722;</span>
+      <input id="grid-zoom-slider"
+             type="range" min="30" max="100" step="5" value="100"
+             oninput="gridSetZoom(this.value)"
+             class="w-20 sm:w-28 accent-[#0053e2] cursor-pointer"
+             aria-label="Zoom level">
       <span class="text-xs select-none text-gray-400" aria-hidden="true">&#43;</span>
     </div>
 

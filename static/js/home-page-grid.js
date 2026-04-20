@@ -29,6 +29,7 @@
 var _gridPid          = 0;      // current page id
 var _gridMin          = 240;    // cell min-width px for auto-fill (80-400); used when _gridFixedCols is null
 var _gridGap          = 8;      // gap between cells in px (0-20)
+var _gridZoom         = 100;    // zoom level 30-100%; scales canvas so more rows fit on screen
 var _gridFixedCols    = null;   // null=auto-fill (slider), 3/4/5=exact fixed columns
 var _gridSaveTimer    = null;   // debounce handle for persisting config
 var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
@@ -53,6 +54,11 @@ function initGridPage(pageId) {
     if (isNaN(_gridGap)) _gridGap = 8;
     var fc = parseInt(root.dataset.gridFixedCols, 10);
     _gridFixedCols = (fc >= 2 && fc <= 10) ? fc : null;
+    // Zoom: 30–100%. Saved in config as grid_zoom (integer percent).
+    var zv = parseInt(root.dataset.gridZoom, 10);
+    _gridZoom = (zv >= 30 && zv <= 100) ? zv : 100;
+    var zoomSlider = document.getElementById('grid-zoom-slider');
+    if (zoomSlider) zoomSlider.value = _gridZoom;
     _gridApplyLayout();
     _gridHighlightColBtn();
     var sizeSlider = document.getElementById('grid-size-slider');
@@ -248,6 +254,18 @@ function gridSetSize(px) {
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
 
+// Zoom slider (30–100%)
+// CSS zoom scales the canvas so more rows are visible at once.
+// At z%, the canvas is rendered at z% of its natural size, so the grid
+// physically shrinks while keeping the same column structure.
+function gridSetZoom(pct) {
+    var n = parseInt(pct, 10);
+    _gridZoom = isNaN(n) ? 100 : Math.max(30, Math.min(100, n));
+    _gridApplyLayout();
+    clearTimeout(_gridSaveTimer);
+    _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
+}
+
 // Gap slider (0–20 px)
 function gridSetGap(px) {
     // NOTE: parseInt('0') = 0 which is falsy — must NOT use `|| fallback` here
@@ -262,18 +280,28 @@ function _gridApplyLayout() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
     if (_gridFixedCols) {
-        // Exact column count: tracks stretch to fill container evenly
         canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
     } else {
-        // Auto-fill: as many fixed-px columns as fit; justify-center centers partial last row
         canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + _gridMin + 'px)';
     }
     canvas.style.gap = _gridGap + 'px';
     canvas.style.justifyContent = _gridFixedCols ? '' : 'center';
 
-    // gap=0: strip ring box-shadow + border-radius on every child so cells truly touch.
-    // We do this in JS (not <style>) because browsers silently ignore <style> blocks
-    // injected via innerHTML (HTMX partial swap target).
+    // Zoom: scale the canvas so more rows fit on screen at once.
+    // CSS `zoom` IS layout-affecting (unlike transform:scale), so the scrollable
+    // area shrinks proportionally and more rows become visible without scrolling.
+    // Width compensation: at z%, canvas layout-width = 100/z * 100% so that
+    // after zoom the rendered width is 100% of the parent.
+    if (_gridZoom < 100) {
+        var z = _gridZoom / 100;
+        canvas.style.zoom  = String(z);
+        canvas.style.width = (100 / z) + '%';
+    } else {
+        canvas.style.zoom  = '';
+        canvas.style.width = '';
+    }
+
+    // gap=0: strip ring box-shadow + border-radius so cells truly touch.
     var zeroGap = (_gridGap === 0);
     Array.from(canvas.children).forEach(function(cell) {
         cell.style.boxShadow    = zeroGap ? 'none' : '';
@@ -298,9 +326,10 @@ function _gridHighlightColBtn() {
 function _gridSaveConfig() {
     var fd = new FormData();
     fd.append('config_json', JSON.stringify({
-        grid_min: _gridMin,
-        grid_gap: _gridGap,
-        grid_fixed_cols: _gridFixedCols  // null clears the preset
+        grid_min:        _gridMin,
+        grid_gap:        _gridGap,
+        grid_zoom:       _gridZoom,
+        grid_fixed_cols: _gridFixedCols   // null clears the preset
     }));
     fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
         .catch(function(e) { console.error('[grid] save config failed:', e); });
