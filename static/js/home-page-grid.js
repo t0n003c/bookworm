@@ -44,6 +44,10 @@ var _gridPickerTotal  = 0;
 var _gridDragId       = null;   // id of the cell being dragged
 var _gridDragOverEl   = null;   // DOM element currently under the drag cursor
 var _gridDropBefore   = true;   // true = insert before target, false = insert after
+var _gridScrollEl     = null;   // the overflow-y-auto scroll container
+var _gridScrollRAF    = null;   // requestAnimationFrame handle for auto-scroll
+var _gridScrollDir    = 0;      // -1 = scroll up, 0 = idle, +1 = scroll down
+var _gridScrollSpeed  = 0;      // px to scroll per animation frame
 
 /* ── Entry point ───────────────────────────────────────────────────────── */
 function initGridPage(pageId) {
@@ -79,6 +83,17 @@ function initGridPage(pageId) {
     // Remove first so HTMX re-swaps don’t stack duplicate listeners.
     window.removeEventListener('resize', _gridOnWindowResize);
     window.addEventListener('resize', _gridOnWindowResize);
+
+    // Auto-scroll during drag: grab the scroll container and attach a dragover
+    // listener so scroll activates even when the cursor is in the padding /
+    // empty space below the last row (not over any cell).
+    _gridScrollEl = document.getElementById('grid-scroll-area');
+    if (_gridScrollEl) {
+        _gridScrollEl.addEventListener('dragover', function(e) {
+            e.preventDefault();  // required so the container accepts drops
+            _gridScrollUpdate(e.clientY);
+        });
+    }
 
     _gridLoadCells();
 }
@@ -182,6 +197,56 @@ function _gridAspectClass(aspect) {
     return 'aspect-square';
 }
 
+/* ── Drag auto-scroll ───────────────────────────────────────────────────────── */
+// Activation zone: how many px from the top/bottom edge starts scrolling.
+// Speed: proportional to depth inside the zone, max px per rAF frame.
+var _GRID_SCROLL_ZONE = 120;  // px  — larger = activates earlier
+var _GRID_SCROLL_MAX  = 18;   // px/frame — higher = faster peak speed
+
+function _gridAutoScrollStep() {
+    if (!_gridDragId || _gridScrollDir === 0 || !_gridScrollEl) {
+        _gridScrollRAF = null;
+        return;
+    }
+    _gridScrollEl.scrollTop += _gridScrollDir * _gridScrollSpeed;
+    _gridScrollRAF = requestAnimationFrame(_gridAutoScrollStep);
+}
+
+function _gridScrollUpdate(clientY) {
+    if (!_gridScrollEl) return;
+    var rect         = _gridScrollEl.getBoundingClientRect();
+    var fromBottom   = rect.bottom - clientY;
+    var fromTop      = clientY - rect.top;
+
+    if (fromBottom < _GRID_SCROLL_ZONE) {
+        _gridScrollDir   = 1;
+        _gridScrollSpeed = Math.max(1, Math.round(
+            _GRID_SCROLL_MAX * (1 - fromBottom / _GRID_SCROLL_ZONE)
+        ));
+    } else if (fromTop < _GRID_SCROLL_ZONE) {
+        _gridScrollDir   = -1;
+        _gridScrollSpeed = Math.max(1, Math.round(
+            _GRID_SCROLL_MAX * (1 - fromTop / _GRID_SCROLL_ZONE)
+        ));
+    } else {
+        _gridScrollDir   = 0;
+        _gridScrollSpeed = 0;
+    }
+
+    if (_gridScrollDir !== 0 && !_gridScrollRAF) {
+        _gridScrollRAF = requestAnimationFrame(_gridAutoScrollStep);
+    }
+}
+
+function _gridScrollStop() {
+    if (_gridScrollRAF) {
+        cancelAnimationFrame(_gridScrollRAF);
+        _gridScrollRAF = null;
+    }
+    _gridScrollDir   = 0;
+    _gridScrollSpeed = 0;
+}
+
 /* ── Drag-to-reorder ────────────────────────────────────────────────────────── */
 // Shows a blue insertion line on the left/right edge of the hovered cell.
 // On drop, removes the dragged cell from its current slot and inserts it
@@ -216,12 +281,14 @@ function _gridBindDrag(el) {
     el.addEventListener('dragend', function() {
         el.classList.remove('opacity-40');
         _gridClearDropIndicator();
+        _gridScrollStop();
         _gridDragId = null;
     });
 
     el.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        _gridScrollUpdate(e.clientY);
         if (!_gridDragId) return;
         var targetId = parseInt(el.dataset.gridCellId, 10);
         if (targetId === _gridDragId) return;  // hovering own cell — no indicator
