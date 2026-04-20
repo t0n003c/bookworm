@@ -400,9 +400,18 @@ function _uplRenderDetail(f) {
   // Preview block — native players where possible
   var preview = '';
   if (group === 'image') {
-    preview = `<div class="mb-4 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800">
-      <img src="${fUrl}" alt="${_uplEsc(f.original_name)}" class="w-full object-contain max-h-52"
-           onerror="this.parentElement.style.display='none'"></div>`;
+    preview = `<div class="mb-4 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800
+                          relative group cursor-zoom-in"
+                    onclick="_uplOpenLightbox('${fUrl}','${_uplEsc(f.original_name)}')">
+      <img src="${fUrl}" alt="${_uplEsc(f.original_name)}"
+           class="w-full object-contain max-h-52"
+           onerror="this.parentElement.style.display='none'">
+      <div class="absolute inset-0 flex items-end justify-center pb-2
+                  opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <span class="text-[10px] bg-black/50 text-white rounded px-1.5 py-0.5 select-none">
+          Click to expand
+        </span>
+      </div></div>`;
   } else if (group === 'video') {
     preview = `<div class="mb-4 rounded-xl overflow-hidden bg-black">
       <video controls preload="metadata" class="w-full max-h-52">
@@ -763,3 +772,42 @@ function _uplEsc(s) {
 function _uplJsStr(s) { // Escape for single-quoted onclick='...' attrs.
   return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 } // Note: _uplFmtSize + _uplFmtDate live in home-page-uploads-tags.js
+
+/* ── Image lightbox (full-size overlay) ─────────────────────────────────────── */
+
+function _uplOpenLightbox(src, altText) {
+    // Reuse existing overlay if already mounted
+    var overlay = document.getElementById('upl-lightbox');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'upl-lightbox';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', 'Full size image');
+        overlay.style.cssText = [
+            'position:fixed', 'inset:0', 'z-index:9999',
+            'background:rgba(0,0,0,.88)', 'display:flex',
+            'align-items:center', 'justify-content:center',
+            'cursor:zoom-out', 'padding:1rem'
+        ].join(';');
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML =
+        '<img src="' + src + '" alt="' + _uplEsc(altText) + '"'
+        + ' style="max-width:100%;max-height:100%;object-fit:contain;'
+        + 'border-radius:.5rem;box-shadow:0 8px 40px rgba(0,0,0,.6)">';
+    overlay.style.display = 'flex';
+    // Close on backdrop click or Escape
+    overlay.onclick = function() {
+        overlay.style.display = 'none';
+        document.removeEventListener('keydown', overlay._kh);
+    };
+    if (overlay._kh) document.removeEventListener('keydown', overlay._kh);
+    overlay._kh = function(e) {
+        if (e.key === 'Escape') {
+            overlay.style.display = 'none';
+            document.removeEventListener('keydown', overlay._kh);
+        }
+    };
+    document.addEventListener('keydown', overlay._kh);
+}

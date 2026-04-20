@@ -27,11 +27,10 @@
 
 /* ── Module state ────────────────────────────────────────────────────── */
 var _gridPid          = 0;      // current page id
-var _gridMin          = 240;    // cell min-width px for auto-fill columns (80-400)
+var _gridMin          = 240;    // cell min-width px for auto-fill (80-400); used when _gridFixedCols is null
 var _gridGap          = 8;      // gap between cells in px (0-20)
+var _gridFixedCols    = null;   // null=auto-fill (slider), 3/4/5=exact fixed columns
 var _gridSaveTimer    = null;   // debounce handle for persisting config
-// preset col counts → min-width px (calibrated for ~1000px content area)
-var _GRID_PRESETS     = {3: 320, 4: 230, 5: 170};
 var _gridCells        = [];     // [{id, position, cell_type, upload_id, aspect, caption, file_url, mime_type, ...}]
 var _gridBusy         = false;  // optimistic-lock: one mutation at a time
 var _gridEditCellId   = null;   // cell being edited in the caption modal
@@ -52,6 +51,8 @@ function initGridPage(pageId) {
     _gridMin = parseInt(root.dataset.gridMin, 10) || 240;
     _gridGap = parseInt(root.dataset.gridGap, 10);
     if (isNaN(_gridGap)) _gridGap = 8;
+    var fc = parseInt(root.dataset.gridFixedCols, 10);
+    _gridFixedCols = (fc >= 2 && fc <= 10) ? fc : null;
     _gridApplyLayout();
     _gridHighlightColBtn();
     var sizeSlider = document.getElementById('grid-size-slider');
@@ -220,27 +221,26 @@ async function _gridSwap(a, b) {
 
 /* ── Column presets + size/gap sliders ────────────────────────────────── */
 
-// 3/4/5 buttons snap the size slider to a calibrated min-width
+// 3/4/5 preset buttons: EXACT column count via repeat(N, 1fr)
 function gridSetCols(n) {
-    _gridMin = _GRID_PRESETS[n] || 240;
-    var slider = document.getElementById('grid-size-slider');
-    if (slider) slider.value = _gridMin;
+    _gridFixedCols = n;
     _gridApplyLayout();
     _gridHighlightColBtn();
     clearTimeout(_gridSaveTimer);
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
 
-// Live size slider (px, 80–400)
+// Size slider: switches back to auto-fill mode (clears fixed preset)
 function gridSetSize(px) {
     _gridMin = Math.max(80, Math.min(400, parseInt(px, 10) || 240));
+    _gridFixedCols = null;  // leave preset mode
     _gridApplyLayout();
     _gridHighlightColBtn();
     clearTimeout(_gridSaveTimer);
     _gridSaveTimer = setTimeout(_gridSaveConfig, 600);
 }
 
-// Live gap slider (px, 0–20)
+// Gap slider (0–20 px)
 function gridSetGap(px) {
     _gridGap = Math.max(0, Math.min(20, parseInt(px, 10) || 8));
     _gridApplyLayout();
@@ -251,12 +251,16 @@ function gridSetGap(px) {
 function _gridApplyLayout() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
-    // Fixed-px tracks (not minmax) so justify-content:center actually works
-    canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + _gridMin + 'px)';
+    if (_gridFixedCols) {
+        // Exact column count: tracks stretch to fill container evenly
+        canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
+    } else {
+        // Auto-fill: as many fixed-px columns as fit; justify-center centers partial last row
+        canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + _gridMin + 'px)';
+    }
     canvas.style.gap = _gridGap + 'px';
-    canvas.style.justifyContent = 'center';
-    // At gap=0, ring-1 box-shadows create a visible line between cells.
-    // Strip radius + shadow via CSS data-attribute toggle.
+    canvas.style.justifyContent = _gridFixedCols ? '' : 'center';
+    // At gap=0, ring-1 box-shadows create a visible line between adjacent cells.
     if (_gridGap === 0) {
         canvas.setAttribute('data-grid-zero-gap', '1');
     } else {
@@ -265,11 +269,10 @@ function _gridApplyLayout() {
 }
 
 function _gridHighlightColBtn() {
-    // Highlight whichever preset button matches current _gridMin (or none)
     [3, 4, 5].forEach(function(n) {
         var btn = document.getElementById('grid-col-btn-' + n);
         if (!btn) return;
-        var active = (_GRID_PRESETS[n] === _gridMin);
+        var active = (_gridFixedCols === n);
         btn.setAttribute('aria-pressed', String(active));
         btn.classList.toggle('bg-[#0053e2]',        active);
         btn.classList.toggle('text-white',           active);
@@ -281,7 +284,11 @@ function _gridHighlightColBtn() {
 
 function _gridSaveConfig() {
     var fd = new FormData();
-    fd.append('config_json', JSON.stringify({grid_min: _gridMin, grid_gap: _gridGap}));
+    fd.append('config_json', JSON.stringify({
+        grid_min: _gridMin,
+        grid_gap: _gridGap,
+        grid_fixed_cols: _gridFixedCols  // null clears the preset
+    }));
     fetch('/home/pages/' + _gridPid + '/update-config', {method: 'POST', body: fd})
         .catch(function(e) { console.error('[grid] save config failed:', e); });
 }
@@ -517,20 +524,35 @@ function _gridRenderMediaFiles(files) {
         el.innerHTML = '<p class="text-sm text-gray-400 p-4">No photos or videos on this page.</p>';
         return;
     }
+    // Build a Set of upload_ids already placed in this grid
+    var inGrid = {};
+    _gridCells.forEach(function(c) { if (c.upload_id) inGrid[c.upload_id] = true; });
+
     el.innerHTML = '<div class="grid grid-cols-4 gap-2 p-3">'
         + media.map(function(f) {
-            var furl  = '/uploads/' + _gridEsc(f.filename);
-            var isImg = f.mime_type.startsWith('image/');
+            var furl    = '/uploads/' + _gridEsc(f.filename);
+            var isImg   = f.mime_type.startsWith('image/');
+            var already = inGrid[f.id] || false;
+            // Already-in-grid overlay: checkmark + blue tint, button still clickable for replace
+            var overlay = already
+                ? '<div class="absolute inset-0 bg-[#0053e2]/30 flex items-center justify-center'
+                  + ' pointer-events-none" aria-hidden="true">'
+                  + '<span class="bg-[#0053e2] text-white text-xs font-bold rounded-full'
+                  + ' w-6 h-6 flex items-center justify-center">&#10003;</span></div>'
+                : '';
+            var label = _gridEsc(f.original_name || f.filename)
+                      + (already ? ' (already in grid)' : '');
             return '<button'
-                 + ' class="aspect-square rounded-lg overflow-hidden bg-gray-100'
+                 + ' class="relative aspect-square rounded-lg overflow-hidden bg-gray-100'
                  + ' dark:bg-zinc-800 hover:ring-2 hover:ring-[#0053e2] focus:outline-none'
-                 + ' focus:ring-2 focus:ring-[#0053e2]"'
+                 + ' focus:ring-2 focus:ring-[#0053e2] transition-all"'
                  + ' onclick="gridPickMedia(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')"'
-                 + ' aria-label="Select ' + _gridEsc(f.original_name || f.filename) + '">'
+                 + ' aria-label="Select ' + label + '">'
                  + (isImg
                     ? '<img src="' + furl + '" class="w-full h-full object-cover" loading="lazy" alt="">'
                     : '<div class="w-full h-full flex items-center justify-center text-3xl"'
-                      + ' aria-hidden="true">🎬</div>')
+                      + ' aria-hidden="true">&#127916;</div>')
+                 + overlay
                  + '</button>';
           }).join('')
         + '</div>';
@@ -548,7 +570,19 @@ async function gridPickMedia(uploadId, mimeType) {
             });
             if (!r.ok) throw new Error('patch ' + r.status);
         } else {
-            // Adding new media from toolbar — create cell + attach in one shot
+            // Adding new media — block duplicate upload_ids
+            var alreadyIn = _gridCells.some(function(c) { return c.upload_id === uploadId; });
+            if (alreadyIn) {
+                var warnEl = document.getElementById('grid-media-files');
+                var old = warnEl.querySelector('.grid-dupe-warn');
+                if (old) old.remove();
+                warnEl.insertAdjacentHTML('afterbegin',
+                    '<p class="grid-dupe-warn text-xs text-amber-600 dark:text-amber-400'
+                    + ' px-3 pt-3 pb-1 select-none">'
+                    + '&#9888;&#xFE0F; That photo is already in the grid. '
+                    + 'Pick a different one, or click an existing grid cell to replace it.</p>');
+                return;
+            }
             var r = await fetch('/home/grid/' + _gridPid + '/cells', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -560,6 +594,16 @@ async function gridPickMedia(uploadId, mimeType) {
                 })
             });
             if (!r.ok) throw new Error('create ' + r.status);
+        }
+        // Tag the picked file so Uploads page shows the grid connection
+        // INSERT OR IGNORE — safe to call multiple times
+        if (_gridPickerPageId) {
+            fetch('/home/uploads/' + _gridPickerPageId
+                  + '/files/page/' + uploadId + '/tags',
+                  {method: 'POST',
+                   headers: {'Content-Type': 'application/json'},
+                   body: JSON.stringify({tag: 'grid:' + _gridPid})
+                  }).catch(function(e) { console.warn('[grid] tag failed:', e); });
         }
         gridCloseMediaPicker();
         await _gridLoadCells();

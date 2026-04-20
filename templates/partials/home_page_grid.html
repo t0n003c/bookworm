@@ -14,8 +14,9 @@
 <div id="grid-page-root"
      class="h-full flex flex-col min-h-0 overflow-hidden"
      data-page-id="{{ page.id }}"
-     data-grid-min="{{ (page.config or {}).get('grid_min', {'3':320,'4':230,'5':170}.get(((page.config or {}).get('grid_cols', 4)|string), 230)) }}"
-     data-grid-gap="{{ (page.config or {}).get('grid_gap', 8) }}">
+     data-grid-min="{{ (page.config or {}).get('grid_min', 240) }}"
+     data-grid-gap="{{ (page.config or {}).get('grid_gap', 8) }}"
+     data-grid-fixed-cols="{{ (page.config or {}).get('grid_fixed_cols', '') }}">
 
   {# ── Toolbar ────────────────────────────────────────────────────────────── #}
   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0 flex-wrap">
