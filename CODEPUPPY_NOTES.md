@@ -129,7 +129,7 @@
 | `routers/categories_db.py` | DB helpers for categories |
 | `routers/attachments.py` | File upload/download/delete |
 | `routers/attachments_db.py` | DB helpers for attachments; sets `UPLOAD_DIR` |
-| `routers/home.py` | Home pages + widget CRUD + weather proxy |
+| `routers/home.py` | Home pages + widget CRUD + weather proxy. Includes `GET /home/pages` → `list_pages_json` (returns `{pages: [{id, name, emoji, page_type}]}` for the current user; auth-gated; must be declared **before** `/pages/{page_id}` so Starlette matches it first; used by add-widget modal CRM picker and upload-preview file picker — both break silently if this is missing). |
 | `routers/home_db.py` | DB helpers for home_pages + home_widgets tables |
 | `routers/home_crm.py` | 9 endpoints under `/home/crm/{page_id}/…` — contacts CRUD + fields CRUD + field-value upsert. Ownership validated via `_get_crm_page()`. |
 | `routers/home_crm_db.py` | DB helpers for CRM. Uses single JOIN in `_attach_field_values()` to avoid N+1. |
@@ -166,6 +166,7 @@
 | `static/js/timeline-ui.js` | Timeline UI interactions |
 | `static/js/bw-spellcheck.js` | Spell-check integration |
 | `static/js/home-widget-text.js` | Text/title widget editor |
+| `static/js/home-widget-upload-preview.js` | **File Preview widget engine** (commit `92b68bc`). Public API: `_loadUploadPreview(el)` (entry point, called on widget boot), `_uplPrevOpenPicker(widgetId)`, `_uplPrevClosePicker()`, `_uplPrevFetchPages()`, `_uplPrevLoadFiles(pageId)`, `_uplPrevFetch()`, `_uplPrevRenderPickerGrid(files)`, `_uplPrevToggleFile(fileId)`, `_uplPrevPrevPage()`, `_uplPrevNextPage()`, `_uplPrevConfirm()` (async — saves config + reloads widget). All module state uses `var`. |
 
 ---
 
@@ -280,6 +281,7 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 | `sticky` | `paper`, `grid`, `kraft`, `chalk`, `memo` | Sticky note (editable text, distinct surface styles) |
 | `quote` | `default` | Pull-quote block |
 | `rss_feed` | `card`, `compact`, `minimal` | RSS feed widget; feeds auto-sync to linked RSS Reader pages |
+| `upload_preview` | `grid`, `carousel` | **File Preview widget** — pinned uploads from any Uploads page rendered as a thumbnail grid or carousel. Config: `{upload_ids: [int], caption: "0"\|"1", style: "grid"\|"carousel"}`. No new DB tables — reads from existing `page_uploads` table. JS engine: `home-widget-upload-preview.js`. File picker calls `GET /home/pages` then `GET /home/uploads/{pid}/files?scoped=1`. |
 
 **Jinja2 filters used by widget templates** (all registered in `templates_env.py`):
 - `fmt_bytes` — human-readable file sizes
@@ -549,6 +551,7 @@ Eddie is always the outermost layer — agents supplement, not replace.
     - Main script: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js`
     - Worker: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
     - If the worker URL is on a different version than the main script, `getDocument()` silently hangs — no error thrown, no timeout, spinner never resolves. Always update **both** URLs together when upgrading PDF.js. (G3 in `home-page-uploads-annot.js` guards this with an inline comment.)
+25. **`GET /home/pages` is a shared dependency for two pickers in `routers/home.py`** (commit `92b68bc`). Both the add-widget modal's **CRM pages** `<select>` field (`select-crm-pages`) AND the **upload-preview file picker** call `GET /home/pages` to populate their page-selector dropdowns. If this endpoint is ever removed, renamed, or placed **after** `/pages/{page_id}` in the router, both pickers silently break with an empty dropdown — no JS error, just nothing to select. Rule: keep `list_pages_json` as the first route under the `/pages` prefix in `routers/home.py`.
 
 ---
 
@@ -599,6 +602,7 @@ powershell -Command "Start-Sleep 5"
 
 | Date | What happened |
 |---|---|
+| 2026-04-20 | **`upload_preview` widget shipped (commit `92b68bc`).** New widget type "File Preview" — pinned uploads from any Uploads page rendered as a thumbnail grid or carousel. Config stored in `home_widgets.config_json` as `{upload_ids, caption, style}`. No new DB tables — uses existing `page_uploads` table. New JS engine: `static/js/home-widget-upload-preview.js` (all-`var`; key fns: `_loadUploadPreview`, `_uplPrevOpenPicker`, `_uplPrevFetchPages`, `_uplPrevLoadFiles`, `_uplPrevConfirm`). **Also fixed latent bug:** `GET /home/pages` (`list_pages_json`) was missing from `routers/home.py` — both the add-widget CRM pages picker AND the new upload-preview file picker were silently failing (empty dropdown). Fixed by adding the endpoint; must be declared **before** `/pages/{page_id}` so Starlette matches it correctly. Auth-gated (not in `_PUBLIC`). |
 | 2026-04-11 | **Phase 8 / B2 PDF Annotations shipped (commit `86ed485`).** New router `home_uploads_annot.py` (not added to `home_uploads_docs.py` — already 798 lines over limit). DB migration: `pdf_annotations` table + `idx_pdf_annot_file`. JS: `home-page-uploads-annot.js` (286 lines). Template: `#upl-annot-modal`. Template-audit 5/5 green, QA 100% green, pre-commit 0 blockers. Manual smoke test step 9 pending. |
 | 2026-04-11 | **CRM Phase 3 (Feature A + B) verified complete by bookworm-qa sweep. PLAN_CRM_PHASE3.md checklist marked done. Both features were already fully implemented; this session confirmed correctness.** Feature B (New Field Types): `crm_custom_fields.field_type` expanded to 9 values (`text`, `select`, `multi_select`, `checkbox`, `url`, `email`, `date`, `number`, `file_links`); `_CRM_FIELD_TYPE_DEFS` constant in `home-page-crm-fields.js`; checkbox quick-toggle `crmQuickCheckbox()` on gallery cards; value encoding documented (checkbox=`'1'`/`'0'`, multi_select+file_links=JSON array string). Feature A (Sort/Filter/Group toolbar): `home-page-crm-toolbar.js` (new module) — state vars `_crmSortKey/_crmFilterField/_crmFilterValue/_crmGroupField`; `window.crmRenderToolbar`; `window._crmProcessed()` (replaces `_crmFiltered()` which now wraps it); `window._crmGroupValue()`; setters `crmSetSort/crmSetFilterField/crmSetFilterValue/crmSetGroup/crmClearFilters`. |
 | 2026-04-15 | **Phase 7 / B2 — Jspreadsheet CE in-browser spreadsheet editor shipped (commit `95ea1dd`).** New file: `static/js/home-page-uploads-spreadsheet.js` — all-`var`, lazy CDN loader for Jsuites + Jspreadsheet CE + SheetJS (pinned major versions; load order is mandatory: Jsuites JS → Jsuites CSS → Jspreadsheet JS → Jspreadsheet CSS → SheetJS). Promise cached in `_uplSsLibsPromise` to avoid re-injection on re-open. New endpoint: `PUT /home/uploads/{pid}/files/page/{fid}/spreadsheet` in `home_uploads_docs.py`; model: `SpreadsheetBody(content_b64, format)`; ≤10 MB guard `MAX_SPREADSHEET_BYTES`; auth-gated + `_demo_guard`. New HTML: `#upl-spreadsheet-modal` in `home_page_uploads.html`. `base.html` load order: uploads-docs.js → uploads-sign.js → uploads-wopi.js → uploads-spreadsheet.js (last, `<script defer>`). `_uplSsInstance()` helper returns `el.jspreadsheet ?? el.jexcel` for v4/v5 compat. |
