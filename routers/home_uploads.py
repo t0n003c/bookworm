@@ -143,7 +143,7 @@ async def upload_file(
             pass  # Corrupted / unsupported mode — keep original
 
     (UPLOAD_DIR / stored_name).write_bytes(data)
-    await create_page_upload(
+    upload_id = await create_page_upload(
         page_id=page_id,
         user_id=uid,
         filename=stored_name,
@@ -151,7 +151,7 @@ async def upload_file(
         mime_type=mime,
         size=len(data),  # reflects WebP size if converted
     )
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "upload_id": upload_id})
 
 
 # ── Delete standalone file ────────────────────────────────────────────────────

@@ -251,12 +251,17 @@ function gridSetGap(px) {
 function _gridApplyLayout() {
     var canvas = document.getElementById('grid-canvas');
     if (!canvas) return;
-    // auto-fill: photos fill their cell, grid reflows naturally — no dead space
-    canvas.style.gridTemplateColumns =
-        'repeat(auto-fill, minmax(' + _gridMin + 'px, 1fr))';
+    // Fixed-px tracks (not minmax) so justify-content:center actually works
+    canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + _gridMin + 'px)';
     canvas.style.gap = _gridGap + 'px';
-    // center partial last rows
     canvas.style.justifyContent = 'center';
+    // At gap=0, ring-1 box-shadows create a visible line between cells.
+    // Strip radius + shadow via CSS data-attribute toggle.
+    if (_gridGap === 0) {
+        canvas.setAttribute('data-grid-zero-gap', '1');
+    } else {
+        canvas.removeAttribute('data-grid-zero-gap');
+    }
 }
 
 function _gridHighlightColBtn() {
@@ -285,6 +290,50 @@ function _gridSaveConfig() {
 function gridAddMedia() {
     // Open the picker with no target cell — gridPickMedia() will POST a new cell
     gridOpenMediaPicker(null);
+}
+
+/* ── Direct upload from picker ────────────────────────────────────────────── */
+async function gridUploadFiles(input) {
+    var files = Array.from(input.files || []);
+    if (!files.length) return;
+    if (!_gridPickerPageId) {
+        alert('Select an Uploads page first so we know where to save the file.');
+        return;
+    }
+    var status = document.getElementById('grid-upload-status');
+    if (status) { status.textContent = 'Uploading…'; status.classList.remove('hidden'); }
+
+    var ok = 0; var failed = 0;
+    for (var i = 0; i < files.length; i++) {
+        var fd = new FormData();
+        fd.append('file', files[i]);
+        try {
+            var r = await fetch('/home/uploads/' + _gridPickerPageId + '/upload',
+                                {method: 'POST', body: fd});
+            if (!r.ok) { failed++; continue; }
+            var data = await r.json();
+            var uploadId = data.upload_id;
+            // Tag with grid page so Uploads page can show the connection
+            await fetch('/home/uploads/' + _gridPickerPageId
+                        + '/files/page/' + uploadId + '/tags',
+                        {method: 'POST',
+                         headers: {'Content-Type': 'application/json'},
+                         body: JSON.stringify({tag: 'grid:' + _gridPid})});
+            ok++;
+        } catch(e) {
+            console.error('[grid] upload error:', e);
+            failed++;
+        }
+    }
+
+    input.value = '';  // allow re-selecting the same file next time
+    if (status) {
+        status.textContent = failed
+            ? ok + ' uploaded, ' + failed + ' failed.'
+            : ok + ' file' + (ok === 1 ? '' : 's') + ' uploaded!';
+        setTimeout(function() { status.classList.add('hidden'); }, 3500);
+    }
+    await _gridMediaFetch();  // refresh gallery to show newly uploaded files
 }
 
 /* ── Cell context menu ─────────────────────────────────────────────────────── */

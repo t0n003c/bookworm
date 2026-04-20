@@ -270,15 +270,21 @@ function _uplCard(f) {
                          bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;
   }
 
-  // Source badge: note-attached = blue, standalone = gray
+  // Source badge: note-attached = blue, grid-linked = green, standalone = gray
+  const gridTag = Array.isArray(f.tags) && f.tags.find(function(t){ return t.startsWith('grid:'); });
   const srcBadge = f.src === 'note'
     ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300
                     truncate max-w-full" title="${_uplEsc(f.note_title || 'Note')}">\uD83D\uDCDD ${_uplEsc((f.note_title || 'Note').substring(0,22))}</span>`
+    : gridTag
+    ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
+                    bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+              title="Linked to a Grid page">&#128248; Grid</span>`
     : `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Standalone</span>`;
 
-  const tagPips = (f.tags || []).slice(0, 3).map(t =>
+  // Exclude grid: tags from yellow pills — they're already shown via the badge
+  const tagPips = (f.tags || []).filter(function(t){ return !t.startsWith('grid:'); }).slice(0, 3).map(t =>
     `<span class="px-1.5 py-0.5 text-[8px] rounded-full bg-yellow-100
                   dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400">${_uplEsc(t)}</span>`
   ).join('');
