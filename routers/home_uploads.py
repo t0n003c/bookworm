@@ -24,6 +24,7 @@ from routers.uploads_db import (
     get_all_user_tags,
     get_note_attachment_owned,
     get_page_upload_owned,
+    get_page_uploads_by_ids,
     get_tags_for_file,
     get_uploads_page,
     remove_tag_from_file,
@@ -95,6 +96,26 @@ def _valid_src(src: str) -> str:
     if src not in ("note", "page"):
         raise HTTPException(status_code=400, detail="src must be 'note' or 'page'")
     return src
+
+
+# ── Pinned-file lookup (upload_preview widget) ────────────────────────────────
+# Fixed route — declared before /{page_id}/… so Starlette never mistakes
+# the string "pinned-files" for a page_id int.
+
+
+@router.get("/pinned-files")
+async def pinned_files(request: Request, ids: str = Query("")):
+    """Return file metadata for a comma-separated list of page_upload IDs.
+
+    Auth-gated. Only rows owned by the requesting user are returned.
+    IDs that don’t exist or belong to another user are silently omitted.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    rows = await get_page_uploads_by_ids(id_list, uid)
+    return JSONResponse(rows)
 
 
 # ── List files (paginated + counts) ──────────────────────────────────────────

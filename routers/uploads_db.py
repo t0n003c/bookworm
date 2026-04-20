@@ -369,6 +369,28 @@ async def remove_tag_from_file(
     return await get_tags_for_file(upload_src, upload_id, user_id)
 
 
+async def get_page_uploads_by_ids(ids: list, user_id: int) -> list:
+    """Fetch specific page_uploads rows by ID, scoped to user ownership.
+
+    Returns only page-src files (note attachments excluded — v1 scope).
+    Rows are returned in the same order as *ids*.
+    Returns [] immediately when ids is empty.
+    """
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    async with get_db() as db:
+        cur = await db.execute(
+            f"SELECT id, filename, original_name, mime_type, size "
+            f"FROM page_uploads "
+            f"WHERE id IN ({placeholders}) AND user_id = ?",
+            (*ids, user_id),
+        )
+        rows = {r["id"]: dict(r) for r in await cur.fetchall()}
+    # Preserve caller's ordering; silently drop IDs that don't exist or aren't owned.
+    return [rows[i] for i in ids if i in rows]
+
+
 async def get_all_user_tags(user_id: int) -> list:
     """Return all distinct tags this user has applied across all files."""
     async with get_db() as db:
