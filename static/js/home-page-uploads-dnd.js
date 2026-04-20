@@ -157,6 +157,10 @@ function _dndSelToggle(src, id, folderId) {
 
 function _dndSelClear() {
   _dndSelected = {};
+  var _btp = document.getElementById('upl-bulk-tag-panel');
+  if (_btp) _btp.remove();
+  var _bdm = document.getElementById('upl-bulk-del-modal');
+  if (_bdm) _bdm.classList.add('hidden');
   document.querySelectorAll('[data-upl-file-key]').forEach(function(c) {
     c.style.outline   = '';
     c.style.boxShadow = '';

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, File, HTTPException, Query, Request, Upload
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
-from routers.attachments_db import UPLOAD_DIR
+from routers.attachments_db import UPLOAD_DIR, delete_attachment_record
 from routers.auth_db import get_unlimited_uploads
 from routers.home_db import get_home_page
 from routers.uploads_db import (
@@ -52,6 +52,28 @@ class TagBody(BaseModel):
         if len(v) > 50:
             raise ValueError("tag too long (max 50 chars)")
         return v
+
+
+class BulkFileRef(BaseModel):
+    src: str
+    id: int
+
+
+class BulkTagBody(BaseModel):
+    ids: list[BulkFileRef]
+    tag: str
+
+    @field_validator("tag")
+    @classmethod
+    def clean_bulk_tag(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v or len(v) > 50:
+            raise ValueError("tag must be 1\u201350 chars")
+        return v
+
+
+class BulkDeleteBody(BaseModel):
+    ids: list[BulkFileRef]
 
 
 def _demo_guard(request: Request):
@@ -275,3 +297,66 @@ async def remove_file_tag(
     _valid_src(src)
     tags = await remove_tag_from_file(src, upload_id, uid, tag.strip().lower())
     return JSONResponse({"tags": tags})
+
+
+# ── Bulk operations ───────────────────────────────────────────────────────────────
+
+@router.post("/{page_id}/files/bulk/tag-add")
+async def bulk_add_tag(request: Request, page_id: int, body: BulkTagBody):
+    """Add a tag to every selected file in one shot."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    for ref in body.ids:
+        await add_tag_to_file(_valid_src(ref.src), ref.id, uid, body.tag)
+    return JSONResponse({"ok": True, "count": len(body.ids)})
+
+
+@router.post("/{page_id}/files/bulk/tag-remove")
+async def bulk_remove_tag(request: Request, page_id: int, body: BulkTagBody):
+    """Remove a tag from every selected file."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    for ref in body.ids:
+        await remove_tag_from_file(_valid_src(ref.src), ref.id, uid, body.tag)
+    return JSONResponse({"ok": True, "count": len(body.ids)})
+
+
+@router.post("/{page_id}/files/bulk/delete")
+async def bulk_delete_files(request: Request, page_id: int, body: BulkDeleteBody):
+    """Delete every selected file; each ownership-checked individually."""
+    if guard := _demo_guard(request):
+        return guard
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    deleted, errors = 0, 0
+    for ref in body.ids:
+        try:
+            if ref.src == "page":
+                fname = await delete_page_upload(ref.id, uid)
+                if fname:
+                    (UPLOAD_DIR / fname).unlink(missing_ok=True)
+                    deleted += 1
+                else:
+                    errors += 1
+            elif ref.src == "note":
+                att = await get_note_attachment_owned(ref.id, uid)
+                if att:
+                    fname = await delete_attachment_record(ref.id)
+                    if fname:
+                        (UPLOAD_DIR / fname).unlink(missing_ok=True)
+                    deleted += 1
+                else:
+                    errors += 1
+        except Exception:
+            errors += 1
+    return JSONResponse({"ok": True, "deleted": deleted, "errors": errors})

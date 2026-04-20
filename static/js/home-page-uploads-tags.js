@@ -235,3 +235,195 @@ async function _uplLoadAllTags() {
     _uplRenderFilterTabs();  // refresh tag filter pills in the tab bar
   } catch { /* silent */ }
 }
+
+// ── Bulk operations (multi-select) ───────────────────────────────────────────
+// These functions work with _dndSelected (from home-page-uploads-dnd.js).
+// Invoked from the floating badge buttons added by _dndSelBadgeUpdate().
+
+function _uplBulkGetSelIds() {
+  return Object.values(_dndSelected).map(function(x) {
+    return { src: x.src, id: x.id };
+  });
+}
+
+function _uplBulkGetUnionTags() {
+  const union = new Set();
+  Object.values(_dndSelected).forEach(function(item) {
+    const f = _uplFiles.find(function(x) { return x.src === item.src && x.id === item.id; });
+    if (f && Array.isArray(f.tags)) {
+      f.tags.forEach(function(t) { if (!t.startsWith('grid:')) union.add(t); });
+    }
+  });
+  return Array.from(union).sort();
+}
+
+// Toggle the floating bulk-tag panel.
+function _uplBulkTagPanel() {
+  const existing = document.getElementById('upl-bulk-tag-panel');
+  if (existing) { existing.remove(); return; }   // second click = close
+
+  const count    = Object.keys(_dndSelected).length;
+  const existing_tags = _uplBulkGetUnionTags();
+  const opts     = _uplAllTags.filter(function(t) { return !existing_tags.includes(t); })
+                              .map(function(t) { return `<option value="${_uplEsc(t)}">` }).join('');
+
+  const existPills = existing_tags.length
+    ? existing_tags.map(function(t) {
+        return `<button onclick="_uplBulkRemoveTag('${_uplJsStr(t)}')" title="Remove from all selected"
+          class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full cursor-pointer
+                 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300
+                 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-700 transition">
+          ${_uplEsc(t)} &times;
+        </button>`;
+      }).join('')
+    : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files yet</span>';
+
+  const panel = document.createElement('div');
+  panel.id    = 'upl-bulk-tag-panel';
+  panel.className =
+    'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-80 ' +
+    'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+    'rounded-2xl shadow-2xl p-4 select-none';
+
+  panel.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">
+        &#127991;&#65039; Tags &mdash; ${count} file${count === 1 ? '' : 's'}
+      </span>
+      <button onclick="document.getElementById('upl-bulk-tag-panel').remove()"
+              class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition text-lg leading-none">&times;</button>
+    </div>
+
+    <p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Add tag to all</p>
+    <div class="flex gap-1 mb-4">
+      <input id="upl-bulk-tag-input" list="upl-bulk-tag-opts"
+             placeholder="Type or choose tag\u2026"
+             class="flex-1 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                    text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                    focus:outline-none focus:ring-1 focus:ring-[#0053e2]"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();_uplBulkAddTag()}" />
+      <datalist id="upl-bulk-tag-opts">${opts}</datalist>
+      <button onclick="_uplBulkAddTag()"
+              class="px-3 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white
+                     hover:bg-[#003eb3] transition font-medium">+ Add</button>
+    </div>
+
+    <p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Remove tag from all</p>
+    <div class="flex flex-wrap gap-1" id="upl-bulk-existing-tags">${existPills}</div>`;
+
+  document.body.appendChild(panel);
+  panel.querySelector('#upl-bulk-tag-input')?.focus();
+}
+
+async function _uplBulkAddTag() {
+  const input = document.getElementById('upl-bulk-tag-input');
+  const tag   = (input ? input.value : '').trim().toLowerCase();
+  if (!tag || tag.length > 50) return;
+  if (input) input.value = '';
+  const ids   = _uplBulkGetSelIds();
+  try {
+    const r = await fetch(`/home/uploads/${_uplPid}/files/bulk/tag-add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, tag }),
+    });
+    if (!r.ok) { _uplShowToast('Failed to add tag.', true); return; }
+    // Optimistically update _uplFiles so panel + cards reflect change immediately
+    ids.forEach(function(ref) {
+      const f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+      if (f) { f.tags = f.tags || []; if (!f.tags.includes(tag)) f.tags.push(tag); }
+    });
+    await _uplLoadAllTags();
+    _uplRender();
+    // Rebuild panel in place
+    document.getElementById('upl-bulk-tag-panel')?.remove();
+    _uplBulkTagPanel();
+    _uplShowToast(`Tag "${tag}" added to ${ids.length} file${ids.length === 1 ? '' : 's'}.`);
+  } catch (e) { _uplShowToast('Error: ' + e, true); }
+}
+
+async function _uplBulkRemoveTag(tag) {
+  const ids = _uplBulkGetSelIds();
+  try {
+    const r = await fetch(`/home/uploads/${_uplPid}/files/bulk/tag-remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, tag }),
+    });
+    if (!r.ok) { _uplShowToast('Failed to remove tag.', true); return; }
+    ids.forEach(function(ref) {
+      const f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+      if (f && Array.isArray(f.tags)) f.tags = f.tags.filter(function(t) { return t !== tag; });
+    });
+    await _uplLoadAllTags();
+    _uplRender();
+    document.getElementById('upl-bulk-tag-panel')?.remove();
+    _uplBulkTagPanel();
+    _uplShowToast(`Tag "${tag}" removed from all selected files.`);
+  } catch (e) { _uplShowToast('Error: ' + e, true); }
+}
+
+// ── Bulk delete ───────────────────────────────────────────────────────────────
+
+function _uplBulkDeleteSelected() {
+  const count = Object.keys(_dndSelected).length;
+  if (!count) return;
+
+  // Reuse / create confirm modal
+  let modal = document.getElementById('upl-bulk-del-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id        = 'upl-bulk-del-modal';
+    modal.className =
+      'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+      <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 w-80 max-w-full">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-zinc-100 mb-1">Delete files?</h3>
+        <p id="upl-bulk-del-msg" class="text-xs text-gray-500 dark:text-zinc-400 mb-5"></p>
+        <div class="flex gap-2 justify-end">
+          <button onclick="document.getElementById('upl-bulk-del-modal').classList.add('hidden')"
+                  class="px-4 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-700
+                         text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition"
+          >Cancel</button>
+          <button id="upl-bulk-del-confirm-btn" onclick="_uplBulkDoDelete()"
+                  class="px-4 py-1.5 text-xs rounded-lg bg-red-600 text-white
+                         hover:bg-red-700 transition font-semibold"
+          >Delete</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+
+  const msg = modal.querySelector('#upl-bulk-del-msg');
+  if (msg) msg.textContent =
+    `Permanently delete ${count} file${count === 1 ? '' : 's'}? This cannot be undone.`;
+  modal.classList.remove('hidden');
+  setTimeout(function() { modal.querySelector('#upl-bulk-del-confirm-btn')?.focus(); }, 50);
+}
+
+async function _uplBulkDoDelete() {
+  const modal = document.getElementById('upl-bulk-del-modal');
+  if (modal) modal.classList.add('hidden');
+
+  const ids = _uplBulkGetSelIds();
+  if (!ids.length) return;
+
+  try {
+    const r = await fetch(`/home/uploads/${_uplPid}/files/bulk/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await r.json().catch(function() { return {}; });
+    _dndSelClear();
+    await _uplFetch(_uplMeta?.page || 1);
+    const del = data.deleted ?? ids.length;
+    const err = data.errors ?? 0;
+    const msg = err
+      ? `Deleted ${del} file${del === 1 ? '' : 's'} (${err} error${err === 1 ? '' : 's'}).`
+      : `Deleted ${del} file${del === 1 ? '' : 's'}.`;
+    _uplShowToast(msg, err > 0);
+  } catch (e) {
+    _uplShowToast('Bulk delete failed: ' + e, true);
+  }
+}
