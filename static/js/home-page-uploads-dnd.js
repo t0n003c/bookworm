@@ -213,6 +213,18 @@ function _dndSelBadgeUpdate() {
   badge.innerHTML =
     '<span>' + count + ' file' + (count === 1 ? '' : 's') + ' selected</span>' +
     catBtn +
+    '<button onclick="_uplBulkTagPanel()" ' +
+      'class="flex items-center gap-1 bg-white/20 hover:bg-white/30 ' +
+            'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium" ' +
+      'title="Add / remove tags on selected files">' +
+      '\uD83C\uDFF7\uFE0F Tags' +
+    '</button>' +
+    '<button onclick="_uplBulkDeleteSelected()" ' +
+      'class="flex items-center gap-1 bg-red-500/80 hover:bg-red-500 ' +
+            'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium" ' +
+      'title="Delete all selected files">' +
+      '\uD83D\uDDD1\uFE0F Delete' +
+    '</button>' +
     '<button onclick="_dndSelClear()" ' +
       'class="ml-1 opacity-70 hover:opacity-100 transition" ' +
       'aria-label="Clear selection">' +

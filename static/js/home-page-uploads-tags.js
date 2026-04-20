@@ -338,7 +338,7 @@ async function _uplBulkAddTag() {
     // Rebuild panel in place
     document.getElementById('upl-bulk-tag-panel')?.remove();
     _uplBulkTagPanel();
-    _uplShowToast(`Tag "${tag}" added to ${ids.length} file${ids.length === 1 ? '' : 's'}.`);
+    _uplShowToast(`Tag "${_uplEsc(tag)}" added to ${ids.length} file${ids.length === 1 ? '' : 's'}.`);
   } catch (e) { _uplShowToast('Error: ' + e, true); }
 }
 
@@ -359,7 +359,7 @@ async function _uplBulkRemoveTag(tag) {
     _uplRender();
     document.getElementById('upl-bulk-tag-panel')?.remove();
     _uplBulkTagPanel();
-    _uplShowToast(`Tag "${tag}" removed from all selected files.`);
+    _uplShowToast(`Tag "${_uplEsc(tag)}" removed from all selected files.`);
   } catch (e) { _uplShowToast('Error: ' + e, true); }
 }
 
