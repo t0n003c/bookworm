@@ -132,16 +132,9 @@ function _uplThumbHtml(file, style) {
                 + ' onmouseleave="_uplVidHoverStop(this)"'
                 + ' class="relative block w-full overflow-hidden rounded-lg'
                 + ' bg-gray-100 dark:bg-zinc-800 aspect-square cursor-pointer"'
-                + ' title="' + name + ' \u2014 hover to peek, click to watch">'
+                + ' title="' + name + '">'
                 + '<video src="' + url + '" preload="metadata" muted playsinline'
                 + ' class="w-full h-full object-cover pointer-events-none"></video>'
-                // overlay: shown at rest, hidden while hovering
-                + '<div class="upl-vid-overlay absolute inset-0 flex flex-col items-center'
-                + ' justify-center gap-1 bg-black/30 transition-opacity pointer-events-none"'
-                + ' style="opacity:1">'
-                + '<span class="text-3xl leading-none" aria-hidden="true">🎥</span>'
-                + '<span class="text-white text-[9px] font-medium">Click to watch</span>'
-                + '</div>'
                 + '</button>';
         }
 
