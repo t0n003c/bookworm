@@ -68,7 +68,8 @@ function _stackPersist(stackId, index) {
     .catch(function() {});  // silence network errors
 }
 
-function _stackInitTouchSwipe(viewportEl, stackId) {
+function _stackInitSwipe(viewportEl, stackId) {
+  // ── Touch swipe (mobile / touchpad) ───────────────────────────────────
   var _touchX = 0;
   viewportEl.addEventListener('touchstart', function(e) {
     _touchX = e.touches[0].clientX;
@@ -78,6 +79,29 @@ function _stackInitTouchSwipe(viewportEl, stackId) {
     if (dx < -40) stackNext(stackId);
     if (dx >  40) stackPrev(stackId);
   }, { passive: true });
+
+  // ── Pointer drag swipe (mouse + pen) ───────────────────────────────
+  // Only fires when edit mode is OFF — in edit mode the hold-to-stack
+  // gesture uses the same pointerdown/up flow on the outer grid and we
+  // don’t want swipe to interfere with stacking.
+  var _ptrX    = 0;
+  var _ptrDown = false;
+  viewportEl.addEventListener('pointerdown', function(e) {
+    if (!e.isPrimary || e.pointerType === 'touch') return;  // touch handled above
+    _ptrX    = e.clientX;
+    _ptrDown = true;
+  }, { passive: true });
+  viewportEl.addEventListener('pointerup', function(e) {
+    if (!_ptrDown || !e.isPrimary || e.pointerType === 'touch') return;
+    _ptrDown = false;
+    // Skip in edit mode — let the grid’s drag machinery take over
+    var grid = document.querySelector('[id^="widget-grid-"]');
+    if (grid && grid.dataset.stackMode === 'true') return;
+    var dx = e.clientX - _ptrX;
+    if (dx < -40) stackNext(stackId);
+    if (dx >  40) stackPrev(stackId);
+  }, { passive: true });
+  viewportEl.addEventListener('pointercancel', function() { _ptrDown = false; }, { passive: true });
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -110,7 +134,7 @@ function initStackCards() {
     var viewport = card.querySelector('.stack-viewport');
 
     if (viewport && !viewport.dataset.swipeInited) {
-      _stackInitTouchSwipe(viewport, stackId);
+      _stackInitSwipe(viewport, stackId);
       viewport.dataset.swipeInited = '1';
     }
 
@@ -130,13 +154,12 @@ function initStackCards() {
     });
   });
 
-  // ── Restore edit mode from localStorage ──
-  // Always called so draggable/drag-handles default to OFF at page load.
+  // ── Apply edit mode state ──
+  // Edit mode is intentionally NOT persisted — always starts OFF on refresh.
+  // _applyStackModeState also sets draggable=false and hides drag handles.
   var grid = document.querySelector('[id^="widget-grid-"]');
   if (grid && typeof _applyStackModeState === 'function') {
-    var pageId = (grid.id || '').replace('widget-grid-', '');
-    var saved  = pageId ? localStorage.getItem('bw_stack_' + pageId) : null;
-    _applyStackModeState(grid, saved === '1');  // default: off
+    _applyStackModeState(grid, false);
   }
 }
 

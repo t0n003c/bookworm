@@ -270,6 +270,9 @@
       border: none !important;
       box-shadow: none !important;
     }
+    /* Hide the widget name label inside a stack slide — the stack header
+       already shows a custom name; the inner label is redundant noise. */
+    .stack-child-frame > .hw-card .hw-widget-label { display: none; }
     /* Suppress shadow transitions while user is actively scrolling the home canvas.
        JS adds .bw-scrolling to #main-content during scroll; removed after 150 ms idle. */
     .bw-scrolling .hw-card { transition: none !important; }

@@ -1164,10 +1164,26 @@ function _clearStackDropHighlight() {
   document.querySelectorAll('.hw-card').forEach(function(c) { c.style.outline = ''; });
 }
 
+// ── Row-span hint: measure actual rendered card height and convert to
+// grid row units so stacks are never smaller than their largest child.
+// The stack chrome (header + dots bar) consumes ~64 px above the content.
+function _stackRowSpanHint(pixelHeight) {
+  var grid = document.querySelector('[id^="widget-grid-"]');
+  var ref  = grid ? grid.querySelector('.hw-card[data-row-span="1"]') : null;
+  var unit = ref ? ref.getBoundingClientRect().height : 120;  // 7.5 rem fallback
+  return Math.max(1, Math.ceil((pixelHeight + 64) / unit));
+}
+
 async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var targetId = parseInt(targetCard.dataset.widgetId, 10);
   var srcId    = parseInt(srcCard.dataset.widgetId, 10);
   if (!targetId || !srcId) return;
+
+  // Measure actual rendered heights BEFORE any DOM mutation.
+  // Config-based row_span is unreliable when grid-auto-rows:auto lets content
+  // expand rows beyond the declared span — the hint corrects this.
+  var targetH  = targetCard.getBoundingClientRect().height;
+  var srcH     = srcCard.getBoundingClientRect().height;
 
   var targetType = targetCard.dataset.widgetType;
   var srcType    = srcCard.dataset.widgetType;
@@ -1185,6 +1201,7 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
     var fd1 = new FormData();
     fd1.append('widget_id', srcId);
     fd1.append('page_id', pageId);
+    fd1.append('row_span_hint', _stackRowSpanHint(srcH));
     var r1 = await fetch('/home/widgets/' + targetId + '/stack-add',
                         { method: 'POST', body: fd1 });
     if (!r1.ok) { _bwToast('Stack add failed', 'error'); return; }
@@ -1200,6 +1217,7 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var fd2 = new FormData();
   fd2.append('page_id', pageId);
   fd2.append('widget_ids', targetId + ',' + srcId);
+  fd2.append('row_span_hint', _stackRowSpanHint(Math.max(targetH, srcH)));
   var r2 = await fetch('/home/widgets/stack', { method: 'POST', body: fd2 });
   if (!r2.ok) { _bwToast('Stack creation failed', 'error'); return; }
   var html2 = await r2.text();
@@ -1239,15 +1257,14 @@ function _applyStackModeState(grid, on) {
 }
 
 /**
- * toggleStackMode — flips data-stack-mode on the widget grid, persists to
- * localStorage so the state survives re-renders (unstack, stack) and F5.
+ * toggleStackMode — flips data-stack-mode on the widget grid.
+ * Intentionally NOT persisted to localStorage — edit mode always resets
+ * to OFF on page refresh so users can't accidentally lock themselves in.
  */
 function toggleStackMode() {
   var grid = document.querySelector('[id^="widget-grid-"]');
   if (!grid) return;
-  var on      = grid.dataset.stackMode !== 'true';
-  var pageId  = (grid.id || '').replace('widget-grid-', '');
-  if (pageId) localStorage.setItem('bw_stack_' + pageId, on ? '1' : '0');
+  var on = grid.dataset.stackMode !== 'true';
   _applyStackModeState(grid, on);
 }
 
