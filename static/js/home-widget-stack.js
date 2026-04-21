@@ -66,10 +66,10 @@ function _stackPersist(stackId, index) {
   cfg.active_index = index;
   card.dataset.widgetConfig = JSON.stringify(cfg);  // keep DOM in sync
   // Fire-and-forget — losing active_index on network failure is acceptable
-  if (typeof _post === 'function') {
-    _post('/home/widgets/' + stackId + '/update-config',
-          { config_json: JSON.stringify(cfg) });
-  }
+  var fd = new FormData();
+  fd.append('config_json', JSON.stringify(cfg));
+  fetch('/home/widgets/' + stackId + '/update-config', { method: 'POST', body: fd })
+    .catch(function() {});  // silence network errors
 }
 
 function _stackInitTouchSwipe(viewportEl, stackId) {
@@ -140,25 +140,22 @@ function initStackCards() {
  * The server returns the full re-rendered home_page.html partial.
  */
 async function unstackWidget(stackId, pageId) {
-  if (typeof _post !== 'function') {
-    console.error('[stack] _post not available');
-    return;
-  }
+  var fd = new FormData();
+  fd.append('page_id', pageId);
   try {
-    var res = await _post('/home/widgets/' + stackId + '/unstack',
-                          { page_id: pageId });
+    var res = await fetch('/home/widgets/' + stackId + '/unstack',
+                         { method: 'POST', body: fd });
     if (!res.ok) {
       if (typeof _bwToast === 'function') _bwToast('Unstack failed', 'error');
       return;
     }
     var html = await res.text();
-    var hc   = document.getElementById('home-canvas');
+    var hc   = document.getElementById('home-content');
     if (hc) {
       hc.innerHTML = html;
-      // Re-init widgets (boots drag-drop, stack cards, widget engines)
-      if (typeof initHomeWidgets === 'function') {
-        try { initHomeWidgets(); } catch(e) {
-          console.error('[stack] initHomeWidgets after unstack:', e);
+      if (typeof _initSwappedPage === 'function') {
+        try { _initSwappedPage(); } catch(e) {
+          console.error('[stack] _initSwappedPage after unstack:', e);
         }
       }
     }

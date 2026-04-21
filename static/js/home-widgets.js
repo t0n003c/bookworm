@@ -1186,8 +1186,8 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
                         { method: 'POST', body: fd1 });
     if (!r1.ok) { _bwToast('Stack add failed', 'error'); return; }
     var html1 = await r1.text();
-    var hc1 = document.getElementById('home-canvas');
-    if (hc1) { hc1.innerHTML = html1; if (typeof initHomeWidgets === 'function') initHomeWidgets(); }
+    var hc1 = document.getElementById('home-content');
+    if (hc1) { hc1.innerHTML = html1; _initSwappedPage(); }
     invalidateHomePageCache(pageId);
     _bwToast('Added to stack 📦', 'success');
     return;
@@ -1200,8 +1200,8 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var r2 = await fetch('/home/widgets/stack', { method: 'POST', body: fd2 });
   if (!r2.ok) { _bwToast('Stack creation failed', 'error'); return; }
   var html2 = await r2.text();
-  var hc2 = document.getElementById('home-canvas');
-  if (hc2) { hc2.innerHTML = html2; if (typeof initHomeWidgets === 'function') initHomeWidgets(); }
+  var hc2 = document.getElementById('home-content');
+  if (hc2) { hc2.innerHTML = html2; _initSwappedPage(); }
   invalidateHomePageCache(pageId);
   _bwToast('Stacked into carousel 📦', 'success');
 }
