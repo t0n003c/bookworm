@@ -414,7 +414,8 @@ def _parse_yt_html(html_text: str) -> dict | None:
     import json
     from collections import deque
 
-    m = re.search(r'var ytInitialData\s*=\s*', html_text)
+    # YouTube sometimes uses different assignment patterns (A/B tests, consent pages)
+    m = re.search(r'(?:var |window\[")?ytInitialData(?:"\])? *=\s*', html_text)
     if not m:
         return None
     try:
@@ -498,12 +499,19 @@ async def rss_proxy(url: str = Query(...)):
             # the channel HTML page loads fine and contains all video data.
             if 'youtube.com' in url:
                 yt_data = _parse_yt_html(text)
+                if not yt_data or not yt_data.get('items'):
+                    # Fallback: try the /videos tab explicitly — it always has
+                    # a full grid even when the Home tab or a consent page doesn't.
+                    videos_url = url.rstrip('/') + '/videos'
+                    text2, _   = await loop.run_in_executor(
+                        _POOL, partial(_fetch_raw, videos_url, False)
+                    )
+                    yt_data = _parse_yt_html(text2)
                 if yt_data and yt_data.get('items'):
                     return JSONResponse(yt_data)
                 return JSONResponse(
-                    {'error': 'Could not extract videos from this YouTube page. '
-                              'Try the channel\'s /videos tab URL.'},
-                    status_code=422,
+                    {'error': 'YouTube is temporarily unavailable — refresh to retry.'},
+                    status_code=502,
                 )
 
             feed_url = _autodiscover_feed_url(text, url)
