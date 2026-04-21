@@ -942,8 +942,8 @@ async function _uplWidgetBadgeClick(widgets, btnEl) {
                 + '<span>' + _uplEsc((w.page_emoji ? w.page_emoji + '\u00a0' : '') + w.page_name)
                 + '<br><span style="font-size:.65rem;color:#6b7280">' + _uplEsc(w.widget_name) + '</span></span>'
                 + '<button onclick="event.stopPropagation();'
-                + '(function(){document.getElementById(\"upl-widget-popover\").remove();'
-                + 'if(typeof showHomePage===\'function\')showHomePage(' + w.page_id + ');})()"
+                + '(function(){var _p=document.getElementById(&quot;upl-widget-popover&quot;);if(_p)_p.remove();'
+                + 'if(window.showHomePage)window.showHomePage(' + w.page_id + ');})()"
                 + ' style="background:#0053e2;color:white;border:none;border-radius:.3rem;'
                 + 'padding:.2rem .5rem;font-size:.65rem;cursor:pointer;flex-shrink:0;margin-left:.5rem">'
                 + 'Go &rarr;</button></li>';
