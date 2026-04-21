@@ -66,7 +66,7 @@ function _buildSizePicker(widgetId, body) {
 }
 
 async function _selectSize(widgetId, col, row) {
-  // Update visual selection
+  // Always update the visual picker immediately
   const grid = document.getElementById(`sz-picker-${widgetId}`);
   grid?.querySelectorAll('.sz-btn').forEach(b => {
     const active = +b.dataset.col === col && +b.dataset.row === row;
@@ -79,13 +79,24 @@ async function _selectSize(widgetId, col, row) {
   const lbl = document.getElementById(`sz-label-${widgetId}`);
   if (lbl) lbl.textContent = `${col} col × ${row} row`;
 
-  // Update card DOM immediately for live feedback
+  // ── Stack-child detection ──
+  // If this widget lives inside a carousel slide, resize the PARENT STACK
+  // (which owns the grid cell) instead of the individual child widget.
+  // _resizeStack() is defined in home-widget-stack.js and handles both the
+  // stack card DOM update and propagation to all sibling children.
   const card = _cardEl(widgetId);
+  if (card?.closest('.stack-slide')) {
+    const stackCard = card.closest('.hw-card[data-widget-type="stack"]');
+    const stackId   = stackCard ? parseInt(stackCard.dataset.widgetId, 10) : null;
+    if (stackId && typeof _resizeStack === 'function') {
+      await _resizeStack(stackId, col, row);
+    }
+    return;   // skip normal single-widget resize path
+  }
+
+  // Normal (non-stacked) widget: update card DOM immediately for live feedback
   if (card) {
     const maxCols = _pageColCount(widgetId);
-    // Use 1/-1 (true full-width) when the chosen col count matches the grid width.
-    // This keeps dividers and titles flush with the grid edges instead of
-    // relying on the last cell of a span-N row accidentally hitting the edge.
     card.style.gridColumn = (col >= maxCols) ? '1 / -1' : `span ${col}`;
     card.style.gridRow    = `span ${row}`;
     card.dataset.colSpan  = col;

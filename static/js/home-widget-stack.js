@@ -177,3 +177,128 @@ async function unstackWidget(stackId, pageId) {
     if (typeof _bwToast === 'function') _bwToast('Unstack failed', 'error');
   }
 }
+
+// ── Widget type label / icon lookup ────────────────────────────────────────
+var _STACK_WIDGET_META = {
+  clock:          ['Clock',        '🕐'],
+  weather:        ['Weather',      '⛅'],
+  calendar:       ['Calendar',     '📅'],
+  todo:           ['To-Do',        '✅'],
+  note_link:      ['Note Link',    '🔗'],
+  timer:          ['Timer',        '⏱️'],
+  countdown:      ['Countdown',    '⏳'],
+  event:          ['Events',       '🗓️'],
+  reminder:       ['Reminders',    '🔔'],
+  title:          ['Title',        '🔤'],
+  banner:         ['Banner',       '🖼️'],
+  text:           ['Text',         '📝'],
+  sticky:         ['Sticky Note',  '📌'],
+  quote:          ['Quote',        '❝'],
+  rss_feed:       ['RSS Feed',     '📡'],
+  buds:           ['Buds',         '🌱'],
+  upload_preview: ['Files',        '📁'],
+};
+
+/**
+ * openStackChildSettings — gear icon calls this instead of openWidgetSettings().
+ * Finds the active slide's child widget, syncs its size attrs from the parent
+ * stack card (so the size picker shows stack dimensions, not stale child ones),
+ * then delegates to the standard openWidgetSettings() with the child's ID.
+ */
+function openStackChildSettings(stackId) {
+  var stackCard = document.getElementById('hw-card-' + stackId);
+  if (!stackCard) return;
+
+  var viewport = stackCard.querySelector('.stack-viewport');
+  if (!viewport) return;
+
+  var activeIdx = parseInt(viewport.dataset.active || '0', 10);
+  var slides    = viewport.querySelectorAll('.stack-slide');
+  var slide     = slides[activeIdx];
+  if (!slide) return;
+
+  var frame = slide.querySelector('[data-child-id]');
+  if (!frame) return;
+
+  var childId = parseInt(frame.dataset.childId, 10);
+  var wtype   = frame.dataset.widgetType || '';
+
+  // Sync stack card's current col/row → child card so the size picker reflects
+  // the real stack dimensions, not whatever the child had at creation time.
+  var childCard = document.getElementById('hw-card-' + childId);
+  if (childCard) {
+    var col = stackCard.dataset.colSpan || '1';
+    var row = stackCard.dataset.rowSpan || '1';
+    childCard.dataset.colSpan = col;
+    childCard.dataset.rowSpan = row;
+    try {
+      var cfg = JSON.parse(childCard.dataset.widgetConfig || '{}');
+      cfg.col_span = parseInt(col, 10);
+      cfg.row_span = parseInt(row, 10);
+      childCard.dataset.widgetConfig = JSON.stringify(cfg);
+    } catch (e) {}
+  }
+
+  var meta = _STACK_WIDGET_META[wtype] || [wtype || 'Widget', '⚙️'];
+  if (typeof openWidgetSettings === 'function') {
+    openWidgetSettings(childId, meta[0], meta[1]);
+  }
+}
+
+/**
+ * _resizeStack — called by _selectSize (home-widgets-settings.js) when the
+ * widget being resized lives inside a stack carousel.
+ *
+ * 1. Updates the outer STACK card's DOM (gridColumn / gridRow).
+ * 2. Persists the new size to the stack's own config_json.
+ * 3. Persists the new size to every child widget's config_json so that
+ *    unstacking later restores the correct dimensions.
+ */
+async function _resizeStack(stackId, col, row) {
+  var stackCard = document.getElementById('hw-card-' + stackId);
+  if (!stackCard) return;
+
+  // 1. DOM update on the stack container
+  var gridEl  = stackCard.closest('[data-col-count]');
+  var maxCols = parseInt(gridEl ? gridEl.dataset.colCount || '3' : '3', 10);
+  stackCard.style.gridColumn = (col >= maxCols) ? '1 / -1' : 'span ' + col;
+  stackCard.style.gridRow    = 'span ' + row;
+  stackCard.dataset.colSpan  = col;
+  stackCard.dataset.rowSpan  = row;
+
+  // 2. Update the size picker label (modal is open for a child widget ID)
+  var modal      = document.getElementById('ws-settings-modal');
+  var childIdStr = modal ? modal.dataset.widgetId : null;
+  if (childIdStr) {
+    var lbl = document.getElementById('sz-label-' + childIdStr);
+    if (lbl) lbl.textContent = col + ' col × ' + row + ' row';
+  }
+
+  // 3. Persist stack config
+  var stackCfg = {};
+  try { stackCfg = JSON.parse(stackCard.dataset.widgetConfig || '{}'); } catch (e) {}
+  stackCfg.col_span = col;
+  stackCfg.row_span = row;
+  stackCard.dataset.widgetConfig = JSON.stringify(stackCfg);
+  await _post('/home/widgets/' + stackId + '/update-config',
+              { config_json: JSON.stringify(stackCfg) });
+
+  // 4. Persist each child's config so dimensions survive unstacking
+  var frames = stackCard.querySelectorAll('[data-child-id]');
+  for (var i = 0; i < frames.length; i++) {
+    var cid   = parseInt(frames[i].dataset.childId, 10);
+    if (!cid) continue;
+    var cCard = document.getElementById('hw-card-' + cid);
+    var cCfg  = {};
+    try { cCfg = JSON.parse((cCard && cCard.dataset.widgetConfig) || '{}'); } catch (e) {}
+    cCfg.col_span = col;
+    cCfg.row_span = row;
+    if (cCard) {
+      cCard.dataset.colSpan      = col;
+      cCard.dataset.rowSpan      = row;
+      cCard.dataset.widgetConfig = JSON.stringify(cCfg);
+    }
+    await _post('/home/widgets/' + cid + '/update-config',
+                { config_json: JSON.stringify(cCfg) });
+  }
+}

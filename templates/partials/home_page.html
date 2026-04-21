@@ -1680,10 +1680,10 @@
         </svg>
       </button>
       {%- endif %}
-      {# Settings gear for the stack itself (col_span/row_span via size picker) #}
+      {# Settings gear — opens the ACTIVE child's settings, not the stack container's #}
       <button type="button"
-        onclick="openWidgetSettings({{ w.id }}, 'Stack', '📦')"
-        title="Stack settings" aria-label="Stack settings"
+        onclick="openStackChildSettings({{ w.id }})"
+        title="Widget settings" aria-label="Widget settings"
         class="p-1 rounded text-gray-400 hover:text-wblue
                hover:bg-blue-50 dark:hover:bg-wblue/10 transition">
         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
