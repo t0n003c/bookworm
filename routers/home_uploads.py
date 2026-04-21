@@ -104,6 +104,7 @@ from pathlib import Path
 
 # File-type sets used by the preview endpoint
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}
+_VIDEO_EXTS = {"mp4", "webm", "ogg", "ogv", "mov", "avi", "mkv", "m4v"}
 _TEXT_EXTS  = {"txt", "md", "csv", "log", "json", "xml",
                "yaml", "yml", "ini", "cfg", "toml", "rst"}
 _PREVIEW_MAX_CHARS = 50_000  # truncate large text files in the popup
@@ -190,11 +191,11 @@ def _docx_to_html(filepath: Path) -> str:
 
 @router.get("/preview")
 async def preview_file(request: Request, id: int = Query(...)):
-    """Return a type-tagged preview payload for docx / txt / image / pdf files.
+    """Return a type-tagged preview payload for image / video / pdf / text / docx files.
 
     Auth-gated + ownership-verified.  Response shape:
       {type, title, filename, ...type-specific fields}
-    where type ∈ {docx, text, image, pdf, unsupported}.
+    where type ∈ {image, video, pdf, text, docx, unsupported}.
     """
     uid = request.session.get("user_id")
     if not uid:
@@ -215,7 +216,6 @@ async def preview_file(request: Request, id: int = Query(...)):
         return JSONResponse({**base, "type": "image", "url": f"/uploads/{filename}"})
 
     # ── Video: native <video> player ─────────────────────────────────────────
-    _VIDEO_EXTS = {"mp4", "webm", "ogg", "ogv", "mov", "avi", "mkv", "m4v"}
     if mime.startswith("video/") or ext in _VIDEO_EXTS:
         return JSONResponse({**base, "type": "video", "url": f"/uploads/{filename}"})
 
