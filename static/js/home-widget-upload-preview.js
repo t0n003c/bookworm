@@ -3,7 +3,7 @@
 
    Public API:
      _loadUploadPreview(el)         — init / re-render one widget tile
-     _uplFilePreview(fileId)        — open file preview popup (img/pdf/txt/docx)
+     _uplFilePreview(fileId)        — open file preview popup (img/video/pdf/txt/docx)
      _uplFileClosePreview()         — close file preview popup
      _uplPrevOpenPicker(widgetId)   — open the file-picker modal
      _uplPrevClosePicker()          — close the file-picker modal
@@ -23,6 +23,7 @@ var _uplPrevPickerTotal = 0;      // total pages for current uploads-page
 var _uplPrevPickerPid   = null;   // current uploads-page ID being browsed
 var _uplPrevBusy        = false;  // guard against concurrent fetches
 var _uplPrevPageFiles   = [];     // files currently shown in picker grid (for badge refresh)
+var _uplVidHoverTimer   = null;   // timeout handle for video hover-preview auto-stop
 
 // ── File type helpers ────────────────────────────────────────────────────────────
 function _uplIsDocx(file) {
@@ -33,17 +34,19 @@ function _uplIsDocx(file) {
 }
 
 var _UPL_PREVIEWABLE_EXTS = [
-    'jpg','jpeg','png','gif','webp','bmp','svg',  // images
-    'pdf',                                         // pdf
-    'txt','md','csv','log','json','xml',            // text
+    'jpg','jpeg','png','gif','webp','bmp','svg',        // images
+    'mp4','webm','ogg','ogv','mov','m4v',               // video
+    'pdf',                                               // pdf
+    'txt','md','csv','log','json','xml',                 // text
     'yaml','yml','ini','cfg','toml','rst',
-    'docx'                                          // docx
+    'docx'                                               // docx
 ];
 function _uplIsPreviewable(file) {
     var mime = file.mime_type || '';
     var name = (file.original_name || file.filename || '').toLowerCase();
     var ext  = name.includes('.') ? name.split('.').pop() : '';
     return mime.startsWith('image/')
+        || mime.startsWith('video/')
         || mime === 'application/pdf'
         || mime.startsWith('text/')
         || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -52,8 +55,33 @@ function _uplIsPreviewable(file) {
 
 // Pick the right emoji for the modal header icon
 function _uplPreviewHeaderIcon(type) {
-    var icons = { image: '🖼️', pdf: '📕', text: '📝', docx: '📄' };
+    var icons = { image: '🖼️', video: '🎥', pdf: '📕', text: '📝', docx: '📄' };
     return icons[type] || '📄';
+}
+
+// ── Video hover-preview: play on mouseenter, stop + rewind on mouseleave ────────
+// Called via inline onmouseenter/onmouseleave on the tile <button>.
+function _uplVidHoverPlay(btn) {
+    var vid = btn.querySelector('video');
+    var overlay = btn.querySelector('.upl-vid-overlay');
+    if (!vid) return;
+    clearTimeout(_uplVidHoverTimer);
+    vid.currentTime = 0;
+    vid.play().catch(function() {});          // silent — autoplay may be blocked
+    if (overlay) overlay.style.opacity = '0'; // hide 🎬 while playing
+    _uplVidHoverTimer = setTimeout(function() {
+        vid.pause();
+        vid.currentTime = 0;
+        if (overlay) overlay.style.opacity = '1';
+    }, 3000);
+}
+
+function _uplVidHoverStop(btn) {
+    var vid = btn.querySelector('video');
+    var overlay = btn.querySelector('.upl-vid-overlay');
+    clearTimeout(_uplVidHoverTimer);
+    if (vid) { vid.pause(); vid.currentTime = 0; }
+    if (overlay) overlay.style.opacity = '1';
 }
 
 // ── MIME → icon (returns null for images so we render a real <img>) ───────────
@@ -95,6 +123,29 @@ function _uplThumbHtml(file, style) {
 
     if (_uplIsPreviewable(file)) {
         var inner;
+
+        // ── Video: poster frame + hover-preview + popup on click ────────────────
+        if (file.mime_type && file.mime_type.startsWith('video/')) {
+            return '<button type="button"'
+                + ' onclick="_uplFilePreview(' + file.id + ')"'
+                + ' onmouseenter="_uplVidHoverPlay(this)"'
+                + ' onmouseleave="_uplVidHoverStop(this)"'
+                + ' class="relative block w-full overflow-hidden rounded-lg'
+                + ' bg-gray-100 dark:bg-zinc-800 aspect-square cursor-pointer"'
+                + ' title="' + name + ' \u2014 hover to peek, click to watch">'
+                + '<video src="' + url + '" preload="metadata" muted playsinline'
+                + ' class="w-full h-full object-cover pointer-events-none"></video>'
+                // overlay: shown at rest, hidden while hovering
+                + '<div class="upl-vid-overlay absolute inset-0 flex flex-col items-center'
+                + ' justify-center gap-1 bg-black/30 transition-opacity pointer-events-none"'
+                + ' style="opacity:1">'
+                + '<span class="text-3xl leading-none" aria-hidden="true">🎥</span>'
+                + '<span class="text-white text-[9px] font-medium">Click to watch</span>'
+                + '</div>'
+                + '</button>';
+        }
+
+        // ── Image: thumbnail + hover gradient + popup on click ────────────────
         if (icon === null) {
             // Image: keep the thumbnail but add a hover overlay + popup on click
             inner = '<img src="' + url + '" alt="' + name + '" loading="lazy" decoding="async"'
@@ -249,6 +300,15 @@ function _uplFilePreview(fileId) {
                     + ' class="max-w-full max-h-[70vh] object-contain rounded shadow-md"'
                     + ' loading="lazy"></div>';
 
+            } else if (type === 'video') {
+                body.innerHTML =
+                    '<div class="flex items-center justify-center py-2">'
+                    + '<video src="' + _uplEsc(data.url) + '"'
+                    + ' controls autoplay muted playsinline'
+                    + ' class="max-w-full rounded shadow-md" style="max-height:65vh">'
+                    + 'Your browser doesn\'t support the video tag.'
+                    + '</video></div>';
+
             } else if (type === 'pdf') {
                 body.innerHTML =
                     '<iframe src="' + _uplEsc(data.url) + '#toolbar=1"'
@@ -281,7 +341,11 @@ function _uplFilePreview(fileId) {
 
 function _uplFileClosePreview() {
     var modal = document.getElementById('upl-file-preview-modal');
-    if (modal) modal.classList.add('hidden');
+    if (!modal) return;
+    // Pause any playing video before hiding so audio doesn't bleed
+    var vid = modal.querySelector('video');
+    if (vid) { vid.pause(); }
+    modal.classList.add('hidden');
 }
 // Backward-compat aliases (template attr references updated but kept for safety)
 var _uplDocxPreview      = _uplFilePreview;

@@ -210,11 +210,16 @@ async def preview_file(request: Request, id: int = Query(...)):
     ext      = _file_ext(original)
     base     = {"title": original, "filename": filename}
 
-    # ── Image: let the browser render it ───────────────────────────────────────
+    # ── Image: let the browser render it ──────────────────────────────────────
     if mime.startswith("image/") or ext in _IMAGE_EXTS:
         return JSONResponse({**base, "type": "image", "url": f"/uploads/{filename}"})
 
-    # ── PDF: iframe ──────────────────────────────────────────────────────────
+    # ── Video: native <video> player ─────────────────────────────────────────
+    _VIDEO_EXTS = {"mp4", "webm", "ogg", "ogv", "mov", "avi", "mkv", "m4v"}
+    if mime.startswith("video/") or ext in _VIDEO_EXTS:
+        return JSONResponse({**base, "type": "video", "url": f"/uploads/{filename}"})
+
+    # ── PDF: iframe ───────────────────────────────────────────────────────────
     if mime == "application/pdf" or ext == "pdf":
         return JSONResponse({**base, "type": "pdf", "url": f"/uploads/{filename}"})
 
