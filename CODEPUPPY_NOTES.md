@@ -22,6 +22,7 @@
   | `BW_COLLABORA_URL` | `` (disabled) | Browser-facing URL of the Collabora Online server (e.g. `http://localhost:9980`). Empty = "Edit in Collabora" button hidden everywhere. |
   | `BW_WOPI_BASE_URL` | `` (disabled) | URL Collabora uses to reach BookWorm's WOPI endpoints (server-to-server). Must be set when `BW_COLLABORA_URL` is set. e.g. `http://bookworm:8001` (Docker bridge) |
   | `BW_WOPI_TOKEN_EXPIRY` | `3600` | WOPI access-token lifetime in seconds (default 1 hour). |
+  | `BW_MAX_UPLOAD_MB` | `200` | Per-file upload size cap in megabytes. Enforced in `routers/home_uploads.py` (`_MAX_MB`) and exposed as Jinja2 global `bw_max_upload_mb` for UI display. |
   | `WORKERS` | `1` | Uvicorn workers (max ~4 with SQLite+WAL) |
 
 - **New env var added?** → also add it to `.env.example` AND `docker-compose.yml` (with comment). No exceptions.
@@ -129,7 +130,7 @@
 | `routers/categories_db.py` | DB helpers for categories |
 | `routers/attachments.py` | File upload/download/delete |
 | `routers/attachments_db.py` | DB helpers for attachments; sets `UPLOAD_DIR` |
-| `routers/home.py` | Home pages + widget CRUD + weather proxy. Includes `GET /home/pages` → `list_pages_json` (returns `{pages: [{id, name, emoji, page_type}]}` for the current user; auth-gated; must be declared **before** `/pages/{page_id}` so Starlette matches it first; used by add-widget modal CRM picker and upload-preview file picker — both break silently if this is missing). |
+| `routers/home.py` | Home pages + widget CRUD + weather proxy. Includes `GET /home/pages` → `list_pages_json` (returns `{pages: [{id, name, emoji, page_type}]}` for the current user; auth-gated; must be declared **before** `/pages/{page_id}` so Starlette matches it first; used by add-widget modal CRM picker and upload-preview file picker — both break silently if this is missing). **RSS proxy internals (all in this file):** `_curl_fetch()` — low-level curl subprocess with Kerberos/NTLM proxy auth (`--proxy-negotiate -u :`); `_fetch_raw(url, send_rss_accept=True)` — text fetch + charset decode; `_parse_yt_html(html_text)` — BFS-walks `ytInitialData` JSON to extract video list from YouTube channel pages, bypassing the blocked `feeds/videos.xml` endpoint; `_autodiscover_feed_url(html, base_url)` — scans `<link rel=alternate>` tags + YouTube-specific `externalChannelId` JSON extraction; `rss_proxy()` — orchestrates all of the above. See **🌐 Network & Proxy** section below. |
 | `routers/home_db.py` | DB helpers for home_pages + home_widgets tables |
 | `routers/home_crm.py` | 9 endpoints under `/home/crm/{page_id}/…` — contacts CRUD + fields CRUD + field-value upsert. Ownership validated via `_get_crm_page()`. |
 | `routers/home_crm_db.py` | DB helpers for CRM. Uses single JOIN in `_attach_field_values()` to avoid N+1. |
@@ -392,6 +393,58 @@ async function _myConfirmFn() {
 
 ---
 
+## 🌐 Network & Proxy — RSS Fetching
+
+All RSS and feed-related HTTP requests in BookWorm go through the helpers in `routers/home.py`, NOT `urllib` directly.
+Walmart's **McAfee Web Gateway** (`http://sysproxy.wal-mart.com:8080`) requires Kerberos/NTLM proxy authentication for all outbound HTTPS.
+`urllib.request.ProxyHandler` cannot negotiate NTLM/Kerberos — it fails with **407 Proxy Auth Required**. curl 8.18 (available on all Walmart Windows endpoints) handles this natively via `--proxy-negotiate -u :` (Windows SSPI / Kerberos, no password needed).
+
+### Key helpers
+
+| Function | Signature | What it does |
+|---|---|---|
+| `_curl_fetch` | `(url, extra_headers=None, timeout=15) → (bytes, content_type_str)` | Runs `curl -s -L --proxy sysproxy --proxy-negotiate -u : ...`. Writes body to a temp file, reads it back, returns raw bytes + Content-Type header string. Raises `urllib.error.URLError`/`HTTPError` on curl non-zero exit or HTTP 4xx/5xx. |
+| `_fetch_raw` | `(url, send_rss_accept=True) → (text, content_type_bare)` | Wraps `_curl_fetch`. `send_rss_accept=True` adds `Accept: application/rss+xml, application/atom+xml…` header for initial feed fetches. **Set `send_rss_accept=False` when following autodiscovered feed URLs** — YouTube's RSS endpoint returns 500 if that Accept header is present. Decodes bytes using charset from Content-Type (defaults to UTF-8). |
+| `_fetch_bytes` | `(url) → (bytes, content_type)` | Binary variant (for images, etc.). No Accept header. |
+| `_autodiscover_feed_url` | `(html, base_url) → str \| None` | Scans HTML for `<link rel="alternate" type="application/rss+xml">` in both attribute orderings. **YouTube-specific:** before falling back to `<link>` tags, tries 3 regex patterns against `ytInitialData` JSON to extract `externalChannelId`/`channelId` → returns `https://www.youtube.com/feeds/videos.xml?channel_id=UC…`. Returns `None` if nothing found. |
+| `_parse_yt_html` | `(html_text) → dict \| None` | **YouTube HTML scraper.** Finds `var ytInitialData = {...}` in the page source, decodes it with `json.JSONDecoder().raw_decode()`, then BFS-walks the JSON tree collecting up to 20 `videoRenderer` (search/home pages) and `gridVideoRenderer` (channel tabs) nodes. Returns `{feed_title, items}` in the same shape as `_parse_rss()`. Returns `None` if `ytInitialData` is absent or no videos found. |
+| `rss_proxy` | `GET /home/rss?url=…` | Main endpoint. (1) Fetches the URL via `_fetch_raw`. (2) If response is HTML and the URL is `youtube.com`: calls `_parse_yt_html` on the page; if that returns nothing, retries on `{url}/videos` tab with `send_rss_accept=False`; returns 502 if both fail. (3) For non-YouTube HTML: runs `_autodiscover_feed_url`, follows the discovered feed URL with `send_rss_accept=False`, or returns a descriptive error JSON. (4) For XML/Atom: parses directly with `_parse_rss()`. |
+
+### Why YouTube's RSS endpoint is bypassed
+
+YouTube's `feeds/videos.xml?channel_id=UC…` endpoint returns **HTTP 404 for all channels** when accessed through McAfee Web Gateway. Root cause: McAfee's outbound egress IP is rate-limited / blocked by YouTube's API tier. The YouTube channel *page* (`/@handle`) returns HTTP 200 fine. `_parse_yt_html` exploits the `ytInitialData` JSON blob that YouTube embeds in every channel page — it contains the full video list and is indistinguishable from a regular browser page load.
+
+> **Fallback strategy inside `rss_proxy`:**
+> 1. Fetch `/@handle` → try `_parse_yt_html` (Home tab may show `videoRenderer`)
+> 2. If no items → fetch `/@handle/videos` tab → try `_parse_yt_html` (always has `gridVideoRenderer`)
+> 3. If still no items → return 502 `"YouTube is temporarily unavailable — refresh to retry."`
+
+### Critical network facts
+
+- **Proxy:** `http://sysproxy.wal-mart.com:8080` — McAfee Web Gateway; Kerberos auth required
+- **All outbound HTTPS** from BookWorm must go through this proxy — no direct connections
+- **`--proxy-negotiate -u :`** tells curl to use Windows SSPI (Kerberos/NTLM) with the current Windows logged-in identity; no username/password needed in the command
+- **curl 8.18** is available on all Walmart Windows endpoints; confirmed working
+- **YouTube `feeds/videos.xml`** → 404 for all channels through McAfee (rate-limited by YouTube based on egress IP)
+- **YouTube channel pages (`/@handle`)** → HTTP 200 fine; use these as the data source
+- **`/videos` tab** is the most reliable fallback — smaller page, always has `gridVideoRenderer` in `ytInitialData`
+
+### RSS debug quick-lookup (extended)
+
+| Symptom | First file to read |
+|---|---|
+| YouTube feeds return "All Feeds failed" | `routers/home.py` → `_parse_yt_html()` then `rss_proxy()` YouTube branch |
+| YouTube feeds return 502 "temporarily unavailable" | YouTube rate-limiting or consent-page gate; retry usually resolves. Check `/videos` fallback in `rss_proxy()`. |
+| Non-YouTube feeds: 407 / proxy auth error | `_curl_fetch()` — verify `--proxy-negotiate` flag is present; check curl version (`curl --version`) |
+| Feed returns HTML instead of XML | `rss_proxy()` HTML-detection branch → `_autodiscover_feed_url()` → `<link rel=alternate>` absent from site |
+| Feed rename / save fails | `static/js/home-page-rss.js` → `rssUpdateFeed()` then `routers/home_rss.py` → `update_feed` |
+| Feed delete fails | `static/js/home-page-rss.js` → `rssDeleteFeed()` then `routers/home_rss.py` → `remove_feed` |
+| Feeds not loading at all | `initRssPage()` in `home-page-rss.js`; `_initSwappedPage()` in `home-widgets.js` |
+| RSS page blank after HTMX nav | `home-widgets.js` → `_initSwappedPage()` → `rss-page-root` guard |
+| Session expiry triggers wrong error | `auth_middleware.py` `_bounce()` — fetch() gets 302→HTML; check `r.redirected` before `r.json()` |
+
+---
+
 ## ✅ Features Completed (as of 2026-04-14)
 
 - [x] Multi-user auth (login/logout/register/setup) with session management
@@ -552,6 +605,7 @@ Eddie is always the outermost layer — agents supplement, not replace.
     - Worker: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
     - If the worker URL is on a different version than the main script, `getDocument()` silently hangs — no error thrown, no timeout, spinner never resolves. Always update **both** URLs together when upgrading PDF.js. (G3 in `home-page-uploads-annot.js` guards this with an inline comment.)
 25. **`GET /home/pages` is a shared dependency for two pickers in `routers/home.py`** (commit `92b68bc`). Both the add-widget modal's **CRM pages** `<select>` field (`select-crm-pages`) AND the **upload-preview file picker** call `GET /home/pages` to populate their page-selector dropdowns. If this endpoint is ever removed, renamed, or placed **after** `/pages/{page_id}` in the router, both pickers silently break with an empty dropdown — no JS error, just nothing to select. Rule: keep `list_pages_json` as the first route under the `/pages` prefix in `routers/home.py`.
+26. **`_fetch_raw(send_rss_accept=True)` MUST be `False` when following autodiscovered YouTube feed URLs.** The initial fetch of a YouTube channel page uses `send_rss_accept=True` (adds `Accept: application/rss+xml…` to help generic sites serve the feed directly). However, if you then call `_fetch_raw(feed_url, True)` on the *discovered* `feeds/videos.xml` URL, YouTube returns HTTP 500 (not 404) when that Accept header is present — the server interprets it as an API call and fails. The fix is `_fetch_raw(feed_url, False)` for any URL returned by `_autodiscover_feed_url()`. This is already wired correctly in `rss_proxy()` (`partial(_fetch_raw, feed_url, False)`) — do NOT change it to `True` when refactoring this code path. Same applies to the `/videos` tab fallback fetch.
 
 ---
 
@@ -602,6 +656,7 @@ powershell -Command "Start-Sleep 5"
 
 | Date | What happened |
 |---|---|
+| 2026-04-20 | **YouTube RSS scraper + Walmart proxy fix shipped.** Root cause of YouTube feed failures: Walmart's McAfee Web Gateway (`sysproxy.wal-mart.com:8080`) requires Kerberos/NTLM proxy auth; `urllib.request.ProxyHandler` cannot negotiate this → 407 on all outbound feeds. Fix: (1) **`_curl_fetch()`** replaces urllib — runs `curl --proxy-negotiate -u :` (Windows SSPI Kerberos, no password) via `subprocess.run` with a tempfile for the response body; returns `(bytes, content_type_str)`. (2) **`_fetch_raw(url, send_rss_accept=True)`** — `send_rss_accept=False` flag added for autodiscovered feed URLs (YouTube RSS returns 500 with the Accept header). (3) **`_parse_yt_html(html_text)`** — NEW: BFS-walks `ytInitialData` JSON embedded in YouTube channel HTML. Collects `gridVideoRenderer` (channel Videos tab) + `videoRenderer` (Home/search) nodes; returns `{feed_title, items}` matching `_parse_rss()` shape, or `None` if no videos. Bypasses `feeds/videos.xml` entirely (blocked by McAfee egress IP rate-limit). (4) **`rss_proxy()`** YouTube branch: `_parse_yt_html` on Home page → fallback to `/videos` tab → 502 if both fail. (5) **`_autodiscover_feed_url()`** — YouTube-specific extraction from `ytInitialData` (`externalChannelId`, `channelId` patterns) before generic `<link>` tag scan. File changed: `routers/home.py`. See **🌐 Network & Proxy** section above. |
 | 2026-04-20 | **`upload_preview` widget shipped (commit `92b68bc`).** New widget type "File Preview" — pinned uploads from any Uploads page rendered as a thumbnail grid or carousel. Config stored in `home_widgets.config_json` as `{upload_ids, caption, style}`. No new DB tables — uses existing `page_uploads` table. New JS engine: `static/js/home-widget-upload-preview.js` (all-`var`; key fns: `_loadUploadPreview`, `_uplPrevOpenPicker`, `_uplPrevFetchPages`, `_uplPrevLoadFiles`, `_uplPrevConfirm`). **Also fixed latent bug:** `GET /home/pages` (`list_pages_json`) was missing from `routers/home.py` — both the add-widget CRM pages picker AND the new upload-preview file picker were silently failing (empty dropdown). Fixed by adding the endpoint; must be declared **before** `/pages/{page_id}` so Starlette matches it correctly. Auth-gated (not in `_PUBLIC`). |
 | 2026-04-11 | **Phase 8 / B2 PDF Annotations shipped (commit `86ed485`).** New router `home_uploads_annot.py` (not added to `home_uploads_docs.py` — already 798 lines over limit). DB migration: `pdf_annotations` table + `idx_pdf_annot_file`. JS: `home-page-uploads-annot.js` (286 lines). Template: `#upl-annot-modal`. Template-audit 5/5 green, QA 100% green, pre-commit 0 blockers. Manual smoke test step 9 pending. |
 | 2026-04-11 | **CRM Phase 3 (Feature A + B) verified complete by bookworm-qa sweep. PLAN_CRM_PHASE3.md checklist marked done. Both features were already fully implemented; this session confirmed correctness.** Feature B (New Field Types): `crm_custom_fields.field_type` expanded to 9 values (`text`, `select`, `multi_select`, `checkbox`, `url`, `email`, `date`, `number`, `file_links`); `_CRM_FIELD_TYPE_DEFS` constant in `home-page-crm-fields.js`; checkbox quick-toggle `crmQuickCheckbox()` on gallery cards; value encoding documented (checkbox=`'1'`/`'0'`, multi_select+file_links=JSON array string). Feature A (Sort/Filter/Group toolbar): `home-page-crm-toolbar.js` (new module) — state vars `_crmSortKey/_crmFilterField/_crmFilterValue/_crmGroupField`; `window.crmRenderToolbar`; `window._crmProcessed()` (replaces `_crmFiltered()` which now wraps it); `window._crmGroupValue()`; setters `crmSetSort/crmSetFilterField/crmSetFilterValue/crmSetGroup/crmClearFilters`. |
