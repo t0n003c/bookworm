@@ -400,6 +400,86 @@ def _autodiscover_feed_url(html: str, base_url: str) -> str | None:
     return None
 
 
+def _parse_yt_html(html_text: str) -> dict | None:
+    """Extract a video feed from a YouTube channel page via the ytInitialData JSON blob.
+
+    YouTube's RSS endpoint is blocked by Walmart's corporate proxy (McAfee SSL
+    inspection IP is rate-limited by YouTube).  The channel *page* loads fine though,
+    and YouTube embeds the full video list inside a `var ytInitialData = {...};` script
+    tag.  We BFS-walk that JSON to collect up to 20 videoRenderer objects and return
+    them in the same dict shape that _parse_rss() produces.
+
+    Returns None when ytInitialData is not present or contains no videos.
+    """
+    import json
+    from collections import deque
+
+    m = re.search(r'var ytInitialData\s*=\s*', html_text)
+    if not m:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(html_text, m.end())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    # ── channel title ────────────────────────────────────────────────────────
+    feed_title = 'YouTube Channel'
+    try:
+        hdr = data.get('header', {})
+        feed_title = (
+            hdr.get('c4TabbedHeaderRenderer', {}).get('title')
+            or hdr.get('pageHeaderRenderer',  {}).get('pageTitle')
+            or 'YouTube Channel'
+        )
+    except (AttributeError, KeyError):
+        pass
+
+    # ── BFS: collect videoRenderer nodes ─────────────────────────────────────
+    items: list[dict] = []
+    seen:  set[str]   = set()
+    queue: deque      = deque([data])
+
+    while queue and len(items) < 20:
+        node = queue.popleft()
+        if isinstance(node, dict):
+            # YouTube uses 'videoRenderer' on search/home pages,
+            # 'gridVideoRenderer' on channel tabs (Videos, Home grid)
+            vr = node.get('videoRenderer') or node.get('gridVideoRenderer')
+            if isinstance(vr, dict):
+                vid = vr.get('videoId', '')
+                if vid and vid not in seen:
+                    seen.add(vid)
+                    t_obj  = vr.get('title', {})
+                    title  = (
+                        t_obj.get('simpleText')
+                        or ((t_obj.get('runs') or [{}])[0]).get('text', '')
+                    )
+                    ds    = vr.get('descriptionSnippet') or {}
+                    desc  = (
+                        ds.get('simpleText')
+                        or ((ds.get('runs') or [{}])[0]).get('text', '')
+                        or (vr.get('viewCountText') or {}).get('simpleText', '')
+                    )
+                    pub   = (vr.get('publishedTimeText') or {}).get('simpleText', '')
+                    items.append({
+                        'title':       title,
+                        'link':        f'https://www.youtube.com/watch?v={vid}',
+                        'description': desc,
+                        'pub_date':    pub,
+                        'thumbnail':   f'https://img.youtube.com/vi/{vid}/mqdefault.jpg',
+                        'categories':  [],
+                    })
+            for v in node.values():
+                if isinstance(v, (dict, list)):
+                    queue.append(v)
+        elif isinstance(node, list):
+            for child in node:
+                if isinstance(child, (dict, list)):
+                    queue.append(child)
+
+    return {'feed_title': feed_title, 'items': items} if items else None
+
+
 @router.get('/rss')
 async def rss_proxy(url: str = Query(...)):
     """Fetch + parse an RSS/Atom feed server-side, with HTML autodiscovery fallback."""
@@ -410,21 +490,31 @@ async def rss_proxy(url: str = Query(...)):
         # ── HTML autodiscovery ────────────────────────────────────────────────
         # If the response is HTML (e.g. a YouTube channel page, a blog home),
         # scan for <link rel="alternate" type="application/rss+xml"> and follow it.
-        sniff  = text.lstrip()[:300].lower()
+        sniff   = text.lstrip()[:300].lower()
         is_html = ('html' in ct_hdr) or sniff.startswith('<!doctype') or '<html' in sniff
         if is_html:
+            # YouTube-specific: scrape ytInitialData JSON directly.
+            # The RSS endpoint (feeds/videos.xml) is blocked by the corporate proxy;
+            # the channel HTML page loads fine and contains all video data.
+            if 'youtube.com' in url:
+                yt_data = _parse_yt_html(text)
+                if yt_data and yt_data.get('items'):
+                    return JSONResponse(yt_data)
+                return JSONResponse(
+                    {'error': 'Could not extract videos from this YouTube page. '
+                              'Try the channel\'s /videos tab URL.'},
+                    status_code=422,
+                )
+
             feed_url = _autodiscover_feed_url(text, url)
             if not feed_url:
-                hint = (
-                    'Tip: for YouTube, use the channel\'s RSS URL directly: '
-                    'https://www.youtube.com/feeds/videos.xml?channel_id=UC…'
-                ) if 'youtube.com' in url else (
-                    'That URL returned an HTML page with no RSS/Atom link. '
-                    'Try finding the \'Subscribe\' or \'RSS\' button on the site.'
+                return JSONResponse(
+                    {'error': 'That URL returned an HTML page with no RSS/Atom link. '
+                              'Try finding the \'Subscribe\' or \'RSS\' button on the site.'},
+                    status_code=422,
                 )
-                return JSONResponse({'error': hint}, status_code=422)
-            # Follow the discovered feed URL — use plain fetch (no RSS Accept header;
-            # some servers e.g. YouTube RSS return 5xx when they see it)
+            # Follow the discovered feed URL — no RSS Accept header;
+            # some servers return 5xx when they see it.
             text, _ = await loop.run_in_executor(_POOL, partial(_fetch_raw, feed_url, False))
 
         data = _parse_rss(text)
