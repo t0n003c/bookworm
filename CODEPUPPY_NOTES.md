@@ -578,7 +578,7 @@ Eddie is always the outermost layer — agents supplement, not replace.
 11. **Uploads** — `UPLOAD_DIR` is set in `routers/attachments_db.py`, not a top-level constant. Files go next to the DB.
 12. **Session invalidation on restart** — in dev (no `BW_SECRET_KEY` env var), the secret key is randomly generated each start, invalidating all sessions. Normal and expected.
 13. **HTMX re-injection `let`/`const` trap** — any `<script>` block inside a partial template (e.g. `note_form.html`) gets re-executed by HTMX every time the partial is swapped in. Top-level `let`/`const` declarations will throw `SyntaxError: already declared` on the second injection. **Rule: use `var` for any state variables declared at the top level of partial `<script>` blocks.** Variables inside function bodies or IIFEs are fine as-is.
-14. **`restart.bat` has a `pause` at the end** — running it with `background=true` (or piped/non-interactive) blocks permanently and the server NEVER actually restarts. Use the direct PowerShell command instead (see Quirk #13). After killing old processes manually, wait ~2s for the port to free up before launching.
+14. **`restart.bat` is safe for both Eddie and humans.** The `pause` that used to block non-interactive runs has been removed. It now calls `_start_server.py` (which fully detaches uvicorn via `STARTUPINFO.SW_HIDE` + `CREATE_NEW_PROCESS_GROUP`) and then polls `/health` with `timeout=2` for up to 30 s before exiting. **Eddie MUST always use `cmd /c restart.bat` to start or restart the server — never manually chain `start /MIN uvicorn && ping && urlopen`.** `cmd /c restart.bat` blocks for at most ~30 s then cleanly exits — well within the 60 s shell-tool timeout. See also Quirk #15 (why `start /B` freezes) and Quirk #19 (why `urlopen` without timeout freezes).
 15. **`start /B` in `cmd.exe` freezes the shell tool.** `start /B someprocess` looks like a background launch but the child inherits the parent cmd's stdout/stderr handles. The Code Puppy shell tool captures those handles and waits for them to close before returning — uvicorn never closes them (it runs forever), so the tool hangs indefinitely. The server actually starts fine; the tool just never gets its exit signal. **Rule: NEVER use `start /B` or `cmd /c "start /B ..."` to launch uvicorn. Always use PowerShell `Start-Process` with explicit `-RedirectStandardOutput`/`-RedirectStandardError` to separate log files:**
     ```powershell
     Start-Process -FilePath '.venv\Scripts\uvicorn.exe' `
@@ -634,17 +634,26 @@ powershell -Command "Invoke-WebRequest -Uri 'http://localhost:8000/login' -UseBa
 
 ## 🚀 How to Start the Server
 
-```powershell
-# Option 1: restart.bat — safe for BOTH Eddie's shell tool AND human double-click.
-# Polls /health with timeout=2 up to 30 s. No pause, no freeze risk.
+```bat
+# THE ONLY RIGHT WAY — for both Eddie and humans.
+# Kills old uvicorn, starts fresh, polls /health (timeout=2 per attempt, max 30 s).
+# Blocks ~5-30 s then cleanly exits. Well inside Eddie's 60 s shell-tool timeout.
 cmd /c restart.bat
-
-# Option 2: PowerShell two-step (when you need explicit control from Eddie's shell tool)
-# Fully detaches uvicorn from the tool's stdout/stderr capture — no freeze.
-powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-Process -FilePath '.venv\\Scripts\\uvicorn.exe' -ArgumentList 'main:app','--host','127.0.0.1','--port','8000' -NoNewWindow -RedirectStandardOutput 'bookworm.log' -RedirectStandardError 'bookworm_err.log'"
 ```
 
-> ⚠️ NEVER use `start /B` or `cmd /c "start /B ..."` — inherited stdout/stderr handles freeze the shell tool (see Quirk #15).
+> ⚠️ **NEVER use any other pattern.** These all freeze Eddie's shell tool or leave stale processes:
+> - `start /MIN uvicorn... && ping... && urlopen(url)` — no timeout on urlopen = hangs forever (Quirk #19)
+> - `cmd /c "start /B uvicorn..."` — inherited stdout/stderr handles freeze the tool (Quirk #15)
+> - `powershell ... Start-Process uvicorn ...` — only needed if `restart.bat` itself is broken; diagnose that first
+
+**Emergency fallback** (only if `restart.bat` fails for some reason):
+```powershell
+# Step 1: kill + start (separate shell call — do NOT chain with Step 2)
+powershell -Command "Get-Process uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2; Start-Process -FilePath '.venv\\Scripts\\uvicorn.exe' -ArgumentList 'main:app','--host','127.0.0.1','--port','8000' -NoNewWindow -RedirectStandardOutput 'bookworm.log' -RedirectStandardError 'bookworm_err.log'"
+
+# Step 2: verify (separate shell call — never in the same && chain as Step 1)
+.venv\Scripts\python.exe _health_check.py
+```
 
 > ⚠️ NEVER chain server start + health check in one `&&` command. In particular, NEVER use `start /MIN .venv\Scripts\uvicorn.exe ... && ping ... && urlopen(url)` with no timeout — if the server is slow (OneDrive I/O, cold disk), `urlopen` blocks forever (see Quirk #19).
 
