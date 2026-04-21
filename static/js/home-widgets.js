@@ -1222,13 +1222,19 @@ function _applyStackModeState(grid, on) {
   if (toggle) toggle.style.backgroundColor = on ? '#0053e2' : '';
   if (knob)   knob.style.transform = on ? 'translateX(1.25rem)' : 'translateX(0.125rem)';
 
+  // Unstack buttons only appear in edit mode
   document.querySelectorAll('.stack-unstack-btn').forEach(function(btn) {
     btn.classList.toggle('hidden', !on);
   });
 
-  // Visual cue: slightly dim non-stack non-child cards when in stack mode
-  document.querySelectorAll('.hw-card:not([data-widget-type="stack"])').forEach(function(c) {
-    c.style.opacity = (on && !c.closest('.stack-slide')) ? '0.85' : '';
+  // Drag handles only make sense in edit mode — scope to top-level grid cards
+  grid.querySelectorAll(':scope > .hw-card .drag-handle').forEach(function(h) {
+    h.style.display = on ? '' : 'none';
+  });
+
+  // Gate native HTML drag on top-level grid cards — child stack cards stay false
+  grid.querySelectorAll(':scope > .hw-card').forEach(function(c) {
+    c.setAttribute('draggable', on ? 'true' : 'false');
   });
 }
 
@@ -1305,6 +1311,7 @@ function _initDnD(grid, pageId) {
   }
 
   grid.addEventListener('pointerdown', e => {
+    if (grid.dataset.stackMode !== 'true') return;  // edit mode only
     const card = e.target.closest('.hw-card');
     if (!card || card.closest('.stack-slide')) return;
     _cancelHold();
@@ -1321,6 +1328,7 @@ function _initDnD(grid, pageId) {
   grid.addEventListener('pointercancel', _cancelHold);
 
   grid.addEventListener('dragstart', e => {
+    if (grid.dataset.stackMode !== 'true') { e.preventDefault(); return; }  // edit mode only
     const card = e.target.closest('.hw-card');
     // Don't allow dragging child cards from inside a stack slide
     if (card && card.closest('.stack-slide')) { e.preventDefault(); return; }
