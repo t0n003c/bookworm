@@ -215,9 +215,9 @@ async def index(request: Request, ws: Optional[int] = None):
     if active_ws_id is not None and active_ws_id not in breadcrumbs:
         breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id, user_id)
     trashed_workspaces = await get_trashed_workspaces(user_id)
-    home_pages       = await get_home_pages(user_id)
-    trashed_hp       = await get_trashed_home_pages(user_id)
-    hp_trash_count   = len(trashed_hp)
+    home_pages         = await get_home_pages(user_id)
+    trashed_hp          = await get_trashed_home_pages(user_id)
+    trashed_home_pages  = trashed_hp
     current_username = request.session.get("username", "")
     current_role     = request.session.get("role", "user")
     response = templates.TemplateResponse(
@@ -240,7 +240,7 @@ async def index(request: Request, ws: Optional[int] = None):
             "open_count":         len(open_workspaces),
             "open_ws_ids":        open_ws_ids,
             "home_pages":         home_pages,
-            "hp_trash_count":     hp_trash_count,
+            "trashed_home_pages": trashed_home_pages,
             "is_demo":            request.session.get("is_demo", False),
             "demo_expires_at":    request.session.get("demo_expires_at"),
         },

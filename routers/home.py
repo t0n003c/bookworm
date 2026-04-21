@@ -23,8 +23,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from routers.home_db import (
     add_widget, create_home_page, delete_home_page, delete_widget,
     duplicate_home_page, empty_home_page_trash, get_home_page, get_home_pages,
-    get_trashed_home_pages, get_widget_by_id, get_widgets, restore_home_page,
-    reorder_widgets, rename_home_page, update_page_config,
+    get_trashed_home_pages, get_widget_by_id, get_widgets, permanent_delete_home_page,
+    restore_home_page, reorder_widgets, rename_home_page, update_page_config,
     update_widget_config, update_widget_style,
 )
 from routers.home_rss_db import (
@@ -33,7 +33,7 @@ from routers.home_rss_db import (
     sync_widget_feeds_to_rss_pages,
 )
 from routers.notes_db import search_notes
-from routers.workspaces_db import get_all_workspaces
+from routers.workspaces_db import get_all_workspaces, get_trashed_workspaces
 from templates_env import templates
 
 router = APIRouter(prefix="/home")
@@ -719,13 +719,41 @@ async def list_trash_json(request: Request):
     ]})
 
 
+@router.get("/sidebar-trash", response_class=HTMLResponse)
+async def sidebar_trash_panel(request: Request):
+    """Render the unified trash partial with both workspace + home-page items."""
+    uid                = _uid(request)
+    trashed_wss        = await get_trashed_workspaces(uid)
+    trashed_home_pages = await get_trashed_home_pages(uid)
+    return templates.TemplateResponse(
+        request, "partials/sidebar_trash.html",
+        {"trashed_workspaces": trashed_wss, "trashed_home_pages": trashed_home_pages},
+    )
+
+
 @router.post("/pages/trash/empty", response_class=HTMLResponse)
 async def empty_trash(request: Request):
-    """Hard-delete all trashed pages; return refreshed sidebar HTML."""
+    """Hard-delete ALL trashed home pages; return refreshed trash panel HTML."""
     uid = _uid(request)
     await empty_home_page_trash(uid)
-    ctx = await _sidebar_ctx(uid)
-    return templates.TemplateResponse(request, "partials/home_sidebar.html", ctx)
+    trashed_wss = await get_trashed_workspaces(uid)
+    return templates.TemplateResponse(
+        request, "partials/sidebar_trash.html",
+        {"trashed_workspaces": trashed_wss, "trashed_home_pages": []},
+    )
+
+
+@router.post("/pages/{page_id}/permanent-delete", response_class=HTMLResponse)
+async def permanent_delete_page(request: Request, page_id: int):
+    """Hard-delete one trashed home page; return refreshed trash panel HTML."""
+    uid = _uid(request)
+    await permanent_delete_home_page(page_id, uid)
+    trashed_wss        = await get_trashed_workspaces(uid)
+    trashed_home_pages = await get_trashed_home_pages(uid)
+    return templates.TemplateResponse(
+        request, "partials/sidebar_trash.html",
+        {"trashed_workspaces": trashed_wss, "trashed_home_pages": trashed_home_pages},
+    )
 
 
 @router.post("/pages/create", response_class=HTMLResponse)

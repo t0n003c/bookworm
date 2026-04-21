@@ -24,6 +24,7 @@ try:
         "partials/home_sidebar.html",
         "partials/note_form.html",
         "partials/sidebar_workspace_list.html",
+    "partials/sidebar_trash.html",
     ]
     all_ok = True
     for t in to_check:

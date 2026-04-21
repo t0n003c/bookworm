@@ -20,6 +20,7 @@ def _parse_ws_id(raw: Optional[str]) -> Optional[int]:
     except (ValueError, TypeError):
         return None
 
+from routers.home_db import get_trashed_home_pages as _get_trashed_home_pages
 from routers.workspaces_db import (
     get_all_workspaces,
     get_open_workspaces,
@@ -65,6 +66,7 @@ async def _ws_context(
     all_wss     = await get_all_workspaces(user_id)
     ws_tree     = await get_workspace_tree(user_id)
     trashed_wss = await get_trashed_workspaces(user_id)
+    trashed_home_pages = await _get_trashed_home_pages(user_id)
     categories  = await get_categories_for_workspace(active_ws_id)
     # Expand active workspace to include all descendants so search spans the subtree
     ws_id_set = await get_descendant_ids(active_ws_id) if active_ws_id is not None else None
@@ -84,6 +86,7 @@ async def _ws_context(
         "all_workspaces":     all_wss,
         "ws_tree":            ws_tree,
         "trashed_workspaces": trashed_wss,
+        "trashed_home_pages": trashed_home_pages,
         "breadcrumbs":        breadcrumbs,
         "active_ws_id":       active_ws_id,
         "open_count":         len(open_wss),

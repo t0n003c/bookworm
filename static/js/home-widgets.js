@@ -472,10 +472,29 @@ function _doDeletePage(pageId) {
       const canvas = document.getElementById('home-canvas');
       if (canvas && +canvas.dataset.pageId === pageId) homeExit();
       _bwToast('Page moved to trash.', 'info', 4000);
+      _refreshSidebarTrash();
     });
 }
 
-// ── Page drag-to-trash ──────────────────────────────────────────────────────
+// ── Unified sidebar trash helpers ─────────────────────────────────────────────────
+
+/**
+ * Fetch the server-rendered trash panel and swap #sidebar-trash innerHTML.
+ * Call this after any home-page delete/restore/permanent-delete operation.
+ */
+function _refreshSidebarTrash() {
+  fetch('/home/sidebar-trash', { credentials: 'same-origin' })
+    .then(function(r) { return r.ok ? r.text() : Promise.reject(r.status); })
+    .then(function(html) {
+      var zone = document.getElementById('sidebar-trash');
+      if (zone) zone.innerHTML = html;
+      // Re-run HTMX discovery so the freshly-rendered workspace buttons work
+      if (window.htmx) htmx.process(document.getElementById('sidebar-trash'));
+    })
+    .catch(function(e) { console.warn('sidebar-trash refresh failed:', e); });
+}
+
+// ── Page drag-to-trash (targets unified #sidebar-trash outer div) ────────────────
 
 function _pgDragStart(event, pageId) {
   event.dataTransfer.setData('application/x-bw-page', String(pageId));
@@ -483,86 +502,33 @@ function _pgDragStart(event, pageId) {
 }
 
 function _trashDragOver(event) {
-  // DOMStringList has .contains() not .includes() — use Array.from + indexOf
+  // Only handle home-page drops — ignore workspace DnD (different data type)
   if (Array.from(event.dataTransfer.types).indexOf('application/x-bw-page') === -1) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
-  var zone = document.getElementById('hp-trash-zone');
-  if (zone) {
-    zone.classList.add('border-red-400', 'text-red-500');
-    zone.classList.remove('border-transparent');
-    zone.style.background = 'rgba(239,68,68,.08)';
-  }
+  var zone = document.getElementById('sidebar-trash');
+  if (zone) zone.style.outline = '2px dashed #ea1100';
 }
 
 function _trashDragLeave(event) {
-  var zone = document.getElementById('hp-trash-zone');
-  if (zone) {
-    zone.classList.remove('border-red-400', 'text-red-500');
-    zone.classList.add('border-transparent');
-    zone.style.background = '';
-  }
+  // Only clear highlight if leaving the #sidebar-trash entirely
+  var zone = document.getElementById('sidebar-trash');
+  if (!zone) return;
+  var related = event.relatedTarget;
+  if (!related || !zone.contains(related)) zone.style.outline = '';
 }
 
 function _trashDrop(event) {
-  event.preventDefault();
-  _trashDragLeave(event);
-  var raw    = event.dataTransfer.getData('application/x-bw-page');
+  var raw = event.dataTransfer.getData('application/x-bw-page');
   var pageId = parseInt(raw, 10);
-  if (!pageId) return;
+  if (!pageId) return;     // not a home-page drag — let workspace DnD handle it
+  event.preventDefault();
+  var zone = document.getElementById('sidebar-trash');
+  if (zone) zone.style.outline = '';
   _doDeletePage(pageId);
 }
 
-// ── Page trash modal ─────────────────────────────────────────────────────────
-
-function openHpTrashModal() {
-  var modal = document.getElementById('hp-trash-modal');
-  if (!modal) return;
-  modal.classList.remove('hidden');
-  var list = document.getElementById('hp-trash-list');
-  list.innerHTML = '<p class="text-sm text-gray-400 italic">Loading…</p>';
-
-  fetch('/home/pages/trash', { credentials: 'same-origin' })
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data) {
-      var pages   = data.pages || [];
-      var emptyBtn = document.getElementById('hp-empty-trash-btn');
-      if (emptyBtn) emptyBtn.disabled = pages.length === 0;
-
-      if (pages.length === 0) {
-        list.innerHTML = '<p class="text-sm text-gray-400 italic py-4 text-center">Trash is empty.</p>';
-        return;
-      }
-
-      list.innerHTML = pages.map(function(p) {
-        var when = (p.deleted_at || '').substring(0, 10) || '—';
-        return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' +
-          ' hover:bg-gray-50 dark:hover:bg-zinc-800 transition">'
-          + '<span class="text-lg leading-none" aria-hidden="true">' + _esc(p.emoji || '🏠') + '</span>'
-          + '<div class="flex-1 min-w-0">'
-          + '<p class="text-sm font-medium text-gray-800 dark:text-zinc-100 truncate">' + _esc(p.name) + '</p>'
-          + '<p class="text-[11px] text-gray-400 dark:text-zinc-500">Deleted ' + _esc(when) + '</p>'
-          + '</div>'
-          + '<button type="button" onclick="_restoreHpPage(' + p.id + ')"'
-          + ' class="flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium'
-          + ' text-[#0053e2] border border-[#0053e2]/30'
-          + ' hover:bg-[#0053e2]/10 dark:hover:bg-blue-900/20 transition">'
-          + 'Restore</button>'
-          + '</div>';
-      }).join('');
-    })
-    .catch(function() {
-      list.innerHTML = '<p class="text-sm text-red-500 italic">Failed to load trash.</p>';
-    });
-}
-
-function closeHpTrashModal() {
-  var modal = document.getElementById('hp-trash-modal');
-  if (modal) modal.classList.add('hidden');
-}
+// ── Home-page restore / permanent-delete ────────────────────────────────────
 
 function _restoreHpPage(pageId) {
   _post('/home/pages/' + pageId + '/restore')
@@ -573,24 +539,26 @@ function _restoreHpPage(pageId) {
     .then(function(result) {
       var sb = document.getElementById('sb-home-pages');
       if (sb) sb.innerHTML = result.html;
-      closeHpTrashModal();
+      _refreshSidebarTrash();
       if (result.restoredId) showHomePage(parseInt(result.restoredId, 10));
       _bwToast('Page restored.', 'success', 3000);
     })
     .catch(function() { _bwToast('Restore failed.', 'error'); });
 }
 
-function _emptyHpTrash() {
-  if (!confirm('Permanently delete ALL pages in trash? This cannot be undone.')) return;
-  _post('/home/pages/trash/empty')
+function _permDeleteHpPage(pageId, name) {
+  if (!confirm('Permanently delete \u201c' + name + '\u201d? This cannot be undone.')) return;
+  _post('/home/pages/' + pageId + '/permanent-delete')
     .then(function(r) { return r.text(); })
     .then(function(html) {
-      var sb = document.getElementById('sb-home-pages');
-      if (sb) sb.innerHTML = html;
-      closeHpTrashModal();
-      _bwToast('Trash emptied.', 'success', 3000);
+      var zone = document.getElementById('sidebar-trash');
+      if (zone) {
+        zone.innerHTML = html;
+        if (window.htmx) htmx.process(zone);
+      }
+      _bwToast('Page permanently deleted.', 'success', 3000);
     })
-    .catch(function() { _bwToast('Empty trash failed.', 'error'); });
+    .catch(function() { _bwToast('Permanent delete failed.', 'error'); });
 }
 
 function duplicateHomePage(pageId, name) {

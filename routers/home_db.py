@@ -101,14 +101,27 @@ async def restore_home_page(page_id: int, user_id: int) -> None:
 
 
 async def get_trashed_home_pages(user_id: int) -> list[dict]:
-    """Return pages in trash (deleted_at IS NOT NULL), newest-deleted first."""
+    """Return pages in trash (deleted_at IS NOT NULL), newest-deleted first, with days_remaining."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT id, name, emoji, page_type, deleted_at FROM home_pages"
+            "SELECT id, name, emoji, page_type, deleted_at,"
+            " MAX(0, 30 - CAST((julianday('now') - julianday(deleted_at)) AS INTEGER)) AS days_remaining"
+            " FROM home_pages"
             " WHERE user_id=? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
             (user_id,),
         )
         return [dict(r) for r in await cur.fetchall()]
+
+
+async def permanent_delete_home_page(page_id: int, user_id: int) -> None:
+    """Hard-delete one trashed home page (and its widgets) for a user."""
+    async with get_db() as db:
+        await db.execute("DELETE FROM home_widgets WHERE page_id=?", (page_id,))
+        await db.execute(
+            "DELETE FROM home_pages WHERE id=? AND user_id=? AND deleted_at IS NOT NULL",
+            (page_id, user_id),
+        )
+        await db.commit()
 
 
 async def empty_home_page_trash(user_id: int) -> int:

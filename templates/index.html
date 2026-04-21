@@ -717,9 +717,12 @@
 
       </div>
 
-      <!-- Trash — pinned to the bottom of the sidebar, never scrolls away -->
+      <!-- Unified Trash — pinned bottom of sidebar; accepts workspace DnD + homespace page drag -->
       <div id="sidebar-trash"
-           class="flex-shrink-0 border-t border-gray-200 dark:border-zinc-800 py-3 px-4">
+           class="flex-shrink-0 border-t border-gray-200 dark:border-zinc-800 py-3 px-4"
+           ondragover="_trashDragOver(event)"
+           ondragleave="_trashDragLeave(event)"
+           ondrop="_trashDrop(event)">
         {% include "partials/sidebar_trash.html" %}
       </div>
 
@@ -952,58 +955,6 @@
         class="px-4 py-2 text-sm rounded-lg bg-wred text-white font-semibold
                hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-wred"
       >Move to Trash</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===== HOME PAGE TRASH MODAL ===== -->
-<div id="hp-trash-modal"
-     class="hidden fixed inset-0 z-[800] flex items-center justify-center
-            bg-black/40 dark:bg-black/60 backdrop-blur-sm"
-     role="dialog" aria-modal="true" aria-labelledby="hp-trash-title"
-     onkeydown="if(event.key==='Escape') closeHpTrashModal()">
-  <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md
-              mx-4 p-6 flex flex-col gap-4" style="max-height:80vh">
-
-    <div class="flex items-center justify-between gap-2">
-      <h2 id="hp-trash-title"
-          class="text-base font-semibold text-gray-800 dark:text-zinc-100 flex items-center gap-2">
-        🗑️ Page Trash
-      </h2>
-      <button type="button" onclick="closeHpTrashModal()"
-              class="p-1 rounded-lg text-gray-400 hover:text-gray-600
-                     dark:hover:text-zinc-300 transition"
-              aria-label="Close trash">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
-             stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-      </button>
-    </div>
-
-    <p class="text-xs text-gray-500 dark:text-zinc-400 -mt-2">
-      Pages are permanently deleted after 30 days.
-    </p>
-
-    <div id="hp-trash-list"
-         class="flex-1 overflow-y-auto space-y-1 min-h-[3rem]">
-      <p class="text-sm text-gray-400 italic">Loading…</p>
-    </div>
-
-    <div class="flex items-center justify-between gap-2 pt-2
-                border-t border-gray-100 dark:border-zinc-800">
-      <button type="button" onclick="closeHpTrashModal()"
-              class="px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-zinc-300
-                     border border-gray-200 dark:border-zinc-700
-                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
-        Close
-      </button>
-      <button type="button" id="hp-empty-trash-btn" onclick="_emptyHpTrash()"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-white
-                     bg-red-600 hover:bg-red-700 transition
-                     disabled:opacity-40 disabled:cursor-not-allowed">
-        Empty Trash
-      </button>
     </div>
   </div>
 </div>
