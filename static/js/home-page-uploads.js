@@ -935,23 +935,45 @@ async function _uplWidgetBadgeClick(widgets, btnEl) {
             };
         }
     } else {
-        // Multiple widgets
-        var items = widgets.map(function(w) {
-            return '<li style="padding:.3rem 0;border-bottom:1px solid #f3f4f6'
-                + ';display:flex;align-items:center;justify-content:space-between">'
-                + '<span>' + _uplEsc((w.page_emoji ? w.page_emoji + '\u00a0' : '') + w.page_name)
-                + '<br><span style="font-size:.65rem;color:#6b7280">' + _uplEsc(w.widget_name) + '</span></span>'
-                + '<button onclick="event.stopPropagation();'
-                + '(function(){var _p=document.getElementById(&quot;upl-widget-popover&quot;);if(_p)_p.remove();'
-                + 'if(window.showHomePage)window.showHomePage(' + w.page_id + ');})()"
-                + ' style="background:#0053e2;color:white;border:none;border-radius:.3rem;'
-                + 'padding:.2rem .5rem;font-size:.65rem;cursor:pointer;flex-shrink:0;margin-left:.5rem">'
-                + 'Go &rarr;</button></li>';
-        }).join('');
-        pop.innerHTML =
-            '<p style="font-weight:600;margin-bottom:.45rem">\uD83D\uDDBC\uFE0F '
-            + widgets.length + ' File Review widgets</p>'
-            + '<ul style="list-style:none;margin:0;padding:0">' + items + '</ul>';
+        // Multiple widgets — build with DOM APIs to avoid innerHTML quote-escaping hell
+        var hdr = document.createElement('p');
+        hdr.style.cssText = 'font-weight:600;margin-bottom:.45rem';
+        hdr.textContent = '\uD83D\uDDBC\uFE0F ' + widgets.length + ' File Review widgets';
+        pop.appendChild(hdr);
+
+        var ul = document.createElement('ul');
+        ul.style.cssText = 'list-style:none;margin:0;padding:0';
+
+        widgets.forEach(function(w) {
+            var li = document.createElement('li');
+            li.style.cssText = 'padding:.3rem 0;border-bottom:1px solid #f3f4f6;'
+                + 'display:flex;align-items:center;justify-content:space-between';
+
+            var lbl = document.createElement('span');
+            lbl.innerHTML = _uplEsc((w.page_emoji ? w.page_emoji + '\u00a0' : '') + w.page_name)
+                + '<br><span style="font-size:.65rem;color:#6b7280">'
+                + _uplEsc(w.widget_name) + '</span>';
+
+            var btn = document.createElement('button');
+            btn.textContent = 'Go \u2192';
+            btn.style.cssText = 'background:#0053e2;color:white;border:none;'
+                + 'border-radius:.3rem;padding:.2rem .5rem;font-size:.65rem;'
+                + 'cursor:pointer;flex-shrink:0;margin-left:.5rem';
+            (function(pageId) {
+                btn.onclick = function(e) {
+                    e.stopPropagation();
+                    var _p = document.getElementById('upl-widget-popover');
+                    if (_p) _p.remove();
+                    if (window.showHomePage) window.showHomePage(pageId);
+                };
+            })(w.page_id);
+
+            li.appendChild(lbl);
+            li.appendChild(btn);
+            ul.appendChild(li);
+        });
+
+        pop.appendChild(ul);
     }
 
     // Close on outside click
