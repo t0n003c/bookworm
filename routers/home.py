@@ -342,13 +342,15 @@ def _curl_fetch(url: str, extra_headers: list | None = None,
             pass
 
 
-def _fetch_raw(url: str) -> tuple:
-    """Fetch URL through Walmart proxy (NTLM). Returns (text, content_type_header)."""
-    body, ct = _curl_fetch(
-        url,
-        extra_headers=['Accept: application/rss+xml, application/atom+xml, text/xml, */*'],
-        timeout=15,
-    )
+def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple:
+    """Fetch URL through Walmart proxy (NTLM). Returns (text, content_type_header).
+
+    send_rss_accept=True  → adds Accept: application/rss+xml… header (initial fetch).
+    send_rss_accept=False → plain fetch, no Accept header (autodiscovered feed URLs;
+                            some servers e.g. YouTube RSS return 5xx with that header).
+    """
+    extra = ['Accept: application/rss+xml, application/atom+xml, text/xml, */*'] if send_rss_accept else []
+    body, ct = _curl_fetch(url, extra_headers=extra, timeout=15)
     # Parse charset out of e.g. "text/xml; charset=utf-8"
     charset  = 'utf-8'
     ct_lower = ct.lower()
@@ -370,8 +372,23 @@ def _autodiscover_feed_url(html: str, base_url: str) -> str | None:
     Handles both attribute orderings:
       <link rel="alternate" type="application/rss+xml" href="...">
       <link href="..." type="application/atom+xml" rel="alternate">
+
+    For YouTube pages, also tries extracting the channel ID directly from
+    the ytInitialData JSON blob, which is more reliable than the <link> tag.
     """
-    import re
+    # ── YouTube-specific: extract from ytInitialData JSON ─────────────────────
+    if 'youtube.com' in base_url:
+        for pat in (
+            r'"externalChannelId":\s*"(UC[\w-]+)"',
+            r'"channelId":\s*"(UC[\w-]+)"',
+            r'"key":\s*"channelId",\s*"value":\s*"(UC[\w-]+)"',
+        ):
+            m = re.search(pat, html)
+            if m:
+                cid = m.group(1)
+                return f'https://www.youtube.com/feeds/videos.xml?channel_id={cid}'
+
+    # ── Generic: <link rel="alternate" type="application/rss+xml"> ─────────────
     patterns = [
         r'<link[^>]+type=["\']application/(?:rss|atom)\+xml["\'][^>]*href=["\']([^"\']+)["\']',
         r'<link[^>]+href=["\']([^"\']+)["\'][^>]*type=["\']application/(?:rss|atom)\+xml["\']',
@@ -406,8 +423,9 @@ async def rss_proxy(url: str = Query(...)):
                     'Try finding the \'Subscribe\' or \'RSS\' button on the site.'
                 )
                 return JSONResponse({'error': hint}, status_code=422)
-            # Follow the discovered feed URL
-            text, _ = await loop.run_in_executor(_POOL, partial(_fetch_raw, feed_url))
+            # Follow the discovered feed URL — use plain fetch (no RSS Accept header;
+            # some servers e.g. YouTube RSS return 5xx when they see it)
+            text, _ = await loop.run_in_executor(_POOL, partial(_fetch_raw, feed_url, False))
 
         data = _parse_rss(text)
         return JSONResponse(data)
