@@ -105,6 +105,12 @@ function _budsRender(wid) {
       +' onclick="_budsWater(\''+wid+'\','+b.id+')"'
       +' class="rounded-lg text-sm transition flex-shrink-0 '+waterCls+'">\uD83D\uDCA7</button>';
 
+    // fertilizeBtn shared between compact and full layouts
+    var fertilizeBtn = '<button title="'+(hasPlan?'View / complete visit plan':'Plan in-person visit')+'"'
+      +' onclick="_budsFertilizeOpen(\''+wid+'\','+b.id+')"'
+      +' class="p-1.5 rounded-lg text-sm hover:bg-green-50 dark:hover:bg-green-900/20'
+      +' text-green-600 hover:text-green-800 transition '+(hasPlan?' ring-1 ring-green-400':'')+'">\uD83C\uDF31</button>';
+
     if (compact) {
       // ── Compact: dense list row — fits many buds in a small widget ──────────
       return '<div class="flex items-center gap-2 py-1 px-1 border-b border-gray-100'
@@ -118,6 +124,7 @@ function _budsRender(wid) {
         + '  </div>'
         + '</div>'
         + waterBtn
+        + fertilizeBtn
         + '</div>';
     }
 
@@ -143,9 +150,7 @@ function _budsRender(wid) {
       + '</div>'
       + '<div class="flex flex-col items-center gap-1 flex-shrink-0">'
       + waterBtn
-      + '  <button title="'+(hasPlan?'View / complete visit plan':'Plan in-person visit')+'"'
-      + ' onclick="_budsFertilizeOpen(\''+wid+'\','+b.id+')"'
-      + ' class="p-1.5 rounded-lg text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 hover:text-green-800 transition '+(hasPlan?'ring-1 ring-green-400':'')+'">\uD83C\uDF31</button>'
+      + fertilizeBtn
       + '  <button title="Edit / delete"'
       + ' onclick="_budsMenuToggle(\''+wid+'\','+b.id+',event)"'
       + ' class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-700 hover:text-gray-600 transition">\u22EE</button>'

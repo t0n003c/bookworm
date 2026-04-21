@@ -1289,10 +1289,44 @@ function _initDnD(grid, pageId) {
     _scrollRaf = requestAnimationFrame(step);
   }
 
+  // ── Hold-to-stack detection ──────────────────────────────────────────────
+  // Hold ≥350 ms on a card before starting to drag → stack gesture.
+  // Quick drag (no hold)                            → normal reorder.
+  // stackMode toggle is kept only for the unstack-button UI.
+  let _holdTimer = null;   // pending setTimeout id
+  let _holdFired = false;  // timer fired before dragstart?
+  let _holdStack = false;  // is this drag a stack gesture?
+  let _holdCard  = null;   // card pointerdown fired on
+
+  function _cancelHold() {
+    if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
+    if (_holdCard)  { _holdCard.style.outline = ''; _holdCard.style.boxShadow = ''; _holdCard = null; }
+    _holdFired = false;
+  }
+
+  grid.addEventListener('pointerdown', e => {
+    const card = e.target.closest('.hw-card');
+    if (!card || card.closest('.stack-slide')) return;
+    _cancelHold();
+    _holdCard = card;
+    _holdTimer = setTimeout(() => {
+      _holdFired = true;
+      // Visual pulse — signals the hold armed the stack gesture
+      card.style.outline   = '2px solid #0053e2';
+      card.style.boxShadow = '0 0 0 4px rgba(0,83,226,0.18)';
+    }, 350);
+  });
+
+  grid.addEventListener('pointerup',     _cancelHold);
+  grid.addEventListener('pointercancel', _cancelHold);
+
   grid.addEventListener('dragstart', e => {
     const card = e.target.closest('.hw-card');
     // Don't allow dragging child cards from inside a stack slide
     if (card && card.closest('.stack-slide')) { e.preventDefault(); return; }
+    // Capture hold state BEFORE _cancelHold resets it
+    _holdStack = _holdFired;
+    _cancelHold();
     _dragSrc = card;
     // Capture by value — _dragSrc may be nulled by dragend before the
     // 0ms callback fires (race condition between dragstart and dragend).
@@ -1301,7 +1335,8 @@ function _initDnD(grid, pageId) {
   });
   grid.addEventListener('dragend', () => {
     _dragSrc?.classList.remove('opacity-40');
-    _dragSrc = null;
+    _dragSrc   = null;
+    _holdStack = false;
     _cancelScroll();
     _clearStackDropHighlight();
   });
@@ -1309,15 +1344,19 @@ function _initDnD(grid, pageId) {
     e.preventDefault();
     _dragY = e.clientY;
     _edgeScroll();
-    // Stack-mode: highlight card if we're hovering over its centre
-    if (grid.dataset.stackMode === 'true' && _dragSrc) {
-      const hovCard = e.target.closest('.hw-card');
-      if (hovCard && hovCard !== _dragSrc && !hovCard.closest('.stack-slide')) {
+    // Hold-stack gesture: highlight the card being hovered over its centre
+    if (_holdStack && _dragSrc) {
+      let hovCard = e.target.closest('.hw-card');
+      // Promote child card inside a stack slide → the outer stack card so
+      // hovering over an existing stack's content still highlights the right target
+      if (hovCard && hovCard.closest('.stack-slide')) {
+        hovCard = hovCard.closest('.hw-card[data-widget-type="stack"]') || hovCard;
+      }
+      if (hovCard && hovCard !== _dragSrc) {
         const r    = hovCard.getBoundingClientRect();
         const relX = (e.clientX - r.left) / r.width;
         const relY = (e.clientY - r.top)  / r.height;
         const onCentre = relX > 0.15 && relX < 0.85 && relY > 0.15 && relY < 0.85;
-        // Clear all, then highlight only the current target
         document.querySelectorAll('.hw-card').forEach(c => { c.style.outline = ''; });
         if (onCentre) hovCard.style.outline = '2px solid #0053e2';
       } else {
@@ -1330,16 +1369,22 @@ function _initDnD(grid, pageId) {
     _cancelScroll();
     _clearStackDropHighlight();
     if (!_dragSrc) return;
-    const target = e.target.closest('.hw-card');
+
+    let target = e.target.closest('.hw-card');
+    if (!target || target === _dragSrc) return;
+    // Promote child card inside a stack slide → the outer stack card
+    if (target.closest('.stack-slide')) {
+      target = target.closest('.hw-card[data-widget-type="stack"]') || target;
+    }
     if (!target || target === _dragSrc) return;
 
-    // Stack mode: drop on centre → combine; drop on edge → reorder
-    if (grid.dataset.stackMode === 'true') {
+    // Hold-stack gesture: drop on centre → combine; drop elsewhere → reorder
+    if (_holdStack) {
       const r      = target.getBoundingClientRect();
       const relX   = (e.clientX - r.left) / r.width;
       const relY   = (e.clientY - r.top)  / r.height;
       const onCard = relX > 0.15 && relX < 0.85 && relY > 0.15 && relY < 0.85;
-      if (onCard && !target.closest('.stack-slide')) {
+      if (onCard) {
         await _stackDropOnCard(target, _dragSrc, pageId);
         return;
       }
