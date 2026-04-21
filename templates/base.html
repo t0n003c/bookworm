@@ -258,6 +258,8 @@
                      overscroll-behavior-y: contain; }
     /* Widget cards: isolate layout so scroll doesn't trigger full-page reflow */
     .hw-card { contain: layout style; }
+    /* Stack carousel: child cards must fill the slide so inner flex-1 centering works */
+    .stack-child-frame > .hw-card { height: 100%; }
     /* Suppress shadow transitions while user is actively scrolling the home canvas.
        JS adds .bw-scrolling to #main-content during scroll; removed after 150 ms idle. */
     .bw-scrolling .hw-card { transition: none !important; }

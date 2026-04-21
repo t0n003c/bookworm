@@ -42,10 +42,6 @@ function _stackSetActive(stackId, index) {
   });
   viewport.dataset.active = index;
 
-  // Update "N/total" counter
-  var counter = document.querySelector('.stack-counter[data-stack-id="' + stackId + '"]');
-  if (counter) counter.textContent = (index + 1) + '/' + count;
-
   // Update dot fill
   var card = document.getElementById('hw-card-' + stackId);
   if (card) {
@@ -242,6 +238,42 @@ function openStackChildSettings(stackId) {
   var meta = _STACK_WIDGET_META[wtype] || [wtype || 'Widget', '⚙️'];
   if (typeof openWidgetSettings === 'function') {
     openWidgetSettings(childId, meta[0], meta[1]);
+  }
+
+  // Inject slide-nav row at the very top of the settings body so the user
+  // can flip between stacked widgets without closing the modal.
+  if (slides.length > 1) {
+    var body = document.getElementById('ws-settings-body');
+    if (body) {
+      var nav = document.createElement('div');
+      nav.className = 'flex items-center justify-between gap-2 pb-2 mb-1 border-b ' +
+                      'border-gray-100 dark:border-zinc-800';
+      nav.innerHTML =
+        '<button type="button" title="Previous widget" aria-label="Previous widget"' +
+        '  onclick="stackPrev(' + stackId + '); openStackChildSettings(' + stackId + ')"' +
+        '  class="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-500' +
+        '         dark:text-zinc-400 hover:text-wblue hover:bg-blue-50' +
+        '         dark:hover:bg-wblue/10 transition font-medium">' +
+        '  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"' +
+        '       stroke-width="2.5" aria-hidden="true">' +
+        '    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>' +
+        '  </svg>Prev' +
+        '</button>' +
+        '<span class="text-[10px] tabular-nums text-gray-400 dark:text-zinc-500 select-none">' +
+          (activeIdx + 1) + ' of ' + slides.length +
+        '</span>' +
+        '<button type="button" title="Next widget" aria-label="Next widget"' +
+        '  onclick="stackNext(' + stackId + '); openStackChildSettings(' + stackId + ')"' +
+        '  class="flex items-center gap-1 px-2 py-1 rounded text-xs text-gray-500' +
+        '         dark:text-zinc-400 hover:text-wblue hover:bg-blue-50' +
+        '         dark:hover:bg-wblue/10 transition font-medium">' +
+        'Next<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"' +
+        '        stroke-width="2.5" aria-hidden="true">' +
+        '  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>' +
+        '</svg>' +
+        '</button>';
+      body.prepend(nav);
+    }
   }
 }
 

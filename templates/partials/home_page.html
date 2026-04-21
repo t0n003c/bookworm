@@ -1658,10 +1658,6 @@
       {%- if cfg.get('custom_name') -%}{{ cfg['custom_name'] }}{%- else -%}Stack{%- endif -%}
     </span>
     <div class="flex items-center gap-1 ml-2 flex-shrink-0">
-      <span class="stack-counter text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums"
-            data-stack-id="{{ w.id }}">
-        {%- if child_count > 0 -%}{{ active + 1 }}/{{ child_count }}{%- endif -%}
-      </span>
       {%- if child_count > 1 %}
       <button type="button" onclick="stackPrev({{ w.id }})" aria-label="Previous slide"
               class="p-0.5 rounded text-gray-400 hover:text-gray-700
