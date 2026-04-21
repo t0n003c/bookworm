@@ -1158,6 +1158,81 @@ function _setTopActionNewNote() {
 // ── Drag & Drop reorder (with edge-scroll) ──────────────────────────────
 let _dragSrc = null;
 
+// ── Stack-mode helpers (needed by _initDnD below) ─────────────────────────────────────
+
+function _clearStackDropHighlight() {
+  document.querySelectorAll('.hw-card').forEach(function(c) { c.style.outline = ''; });
+}
+
+async function _stackDropOnCard(targetCard, srcCard, pageId) {
+  var targetId = parseInt(targetCard.dataset.widgetId, 10);
+  var srcId    = parseInt(srcCard.dataset.widgetId, 10);
+  if (!targetId || !srcId) return;
+
+  var targetType = targetCard.dataset.widgetType;
+  var srcType    = srcCard.dataset.widgetType;
+  if (['divider', 'stack'].includes(targetType) ||
+      ['divider', 'stack'].includes(srcType)) {
+    _bwToast('Dividers and stacks cannot be stacked.', 'error');
+    return;
+  }
+
+  // If target is already a stack: add srcCard to it
+  if (targetType === 'stack') {
+    var fd1 = new FormData();
+    fd1.append('widget_id', srcId);
+    fd1.append('page_id', pageId);
+    var r1 = await fetch('/home/widgets/' + targetId + '/stack-add',
+                        { method: 'POST', body: fd1 });
+    if (!r1.ok) { _bwToast('Stack add failed', 'error'); return; }
+    var html1 = await r1.text();
+    var hc1 = document.getElementById('home-canvas');
+    if (hc1) { hc1.innerHTML = html1; if (typeof initHomeWidgets === 'function') initHomeWidgets(); }
+    invalidateHomePageCache(pageId);
+    _bwToast('Added to stack 📦', 'success');
+    return;
+  }
+
+  // Otherwise: create a brand-new stack from the two cards
+  var fd2 = new FormData();
+  fd2.append('page_id', pageId);
+  fd2.append('widget_ids', targetId + ',' + srcId);
+  var r2 = await fetch('/home/widgets/stack', { method: 'POST', body: fd2 });
+  if (!r2.ok) { _bwToast('Stack creation failed', 'error'); return; }
+  var html2 = await r2.text();
+  var hc2 = document.getElementById('home-canvas');
+  if (hc2) { hc2.innerHTML = html2; if (typeof initHomeWidgets === 'function') initHomeWidgets(); }
+  invalidateHomePageCache(pageId);
+  _bwToast('Stacked into carousel 📦', 'success');
+}
+
+/**
+ * toggleStackMode — flips data-stack-mode on the widget grid, updates the
+ * toggle pill in the layout modal, and shows/hides .stack-unstack-btn buttons.
+ */
+function toggleStackMode() {
+  var grid = document.querySelector('[id^="widget-grid-"]');
+  if (!grid) return;
+  var on = grid.dataset.stackMode !== 'true';
+  grid.dataset.stackMode = on ? 'true' : 'false';
+
+  var knob   = document.getElementById('pg-stack-mode-knob');
+  var toggle = document.getElementById('pg-stack-mode-toggle');
+  if (toggle) toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  if (toggle) toggle.style.backgroundColor = on ? '#0053e2' : '';
+  if (knob)   knob.style.transform = on ? 'translateX(1.25rem)' : 'translateX(0.125rem)';
+
+  // Show/hide unstack buttons on all stack cards
+  document.querySelectorAll('.stack-unstack-btn').forEach(function(btn) {
+    btn.classList.toggle('hidden', !on);
+  });
+
+  // Visual cue: slightly dim non-stack non-child cards when in stack mode
+  document.querySelectorAll('.hw-card:not([data-widget-type="stack"])').forEach(function(c) {
+    c.style.opacity = (on && !c.closest('.stack-slide')) ? '0.85' : '';
+  });
+}
+
 function _initDnD(grid, pageId) {
   // Edge-scroll: scroll #main-content when the user drags near the top/bottom.
   // We update _dragY on every dragover so the rAF loop always sees fresh coords.
@@ -1203,7 +1278,10 @@ function _initDnD(grid, pageId) {
   }
 
   grid.addEventListener('dragstart', e => {
-    _dragSrc = e.target.closest('.hw-card');
+    const card = e.target.closest('.hw-card');
+    // Don't allow dragging child cards from inside a stack slide
+    if (card && card.closest('.stack-slide')) { e.preventDefault(); return; }
+    _dragSrc = card;
     // Capture by value — _dragSrc may be nulled by dragend before the
     // 0ms callback fires (race condition between dragstart and dragend).
     const captured = _dragSrc;
@@ -1213,22 +1291,54 @@ function _initDnD(grid, pageId) {
     _dragSrc?.classList.remove('opacity-40');
     _dragSrc = null;
     _cancelScroll();
+    _clearStackDropHighlight();
   });
   grid.addEventListener('dragover', e => {
     e.preventDefault();
     _dragY = e.clientY;
     _edgeScroll();
+    // Stack-mode: highlight card if we're hovering over its centre
+    if (grid.dataset.stackMode === 'true' && _dragSrc) {
+      const hovCard = e.target.closest('.hw-card');
+      if (hovCard && hovCard !== _dragSrc && !hovCard.closest('.stack-slide')) {
+        const r    = hovCard.getBoundingClientRect();
+        const relX = (e.clientX - r.left) / r.width;
+        const relY = (e.clientY - r.top)  / r.height;
+        const onCentre = relX > 0.15 && relX < 0.85 && relY > 0.15 && relY < 0.85;
+        // Clear all, then highlight only the current target
+        document.querySelectorAll('.hw-card').forEach(c => { c.style.outline = ''; });
+        if (onCentre) hovCard.style.outline = '2px solid #0053e2';
+      } else {
+        _clearStackDropHighlight();
+      }
+    }
   });
   grid.addEventListener('drop', async e => {
     e.preventDefault();
     _cancelScroll();
+    _clearStackDropHighlight();
     if (!_dragSrc) return;
     const target = e.target.closest('.hw-card');
     if (!target || target === _dragSrc) return;
-    const cards = [...grid.querySelectorAll('.hw-card')];
+
+    // Stack mode: drop on centre → combine; drop on edge → reorder
+    if (grid.dataset.stackMode === 'true') {
+      const r      = target.getBoundingClientRect();
+      const relX   = (e.clientX - r.left) / r.width;
+      const relY   = (e.clientY - r.top)  / r.height;
+      const onCard = relX > 0.15 && relX < 0.85 && relY > 0.15 && relY < 0.85;
+      if (onCard && !target.closest('.stack-slide')) {
+        await _stackDropOnCard(target, _dragSrc, pageId);
+        return;
+      }
+    }
+
+    // Normal reorder
+    const cards = [...grid.querySelectorAll(':scope > .hw-card')];
     const si = cards.indexOf(_dragSrc), ti = cards.indexOf(target);
+    if (si < 0 || ti < 0) return;    // child cards not in grid directly
     if (si < ti) target.after(_dragSrc); else target.before(_dragSrc);
-    const order = [...grid.querySelectorAll('.hw-card')]
+    const order = [...grid.querySelectorAll(':scope > .hw-card')]
       .map(c => c.dataset.widgetId).join(',');
     await _post(`/home/pages/${pageId}/widgets/reorder`, { order });
     invalidateHomePageCache(pageId);
@@ -1367,6 +1477,9 @@ function initHomeWidgets() {
   document.querySelectorAll('[data-upload-ids]').forEach(function(el) {
     if (typeof _loadUploadPreview === 'function') _loadUploadPreview(el);
   });
+
+  // Stack carousel cards
+  if (typeof initStackCards === 'function') initStackCards();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

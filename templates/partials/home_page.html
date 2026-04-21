@@ -11,7 +11,7 @@
 #}
 {% macro widget_header(w, title='', icon='', has_settings=true, has_edit=false) %}
 {#- Floated absolutely — zero layout cost; only visible on card hover. -#}
-<div id="wh-actions-{{ w.id }}" class="absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5
+<div id="wh-actions-{{ w.id }}" class="hw-actions-bar absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5
             opacity-0 group-hover/wcard:opacity-100 transition">
   {% if has_edit %}
   {#- Pencil / edit icon — used by title widgets instead of the gear -#}
@@ -1588,8 +1588,174 @@
 {% endcall %}
 {% endmacro %}
 
+{# ── Stack widget macros ───────────────────────────────────────────────────────────────────── #}
+
+{#-
+  render_stack_child(w): renders just the body of a child widget inside a
+  carousel slide. The outer card wrapper + action bar come from render_stack;
+  we call the normal render_* macro here so each child type gets its full
+  interactive content (clock ticks, todo checkboxes, etc.).
+  NOTE: action bars (.hw-actions-bar) are hidden by CSS inside .stack-slide.
+  NOTE: draggable is disabled on child .hw-card elements via initStackCards().
+-#}
+{% macro render_stack_child(w) %}
+<div class="stack-child-frame w-full h-full overflow-y-auto"
+     data-child-id="{{ w.id }}"
+     data-widget-type="{{ w.widget_type }}">
+  {% if w.widget_type == 'clock' %}            {{ render_clock(w) }}
+  {% elif w.widget_type == 'weather' %}        {{ render_weather(w) }}
+  {% elif w.widget_type == 'calendar' %}       {{ render_calendar(w) }}
+  {% elif w.widget_type == 'todo' %}           {{ render_todo(w) }}
+  {% elif w.widget_type == 'note_link' %}      {{ render_note_link(w) }}
+  {% elif w.widget_type == 'timer' %}          {{ render_timer(w) }}
+  {% elif w.widget_type == 'countdown' %}      {{ render_countdown(w) }}
+  {% elif w.widget_type == 'event' %}          {{ render_event(w) }}
+  {% elif w.widget_type == 'reminder' %}       {{ render_reminder(w) }}
+  {% elif w.widget_type == 'title' %}          {{ render_title(w) }}
+  {% elif w.widget_type == 'banner' %}         {{ render_banner(w) }}
+  {% elif w.widget_type == 'text' %}           {{ render_text(w) }}
+  {% elif w.widget_type == 'sticky' %}         {{ render_sticky(w) }}
+  {% elif w.widget_type == 'quote' %}          {{ render_quote(w) }}
+  {% elif w.widget_type == 'rss_feed' %}       {{ render_rss_feed(w) }}
+  {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
+  {% elif w.widget_type == 'upload_preview' %} {{ render_upload_preview(w) }}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{#-
+  render_stack(w): the outer carousel card.
+  w.children is populated by get_widgets() nesting logic in home_db.py.
+  - Header: slide label + counter + prev/next arrows
+  - Viewport: overflow:hidden clips each slide; opacity toggle shows active
+  - Dot nav: clickable pagination dots (hidden if only 1 child)
+  - Unstack button: revealed only when stack-mode is active (toggled via JS)
+-#}
+{% macro render_stack(w) %}
+{%- set cfg = w.get('config', {}) -%}
+{%- set active = cfg.get('active_index', 0)|int -%}
+{%- set child_count = w.children|length -%}
+<div id="hw-card-{{ w.id }}"
+     class="hw-card group/wcard relative rounded-xl
+            bg-white dark:bg-zinc-900
+            border border-gray-200 dark:border-zinc-800 shadow-sm
+            hover:shadow-md transition-shadow duration-200
+            flex flex-col overflow-hidden"
+     data-widget-id="{{ w.id }}"
+     data-widget-type="stack"
+     data-col-span="{{ cfg.get('col_span', 1) }}"
+     data-row-span="{{ cfg.get('row_span', 2) }}"
+     data-widget-config='{{ cfg | tojson | e }}'
+     data-child-count="{{ child_count }}"
+     draggable="true"
+     style="grid-column: span {{ cfg.get('col_span', 1) }};
+            grid-row:    span {{ cfg.get('row_span', 2) }};">
+
+  {# ── Header: label + slide counter + arrows ── #}
+  <div class="flex items-center justify-between px-3 py-2
+              border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
+    <span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 truncate">
+      {%- if cfg.get('custom_name') -%}{{ cfg['custom_name'] }}{%- else -%}Stack{%- endif -%}
+    </span>
+    <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+      <span class="stack-counter text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums"
+            data-stack-id="{{ w.id }}">
+        {%- if child_count > 0 -%}{{ active + 1 }}/{{ child_count }}{%- endif -%}
+      </span>
+      {%- if child_count > 1 %}
+      <button type="button" onclick="stackPrev({{ w.id }})" aria-label="Previous slide"
+              class="p-0.5 rounded text-gray-400 hover:text-gray-700
+                     dark:hover:text-zinc-200 transition">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <button type="button" onclick="stackNext({{ w.id }})" aria-label="Next slide"
+              class="p-0.5 rounded text-gray-400 hover:text-gray-700
+                     dark:hover:text-zinc-200 transition">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+      {%- endif %}
+      {# Settings gear for the stack itself (col_span/row_span via size picker) #}
+      <button type="button"
+        onclick="openWidgetSettings({{ w.id }}, 'Stack', '📦')"
+        title="Stack settings" aria-label="Stack settings"
+        class="p-1 rounded text-gray-400 hover:text-wblue
+               hover:bg-blue-50 dark:hover:bg-wblue/10 transition">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066
+               c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756
+               2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724
+               1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0
+               00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0
+               00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573
+               c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
+      <span class="drag-handle cursor-grab active:cursor-grabbing p-1
+                   text-gray-300 dark:text-zinc-600 hover:text-gray-500
+                   transition select-none" title="Drag to reorder" aria-hidden="true">
+        <svg class="w-3 h-4" viewBox="0 0 6 10" fill="currentColor" aria-hidden="true">
+          <circle cx="2" cy="1.5" r="1.5"/><circle cx="5" cy="1.5" r="1.5"/>
+          <circle cx="2" cy="5"   r="1.5"/><circle cx="5" cy="5"   r="1.5"/>
+          <circle cx="2" cy="8.5" r="1.5"/><circle cx="5" cy="8.5" r="1.5"/>
+        </svg>
+      </span>
+    </div>
+  </div>
+
+  {# ── Slide viewport ── #}
+  <div class="stack-viewport relative flex-1 overflow-hidden min-h-0"
+       data-stack-id="{{ w.id }}"
+       data-active="{{ active }}">
+    {%- for child in w.children %}
+    <div class="stack-slide absolute inset-0 transition-opacity duration-200
+                {%- if loop.index0 == active %} opacity-100 z-10
+                {%- else %} opacity-0 z-0 pointer-events-none{%- endif %}"
+         data-slide-index="{{ loop.index0 }}">
+      {{ render_stack_child(child) }}
+    </div>
+    {%- endfor %}
+  </div>
+
+  {# ── Dot pagination ── #}
+  {%- if child_count > 1 %}
+  <div class="flex justify-center gap-1.5 py-2 flex-shrink-0">
+    {%- for child in w.children %}
+    <button type="button"
+            onclick="stackGoTo({{ w.id }}, {{ loop.index0 }})"
+            aria-label="Go to slide {{ loop.index0 + 1 }}"
+            class="stack-dot w-2 h-2 rounded-full transition
+                   {%- if loop.index0 == active %} bg-wblue
+                   {%- else %} bg-gray-300 dark:bg-zinc-600 hover:bg-gray-400{%- endif %}">
+    </button>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+
+  {# Unstack button — hidden until stack-mode is active (JS reveals it) #}
+  <button type="button"
+          onclick="unstackWidget({{ w.id }}, {{ page.id }})"
+          title="Break stack apart"
+          class="stack-unstack-btn hidden absolute top-1.5 left-1.5 z-20
+                 px-1.5 py-0.5 text-[10px] font-medium rounded
+                 bg-red-50 dark:bg-red-900/30 text-red-500
+                 hover:bg-red-100 dark:hover:bg-red-900/50 transition">
+    ✕ unstack
+  </button>
+</div>
+{% endmacro %}
+
 {#
-  ── Page-type gate ───────────────────────────────────────────────────────────────────────────────────────── ──────────────────────────────────────────────────────────
+  ── Page-type gate ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Non-dashboard types show a rich coming-soon card instead of the widget canvas.
   Works with both old server code (page dict always has page_type from SELECT *)
   and new server code (explicit tmpl routing). This way no server restart needed.
@@ -1620,6 +1786,7 @@
        id="widget-grid-{{ page.id }}"
        {%- set _pgcfg = page.get('config', {}) -%}
        data-col-count="{{ _pgcfg.get('col_count', 3) }}"
+       data-stack-mode="{{ 'true' if _pgcfg.get('stack_mode') else 'false' }}"
        style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: auto;">
     {% for w in widgets %}
       {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
@@ -1638,8 +1805,9 @@
       {% elif w.widget_type == 'sticky' %}    {{ render_sticky(w) }}
       {% elif w.widget_type == 'quote' %}     {{ render_quote(w) }}
       {% elif w.widget_type == 'rss_feed' %}  {{ render_rss_feed(w) }}
-      {% elif w.widget_type == 'buds' %}      {{ render_buds(w) }}
-      {% elif w.widget_type == 'upload_preview' %} {{ render_upload_preview(w) }}
+      {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
+      {% elif w.widget_type == 'upload_preview' %}  {{ render_upload_preview(w) }}
+      {% elif w.widget_type == 'stack' %}           {{ render_stack(w) }}
       {% endif %}
     {% endfor %}
   </div>
@@ -1827,4 +1995,3 @@
   </div>
 </div>
 {% endif %}{# ── end page-type gate #}
-

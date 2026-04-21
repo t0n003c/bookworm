@@ -183,16 +183,17 @@ async def duplicate_home_page(page_id: int, user_id: int) -> int:
         )
         new_page_id = pc.lastrowid
 
-        # clone widgets
+        # clone widgets — flatten stacks: skip stack containers, promote children to top-level
         wc = await db.execute(
             "SELECT widget_type, style, config_json, sort_order "
-            "FROM home_widgets WHERE page_id=? ORDER BY sort_order",
+            "FROM home_widgets WHERE page_id=? AND widget_type != 'stack' ORDER BY sort_order",
             (page_id,),
         )
         for w in await wc.fetchall():
             await db.execute(
                 "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order) "
                 "VALUES(?, ?, ?, ?, ?)",
+                # group_id intentionally omitted — cloned children become top-level cards
                 (new_page_id, w["widget_type"], w["style"], w["config_json"], w["sort_order"]),
             )
 
@@ -203,21 +204,34 @@ async def duplicate_home_page(page_id: int, user_id: int) -> int:
 # ── Widgets ───────────────────────────────────────────────────────────────────
 
 async def get_widgets(page_id: int) -> list[dict]:
+    """Return top-level widgets for a page, with stack children nested under w['children']."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT * FROM home_widgets WHERE page_id=? ORDER BY sort_order,id",
+            "SELECT * FROM home_widgets WHERE page_id=? ORDER BY sort_order, id",
             (page_id,),
         )
         rows = await cur.fetchall()
-    result = []
+
+    all_widgets: list[dict] = []
     for r in rows:
         w = dict(r)
         try:
             w["config"] = json.loads(w["config_json"])
         except Exception:
             w["config"] = {}
-        result.append(w)
-    return result
+        w.setdefault("children", [])
+        all_widgets.append(w)
+
+    # Nest children under their parent stack in Python — no extra SQL round-trip
+    by_id = {w["id"]: w for w in all_widgets}
+    top_level: list[dict] = []
+    for w in all_widgets:
+        gid = w.get("group_id")
+        if gid and gid in by_id:
+            by_id[gid]["children"].append(w)
+        else:
+            top_level.append(w)
+    return top_level
 
 
 async def add_widget(
@@ -268,8 +282,28 @@ async def reorder_widgets(page_id: int, ordered_ids: list[int]) -> None:
 
 
 async def delete_widget(widget_id: int) -> None:
+    """Delete a widget.  If it was the last child of a stack, auto-delete the stack too."""
     async with get_db() as db:
+        # Check if this widget belongs to a stack before deleting it
+        cur = await db.execute(
+            "SELECT group_id FROM home_widgets WHERE id=?", (widget_id,)
+        )
+        row = await cur.fetchone()
+        parent_stack_id = row["group_id"] if row else None
+
         await db.execute("DELETE FROM home_widgets WHERE id=?", (widget_id,))
+
+        # Auto-delete parent stack if it now has no children remaining
+        if parent_stack_id:
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM home_widgets WHERE group_id=?", (parent_stack_id,)
+            )
+            remaining = (await cur.fetchone())[0]
+            if remaining == 0:
+                await db.execute(
+                    "DELETE FROM home_widgets WHERE id=?", (parent_stack_id,)
+                )
+
         await db.commit()
 
 
@@ -288,3 +322,95 @@ async def get_widget_by_id(widget_id: int) -> dict | None:
     except Exception:
         w["config"] = {}
     return w
+
+
+# ── Widget Stack helpers ──────────────────────────────────────────────────────────────────
+
+async def create_stack_widget(page_id: int, child_ids: list[int]) -> int:
+    """
+    Create a 'stack' widget row at the sort_order of the first child, then
+    assign group_id on each child.  Returns the new stack widget id.
+    Caller must validate that child_ids are all stackable (not divider/stack,
+    not already grouped).
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT sort_order FROM home_widgets WHERE id=? AND page_id=?",
+            (child_ids[0], page_id),
+        )
+        row = await cur.fetchone()
+        sort = row["sort_order"] if row else 0
+
+        cur = await db.execute(
+            "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order)"
+            " VALUES(?, 'stack', '', ?, ?)",
+            (page_id, json.dumps({"active_index": 0, "col_span": 1, "row_span": 2}), sort),
+        )
+        stack_id = cur.lastrowid
+
+        for cid in child_ids:
+            await db.execute(
+                "UPDATE home_widgets SET group_id=? WHERE id=? AND page_id=?",
+                (stack_id, cid, page_id),
+            )
+        await db.commit()
+    return stack_id
+
+
+async def stack_add_child(stack_id: int, widget_id: int, page_id: int) -> bool:
+    """
+    Set group_id=stack_id on widget_id.
+    Validates: both rows belong to page_id; widget is not divider/stack;
+    widget is not already in any stack.
+    Returns False if any validation fails.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT widget_type, group_id FROM home_widgets WHERE id=? AND page_id=?",
+            (widget_id, page_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return False
+        if row["widget_type"] in ("divider", "stack"):
+            return False
+        if row["group_id"] is not None:
+            return False  # already belongs to a stack
+
+        cur = await db.execute(
+            "SELECT id FROM home_widgets WHERE id=? AND page_id=? AND widget_type='stack'",
+            (stack_id, page_id),
+        )
+        if not await cur.fetchone():
+            return False
+
+        await db.execute(
+            "UPDATE home_widgets SET group_id=? WHERE id=?",
+            (stack_id, widget_id),
+        )
+        await db.commit()
+    return True
+
+
+async def unstack_widget(stack_id: int, page_id: int) -> list[int]:
+    """
+    Clear group_id on all children, then delete the stack widget row.
+    Returns list of freed child widget IDs in sort_order.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id FROM home_widgets WHERE group_id=? AND page_id=? ORDER BY sort_order, id",
+            (stack_id, page_id),
+        )
+        child_ids = [r["id"] for r in await cur.fetchall()]
+
+        await db.execute(
+            "UPDATE home_widgets SET group_id=NULL WHERE group_id=?",
+            (stack_id,),
+        )
+        await db.execute(
+            "DELETE FROM home_widgets WHERE id=? AND page_id=?",
+            (stack_id, page_id),
+        )
+        await db.commit()
+    return child_ids

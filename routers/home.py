@@ -21,10 +21,11 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from routers.home_db import (
-    add_widget, create_home_page, delete_home_page, delete_widget,
-    duplicate_home_page, empty_home_page_trash, get_home_page, get_home_pages,
-    get_trashed_home_pages, get_widget_by_id, get_widgets, permanent_delete_home_page,
-    restore_home_page, reorder_widgets, rename_home_page, update_page_config,
+    add_widget, create_home_page, create_stack_widget, delete_home_page,
+    delete_widget, duplicate_home_page, empty_home_page_trash, get_home_page,
+    get_home_pages, get_trashed_home_pages, get_widget_by_id, get_widgets,
+    permanent_delete_home_page, restore_home_page, reorder_widgets,
+    rename_home_page, stack_add_child, unstack_widget, update_page_config,
     update_widget_config, update_widget_style,
 )
 from routers.home_rss_db import (
@@ -1007,6 +1008,94 @@ async def add_widget_handler(
     )
 
 
+# ── Stack endpoints — MUST precede /widgets/{widget_id}/… routes ────────────────────────────
+# Starlette matches routes in declaration order; literal 'stack' must come
+# before int-parameterised /{widget_id}/ or it would be parsed as an int.
+
+@router.post("/widgets/stack", response_class=HTMLResponse)
+async def create_stack(
+    request:    Request,
+    page_id:    int = Form(...),
+    widget_ids: str = Form(...),   # comma-separated widget IDs e.g. "5,12"
+):
+    """Combine two or more existing widgets into a swipeable stack card."""
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        return HTMLResponse(_ERR.format("Page not found."), 404)
+
+    try:
+        ids = [int(x.strip()) for x in widget_ids.split(",") if x.strip()]
+    except ValueError:
+        return HTMLResponse(_ERR.format("Invalid widget IDs."), 400)
+    if len(ids) < 2:
+        return HTMLResponse(_ERR.format("A stack requires at least 2 widgets."), 400)
+
+    for wid in ids:
+        w = await get_widget_by_id(wid)
+        if not w or w.get("page_id") != page_id:
+            return HTMLResponse(_ERR.format(f"Widget {wid} not found on this page."), 400)
+        if w["widget_type"] in ("divider", "stack"):
+            return HTMLResponse(_ERR.format(f"Widget {wid} cannot be stacked."), 400)
+        if w.get("group_id"):
+            return HTMLResponse(_ERR.format(f"Widget {wid} is already in a stack."), 400)
+
+    await create_stack_widget(page_id, ids)
+    widgets   = await get_widgets(page_id)
+    all_notes = await _user_notes(uid)
+    return templates.TemplateResponse(
+        request, "partials/home_page.html",
+        {"page": page, "widgets": widgets, "all_notes": all_notes},
+    )
+
+
+@router.post("/widgets/{stack_id}/stack-add", response_class=HTMLResponse)
+async def stack_add(
+    request:   Request,
+    stack_id:  int,
+    widget_id: int = Form(...),
+    page_id:   int = Form(...),
+):
+    """Add an existing widget into an existing stack."""
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        return HTMLResponse(_ERR.format("Page not found."), 404)
+
+    ok = await stack_add_child(stack_id, widget_id, page_id)
+    if not ok:
+        return HTMLResponse(_ERR.format("Cannot add that widget to the stack."), 400)
+
+    widgets   = await get_widgets(page_id)
+    all_notes = await _user_notes(uid)
+    return templates.TemplateResponse(
+        request, "partials/home_page.html",
+        {"page": page, "widgets": widgets, "all_notes": all_notes},
+    )
+
+
+@router.post("/widgets/{stack_id}/unstack", response_class=HTMLResponse)
+async def unstack(
+    request:  Request,
+    stack_id: int,
+    page_id:  int = Form(...),
+):
+    """Break a stack apart, returning all children to the top-level grid."""
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        return HTMLResponse(_ERR.format("Page not found."), 404)
+
+    await unstack_widget(stack_id, page_id)
+    widgets   = await get_widgets(page_id)
+    all_notes = await _user_notes(uid)
+    return templates.TemplateResponse(
+        request, "partials/home_page.html",
+        {"page": page, "widgets": widgets, "all_notes": all_notes},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 @router.post("/widgets/{widget_id}/update-config", response_class=HTMLResponse)
 async def update_widget(
     request: Request,

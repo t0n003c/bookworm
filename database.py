@@ -744,6 +744,18 @@ async def init_db() -> None:
                 "ALTER TABLE users ADD COLUMN unlimited_uploads INTEGER NOT NULL DEFAULT 0"
             )
 
+        # ── home_widgets.group_id — widget stack carousel (self-referential FK) ─────────────
+        # A widget with group_id pointing to a 'stack' type widget is a child slide.
+        # ON DELETE SET NULL: deleting the stack container frees children automatically.
+        # PRAGMA foreign_keys=ON is set by get_db() on every connection.
+        cur = await db.execute("PRAGMA table_info(home_widgets)")
+        _hw_cols = {r[1] for r in await cur.fetchall()}
+        if "group_id" not in _hw_cols:
+            await db.execute(
+                "ALTER TABLE home_widgets ADD COLUMN "
+                "group_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL"
+            )
+
         await db.commit()
 
 @asynccontextmanager
