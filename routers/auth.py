@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from routers.auth_db import authenticate, create_user, user_count, get_user_by_username, get_registration_open
 from routers.totp_db import get_totp_status
+from routers.seed_uploads import seed_flower_uploads
 from database import get_db
 from security import make_expires_at
 from templates_env import templates
@@ -46,6 +47,7 @@ async def setup_submit(
             status_code=400,
         )
     user_id = await create_user(username, password, role="superadmin")
+    await seed_flower_uploads(user_id)
     # Backfill any workspaces that existed before the first user was created
     async with get_db() as db:
         await db.execute(
@@ -155,5 +157,6 @@ async def register_submit(
             {"error": error, "username": username},
             status_code=400,
         )
-    await create_user(username, password, role="user")
+    user_id = await create_user(username, password, role="user")
+    await seed_flower_uploads(user_id)
     return RedirectResponse("/login?registered=1", status_code=302)

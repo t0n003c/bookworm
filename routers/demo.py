@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from database import get_db
 from routers.attachments_db import UPLOAD_DIR
 from routers.auth_db import delete_user, hash_password
+from routers.seed_uploads import seed_flower_uploads
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -451,6 +452,7 @@ async def demo_start(request: Request):
 
     log.info("Demo: created user %s (id=%d)", username, user_id)
     await _seed_demo(user_id)
+    await seed_flower_uploads(user_id)
 
     # Session with a hard 2-hour expiry so auth middleware auto-redirects
     # to /login when time is up — no manual polling needed.

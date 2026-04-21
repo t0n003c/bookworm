@@ -19,6 +19,7 @@ from routers.auth_db import (
     update_password,
 )
 from templates_env import templates
+from routers.seed_uploads import seed_flower_uploads
 
 router = APIRouter(prefix="/account")
 
@@ -166,7 +167,8 @@ async def create_user_handler(
     if existing:
         return HTMLResponse(_ERR.format("Username already taken."))
 
-    await create_user(new_username, new_password, role="user")
+    new_uid = await create_user(new_username, new_password, role="user")
+    await seed_flower_uploads(new_uid)
     # Re-render the full user list so HTMX swaps it in
     users = await get_all_users()
     me    = request.session.get("user_id")
