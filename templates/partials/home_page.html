@@ -1644,12 +1644,12 @@
      data-widget-id="{{ w.id }}"
      data-widget-type="stack"
      data-col-span="{{ cfg.get('col_span', 1) }}"
-     data-row-span="{{ cfg.get('row_span', 2) }}"
+     data-row-span="{{ cfg.get('row_span', 1) }}"
      data-widget-config='{{ cfg | tojson | e }}'
      data-child-count="{{ child_count }}"
      draggable="true"
      style="grid-column: span {{ cfg.get('col_span', 1) }};
-            grid-row:    span {{ cfg.get('row_span', 2) }};">
+            grid-row:    span {{ cfg.get('row_span', 1) }};">
 
   {# ── Header: label + slide counter + arrows ── #}
   <div class="flex items-center justify-between px-3 py-2

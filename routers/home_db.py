@@ -335,16 +335,25 @@ async def create_stack_widget(page_id: int, child_ids: list[int]) -> int:
     """
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT sort_order FROM home_widgets WHERE id=? AND page_id=?",
+            "SELECT sort_order, config_json FROM home_widgets WHERE id=? AND page_id=?",
             (child_ids[0], page_id),
         )
         row = await cur.fetchone()
         sort = row["sort_order"] if row else 0
 
+        # Inherit dimensions from first child so the stack card matches what
+        # the user already had — do NOT hardcode row_span:2.
+        try:
+            first_cfg = json.loads(row["config_json"]) if row else {}
+        except Exception:
+            first_cfg = {}
+        col_span = first_cfg.get("col_span", 1)
+        row_span = first_cfg.get("row_span", 1)
+
         cur = await db.execute(
             "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order)"
             " VALUES(?, 'stack', '', ?, ?)",
-            (page_id, json.dumps({"active_index": 0, "col_span": 1, "row_span": 2}), sort),
+            (page_id, json.dumps({"active_index": 0, "col_span": col_span, "row_span": row_span}), sort),
         )
         stack_id = cur.lastrowid
 

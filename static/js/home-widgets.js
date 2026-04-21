@@ -1207,13 +1207,10 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
 }
 
 /**
- * toggleStackMode — flips data-stack-mode on the widget grid, updates the
- * toggle pill in the layout modal, and shows/hides .stack-unstack-btn buttons.
+ * _applyStackModeState — shared applier used by toggleStackMode AND
+ * initStackCards (localStorage restore).  Keeps the two callers DRY.
  */
-function toggleStackMode() {
-  var grid = document.querySelector('[id^="widget-grid-"]');
-  if (!grid) return;
-  var on = grid.dataset.stackMode !== 'true';
+function _applyStackModeState(grid, on) {
   grid.dataset.stackMode = on ? 'true' : 'false';
 
   var knob   = document.getElementById('pg-stack-mode-knob');
@@ -1222,7 +1219,6 @@ function toggleStackMode() {
   if (toggle) toggle.style.backgroundColor = on ? '#0053e2' : '';
   if (knob)   knob.style.transform = on ? 'translateX(1.25rem)' : 'translateX(0.125rem)';
 
-  // Show/hide unstack buttons on all stack cards
   document.querySelectorAll('.stack-unstack-btn').forEach(function(btn) {
     btn.classList.toggle('hidden', !on);
   });
@@ -1231,6 +1227,19 @@ function toggleStackMode() {
   document.querySelectorAll('.hw-card:not([data-widget-type="stack"])').forEach(function(c) {
     c.style.opacity = (on && !c.closest('.stack-slide')) ? '0.85' : '';
   });
+}
+
+/**
+ * toggleStackMode — flips data-stack-mode on the widget grid, persists to
+ * localStorage so the state survives re-renders (unstack, stack) and F5.
+ */
+function toggleStackMode() {
+  var grid = document.querySelector('[id^="widget-grid-"]');
+  if (!grid) return;
+  var on      = grid.dataset.stackMode !== 'true';
+  var pageId  = (grid.id || '').replace('widget-grid-', '');
+  if (pageId) localStorage.setItem('bw_stack_' + pageId, on ? '1' : '0');
+  _applyStackModeState(grid, on);
 }
 
 function _initDnD(grid, pageId) {

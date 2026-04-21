@@ -133,6 +133,17 @@ function initStackCards() {
       handle.style.display = 'none';
     });
   });
+
+  // ── Restore stack mode from localStorage ──
+  // Runs after every re-render (unstack, stack creation, F5 refresh).
+  // _applyStackModeState is defined in home-widgets.js and is always
+  // loaded before home-widget-stack.js.
+  var grid = document.querySelector('[id^="widget-grid-"]');
+  if (grid && typeof _applyStackModeState === 'function') {
+    var pageId = (grid.id || '').replace('widget-grid-', '');
+    var saved  = pageId ? localStorage.getItem('bw_stack_' + pageId) : null;
+    if (saved === '1') _applyStackModeState(grid, true);
+  }
 }
 
 /**
