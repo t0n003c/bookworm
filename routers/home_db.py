@@ -341,14 +341,29 @@ async def create_stack_widget(page_id: int, child_ids: list[int]) -> int:
         row = await cur.fetchone()
         sort = row["sort_order"] if row else 0
 
-        # Inherit dimensions from first child so the stack card matches what
-        # the user already had — do NOT hardcode row_span:2.
+        # Inherit dimensions from ALL children — take the max col/row span so the
+        # stack is never smaller than any of its members.  A user might drag a tall
+        # File Review widget onto a 1-row widget; without this the File Review would
+        # be squeezed into the target's smaller footprint.
         try:
             first_cfg = json.loads(row["config_json"]) if row else {}
         except Exception:
             first_cfg = {}
         col_span = first_cfg.get("col_span", 1)
         row_span = first_cfg.get("row_span", 1)
+
+        for extra_id in child_ids[1:]:
+            cur2 = await db.execute(
+                "SELECT config_json FROM home_widgets WHERE id=? AND page_id=?",
+                (extra_id, page_id),
+            )
+            xrow = await cur2.fetchone()
+            try:
+                xcfg = json.loads(xrow["config_json"]) if xrow else {}
+            except Exception:
+                xcfg = {}
+            col_span = max(col_span, xcfg.get("col_span", 1))
+            row_span = max(row_span, xcfg.get("row_span", 1))
 
         cur = await db.execute(
             "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order)"
@@ -397,6 +412,36 @@ async def stack_add_child(stack_id: int, widget_id: int, page_id: int) -> bool:
             "UPDATE home_widgets SET group_id=? WHERE id=?",
             (stack_id, widget_id),
         )
+
+        # Expand the stack if the new child is larger than its current footprint.
+        cur_new = await db.execute(
+            "SELECT config_json FROM home_widgets WHERE id=?", (widget_id,)
+        )
+        new_wrow = await cur_new.fetchone()
+        try:
+            new_cfg = json.loads(new_wrow["config_json"]) if new_wrow else {}
+        except Exception:
+            new_cfg = {}
+
+        cur_st = await db.execute(
+            "SELECT config_json FROM home_widgets WHERE id=?", (stack_id,)
+        )
+        st_row = await cur_st.fetchone()
+        try:
+            st_cfg = json.loads(st_row["config_json"]) if st_row else {}
+        except Exception:
+            st_cfg = {}
+
+        new_col  = new_cfg.get("col_span", 1)
+        new_rows = new_cfg.get("row_span", 1)
+        if new_col > st_cfg.get("col_span", 1) or new_rows > st_cfg.get("row_span", 1):
+            st_cfg["col_span"] = max(st_cfg.get("col_span", 1), new_col)
+            st_cfg["row_span"] = max(st_cfg.get("row_span", 1), new_rows)
+            await db.execute(
+                "UPDATE home_widgets SET config_json=? WHERE id=?",
+                (json.dumps(st_cfg), stack_id),
+            )
+
         await db.commit()
     return True
 
