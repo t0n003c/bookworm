@@ -37,6 +37,7 @@
             ('text',     '📝', 'Text'),
             ('sticky',   '📌', 'Sticky Note'),
             ('quote',    '❝', 'Quote'),
+            ('upload_preview', '🖼️', 'File Review'),
           ] %}
           {% for wtype, icon, label in wt_list %}
           <button type="button" onclick="selectWidgetType('{{ wtype }}')"
@@ -57,9 +58,8 @@
         </p>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {% for wtype, icon, label in [
-            ('rss_feed',       '📡', 'RSS Feed'),
-            ('buds',           '🌸', 'Buds'),
-            ('upload_preview', '🖼️', 'File Preview'),
+            ('rss_feed', '📡', 'RSS Feed'),
+            ('buds',     '🌸', 'Buds'),
           ] %}
           <button type="button" onclick="selectWidgetType('{{ wtype }}')"
                   data-wtype="{{ wtype }}"
