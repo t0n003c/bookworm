@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import tempfile
 import traceback
 import urllib.error
 import urllib.parse
@@ -293,35 +295,73 @@ _RSS_UA = (
 )
 
 
+_PROXY = 'http://sysproxy.wal-mart.com:8080'
+
+
+def _curl_fetch(url: str, extra_headers: list | None = None,
+               timeout: int = 15) -> tuple[bytes, str]:
+    """Low-level: run curl with NTLM proxy auth.
+    Returns (body_bytes, raw_content_type_header).
+    Raises urllib.error.URLError / HTTPError on failure."""
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.curl_body')
+    os.close(tmp_fd)                # release fd so curl can write
+    try:
+        cmd = [
+            'curl', '-s', '-L',
+            '--proxy', _PROXY,
+            '--proxy-negotiate', '-u', ':',  # Kerberos/NTLM via Windows SSPI — no password needed
+            '-A', _RSS_UA,
+            '--max-time', str(timeout),
+            '-o', tmp_path,
+            '-w', '%{content_type}\n%{http_code}',
+        ]
+        for h in (extra_headers or []):
+            cmd += ['-H', h]
+        cmd.append(url)
+
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout + 10,
+        )
+
+        if result.returncode not in (0, 23):   # 23 = write error (e.g. piped away)
+            raise urllib.error.URLError(result.stderr.strip() or f'curl exited {result.returncode}')
+
+        parts = result.stdout.strip().splitlines()
+        ct    = parts[0] if parts else ''
+        code  = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+        if code >= 400:
+            raise urllib.error.HTTPError(url, code, f'HTTP {code}', {}, None)
+
+        with open(tmp_path, 'rb') as f:
+            return f.read(), ct
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 def _fetch_raw(url: str) -> tuple:
-    """Fetch URL through Walmart proxy. Returns (text, content_type_header)."""
-    proxy  = urllib.request.ProxyHandler({
-        'http':  'http://sysproxy.wal-mart.com:8080',
-        'https': 'http://sysproxy.wal-mart.com:8080',
-    })
-    opener = urllib.request.build_opener(proxy)
-    req    = urllib.request.Request(url, headers={
-        'User-Agent': _RSS_UA,
-        'Accept': 'application/rss+xml, application/atom+xml, text/xml, */*',
-    })
-    with opener.open(req, timeout=15) as resp:
-        ct_header = resp.headers.get_content_type() or ''
-        charset   = resp.headers.get_content_charset() or 'utf-8'
-        return resp.read().decode(charset, errors='replace'), ct_header
+    """Fetch URL through Walmart proxy (NTLM). Returns (text, content_type_header)."""
+    body, ct = _curl_fetch(
+        url,
+        extra_headers=['Accept: application/rss+xml, application/atom+xml, text/xml, */*'],
+        timeout=15,
+    )
+    # Parse charset out of e.g. "text/xml; charset=utf-8"
+    charset  = 'utf-8'
+    ct_lower = ct.lower()
+    if 'charset=' in ct_lower:
+        charset = ct_lower.split('charset=')[-1].split(';')[0].strip() or 'utf-8'
+    ct_bare = ct.split(';')[0].strip()
+    return body.decode(charset, errors='replace'), ct_bare
 
 
 def _fetch_bytes(url: str) -> tuple[bytes, str]:
-    """Fetch binary content (e.g. images) through Walmart proxy.
-    Returns (raw_bytes, content_type).  Raises on non-2xx."""
-    proxy  = urllib.request.ProxyHandler({
-        'http':  'http://sysproxy.wal-mart.com:8080',
-        'https': 'http://sysproxy.wal-mart.com:8080',
-    })
-    opener = urllib.request.build_opener(proxy)
-    req    = urllib.request.Request(url, headers={'User-Agent': _RSS_UA})
-    with opener.open(req, timeout=10) as resp:
-        ct = resp.headers.get_content_type() or 'application/octet-stream'
-        return resp.read(), ct
+    """Fetch binary content through Walmart proxy (NTLM). Returns (raw_bytes, content_type)."""
+    body, ct = _curl_fetch(url, timeout=10)
+    return body, ct.split(';')[0].strip() or 'application/octet-stream'
 
 
 def _autodiscover_feed_url(html: str, base_url: str) -> str | None:
