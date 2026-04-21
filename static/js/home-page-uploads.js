@@ -871,20 +871,28 @@ function _uplInjectWidgetBadges() {
         var wgts = _uplWidgetUsageMap[fid];
         if (!wgts || !wgts.length) return;
 
-        // Label: single widget → its name; multiple → count
         var label = wgts.length === 1
-            ? _uplEsc(wgts[0].widget_name)
+            ? wgts[0].widget_name
             : wgts.length + '\u00a0widgets';
 
-        // Reference the in-memory map by file ID — no JSON-in-onclick encoding issues
-        span.innerHTML =
-            '<button onclick="event.stopPropagation();_uplWidgetBadgeClick(_uplWidgetUsageMap[\'' + fid + '\'],this)"'
-            + ' class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded'
+        // Build with DOM — no string-in-string escaping at all
+        var btn = document.createElement('button');
+        btn.textContent = '\uD83D\uDDBC\uFE0F ' + label + ' \u25BE';
+        btn.title = 'Pinned to a File Review widget';
+        btn.setAttribute('aria-haspopup', 'true');
+        btn.className = 'inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded'
             + ' font-semibold bg-purple-50 text-purple-700 dark:bg-purple-900/40'
             + ' dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60'
-            + ' transition-colors cursor-pointer"'
-            + ' title="Pinned to a File Review widget" aria-haspopup="true">'
-            + '\uD83D\uDDBC\uFE0F ' + label + ' \u25BE</button>';
+            + ' transition-colors cursor-pointer';
+        (function(fileId) {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                _uplWidgetBadgeClick(_uplWidgetUsageMap[fileId], btn);
+            };
+        })(fid);
+
+        span.innerHTML = '';
+        span.appendChild(btn);
     });
 }
 
