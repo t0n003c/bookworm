@@ -636,6 +636,13 @@ async function _uplPrevConfirm() {
     var countBadge = document.getElementById('upl-prev-settings-count');
     if (countBadge) countBadge.textContent = ids.length + ' file(s) pinned';
 
+    // ── KEY FIX: keep the hidden upload_ids input in sync ────────────────────
+    // The settings modal renders <input id="cf-upl-ids" value='[]'> at open time.
+    // saveWidgetSettings() reads that value and would overwrite upload_ids with []
+    // if we don't update it here before the user ever hits Apply.
+    var hiddenInput = document.getElementById('cf-upl-ids');
+    if (hiddenInput) hiddenInput.value = JSON.stringify(ids);
+
     // Update the preview div dataset immediately for instant render
     var card = document.getElementById('hw-card-' + widgetId);
     var el   = card ? card.querySelector('[data-upload-ids]') : null;
