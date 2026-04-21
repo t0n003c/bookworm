@@ -1171,7 +1171,10 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
 
   var targetType = targetCard.dataset.widgetType;
   var srcType    = srcCard.dataset.widgetType;
-  if (['divider', 'stack'].includes(targetType) ||
+  // Dividers can never be stacked (either side).
+  // An existing stack cannot be dragged as the source into another stack.
+  // Dropping a plain widget ONTO a stack is fine — that's the add-to-stack path below.
+  if (targetType === 'divider' ||
       ['divider', 'stack'].includes(srcType)) {
     _bwToast('Dividers and stacks cannot be stacked.', 'error');
     return;
