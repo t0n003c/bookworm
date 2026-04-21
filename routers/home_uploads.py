@@ -5,6 +5,7 @@ All endpoints are JSON — consumed by home-page-uploads.js.
 The page shell is rendered by home_page_view() in home.py.
 """
 import io
+import json
 import mimetypes
 import os
 import uuid
@@ -16,6 +17,7 @@ from pydantic import BaseModel, field_validator
 
 from routers.attachments_db import UPLOAD_DIR, delete_attachment_record
 from routers.auth_db import get_unlimited_uploads
+from database import get_db
 from routers.home_db import get_home_page
 from routers.uploads_db import (
     add_tag_to_file,
@@ -265,7 +267,7 @@ async def pinned_files(request: Request, ids: str = Query("")):
     """Return file metadata for a comma-separated list of page_upload IDs.
 
     Auth-gated. Only rows owned by the requesting user are returned.
-    IDs that don’t exist or belong to another user are silently omitted.
+    IDs that don't exist or belong to another user are silently omitted.
     """
     uid = request.session.get("user_id")
     if not uid:
@@ -273,6 +275,62 @@ async def pinned_files(request: Request, ids: str = Query("")):
     id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
     rows = await get_page_uploads_by_ids(id_list, uid)
     return JSONResponse(rows)
+
+
+@router.get("/file-widget-usage")
+async def file_widget_usage(request: Request, ids: str = Query("")):
+    """Return which upload_preview widgets each file is pinned to.
+
+    Auth-gated. Response shape:
+      {"<file_id>": [{widget_id, widget_name, page_id, page_name, page_emoji}, ...]}
+    Only widgets owned by the requesting user are included.
+    File IDs that are not pinned to any widget are omitted from the response.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+
+    id_set = {int(x) for x in ids.split(",") if x.strip().isdigit()}
+    if not id_set:
+        return JSONResponse({})
+
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT hw.id AS widget_id, hw.config_json,
+                   hp.id AS page_id, hp.name AS page_name, hp.emoji AS page_emoji
+            FROM home_widgets hw
+            JOIN home_pages hp ON hw.page_id = hp.id
+            WHERE hp.user_id = ? AND hw.widget_type = 'upload_preview'
+            """,
+            (uid,),
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+
+    result: dict[int, list[dict]] = {}
+    for row in rows:
+        try:
+            cfg = json.loads(row["config_json"] or "{}")
+        except Exception:
+            cfg = {}
+        pinned = cfg.get("upload_ids", [])
+        if not isinstance(pinned, list):
+            continue
+        # Widget display name: prefer custom_name when show_name is set
+        raw_name = (cfg.get("custom_name") or "").strip() if cfg.get("show_name") else ""
+        widget_name = raw_name or "File Review"
+        for fid in pinned:
+            if isinstance(fid, int) and fid in id_set:
+                result.setdefault(fid, []).append({
+                    "widget_id":   row["widget_id"],
+                    "widget_name": widget_name,
+                    "page_id":     row["page_id"],
+                    "page_name":   row["page_name"],
+                    "page_emoji":  row["page_emoji"] or "",
+                })
+
+    # JSON object keys must be strings
+    return JSONResponse({str(k): v for k, v in result.items()})
 
 
 # ── List files (paginated + counts) ──────────────────────────────────────────

@@ -19,6 +19,7 @@ let _uplBusy      = false;   // upload in progress
 let _uplDelPending    = null;   // uploadId waiting for delete confirmation
 let _uplRmAttPending  = null;   // note-attachment id waiting for remove confirmation
 var _uplCacheBust     = {};     // fileId → timestamp; cache-busts embed after sign
+var _uplWidgetUsageMap = {};    // fileId → [{widget_id, widget_name, page_id, page_name, page_emoji}]
 var _DOCX_MIME     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -110,6 +111,8 @@ async function _uplFetch(page) {
   // Rebuild filter tabs + grid from current state
   _uplRenderFilterTabs();
   _uplRender();
+  // Fire-and-forget: inject 🖼️ widget-usage badges onto page-source file cards
+  _uplFetchWidgetUsage();
 }
 
 // ── MIME group helper (mirrors _CASE SQL in get_uploads_page() in uploads_db.py) ─
@@ -335,7 +338,7 @@ function _uplCard(f) {
            title="${_uplEsc(f.original_name)}">${_uplEsc(f.original_name)}</p>
         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">
           ${_uplFmtSize(f.size)} &middot; ${_uplFmtDate(f.created_at)}</p>
-        <div class="flex flex-wrap gap-1 mt-1.5">${srcBadge}${tagPips ? tagPips : ''}</div>
+        <div class="flex flex-wrap gap-1 mt-1.5">${srcBadge}${tagPips ? tagPips : ''}${f.src === 'page' ? '<span data-upl-widget-badge="' + f.id + '"></span>' : ''}</div>
       </div>
     </div>`;
 }
@@ -840,7 +843,128 @@ function _uplOpenLightbox(src, altText) {
     document.addEventListener('keydown', overlay._kh);
 }
 
-/* ── Grid-badge popover: click → show grid page name + Go-to link ───────────────── */
+/* ── Widget-usage badges: which File Review widgets pin each file ─────────────────── */
+
+async function _uplFetchWidgetUsage() {
+    // Collect all page-source file IDs currently visible (placeholders already in DOM)
+    var spans = document.querySelectorAll('[data-upl-widget-badge]');
+    if (!spans.length) return;
+
+    var ids = [];
+    spans.forEach(function(s) { if (s.dataset.uplWidgetBadge) ids.push(s.dataset.uplWidgetBadge); });
+    if (!ids.length) return;
+
+    try {
+        var r = await fetch('/home/uploads/file-widget-usage?ids=' + ids.join(','),
+            { credentials: 'same-origin' });
+        if (!r.ok) return;
+        _uplWidgetUsageMap = await r.json();
+    } catch (_) { return; }
+
+    // Inject badges into the placeholder spans now that we have the data
+    _uplInjectWidgetBadges();
+}
+
+function _uplInjectWidgetBadges() {
+    document.querySelectorAll('[data-upl-widget-badge]').forEach(function(span) {
+        var fid  = span.dataset.uplWidgetBadge;
+        var wgts = _uplWidgetUsageMap[fid];
+        if (!wgts || !wgts.length) return;
+
+        // Label: single widget → its name; multiple → count
+        var label = wgts.length === 1
+            ? _uplEsc(wgts[0].widget_name)
+            : wgts.length + '\u00a0widgets';
+
+        // Reference the in-memory map by file ID — no JSON-in-onclick encoding issues
+        span.innerHTML =
+            '<button onclick="event.stopPropagation();_uplWidgetBadgeClick(_uplWidgetUsageMap[\'' + fid + '\'],this)"'
+            + ' class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded'
+            + ' font-semibold bg-purple-50 text-purple-700 dark:bg-purple-900/40'
+            + ' dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60'
+            + ' transition-colors cursor-pointer"'
+            + ' title="Pinned to a File Review widget" aria-haspopup="true">'
+            + '\uD83D\uDDBC\uFE0F ' + label + ' \u25BE</button>';
+    });
+}
+
+async function _uplWidgetBadgeClick(widgets, btnEl) {
+    // Close any existing popover (toggle if same button)
+    var old = document.getElementById('upl-widget-popover');
+    if (old) {
+        var wasSame = old._btnEl === btnEl;
+        old.remove();
+        if (wasSame) return;
+    }
+
+    var pop = document.createElement('div');
+    pop.id = 'upl-widget-popover';
+    pop._btnEl = btnEl;
+    pop.style.cssText = [
+        'position:fixed', 'z-index:9999',
+        'background:white', 'border:1px solid #e5e7eb',
+        'border-radius:.5rem', 'box-shadow:0 4px 20px rgba(0,0,0,.15)',
+        'padding:.75rem 1rem', 'min-width:200px', 'max-width:280px',
+        'font-size:.75rem', 'color:#374151'
+    ].join(';');
+
+    // Position below the badge button (fixed coords, scroll-proof)
+    var rect = btnEl.getBoundingClientRect();
+    pop.style.top  = (rect.bottom + 4) + 'px';
+    pop.style.left = Math.min(rect.left, window.innerWidth - 290) + 'px';
+    document.body.appendChild(pop);
+
+    // Build content directly from the already-fetched widget data
+    if (widgets.length === 1) {
+        var w = widgets[0];
+        pop.innerHTML =
+            '<p style="font-weight:600;margin-bottom:.25rem">\uD83D\uDDBC\uFE0F '
+            + _uplEsc(w.widget_name) + '</p>'
+            + '<p style="color:#6b7280;font-size:.65rem;margin-bottom:.55rem">'
+            + _uplEsc((w.page_emoji ? w.page_emoji + '\u00a0' : '') + w.page_name)
+            + '</p>'
+            + '<button id="upl-widget-pop-goto" style="background:#0053e2;color:white;'
+            + 'border:none;border-radius:.35rem;padding:.3rem .75rem;'
+            + 'font-size:.72rem;cursor:pointer;width:100%">'
+            + 'Go to page &rarr;</button>';
+        var goBtn = pop.querySelector('#upl-widget-pop-goto');
+        if (goBtn) {
+            goBtn.onclick = function() {
+                pop.remove();
+                if (typeof showHomePage === 'function') showHomePage(w.page_id);
+            };
+        }
+    } else {
+        // Multiple widgets
+        var items = widgets.map(function(w) {
+            return '<li style="padding:.3rem 0;border-bottom:1px solid #f3f4f6'
+                + ';display:flex;align-items:center;justify-content:space-between">'
+                + '<span>' + _uplEsc((w.page_emoji ? w.page_emoji + '\u00a0' : '') + w.page_name)
+                + '<br><span style="font-size:.65rem;color:#6b7280">' + _uplEsc(w.widget_name) + '</span></span>'
+                + '<button onclick="event.stopPropagation();'
+                + '(function(){document.getElementById(\"upl-widget-popover\").remove();'
+                + 'if(typeof showHomePage===\'function\')showHomePage(' + w.page_id + ');})()"
+                + ' style="background:#0053e2;color:white;border:none;border-radius:.3rem;'
+                + 'padding:.2rem .5rem;font-size:.65rem;cursor:pointer;flex-shrink:0;margin-left:.5rem">'
+                + 'Go &rarr;</button></li>';
+        }).join('');
+        pop.innerHTML =
+            '<p style="font-weight:600;margin-bottom:.45rem">\uD83D\uDDBC\uFE0F '
+            + widgets.length + ' File Review widgets</p>'
+            + '<ul style="list-style:none;margin:0;padding:0">' + items + '</ul>';
+    }
+
+    // Close on outside click
+    var outside = function(e) {
+        if (!pop.contains(e.target) && e.target !== btnEl) {
+            pop.remove();
+            document.removeEventListener('click', outside);
+        }
+    };
+    setTimeout(function() { document.addEventListener('click', outside); }, 0);
+}
+
+/* ── Grid-badge popover: click → show grid page name + Go-to link ─────────────────── */
 
 async function _uplGridBadgeClick(gridPageId, btnEl) {
     // Close any existing popover
