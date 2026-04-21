@@ -471,7 +471,126 @@ function _doDeletePage(pageId) {
       if (sb) sb.innerHTML = html;
       const canvas = document.getElementById('home-canvas');
       if (canvas && +canvas.dataset.pageId === pageId) homeExit();
+      _bwToast('Page moved to trash.', 'info', 4000);
     });
+}
+
+// ── Page drag-to-trash ──────────────────────────────────────────────────────
+
+function _pgDragStart(event, pageId) {
+  event.dataTransfer.setData('application/x-bw-page', String(pageId));
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+function _trashDragOver(event) {
+  // DOMStringList has .contains() not .includes() — use Array.from + indexOf
+  if (Array.from(event.dataTransfer.types).indexOf('application/x-bw-page') === -1) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  var zone = document.getElementById('hp-trash-zone');
+  if (zone) {
+    zone.classList.add('border-red-400', 'text-red-500');
+    zone.classList.remove('border-transparent');
+    zone.style.background = 'rgba(239,68,68,.08)';
+  }
+}
+
+function _trashDragLeave(event) {
+  var zone = document.getElementById('hp-trash-zone');
+  if (zone) {
+    zone.classList.remove('border-red-400', 'text-red-500');
+    zone.classList.add('border-transparent');
+    zone.style.background = '';
+  }
+}
+
+function _trashDrop(event) {
+  event.preventDefault();
+  _trashDragLeave(event);
+  var raw    = event.dataTransfer.getData('application/x-bw-page');
+  var pageId = parseInt(raw, 10);
+  if (!pageId) return;
+  _doDeletePage(pageId);
+}
+
+// ── Page trash modal ─────────────────────────────────────────────────────────
+
+function openHpTrashModal() {
+  var modal = document.getElementById('hp-trash-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  var list = document.getElementById('hp-trash-list');
+  list.innerHTML = '<p class="text-sm text-gray-400 italic">Loading…</p>';
+
+  fetch('/home/pages/trash', { credentials: 'same-origin' })
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      var pages   = data.pages || [];
+      var emptyBtn = document.getElementById('hp-empty-trash-btn');
+      if (emptyBtn) emptyBtn.disabled = pages.length === 0;
+
+      if (pages.length === 0) {
+        list.innerHTML = '<p class="text-sm text-gray-400 italic py-4 text-center">Trash is empty.</p>';
+        return;
+      }
+
+      list.innerHTML = pages.map(function(p) {
+        var when = (p.deleted_at || '').substring(0, 10) || '—';
+        return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' +
+          ' hover:bg-gray-50 dark:hover:bg-zinc-800 transition">'
+          + '<span class="text-lg leading-none" aria-hidden="true">' + _esc(p.emoji || '🏠') + '</span>'
+          + '<div class="flex-1 min-w-0">'
+          + '<p class="text-sm font-medium text-gray-800 dark:text-zinc-100 truncate">' + _esc(p.name) + '</p>'
+          + '<p class="text-[11px] text-gray-400 dark:text-zinc-500">Deleted ' + _esc(when) + '</p>'
+          + '</div>'
+          + '<button type="button" onclick="_restoreHpPage(' + p.id + ')"'
+          + ' class="flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium'
+          + ' text-[#0053e2] border border-[#0053e2]/30'
+          + ' hover:bg-[#0053e2]/10 dark:hover:bg-blue-900/20 transition">'
+          + 'Restore</button>'
+          + '</div>';
+      }).join('');
+    })
+    .catch(function() {
+      list.innerHTML = '<p class="text-sm text-red-500 italic">Failed to load trash.</p>';
+    });
+}
+
+function closeHpTrashModal() {
+  var modal = document.getElementById('hp-trash-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function _restoreHpPage(pageId) {
+  _post('/home/pages/' + pageId + '/restore')
+    .then(function(r) {
+      var restoredId = r.headers.get('X-Restored-Page-Id');
+      return r.text().then(function(html) { return { html: html, restoredId: restoredId }; });
+    })
+    .then(function(result) {
+      var sb = document.getElementById('sb-home-pages');
+      if (sb) sb.innerHTML = result.html;
+      closeHpTrashModal();
+      if (result.restoredId) showHomePage(parseInt(result.restoredId, 10));
+      _bwToast('Page restored.', 'success', 3000);
+    })
+    .catch(function() { _bwToast('Restore failed.', 'error'); });
+}
+
+function _emptyHpTrash() {
+  if (!confirm('Permanently delete ALL pages in trash? This cannot be undone.')) return;
+  _post('/home/pages/trash/empty')
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      var sb = document.getElementById('sb-home-pages');
+      if (sb) sb.innerHTML = html;
+      closeHpTrashModal();
+      _bwToast('Trash emptied.', 'success', 3000);
+    })
+    .catch(function() { _bwToast('Empty trash failed.', 'error'); });
 }
 
 function duplicateHomePage(pageId, name) {

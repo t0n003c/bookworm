@@ -22,8 +22,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from routers.home_db import (
     add_widget, create_home_page, delete_home_page, delete_widget,
-    duplicate_home_page, get_home_page, get_home_pages, get_widget_by_id,
-    get_widgets, reorder_widgets, rename_home_page, update_page_config,
+    duplicate_home_page, empty_home_page_trash, get_home_page, get_home_pages,
+    get_trashed_home_pages, get_widget_by_id, get_widgets, restore_home_page,
+    reorder_widgets, rename_home_page, update_page_config,
     update_widget_config, update_widget_style,
 )
 from routers.home_rss_db import (
@@ -73,6 +74,16 @@ def _uid(request: Request) -> int:
     return request.session["user_id"]
 
 
+async def _sidebar_ctx(uid: int, active_page_id: int | None = None) -> dict:
+    """Return {pages, hp_trash_count} for home_sidebar.html renders."""
+    pages   = await get_home_pages(uid)
+    trashed = await get_trashed_home_pages(uid)
+    ctx: dict = {"pages": pages, "hp_trash_count": len(trashed)}
+    if active_page_id is not None:
+        ctx["active_page_id"] = active_page_id
+    return ctx
+
+
 async def _user_notes(uid: int, limit: int = 50) -> list[dict]:
     """Return recent notes scoped to this user's workspaces.
 
@@ -112,9 +123,9 @@ async def _fetch_json_async(url: str) -> dict:
 
 @router.get("/sidebar", response_class=HTMLResponse)
 async def home_sidebar(request: Request):
-    pages = await get_home_pages(_uid(request))
+    ctx = await _sidebar_ctx(_uid(request))
     return templates.TemplateResponse(
-        request, "partials/home_sidebar.html", {"pages": pages}
+        request, "partials/home_sidebar.html", ctx
     )
 
 
@@ -693,6 +704,30 @@ async def list_pages_json(request: Request):
     ]})
 
 
+# ── Page trash endpoints (fixed paths — MUST stay before /{page_id} routes) ───
+
+@router.get("/pages/trash")
+async def list_trash_json(request: Request):
+    """JSON list of trashed pages for the trash modal."""
+    uid     = _uid(request)
+    trashed = await get_trashed_home_pages(uid)
+    return JSONResponse({"pages": [
+        {"id": p["id"], "name": p["name"], "emoji": p.get("emoji", "") or "",
+         "page_type": p.get("page_type") or "dashboard",
+         "deleted_at": p.get("deleted_at") or ""}
+        for p in trashed
+    ]})
+
+
+@router.post("/pages/trash/empty", response_class=HTMLResponse)
+async def empty_trash(request: Request):
+    """Hard-delete all trashed pages; return refreshed sidebar HTML."""
+    uid = _uid(request)
+    await empty_home_page_trash(uid)
+    ctx = await _sidebar_ctx(uid)
+    return templates.TemplateResponse(request, "partials/home_sidebar.html", ctx)
+
+
 @router.post("/pages/create", response_class=HTMLResponse)
 async def create_page(
     request:   Request,
@@ -702,10 +737,9 @@ async def create_page(
 ):
     uid     = _uid(request)
     page_id = await create_home_page(uid, name, emoji, page_type)
-    pages   = await get_home_pages(uid)
-    resp    = templates.TemplateResponse(
-        request, "partials/home_sidebar.html",
-        {"pages": pages, "active_page_id": page_id},
+    ctx = await _sidebar_ctx(uid, active_page_id=page_id)
+    resp = templates.TemplateResponse(
+        request, "partials/home_sidebar.html", ctx,
     )
     resp.headers["X-New-Page-Id"] = str(page_id)
     return resp
@@ -853,9 +887,9 @@ async def rename_page(
 ):
     uid = _uid(request)
     await rename_home_page(page_id, uid, name, emoji)
-    pages = await get_home_pages(uid)
+    ctx = await _sidebar_ctx(uid)
     return templates.TemplateResponse(
-        request, "partials/home_sidebar.html", {"pages": pages}
+        request, "partials/home_sidebar.html", ctx
     )
 
 
@@ -883,9 +917,9 @@ async def duplicate_page(request: Request, page_id: int):
     """Clone a home page + all its widgets and navigate to the copy."""
     uid = _uid(request)
     new_id = await duplicate_home_page(page_id, uid)
-    pages  = await get_home_pages(uid)
-    resp   = templates.TemplateResponse(
-        request, "partials/home_sidebar.html", {"pages": pages}
+    ctx = await _sidebar_ctx(uid)
+    resp = templates.TemplateResponse(
+        request, "partials/home_sidebar.html", ctx
     )
     resp.headers["X-New-Page-Id"] = str(new_id)
     return resp
@@ -895,13 +929,24 @@ async def duplicate_page(request: Request, page_id: int):
 async def del_page(request: Request, page_id: int):
     uid = _uid(request)
     await delete_home_page(page_id, uid)
-    pages = await get_home_pages(uid)
+    ctx = await _sidebar_ctx(uid)
     return templates.TemplateResponse(
-        request, "partials/home_sidebar.html", {"pages": pages}
+        request, "partials/home_sidebar.html", ctx
     )
 
 
-# ── CRUD: widgets ─────────────────────────────────────────────────────────────
+@router.post("/pages/{page_id}/restore", response_class=HTMLResponse)
+async def restore_page(request: Request, page_id: int):
+    """Un-trash a page; return refreshed sidebar HTML + X-Restored-Page-Id header."""
+    uid = _uid(request)
+    await restore_home_page(page_id, uid)
+    ctx = await _sidebar_ctx(uid)
+    resp = templates.TemplateResponse(request, "partials/home_sidebar.html", ctx)
+    resp.headers["X-Restored-Page-Id"] = str(page_id)
+    return resp
+
+
+# ── CRUD: widgets ────────────────────────────────────────────────────────────────────
 
 @router.post("/pages/{page_id}/widgets/add", response_class=HTMLResponse)
 async def add_widget_handler(
