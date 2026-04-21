@@ -58,12 +58,21 @@ async def get_note_by_id(note_id: int) -> Optional[dict]:
         return note
 
 
-# Allowlists — only these values ever touch SQL so injection is impossible
+# Allowlists — only these values ever touch SQL so injection is impossible.
+# Dynamic attr_{id} tokens are handled separately in _build_order_clause.
 _FIELD_MAP: dict[str, str] = {
-    "date":    "n.meeting_date",
-    "title":   "n.title",
-    "created": "n.created_at",
-    "updated": "n.updated_at",
+    "date":     "n.meeting_date",
+    "title":    "n.title",
+    "created":  "n.created_at",
+    "updated":  "n.updated_at",
+    # Correlated subquery — picks the lexicographically first category name
+    # for the note, NULLs sort last (uncategorised notes float to the bottom).
+    "category": (
+        "(SELECT MIN(c.name)"
+        " FROM note_categories nc"
+        " JOIN categories c ON c.id = nc.category_id"
+        " WHERE nc.note_id = n.id)"
+    ),
 }
 _VALID_DIRS = {"asc", "desc"}
 _DEFAULT_SORT_BY = ["date:desc"]
@@ -72,7 +81,12 @@ _DEFAULT_SORT_BY = ["date:desc"]
 def _build_order_clause(sort_by: list[str]) -> str:
     """Build a safe multi-column ORDER BY from a list of 'field:dir' tokens.
 
-    Unknown field/dir values are silently skipped.  Duplicate fields are
+    Static fields are validated against _FIELD_MAP (allowlist).
+    Dynamic attribute fields use the token format ``attr_{id}`` where ``id``
+    must be a pure decimal integer — validated with str.isdigit() so no SQL
+    injection is possible regardless of user input.
+
+    Unknown / invalid tokens are silently skipped.  Duplicate fields are
     de-duplicated (first occurrence wins).  Falls back to date DESC when
     nothing valid remains.
     """
@@ -80,14 +94,27 @@ def _build_order_clause(sort_by: list[str]) -> str:
     clauses: list[str] = []
     for entry in sort_by:
         parts = entry.strip().split(":", 1)
-        field = parts[0].strip().lower()
-        direction = parts[1].strip().lower() if len(parts) > 1 else "desc"
-        if field not in _FIELD_MAP or direction not in _VALID_DIRS:
+        field     = parts[0].strip().lower()
+        direction = (parts[1].strip().lower() if len(parts) > 1 else "desc")
+        if direction not in _VALID_DIRS or field in seen:
             continue
-        if field in seen:
-            continue
+
+        if field in _FIELD_MAP:
+            col_expr = _FIELD_MAP[field]
+        elif field.startswith("attr_") and field[5:].isdigit():
+            # Safe: attr_id is validated as a non-negative integer literal.
+            attr_id  = int(field[5:])
+            col_expr = (
+                f"(SELECT na.value FROM note_attributes na"
+                f" WHERE na.note_id = n.id AND na.attr_def_id = {attr_id}"
+                f" LIMIT 1)"
+            )
+        else:
+            continue  # unknown field — skip silently
+
         seen.add(field)
-        clauses.append(f"{_FIELD_MAP[field]} {direction.upper()}")
+        clauses.append(f"{col_expr} {direction.upper()}")
+
     return ", ".join(clauses) if clauses else f"{_FIELD_MAP['date']} DESC"
 
 

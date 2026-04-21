@@ -2274,10 +2274,14 @@
    * #filter-form so hx-include="#filter-form" picks them up.
    * ======================================================= */
   const _SORT_FIELDS = [
-    { value: 'date',    label: '\uD83D\uDCC5 Meeting Date' },
+    { value: 'date',     label: '\uD83D\uDCC5 Meeting Date' },
     { value: 'title',   label: '\uD83D\uDD24 Title' },
     { value: 'created', label: '\uD83C\uDD95 Created' },
     { value: 'updated', label: '\u270F\uFE0F Updated' },
+    { value: 'category', label: '\uD83C\uDFF7\uFE0F Category' },
+    ...{{ attr_defs | default([]) | tojson | safe }}.map(function(a) {
+      return { value: 'attr_' + a.id, label: '\uD83D\uDD16 ' + a.name };
+    }),
   ];
   let _sortState = [{ field: 'date', dir: 'desc' }];
 
