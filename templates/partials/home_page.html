@@ -1653,7 +1653,7 @@
      draggable="true"
      style="grid-column: span {{ cfg.get('col_span', 1) }};
             grid-row:    span {{ cfg.get('row_span', 1) }};
-            min-height:  calc({{ cfg.get('row_span', 1) }} * 7.5rem + 1.5rem);">
+            min-height:  {{ (cfg.get('min_height_px')|string + 'px') if cfg.get('min_height_px') else 'calc(' ~ cfg.get('row_span', 1) ~ ' * 7.5rem + 1.5rem)' }};">
 
   {#-- Slide viewport: fills the full card --#}
   <div class="stack-viewport absolute inset-0 overflow-hidden"

@@ -336,15 +336,16 @@ async def get_widget_by_id(widget_id: int) -> dict | None:
 
 # ── Widget Stack helpers ──────────────────────────────────────────────────────────────────
 
-async def create_stack_widget(page_id: int, child_ids: list[int], row_span_hint: int = 0) -> int:
+async def create_stack_widget(page_id: int, child_ids: list[int], height_px_hint: int = 0) -> int:
     """
     Create a 'stack' widget row at the sort_order of the first child, then
     assign group_id on each child.  Returns the new stack widget id.
     Caller must validate that child_ids are all stackable (not divider/stack,
     not already grouped).
-    row_span_hint: frontend-measured row span (pixel height converted by JS);
-    used when larger than the config-derived value so auto-sized cards are
-    not squished inside the stack.
+    height_px_hint: actual rendered pixel height captured by JS at drop time.
+    Stored as min_height_px in config so the template can reproduce the exact
+    visual size without relying on grid-auto-rows to do the expansion.
+    Row span is never inflated — it stays as the max of children’s configured spans.
     """
     async with get_db() as db:
         cur = await db.execute(
@@ -380,18 +381,21 @@ async def create_stack_widget(page_id: int, child_ids: list[int], row_span_hint:
 
         # Frontend hint wins if larger — grid-auto-rows:auto lets cards grow
         # beyond their declared row_span; the hint captures that visual size.
-        if row_span_hint and row_span_hint > row_span:
-            row_span = row_span_hint
+        # (row span itself is intentionally NOT inflated — no auto row count increase)
+
+        cfg: dict = {
+            "active_index": 0,
+            "col_span":     col_span,
+            "row_span":     row_span,
+            "child_order":  child_ids,
+        }
+        if height_px_hint > 0:
+            cfg["min_height_px"] = height_px_hint
 
         cur = await db.execute(
             "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order)"
             " VALUES(?, 'stack', '', ?, ?)",
-            (page_id, json.dumps({
-                "active_index": 0,
-                "col_span":     col_span,
-                "row_span":     row_span,
-                "child_order":  child_ids,   # drag-determined order; [0]=page1, [1]=page2…
-            }), sort),
+            (page_id, json.dumps(cfg), sort),
         )
         stack_id = cur.lastrowid
 
@@ -404,12 +408,13 @@ async def create_stack_widget(page_id: int, child_ids: list[int], row_span_hint:
     return stack_id
 
 
-async def stack_add_child(stack_id: int, widget_id: int, page_id: int, row_span_hint: int = 0) -> bool:
+async def stack_add_child(stack_id: int, widget_id: int, page_id: int, height_px_hint: int = 0) -> bool:
     """
     Set group_id=stack_id on widget_id.
     Validates: both rows belong to page_id; widget is not divider/stack;
     widget is not already in any stack.
-    row_span_hint: frontend-measured row span for the new child.
+    height_px_hint: actual rendered px height of the new child at drop time.
+    Updates min_height_px in the stack config when the new child is taller.
     Returns False if any validation fails.
     """
     async with get_db() as db:
@@ -458,11 +463,11 @@ async def stack_add_child(stack_id: int, widget_id: int, page_id: int, row_span_
 
         new_col  = new_cfg.get("col_span", 1)
         new_rows = new_cfg.get("row_span", 1)
-        # Also honour the frontend-measured hint (beats config-based value)
-        if row_span_hint and row_span_hint > new_rows:
-            new_rows = row_span_hint
         st_cfg["col_span"] = max(st_cfg.get("col_span", 1), new_col)
         st_cfg["row_span"] = max(st_cfg.get("row_span", 1), new_rows)
+        # Update min_height_px if the new child is visually taller.
+        if height_px_hint > 0 and height_px_hint > st_cfg.get("min_height_px", 0):
+            st_cfg["min_height_px"] = height_px_hint
         # Append new child to ordering list so it becomes the last slide.
         # Backwards-compat: seed child_order from existing DB order if missing.
         if "child_order" not in st_cfg:

@@ -1014,10 +1014,10 @@ async def add_widget_handler(
 
 @router.post("/widgets/stack", response_class=HTMLResponse)
 async def create_stack(
-    request:        Request,
-    page_id:        int  = Form(...),
-    widget_ids:     str  = Form(...),   # comma-separated widget IDs e.g. "5,12"
-    row_span_hint:  int  = Form(0),     # frontend-measured pixel-height → row-span
+    request:         Request,
+    page_id:         int  = Form(...),
+    widget_ids:      str  = Form(...),   # comma-separated widget IDs e.g. "5,12"
+    height_px_hint:  int  = Form(0),     # actual rendered px height captured by JS
 ):
     """Combine two or more existing widgets into a swipeable stack card."""
     uid  = _uid(request)
@@ -1041,7 +1041,7 @@ async def create_stack(
         if w.get("group_id"):
             return HTMLResponse(_ERR.format(f"Widget {wid} is already in a stack."), 400)
 
-    await create_stack_widget(page_id, ids, row_span_hint=row_span_hint)
+    await create_stack_widget(page_id, ids, height_px_hint=height_px_hint)
     widgets   = await get_widgets(page_id)
     all_notes = await _user_notes(uid)
     return templates.TemplateResponse(
@@ -1052,11 +1052,11 @@ async def create_stack(
 
 @router.post("/widgets/{stack_id}/stack-add", response_class=HTMLResponse)
 async def stack_add(
-    request:       Request,
-    stack_id:      int,
-    widget_id:     int  = Form(...),
-    page_id:       int  = Form(...),
-    row_span_hint: int  = Form(0),   # frontend-measured pixel-height → row-span
+    request:         Request,
+    stack_id:        int,
+    widget_id:       int  = Form(...),
+    page_id:         int  = Form(...),
+    height_px_hint:  int  = Form(0),   # actual rendered px height captured by JS
 ):
     """Add an existing widget into an existing stack."""
     uid  = _uid(request)
@@ -1064,7 +1064,7 @@ async def stack_add(
     if not page:
         return HTMLResponse(_ERR.format("Page not found."), 404)
 
-    ok = await stack_add_child(stack_id, widget_id, page_id, row_span_hint=row_span_hint)
+    ok = await stack_add_child(stack_id, widget_id, page_id, height_px_hint=height_px_hint)
     if not ok:
         return HTMLResponse(_ERR.format("Cannot add that widget to the stack."), 400)
 
