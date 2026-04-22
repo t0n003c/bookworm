@@ -116,7 +116,11 @@ function _uplTrunc(s, n) {
 }
 
 // ── Build one thumbnail cell ──────────────────────────────────────────────────
-function _uplThumbHtml(file, style) {
+// sizeClass controls the sizing CSS applied to the outer button/link.
+// Default 'aspect-square' keeps the classic square grid look.
+// Pass 'w-full h-full' for the single-file fill layout.
+function _uplThumbHtml(file, style, sizeClass) {
+    if (sizeClass === undefined) sizeClass = 'aspect-square';
     var icon = _uplMimeIcon(file.mime_type || '');
     var name = _uplEsc(_uplTrunc(file.original_name || file.filename, 26));
     var url  = '/uploads/' + _uplEsc(file.filename);
@@ -131,7 +135,7 @@ function _uplThumbHtml(file, style) {
                 + ' onmouseenter="_uplVidHoverPlay(this)"'
                 + ' onmouseleave="_uplVidHoverStop(this)"'
                 + ' class="relative block w-full overflow-hidden rounded-lg'
-                + ' bg-gray-100 dark:bg-zinc-800 aspect-square cursor-pointer"'
+                + ' bg-gray-100 dark:bg-zinc-800 ' + sizeClass + ' cursor-pointer"'
                 + ' title="' + name + '">'
                 + '<video src="' + url + '" preload="metadata" muted playsinline'
                 + ' class="w-full h-full object-cover pointer-events-none"></video>'
@@ -162,7 +166,7 @@ function _uplThumbHtml(file, style) {
         }
         return '<button type="button" onclick="_uplFilePreview(' + file.id + ')"'
             + ' class="relative block w-full overflow-hidden rounded-lg'
-            + ' bg-gray-100 dark:bg-zinc-800 aspect-square'
+            + ' bg-gray-100 dark:bg-zinc-800 ' + sizeClass
             + ' hover:opacity-90 transition-opacity cursor-pointer"'
             + ' title="' + name + ' \u2014 click to preview">'
             + inner + '</button>';
@@ -185,7 +189,7 @@ function _uplThumbHtml(file, style) {
     }
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer"'
         + ' class="relative block overflow-hidden rounded-lg bg-gray-100'
-        + ' dark:bg-zinc-800 aspect-square hover:opacity-90 transition-opacity"'
+        + ' dark:bg-zinc-800 ' + sizeClass + ' hover:opacity-90 transition-opacity"'
         + ' title="' + name + '">'
         + inner2 + '</a>';
 }
@@ -197,6 +201,24 @@ function _uplPrevRender(el, files, style, showCaption) {
             + ' gap-2 text-gray-300 dark:text-zinc-600 select-none py-4">'
             + '<span class="text-4xl" aria-hidden="true">🖼️</span>'
             + '<span class="text-xs text-center px-2">No files pinned — open ⚙️ to pick some</span>'
+            + '</div>';
+        return;
+    }
+
+    // ── Single-file fill: skip the grid entirely.  The thumbnail gets
+    // w-full h-full so it stretches to exactly the available card height
+    // (whether standalone or inside a compact stack slide).
+    if (files.length === 1 && style !== 'carousel') {
+        var f1    = files[0];
+        var name1 = _uplEsc(_uplTrunc(f1.original_name || f1.filename, 22));
+        el.innerHTML = '<div class="h-full flex flex-col">'
+            + '<div class="flex-1 min-h-0">'
+            + _uplThumbHtml(f1, style, 'w-full h-full')
+            + '</div>'
+            + (showCaption
+                ? '<p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate mt-0.5'
+                  + ' flex-shrink-0 leading-tight">' + name1 + '</p>'
+                : '')
             + '</div>';
         return;
     }
