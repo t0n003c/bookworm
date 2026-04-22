@@ -154,6 +154,23 @@ function initStackCards() {
     card.querySelectorAll('.stack-slide .drag-handle').forEach(function(handle) {
       handle.style.display = 'none';
     });
+
+    // ── Fill-viewport fix ──────────────────────────────────────────────────
+    // Each child widget is rendered by the card() macro which sets an inline
+    // style of  min-height:7.5rem  (120 px) and grid-column/grid-row spans.
+    // Those grid styles are irrelevant inside a stack slide and the min-height
+    // is just a floor — the card never grows to fill the slide viewport,
+    // leaving a blank gap below short widgets and clipping tall ones.
+    //
+    // Inline styles beat CSS class specificity, so we patch them in JS:
+    //   • minHeight  → '100%'  : card fills its parent .stack-child-frame
+    //                            (which is h-full = the full viewport height)
+    //   • gridColumn/gridRow   : cleared — meaningless inside the carousel
+    card.querySelectorAll('.stack-child-frame .hw-card').forEach(function(child) {
+      child.style.minHeight   = '100%';
+      child.style.gridColumn  = '';
+      child.style.gridRow     = '';
+    });
   });
 
   // ── Restore edit mode state ──
