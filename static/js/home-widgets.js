@@ -1230,7 +1230,7 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
 
 /**
  * _applyStackModeState — shared applier used by toggleStackMode AND
- * initStackCards (localStorage restore).  Keeps the two callers DRY.
+ * initStackCards (_hwStackModeOn restore).  Keeps the two callers DRY.
  */
 function _applyStackModeState(grid, on) {
   grid.dataset.stackMode = on ? 'true' : 'false';
@@ -1260,12 +1260,15 @@ function _applyStackModeState(grid, on) {
 /**
  * toggleStackMode — flips data-stack-mode on the widget grid.
  * Intentionally NOT persisted to localStorage — edit mode always resets
- * to OFF on page refresh so users can't accidentally lock themselves in.
+ * to OFF on page refresh so users can’t accidentally lock themselves in.
+ * Writes _hwStackModeOn (defined in home-widget-stack.js) so that the state
+ * survives HTMX partial re-renders (stack / unstack swaps).
  */
 function toggleStackMode() {
   var grid = document.querySelector('[id^="widget-grid-"]');
   if (!grid) return;
   var on = grid.dataset.stackMode !== 'true';
+  if (typeof _hwStackModeOn !== 'undefined') _hwStackModeOn = on;  // persist across HTMX swaps
   _applyStackModeState(grid, on);
 }
 

@@ -15,7 +15,13 @@
 
 'use strict';
 
-// ── Internal helpers ────────────────────────────────────────────────────────
+// ── Module state ──────────────────────────────────────────────────────────
+// Survives HTMX partial re-renders (stack/unstack re-renders the widget grid
+// but does NOT reload this script).  toggleStackMode() in home-widgets.js
+// writes this; initStackCards() reads it back so edit mode is preserved.
+var _hwStackModeOn = false;
+
+// ── Internal helpers ───────────────────────────────────────────────────────
 
 function _stackGetViewport(stackId) {
   return document.querySelector('.stack-viewport[data-stack-id="' + stackId + '"]');
@@ -150,12 +156,12 @@ function initStackCards() {
     });
   });
 
-  // ── Apply edit mode state ──
-  // Edit mode is intentionally NOT persisted — always starts OFF on refresh.
-  // _applyStackModeState also sets draggable=false and hides drag handles.
+  // ── Restore edit mode state ──
+  // _hwStackModeOn survives HTMX swaps (script stays in memory).
+  // On fresh page load it is false (module initialises to false above).
   var grid = document.querySelector('[id^="widget-grid-"]');
   if (grid && typeof _applyStackModeState === 'function') {
-    _applyStackModeState(grid, false);
+    _applyStackModeState(grid, _hwStackModeOn);
   }
 }
 

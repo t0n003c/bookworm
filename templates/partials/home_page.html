@@ -1710,7 +1710,12 @@
   </div>
 
   {# ── Slide viewport ── #}
-  <div class="stack-viewport relative flex-1 overflow-hidden min-h-0"
+  {#- Explicit height bypasses the grid-item → flex-1 chain that Chrome can
+      fail to propagate when only min-height is set on the grid item.
+      3.5 rem accounts for the stack chrome: header (py-2 + text-xs ≈ 1.9 rem)
+      plus dots bar (py-2 + h-2 dot ≈ 1.5 rem) = 3.4 rem, rounded up. -#}
+  <div class="stack-viewport relative overflow-hidden"
+       style="height: calc({{ cfg.get('row_span', 1) }} * 7.5rem - 3.5rem);"
        data-stack-id="{{ w.id }}"
        data-active="{{ active }}">
     {%- for child in w.children %}
