@@ -230,7 +230,9 @@ function _uplPrevRender(el, files, style, showCaption) {
                 + '</div>';
         }).join('');
 
-        el.innerHTML = '<div class="grid gap-1 h-full content-start"'
+        // No h-full here — let the grid grow to its natural content height
+        // so the parent overflow-y-auto container has something to scroll.
+        el.innerHTML = '<div class="grid gap-1 content-start"'
             + ' style="grid-template-columns: repeat(' + cols + ', minmax(0,1fr));">'
             + items + '</div>';
     }

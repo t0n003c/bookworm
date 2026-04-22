@@ -231,6 +231,16 @@ async def get_widgets(page_id: int) -> list[dict]:
             by_id[gid]["children"].append(w)
         else:
             top_level.append(w)
+
+    # Re-sort each stack's children by the stored child_order (drag-determined
+    # page sequence).  Falls back to sort_order (already natural) when missing.
+    for w in top_level:
+        if w.get("widget_type") == "stack" and w.get("children"):
+            order = w["config"].get("child_order", [])
+            if order:
+                rank = {wid: i for i, wid in enumerate(order)}
+                w["children"].sort(key=lambda c: rank.get(c["id"], len(order)))
+
     return top_level
 
 
@@ -376,7 +386,12 @@ async def create_stack_widget(page_id: int, child_ids: list[int], row_span_hint:
         cur = await db.execute(
             "INSERT INTO home_widgets(page_id, widget_type, style, config_json, sort_order)"
             " VALUES(?, 'stack', '', ?, ?)",
-            (page_id, json.dumps({"active_index": 0, "col_span": col_span, "row_span": row_span}), sort),
+            (page_id, json.dumps({
+                "active_index": 0,
+                "col_span":     col_span,
+                "row_span":     row_span,
+                "child_order":  child_ids,   # drag-determined order; [0]=page1, [1]=page2…
+            }), sort),
         )
         stack_id = cur.lastrowid
 
@@ -446,13 +461,22 @@ async def stack_add_child(stack_id: int, widget_id: int, page_id: int, row_span_
         # Also honour the frontend-measured hint (beats config-based value)
         if row_span_hint and row_span_hint > new_rows:
             new_rows = row_span_hint
-        if new_col > st_cfg.get("col_span", 1) or new_rows > st_cfg.get("row_span", 1):
-            st_cfg["col_span"] = max(st_cfg.get("col_span", 1), new_col)
-            st_cfg["row_span"] = max(st_cfg.get("row_span", 1), new_rows)
-            await db.execute(
-                "UPDATE home_widgets SET config_json=? WHERE id=?",
-                (json.dumps(st_cfg), stack_id),
+        st_cfg["col_span"] = max(st_cfg.get("col_span", 1), new_col)
+        st_cfg["row_span"] = max(st_cfg.get("row_span", 1), new_rows)
+        # Append new child to ordering list so it becomes the last slide.
+        # Backwards-compat: seed child_order from existing DB order if missing.
+        if "child_order" not in st_cfg:
+            cur_kids = await db.execute(
+                "SELECT id FROM home_widgets WHERE group_id=? AND page_id=? ORDER BY sort_order, id",
+                (stack_id, page_id),
             )
+            st_cfg["child_order"] = [r["id"] for r in await cur_kids.fetchall()]
+        if widget_id not in st_cfg["child_order"]:
+            st_cfg["child_order"].append(widget_id)
+        await db.execute(
+            "UPDATE home_widgets SET config_json=? WHERE id=?",
+            (json.dumps(st_cfg), stack_id),
+        )
 
         await db.commit()
     return True

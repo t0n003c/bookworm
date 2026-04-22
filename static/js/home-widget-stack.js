@@ -175,6 +175,19 @@ function initStackCards() {
       child.style.minHeight   = '';
       child.style.gridColumn  = '';
       child.style.gridRow     = '';
+      // The top chrome overlay is h-7 (1.75 rem = 28 px).  Pushing the
+      // inner card's top padding to match means all widget content starts
+      // below the gradient — navigation buttons become clickable and the
+      // first row of thumbnails / calendar cells is no longer covered.
+      child.style.paddingTop  = '1.75rem';
+    });
+
+    // Calendar widgets inside stacks: make them fill the available flex
+    // space and scroll vertically so the user can reach all date rows.
+    card.querySelectorAll('.stack-child-frame .calendar-widget').forEach(function(calEl) {
+      calEl.style.flex      = '1 1 0';
+      calEl.style.minHeight = '0';
+      calEl.style.overflowY = 'auto';
     });
   });
 

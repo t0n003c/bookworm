@@ -1574,7 +1574,7 @@
 {%- set caption = '1' if cfg.get('caption') == '1' or cfg.get('caption') == true else '0' -%}
 {% call card(w) %}
   {{ widget_header(w, 'File Preview', '🖼️') }}
-  <div class="flex-1 min-h-0 overflow-hidden"
+  <div class="flex-1 min-h-0 overflow-y-auto"
        id="upl-prev-{{ w.id }}"
        data-upload-ids="{{ ids | tojson | e }}"
        data-style="{{ w.style }}"
