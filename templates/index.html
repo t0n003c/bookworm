@@ -2283,12 +2283,14 @@
       return { value: 'attr_' + a.id, label: '\uD83D\uDD16 ' + a.name };
     }),
   ];
-  // ── Sort persistence (localStorage, per-user) ────────────────────────────
-  // Key mirrors the _BW_WS_KEY namespace pattern already used in this file.
-  const _SORT_LS_KEY = 'bw-sort-{{ current_user_id }}';
-  function _sortLoad() {
+  // ── Sort persistence (localStorage, per-workspace) ─────────────────────────
+  // Key pattern: bw-sort-{userId}-{wsId} — each workspace keeps its own sort.
+  function _sortKey(wsId) {
+    return 'bw-sort-{{ current_user_id }}-' + (wsId || '0');
+  }
+  function _sortLoad(wsId) {
     try {
-      var raw = localStorage.getItem(_SORT_LS_KEY);
+      var raw = localStorage.getItem(_sortKey(wsId));
       if (!raw) return [{ field: 'date', dir: 'desc' }];
       var parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || parsed.length === 0) return [{ field: 'date', dir: 'desc' }];
@@ -2299,9 +2301,16 @@
     } catch (e) { return [{ field: 'date', dir: 'desc' }]; }
   }
   function _sortSave() {
-    try { localStorage.setItem(_SORT_LS_KEY, JSON.stringify(_sortState)); } catch (e) {}
+    var wsId = document.getElementById('active-workspace')?.value || '0';
+    try { localStorage.setItem(_sortKey(wsId), JSON.stringify(_sortState)); } catch (e) {}
   }
-  let _sortState = _sortLoad();
+  // Load + render sort for a new workspace — call before every HTMX switch.
+  function _sortApplyWorkspace(wsId) {
+    _sortState = _sortLoad(wsId);
+    _renderSort();
+  }
+  // Seed with the workspace the server landed on at page load.
+  let _sortState = _sortLoad('{{ active_ws_id if active_ws_id is not none else "" }}');
 
   function _renderSort() {
     const rows    = document.getElementById('sort-rows');
@@ -2407,10 +2416,10 @@
   // Boot the sort builder once the DOM is ready
   document.addEventListener('DOMContentLoaded', function () {
     _renderSort();
-    // If a non-default sort was restored from localStorage, the server already
-    // rendered the note list with its own default sort order.  Re-fetch now so
-    // the list matches the saved sort state immediately after F5.
-    if (localStorage.getItem(_SORT_LS_KEY)) _sortRefreshNotes();
+    // If a sort was saved for the initial workspace, the server already rendered
+    // notes with its own default order.  Re-fetch now to apply the saved sort.
+    var _initWsId = '{{ active_ws_id if active_ws_id is not none else "" }}';
+    if (localStorage.getItem(_sortKey(_initWsId))) _sortRefreshNotes();
   });
 
   /* ---- Category filter refresh ---- */
@@ -2450,6 +2459,7 @@
 
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
+    _sortApplyWorkspace(id); // load this workspace's saved sort before the HTMX request
     const hc = document.getElementById('home-content');
     const fromHome = !!(hc && !hc.classList.contains('hidden'));
 
@@ -2489,6 +2499,7 @@
     if (typeof homeExit === 'function') homeExit();
     const nl = document.getElementById('note-list');
     if (fromHome && nl) nl.classList.add('hidden');
+    _sortApplyWorkspace(id); // load this workspace's saved sort before the HTMX request
     document.getElementById('active-workspace').value = id;
     _bwSetActiveWs(id);
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
@@ -2501,6 +2512,7 @@
 
   /* Top-bar tab click — tabs only visible in workspace view, never from Homespace. */
   function wsTabClick(id) {
+    _sortApplyWorkspace(id); // load this workspace's saved sort before the HTMX request
     window._bwWsId = id;
     document.getElementById('active-workspace').value = id;
     _bwSetActiveWs(id);
