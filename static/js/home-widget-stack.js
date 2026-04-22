@@ -163,11 +163,16 @@ function initStackCards() {
     // leaving a blank gap below short widgets and clipping tall ones.
     //
     // Inline styles beat CSS class specificity, so we patch them in JS:
-    //   • minHeight  → '100%'  : card fills its parent .stack-child-frame
-    //                            (which is h-full = the full viewport height)
+    //   • height → '100%'     : card fills its parent .stack-child-frame
+    //                            (h-full = the full viewport height).
+    //                            Must be 'height' not 'minHeight' so that
+    //                            flex-1 children inside the card (e.g. the
+    //                            file-preview content div) have a resolved
+    //                            parent height to grow into.
     //   • gridColumn/gridRow   : cleared — meaningless inside the carousel
     card.querySelectorAll('.stack-child-frame .hw-card').forEach(function(child) {
-      child.style.minHeight   = '100%';
+      child.style.height      = '100%';
+      child.style.minHeight   = '';
       child.style.gridColumn  = '';
       child.style.gridRow     = '';
     });

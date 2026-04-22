@@ -1599,7 +1599,7 @@
   NOTE: draggable is disabled on child .hw-card elements via initStackCards().
 -#}
 {% macro render_stack_child(w) %}
-<div class="stack-child-frame w-full h-full overflow-y-auto"
+<div class="stack-child-frame w-full h-full overflow-hidden"
      data-child-id="{{ w.id }}"
      data-widget-type="{{ w.widget_type }}">
   {% if w.widget_type == 'clock' %}            {{ render_clock(w) }}
