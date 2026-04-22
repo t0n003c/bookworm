@@ -678,12 +678,36 @@ function _reminderAgendaLi(wid, item, i) {
 // ── Reminder Notifications ───────────────────────────────────────────────────
 const _notifFired = {}; // key: `${wid}-${date}-${time}` → true
 
-// ── Missed-reminder log (persists until user opens the bell panel) ────────────
-const _missedQueue = [];
+// ── Missed-reminder log (localStorage-backed, auto-expires at midnight) ────────
+// Key includes today's ISO date so old entries vanish automatically the next day.
+var _REM_LS_KEY = 'bw-missed-' + new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+// Prune any leftover keys from previous days to keep localStorage tidy.
+(function _remPruneOldDays() {
+  try {
+    Object.keys(localStorage).forEach(function (k) {
+      if (k.startsWith('bw-missed-') && k !== _REM_LS_KEY) localStorage.removeItem(k);
+    });
+  } catch (e) {}
+}());
+// Restore today's queue from storage (or start fresh).
+var _missedQueue = (function () {
+  try {
+    var raw = localStorage.getItem(_REM_LS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}());
+// Sync the badge once the DOM is ready (script is defer so DOM is already parsed).
+_remBellUpdateBadge();
 
-/** Push a missed reminder into the log and update the top-bar bell badge. */
+/** Persist the current queue to localStorage. */
+function _remSave() {
+  try { localStorage.setItem(_REM_LS_KEY, JSON.stringify(_missedQueue)); } catch (e) {}
+}
+
+/** Push a missed reminder into the log, save it, and update the top-bar bell badge. */
 function _remLogMissed(text, time) {
   _missedQueue.push({ text, time, ts: Date.now() });
+  _remSave();
   _remBellUpdateBadge();
 }
 
@@ -740,6 +764,7 @@ function _remBellRender() {
 /** Public: clear all missed reminders and close the panel. */
 window.remBellClear = function () {
   _missedQueue.length = 0;
+  try { localStorage.removeItem(_REM_LS_KEY); } catch (e) {}
   _remBellUpdateBadge();
   _remBellRender();
 };
