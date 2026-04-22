@@ -2283,7 +2283,25 @@
       return { value: 'attr_' + a.id, label: '\uD83D\uDD16 ' + a.name };
     }),
   ];
-  let _sortState = [{ field: 'date', dir: 'desc' }];
+  // ── Sort persistence (localStorage, per-user) ────────────────────────────
+  // Key mirrors the _BW_WS_KEY namespace pattern already used in this file.
+  const _SORT_LS_KEY = 'bw-sort-{{ current_user_id }}';
+  function _sortLoad() {
+    try {
+      var raw = localStorage.getItem(_SORT_LS_KEY);
+      if (!raw) return [{ field: 'date', dir: 'desc' }];
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) return [{ field: 'date', dir: 'desc' }];
+      var valid = parsed.filter(function(s) {
+        return typeof s.field === 'string' && (s.dir === 'asc' || s.dir === 'desc');
+      });
+      return valid.length > 0 ? valid : [{ field: 'date', dir: 'desc' }];
+    } catch (e) { return [{ field: 'date', dir: 'desc' }]; }
+  }
+  function _sortSave() {
+    try { localStorage.setItem(_SORT_LS_KEY, JSON.stringify(_sortState)); } catch (e) {}
+  }
+  let _sortState = _sortLoad();
 
   function _renderSort() {
     const rows    = document.getElementById('sort-rows');
@@ -2342,12 +2360,14 @@
     if (_sortState.some((s, i) => i !== idx && s.field === field)) return; // duplicate
     _sortState[idx].field = field;
     _renderSort();
+    _sortSave();
     _sortRefreshNotes();
   }
 
   function _onSortDir(idx) {
     _sortState[idx].dir = _sortState[idx].dir === 'asc' ? 'desc' : 'asc';
     _renderSort();
+    _sortSave();
     _sortRefreshNotes();
   }
 
@@ -2355,6 +2375,7 @@
     if (_sortState.length <= 1) return;
     _sortState.splice(idx, 1);
     _renderSort();
+    _sortSave();
     _sortRefreshNotes();
   }
 
@@ -2365,6 +2386,7 @@
     if (!next) return;
     _sortState.push({ field: next.value, dir: 'desc' });
     _renderSort();
+    _sortSave();
     _sortRefreshNotes();
   }
 
