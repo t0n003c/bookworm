@@ -1649,7 +1649,8 @@
      data-child-count="{{ child_count }}"
      draggable="true"
      style="grid-column: span {{ cfg.get('col_span', 1) }};
-            grid-row:    span {{ cfg.get('row_span', 1) }};">
+            grid-row:    span {{ cfg.get('row_span', 1) }};
+            min-height:  calc({{ cfg.get('row_span', 1) }} * 7.5rem);">
 
   {# ── Header: label + slide counter + arrows ── #}
   <div class="flex items-center justify-between px-3 py-2

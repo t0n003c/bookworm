@@ -1164,14 +1164,15 @@ function _clearStackDropHighlight() {
   document.querySelectorAll('.hw-card').forEach(function(c) { c.style.outline = ''; });
 }
 
-// ── Row-span hint: measure actual rendered card height and convert to
-// grid row units so stacks are never smaller than their largest child.
-// The stack chrome (header + dots bar) consumes ~64 px above the content.
+// ── Row-span hint: compute how many grid rows a stack needs to show a card
+// that is pixelHeight tall.  Uses a fixed 7.5 rem (120 px) baseline — the
+// guaranteed CSS min-height on every regular card — NOT a measured reference
+// card height, because grid-auto-rows:auto inflates all cards in the same row
+// to the height of the tallest item, making the "measured" unit wrong.
 function _stackRowSpanHint(pixelHeight) {
-  var grid = document.querySelector('[id^="widget-grid-"]');
-  var ref  = grid ? grid.querySelector('.hw-card[data-row-span="1"]') : null;
-  var unit = ref ? ref.getBoundingClientRect().height : 120;  // 7.5 rem fallback
-  return Math.max(1, Math.ceil((pixelHeight + 64) / unit));
+  var ROW_UNIT = 120;  // 7.5 rem — matches min-height on hw-card + render_stack
+  var CHROME   =  64;  // stack header (~40 px) + dots bar (~24 px)
+  return Math.max(2, Math.ceil((pixelHeight + CHROME) / ROW_UNIT));
 }
 
 async function _stackDropOnCard(targetCard, srcCard, pageId) {

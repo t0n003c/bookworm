@@ -80,28 +80,24 @@ function _stackInitSwipe(viewportEl, stackId) {
     if (dx >  40) stackPrev(stackId);
   }, { passive: true });
 
-  // ── Pointer drag swipe (mouse + pen) ───────────────────────────────
-  // Only fires when edit mode is OFF — in edit mode the hold-to-stack
-  // gesture uses the same pointerdown/up flow on the outer grid and we
-  // don’t want swipe to interfere with stacking.
-  var _ptrX    = 0;
-  var _ptrDown = false;
-  viewportEl.addEventListener('pointerdown', function(e) {
-    if (!e.isPrimary || e.pointerType === 'touch') return;  // touch handled above
-    _ptrX    = e.clientX;
-    _ptrDown = true;
-  }, { passive: true });
-  viewportEl.addEventListener('pointerup', function(e) {
-    if (!_ptrDown || !e.isPrimary || e.pointerType === 'touch') return;
-    _ptrDown = false;
-    // Skip in edit mode — let the grid’s drag machinery take over
-    var grid = document.querySelector('[id^="widget-grid-"]');
-    if (grid && grid.dataset.stackMode === 'true') return;
-    var dx = e.clientX - _ptrX;
-    if (dx < -40) stackNext(stackId);
-    if (dx >  40) stackPrev(stackId);
-  }, { passive: true });
-  viewportEl.addEventListener('pointercancel', function() { _ptrDown = false; }, { passive: true });
+  // ── Mouse drag-to-swipe ───────────────────────────────────────
+  // mousedown fires on the viewport; mouseup is attached to document so the
+  // release is caught even when the cursor has moved outside the viewport.
+  // A 40 px horizontal threshold separates swipe from a normal click.
+  var _mouseX = 0;
+  viewportEl.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;  // left-click only
+    _mouseX = e.clientX;
+    function onUp(ev) {
+      document.removeEventListener('mouseup', onUp);
+      var grid = document.querySelector('[id^="widget-grid-"]');
+      if (grid && grid.dataset.stackMode === 'true') return;  // edit mode – no swipe
+      var dx = ev.clientX - _mouseX;
+      if (dx < -40) stackNext(stackId);
+      if (dx >  40) stackPrev(stackId);
+    }
+    document.addEventListener('mouseup', onUp);
+  });
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
