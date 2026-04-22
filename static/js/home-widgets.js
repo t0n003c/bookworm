@@ -1165,14 +1165,13 @@ function _clearStackDropHighlight() {
 }
 
 // ── Row-span hint: compute how many grid rows a stack needs to show a card
-// that is pixelHeight tall.  Uses a fixed 7.5 rem (120 px) baseline — the
-// guaranteed CSS min-height on every regular card — NOT a measured reference
-// card height, because grid-auto-rows:auto inflates all cards in the same row
-// to the height of the tallest item, making the "measured" unit wrong.
-function _stackRowSpanHint(pixelHeight) {
-  var ROW_UNIT = 120;  // 7.5 rem — matches min-height on hw-card + render_stack
-  var CHROME   =  64;  // stack header (~40 px) + dots bar (~24 px)
-  return Math.max(2, Math.ceil((pixelHeight + CHROME) / ROW_UNIT));
+// _stackRowSpanHint — returns the row_span the stack should be saved with.
+// Rule: preserve the source widget's configured row span exactly.
+// Chrome (header + dots, ~3.5 rem) lives in the *viewport height formula*
+// in the template, NOT here.  Adding chrome to the stored row_span would
+// inflate the grid footprint beyond what the user configured.
+function _stackRowSpanHint(configRowSpan) {
+  return Math.max(1, configRowSpan);
 }
 
 async function _stackDropOnCard(targetCard, srcCard, pageId) {
@@ -1180,15 +1179,12 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var srcId    = parseInt(srcCard.dataset.widgetId, 10);
   if (!targetId || !srcId) return;
 
-  // Derive "logical pixel height" from the configured data-row-span, NOT from
-  // getBoundingClientRect().  getBoundingClientRect is inflated by
-  // grid-auto-rows:auto when a taller sibling occupies the same grid row —
-  // e.g. two 1-row widgets next to a 3-row widget all measure ~360 px, making
-  // _stackRowSpanHint return 4 rows instead of the correct 2.
-  // data-row-span is the user-configured span and is immune to that inflation.
-  var ROW_PX   = 120;  // 7.5 rem — matches ROW_UNIT in _stackRowSpanHint
-  var targetH  = parseInt(targetCard.dataset.rowSpan || '1', 10) * ROW_PX;
-  var srcH     = parseInt(srcCard.dataset.rowSpan    || '1', 10) * ROW_PX;
+  // Use configured data-row-span, not getBoundingClientRect().
+  // getBoundingClientRect is inflated by grid-auto-rows:auto when a taller
+  // sibling occupies the same row — two 1-row widgets next to a 3-row widget
+  // all measure ~360 px and produce a bloated hint.
+  var targetRows = parseInt(targetCard.dataset.rowSpan || '1', 10);
+  var srcRows    = parseInt(srcCard.dataset.rowSpan    || '1', 10);
 
   var targetType = targetCard.dataset.widgetType;
   var srcType    = srcCard.dataset.widgetType;
@@ -1206,7 +1202,7 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
     var fd1 = new FormData();
     fd1.append('widget_id', srcId);
     fd1.append('page_id', pageId);
-    fd1.append('row_span_hint', _stackRowSpanHint(srcH));
+    fd1.append('row_span_hint', _stackRowSpanHint(srcRows));
     var r1 = await fetch('/home/widgets/' + targetId + '/stack-add',
                         { method: 'POST', body: fd1 });
     if (!r1.ok) { _bwToast('Stack add failed', 'error'); return; }
@@ -1222,7 +1218,7 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var fd2 = new FormData();
   fd2.append('page_id', pageId);
   fd2.append('widget_ids', targetId + ',' + srcId);
-  fd2.append('row_span_hint', _stackRowSpanHint(Math.max(targetH, srcH)));
+  fd2.append('row_span_hint', _stackRowSpanHint(Math.max(targetRows, srcRows)));
   var r2 = await fetch('/home/widgets/stack', { method: 'POST', body: fd2 });
   if (!r2.ok) { _bwToast('Stack creation failed', 'error'); return; }
   var html2 = await r2.text();
