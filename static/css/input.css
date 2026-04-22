@@ -1,0 +1,8 @@
+/* BookWorm — Tailwind CSS entry point.
+   This file is compiled by the Tailwind CLI into static/css/tailwind.css.
+   Run rebuild_css.bat to regenerate after template / JS changes.
+   DO NOT edit tailwind.css directly — it is auto-generated and overwritten. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

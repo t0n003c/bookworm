@@ -50,5 +50,9 @@ openapi_tmp.json
 openapi_*.json
 *.tmp.json
 
+# Tailwind CLI binary (Windows-only, not needed in Linux Docker image)
+tailwindcss.exe
+tailwindcss-windows-x64.exe
+
 # This file itself
 .dockerignore

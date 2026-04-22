@@ -65,7 +65,7 @@
     * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
     .dark * { scrollbar-color: #3f3f46 transparent; }
   </style>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
@@ -230,21 +230,6 @@
         pre.parentNode.insertBefore(wrapper, pre);
         wrapper.appendChild(pre);
       });
-    };
-  </script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            wblue:  { DEFAULT: '#0053e2', hover: '#0060ff', press: '#003eb0' },
-            wspark: { DEFAULT: '#ffc220', dark: '#995213' },
-            wred:   { DEFAULT: '#ea1100' },
-            wgreen: { DEFAULT: '#2a8703' },
-          }
-        }
-      }
     };
   </script>
   <style>

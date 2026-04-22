@@ -9,6 +9,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source (DB, logs, uploads, and secrets are gitignored + dockerignored).
+# static/css/tailwind.css is pre-built and committed — copied here automatically.
+# To update CSS after template changes: run rebuild_css.bat locally, then commit
+# the updated static/css/tailwind.css before rebuilding the Docker image.
 COPY . .
 
 # /data is the volume mount point for persistent state:
