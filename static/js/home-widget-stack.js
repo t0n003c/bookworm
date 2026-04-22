@@ -155,31 +155,30 @@ function initStackCards() {
       handle.style.display = 'none';
     });
 
-    // ── Fill-viewport fix ──────────────────────────────────────────────────
-    // Each child widget is rendered by the card() macro which sets an inline
-    // style of  min-height:7.5rem  (120 px) and grid-column/grid-row spans.
-    // Those grid styles are irrelevant inside a stack slide and the min-height
-    // is just a floor — the card never grows to fill the slide viewport,
-    // leaving a blank gap below short widgets and clipping tall ones.
+    // ── Fill-viewport + chrome-aware padding fix ──────────────────────────
+    // Inner cards come from the card() macro with p-3 (0.75 rem / 12 px on
+    // every side) and grid-column / min-height inline styles.
+    // Inside a stack those grid styles are irrelevant and the uniform p-3
+    // wastes space that visual widgets (file preview, calendar) need.
     //
-    // Inline styles beat CSS class specificity, so we patch them in JS:
-    //   • height → '100%'     : card fills its parent .stack-child-frame
-    //                            (h-full = the full viewport height).
-    //                            Must be 'height' not 'minHeight' so that
-    //                            flex-1 children inside the card (e.g. the
-    //                            file-preview content div) have a resolved
-    //                            parent height to grow into.
-    //   • gridColumn/gridRow   : cleared — meaningless inside the carousel
+    // We replace p-3 with chrome-aware values:
+    //   top    → 1.75 rem (28 px = h-7 chrome height) so content starts
+    //            below the gradient — nav buttons / first thumbnail visible
+    //   bottom → 1.25 rem when ≥2 children (dots bar ≈ 16 px + buffer)
+    //            0.25 rem when only 1 child (no dots, just a tiny gap)
+    //   sides  → 0.5 rem (8 px) — tighter than p-3 (12 px) so calendar
+    //            cells and thumbnails get more horizontal room
+    var childCount = parseInt(card.dataset.childCount, 10) || 1;
     card.querySelectorAll('.stack-child-frame .hw-card').forEach(function(child) {
-      child.style.height      = '100%';
-      child.style.minHeight   = '';
-      child.style.gridColumn  = '';
-      child.style.gridRow     = '';
-      // The top chrome overlay is h-7 (1.75 rem = 28 px).  Pushing the
-      // inner card's top padding to match means all widget content starts
-      // below the gradient — navigation buttons become clickable and the
-      // first row of thumbnails / calendar cells is no longer covered.
-      child.style.paddingTop  = '1.75rem';
+      child.style.height         = '100%';
+      child.style.minHeight      = '';
+      child.style.gridColumn     = '';
+      child.style.gridRow        = '';
+      child.style.padding        = '0';
+      child.style.paddingTop     = '1.75rem';
+      child.style.paddingLeft    = '0.5rem';
+      child.style.paddingRight   = '0.5rem';
+      child.style.paddingBottom  = childCount > 1 ? '1.25rem' : '0.25rem';
     });
 
     // Calendar widgets inside stacks: make them fill the available flex
