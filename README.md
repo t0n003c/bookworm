@@ -107,7 +107,7 @@ The database is created automatically at `./bookworm.db` on first run.
 |---|---|
 | Backend | [FastAPI](https://fastapi.tiangolo.com/) + [uvicorn](https://www.uvicorn.org/) |
 | Templates | [Jinja2](https://jinja.palletsprojects.com/) + [HTMX](https://htmx.org/) |
-| Styling | [Tailwind CSS](https://tailwindcss.com/) (CDN) |
+| Styling | [Tailwind CSS](https://tailwindcss.com/) (pre-built via standalone CLI) |
 | Database | [SQLite](https://sqlite.org/) via [aiosqlite](https://github.com/omnilib/aiosqlite) |
 | Container | [Docker](https://docker.com/) + Docker Compose |
 

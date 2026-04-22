@@ -9,7 +9,7 @@ AI agent guidance for the BookWorm codebase.
 
 **BookWorm** — self-hosted team note-taking app for Tinh's Walmart Grocery team.
 
-- **Stack:** FastAPI + HTMX + Tailwind CSS (CDN) + SQLite (aiosqlite)
+- **Stack:** FastAPI + HTMX + Tailwind CSS (bundled, pre-built) + SQLite (aiosqlite)
 - **Local dev:** `http://localhost:8000` via `.venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000`
 - **Start/restart:** `cmd /c restart.bat` (Eddie-safe, polls 30 s) or double-click `restart.vbs` (silent)
 - **Docker:** `docker compose up -d` → port **8001**

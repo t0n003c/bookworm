@@ -69,7 +69,13 @@
 ### ✅ Static assets
 - `static/` is served by FastAPI `StaticFiles` — files are committed to git and baked into the Docker image.
 - Cache-busting: `static_v` global in Jinja2 (computed from max mtime of all JS/CSS at startup). Always append `?v={{ static_v }}` to `<script src>` and `<link href>` tags for app assets.
-- **Tailwind CSS is loaded from CDN** (`cdn.tailwindcss.com`) — this is known tech debt. It works but: (a) violates Tailwind's own prod guidelines, (b) is slow, (c) breaks on air-gapped networks. **Pending task: bundle Tailwind as a build step in the Dockerfile.** Until then, don't add more CDN script tags.
+- **Tailwind CSS is bundled locally via Tailwind CLI v3.4.17 standalone** (commit `28e14a9`). The CDN tech debt is resolved.
+  - `tailwind.config.js` — custom BookWorm theme (wblue/wspark/wred/wgreen + `darkMode: 'class'`)
+  - `static/css/input.css` — Tailwind directives source (do not edit generated output)
+  - `static/css/tailwind.css` — 75 KB minified output, **committed to git**, copied into Docker image automatically
+  - `tailwindcss.exe` — Windows-only CLI binary, gitignored (download from Walmart Artifactory if needed; see `rebuild_css.bat`)
+  - **Rule: after adding new Tailwind classes in templates or JS files, run `rebuild_css.bat` and commit the updated `static/css/tailwind.css`**
+  - Dynamic color values (RSS feed colours, CRM stage colours) use inline `style=` attributes — NOT Tailwind classes. The CLI scan does not miss them.
 
 ### ✅ Docker image hygiene
 - `.dockerignore` excludes: `__pycache__`, `.venv`, `*.db`, `*.sqlite`, `uploads/`, `*.log`, `.git/`, `*.secret`. Keep it up to date.
@@ -100,7 +106,7 @@
 ## 🗺️ What Is This?
 
 **BookWorm** — a self-hosted team note-taking app for Tinh's Walmart Grocery team.
-- Stack: **FastAPI + HTMX + Tailwind CSS (CDN) + SQLite (aiosqlite)**
+- Stack: **FastAPI + HTMX + Tailwind CSS (bundled, pre-built) + SQLite (aiosqlite)**
 - Runs locally at **http://localhost:8000** via `.venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000`
 - Started via `restart.bat` or the command above (background process, log → `bookworm.log`)
 - Health check: `_health_check.py` — run it to sanity-check templates + live routes
@@ -508,7 +514,15 @@ Last commits: **`95ea1dd`** — Ghost Signature drag-to-place (B1) + Jspreadshee
 - `templates/partials/home_page_uploads.html` — `#upl-spreadsheet-modal` block
 - `base.html` load order: `uploads-docs.js` → `uploads-sign.js` → `uploads-wopi.js` → `uploads-spreadsheet.js` (last)
 
-**Current status:** App healthy. Phase 6 Feature A + Phase 7 B1+B2 all working. CODEPUPPY_NOTES in sync.
+**Current status:** App healthy. Phase 6 Feature A + Phase 7 B1+B2 all working. Tailwind CDN debt resolved (2026-04-22). CODEPUPPY_NOTES in sync.
+
+---
+
+## 🚀 2026-04-22 Session — Tailwind CDN Debt Resolved
+
+| Date | Change |
+|---|---|
+| 2026-04-22 | **Tailwind CDN → local bundled CSS (commit `28e14a9`).** Resolved longstanding tech debt. Downloaded Tailwind CLI v3.4.17 standalone binary (no npm/Node required). Created `tailwind.config.js` mirroring the inline `tailwind.config = {...}` blocks previously in templates (custom colors: `wblue`, `wspark`, `wred`, `wgreen`; `darkMode: 'class'`). Content paths scan `templates/**/*.html` + `static/js/**/*.js` — JS files build full HTML string literals with embedded Tailwind classes, all captured by static scan. Dynamic colors (RSS feeds, CRM stages) use inline `style=` attributes, not Tailwind classes — no purge risk. Generated `static/css/tailwind.css` (75,937 bytes minified). Replaced `<script src="https://cdn.tailwindcss.com">` with `<link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">` in all 5 templates: `base.html`, `login.html`, `register.html`, `setup.html`, `2fa_verify.html`. Removed now-unnecessary inline `tailwind.config = {...}` script blocks from `base.html` and `setup.html`. Added `rebuild_css.bat` (run after adding new Tailwind classes; uses Walmart Artifactory proxy URL for binary download). `tailwindcss.exe` added to `.gitignore` + `.dockerignore`. `static/css/tailwind.css` committed to git — Docker build copies it automatically. QA: 100% green, all templates pass, CSS served as `text/css`, zero CDN references remain. |
 
 ---
 
