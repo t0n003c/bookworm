@@ -2405,7 +2405,13 @@
   }
 
   // Boot the sort builder once the DOM is ready
-  document.addEventListener('DOMContentLoaded', _renderSort);
+  document.addEventListener('DOMContentLoaded', function () {
+    _renderSort();
+    // If a non-default sort was restored from localStorage, the server already
+    // rendered the note list with its own default sort order.  Re-fetch now so
+    // the list matches the saved sort state immediately after F5.
+    if (localStorage.getItem(_SORT_LS_KEY)) _sortRefreshNotes();
+  });
 
   /* ---- Category filter refresh ---- */
   function refreshCatFilter(wsId) {
