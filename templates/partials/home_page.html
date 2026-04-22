@@ -1635,6 +1635,11 @@
 {%- set cfg = w.get('config', {}) -%}
 {%- set active = cfg.get('active_index', 0)|int -%}
 {%- set child_count = w.children|length -%}
+{#- eff_rows: clamp at 2 — a stack always needs header + dots + content.
+    Chrome is ~3.5 rem (56 px); a 1-row slot is only 7.5 rem (120 px), leaving
+    4 rem (64 px) of viewport — not workable.  Minimum 2 rows = 11.5 rem
+    of usable viewport regardless of what row_span is stored in config. -#}
+{%- set eff_rows = [cfg.get('row_span', 1), 2] | max -%}
 <div id="hw-card-{{ w.id }}"
      class="hw-card group/wcard relative rounded-xl
             bg-white dark:bg-zinc-900
@@ -1650,7 +1655,7 @@
      draggable="true"
      style="grid-column: span {{ cfg.get('col_span', 1) }};
             grid-row:    span {{ cfg.get('row_span', 1) }};
-            min-height:  calc({{ cfg.get('row_span', 1) }} * 7.5rem);">
+            min-height:  calc({{ eff_rows }} * 7.5rem);">
 
   {# ── Header: label + slide counter + arrows ── #}
   <div class="flex items-center justify-between px-3 py-2
@@ -1715,7 +1720,7 @@
       3.5 rem accounts for the stack chrome: header (py-2 + text-xs ≈ 1.9 rem)
       plus dots bar (py-2 + h-2 dot ≈ 1.5 rem) = 3.4 rem, rounded up. -#}
   <div class="stack-viewport relative overflow-hidden"
-       style="height: calc({{ cfg.get('row_span', 1) }} * 7.5rem - 3.5rem);"
+       style="height: calc({{ eff_rows }} * 7.5rem - 3.5rem);"
        data-stack-id="{{ w.id }}"
        data-active="{{ active }}">
     {%- for child in w.children %}

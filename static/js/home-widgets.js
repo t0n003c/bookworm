@@ -1180,11 +1180,15 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
   var srcId    = parseInt(srcCard.dataset.widgetId, 10);
   if (!targetId || !srcId) return;
 
-  // Measure actual rendered heights BEFORE any DOM mutation.
-  // Config-based row_span is unreliable when grid-auto-rows:auto lets content
-  // expand rows beyond the declared span — the hint corrects this.
-  var targetH  = targetCard.getBoundingClientRect().height;
-  var srcH     = srcCard.getBoundingClientRect().height;
+  // Derive "logical pixel height" from the configured data-row-span, NOT from
+  // getBoundingClientRect().  getBoundingClientRect is inflated by
+  // grid-auto-rows:auto when a taller sibling occupies the same grid row —
+  // e.g. two 1-row widgets next to a 3-row widget all measure ~360 px, making
+  // _stackRowSpanHint return 4 rows instead of the correct 2.
+  // data-row-span is the user-configured span and is immune to that inflation.
+  var ROW_PX   = 120;  // 7.5 rem — matches ROW_UNIT in _stackRowSpanHint
+  var targetH  = parseInt(targetCard.dataset.rowSpan || '1', 10) * ROW_PX;
+  var srcH     = parseInt(srcCard.dataset.rowSpan    || '1', 10) * ROW_PX;
 
   var targetType = targetCard.dataset.widgetType;
   var srcType    = srcCard.dataset.widgetType;
