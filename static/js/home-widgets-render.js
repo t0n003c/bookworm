@@ -1357,19 +1357,7 @@ function _subsWgtRender(el, list, summary) {
       + '<span style="font-size:10px;color:#6b7280;">'
         + _subsWgtFmtMoney(summary.monthly_total) + '/mo'
       + '</span>'
-      + '<span style="display:flex;gap:2px;align-items:center;">'
-        + '<button onclick="_subsWgtNav(' + wid + ',-1)" '
-          + 'title="Previous" '
-          + 'style="font-size:12px;line-height:1;color:#9ca3af;background:none;border:none;'
-          + 'cursor:pointer;padding:0 3px;border-radius:3px;transition:color 0.15s;"'
-          + ' onmouseover="this.style.color=\'#0053e2\'" onmouseout="this.style.color=\'#9ca3af\'">&#8249;</button>'
-        + dotsHtml
-        + '<button onclick="_subsWgtNav(' + wid + ',1)" '
-          + 'title="Next" '
-          + 'style="font-size:12px;line-height:1;color:#9ca3af;background:none;border:none;'
-          + 'cursor:pointer;padding:0 3px;border-radius:3px;transition:color 0.15s;"'
-          + ' onmouseover="this.style.color=\'#0053e2\'" onmouseout="this.style.color=\'#9ca3af\'">&#8250;</button>'
-      + '</span>'
+      + '<span style="display:flex;gap:4px;align-items:center;">' + dotsHtml + '</span>'
       + '<button onclick="openHomePage(' + pid + ')" '
         + 'style="font-size:10px;color:#0053e2;background:none;border:none;cursor:pointer;'
         + 'padding:0;text-decoration:underline;text-underline-offset:2px;">'
@@ -1384,10 +1372,12 @@ function _subsWgtRender(el, list, summary) {
   // Draw chart if starting on slide 1
   if (savedSlide === 1) _subsWgtRenderChart(wid);
 
-  // ── Touch swipe + click-zone navigation ────────────────────────────────
+  // ── Touch swipe + mouse drag-to-swipe ──────────────────────────────────────
   // Guard: only bind once per element even if _subsWgtRender is called again.
   if (!el.dataset.swipeInited) {
     el.dataset.swipeInited = '1';
+
+    // ─ Touch (mobile / touchpad) ──────────────────────────────────────────
     var _swStartX = null;
     var _swStartY = null;
     el.addEventListener('touchstart', function(e) {
@@ -1399,12 +1389,28 @@ function _subsWgtRender(el, list, summary) {
       var dx = e.changedTouches[0].clientX - _swStartX;
       var dy = e.changedTouches[0].clientY - _swStartY;
       _swStartX = null; _swStartY = null;
-      // Ignore swipes that are more vertical than horizontal (scroll intent)
-      if (Math.abs(dy) > Math.abs(dx)) return;
+      if (Math.abs(dy) > Math.abs(dx)) return;  // vertical scroll intent
       if (Math.abs(dx) < 30) return;
-      var cur = parseInt(localStorage.getItem('bw-subs-slide-' + wid) || '0', 10) || 0;
-      _subsWgtGoTo(wid, cur + (dx < 0 ? 1 : -1));
+      _subsWgtNav(wid, dx < 0 ? 1 : -1);
     }, {passive: true});
+
+    // ─ Mouse drag (desktop) ──────────────────────────────────────────
+    // mouseup is on document so releasing outside the card still triggers.
+    var _mouseX = 0;
+    el.addEventListener('mousedown', function(e) {
+      if (e.button !== 0) return;  // left-click only
+      _mouseX = e.clientX;
+      function onUp(ev) {
+        document.removeEventListener('mouseup', onUp);
+        // Don’t swipe in widget-edit (stack) mode
+        var grid = document.querySelector('[id^="widget-grid-"]');
+        if (grid && grid.dataset.stackMode === 'true') return;
+        var dx = ev.clientX - _mouseX;
+        if (dx < -40) _subsWgtNav(wid, 1);
+        if (dx >  40) _subsWgtNav(wid, -1);
+      }
+      document.addEventListener('mouseup', onUp);
+    });
   }
 }
 
