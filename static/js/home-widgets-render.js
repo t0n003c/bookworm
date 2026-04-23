@@ -1222,6 +1222,15 @@ function _subsWgtGoTo(wid, idx) {
   if (idx === 1) _subsWgtRenderChart(wid);
 }
 
+// Navigate relative to the current slide (+1 forward, -1 back, wraps).
+// Used by click arrows so they don’t bake in a stale slide index at render time.
+function _subsWgtNav(wid, dir) {
+  var cur   = parseInt(localStorage.getItem('bw-subs-slide-' + wid) || '0', 10) || 0;
+  var el    = document.getElementById('subs-sw-' + wid);
+  var count = (el ? el.querySelectorAll('.subs-sw-slide').length : 0) || 2;
+  _subsWgtGoTo(wid, (cur + dir + count) % count);
+}
+
 function _subsWgtRenderChart(wid) {
   var canvas = document.getElementById('subs-sw-canvas-' + wid);
   if (!canvas) return;
@@ -1348,7 +1357,19 @@ function _subsWgtRender(el, list, summary) {
       + '<span style="font-size:10px;color:#6b7280;">'
         + _subsWgtFmtMoney(summary.monthly_total) + '/mo'
       + '</span>'
-      + '<span style="display:flex;gap:4px;align-items:center;">' + dotsHtml + '</span>'
+      + '<span style="display:flex;gap:2px;align-items:center;">'
+        + '<button onclick="_subsWgtNav(' + wid + ',-1)" '
+          + 'title="Previous" '
+          + 'style="font-size:12px;line-height:1;color:#9ca3af;background:none;border:none;'
+          + 'cursor:pointer;padding:0 3px;border-radius:3px;transition:color 0.15s;"'
+          + ' onmouseover="this.style.color=\'#0053e2\'" onmouseout="this.style.color=\'#9ca3af\'">&#8249;</button>'
+        + dotsHtml
+        + '<button onclick="_subsWgtNav(' + wid + ',1)" '
+          + 'title="Next" '
+          + 'style="font-size:12px;line-height:1;color:#9ca3af;background:none;border:none;'
+          + 'cursor:pointer;padding:0 3px;border-radius:3px;transition:color 0.15s;"'
+          + ' onmouseover="this.style.color=\'#0053e2\'" onmouseout="this.style.color=\'#9ca3af\'">&#8250;</button>'
+      + '</span>'
       + '<button onclick="openHomePage(' + pid + ')" '
         + 'style="font-size:10px;color:#0053e2;background:none;border:none;cursor:pointer;'
         + 'padding:0;text-decoration:underline;text-underline-offset:2px;">'

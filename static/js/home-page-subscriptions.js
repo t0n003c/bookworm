@@ -713,6 +713,14 @@ function _subsRenderModalForm(sub) {
     '</div>' +
     _subsField('Notes', '<textarea id="sf-notes" rows="2" class="' + _subsCls() + '" ' +
       'placeholder="Optional notes">' + _subsEsc(v.notes||'') + '</textarea>') +
+    _subsField('Remind me before due date',
+      '<select id="sf-reminder-days" class="' + _subsCls() + '">' +
+      [{v:0,l:'No reminder'},{v:1,l:'1 day before'},{v:3,l:'3 days before'},
+       {v:7,l:'7 days before'},{v:14,l:'14 days before'},{v:30,l:'30 days before'}]
+      .map(function(o) {
+        return '<option value="' + o.v + '"' + ((v.reminder_days||0) === o.v ? ' selected':'') + '>' + o.l + '</option>';
+      }).join('') +
+      '</select>') +
     (sub ? '<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-zinc-200">' +
       '<input id="sf-active" type="checkbox"' + activeChk + ' class="rounded"> Active</label>' : '');
 }
