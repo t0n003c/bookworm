@@ -420,6 +420,14 @@ async def init_db() -> None:
         except Exception:
             pass  # column already exists
 
+        # start_date: when the subscription began (ISO date YYYY-MM-DD, nullable)
+        try:
+            await db.execute(
+                "ALTER TABLE subscriptions ADD COLUMN start_date TEXT"
+            )
+        except Exception:
+            pass  # column already exists
+
         # ── rss_page_feeds: add source_widget_id column (migration) ───────────
         # Tracks which RSS widget originally synced this feed.
         # NULL = manually added feed.  ON DELETE SET NULL means widget deletion

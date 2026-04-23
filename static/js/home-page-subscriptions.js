@@ -772,9 +772,11 @@ function _subsRenderModalForm(sub) {
     _subsField('Category', '<input id="sf-category" type="text" value="' + _subsEscAttr(v.category||'') + '" ' +
       'class="' + _subsCls() + '" placeholder="e.g. Entertainment" list="sf-cat-list" maxlength="80">' +
       _subsCatDatalist()) +
+    _subsField('Color', '<input id="sf-color" type="color" value="' + _subsEscAttr(v.color||'#0053e2') + '" ' +
+      'class="h-9 w-full cursor-pointer rounded-lg border border-gray-200 dark:border-zinc-700 p-0.5">') +
     '<div class="grid grid-cols-2 gap-3">' +
-      _subsField('Color', '<input id="sf-color" type="color" value="' + _subsEscAttr(v.color||'#0053e2') + '" ' +
-        'class="h-9 w-full cursor-pointer rounded-lg border border-gray-200 dark:border-zinc-700 p-0.5">') +
+      _subsField('Start Date', '<input id="sf-start-date" type="date" value="' + _subsEscAttr(v.start_date||'') + '" ' +
+        'class="' + _subsCls() + '">') +
       _subsField('Next Payment Date', '<input id="sf-date" type="date" value="' + _subsEscAttr(v.next_payment_date||'') + '" ' +
         'class="' + _subsCls() + '">') +
     '</div>' +
@@ -821,6 +823,7 @@ function _subsSubmitForm() {
   var category = (document.getElementById('sf-category') || {}).value || '';
   var color    = (document.getElementById('sf-color')    || {}).value || '#0053e2';
   var date     = (document.getElementById('sf-date')     || {}).value || '';
+  var startDate= (document.getElementById('sf-start-date') || {}).value || '';
   var notes    = (document.getElementById('sf-notes')    || {}).value || '';
   var activeEl = document.getElementById('sf-active');
   var active   = activeEl ? (activeEl.checked ? 1 : 0) : 1;
@@ -842,6 +845,7 @@ function _subsSubmitForm() {
   fd.append('category',          category.trim());
   fd.append('color',             color);
   fd.append('next_payment_date', date);
+  fd.append('start_date',        startDate);
   fd.append('notes',             notes.trim());
   fd.append('reminder_days',     reminderDays);
   if (_subsEditingId) fd.append('active', active);

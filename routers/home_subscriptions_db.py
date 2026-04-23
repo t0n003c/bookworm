@@ -121,7 +121,8 @@ async def add_subscription(
     category: str,
     color: str,
     next_payment_date: str | None,
-    notes: str,
+    start_date: str | None = None,
+    notes: str = "",
     website_url: str = "",
     reminder_days: int = 0,
 ) -> int:
@@ -131,14 +132,14 @@ async def add_subscription(
             """
             INSERT INTO subscriptions
               (page_id, name, amount, currency, cycle, frequency,
-               category, color, next_payment_date, notes, website_url,
-               reminder_days)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+               category, color, next_payment_date, start_date, notes,
+               website_url, reminder_days)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 page_id, name, amount, currency, cycle, frequency,
-                category, color, next_payment_date or None, notes,
-                website_url.strip(), max(0, reminder_days),
+                category, color, next_payment_date or None, start_date or None,
+                notes, website_url.strip(), max(0, reminder_days),
             ),
         )
         await db.commit()
@@ -157,8 +158,9 @@ async def update_subscription(
     category: str,
     color: str,
     next_payment_date: str | None,
-    notes: str,
-    active: int,
+    start_date: str | None = None,
+    notes: str = "",
+    active: int = 1,
     website_url: str = "",
     reminder_days: int = 0,
 ) -> bool:
@@ -168,15 +170,15 @@ async def update_subscription(
             """
             UPDATE subscriptions
                SET name=?, amount=?, currency=?, cycle=?, frequency=?,
-                   category=?, color=?, next_payment_date=?, notes=?, active=?,
-                   website_url=?, reminder_days=?
+                   category=?, color=?, next_payment_date=?, start_date=?,
+                   notes=?, active=?, website_url=?, reminder_days=?
              WHERE id=? AND page_id=?
                AND page_id IN (SELECT id FROM home_pages WHERE user_id=?)
             """,
             (
                 name, amount, currency, cycle, frequency,
-                category, color, next_payment_date or None, notes, active,
-                website_url.strip(), max(0, reminder_days),
+                category, color, next_payment_date or None, start_date or None,
+                notes, active, website_url.strip(), max(0, reminder_days),
                 sub_id, page_id, user_id,
             ),
         )
