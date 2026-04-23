@@ -211,10 +211,16 @@ async function _saveWidgetFullConfig(widgetId, config) {
     }
 
     // Subscriptions Summary: reload widget when page_id changes.
+    // Apply bg_color live without re-fetching data.
     const swEl = card.querySelector('.subs-summary-widget');
     if (swEl && config.page_id !== undefined) {
       swEl.dataset.pageId = String(config.page_id || 0);
       if (typeof _loadSubscriptionsSummary === 'function') _loadSubscriptionsSummary(swEl);
+    }
+    if (swEl && config.bg_color !== undefined) {
+      swEl.style.background = (typeof _subsWgtGradient === 'function')
+        ? _subsWgtGradient(config.bg_color)
+        : config.bg_color;
     }
   }
 

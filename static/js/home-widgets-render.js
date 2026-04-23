@@ -1309,6 +1309,11 @@ function _subsWgtRenderChart(wid) {
   });
 }
 
+function _subsWgtGradient(hex) {
+  // Layer a subtle depth vignette over a flat color base — works for any hue.
+  return 'linear-gradient(135deg,rgba(0,0,0,0.18) 0%,rgba(255,255,255,0.04) 50%,rgba(0,0,0,0.12) 100%),' + hex;
+}
+
 function _subsWgtRender(el, list, summary) {
   var wid = el.dataset.widgetId;
   var pid = el.dataset.pageId;
@@ -1318,7 +1323,11 @@ function _subsWgtRender(el, list, summary) {
   _subsWgtData[wid] = { list: list, summary: summary, chart: null };
 
   // ── Glassmorphism dark skin ──────────────────────────────────────────────
-  el.style.background   = 'linear-gradient(135deg,#1a2b3c 0%,#243b55 60%,#1a2b3c 100%)';
+  var _card = el.closest ? el.closest('.hw-card') : null;
+  var _cfg  = {};
+  try { _cfg = JSON.parse(_card ? _card.dataset.widgetConfig || '{}' : '{}'); } catch(e) {}
+  var bgHex = _cfg.bg_color || '#1a2b3c';
+  el.style.background   = _subsWgtGradient(bgHex);
   el.style.borderRadius = '10px';
   el.style.overflow     = 'hidden';
 
