@@ -1,6 +1,11 @@
 {# Trip Planning homespace page shell.
-   NO <script> blocks. NO let/const. All rendering done by home-page-trip*.js.
-   initTripPage(pid) is called from _initSwappedPage() in home-widgets.js. #}
+   NO <script> blocks. NO let/const.
+   Modules:
+     home-page-trip.js      — entry, tab switch, shared utils, spot modal, spot CRUD
+     home-page-trip-locs.js — location grid, location modal, two-level nav
+     home-page-trip-plan.js — Plan tab (day lanes, drag-and-drop)
+     home-page-trip-chart.js — Chart tab (lazy Chart.js)
+   initTripPage(pid) called by _initSwappedPage() in home-widgets.js. #}
 
 <div id="trip-page-root"
      data-page-id="{{ page.id }}"
@@ -11,35 +16,28 @@
   <div class="flex-shrink-0 flex items-center gap-3 px-4 py-2
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-950">
-
-    {# Page title #}
     <span class="text-xl" aria-hidden="true">{{ page.emoji or '✈️' }}</span>
     <h1 class="font-semibold text-gray-800 dark:text-zinc-100 truncate mr-auto text-sm">
       {{ page.name }}
     </h1>
-
     {# Tab buttons #}
     <div class="flex items-center gap-1 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5">
-      <button id="trip-tab-research"
-        onclick="tripSetTab('research')"
+      <button id="trip-tab-research" onclick="tripSetTab('research')"
         class="trip-tab-btn px-3 py-1 rounded-md text-xs font-medium transition
                bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm">
         🔬 Research
       </button>
-      <button id="trip-tab-plan"
-        onclick="tripSetTab('plan')"
+      <button id="trip-tab-plan" onclick="tripSetTab('plan')"
         class="trip-tab-btn px-3 py-1 rounded-md text-xs font-medium transition
                text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200">
         🗓️ Plan
       </button>
-      <button id="trip-tab-chart"
-        onclick="tripSetTab('chart')"
+      <button id="trip-tab-chart" onclick="tripSetTab('chart')"
         class="trip-tab-btn px-3 py-1 rounded-md text-xs font-medium transition
                text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200">
         📊 Charts
       </button>
     </div>
-
     {# Dynamic controls injected by JS #}
     <div id="trip-topbar-controls" class="flex items-center gap-2"></div>
   </div>
@@ -47,31 +45,46 @@
   {# ── Research panel ────────────────────────────────────────────────────── #}
   <div id="trip-panel-research" class="flex flex-col flex-1 overflow-hidden">
 
-    {# Filter bar (type pills + search + add) — rendered by JS #}
-    <div id="trip-filter-bar"
-         class="flex-shrink-0 flex flex-wrap items-center gap-2 px-4 py-2
-                border-b border-gray-100 dark:border-zinc-800
-                bg-gray-50 dark:bg-zinc-900">
+    {# Level A: Location grid — shown by default #}
+    <div id="trip-locs-view" class="flex flex-col flex-1 overflow-hidden">
+      {# Optional search/filter bar for locations — rendered by locs JS #}
+      <div id="trip-locs-filter-bar"
+           class="flex-shrink-0 flex flex-wrap items-center gap-2 px-4 py-2
+                  border-b border-gray-100 dark:border-zinc-800
+                  bg-gray-50 dark:bg-zinc-900 hidden">
+      </div>
+      {# Location card grid #}
+      <div id="trip-locs-grid"
+           class="flex-1 overflow-y-auto p-4
+                  grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4
+                  gap-4 content-start">
+      </div>
     </div>
 
-    {# Spot card grid — rendered by JS #}
-    <div id="trip-spots-grid"
-         class="flex-1 overflow-y-auto p-4
-                grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4
-                gap-4 content-start">
+    {# Level B: Spot view — hidden until a location is opened #}
+    <div id="trip-spots-view" class="hidden flex flex-col flex-1 overflow-hidden">
+      {# Breadcrumb + type filter bar — rendered by JS #}
+      <div id="trip-filter-bar"
+           class="flex-shrink-0 flex flex-wrap items-center gap-2 px-4 py-2
+                  border-b border-gray-100 dark:border-zinc-800
+                  bg-gray-50 dark:bg-zinc-900">
+      </div>
+      {# Spot card grid #}
+      <div id="trip-spots-grid"
+           class="flex-1 overflow-y-auto p-4
+                  grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4
+                  gap-4 content-start">
+      </div>
     </div>
   </div>
 
   {# ── Plan panel ────────────────────────────────────────────────────────── #}
   <div id="trip-panel-plan" class="hidden flex flex-col flex-1 overflow-hidden">
-    {# Plan toolbar — rendered by JS #}
     <div id="trip-plan-toolbar"
          class="flex-shrink-0 flex items-center gap-2 px-4 py-2
                 border-b border-gray-100 dark:border-zinc-800
                 bg-gray-50 dark:bg-zinc-900">
     </div>
-
-    {# Horizontally-scrolling lane container #}
     <div id="trip-days-container"
          class="flex-1 overflow-x-auto overflow-y-hidden p-4 flex gap-4 items-start">
     </div>
@@ -79,25 +92,18 @@
 
   {# ── Chart panel ───────────────────────────────────────────────────────── #}
   <div id="trip-panel-chart" class="hidden flex-1 overflow-y-auto p-4">
-    {# Stat summary cards — rendered by JS #}
     <div id="trip-stats-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
-
-    {# Charts — fixed-height wrappers required for Chart.js responsive mode #}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
                   dark:border-zinc-800 p-4">
-        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">
-          Spots by Type
-        </p>
+        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Spots by Type</p>
         <div style="position:relative;height:240px;min-width:0;">
           <canvas id="trip-canvas-type"></canvas>
         </div>
       </div>
       <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
                   dark:border-zinc-800 p-4">
-        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">
-          Budget by Type
-        </p>
+        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Budget by Type</p>
         <div style="position:relative;height:240px;min-width:0;">
           <canvas id="trip-canvas-budget"></canvas>
         </div>
@@ -106,6 +112,42 @@
   </div>
 
 </div>{# /trip-page-root #}
+
+
+{# ── Location modal ────────────────────────────────────────────────────────── #}
+<div id="trip-loc-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="trip-loc-modal-title">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="tripCloseLocModal()"></div>
+  <div class="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              border border-gray-200 dark:border-zinc-800 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4
+                border-b border-gray-100 dark:border-zinc-800">
+      <h2 id="trip-loc-modal-title"
+          class="font-semibold text-gray-800 dark:text-zinc-100">Add Location</h2>
+      <button onclick="tripCloseLocModal()"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 transition
+                     text-xl leading-none">&times;</button>
+    </div>
+    <div class="p-5 overflow-y-auto space-y-3" style="max-height:72vh;">
+      <div id="trip-loc-modal-body"></div>
+    </div>
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
+      <button onclick="tripCloseLocModal()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-200
+                     dark:border-zinc-700 text-gray-600 dark:text-zinc-300
+                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+        Cancel
+      </button>
+      <button id="trip-loc-submit" onclick="tripSubmitLoc()"
+              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] hover:bg-[#0046c0]
+                     text-white font-medium transition">
+        Save
+      </button>
+    </div>
+  </div>
+</div>
 
 
 {# ── Spot modal ────────────────────────────────────────────────────────────── #}
@@ -121,11 +163,10 @@
       <h2 id="trip-spot-modal-title"
           class="font-semibold text-gray-800 dark:text-zinc-100">Add Spot</h2>
       <button onclick="tripCloseSpotModal()"
-              class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200
-                     transition text-xl leading-none">&times;</button>
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 transition
+                     text-xl leading-none">&times;</button>
     </div>
-    <div class="p-5 overflow-y-auto space-y-3" style="max-height:70vh;">
-      {# All fields rendered by JS into #trip-spot-modal-body #}
+    <div class="p-5 overflow-y-auto space-y-3" style="max-height:72vh;">
       <div id="trip-spot-modal-body"></div>
     </div>
     <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
@@ -143,6 +184,7 @@
     </div>
   </div>
 </div>
+
 
 {# ── Day modal ─────────────────────────────────────────────────────────────── #}
 <div id="trip-day-modal"
@@ -198,14 +240,16 @@
   </div>
 </div>
 
-{# ── Delete confirm modal ───────────────────────────────────────────────────── #}
+
+{# ── Shared delete-confirm modal ────────────────────────────────────────────── #}
 <div id="trip-del-modal"
      class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-     role="dialog" aria-modal="true">
+     role="dialog" aria-modal="true" aria-labelledby="trip-del-modal-title">
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
        onclick="tripCloseDelModal()"></div>
   <div class="relative w-full max-w-xs bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
               border border-gray-200 dark:border-zinc-800 p-5 text-center">
+    <h2 id="trip-del-modal-title" class="sr-only">Confirm Delete</h2>
     <p class="text-2xl mb-2">🗑️</p>
     <p id="trip-del-msg" class="text-sm text-gray-700 dark:text-zinc-200 mb-4"></p>
     <div class="flex gap-2 justify-center">

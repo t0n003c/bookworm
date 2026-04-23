@@ -56,9 +56,9 @@ function _tripRenderStatCards(data) {
     ? data.grand_currency + ' ' + Number(data.grand_total).toFixed(2)
     : (data.currency_note ? '⚠️ Mixed currencies' : '—');
   var cards = [
-    {icon: '📍', label: 'Spots Researched', value: data.total_spots || 0},
+    {icon: '📍', label: 'Locations',       value: data.total_locations || 0},
+    {icon: '🎯', label: 'Spots Researched', value: data.total_spots || 0},
     {icon: '🗓️', label: 'Days Planned',     value: data.total_days  || 0},
-    {icon: '✅', label: 'Spots in Plan',    value: data.spots_in_plan || 0},
     {icon: '💰', label: 'Est. Budget',      value: budget},
   ];
   el.innerHTML = cards.map(function(c) {
