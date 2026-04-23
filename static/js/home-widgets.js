@@ -1221,6 +1221,13 @@ async function _stackDropOnCard(targetCard, srcCard, pageId) {
 
   var targetType = targetCard.dataset.widgetType;
   var srcType    = srcCard.dataset.widgetType;
+
+  // Subscriptions widget is a full-page experience — stacking makes no sense.
+  if (targetType === 'subscriptions_summary' || srcType === 'subscriptions_summary') {
+    _bwToast('The Subscriptions widget cannot be combined into a stack.', 'error');
+    return;
+  }
+
   // Dividers can never be stacked (either side).
   // An existing stack cannot be dragged as the source into another stack.
   // Dropping a plain widget ONTO a stack is fine — that's the add-to-stack path below.

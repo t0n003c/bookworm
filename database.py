@@ -410,6 +410,16 @@ async def init_db() -> None:
         except Exception:
             pass  # column already exists
 
+        # reminder_days: how many days before due date to show a reminder banner
+        # 0 = no reminder (default)
+        try:
+            await db.execute(
+                "ALTER TABLE subscriptions ADD COLUMN "
+                "reminder_days INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # column already exists
+
         # ── rss_page_feeds: add source_widget_id column (migration) ───────────
         # Tracks which RSS widget originally synced this feed.
         # NULL = manually added feed.  ON DELETE SET NULL means widget deletion

@@ -425,7 +425,7 @@ async def stack_add_child(stack_id: int, widget_id: int, page_id: int, height_px
         row = await cur.fetchone()
         if not row:
             return False
-        if row["widget_type"] in ("divider", "stack"):
+        if row["widget_type"] in ("divider", "stack", "subscriptions_summary"):
             return False
         if row["group_id"] is not None:
             return False  # already belongs to a stack

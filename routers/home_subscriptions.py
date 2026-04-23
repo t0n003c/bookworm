@@ -85,6 +85,7 @@ async def add_subscription_endpoint(
     next_payment_date: str   = Form(""),
     notes:             str   = Form(""),
     website_url:       str   = Form(""),
+    reminder_days:     int   = Form(0),
 ):
     try:
         uid = _uid(request)
@@ -110,6 +111,7 @@ async def add_subscription_endpoint(
         next_payment_date=next_payment_date.strip() or None,
         notes=notes.strip(),
         website_url=website_url.strip(),
+        reminder_days=max(0, reminder_days),
     )
     return JSONResponse({"id": new_id}, status_code=201)
 
@@ -132,6 +134,7 @@ async def update_subscription_endpoint(
     notes:             str   = Form(""),
     active:            int   = Form(1),
     website_url:       str   = Form(""),
+    reminder_days:     int   = Form(0),
 ):
     try:
         uid = _uid(request)
@@ -160,6 +163,7 @@ async def update_subscription_endpoint(
         notes=notes.strip(),
         active=1 if active else 0,
         website_url=website_url.strip(),
+        reminder_days=max(0, reminder_days),
     )
     if not ok:
         return JSONResponse({"error": "not found or no permission"}, status_code=404)

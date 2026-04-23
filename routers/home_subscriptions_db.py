@@ -123,6 +123,7 @@ async def add_subscription(
     next_payment_date: str | None,
     notes: str,
     website_url: str = "",
+    reminder_days: int = 0,
 ) -> int:
     """INSERT a new subscription, return its id."""
     async with get_db() as db:
@@ -130,13 +131,14 @@ async def add_subscription(
             """
             INSERT INTO subscriptions
               (page_id, name, amount, currency, cycle, frequency,
-               category, color, next_payment_date, notes, website_url)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               category, color, next_payment_date, notes, website_url,
+               reminder_days)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 page_id, name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, notes,
-                website_url.strip(),
+                website_url.strip(), max(0, reminder_days),
             ),
         )
         await db.commit()
@@ -158,6 +160,7 @@ async def update_subscription(
     notes: str,
     active: int,
     website_url: str = "",
+    reminder_days: int = 0,
 ) -> bool:
     """UPDATE subscription; triple ownership guard. Returns True on success."""
     async with get_db() as db:
@@ -166,14 +169,14 @@ async def update_subscription(
             UPDATE subscriptions
                SET name=?, amount=?, currency=?, cycle=?, frequency=?,
                    category=?, color=?, next_payment_date=?, notes=?, active=?,
-                   website_url=?
+                   website_url=?, reminder_days=?
              WHERE id=? AND page_id=?
                AND page_id IN (SELECT id FROM home_pages WHERE user_id=?)
             """,
             (
                 name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, notes, active,
-                website_url.strip(),
+                website_url.strip(), max(0, reminder_days),
                 sub_id, page_id, user_id,
             ),
         )

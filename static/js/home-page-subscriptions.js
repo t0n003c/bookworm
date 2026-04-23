@@ -69,7 +69,58 @@ function _subsLoadAll() {
 
 function _subsSetLoading(on) {
   var el = document.getElementById('subs-loading');
-  if (el) el.textContent = on ? 'Loading…' : '';
+  if (el) el.textContent = on ? 'Loading\u2026' : '';
+}
+
+// ── Due-date reminder banner ────────────────────────────────────────────────────
+// Shown when an active subscription is within its reminder window.
+// Dismissals are stored in localStorage so we don’t nag on every page load.
+function _subsCheckReminders() {
+  var banner = document.getElementById('subs-reminder-banner');
+  if (!banner) return;
+
+  // Check which active subs have a reminder set and are due within the window
+  var due = _subsData.filter(function(s) {
+    if (!s.active || !s.reminder_days || s.reminder_days <= 0) return false;
+    var d = s.days_until_due;
+    return d !== null && d !== undefined && d <= s.reminder_days;
+  });
+
+  // Filter out dismissed (keyed by id + date so it re-surfaces next renewal)
+  var active = due.filter(function(s) {
+    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '');
+    return !localStorage.getItem(key);
+  });
+
+  if (active.length === 0) { banner.innerHTML = ''; return; }
+
+  var rows = active.map(function(s) {
+    var d = s.days_until_due;
+    var urgency = (d !== null && d <= 0)
+      ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+      : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800';
+    var textCol = (d !== null && d <= 0)
+      ? 'text-red-700 dark:text-red-300'
+      : 'text-amber-800 dark:text-amber-200';
+    var dueTxt = (d === null || d === undefined) ? 'unknown'
+      : (d < 0 ? Math.abs(d) + ' day' + (Math.abs(d) !== 1 ? 's' : '') + ' overdue'
+      : d === 0 ? 'due today'
+      : 'due in ' + d + ' day' + (d !== 1 ? 's' : ''));
+    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '');
+    return '<div class="flex items-center justify-between gap-3 border rounded-lg px-3 py-2 ' + urgency + '">' +
+      '<span class="text-xs font-medium ' + textCol + '">\uD83D\uDD14 <strong>' + _subsEsc(s.name) + '</strong> is ' + _subsEsc(dueTxt) + '</span>' +
+      '<button onclick="_subsReminderDismiss(\'' + _subsEscAttr(key) + '\')" ' +
+        'class="text-xs ' + textCol + ' opacity-60 hover:opacity-100 transition flex-shrink-0" ' +
+        'title="Dismiss">\u00D7 Dismiss</button>' +
+      '</div>';
+  }).join('');
+
+  banner.innerHTML = '<div class="flex flex-col gap-1 px-4 py-2 border-b border-gray-100 dark:border-zinc-800">' + rows + '</div>';
+}
+
+function _subsReminderDismiss(key) {
+  localStorage.setItem(key, '1');
+  _subsCheckReminders();
 }
 
 // ── Filter bar ─────────────────────────────────────────────────────────────────
@@ -698,6 +749,8 @@ function _subsSubmitForm() {
   var notes    = (document.getElementById('sf-notes')    || {}).value || '';
   var activeEl = document.getElementById('sf-active');
   var active   = activeEl ? (activeEl.checked ? 1 : 0) : 1;
+  var remindEl = document.getElementById('sf-reminder-days');
+  var reminderDays = remindEl ? (parseInt(remindEl.value, 10) || 0) : 0;
 
   if (!name.trim()) {
     _subsShowModalError('Name is required.');
@@ -715,6 +768,7 @@ function _subsSubmitForm() {
   fd.append('color',             color);
   fd.append('next_payment_date', date);
   fd.append('notes',             notes.trim());
+  fd.append('reminder_days',     reminderDays);
   if (_subsEditingId) fd.append('active', active);
 
   var saveBtn = document.getElementById('subs-modal-save');

@@ -1038,7 +1038,7 @@ async def create_stack(
         w = await get_widget_by_id(wid)
         if not w or w.get("page_id") != page_id:
             return HTMLResponse(_ERR.format(f"Widget {wid} not found on this page."), 400)
-        if w["widget_type"] in ("divider", "stack"):
+        if w["widget_type"] in ("divider", "stack", "subscriptions_summary"):
             return HTMLResponse(_ERR.format(f"Widget {wid} cannot be stacked."), 400)
         if w.get("group_id"):
             return HTMLResponse(_ERR.format(f"Widget {wid} is already in a stack."), 400)
