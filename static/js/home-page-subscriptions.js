@@ -54,6 +54,7 @@ function _subsLoadAll() {
     _subsData    = Array.isArray(results[0]) ? results[0] : [];
     _subsSummary = results[1] || {};
     _subsSetLoading(false);
+    _subsRenderTopBarControls();
     _subsRenderFilterBar();
     _subsRenderList();
     _subsRenderSummaryCards();
