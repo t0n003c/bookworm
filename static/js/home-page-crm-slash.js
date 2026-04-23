@@ -7,6 +7,12 @@
 // ── Command definitions ───────────────────────────────────────────────────────
 var _CRM_SLASH_CMDS = [
   {
+    cmd: 'bullet',
+    icon: '•',
+    label: 'Insert bullet point',
+    value: function() { return '\u2022 '; },
+  },
+  {
     cmd: 'today',
     icon: '📅',
     label: 'Insert today\'s date',
@@ -40,17 +46,10 @@ var _CRM_SLASH_CMDS = [
     icon: '👤',
     label: 'Insert my name',
     value: function() {
-      // Pull from the logged-in user badge in the nav if present
       var el = document.getElementById('bw-username') ||
                document.querySelector('[data-username]');
       return el ? (el.dataset.username || el.textContent.trim()) : '';
     },
-  },
-  {
-    cmd: 'clear',
-    icon: '🗑',
-    label: 'Clear this field',
-    value: function() { return ''; },
   },
   {
     cmd: 'na',
@@ -63,12 +62,6 @@ var _CRM_SLASH_CMDS = [
     icon: '⏳',
     label: 'Mark as TBD',
     value: function() { return 'TBD'; },
-  },
-  {
-    cmd: 'bullet',
-    icon: '•',
-    label: 'Insert bullet point',
-    value: function() { return '\u2022 '; },
   },
 ];
 
