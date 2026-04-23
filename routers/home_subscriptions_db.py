@@ -122,6 +122,7 @@ async def add_subscription(
     color: str,
     next_payment_date: str | None,
     notes: str,
+    website_url: str = "",
 ) -> int:
     """INSERT a new subscription, return its id."""
     async with get_db() as db:
@@ -129,12 +130,13 @@ async def add_subscription(
             """
             INSERT INTO subscriptions
               (page_id, name, amount, currency, cycle, frequency,
-               category, color, next_payment_date, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+               category, color, next_payment_date, notes, website_url)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 page_id, name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, notes,
+                website_url.strip(),
             ),
         )
         await db.commit()
@@ -155,6 +157,7 @@ async def update_subscription(
     next_payment_date: str | None,
     notes: str,
     active: int,
+    website_url: str = "",
 ) -> bool:
     """UPDATE subscription; triple ownership guard. Returns True on success."""
     async with get_db() as db:
@@ -162,13 +165,15 @@ async def update_subscription(
             """
             UPDATE subscriptions
                SET name=?, amount=?, currency=?, cycle=?, frequency=?,
-                   category=?, color=?, next_payment_date=?, notes=?, active=?
+                   category=?, color=?, next_payment_date=?, notes=?, active=?,
+                   website_url=?
              WHERE id=? AND page_id=?
                AND page_id IN (SELECT id FROM home_pages WHERE user_id=?)
             """,
             (
                 name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, notes, active,
+                website_url.strip(),
                 sub_id, page_id, user_id,
             ),
         )

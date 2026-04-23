@@ -166,6 +166,23 @@ function _subsRenderList() {
   }).join('');
 }
 
+// ── Favicon helper ────────────────────────────────────────────────────────────
+// Returns a Google favicon URL for the given website URL, or null if invalid.
+// Falls back gracefully to the colored dot via onerror in the img tag.
+function _subsGetFaviconUrl(websiteUrl) {
+  if (!websiteUrl) return null;
+  try {
+    var url = websiteUrl.trim();
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    var hostname = new URL(url).hostname;
+    if (!hostname || hostname.indexOf('.') === -1) return null;
+    return 'https://www.google.com/s2/favicons?domain=' +
+           encodeURIComponent(hostname) + '&sz=32';
+  } catch (e) {
+    return null;
+  }
+}
+
 function _subsRowHtml(s) {
   var daysUntil = s.days_until_due;
   var badge = '';
@@ -188,11 +205,22 @@ function _subsRowHtml(s) {
   var monthlyStr = '$' + (s.monthly_equiv || 0).toFixed(2) + '/mo';
   if (s.currency !== 'USD') monthlyStr = s.currency + ' equiv';
 
+  // Icon: favicon if website_url set, colored dot as fallback
+  var faviconUrl = _subsGetFaviconUrl(s.website_url || '');
+  var iconHtml = faviconUrl
+    ? '<img src="' + faviconUrl + '" width="16" height="16" ' +
+        'style="flex-shrink:0;border-radius:3px;" alt="" ' +
+        'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'inline-block\';">'
+      + '<span class="w-3 h-3 rounded-full flex-shrink-0" ' +
+        'style="display:none;background:' + _subsEsc(color) + ';"></span>'
+    : '<span class="w-3 h-3 rounded-full flex-shrink-0" ' +
+        'style="background:' + _subsEsc(color) + ';"></span>';
+
   return '<div class="flex flex-col gap-1 px-3 py-2.5 border-b border-gray-50 ' +
     'dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition ' +
     (inactive ? 'opacity-50' : '') + '">' +
     '<div class="flex items-center gap-2 min-w-0">' +
-      '<span class="w-3 h-3 rounded-full flex-shrink-0" style="background:' + _subsEsc(color) + '"></span>' +
+      iconHtml +
       '<span class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate flex-1">' +
         _subsEsc(s.name) +
       '</span>' +
@@ -493,7 +521,8 @@ function _subsCls() {
 }
 
 function _subsSubmitForm() {
-  var name     = (document.getElementById('sf-name')     || {}).value || '';
+  var name     = (document.getElementById('sf-name')        || {}).value || '';
+  var websiteUrl= (document.getElementById('sf-website-url') || {}).value || '';
   var amount   = parseFloat((document.getElementById('sf-amount')   || {}).value || '0') || 0;
   var currency = (document.getElementById('sf-currency') || {}).value || 'USD';
   var cycle    = parseInt((document.getElementById('sf-cycle')      || {}).value || '3', 10);
@@ -512,6 +541,7 @@ function _subsSubmitForm() {
 
   var fd = new FormData();
   fd.append('name',              name.trim());
+  fd.append('website_url',       websiteUrl.trim());
   fd.append('amount',            amount);
   fd.append('currency',          currency);
   fd.append('cycle',             cycle);

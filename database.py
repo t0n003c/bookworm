@@ -401,6 +401,14 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_subscriptions_next_payment "
             "ON subscriptions(page_id, next_payment_date)"
         )
+        # website_url added Phase 1 icon fix — safe to run on existing DB
+        try:
+            await db.execute(
+                "ALTER TABLE subscriptions ADD COLUMN "
+                "website_url TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass  # column already exists
 
         # ── rss_page_feeds: add source_widget_id column (migration) ───────────
         # Tracks which RSS widget originally synced this feed.
