@@ -67,10 +67,7 @@ var _CRM_SLASH_CMDS = [
   {
     cmd: 'bullet',
     icon: '•',
-    label: 'Add bullet point',
-    // The slash palette only activates when the entire field value starts with '/'
-    // so there is never pre-existing content to preserve at execution time.
-    // Always inserts '• ' — the user can keep typing after the palette closes.
+    label: 'Insert bullet point',
     value: function() { return '\u2022 '; },
   },
 ];
@@ -79,6 +76,7 @@ var _CRM_SLASH_CMDS = [
 var _slashPalette  = null; // current floating palette el
 var _slashTarget   = null; // input/textarea the palette is anchored to
 var _slashCursor   = -1;   // keyboard cursor index
+var _slashSlashIdx = -1;   // caret position of the '/' that triggered the palette
 
 // ── Attach to a form ──────────────────────────────────────────────────────────
 function _crmAttachSlash(formEl) {
@@ -100,19 +98,34 @@ function _crmAttachSlash(formEl) {
 
 // ── Input handler ─────────────────────────────────────────────────────────────
 function _slashOnInput(e) {
-  var el  = e.target;
-  var val = el.value;
-  // Show palette when the entire value starts with '/'
-  if (val.startsWith('/')) {
-    var query = val.slice(1).toLowerCase();
-    var matches = _CRM_SLASH_CMDS.filter(function(c) {
-      return c.cmd.startsWith(query) || c.label.toLowerCase().includes(query);
-    });
-    if (matches.length) {
-      _slashShow(el, matches);
-    } else {
-      _slashHide();
+  var el     = e.target;
+  var cursor = el.selectionStart;
+  var before = el.value.slice(0, cursor);
+
+  // Walk backwards from cursor to find a '/' that starts a command token.
+  // Trigger when '/' is at position 0 OR preceded by whitespace — avoids
+  // false-positives inside URLs (http://) or paths.
+  var slashIdx = -1;
+  for (var i = before.length - 1; i >= 0; i--) {
+    if (before[i] === '/') {
+      var prev = i > 0 ? before[i - 1] : '';
+      if (prev === '' || prev === ' ' || prev === '\n' || prev === '\t') {
+        slashIdx = i;
+      }
+      break; // stop at first '/' found going backwards
     }
+    // If we hit a space before a '/', the query has a space in it — not a command
+    if (before[i] === ' ' || before[i] === '\n') break;
+  }
+
+  if (slashIdx === -1) { _slashHide(); return; }
+
+  var query   = before.slice(slashIdx + 1).toLowerCase();
+  var matches = _CRM_SLASH_CMDS.filter(function(c) {
+    return c.cmd.startsWith(query) || c.label.toLowerCase().includes(query);
+  });
+  if (matches.length) {
+    _slashShow(el, matches, slashIdx);
   } else {
     _slashHide();
   }
@@ -141,9 +154,10 @@ function _slashOnKeydown(e) {
 }
 
 // ── Show palette ──────────────────────────────────────────────────────────────
-function _slashShow(inputEl, cmds) {
-  _slashTarget = inputEl;
-  _slashCursor = cmds.length === 1 ? 0 : -1;
+function _slashShow(inputEl, cmds, slashIdx) {
+  _slashTarget   = inputEl;
+  _slashSlashIdx = slashIdx;
+  _slashCursor   = cmds.length === 1 ? 0 : -1;
 
   if (!_slashPalette) {
     _slashPalette = document.createElement('div');
@@ -189,9 +203,13 @@ function _slashHighlight() {
 // ── Apply a command ───────────────────────────────────────────────────────────
 function _slashApply(el, cmd) {
   if (!el || !cmd) return;
-  var result = typeof cmd.value === 'function' ? cmd.value() : cmd.value;
-  el.value = result;
-  // Fire an input event so any listeners (e.g. form validation) pick up the change
+  var result   = typeof cmd.value === 'function' ? cmd.value() : cmd.value;
+  var val      = el.value;
+  var queryEnd = el.selectionStart; // cursor sits at end of typed query
+  // Replace only the /query slice — preserve everything before and after it
+  el.value = val.slice(0, _slashSlashIdx) + result + val.slice(queryEnd);
+  var newPos = _slashSlashIdx + result.length;
+  el.setSelectionRange(newPos, newPos);
   el.dispatchEvent(new Event('input', { bubbles: true }));
   _slashHide();
   el.focus();
@@ -200,6 +218,7 @@ function _slashApply(el, cmd) {
 // ── Hide palette ──────────────────────────────────────────────────────────────
 function _slashHide() {
   if (_slashPalette) _slashPalette.style.display = 'none';
-  _slashTarget = null;
-  _slashCursor = -1;
+  _slashTarget   = null;
+  _slashCursor   = -1;
+  _slashSlashIdx = -1;
 }
