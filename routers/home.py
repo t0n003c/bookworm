@@ -871,6 +871,9 @@ async def home_page_view(request: Request, page_id: int):
         elif p_type == "subscriptions":
             tmpl = "partials/home_page_subscriptions.html"
             # No server-side DB prep — JS fetches /list and /summary after load.
+        elif p_type == "trip":
+            tmpl = "partials/home_page_trip.html"
+            # No server-side DB prep — JS fetches /spots and /days after load.
         elif p_type == "uploads":
             tmpl = "partials/home_page_uploads.html"
             # Collabora Online integration — read config once at render time.

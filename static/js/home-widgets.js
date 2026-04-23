@@ -345,6 +345,7 @@ const HP_TYPE_DEFAULTS = {
   grid_builder:{ emoji: '🎨', placeholder: 'e.g. Feed Grid'     },
   uploads:     { emoji: '🖼️', placeholder: 'e.g. Media Library' },
   rss:         { emoji: '📡', placeholder: 'e.g. My Feeds'      },
+  trip:        { emoji: '✈️', placeholder: 'e.g. Smoky Mountains 2026' },
 };
 
 /**
@@ -1524,6 +1525,17 @@ function _initSwappedPage() {
     const pid = parseInt(gridRoot.dataset.pageId, 10);
     if (pid && typeof initGridPage === 'function') {
       try { initGridPage(pid); } catch(e) { console.error('[home] initGridPage:', e); }
+    }
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
+  // Trip Planning page
+  var tripRoot = document.getElementById('trip-page-root');
+  if (tripRoot) {
+    var tripPid = parseInt(tripRoot.dataset.pageId, 10);
+    if (tripPid && typeof initTripPage === 'function') {
+      try { initTripPage(tripPid); } catch(e) { console.error('[home] initTripPage:', e); }
     }
     var _ta = document.getElementById('top-action-area');
     if (_ta) _ta.innerHTML = '';

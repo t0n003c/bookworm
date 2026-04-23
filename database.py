@@ -811,6 +811,66 @@ async def init_db() -> None:
                 "group_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL"
             )
 
+        # ── Trip Planning homespace page tables ─────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_spots (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id        INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id        INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                name           TEXT    NOT NULL,
+                spot_type      TEXT    NOT NULL DEFAULT 'Other',
+                cover_url      TEXT    NOT NULL DEFAULT '',
+                map_url        TEXT    NOT NULL DEFAULT '',
+                notes          TEXT    NOT NULL DEFAULT '',
+                priority       INTEGER NOT NULL DEFAULT 3,
+                estimated_cost REAL    NOT NULL DEFAULT 0,
+                currency       TEXT    NOT NULL DEFAULT 'USD',
+                sort_order     INTEGER NOT NULL DEFAULT 0,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS trip_spots_updated_at
+            AFTER UPDATE ON trip_spots
+            BEGIN
+                UPDATE trip_spots SET updated_at = datetime('now') WHERE id = NEW.id;
+            END
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_spots_page "
+            "ON trip_spots(page_id, user_id)"
+        )
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_days (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                day_label  TEXT    NOT NULL DEFAULT '',
+                day_date   TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_days_page "
+            "ON trip_days(page_id, user_id)"
+        )
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_day_spots (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                day_id     INTEGER NOT NULL REFERENCES trip_days(id)  ON DELETE CASCADE,
+                spot_id    INTEGER NOT NULL REFERENCES trip_spots(id) ON DELETE CASCADE,
+                time_label TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(day_id, spot_id)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_day_spots_day "
+            "ON trip_day_spots(day_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager
