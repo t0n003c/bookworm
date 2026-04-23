@@ -183,6 +183,67 @@ function _subsGetFaviconUrl(websiteUrl) {
   }
 }
 
+// ── Favicon preview helpers (used by the Add/Edit modal) ──────────────────────
+var _subsAutoFillTimer = null;
+
+// Live-update the favicon preview img as the user types in the URL field.
+function _subsUpdateFaviconPreview(urlVal) {
+  var img = document.getElementById('sf-favicon-preview');
+  if (!img) return;
+  var url = _subsGetFaviconUrl(urlVal);
+  if (url) {
+    img.src   = url;
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+    img.src = '';
+  }
+}
+
+// When the user types a Name, auto-suggest the website URL if the field is still empty.
+// Uses a simple lookup of common services; fills in silently so user can override.
+var _SUBS_KNOWN_DOMAINS = {
+  'netflix': 'netflix.com',   'spotify': 'spotify.com',
+  'youtube': 'youtube.com',   'hulu': 'hulu.com',
+  'disney+': 'disneyplus.com','disney plus': 'disneyplus.com',
+  'apple tv': 'tv.apple.com', 'apple music': 'music.apple.com',
+  'amazon prime': 'amazon.com','prime video': 'amazon.com',
+  'hbo': 'hbo.com',           'max': 'max.com',
+  'peacock': 'peacocktv.com', 'paramount': 'paramountplus.com',
+  'adobe': 'adobe.com',       'microsoft 365': 'microsoft.com',
+  'office 365': 'microsoft.com','github': 'github.com',
+  'dropbox': 'dropbox.com',   'google one': 'one.google.com',
+  'icloud': 'icloud.com',     'notion': 'notion.so',
+  'slack': 'slack.com',       'zoom': 'zoom.us',
+  'chatgpt': 'openai.com',    'openai': 'openai.com',
+  'canva': 'canva.com',       'figma': 'figma.com',
+  'duolingo': 'duolingo.com', 'crunchyroll': 'crunchyroll.com',
+  'funimation': 'funimation.com', 'twitch': 'twitch.tv',
+  'nintendo': 'nintendo.com', 'playstation': 'playstation.com',
+  'xbox': 'xbox.com',         'steam': 'store.steampowered.com',
+  'nytimes': 'nytimes.com',   'new york times': 'nytimes.com',
+  'washington post': 'washingtonpost.com',
+  'patreon': 'patreon.com',   'substack': 'substack.com',
+  'linkedin': 'linkedin.com', 'nord vpn': 'nordvpn.com',
+  'nordvpn': 'nordvpn.com',   'expressvpn': 'expressvpn.com',
+  'lastpass': 'lastpass.com', '1password': '1password.com',
+  'bitwarden': 'bitwarden.com','dashlane': 'dashlane.com',
+};
+
+function _subsAutoFillUrl(name) {
+  clearTimeout(_subsAutoFillTimer);
+  _subsAutoFillTimer = setTimeout(function() {
+    var urlField = document.getElementById('sf-website-url');
+    if (!urlField || urlField.value.trim()) return; // don\'t overwrite what the user typed
+    var key = name.trim().toLowerCase();
+    var domain = _SUBS_KNOWN_DOMAINS[key];
+    if (domain) {
+      urlField.value = domain;
+      _subsUpdateFaviconPreview(domain);
+    }
+  }, 600);
+}
+
 function _subsRowHtml(s) {
   var daysUntil = s.days_until_due;
   var badge = '';
@@ -208,13 +269,15 @@ function _subsRowHtml(s) {
   // Icon: favicon if website_url set, colored dot as fallback
   var faviconUrl = _subsGetFaviconUrl(s.website_url || '');
   var iconHtml = faviconUrl
-    ? '<img src="' + faviconUrl + '" width="16" height="16" ' +
-        'style="flex-shrink:0;border-radius:3px;" alt="" ' +
+    ? '<img src="' + faviconUrl + '" width="24" height="24" ' +
+        'style="flex-shrink:0;border-radius:5px;" alt="" ' +
         'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'inline-block\';">'
-      + '<span class="w-3 h-3 rounded-full flex-shrink-0" ' +
-        'style="display:none;background:' + _subsEsc(color) + ';"></span>'
-    : '<span class="w-3 h-3 rounded-full flex-shrink-0" ' +
-        'style="background:' + _subsEsc(color) + ';"></span>';
+      + '<span class="w-5 h-5 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" ' +
+        'style="display:none;background:' + _subsEsc(color) + ';">' +
+        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>'
+    : '<span class="w-5 h-5 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" ' +
+        'style="background:' + _subsEsc(color) + ';">' +
+        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>';
 
   return '<div class="flex flex-col gap-1 px-3 py-2.5 border-b border-gray-50 ' +
     'dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition ' +
@@ -475,7 +538,17 @@ function _subsRenderModalForm(sub) {
 
   container.innerHTML =
     _subsField('Name', '<input id="sf-name" type="text" value="' + _subsEscAttr(v.name||'') + '" ' +
-      'class="' + _subsCls() + '" placeholder="e.g. Netflix" maxlength="120">') +
+      'class="' + _subsCls() + '" placeholder="e.g. Netflix" maxlength="120"' +
+      ' oninput="_subsAutoFillUrl(this.value)">') +
+    _subsField('Website URL',
+      '<div class="flex items-center gap-2">' +
+        '<img id="sf-favicon-preview" src="" alt="" width="20" height="20"' +
+          ' style="border-radius:4px;flex-shrink:0;display:' + (v.website_url ? 'block' : 'none') + ';"' +
+          ' onerror="this.style.display=\'none\'">' +
+        '<input id="sf-website-url" type="text" value="' + _subsEscAttr(v.website_url||'') + '" ' +
+          'class="' + _subsCls() + '" placeholder="e.g. netflix.com" maxlength="255"' +
+          ' oninput="_subsUpdateFaviconPreview(this.value)">' +
+      '</div>') +
     '<div class="grid grid-cols-2 gap-3">' +
       _subsField('Amount', '<input id="sf-amount" type="number" min="0" step="0.01" ' +
         'value="' + (v.amount||0) + '" class="' + _subsCls() + '">') +
