@@ -73,6 +73,46 @@ function _subsSetLoading(on) {
 
 // ── Filter bar ─────────────────────────────────────────────────────────────────
 
+function _subsRenderTopBarControls() {
+  var el = document.getElementById('subs-topbar-controls');
+  if (!el) return;
+
+  var sortOpts = [
+    {v:'name',   l:'Name'},
+    {v:'amount', l:'Cost \u2193'},
+    {v:'date',   l:'Due Soon'},
+  ];
+  var sortHtml =
+    '<select onchange="_subsSetSort(this.value)"' +
+    ' title="Sort by"' +
+    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5' +
+    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200' +
+    ' focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40">' +
+    sortOpts.map(function(o) {
+      return '<option value="' + o.v + '"' + (o.v === _subsSort ? ' selected' : '') + '>' + o.l + '</option>';
+    }).join('') +
+    '</select>';
+
+  var exportHtml =
+    '<button onclick="_subsExportCSV()"' +
+    ' title="Export to CSV"' +
+    ' class="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border' +
+    ' border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300' +
+    ' hover:border-[#0053e2] hover:text-[#0053e2] dark:hover:text-blue-400 transition' +
+    ' bg-white dark:bg-zinc-800">\u2B07 CSV</button>';
+
+  el.innerHTML =
+    '<input type="search" id="subs-search-input"' +
+    ' value="' + _subsEscAttr(_subsSearchTerm) + '"' +
+    ' placeholder="\uD83D\uDD0D Search\u2026"' +
+    ' oninput="_subsSetSearch(this.value)"' +
+    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5' +
+    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 w-36' +
+    ' focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40">' +
+    sortHtml +
+    exportHtml;
+}
+
 function _subsRenderFilterBar() {
   var bar = document.getElementById('subs-filter-bar');
   if (!bar) return;
@@ -97,42 +137,10 @@ function _subsRenderFilterBar() {
       '">' + _subsEsc(t.l) + '</button>';
   }).join('');
 
-  // Search input
-  var searchHtml =
-    '<input type="search" id="subs-search-input"' +
-    ' value="' + _subsEscAttr(_subsSearchTerm) + '"' +
-    ' placeholder="\uD83D\uDD0D Search\u2026"' +
-    ' oninput="_subsSetSearch(this.value)"' +
-    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-0.5' +
-    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 w-32">';
-
-  // Sort selector
-  var sortOpts = [
-    {v:'name',   l:'Name'},
-    {v:'amount', l:'Cost ↓'},
-    {v:'date',   l:'Due Soon'},
-  ];
-  var sortHtml =
-    '<select onchange="_subsSetSort(this.value)"' +
-    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5' +
-    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200">' +
-    sortOpts.map(function(o) {
-      return '<option value="' + o.v + '"' + (o.v === _subsSort ? ' selected' : '') + '>' + o.l + '</option>';
-    }).join('') +
-    '</select>';
-
-  // Export button
-  var exportHtml =
-    '<button onclick="_subsExportCSV()"' +
-    ' title="Export to CSV"' +
-    ' class="text-xs text-gray-400 dark:text-zinc-500 hover:text-[#0053e2]' +
-    ' dark:hover:text-blue-400 transition px-1 py-0.5">\u2B07 CSV</button>';
-
-  // Category dropdown
   var catHtml = '';
   if (catKeys.length > 0) {
     catHtml = '<select onchange="_subsSetFilter(_subsFilterActive,this.value)" ' +
-      'class="text-xs border border-gray-200 dark:border-zinc-700 ' +
+      'class="ml-auto text-xs border border-gray-200 dark:border-zinc-700 ' +
       'rounded px-2 py-0.5 bg-white dark:bg-zinc-800 ' +
       'text-gray-700 dark:text-zinc-200">' +
       '<option value="">All categories</option>' +
@@ -143,14 +151,7 @@ function _subsRenderFilterBar() {
       '</select>';
   }
 
-  bar.innerHTML =
-    '<div class="flex flex-wrap items-center gap-1 w-full">'
-    + '<div class="flex gap-1">' + tabHtml + '</div>'
-    + searchHtml
-    + sortHtml
-    + exportHtml
-    + (catHtml ? '<div class="ml-auto">' + catHtml + '</div>' : '')
-    + '</div>';
+  bar.innerHTML = tabHtml + catHtml;
 }
 
 function _subsSetFilter(active, cat) {
@@ -167,7 +168,8 @@ function _subsSetSearch(term) {
 
 function _subsSetSort(key) {
   _subsSort = key || 'name';
-  _subsRenderFilterBar();
+  // Don't re-render topbar controls — the select already shows the new value
+  // and re-rendering would reset the search input.
   _subsRenderList();
 }
 

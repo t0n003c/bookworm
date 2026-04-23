@@ -18,9 +18,12 @@
     <span class="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded uppercase
                  tracking-wide"
          style="background:rgba(0,83,226,0.10); color:#0053e2;">Subscriptions</span>
+    {# Top-bar controls: search, sort, export — injected by JS after data loads #}
+    <div id="subs-topbar-controls"
+         class="flex items-center gap-1.5 ml-auto flex-shrink-0"></div>
     {# Spinner shown while loading #}
     <span id="subs-loading"
-          class="ml-auto text-xs text-gray-400 dark:text-zinc-500"
+          class="text-xs text-gray-400 dark:text-zinc-500 flex-shrink-0"
           aria-live="polite"></span>
   </div>
 
