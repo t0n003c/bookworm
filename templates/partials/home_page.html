@@ -1588,7 +1588,34 @@
 {% endcall %}
 {% endmacro %}
 
-{# ── Stack widget macros ───────────────────────────────────────────────────────────────────── #}
+{# ── Subscriptions Summary widget ─────────────────────────────────────────────────────── #}
+{% macro render_subscriptions_summary(w) %}
+{%- set cfg = w.get('config', {}) -%}
+{%- set pid = cfg.get('page_id', 0) | int -%}
+{% call card(w) %}
+  {{ widget_header(w, 'Subscriptions', '💳') }}
+  {%- if pid %}
+  {#- JS engine (_loadSubscriptionsSummary) mounts into this div on widget boot -#}
+  <div class="subs-summary-widget flex-1 min-h-0 flex flex-col"
+       id="subs-sw-{{ w.id }}"
+       data-widget-id="{{ w.id }}"
+       data-page-id="{{ pid }}">
+    <div class="flex items-center justify-center h-full
+                text-gray-300 dark:text-zinc-600 text-xs select-none">
+      Loading…
+    </div>
+  </div>
+  {%- else %}
+  <div class="flex-1 flex flex-col items-center justify-center gap-2
+              text-center text-xs text-gray-400 dark:text-zinc-500 px-4">
+    <span class="text-2xl" aria-hidden="true">💳</span>
+    <p>Open <strong>⚙️ Settings</strong> and pick a Subscriptions page.</p>
+  </div>
+  {%- endif %}
+{% endcall %}
+{% endmacro %}
+
+{# ── Stack widget macros ─────────────────────────────────────────────────────────────────────────────── #}
 
 {#-
   render_stack_child(w): renders just the body of a child widget inside a
@@ -1619,6 +1646,7 @@
   {% elif w.widget_type == 'rss_feed' %}       {{ render_rss_feed(w) }}
   {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
   {% elif w.widget_type == 'upload_preview' %} {{ render_upload_preview(w) }}
+  {% elif w.widget_type == 'subscriptions_summary' %} {{ render_subscriptions_summary(w) }}
   {% endif %}
 </div>
 {% endmacro %}
@@ -1813,6 +1841,7 @@
       {% elif w.widget_type == 'rss_feed' %}  {{ render_rss_feed(w) }}
       {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
       {% elif w.widget_type == 'upload_preview' %}  {{ render_upload_preview(w) }}
+      {% elif w.widget_type == 'subscriptions_summary' %} {{ render_subscriptions_summary(w) }}
       {% elif w.widget_type == 'stack' %}           {{ render_stack(w) }}
       {% endif %}
     {% endfor %}

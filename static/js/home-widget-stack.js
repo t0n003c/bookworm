@@ -250,6 +250,7 @@ var _STACK_WIDGET_META = {
   rss_feed:       ['RSS Feed',     '📡'],
   buds:           ['Buds',         '🌱'],
   upload_preview: ['Files',        '📁'],
+  subscriptions_summary: ['Subscriptions', '💳'],
 };
 
 /**

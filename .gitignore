@@ -71,6 +71,7 @@ cookies.txt
 cookies*.txt
 *_cookies.txt
 bw_qa*.txt
+qa_*.txt
 
 # Eddie one-off debug / inspection scripts
 _rss_routes.py

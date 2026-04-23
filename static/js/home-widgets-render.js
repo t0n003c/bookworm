@@ -1176,3 +1176,216 @@ function _calBuildDayModal() {
     </div>`;
   return el;
 }
+
+// ── Subscriptions Summary Widget ─────────────────────────────────────────────────────────────
+// Shared chart lib promise — one lazy-load for all subs-summary widgets on the page.
+var _subsWgtChartPromise = null;
+// Per-widget data store: {list, summary, chart (Chart instance or null)}
+var _subsWgtData = {};
+
+function _subsWgtEsc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _subsWgtFaviconUrl(url) {
+  if (!url) return null;
+  try {
+    var u = url.trim();
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    var host = new URL(u).hostname;
+    if (!host || host.indexOf('.') === -1) return null;
+    return 'https://www.google.com/s2/favicons?domain=' +
+           encodeURIComponent(host) + '&sz=32';
+  } catch (e) { return null; }
+}
+
+function _subsWgtFmtMoney(val) {
+  return '$' + (parseFloat(val) || 0).toFixed(2);
+}
+
+// Switch slides; persist choice to localStorage.
+function _subsWgtGoTo(wid, idx) {
+  var el = document.getElementById('subs-sw-' + wid);
+  if (!el) return;
+  var slides = el.querySelectorAll('.subs-sw-slide');
+  var dots   = el.querySelectorAll('.subs-sw-dot');
+  idx = ((idx % slides.length) + slides.length) % slides.length;
+  slides.forEach(function(s, i) {
+    s.style.display = (i === idx) ? 'flex' : 'none';
+  });
+  dots.forEach(function(d, i) {
+    d.style.background = (i === idx) ? '#0053e2' : '#d1d5db';
+  });
+  localStorage.setItem('bw-subs-slide-' + wid, idx);
+  // Lazy-render chart when switching to slide 1
+  if (idx === 1) _subsWgtRenderChart(wid);
+}
+
+function _subsWgtRenderChart(wid) {
+  var canvas = document.getElementById('subs-sw-canvas-' + wid);
+  if (!canvas) return;
+  var store = _subsWgtData[wid];
+  if (!store || !store.summary) return;
+  // Destroy old chart instance if re-rendering
+  if (store.chart) { store.chart.destroy(); store.chart = null; }
+
+  var cats = store.summary.by_category || [];
+  if (!cats.length) {
+    canvas.parentNode.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-4">No data yet.</p>';
+    return;
+  }
+
+  var labels = cats.map(function(c) { return c.category || 'Other'; });
+  var values = cats.map(function(c) { return c.monthly_total; });
+  var palette = ['#0053e2','#ffc220','#2a8703','#ea1100','#995213',
+                 '#0ea5e9','#a855f7','#ec4899','#f97316','#14b8a6'];
+  var bgColors = labels.map(function(_, i) { return palette[i % palette.length]; });
+
+  // Lazy-load Chart.js vendor bundle, then draw
+  if (!_subsWgtChartPromise) {
+    _subsWgtChartPromise = new Promise(function(resolve, reject) {
+      if (window.Chart) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = '/static/js/vendor/chart.umd.min.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  _subsWgtChartPromise.then(function() {
+    // canvas may have been removed if widget refreshed mid-load
+    var c = document.getElementById('subs-sw-canvas-' + wid);
+    if (!c || !window.Chart) return;
+    store.chart = new window.Chart(c, {
+      type: 'doughnut',
+      data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors,
+                borderWidth: 2, borderColor: '#ffffff' }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '65%',
+        plugins: {
+          legend: { display: true, position: 'right',
+            labels: { boxWidth: 8, boxHeight: 8, font: { size: 9 }, padding: 4 } },
+          tooltip: {
+            callbacks: { label: function(ctx) {
+              return ' $' + (ctx.raw || 0).toFixed(2) + '/mo';
+            }}
+          }
+        }
+      }
+    });
+  }).catch(function(e) {
+    console.error('[subs-widget] Chart.js vendor bundle load failed:', e);
+  });
+}
+
+function _subsWgtRender(el, list, summary) {
+  var wid = el.dataset.widgetId;
+  var pid = el.dataset.pageId;
+  var savedSlide = parseInt(localStorage.getItem('bw-subs-slide-' + wid) || '0', 10) || 0;
+
+  // Cache data for chart rendering
+  _subsWgtData[wid] = { list: list, summary: summary, chart: null };
+
+  var activeRows = (list || []).filter(function(s) { return s.active; });
+  var overflow   = Math.max(0, activeRows.length - 5);
+  var topRows    = activeRows.slice(0, 5);
+
+  // ── Slide 0: subscription list ────────────────────────────────
+  var rowsHtml = topRows.length ? topRows.map(function(s) {
+    var faviconUrl = _subsWgtFaviconUrl(s.website_url || '');
+    var iconHtml = faviconUrl
+      ? '<img src="' + faviconUrl + '" width="14" height="14" alt=""'
+        + ' style="flex-shrink:0;border-radius:2px;"'
+        + ' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'inline-block\';">'  
+        + '<span style="width:10px;height:10px;border-radius:50%;display:none;flex-shrink:0;background:'
+        + _subsWgtEsc(s.color || '#0053e2') + ';"></span>'
+      : '<span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'
+        + _subsWgtEsc(s.color || '#0053e2') + ';"></span>';
+    return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;'
+      + 'border-bottom:1px solid rgba(0,0,0,0.05);min-width:0;">'
+      + iconHtml
+      + '<span style="font-size:11px;font-weight:600;flex:1;white-space:nowrap;'
+        + 'overflow:hidden;text-overflow:ellipsis;">'
+        + _subsWgtEsc(s.name) + '</span>'
+      + '<span style="font-size:10px;color:#6b7280;white-space:nowrap;margin-left:auto;padding-left:4px;">'
+        + _subsWgtEsc(s.currency) + ' ' + (s.amount || 0).toFixed(2)
+      + '</span>'
+    + '</div>';
+  }).join('')
+  : '<p style="font-size:11px;color:#9ca3af;text-align:center;padding:12px 0;">' +
+    'No active subscriptions.</p>';
+
+  var overflowHtml = overflow > 0
+    ? '<p style="font-size:10px;color:#9ca3af;text-align:right;margin-top:2px;">+ '
+      + overflow + ' more</p>' : '';
+
+  var slide0 = '<div class="subs-sw-slide" '
+    + 'style="display:' + (savedSlide === 0 ? 'flex' : 'none')
+    + ';flex-direction:column;flex:1;overflow:hidden;padding:4px 0;">'  
+    + rowsHtml + overflowHtml
+    + '</div>';
+
+  // ── Slide 1: donut chart ───────────────────────────────────
+  var slide1 = '<div class="subs-sw-slide"'
+    + ' style="display:' + (savedSlide === 1 ? 'flex' : 'none')
+    + ';flex-direction:column;flex:1;min-height:0;">'
+    + '<div style="position:relative;height:130px;flex-shrink:0;">'
+      + '<canvas id="subs-sw-canvas-' + wid + '"></canvas>'
+    + '</div>'
+    + '</div>';
+
+  // ── Footer: totals + dots + page link ──────────────────────────
+  var dotsHtml = [0, 1].map(function(i) {
+    return '<span class="subs-sw-dot" onclick="_subsWgtGoTo(' + wid + ',' + i + ')" '
+      + 'style="display:inline-block;width:6px;height:6px;border-radius:50%;cursor:pointer;'
+      + 'background:' + (i === savedSlide ? '#0053e2' : '#d1d5db') + ';"></span>';
+  }).join('');
+
+  var footer = '<div style="flex-shrink:0;padding-top:4px;border-top:1px solid rgba(0,0,0,0.06);">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;">'
+      + '<span style="font-size:10px;color:#6b7280;">'
+        + _subsWgtFmtMoney(summary.monthly_total) + '/mo'
+      + '</span>'
+      + '<span style="display:flex;gap:4px;align-items:center;">' + dotsHtml + '</span>'
+      + '<button onclick="openHomePage(' + pid + ')" '
+        + 'style="font-size:10px;color:#0053e2;background:none;border:none;cursor:pointer;'
+        + 'padding:0;text-decoration:underline;text-underline-offset:2px;">'
+        + 'Open →</button>'
+    + '</div>'
+  + '</div>';
+
+  el.innerHTML = '<div style="display:flex;flex-direction:column;height:100%;gap:0;padding:0 2px;">'
+    + slide0 + slide1 + footer
+    + '</div>';
+
+  // Draw chart if starting on slide 1
+  if (savedSlide === 1) _subsWgtRenderChart(wid);
+}
+
+function _loadSubscriptionsSummary(el) {
+  var pid = el.dataset.pageId;
+  if (!pid || pid === '0') return; // unconfigured — placeholder shown by template
+
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:6px;justify-content:center;height:100%;'
+    + 'font-size:11px;color:#9ca3af;">'
+    + '<div style="width:14px;height:14px;border-radius:50%;border:2px solid #0053e2;'
+    + 'border-top-color:transparent;animation:spin 0.8s linear infinite;"></div>'
+    + 'Loading…</div>';
+
+  Promise.all([
+    fetch('/home/subscriptions/' + pid + '/list',
+      {credentials: 'same-origin'}).then(function(r) { return r.json(); }),
+    fetch('/home/subscriptions/' + pid + '/summary',
+      {credentials: 'same-origin'}).then(function(r) { return r.json(); }),
+  ]).then(function(results) {
+    _subsWgtRender(el, results[0], results[1]);
+  }).catch(function(e) {
+    console.error('[subs-widget] failed to load data:', e);
+    el.innerHTML =
+      '<p style="font-size:11px;color:#ef4444;text-align:center;padding:16px;">'
+      + 'Failed to load.</p>';
+  });
+}

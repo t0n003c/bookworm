@@ -60,6 +60,7 @@
           {% for wtype, icon, label in [
             ('rss_feed', '📡', 'RSS Feed'),
             ('buds',     '🌸', 'Buds'),
+            ('subscriptions_summary', '💳', 'Subscriptions'),
           ] %}
           <button type="button" onclick="selectWidgetType('{{ wtype }}')"
                   data-wtype="{{ wtype }}"

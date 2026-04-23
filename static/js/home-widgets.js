@@ -933,6 +933,10 @@ const WIDGET_CONFIG_FIELDS = {
     { id: 'cf-upl-ids', label: 'Pinned files', type: 'upload-picker',
       name: 'upload_ids' },
   ],
+  subscriptions_summary: () => [
+    { id: 'cf-subs-pid', label: 'Subscriptions page', type: 'select-subs-pages',
+      name: 'page_id' },
+  ],
 };
 
 function selectWidgetType(wtype) {
@@ -1038,6 +1042,32 @@ function aw_refreshConfig(wtype, style) {
       }, 50);
       return `<div>${lbl}
         <select id="${selId}" data-name="${selName}"
+          class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2
+                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                 focus:outline-none focus:ring-2 focus:ring-wblue">
+          <option value="">Loading…</option>
+        </select></div>`;
+    }
+    if (f.type === 'select-subs-pages') {
+      // Async-populated subscriptions page picker — mirrors select-crm-pages pattern.
+      var subsSelId   = f.id;
+      var subsSelName = f.name;
+      setTimeout(function() {
+        fetch('/home/pages', {credentials: 'same-origin',
+          headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function(r) { return r.ok ? r.json() : {pages:[]}; })
+        .then(function(data) {
+          var pages = (data.pages || []).filter(function(p) { return p.page_type === 'subscriptions'; });
+          var sel = document.getElementById(subsSelId);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— pick a page —</option>'
+            + pages.map(function(p) {
+                return '<option value="'+p.id+'">'+p.name+'</option>';
+              }).join('');
+        }).catch(function() {});
+      }, 50);
+      return `<div>${lbl}
+        <select id="${subsSelId}" data-name="${subsSelName}"
           class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2
                  bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                  focus:outline-none focus:ring-2 focus:ring-wblue">
@@ -1578,6 +1608,11 @@ function initHomeWidgets() {
     if (typeof _loadUploadPreview === 'function') _loadUploadPreview(el);
   });
 
+  // Subscriptions Summary widgets
+  document.querySelectorAll('.subs-summary-widget').forEach(function(el) {
+    if (typeof _loadSubscriptionsSummary === 'function') _loadSubscriptionsSummary(el);
+  });
+
   // Stack carousel cards
   if (typeof initStackCards === 'function') initStackCards();
 }
@@ -1682,6 +1717,34 @@ function closeNotePreview() {
   if (sidebar && !sidebar.classList.contains('hidden')) {
     sidebar.classList.add('translate-x-full');
     setTimeout(() => {
+      overlay?.classList.add('hidden');
+      overlay?.classList.remove('flex');
+      sidebar.classList.add('hidden');
+    }, 310);
+  } else {
+    overlay?.classList.add('hidden');
+    overlay?.classList.remove('flex');
+  }
+  document.getElementById('note-preview-popup')?.classList.add('hidden');
+}
+
+// ── Scroll-jank suppressor ─────────────────────────────────────────────────────────
+// While #main-content is scrolling, CSS class .bw-scrolling disables
+// transition: on .hw-card (hover shadow paints would cause jank on every frame).
+(function _initScrollSuppressor() {
+  const main = document.getElementById('main-content');
+  if (!main) return;
+  let _scrollTimer = null;
+  main.addEventListener('scroll', () => {
+    if (!_scrollTimer) main.classList.add('bw-scrolling');
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(() => {
+      main.classList.remove('bw-scrolling');
+      _scrollTimer = null;
+    }, 150);
+  }, { passive: true });
+})();
+t(() => {
       overlay?.classList.add('hidden');
       overlay?.classList.remove('flex');
       sidebar.classList.add('hidden');
