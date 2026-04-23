@@ -1318,7 +1318,7 @@ function _subsWgtRender(el, list, summary) {
   _subsWgtData[wid] = { list: list, summary: summary, chart: null };
 
   // ── Glassmorphism dark skin ──────────────────────────────────────────────
-  el.style.background   = 'linear-gradient(135deg,#0f172a 0%,#1e1b4b 60%,#0f172a 100%)';
+  el.style.background   = 'linear-gradient(135deg,#1a2b3c 0%,#243b55 60%,#1a2b3c 100%)';
   el.style.borderRadius = '10px';
   el.style.overflow     = 'hidden';
 

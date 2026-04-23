@@ -497,69 +497,6 @@ function _subsCardHtml(s) {
   '</div>';
 }
 
-    } else if (daysUntil <= 7) {
-      badge = '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 ' +
-        'dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap">Due in ' + daysUntil + 'd</span>';
-    } else if (daysUntil <= 30) {
-      badge = '<span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 ' +
-        'dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap">Due in ' + daysUntil + 'd</span>';
-    }
-  }
-
-  var inactive = !s.active;
-  var color = s.color || '#0053e2';
-  var pct = s.progress_pct || 0;
-  var monthlyStr = '$' + (s.monthly_equiv || 0).toFixed(2) + '/mo';
-  if (s.currency !== 'USD') monthlyStr = s.currency + ' equiv';
-
-  // Icon: favicon if website_url set, colored dot as fallback
-  var faviconUrl = _subsGetFaviconUrl(s.website_url || '');
-  var iconHtml = faviconUrl
-    ? '<img src="' + faviconUrl + '" width="24" height="24" ' +
-        'style="flex-shrink:0;border-radius:5px;" alt="" ' +
-        'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'inline-block\';">'
-      + '<span class="w-5 h-5 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" ' +
-        'style="display:none;background:' + _subsEsc(color) + ';">' +
-        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>'
-    : '<span class="w-5 h-5 rounded-lg flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" ' +
-        'style="background:' + _subsEsc(color) + ';">' +
-        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>';
-
-  return '<div class="flex flex-col gap-1 px-3 py-2.5 border-b border-gray-50 ' +
-    'dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition ' +
-    (inactive ? 'opacity-50' : '') + '">' +
-    '<div class="flex items-center gap-2 min-w-0">' +
-      iconHtml +
-      '<span class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate flex-1">' +
-        _subsEsc(s.name) +
-      '</span>' +
-      badge +
-      '<span class="text-xs text-gray-500 dark:text-zinc-400 whitespace-nowrap ml-auto pl-1">' +
-        _subsEsc(s.currency) + ' ' + (s.amount || 0).toFixed(2) +
-      '</span>' +
-    '</div>' +
-    '<div class="flex items-center gap-2">' +
-      '<div class="flex-1 h-1 rounded-full bg-gray-100 dark:bg-zinc-700 overflow-hidden">' +
-        '<div class="h-full rounded-full transition-all" ' +
-          'style="width:' + pct + '%; background:' + _subsEsc(color) + '"></div>' +
-      '</div>' +
-      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 whitespace-nowrap">' +
-        _subsEsc(s.cycle_label || '') +
-      '</span>' +
-    '</div>' +
-    '<div class="flex items-center gap-1 justify-end">' +
-      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-auto">' +
-        _subsEsc(monthlyStr) +
-      '</span>' +
-      '<button onclick="_subsEdit(' + s.id + ')" ' +
-        'class="text-xs text-gray-400 hover:text-[#0053e2] transition px-1" ' +
-        'aria-label="Edit ' + _subsEscAttr(s.name) + '">✏️</button>' +
-      '<button onclick="_subsDeletePrompt(' + s.id + ',\'' + _subsJsStr(s.name) + '\')" ' +
-        'class="text-xs text-gray-400 hover:text-red-500 transition px-1" ' +
-        'aria-label="Delete ' + _subsEscAttr(s.name) + '">🗑️</button>' +
-    '</div>' +
-  '</div>';
-}
 
 // ── Summary cards ────────────────────────────────────────────────────────────
 
