@@ -326,7 +326,6 @@ function _subsRenderList() {
   el.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));' +
     'gap:10px;padding:12px;align-content:start;';
 }
-}
 
 // ── Favicon helper ────────────────────────────────────────────────────────────
 // Returns a Google favicon URL for the given website URL, or null if invalid.
