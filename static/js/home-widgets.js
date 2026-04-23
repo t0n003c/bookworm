@@ -1716,34 +1716,7 @@ function closeNotePreview() {
   const sidebar = document.getElementById('note-preview-sidebar');
   if (sidebar && !sidebar.classList.contains('hidden')) {
     sidebar.classList.add('translate-x-full');
-    setTimeout(() => {
-      overlay?.classList.add('hidden');
-      overlay?.classList.remove('flex');
-      sidebar.classList.add('hidden');
-    }, 310);
-  } else {
-    overlay?.classList.add('hidden');
-    overlay?.classList.remove('flex');
-  }
-  document.getElementById('note-preview-popup')?.classList.add('hidden');
-}
-
-// ── Scroll-jank suppressor ─────────────────────────────────────────────────────────
-// While #main-content is scrolling, CSS class .bw-scrolling disables
-// transition: on .hw-card (hover shadow paints would cause jank on every frame).
-(function _initScrollSuppressor() {
-  const main = document.getElementById('main-content');
-  if (!main) return;
-  let _scrollTimer = null;
-  main.addEventListener('scroll', () => {
-    if (!_scrollTimer) main.classList.add('bw-scrolling');
-    clearTimeout(_scrollTimer);
-    _scrollTimer = setTimeout(() => {
-      main.classList.remove('bw-scrolling');
-      _scrollTimer = null;
-    }, 150);
-  }, { passive: true });
-})();
+    setTimeou
 t(() => {
       overlay?.classList.add('hidden');
       overlay?.classList.remove('flex');
