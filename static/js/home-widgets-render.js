@@ -1362,6 +1362,29 @@ function _subsWgtRender(el, list, summary) {
 
   // Draw chart if starting on slide 1
   if (savedSlide === 1) _subsWgtRenderChart(wid);
+
+  // ── Touch swipe + click-zone navigation ────────────────────────────────
+  // Guard: only bind once per element even if _subsWgtRender is called again.
+  if (!el.dataset.swipeInited) {
+    el.dataset.swipeInited = '1';
+    var _swStartX = null;
+    var _swStartY = null;
+    el.addEventListener('touchstart', function(e) {
+      _swStartX = e.touches[0].clientX;
+      _swStartY = e.touches[0].clientY;
+    }, {passive: true});
+    el.addEventListener('touchend', function(e) {
+      if (_swStartX === null) return;
+      var dx = e.changedTouches[0].clientX - _swStartX;
+      var dy = e.changedTouches[0].clientY - _swStartY;
+      _swStartX = null; _swStartY = null;
+      // Ignore swipes that are more vertical than horizontal (scroll intent)
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      if (Math.abs(dx) < 30) return;
+      var cur = parseInt(localStorage.getItem('bw-subs-slide-' + wid) || '0', 10) || 0;
+      _subsWgtGoTo(wid, cur + (dx < 0 ? 1 : -1));
+    }, {passive: true});
+  }
 }
 
 function _loadSubscriptionsSummary(el) {

@@ -37,6 +37,7 @@ function initSubsPage(pid) {
   _subsSummary       = {};
   _subsFilterActive  = 'all';
   _subsFilterCat     = '';
+  _subsSearchTerm    = '';
   _subsSort          = 'name';
   _subsEditingId     = 0;
   _subsSetLoading(true);
@@ -96,10 +97,42 @@ function _subsRenderFilterBar() {
       '">' + _subsEsc(t.l) + '</button>';
   }).join('');
 
+  // Search input
+  var searchHtml =
+    '<input type="search" id="subs-search-input"' +
+    ' value="' + _subsEscAttr(_subsSearchTerm) + '"' +
+    ' placeholder="\uD83D\uDD0D Search\u2026"' +
+    ' oninput="_subsSetSearch(this.value)"' +
+    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-2 py-0.5' +
+    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 w-32">';
+
+  // Sort selector
+  var sortOpts = [
+    {v:'name',   l:'Name'},
+    {v:'amount', l:'Cost ↓'},
+    {v:'date',   l:'Due Soon'},
+  ];
+  var sortHtml =
+    '<select onchange="_subsSetSort(this.value)"' +
+    ' class="text-xs border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5' +
+    ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200">' +
+    sortOpts.map(function(o) {
+      return '<option value="' + o.v + '"' + (o.v === _subsSort ? ' selected' : '') + '>' + o.l + '</option>';
+    }).join('') +
+    '</select>';
+
+  // Export button
+  var exportHtml =
+    '<button onclick="_subsExportCSV()"' +
+    ' title="Export to CSV"' +
+    ' class="text-xs text-gray-400 dark:text-zinc-500 hover:text-[#0053e2]' +
+    ' dark:hover:text-blue-400 transition px-1 py-0.5">\u2B07 CSV</button>';
+
+  // Category dropdown
   var catHtml = '';
   if (catKeys.length > 0) {
     catHtml = '<select onchange="_subsSetFilter(_subsFilterActive,this.value)" ' +
-      'class="ml-auto text-xs border border-gray-200 dark:border-zinc-700 ' +
+      'class="text-xs border border-gray-200 dark:border-zinc-700 ' +
       'rounded px-2 py-0.5 bg-white dark:bg-zinc-800 ' +
       'text-gray-700 dark:text-zinc-200">' +
       '<option value="">All categories</option>' +
@@ -110,7 +143,14 @@ function _subsRenderFilterBar() {
       '</select>';
   }
 
-  bar.innerHTML = tabHtml + catHtml;
+  bar.innerHTML =
+    '<div class="flex flex-wrap items-center gap-1 w-full">'
+    + '<div class="flex gap-1">' + tabHtml + '</div>'
+    + searchHtml
+    + sortHtml
+    + exportHtml
+    + (catHtml ? '<div class="ml-auto">' + catHtml + '</div>' : '')
+    + '</div>';
 }
 
 function _subsSetFilter(active, cat) {
@@ -120,13 +160,62 @@ function _subsSetFilter(active, cat) {
   _subsRenderList();
 }
 
+function _subsSetSearch(term) {
+  _subsSearchTerm = (term || '').trim();
+  _subsRenderList();
+}
+
+function _subsSetSort(key) {
+  _subsSort = key || 'name';
+  _subsRenderFilterBar();
+  _subsRenderList();
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────────
+function _subsExportCSV() {
+  var headers = ['Name','Amount','Currency','Cycle','Category','Color',
+                 'Next Payment Date','Active','Monthly Equiv','Website URL','Notes'];
+  var cycleLabel = {1:'Daily',2:'Weekly',3:'Monthly',4:'Yearly'};
+  var rows = _subsData.map(function(s) {
+    return [
+      s.name || '',
+      (s.amount || 0).toFixed(2),
+      s.currency || 'USD',
+      cycleLabel[s.cycle] || 'Monthly',
+      s.category || '',
+      s.color || '',
+      s.next_payment_date || '',
+      s.active ? 'Yes' : 'No',
+      (s.monthly_equiv || 0).toFixed(2),
+      s.website_url || '',
+      s.notes || '',
+    ].map(function(v) {
+      // CSV-encode: wrap in quotes if value contains comma, quote, or newline
+      var str = String(v).replace(/"/g, '""');
+      return /[,"\n]/.test(str) ? '"' + str + '"' : str;
+    });
+  });
+  var csv = [headers].concat(rows).map(function(r) { return r.join(','); }).join('\r\n');
+  var blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'subscriptions.csv';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
 // ── Subscription list ──────────────────────────────────────────────────────────
 
 function _subsApplyFilters(data) {
+  var term = _subsSearchTerm.toLowerCase();
   return data.filter(function(s) {
     if (_subsFilterActive === 'active'   && !s.active) return false;
     if (_subsFilterActive === 'inactive' &&  s.active) return false;
     if (_subsFilterCat && s.category !== _subsFilterCat) return false;
+    if (term && (s.name || '').toLowerCase().indexOf(term) === -1) return false;
     return true;
   });
 }
