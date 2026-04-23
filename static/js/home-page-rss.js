@@ -164,23 +164,42 @@ function _renderTopCatBar() {
 
 function _feedRow(f) {
   const isActive = String(_selFeed) === String(f.id);
-  const src = (window._rssWidgetSources || {})[f.id];
+  const src      = (window._rssWidgetSources || {})[f.id];
+  const favicon  = _rssFaviconUrl(f.url);
+  const color    = f.color || '#0053e2';
+
+  const iconHtml = favicon
+    ? `<img src="${favicon}" width="16" height="16" alt=""
+            style="border-radius:3px;flex-shrink:0;"
+            onerror="this.style.display='none';this.nextSibling.style.display='inline-block';">
+       <span style="display:none;width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${_esc(color)};"></span>`
+    : `<span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:2px;background:${_esc(color)};"></span>`;
+
   const badge = src
-    ? '<span class="block text-[9px] text-[#0053e2] dark:text-blue-400 truncate leading-tight mt-0.5"'
-      + ' title="Synced from ' + _esc(src.page_name) + ' › ' + _esc(src.widget_label) + '">'
-      + '📌 ' + _esc(src.page_emoji) + ' ' + _esc(src.page_name) + ' › ' + _esc(src.widget_label)
-      + '</span>'
+    ? `<span class="block text-[9px] truncate leading-tight mt-0.5"
+             style="color:${_esc(color)};opacity:.8;"
+             title="Synced from ${_esc(src.page_name)} › ${_esc(src.widget_label)}">
+        📌 ${_esc(src.page_emoji)} ${_esc(src.page_name)} › ${_esc(src.widget_label)}
+      </span>`
     : '';
+
   return `
     <div data-feed-id="${f.id}" class="rounded-lg overflow-hidden">
-      <div class="flex items-center gap-1 group px-1 py-0.5
-                  ${isActive ? 'bg-blue-50 dark:bg-zinc-700' : 'hover:bg-gray-100 dark:hover:bg-zinc-800'} transition">
+      <div class="flex items-center gap-1.5 group px-1 py-0.5 rounded-lg transition
+                  ${isActive
+                    ? 'bg-blue-50 dark:bg-blue-900/20'
+                    : 'hover:bg-gray-100 dark:hover:bg-zinc-800'}"
+           style="${isActive ? 'border-left:3px solid ' + color + ';padding-left:6px;' : 'border-left:3px solid transparent;padding-left:6px;'}"
+      >
         <button onclick="rssSelectFeed(${f.id})"
-                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1
-                       ${isActive ? 'font-semibold text-[#0053e2] dark:text-blue-300' : 'text-gray-700 dark:text-zinc-200'}">
-          <span class="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style="background:${_esc(f.color)}"></span>
+                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1">
+          ${iconHtml}
           <span class="flex-1 min-w-0">
-            <span class="truncate block text-sm">${_esc(f.label || f.url)}</span>
+            <span class="truncate block text-sm
+                         ${isActive ? 'font-semibold' : 'text-gray-700 dark:text-zinc-200'}"
+                  style="${isActive ? 'color:' + color + ';' : ''}">
+              ${_esc(f.label || f.url)}
+            </span>
             ${badge}
           </span>
         </button>
@@ -217,6 +236,18 @@ function _feedRow(f) {
         </form>
       </div>
     </div>`;
+}
+
+// ── Favicon helper (Google S2) ──────────────────────────────────────────────
+function _rssFaviconUrl(feedUrl) {
+  if (!feedUrl) return null;
+  try {
+    let u = feedUrl.trim();
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    const host = new URL(u).hostname;
+    if (!host || host.indexOf('.') === -1) return null;
+    return 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(host) + '&sz=32';
+  } catch { return null; }
 }
 
 // ── Toast — thin delegator to the shared window._bwToast (home-widgets.js) ──
@@ -411,8 +442,20 @@ async function _loadAllItems() {
 
 function _showItemsLoading() {
   var _sil = document.getElementById('rss-items-panel');
-  if (!_sil) return;                          // page navigated away
-  _sil.innerHTML = '<div class="p-4 text-sm text-gray-400 text-center mt-8 animate-pulse">Loading…</div>';
+  if (!_sil) return;
+  const skel = Array.from({length: 5}, (_, i) => `
+    <div class="px-3 py-2.5 border-b border-gray-100 dark:border-zinc-800 animate-pulse"
+         style="animation-delay:${i * 80}ms">
+      <div class="flex items-start gap-2.5">
+        <div class="w-2 h-2 mt-1.5 rounded-full bg-gray-200 dark:bg-zinc-700 flex-shrink-0"></div>
+        <div class="flex-1 space-y-1.5">
+          <div class="h-3 bg-gray-200 dark:bg-zinc-700 rounded w-5/6"></div>
+          <div class="h-3 bg-gray-100 dark:bg-zinc-800 rounded w-4/6"></div>
+          <div class="h-2.5 bg-gray-100 dark:bg-zinc-800 rounded w-2/5 mt-0.5"></div>
+        </div>
+      </div>
+    </div>`).join('');
+  _sil.innerHTML = skel;
 }
 function _showItemsError(msg) {
   var _sie = document.getElementById('rss-items-panel');
@@ -422,27 +465,46 @@ function _showItemsError(msg) {
 
 // ── Single article card (shared by flat + grouped renders) ──────────────────
 function _itemCard(it, idx) {
-  const isRead = _read.has(it.guid);
+  const isRead  = _read.has(it.guid);
+  const color   = it._color || '#0053e2';
+  const dotGlow = isRead ? '' : `box-shadow:0 0 0 3px ${color}25;`;
+
+  const thumbHtml = it.thumbnail
+    ? `<img src="/home/img?url=${encodeURIComponent(it.thumbnail)}" alt=""
+            style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;"
+            onerror="this.style.display='none'">`
+    : '';
+
   return `
     <button class="rss-item w-full text-left px-3 py-2.5
-                   border-b border-gray-100 dark:border-zinc-800
-                   hover:bg-gray-50 dark:hover:bg-zinc-800 transition group
-                   ${isRead ? '' : 'bw-rss-unread'}"
+                   border-b border-gray-100 dark:border-zinc-800/80
+                   hover:bg-blue-50/50 dark:hover:bg-zinc-800/60 transition-colors group
+                   ${isRead ? 'opacity-80' : ''}"
+            style="border-left:3px solid ${isRead ? 'transparent' : color};"
             data-guid="${_esc(it.guid)}" data-idx="${idx}"
             onclick="rssOpenItem(${idx})">
-      <div class="flex items-start gap-2">
-        <span class="rss-dot w-1.5 h-1.5 mt-1.5 rounded-full flex-shrink-0 ${isRead ? 'invisible' : ''}"
-              style="background:${_esc(it._color || '#0053e2')}"></span>
+      <div class="flex items-start gap-2.5">
+        <span class="rss-dot mt-1.5 rounded-full flex-shrink-0 transition-all
+                     ${isRead ? 'w-1.5 h-1.5 bg-gray-200 dark:bg-zinc-700' : 'w-2 h-2'}"
+              style="${isRead ? '' : 'background:' + color + ';' + dotGlow}"></span>
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-semibold leading-snug text-gray-800 dark:text-zinc-100
-                    line-clamp-2 group-hover:text-[#0053e2] transition
-                    ${isRead ? 'font-normal text-gray-500 dark:text-zinc-400' : ''}">
+          <p class="text-xs leading-snug line-clamp-2 transition-colors
+                    group-hover:text-[#0053e2] dark:group-hover:text-blue-400
+                    ${isRead
+                      ? 'font-normal text-gray-500 dark:text-zinc-400'
+                      : 'font-semibold text-gray-800 dark:text-zinc-100'}">
             ${_esc(it.title)}
           </p>
-          <p class="mt-0.5 text-[10px] text-gray-400 dark:text-zinc-500 truncate">
-            ${it._source ? _esc(it._source) + (it._date ? ' · ' : '') : ''}${it._date}
+          <p class="mt-1 text-[10px] flex items-center gap-1 flex-wrap">
+            ${it._source
+              ? `<span class="font-medium px-1.5 py-0.5 rounded-full text-white text-[9px]"
+                       style="background:${color};"
+                 >${_esc(it._source)}</span>`
+              : ''}
+            ${it._date ? `<span class="text-gray-400 dark:text-zinc-500">${_esc(it._date)}</span>` : ''}
           </p>
         </div>
+        ${thumbHtml}
       </div>
     </button>`;
 }
@@ -471,11 +533,15 @@ function _renderItems(items) {
       return a.localeCompare(b);
     });
     panel.innerHTML = sorted.map(([cat, entries]) =>
-      `<div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider
-                   text-gray-400 dark:text-zinc-500
-                   bg-gray-50 dark:bg-zinc-950
-                   border-b border-gray-100 dark:border-zinc-800
-                   sticky top-0 z-10">${_esc(cat || 'Uncategorized')}</div>` +
+      `<div class="px-3 py-2 text-[10px] font-bold uppercase tracking-widest
+                   text-gray-500 dark:text-zinc-400
+                   bg-gradient-to-r from-gray-100 to-transparent
+                   dark:from-zinc-800/80 dark:to-transparent
+                   border-b border-gray-200 dark:border-zinc-700
+                   sticky top-0 z-10 flex items-center gap-2">
+        <span class="w-4 h-px bg-gray-300 dark:bg-zinc-600 flex-shrink-0"></span>
+        ${_esc(cat || 'Uncategorized')}
+      </div>` +
       entries.map(({ it, idx }) => _itemCard(it, idx)).join('')
     ).join('');
     return;
@@ -511,15 +577,22 @@ function _showPreview(it) {
             class="w-full max-h-64 object-cover rounded-xl mb-5 bg-gray-100 dark:bg-zinc-800"
             onerror="this.style.display='none'">`
     : '';
+  const favicon = _rssFaviconUrl(it.link || '');
+  const sourceChip = it._source
+    ? `<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
+             style="background:${_esc(it._color || '#0053e2')};">
+        ${favicon ? `<img src="${_esc(favicon)}" width="12" height="12" alt="" style="border-radius:2px;"
+             onerror="this.style.display='none'">` : ''}
+        ${_esc(it._source)}
+      </span>`
+    : '';
   panel.innerHTML = `
     <div class="max-w-2xl mx-auto px-6 py-6">
-      <div class="flex items-center gap-2 text-[11px] text-gray-400 dark:text-zinc-500 mb-3">
-        <span class="inline-block w-2 h-2 rounded-full flex-shrink-0"
-              style="background:${_esc(it._color || '#0053e2')}"></span>
-        ${it._source ? `<span class="font-medium text-gray-500 dark:text-zinc-400">${_esc(it._source)}</span><span>·</span>` : ''}
-        <span>${it._date || ''}</span>
+      <div class="flex items-center gap-2 flex-wrap text-[11px] text-gray-400 dark:text-zinc-500 mb-4">
+        ${sourceChip}
+        ${it._date ? `<span class="text-gray-400 dark:text-zinc-500">${_esc(it._date)}</span>` : ''}
       </div>
-      <h2 class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-snug mb-4">${_esc(it.title)}</h2>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-zinc-100 leading-snug mb-5">${_esc(it.title)}</h2>
       ${thumbHtml}
       <div id="rss-preview-body"
            class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-zinc-300
