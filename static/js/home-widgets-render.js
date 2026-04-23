@@ -757,7 +757,7 @@ function _remBellRender() {
         <p class="text-xs text-gray-700 dark:text-zinc-200 leading-snug">${_esc(r.text)}</p>
         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">${_esc(label)}</p>
       </div>
-      <button onclick="remBellDismiss(${r.ts})" title="Dismiss"
+      <button onclick="event.stopPropagation();remBellDismiss(${r.ts})" title="Dismiss"
         class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition
                w-5 h-5 rounded flex items-center justify-center text-xs
                text-gray-300 dark:text-zinc-600
