@@ -20,7 +20,8 @@ var _crmFields   = [];
 var _crmStages   = [];
 var _crmDeals    = [];
 var _crmProjects = [];
-var _crmView     = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar' | 'detail'
+var _crmView         = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calendar' | 'detail'
+var _crmGalleryStyle = 'cards';   // 'cards' | 'compact' | 'profile' | 'minimal'
 var _crmQuery    = '';
 
 // Calendar state (owned by home-page-crm-calendar.js, declared here for reset)
@@ -44,7 +45,8 @@ var _crmDupOverride = false;
 // ── Entry point ───────────────────────────────────────────────────────────────
 function initCrmPage(pid) {
   _crmPid  = pid;
-  _crmView = localStorage.getItem('bw_crm_view') || 'table';
+  _crmView         = localStorage.getItem('bw_crm_view')   || 'table';
+  _crmGalleryStyle  = localStorage.getItem('bw_crm_gstyle') || 'cards';
   _crmQuery = '';
   // Reset calendar state on every HTMX re-nav (reminders lazy-reload per session)
   _crmAllReminders       = [];
@@ -164,13 +166,22 @@ function _crmRenderViewToggle() {
                     : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#ffc220]'}"
        >☑ Select</button>`
     : '';
+  const galStyles = [['cards','⊟ Cards'],['compact','☰ Compact'],['profile','◉ Profile'],['minimal','⊡ Minimal']];
+  const galPicker = _crmView === 'gallery'
+    ? `<select onchange="crmSetGalleryStyle(this.value)"
+         class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600
+                bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+         ${galStyles.map(([v,l])=>`<option value="${v}" ${_crmGalleryStyle===v?'selected':''}>${l}</option>`).join('')}
+       </select>`
+    : '';
   el.innerHTML =
     `<select onchange="crmSetView(this.value)"
        class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600
               bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
               focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
        ${opts}
-     </select>${canBulk ? ' ' + bulkBtn : ''}`;
+     </select>${galPicker ? ' ' + galPicker : ''}${canBulk ? ' ' + bulkBtn : ''}`;
 }
 
 function crmSetView(v) {
