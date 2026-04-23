@@ -751,15 +751,30 @@ function _remBellRender() {
   list.innerHTML = _missedQueue.slice().reverse().map(r => {
     const t = new Date(r.ts);
     const label = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `<div class="flex items-start gap-2 py-2 border-b border-gray-100 dark:border-zinc-800 last:border-0">
+    return `<div class="flex items-start gap-2 py-2 border-b border-gray-100 dark:border-zinc-800 last:border-0 group">
       <span class="text-wblue mt-0.5 flex-shrink-0">🔔</span>
       <div class="flex-1 min-w-0">
         <p class="text-xs text-gray-700 dark:text-zinc-200 leading-snug">${_esc(r.text)}</p>
         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">${_esc(label)}</p>
       </div>
+      <button onclick="remBellDismiss(${r.ts})" title="Dismiss"
+        class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition
+               w-5 h-5 rounded flex items-center justify-center text-xs
+               text-gray-300 dark:text-zinc-600
+               hover:text-red-500 dark:hover:text-red-400
+               hover:bg-red-50 dark:hover:bg-red-900/20">✕</button>
     </div>`;
   }).join('');
 }
+
+/** Public: dismiss a single reminder by its timestamp key. */
+window.remBellDismiss = function (ts) {
+  const idx = _missedQueue.findIndex(r => r.ts === ts);
+  if (idx !== -1) _missedQueue.splice(idx, 1);
+  _remSave();
+  _remBellUpdateBadge();
+  _remBellRender();
+};
 
 /** Public: clear all missed reminders and close the panel. */
 window.remBellClear = function () {
