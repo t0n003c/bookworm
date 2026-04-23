@@ -174,25 +174,34 @@ function _subsRenderFilterBar() {
   _subsData.forEach(function(s) { if (s.category) cats[s.category] = 1; });
   var catKeys = Object.keys(cats).sort();
 
+  var counts = {
+    all:      _subsData.length,
+    active:   _subsData.filter(function(s){ return  s.active; }).length,
+    inactive: _subsData.filter(function(s){ return !s.active; }).length,
+  };
   var tabs = [
-    {k:'all',    l:'All'},
-    {k:'active', l:'Active'},
-    {k:'inactive',l:'Inactive'}
+    {k:'all',     l:'All',      n: counts.all},
+    {k:'active',  l:'Active',   n: counts.active},
+    {k:'inactive',l:'Inactive', n: counts.inactive},
   ];
   var tabHtml = tabs.map(function(t) {
     var active = t.k === _subsFilterActive;
     return '<button onclick="_subsSetFilter(\'' + t.k + '\',_subsFilterCat)" ' +
-      'class="px-2 py-0.5 rounded text-xs font-medium transition ' +
+      'class="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition ' +
       (active
         ? 'bg-[#0053e2] text-white'
         : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800') +
-      '">' + _subsEsc(t.l) + '</button>';
+      '">' + _subsEsc(t.l) +
+      '<span class="text-[10px] px-1 py-px rounded-full ' +
+        (active ? 'bg-white/30 text-white' : 'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400') +
+        '">' + t.n + '</span>' +
+      '</button>';
   }).join('');
 
   var catHtml = '';
   if (catKeys.length > 0) {
     catHtml = '<select onchange="_subsSetFilter(_subsFilterActive,this.value)" ' +
-      'class="ml-auto text-xs border border-gray-200 dark:border-zinc-700 ' +
+      'class="text-xs border border-gray-200 dark:border-zinc-700 ' +
       'rounded px-2 py-0.5 bg-white dark:bg-zinc-800 ' +
       'text-gray-700 dark:text-zinc-200">' +
       '<option value="">All categories</option>' +
@@ -203,7 +212,13 @@ function _subsRenderFilterBar() {
       '</select>';
   }
 
-  bar.innerHTML = tabHtml + catHtml;
+  // Add button lives in the filter bar so it stays visible
+  var addBtn = '<button onclick="subsOpenAddModal()" ' +
+    'class="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ' +
+    'bg-[#0053e2] text-white hover:bg-[#0048c8] transition flex-shrink-0" ' +
+    'aria-label="Add subscription">＋ Add</button>';
+
+  bar.innerHTML = tabHtml + catHtml + addBtn;
 }
 
 function _subsSetFilter(active, cat) {
@@ -295,18 +310,22 @@ function _subsRenderList() {
   var filtered = _subsApplySort(_subsApplyFilters(_subsData));
 
   if (filtered.length === 0) {
+    el.style.cssText = '';
     el.innerHTML = '<div class="p-6 text-center">' +
       '<p class="text-sm text-gray-400 dark:text-zinc-500">' +
       (_subsData.length === 0
-        ? 'No subscriptions yet.<br>Click <strong>＋ Add Subscription</strong> to start.'
+        ? 'No subscriptions yet.<br>Click <strong>＋ Add</strong> in the filter bar to start.'
         : 'No subscriptions match the current filter.') +
       '</p></div>';
     return;
   }
 
   el.innerHTML = filtered.map(function(s) {
-    return _subsRowHtml(s);
+    return _subsCardHtml(s);
   }).join('');
+  el.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));' +
+    'gap:10px;padding:12px;align-content:start;';
+}
 }
 
 // ── Favicon helper ────────────────────────────────────────────────────────────
@@ -387,13 +406,98 @@ function _subsAutoFillUrl(name) {
   }, 600);
 }
 
-function _subsRowHtml(s) {
+function _subsCardHtml(s) {
   var daysUntil = s.days_until_due;
   var badge = '';
   if (daysUntil !== null && daysUntil !== undefined) {
     if (daysUntil < 0) {
-      badge = '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 ' +
+      badge = '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 ' +
         'dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap">Overdue</span>';
+    } else if (daysUntil <= 7) {
+      badge = '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 ' +
+        'dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap">Due in ' + daysUntil + 'd</span>';
+    } else if (daysUntil <= 30) {
+      badge = '<span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ' +
+        'dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap">Due in ' + daysUntil + 'd</span>';
+    }
+  }
+
+  var inactive = !s.active;
+  var color    = s.color || '#0053e2';
+  var pct      = s.progress_pct || 0;
+  var amtStr   = _subsEsc(s.currency) + ' ' + (s.amount || 0).toFixed(2);
+  var moStr    = (s.currency === 'USD' ? '$' : s.currency + ' ') +
+                 (s.monthly_equiv || 0).toFixed(2) + '/mo';
+
+  var faviconUrl = _subsGetFaviconUrl(s.website_url || '');
+  var iconHtml = faviconUrl
+    ? '<img src="' + faviconUrl + '" width="28" height="28" alt=""' +
+        ' style="border-radius:7px;flex-shrink:0;"' +
+        ' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\';">'
+      + '<span style="display:none;width:28px;height:28px;border-radius:7px;flex-shrink:0;' +
+        'background:' + color + ';color:#fff;font-size:13px;font-weight:700;' +
+        'align-items:center;justify-content:center;">' +
+        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>'
+    : '<span style="display:flex;width:28px;height:28px;border-radius:7px;flex-shrink:0;' +
+        'background:' + color + ';color:#fff;font-size:13px;font-weight:700;' +
+        'align-items:center;justify-content:center;">' +
+        _subsEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>';
+
+  // Glow color for progress bar
+  var glowStyle = 'box-shadow:0 0 6px 1px ' + color + '66;';
+
+  return '<div class="group relative flex flex-col rounded-xl border ' +
+    'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 ' +
+    'shadow-sm overflow-hidden transition hover:shadow-md hover:-translate-y-0.5 ' +
+    (inactive ? 'opacity-50 ' : '') + '" ' +
+    'style="border-top:3px solid ' + color + ';">' +
+
+    // Card body
+    '<div class="flex flex-col gap-2 p-3">' +
+
+      // Row 1: icon + name + amount
+      '<div class="flex items-start gap-2 min-w-0">' +
+        iconHtml +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate leading-tight">' +
+            _subsEsc(s.name) +
+          '</p>' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+            _subsEsc(s.cycle_label || '') +
+          '</p>' +
+        '</div>' +
+        '<div class="text-right flex-shrink-0">' +
+          '<p class="text-sm font-bold text-gray-800 dark:text-zinc-100">' + amtStr + '</p>' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' + _subsEsc(moStr) + '</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Row 2: progress bar
+      '<div class="h-1.5 rounded-full bg-gray-100 dark:bg-zinc-700 overflow-visible">' +
+        '<div class="h-full rounded-full transition-all" ' +
+          'style="width:' + pct + '%;background:' + color + ';' + glowStyle + '"></div>' +
+      '</div>' +
+
+      // Row 3: badge + action buttons
+      '<div class="flex items-center justify-between gap-1">' +
+        (badge || '<span class="text-[10px] text-gray-300 dark:text-zinc-600">' +
+          (s.next_payment_date ? _subsEsc(s.next_payment_date) : 'No date') + '</span>') +
+        '<div class="flex gap-0.5 opacity-0 group-hover:opacity-100 transition">' +
+          '<button onclick="_subsEdit(' + s.id + ')" ' +
+            'class="p-1 rounded text-gray-400 hover:text-[#0053e2] hover:bg-blue-50 ' +
+            'dark:hover:bg-blue-900/30 transition" ' +
+            'aria-label="Edit ' + _subsEscAttr(s.name) + '">✏️</button>' +
+          '<button onclick="_subsDeletePrompt(' + s.id + ',\'' + _subsJsStr(s.name) + '\')" ' +
+            'class="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 ' +
+            'dark:hover:bg-red-900/30 transition" ' +
+            'aria-label="Delete ' + _subsEscAttr(s.name) + '">🗑️</button>' +
+        '</div>' +
+      '</div>' +
+
+    '</div>' +
+  '</div>';
+}
+
     } else if (daysUntil <= 7) {
       badge = '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 ' +
         'dark:bg-red-900/40 dark:text-red-300 whitespace-nowrap">Due in ' + daysUntil + 'd</span>';
@@ -458,28 +562,55 @@ function _subsRowHtml(s) {
   '</div>';
 }
 
-// ── Summary cards ──────────────────────────────────────────────────────────────
+// ── Summary cards ────────────────────────────────────────────────────────────
+
+// RAF counter: animates an element's text from 0 → target over ~700 ms.
+function _subsAnimateCount(el, target, prefix, suffix, decimals) {
+  var start = performance.now();
+  var dur   = 700;
+  function step(now) {
+    var t   = Math.min((now - start) / dur, 1);
+    var ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    var val = target * ease;
+    el.textContent = (prefix || '') + val.toFixed(decimals || 0) + (suffix || '');
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
 
 function _subsRenderSummaryCards() {
   var el = document.getElementById('subs-summary-cards');
   if (!el) return;
   var s = _subsSummary;
   var cards = [
-    {label:'Monthly Total', value: _subsFmtMoney(s.monthly_total), icon:'📅'},
-    {label:'Yearly Total',  value: _subsFmtMoney(s.yearly_total),  icon:'📆'},
-    {label:'Active',        value: (s.active_count || 0) + ' / ' + (s.total_count || 0), icon:'✅'},
-    {label:'Next Due',      value: _subsNextDueLabel(s.upcoming),  icon:'⏰'},
+    {label:'Monthly',  raw: s.monthly_total,   id:'subs-sc-mo',  prefix:'$', dec:2, topColor:'#0053e2', icon:'💳'},
+    {label:'Yearly',   raw: s.yearly_total,    id:'subs-sc-yr',  prefix:'$', dec:2, topColor:'#6366f1', icon:'📆'},
+    {label:'Active',   raw: null,              id:'subs-sc-act', prefix:'',  dec:0, topColor:'#2a8703', icon:'✅',
+     text: (s.active_count || 0) + ' / ' + (s.total_count || 0)},
+    {label:'Next Due', raw: null,              id:'subs-sc-due', prefix:'',  dec:0, topColor:'#f59e0b', icon:'⏰',
+     text: _subsNextDueLabel(s.upcoming)},
   ];
   el.innerHTML = cards.map(function(c) {
+    var valHtml = c.raw !== null && c.raw !== undefined
+      ? '<p id="' + c.id + '" class="text-xl font-bold text-gray-900 dark:text-zinc-100 tabular-nums">'
+          + c.prefix + '0.00</p>'
+      : '<p id="' + c.id + '" class="text-xl font-bold text-gray-900 dark:text-zinc-100 truncate">' +
+          _subsEsc(c.text || '—') + '</p>';
     return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-100 ' +
-      'dark:border-zinc-800 shadow-sm p-3 flex flex-col gap-1">' +
+      'dark:border-zinc-800 shadow-sm p-3 flex flex-col gap-1" ' +
+      'style="border-top:3px solid ' + c.topColor + ';">' +
       '<div class="flex items-center gap-1.5">' +
-        '<span aria-hidden="true">' + c.icon + '</span>' +
+        '<span aria-hidden="true" class="text-base">' + c.icon + '</span>' +
         '<span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">' + _subsEsc(c.label) + '</span>' +
       '</div>' +
-      '<p class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">' + _subsEsc(c.value) + '</p>' +
+      valHtml +
     '</div>';
   }).join('');
+  // Animate money values
+  var moEl = document.getElementById('subs-sc-mo');
+  var yrEl = document.getElementById('subs-sc-yr');
+  if (moEl && s.monthly_total != null) _subsAnimateCount(moEl, s.monthly_total, '$', '', 2);
+  if (yrEl && s.yearly_total  != null) _subsAnimateCount(yrEl, s.yearly_total,  '$', '', 2);
 }
 
 function _subsFmtMoney(val) {

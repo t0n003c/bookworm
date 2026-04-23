@@ -1215,7 +1215,7 @@ function _subsWgtGoTo(wid, idx) {
     s.style.display = (i === idx) ? 'flex' : 'none';
   });
   dots.forEach(function(d, i) {
-    d.style.background = (i === idx) ? '#0053e2' : '#d1d5db';
+    d.style.background = (i === idx) ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.22)';
   });
   localStorage.setItem('bw-subs-slide-' + wid, idx);
   // Lazy-render chart when switching to slide 1
@@ -1264,25 +1264,45 @@ function _subsWgtRenderChart(wid) {
     });
   }
   _subsWgtChartPromise.then(function() {
-    // canvas may have been removed if widget refreshed mid-load
     var c = document.getElementById('subs-sw-canvas-' + wid);
     if (!c || !window.Chart) return;
+    var total = store.summary ? store.summary.monthly_total || 0 : 0;
+    var centerLabelPlugin = {
+      id: 'centerLabel-' + wid,
+      afterDraw: function(chart) {
+        var ctx2 = chart.ctx;
+        var cx = chart.chartArea ? (chart.chartArea.left + chart.chartArea.right) / 2 : 0;
+        var cy = chart.chartArea ? (chart.chartArea.top  + chart.chartArea.bottom) / 2 : 0;
+        ctx2.save();
+        ctx2.textAlign = 'center';
+        ctx2.textBaseline = 'middle';
+        ctx2.fillStyle = 'rgba(241,245,249,0.95)';
+        ctx2.font = 'bold 13px sans-serif';
+        ctx2.fillText('$' + (total).toFixed(2), cx, cy - 5);
+        ctx2.fillStyle = 'rgba(148,163,184,0.7)';
+        ctx2.font = '9px sans-serif';
+        ctx2.fillText('/mo', cx, cy + 9);
+        ctx2.restore();
+      }
+    };
     store.chart = new window.Chart(c, {
       type: 'doughnut',
       data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors,
-                borderWidth: 2, borderColor: '#ffffff' }] },
+                borderWidth: 2, borderColor: 'rgba(15,23,42,0.8)' }] },
       options: {
-        responsive: true, maintainAspectRatio: false, cutout: '65%',
+        responsive: true, maintainAspectRatio: false, cutout: '62%',
         plugins: {
           legend: { display: true, position: 'right',
-            labels: { boxWidth: 8, boxHeight: 8, font: { size: 9 }, padding: 4 } },
+            labels: { boxWidth: 8, boxHeight: 8, font: { size: 9 }, padding: 4,
+                      color: 'rgba(148,163,184,0.9)' } },
           tooltip: {
             callbacks: { label: function(ctx) {
               return ' $' + (ctx.raw || 0).toFixed(2) + '/mo';
             }}
           }
         }
-      }
+      },
+      plugins: [centerLabelPlugin]
     });
   }).catch(function(e) {
     console.error('[subs-widget] Chart.js vendor bundle load failed:', e);
@@ -1297,43 +1317,65 @@ function _subsWgtRender(el, list, summary) {
   // Cache data for chart rendering
   _subsWgtData[wid] = { list: list, summary: summary, chart: null };
 
+  // ── Glassmorphism dark skin ──────────────────────────────────────────────
+  el.style.background   = 'linear-gradient(135deg,#0f172a 0%,#1e1b4b 60%,#0f172a 100%)';
+  el.style.borderRadius = '10px';
+  el.style.overflow     = 'hidden';
+
   var activeRows = (list || []).filter(function(s) { return s.active; });
   var overflow   = Math.max(0, activeRows.length - 5);
   var topRows    = activeRows.slice(0, 5);
 
+  // ── Hero monthly total ───────────────────────────────────────────────────
+  var heroHtml =
+    '<div style="text-align:center;padding:5px 0 7px;">'
+    + '<p style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;'
+      + 'color:rgba(148,163,184,0.7);margin:0 0 2px;">Monthly</p>'
+    + '<p style="font-size:22px;font-weight:800;line-height:1;color:#f1f5f9;'
+      + 'letter-spacing:-0.5px;margin:0;">'
+      + _subsWgtFmtMoney(summary.monthly_total)
+    + '</p>'
+  + '</div>';
+
   // ── Slide 0: subscription list ────────────────────────────────
   var rowsHtml = topRows.length ? topRows.map(function(s) {
+    var color = s.color || '#0053e2';
     var faviconUrl = _subsWgtFaviconUrl(s.website_url || '');
     var iconHtml = faviconUrl
-      ? '<img src="' + faviconUrl + '" width="14" height="14" alt=""'
-        + ' style="flex-shrink:0;border-radius:2px;"'
-        + ' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'inline-block\';">'  
-        + '<span style="width:10px;height:10px;border-radius:50%;display:none;flex-shrink:0;background:'
-        + _subsWgtEsc(s.color || '#0053e2') + ';"></span>'
-      : '<span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'
-        + _subsWgtEsc(s.color || '#0053e2') + ';"></span>';
-    return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;'
-      + 'border-bottom:1px solid rgba(0,0,0,0.05);min-width:0;">'
+      ? '<img src="' + faviconUrl + '" width="18" height="18" alt=""'
+        + ' style="flex-shrink:0;border-radius:4px;"'
+        + ' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\';">'
+        + '<span style="width:18px;height:18px;border-radius:4px;display:none;flex-shrink:0;'
+          + 'align-items:center;justify-content:center;font-size:10px;font-weight:700;'
+          + 'color:#fff;background:' + _subsWgtEsc(color) + ';">'
+          + _subsWgtEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>'
+      : '<span style="width:18px;height:18px;border-radius:4px;flex-shrink:0;display:flex;'
+          + 'align-items:center;justify-content:center;font-size:10px;font-weight:700;'
+          + 'color:#fff;background:' + _subsWgtEsc(color) + ';">'
+          + _subsWgtEsc((s.name || '?').charAt(0).toUpperCase()) + '</span>';
+    return '<div style="display:flex;align-items:center;gap:7px;padding:3px 4px 3px 6px;'
+      + 'border-left:3px solid ' + _subsWgtEsc(color) + ';'
+      + 'border-radius:0 4px 4px 0;margin-bottom:3px;min-width:0;'
+      + 'background:rgba(255,255,255,0.04);">'
       + iconHtml
       + '<span style="font-size:11px;font-weight:600;flex:1;white-space:nowrap;'
-        + 'overflow:hidden;text-overflow:ellipsis;">'
+        + 'overflow:hidden;text-overflow:ellipsis;color:#e2e8f0;">'
         + _subsWgtEsc(s.name) + '</span>'
-      + '<span style="font-size:10px;color:#6b7280;white-space:nowrap;margin-left:auto;padding-left:4px;">'
-        + _subsWgtEsc(s.currency) + ' ' + (s.amount || 0).toFixed(2)
+      + '<span style="font-size:10px;color:rgba(148,163,184,0.85);white-space:nowrap;padding-left:4px;">'
+        + _subsWgtEsc(s.currency) + '\u00a0' + (s.amount || 0).toFixed(2)
       + '</span>'
     + '</div>';
   }).join('')
-  : '<p style="font-size:11px;color:#9ca3af;text-align:center;padding:12px 0;">' +
-    'No active subscriptions.</p>';
+  : '<p style="font-size:11px;color:rgba(148,163,184,0.5);text-align:center;padding:10px 0;">No active subscriptions.</p>';
 
   var overflowHtml = overflow > 0
-    ? '<p style="font-size:10px;color:#9ca3af;text-align:right;margin-top:2px;">+ '
+    ? '<p style="font-size:9px;color:rgba(148,163,184,0.45);text-align:right;margin-top:2px;">+ '
       + overflow + ' more</p>' : '';
 
   var slide0 = '<div class="subs-sw-slide" '
     + 'style="display:' + (savedSlide === 0 ? 'flex' : 'none')
-    + ';flex-direction:column;flex:1;overflow:hidden;padding:4px 0;">'  
-    + rowsHtml + overflowHtml
+    + ';flex-direction:column;flex:1;overflow:hidden;padding:0 2px;">'
+    + heroHtml + rowsHtml + overflowHtml
     + '</div>';
 
   // ── Slide 1: donut chart ───────────────────────────────────
@@ -1349,23 +1391,24 @@ function _subsWgtRender(el, list, summary) {
   var dotsHtml = [0, 1].map(function(i) {
     return '<span class="subs-sw-dot" onclick="_subsWgtGoTo(' + wid + ',' + i + ')" '
       + 'style="display:inline-block;width:6px;height:6px;border-radius:50%;cursor:pointer;'
-      + 'background:' + (i === savedSlide ? '#0053e2' : '#d1d5db') + ';"></span>';
+      + 'background:' + (i === savedSlide ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.22)') + ';"></span>';
   }).join('');
 
-  var footer = '<div style="flex-shrink:0;padding-top:4px;border-top:1px solid rgba(0,0,0,0.06);">'
+  var footer = '<div style="flex-shrink:0;padding:6px 2px 2px;border-top:1px solid rgba(255,255,255,0.07);">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-      + '<span style="font-size:10px;color:#6b7280;">'
-        + _subsWgtFmtMoney(summary.monthly_total) + '/mo'
+      + '<span style="font-size:10px;color:rgba(148,163,184,0.6);">'
+        + _subsWgtFmtMoney(summary.yearly_total) + '/yr'
       + '</span>'
-      + '<span style="display:flex;gap:4px;align-items:center;">' + dotsHtml + '</span>'
+      + '<span style="display:flex;gap:5px;align-items:center;">' + dotsHtml + '</span>'
       + '<button onclick="openHomePage(' + pid + ')" '
-        + 'style="font-size:10px;color:#0053e2;background:none;border:none;cursor:pointer;'
+        + 'style="font-size:10px;color:rgba(147,197,253,0.85);background:none;border:none;cursor:pointer;'
         + 'padding:0;text-decoration:underline;text-underline-offset:2px;">'
-        + 'Open →</button>'
+        + 'Open \u2192</button>'
     + '</div>'
   + '</div>';
 
-  el.innerHTML = '<div style="display:flex;flex-direction:column;height:100%;gap:0;padding:0 2px;">'
+  el.innerHTML = '<div id="subs-sw-' + wid + '" '
+    + 'style="display:flex;flex-direction:column;height:100%;padding:6px 8px 4px;">'
     + slide0 + slide1 + footer
     + '</div>';
 

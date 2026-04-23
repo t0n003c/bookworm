@@ -30,12 +30,18 @@
   {# ── Due-date reminder banner — populated by JS when active subs are due #}
   <div id="subs-reminder-banner"></div>
 
+  {# ── Summary cards (full-width strip above panels) ────────────────────────── #}
+  <div id="subs-summary-cards"
+       class="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 py-3 flex-shrink-0
+              border-b border-gray-100 dark:border-zinc-800">
+  </div>
+
   {# ── Two-panel body ───────────────────────────────────────────────────────── #}
   <div class="flex flex-1 overflow-hidden">
 
-    {# ── LEFT: subscription list (~35%) ──────────────────────────────────── #}
-    <div class="w-[340px] flex-shrink-0 flex flex-col border-r border-gray-200
-                dark:border-zinc-800 bg-white dark:bg-zinc-900">
+    {# ── LEFT: subscription card grid (stretches) ────────────────────────── #}
+    <div class="flex-1 flex flex-col border-r border-gray-200
+                dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950">
 
       {# Filter / sort bar — populated by JS #}
       <div id="subs-filter-bar"
@@ -50,26 +56,11 @@
         {# Populated by _subsRenderList() #}
       </div>
 
-      {# Add button #}
-      <div class="p-3 border-t border-gray-100 dark:border-zinc-800 flex-shrink-0">
-        <button onclick="subsOpenAddModal()"
-                class="w-full py-2 px-3 rounded-lg text-sm font-semibold
-                       bg-[#0053e2] text-white hover:bg-[#0048c8] transition
-                       focus:outline-none focus:ring-2 focus:ring-[#0053e2]/50"
-                aria-label="Add subscription">
-          ＋ Add Subscription
-        </button>
-      </div>
     </div>
 
-    {# ── RIGHT: analytics panel ───────────────────────────────────────────── #}
+    {# ── RIGHT: analytics panel (fixed width) ────────────────────────────── #}
     <div id="subs-analytics-panel"
-         class="flex-1 flex flex-col overflow-y-auto min-w-0">
-
-      {# Summary cards row — 4 cards injected by _subsRenderSummaryCards() #}
-      <div id="subs-summary-cards"
-           class="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 flex-shrink-0">
-      </div>
+         class="w-[380px] flex-shrink-0 flex flex-col overflow-y-auto">
 
       {# Charts row — fixed-height wrappers required for Chart.js responsive:true #}
       <div class="flex gap-4 px-4 pb-4 flex-shrink-0 flex-wrap">
