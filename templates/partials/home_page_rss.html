@@ -34,42 +34,33 @@
   <div class="flex flex-1 min-h-0 overflow-hidden">
 
     {# ── Feeds panel (left) ──────────────────────────────────────────────── #}
-    <div class="w-56 flex-shrink-0 border-r border-gray-200 dark:border-zinc-700
-                flex flex-col bg-gray-50 dark:bg-zinc-800">
+    <div class="w-56 flex-shrink-0 border-r border-gray-200 dark:border-zinc-800
+                flex flex-col bg-gray-50 dark:bg-zinc-950">
 
-      <div class="px-3 pt-3 pb-2 flex items-center gap-1.5">
-        <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-300
-                     uppercase tracking-widest">Feeds</span>
-        <span class="ml-auto text-sm leading-none select-none opacity-40">📡</span>
-      </div>
+      <div class="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-400 dark:text-zinc-500
+                  uppercase tracking-widest">Feeds</div>
 
       {# Feed list — rendered flat by _renderFeedList() #}
       <div id="rss-feed-list" class="flex-1 overflow-y-auto px-2 space-y-0.5 pb-2"></div>
 
       {# Add-feed form #}
-      <div class="border-t border-gray-200 dark:border-zinc-700 p-3 flex-shrink-0">
+      <div class="border-t border-gray-200 dark:border-zinc-800 p-3 flex-shrink-0">
         <form id="rss-add-form">
           <input id="rss-add-url" type="url" placeholder="Feed URL…" required
-                 class="w-full border border-gray-300 dark:border-zinc-600 rounded-lg
-                        px-2 py-1.5 text-xs
-                        bg-white dark:bg-zinc-700
-                        text-gray-800 dark:text-zinc-100
-                        placeholder:text-gray-400 dark:placeholder:text-zinc-400
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-1.5" />
           <input id="rss-add-label" type="text" placeholder="Label (optional)"
-                 class="w-full border border-gray-300 dark:border-zinc-600 rounded-lg
-                        px-2 py-1.5 text-xs
-                        bg-white dark:bg-zinc-700
-                        text-gray-800 dark:text-zinc-100
-                        placeholder:text-gray-400 dark:placeholder:text-zinc-400
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-1.5" />
           <input id="rss-add-category" type="text" placeholder="Category (optional)"
                  list="rss-category-list"
-                 class="w-full border border-gray-300 dark:border-zinc-600 rounded-lg
-                        px-2 py-1.5 text-xs
-                        bg-white dark:bg-zinc-700
-                        text-gray-800 dark:text-zinc-100
-                        placeholder:text-gray-400 dark:placeholder:text-zinc-400
+                 class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg
+                        px-2 py-1.5 text-xs bg-white dark:bg-zinc-800
+                        text-gray-800 dark:text-zinc-100 placeholder-gray-400
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] mb-2" />
           <datalist id="rss-category-list"></datalist>
           <button id="rss-add-btn" type="submit"
@@ -78,7 +69,7 @@
                          disabled:opacity-50 disabled:cursor-not-allowed">
             + Add Feed
           </button>
-          <p id="rss-add-err" class="hidden mt-1.5 text-[10px] text-red-500 dark:text-red-400"></p>
+          <p id="rss-add-err" class="hidden mt-1.5 text-[10px] text-red-500"></p>
         </form>
       </div>
     </div>

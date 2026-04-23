@@ -185,64 +185,46 @@ function _feedRow(f) {
 
   return `
     <div data-feed-id="${f.id}" class="rounded-lg overflow-hidden">
-      <div class="flex items-center gap-1.5 group px-2 py-0.5 rounded-lg transition
-                  ${isActive
-                    ? 'bg-white/70 dark:bg-zinc-700'
-                    : 'hover:bg-white/50 dark:hover:bg-zinc-700/60'}">
+      <div class="flex items-center gap-1 group px-1 py-0.5
+                  ${isActive ? 'bg-blue-50 dark:bg-zinc-700' : 'hover:bg-gray-100 dark:hover:bg-zinc-800'} transition">
         <button onclick="rssSelectFeed(${f.id})"
-                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1">
+                class="flex-1 min-w-0 text-left flex items-center gap-2 py-1
+                       ${isActive ? 'font-semibold text-[#0053e2] dark:text-blue-300' : 'text-gray-700 dark:text-zinc-200'}">
           ${iconHtml}
           <span class="flex-1 min-w-0">
-            <span class="truncate block text-sm
-                         ${isActive
-                           ? 'font-semibold text-[#0053e2] dark:text-blue-300'
-                           : 'text-gray-700 dark:text-zinc-200'}">
-              ${_esc(f.label || f.url)}
-            </span>
+            <span class="truncate block text-sm">${_esc(f.label || f.url)}</span>
             ${badge}
           </span>
         </button>
         <button onclick="rssEditFeed(${f.id})" title="Edit feed"
-                class="opacity-0 group-hover:opacity-100 text-gray-300 dark:text-zinc-500
-                       hover:text-blue-500 dark:hover:text-blue-300
+                class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-blue-500
                        transition text-xs px-0.5 flex-shrink-0" aria-label="Edit feed">✎</button>
         <button onclick="rssDeleteFeed(event,${f.id})" title="Remove feed"
-                class="opacity-0 group-hover:opacity-100 text-gray-300 dark:text-zinc-500
-                       hover:text-red-500 dark:hover:text-red-400
+                class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500
                        transition text-xs px-1 flex-shrink-0" aria-label="Remove feed">✕</button>
       </div>
       <div id="rss-edit-${f.id}"
-           class="hidden px-2 pb-2 pt-1
-                  bg-white/60 dark:bg-zinc-700/50
-                  border-b border-gray-100 dark:border-zinc-600">
+           class="hidden px-2 pb-2 pt-1 bg-gray-50 dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800">
         <form onsubmit="rssUpdateFeed(event,${f.id})" class="space-y-1">
           <input name="label" value="${_esc(f.label)}" placeholder="Label"
-                 class="w-full text-xs px-2 py-1
-                        border border-gray-300 dark:border-zinc-600
-                        rounded bg-white dark:bg-zinc-700
-                        text-gray-800 dark:text-zinc-100
-                        placeholder:text-gray-400 dark:placeholder:text-zinc-400
+                 class="w-full text-xs px-2 py-1 border border-gray-300 dark:border-zinc-600
+                        rounded bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
           <input name="category" value="${_esc(f.category || '')}" placeholder="Category (optional)"
-         list="rss-category-list"
-                 class="w-full text-xs px-2 py-1
-                        border border-gray-300 dark:border-zinc-600
-                        rounded bg-white dark:bg-zinc-700
-                        text-gray-800 dark:text-zinc-100
-                        placeholder:text-gray-400 dark:placeholder:text-zinc-400
+                 list="rss-category-list"
+                 class="w-full text-xs px-2 py-1 border border-gray-300 dark:border-zinc-600
+                        rounded bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]">
           <div class="flex items-center gap-2">
-            <label class="text-[10px] text-gray-400 dark:text-zinc-400">Colour</label>
+            <label class="text-[10px] text-gray-400">Colour</label>
             <input name="color" type="color" value="${_esc(f.color)}"
                    class="h-5 w-8 rounded border border-gray-300 dark:border-zinc-600 cursor-pointer">
             <button type="submit"
                     class="ml-auto text-[10px] px-2 py-0.5 bg-[#0053e2] text-white rounded
                            hover:bg-[#003eb3] transition font-semibold">Save</button>
             <button type="button" onclick="rssEditFeed(${f.id})"
-                    class="text-[10px] px-2 py-0.5
-                           border border-gray-300 dark:border-zinc-600
-                           rounded text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-600 transition">Cancel</button>
+                    class="text-[10px] px-2 py-0.5 border border-gray-300 dark:border-zinc-600
+                           rounded text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800">Cancel</button>
           </div>
         </form>
       </div>
