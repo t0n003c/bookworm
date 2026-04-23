@@ -1468,6 +1468,17 @@ function _initSwappedPage() {
     if (_ta) _ta.innerHTML = '';
     return;
   }
+  // Subscriptions page
+  var subsRoot = document.getElementById('subs-page-root');
+  if (subsRoot) {
+    var subsPid = parseInt(subsRoot.dataset.pageId, 10);
+    if (subsPid && typeof initSubsPage === 'function') {
+      try { initSubsPage(subsPid); } catch(e) { console.error('[home] initSubsPage:', e); }
+    }
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
   // Grid page
   const gridRoot = document.getElementById('grid-page-root');
   if (gridRoot) {

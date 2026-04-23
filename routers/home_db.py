@@ -40,7 +40,7 @@ async def get_home_page(page_id: int, user_id: int) -> dict | None:
 
 
 # Valid page types — kept here so router + db stay in sync.
-PAGE_TYPES = frozenset({"dashboard", "crm", "media", "grid_builder", "uploads", "rss", "grid"})
+PAGE_TYPES = frozenset({"dashboard", "crm", "media", "grid_builder", "uploads", "rss", "grid", "subscriptions"})
 
 
 async def create_home_page(

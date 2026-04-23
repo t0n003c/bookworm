@@ -868,7 +868,9 @@ async def home_page_view(request: Request, page_id: int):
             widget_sources = await _build_widget_sources(page_feeds, uid)
         elif p_type == "crm":
             tmpl = "partials/home_page_crm.html"
-            # No server-side DB prep — JS fetches contacts + fields after load.
+        elif p_type == "subscriptions":
+            tmpl = "partials/home_page_subscriptions.html"
+            # No server-side DB prep — JS fetches /list and /summary after load.
         elif p_type == "uploads":
             tmpl = "partials/home_page_uploads.html"
             # Collabora Online integration — read config once at render time.

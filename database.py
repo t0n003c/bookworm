@@ -369,9 +369,38 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE rss_page_feeds ADD COLUMN category TEXT NOT NULL DEFAULT ''"
             )
-            await db.commit()
         except Exception:
             pass  # column already exists — idempotent
+
+        # ── Subscriptions (Wallos-inspired recurring cost tracker) ──────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id           INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                name              TEXT    NOT NULL,
+                amount            REAL    NOT NULL DEFAULT 0,
+                currency          TEXT    NOT NULL DEFAULT 'USD',
+                cycle             INTEGER NOT NULL DEFAULT 3,
+                -- 1=daily  2=weekly  3=monthly  4=yearly
+                frequency         INTEGER NOT NULL DEFAULT 1,
+                -- billing repeats every N cycles (e.g. freq=3,cycle=3 → every 3 months)
+                category          TEXT    NOT NULL DEFAULT '',
+                color             TEXT    NOT NULL DEFAULT '#0053e2',
+                next_payment_date TEXT,
+                -- ISO date YYYY-MM-DD, nullable
+                active            INTEGER NOT NULL DEFAULT 1,
+                notes             TEXT    NOT NULL DEFAULT '',
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subscriptions_page "
+            "ON subscriptions(page_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subscriptions_next_payment "
+            "ON subscriptions(page_id, next_payment_date)"
+        )
 
         # ── rss_page_feeds: add source_widget_id column (migration) ───────────
         # Tracks which RSS widget originally synced this feed.

@@ -1024,7 +1024,7 @@
     <!-- ── Page type picker (hidden during rename) ────────────────────── -->
     <div id="hp-type-picker" class="mb-5">
       <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Page type</p>
-      <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Page type">
+      <div class="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Page type">
 
         <!-- Dashboard -->
         <button type="button" data-type="dashboard"
@@ -1096,6 +1096,18 @@
           <span class="text-2xl leading-none" aria-hidden="true">📡</span>
           <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">RSS Reader</span>
           <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Feed reader</span>
+        </button>
+
+        <!-- Subscriptions -->
+        <button type="button" data-type="subscriptions"
+          onclick="selectPageType('subscriptions')"
+          class="hp-type-btn flex flex-col items-center gap-1 p-3 rounded-xl border-2
+                 border-transparent bg-gray-50 dark:bg-zinc-800
+                 hover:border-[#0053e2]/40 transition text-center"
+          aria-pressed="false">
+          <span class="text-2xl leading-none" aria-hidden="true">💳</span>
+          <span class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200">Subscriptions</span>
+          <span class="text-[10px] text-gray-400 dark:text-zinc-500 leading-tight">Track recurring costs</span>
         </button>
 
       </div>
