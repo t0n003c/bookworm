@@ -40,6 +40,13 @@
     </div>
     {# Dynamic controls injected by JS #}
     <div id="trip-topbar-controls" class="flex items-center gap-2"></div>
+    {# Card-size slider — shown only on Plan tab #}
+    <div id="trip-day-size-wrap" class="hidden items-center gap-1.5">
+      <span class="text-[10px] text-gray-400 dark:text-zinc-500 select-none" title="Card width">▣</span>
+      <input id="trip-day-size-slider" type="range" min="200" max="480" step="10" value="256"
+             oninput="tripSetDayCardWidth(this.value)"
+             class="w-20 h-1.5 accent-[#0053e2] cursor-pointer">
+    </div>
   </div>
 
   {# ── Research panel ────────────────────────────────────────────────────── #}

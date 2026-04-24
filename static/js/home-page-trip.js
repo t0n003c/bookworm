@@ -74,6 +74,11 @@ window.tripSetTab = function(tab) {
     }
   });
   _tripRenderTopbarControls();
+  var sizeWrap = document.getElementById('trip-day-size-wrap');
+  if (sizeWrap) {
+    if (tab === 'plan') { sizeWrap.classList.remove('hidden'); sizeWrap.classList.add('flex'); }
+    else               { sizeWrap.classList.add('hidden');    sizeWrap.classList.remove('flex'); }
+  }
   if (tab === 'plan'  && typeof tripLoadPlan  === 'function') tripLoadPlan();
   if (tab === 'chart' && typeof tripLoadChart === 'function') tripLoadChart();
 };

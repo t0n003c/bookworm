@@ -16,6 +16,24 @@ var _tripDayEditing   = null;   // null = add mode, int = day id being edited
 window._tripActivePlanId   = null;
 window._tripActivePlanName = '';
 
+// ── Day card width (slider) ───────────────────────────────────────────────────
+var _TRIP_DAY_W_KEY     = 'bw-trip-day-card-width';
+var _tripDayCardWidth   = parseInt(localStorage.getItem(_TRIP_DAY_W_KEY) || '256', 10);
+
+window.tripSetDayCardWidth = function(w) {
+  _tripDayCardWidth = parseInt(w, 10);
+  try { localStorage.setItem(_TRIP_DAY_W_KEY, _tripDayCardWidth); } catch(e) {}
+  // Update all rendered lanes live — no full re-render needed
+  document.querySelectorAll('.trip-day-lane-card').forEach(function(el) {
+    el.style.width = _tripDayCardWidth + 'px';
+  });
+};
+
+function _tripSyncSizeSlider() {
+  var sl = document.getElementById('trip-day-size-slider');
+  if (sl) sl.value = _tripDayCardWidth;
+}
+
 // ── Entry: called by tripSetTab('plan') and after CRUD refreshes ──────────────
 window.tripLoadPlan = function() {
   if (window._tripActivePlanId) {
@@ -171,6 +189,7 @@ function _tripRenderPlan() {
   container.innerHTML = _tripDays.map(function(d) {
     return _tripRenderDayLane(d);
   }).join('');
+  _tripSyncSizeSlider();
 }
 
 function _tripRenderDayLane(d) {
@@ -185,9 +204,9 @@ function _tripRenderDayLane(d) {
         _tripEsc(d.day_date) + '</span>'
     : '';
 
-  return '<div class="flex-shrink-0 w-64 bg-white dark:bg-zinc-900 rounded-xl ' +
+  return '<div class="trip-day-lane-card flex-shrink-0 bg-white dark:bg-zinc-900 rounded-xl ' +
     'border border-gray-200 dark:border-zinc-800 flex flex-col overflow-hidden ' +
-    'shadow-sm" style="max-height:calc(100vh - 12rem);">' +
+    'shadow-sm" style="width:' + _tripDayCardWidth + 'px;max-height:calc(100vh - 12rem);">' +
     '<div class="flex items-center gap-1 px-3 py-2 ' +
       'border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">' +
       '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
