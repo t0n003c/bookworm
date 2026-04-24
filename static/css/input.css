@@ -6,3 +6,34 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── BookWorm CE editor list styles ────────────────────────────────────────────
+   Tailwind Preflight strips default ul/ol markers.  Restore them inside every
+   contenteditable surface so lists render correctly without the Typography plugin.
+   Targets: trip note block CE, trip spot notes CE, workspace note preview,
+            text-widget CE (tw-view-*), and the DOCX editor.               */
+[contenteditable] ul,
+#md-live-preview  ul,
+#bw-word-paper    ul  {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+[contenteditable] ol,
+#md-live-preview  ol,
+#bw-word-paper    ol  {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+[contenteditable] li,
+#md-live-preview  li,
+#bw-word-paper    li  {
+  margin: 0.1rem 0;
+}
+[contenteditable] h1,
+#md-live-preview  h1  { font-size: 1.5rem;  font-weight: 700; margin: 0.5rem 0 0.25rem; line-height: 1.2; }
+[contenteditable] h2,
+#md-live-preview  h2  { font-size: 1.25rem; font-weight: 700; margin: 0.4rem 0 0.2rem;  line-height: 1.2; }
+[contenteditable] h3,
+#md-live-preview  h3  { font-size: 1.1rem;  font-weight: 600; margin: 0.35rem 0 0.2rem; line-height: 1.2; }

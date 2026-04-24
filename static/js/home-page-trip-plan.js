@@ -224,7 +224,7 @@ function _tripNoteInit(markdown) {
         _tripNoteReplaceBlockWithList(block, ce, 'ul');
         return;
       }
-      if (text === '1.' || text === '1') {
+      if (text === '1.') {
         e.preventDefault();
         e.stopPropagation();
         _tripNoteReplaceBlockWithList(block, ce, 'ol');
