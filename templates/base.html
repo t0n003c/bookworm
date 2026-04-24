@@ -509,8 +509,9 @@
     .bw-toggle-h1 > summary { font-size: 1.35rem; font-weight: 700; }
     .bw-toggle-h2 > summary { font-size: 1.1rem;  font-weight: 700; }
     .bw-toggle-h3 > summary { font-size: .95rem;  font-weight: 600; }
-    /* Body: indented to align with the heading text (not a padded box) */
-    .bw-toggle > :not(summary) { padding-left: .85rem; }
+    /* Body: indented to align with the heading text (not a padded box).
+       Explicit font reset is a safety-net so no heading weight/size bleeds in. */
+    .bw-toggle > :not(summary) { padding-left: .85rem; font-size: 1rem; font-weight: 400; }
 
     /* ── Column layouts ── */
     .bw-cols { display: grid; gap: .6rem; margin: .6rem 0; }

@@ -764,15 +764,28 @@ function _attachCE(ce) {
 
   ce.addEventListener('keydown', _onKeydown);
 
-  // After applying a heading / blockquote, pressing Enter should fall back
-  // to a normal paragraph so the format doesn't bleed onto the next line.
+  // ── Enter key: heading/blockquote → fall back to plain paragraph ───────────
+  // Also handles the two toggle-heading edge cases:
+  //   A) Enter inside <summary>  → insert a <p> inside <details> instead of
+  //      creating a second <summary> (which would inherit the heading style).
+  //   B) Enter on the last empty block inside <details>  → escape to a new
+  //      <p> after the <details> element (Notion-style "press Enter to exit").
   ce.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.shiftKey || _sc.open) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
-    let node = sel.anchorNode;
+
+    // Walk up from caret — collect enclosing summary / details / heading nodes
+    let node    = sel.anchorNode;
+    let summary = null;
+    let details = null;
     while (node && node !== ce) {
+      if (node.nodeName === 'SUMMARY') summary = node;
+      if (node.nodeName === 'DETAILS' && node.classList?.contains('bw-toggle')) {
+        details = node; break;
+      }
       if (/^H[1-6]$/.test(node.nodeName) || node.nodeName === 'BLOCKQUOTE') {
+        // Plain heading / blockquote → revert to paragraph
         e.preventDefault();
         document.execCommand('insertParagraph');
         document.execCommand('formatBlock', false, 'div');
@@ -780,6 +793,56 @@ function _attachCE(ce) {
         return;
       }
       node = node.parentNode;
+    }
+
+    if (!details) return; // not inside a toggle — browser handles Enter normally
+
+    // ── Case A: cursor is inside <summary> ───────────────────────────────────
+    // Prevent the browser from cloning a second <summary> (which would look
+    // like another heading-styled line). Instead, drop a fresh <p> right after
+    // the <summary>, open the <details>, and place the caret inside it.
+    if (summary) {
+      e.preventDefault();
+      details.open = true;
+      const p = document.createElement('p');
+      p.innerHTML = '<br>';
+      const ref = summary.nextSibling;
+      if (ref) details.insertBefore(p, ref);
+      else      details.appendChild(p);
+      const r = document.createRange();
+      r.setStart(p, 0);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      ce.dispatchEvent(new Event('input'));
+      return;
+    }
+
+    // ── Case B: Enter on the last empty content block → escape the toggle ────
+    // Find the direct-child-of-details block that holds the caret.
+    let block = sel.anchorNode;
+    while (block && block.parentNode !== details) block = block.parentNode;
+    if (!block || block === summary) return;
+
+    const isLast  = block === details.lastChild;
+    const isEmpty = block.textContent.trim() === '' ||
+                    (block.childNodes.length === 1 && block.firstChild?.nodeName === 'BR');
+
+    if (isLast && isEmpty) {
+      e.preventDefault();
+      // Remove the now-useless empty trailing block
+      details.removeChild(block);
+      // Insert a fresh paragraph after the <details> and move caret there
+      const p = document.createElement('p');
+      p.innerHTML = '<br>';
+      if (details.nextSibling) details.parentNode.insertBefore(p, details.nextSibling);
+      else                     details.parentNode.appendChild(p);
+      const r = document.createRange();
+      r.setStart(p, 0);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      ce.dispatchEvent(new Event('input'));
     }
   });
 
