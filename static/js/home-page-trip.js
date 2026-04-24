@@ -48,8 +48,8 @@ window.initTripPage = function(pid) {
   _tripEditingId            = null;
   _tripSpotUploadedCoverUrl = '';
   tripSetTab('research');
-  // Load locations (top level of Research tab)
-  if (typeof tripLoadLocations === 'function') tripLoadLocations();
+  // Load locations — pass true so sessionStorage drill-in is restored exactly once
+  if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
 };
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -135,60 +135,16 @@ window._tripLoadSpots = function(locId) {
 
 function _tripLoadSpots(locId) { window._tripLoadSpots(locId); }
 
-// ── Filter bar (inside a location) ───────────────────────────────────────────
-function _tripRenderFilterBar() {
-  var bar = document.getElementById('trip-filter-bar');
-  if (!bar) return;
-  var loc  = window._tripActiveLoc;
-  var locName = loc ? loc.name : 'Location';
-  // Breadcrumb
-  var html =
-    '<button onclick="tripCloseLocView()" ' +
-      'class="flex items-center gap-1 text-xs font-semibold text-[#0053e2] ' +
-             'hover:underline whitespace-nowrap">' +
-      '← All Locations</button>' +
-    '<span class="text-gray-300 dark:text-zinc-600 text-xs">|</span>' +
-    '<span class="text-xs text-gray-600 dark:text-zinc-300 font-medium truncate max-w-32">' +
-      _tripEsc(locName) + '</span>';
 
-  // Type filter pills (only types that exist in this location's spots)
-  var present = {};
-  _tripSpots.forEach(function(s) { present[s.spot_type] = true; });
-  var types = Object.keys(present).sort();
-  if (types.length) {
-    html += '<span class="text-gray-300 dark:text-zinc-600 text-xs">|</span>';
-    html += '<button onclick="tripSetTypeFilter(null)" ' +
-      'class="trip-pill px-2.5 py-1 rounded-full text-xs font-medium transition ' +
-      (_tripTypeFilter === null
-        ? 'bg-[#0053e2] text-white'
-        : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 ' +
-          'hover:bg-gray-200 dark:hover:bg-zinc-700') + '">All</button>';
-    types.forEach(function(t) {
-      var active = _tripTypeFilter === t;
-      html += '<button onclick="tripSetTypeFilter(\'' + _tripEsc(t) + '\')" ' +
-        'class="trip-pill px-2.5 py-1 rounded-full text-xs font-medium transition ' +
-        (active
-          ? 'bg-[#0053e2] text-white'
-          : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 ' +
-            'hover:bg-gray-200 dark:hover:bg-zinc-700') + '">' +
-        (_TRIP_TYPE_EMOJI[t] || '📍') + ' ' + _tripEsc(t) + '</button>';
-    });
-  }
-  bar.innerHTML = html;
-}
-
-// ── Research: spot card grid ──────────────────────────────────────────────────
+// ── Research: spot card grid (groups from _tripApplySpotOps) ────────────────
 function _tripRenderResearch() {
   var grid = document.getElementById('trip-spots-grid');
   if (!grid) return;
-  var q = _tripQuery.toLowerCase();
-  var filtered = _tripSpots.filter(function(s) {
-    if (_tripTypeFilter && s.spot_type !== _tripTypeFilter) return false;
-    if (q && s.name.toLowerCase().indexOf(q) === -1 &&
-             (s.notes || '').toLowerCase().indexOf(q) === -1) return false;
-    return true;
-  });
-  if (!filtered.length) {
+  var groups = (typeof _tripApplySpotOps === 'function')
+    ? _tripApplySpotOps(_tripSpots)
+    : [{groupLabel: null, items: _tripSpots}];
+  var totalVisible = groups.reduce(function(n, g) { return n + g.items.length; }, 0);
+  if (!totalVisible) {
     grid.innerHTML =
       '<div class="col-span-full text-center py-16 text-gray-400 dark:text-zinc-500 text-sm">' +
         (_tripSpots.length
@@ -198,8 +154,19 @@ function _tripRenderResearch() {
       '</div>';
     return;
   }
-  grid.innerHTML = filtered.map(_tripRenderSpotCard).join('');
-}
+  var html = '';
+  groups.forEach(function(g) {
+    if (g.groupLabel) {
+      html += '<div class="col-span-full text-xs font-semibold text-gray-500 ' +
+        'dark:text-zinc-400 uppercase tracking-wide pt-2 pb-0.5 border-b ' +
+        'border-gray-100 dark:border-zinc-800">' +
+        _tripEsc(g.groupLabel) + ' <span class="font-normal normal-case">(' + g.items.length + ')</span>' +
+        '</div>';
+    }
+    html += g.items.map(_tripRenderSpotCard).join('');
+  });
+  grid.innerHTML = html;
+};
 
 function _tripRenderSpotCard(s) {
   var emoji  = _TRIP_TYPE_EMOJI[s.spot_type] || '📍';
@@ -213,14 +180,29 @@ function _tripRenderSpotCard(s) {
         'onclick="event.stopPropagation()" ' +
         'class="text-[10px] text-[#0053e2] hover:underline">📍 Map</a>'
     : '';
+  var attrs = (s.attrs && s.attrs.length)
+    ? '<div class="flex flex-wrap gap-1 mt-0.5">' +
+        s.attrs.slice(0, 3).map(function(a) {
+          return '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
+            'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">' +
+            _tripEsc(a.attr_key) + ': ' + _tripEsc(a.attr_value) + '</span>';
+        }).join('') +
+        (s.attrs.length > 3
+          ? '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
+              'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500">+' +
+              (s.attrs.length - 3) + '</span>'
+          : '') +
+      '</div>'
+    : '';
   var cover = s.cover_url
-    ? '<div class="h-32 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
+    ? '<div class="h-40 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
         '<img src="' + _tripEsc(s.cover_url) + '" alt="" ' +
           'class="w-full h-full object-cover" ' +
           'onerror="this.parentNode.style.display=\'none\'">' +
       '</div>'
-    : '<div class="h-20 flex items-center justify-center bg-gray-50 ' +
-        'dark:bg-zinc-800 text-3xl">' + emoji + '</div>';
+    : '<div class="h-28 flex items-center justify-center bg-gradient-to-br ' +
+        'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
+        'select-none">' + emoji + '</div>';
 
   // Add-to-day dropdown using days from the plan module if loaded
   var dayOpts = '<option value="">— pick a day —</option>';
@@ -252,6 +234,7 @@ function _tripRenderSpotCard(s) {
         ? '<p class="text-[11px] text-gray-500 dark:text-zinc-400 line-clamp-2">' +
             _tripEsc(s.notes) + '</p>'
         : '') +
+      attrs +
       '<div class="flex items-center gap-2 mt-auto pt-1">' +
         mapBtn +
         '<button onclick="event.stopPropagation();tripOpenEditSpot(' + s.id + ')" ' +
@@ -293,17 +276,12 @@ function _tripTypeColor(spotType) {
   ];
 }
 
-// ── Public: filter / search ───────────────────────────────────────────────────
-window.tripSetTypeFilter = function(type) {
-  _tripTypeFilter = type;
-  _tripRenderFilterBar();
-  _tripRenderResearch();
-};
-
+// tripSetTypeFilter, tripSearch, _tripRenderFilterBar live in home-page-trip-filters.js
 window.tripSearch = function() {
   var el = document.getElementById('trip-search');
   _tripQuery = el ? el.value : '';
-  _tripRenderResearch();
+  if (typeof _tripRenderFilterBar === 'function') _tripRenderFilterBar();
+  window._tripRenderResearch();
 };
 
 // ── Add spot to day (from spot card) ─────────────────────────────────────────
@@ -355,6 +333,9 @@ window.tripOpenEditSpot = function(id) {
 };
 
 window.tripCloseSpotModal = function() {
+  // Detach format toolbar before hiding so listeners don’t accumulate on reopen
+  var _ce = document.getElementById('tsf-notes-ce');
+  if (_ce && typeof window.bwFmtDetach === 'function') window.bwFmtDetach(_ce);
   document.getElementById('trip-spot-modal').classList.add('hidden');
   _tripEditingId            = null;
   _tripSpotUploadedCoverUrl = '';
@@ -461,16 +442,59 @@ function _tripRenderSpotForm(v) {
         '<p id="tsf-upload-status" class="text-[10px] text-gray-400 mt-1"></p>' +
       '</div>' +
     '</div>' +
+    // Custom attributes (before Notes)
+    '<div>' +
+      '<label class="' + _lc() + '">Custom Attributes</label>' +
+      '<div id="tsf-attrs-list" class="space-y-1.5">' +
+        ((v.attrs || []).map(function(a, i) {
+          return _tripSpotAttrRow(i, a.attr_key || '', a.attr_value || '');
+        }).join('')) +
+      '</div>' +
+      '<button type="button" onclick="tripSpotAddAttrRow()" ' +
+        'class="mt-2 text-xs text-[#0053e2] hover:underline">＋ Add attribute</button>' +
+    '</div>' +
     // Notes (at the bottom, vertically resizable)
     '<div>' +
       '<label class="' + _lc() + '">Notes</label>' +
-      '<textarea id="tsf-notes" rows="4" placeholder="Tips, must-try items, notes…" ' +
-        'class="' + _ic() + ' resize-y min-h-[80px]">' +
-        _tripEsc(v.notes || '') +
-      '</textarea>' +
+      // Mini WYSIWYG CE editor — slash commands (⁄), format toolbar, markdown round-trip
+      '<div id="tsf-notes-ce" contenteditable="true" spellcheck="true" ' +
+        'aria-label="Notes" aria-multiline="true" ' +
+        'class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 ' +
+               'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+               'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
+               'focus:ring-2 focus:ring-[#0053e2]/40 overflow-y-auto cursor-text" ' +
+        'style="min-height:80px;max-height:280px"></div>' +
     '</div>';
 
   document.getElementById('trip-spot-modal-body').innerHTML = html;
+  _tripSpotNotesInit(v.notes || '');  // populate CE + wire slash & fmt
+}
+
+// ── Notes CE helpers ───────────────────────────────────────────────────────────────
+// Load markdown into the CE on modal open, then wire slash commands + fmt toolbar.
+function _tripSpotNotesInit(markdown) {
+  var ce = document.getElementById('tsf-notes-ce');
+  if (!ce) return;
+  if (markdown && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    marked.use({ gfm: true, breaks: true });
+    ce.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
+  }
+  if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
+  if (typeof window.bwFmtAttach    === 'function') window.bwFmtAttach(ce);
+}
+
+// Convert the CE’s HTML back to Markdown for persistence.
+function _tripSpotNotesToMd() {
+  var ce = document.getElementById('tsf-notes-ce');
+  if (!ce) return '';
+  if (typeof TurndownService === 'undefined') return ce.innerText || '';
+  var td = new TurndownService({
+    bulletListMarker: '-',
+    headingStyle:     'atx',
+    codeBlockStyle:   'fenced',
+  });
+  if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
+  return td.turndown(ce.innerHTML).trimEnd();
 }
 
 window.tripSpotTypeChange = function() {
@@ -478,6 +502,54 @@ window.tripSpotTypeChange = function() {
   var wrap = document.getElementById('tsf-custom-wrap');
   if (sel && wrap) wrap.classList.toggle('hidden', sel.value !== 'custom');
 };
+
+// Spot modal attr-row helpers
+function _tripSpotAttrRow(idx, key, val) {
+  return '<div class="flex gap-1.5 items-center" id="tsf-attr-row-' + idx + '">' +
+    '<input type="text" placeholder="Attribute" value="' + _tripEsc(key) + '" ' +
+      'data-sattr-key data-idx="' + idx + '" ' +
+      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
+             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
+             'focus:ring-2 focus:ring-[#0053e2]/40">' +
+    '<input type="text" placeholder="Value" value="' + _tripEsc(val) + '" ' +
+      'data-sattr-val data-idx="' + idx + '" ' +
+      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
+             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
+             'focus:ring-2 focus:ring-[#0053e2]/40">' +
+    '<button type="button" onclick="tripSpotRemoveAttrRow(' + idx + ')" ' +
+      'class="text-gray-300 hover:text-red-500 transition text-sm px-1">✕</button>' +
+  '</div>';
+}
+
+window.tripSpotAddAttrRow = function() {
+  var list = document.getElementById('tsf-attrs-list');
+  if (!list) return;
+  var idx = list.children.length;
+  var div = document.createElement('div');
+  div.innerHTML = _tripSpotAttrRow(idx, '', '');
+  list.appendChild(div.firstChild);
+};
+
+window.tripSpotRemoveAttrRow = function(idx) {
+  var row = document.getElementById('tsf-attr-row-' + idx);
+  if (row) row.remove();
+};
+
+function _tripSpotCollectAttrs() {
+  var list   = document.getElementById('tsf-attrs-list');
+  var attrs  = [];
+  if (!list) return attrs;
+  var keyEls = list.querySelectorAll('[data-sattr-key]');
+  var valEls = list.querySelectorAll('[data-sattr-val]');
+  for (var i = 0; i < keyEls.length; i++) {
+    var k = (keyEls[i].value || '').trim();
+    var v = valEls[i] ? valEls[i].value : '';
+    if (k) attrs.push({attr_key: k, attr_value: v});
+  }
+  return attrs;
+}
 
 // Cover tab toggle (spot modal)
 window.tripSpotCoverTab = function(tab) {
@@ -538,14 +610,16 @@ window.tripSubmitSpot = function() {
   var coverUrl = _tripSpotUploadedCoverUrl ||
                  (document.getElementById('tsf-cover-url') || {}).value || '';
   var mapUrl   = (document.getElementById('tsf-map')         || {}).value || '';
-  var notes    = (document.getElementById('tsf-notes')       || {}).value || '';
+  var notes    = _tripSpotNotesToMd();
   var priority = parseInt((document.getElementById('tsf-priority') || {}).value || '3', 10);
   var cost     = parseFloat((document.getElementById('tsf-cost')   || {}).value || '0') || 0;
   var currency = (document.getElementById('tsf-currency')   || {}).value || 'USD';
 
   if (!name.trim()) { _tripShowToast('Name is required', true); return; }
 
+  var attrs = _tripSpotCollectAttrs();
   var fd = new URLSearchParams();
+  fd.append('attrs',            JSON.stringify(attrs));
   fd.append('name',             name.trim());
   fd.append('spot_type',        spotType);
   fd.append('spot_type_custom', custom.trim());

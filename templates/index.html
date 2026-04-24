@@ -2345,9 +2345,8 @@
     /* ── Raw textarea path ──
        Handled IDs:
          note-content  — main note editor textarea (fires renderPreview on convert)
-         tsf-notes     — Trip Spot "Notes" field
-         tlf-notes     — Trip Location "Notes" field                           */
-    var _BULLET_TEXTAREA_IDS = { 'note-content': true, 'tsf-notes': true, 'tlf-notes': true };
+         tlf-notes     — Trip Location "Notes" field (Trip Spot uses CE, see below)                           */
+    var _BULLET_TEXTAREA_IDS = { 'note-content': true, 'tlf-notes': true };
     var ta = (e.target && e.target.tagName === 'TEXTAREA' && _BULLET_TEXTAREA_IDS[e.target.id])
              ? e.target : null;
     if (ta) {
@@ -2374,7 +2373,8 @@
        closest('[contenteditable="true"]') finds whichever CE surface is active:
          #md-live-preview  — note editor (has 400 ms markdown-sync debounce)
          #tw-view-{id}     — Text home-widget (openTextEdit sets contentEditable)
-         #bw-word-paper    — DOCX document editor                              */
+         #bw-word-paper    — DOCX document editor
+         #tsf-notes-ce     — Trip Spot "Notes" field (mini WYSIWYG CE in modal)  */
     var ceEl = (e.target && typeof e.target.closest === 'function')
                ? e.target.closest('[contenteditable="true"]') : null;
     if (!ceEl) return;
