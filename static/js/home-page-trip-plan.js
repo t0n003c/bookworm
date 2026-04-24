@@ -213,7 +213,7 @@ function _tripRenderDaySpotRow(dayId, s) {
   var emoji = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[s.spot_type])
     || '📍';
   var timeLabel = s.time_label
-    ? '<span class="text-[10px] text-[#0053e2] font-medium">' + _tripEsc(s.time_label) + '</span>'
+    ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' + _tripEsc(s.time_label) + '</span>'
     : '';
   return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg ' +
     'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 ' +
