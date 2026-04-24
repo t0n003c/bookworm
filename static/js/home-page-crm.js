@@ -325,8 +325,22 @@ function _crmFiltered() {
   });
 }
 
-// ── Text-field textarea: auto-continue bullet points on Enter ───────────────
+// ── Text-field textarea: auto-bullet on `- ` and auto-continue on Enter ──────
 function _crmTextBulletKey(e) {
+  // Space after a lone dash on an empty line → convert to `• `
+  if (e.key === ' ') {
+    var ta2  = e.target;
+    var pos2 = ta2.selectionStart;
+    if (ta2.selectionEnd !== pos2) return;
+    var val2      = ta2.value;
+    var ls2       = val2.lastIndexOf('\n', pos2 - 1) + 1;
+    if (val2.substring(ls2, pos2) !== '-') return;
+    e.preventDefault();
+    ta2.value = val2.slice(0, ls2) + '\u2022 ' + val2.slice(pos2);
+    ta2.setSelectionRange(ls2 + 2, ls2 + 2);
+    ta2.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
   if (e.key !== 'Enter') return;
   var ta        = e.target;
   var pos       = ta.selectionStart;

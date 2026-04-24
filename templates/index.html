@@ -2342,9 +2342,15 @@
   document.addEventListener('keydown', function _bwAutoBulletHandler(e) {
     if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
 
-    /* ── Raw textarea path ── */
-    var ta = document.getElementById('note-content');
-    if (ta && e.target === ta) {
+    /* ── Raw textarea path ──
+       Handled IDs:
+         note-content  — main note editor textarea (fires renderPreview on convert)
+         tsf-notes     — Trip Spot "Notes" field
+         tlf-notes     — Trip Location "Notes" field                           */
+    var _BULLET_TEXTAREA_IDS = { 'note-content': true, 'tsf-notes': true, 'tlf-notes': true };
+    var ta = (e.target && e.target.tagName === 'TEXTAREA' && _BULLET_TEXTAREA_IDS[e.target.id])
+             ? e.target : null;
+    if (ta) {
       var pos = ta.selectionStart;
       if (ta.selectionEnd !== pos) return;           // bail on selection
       var val       = ta.value;
@@ -2352,12 +2358,15 @@
       var lineText  = val.substring(lineStart, pos);
       if (lineText !== '-') return;                  // not a lone dash
       e.preventDefault();
-      ta.value = val.slice(0, lineStart) + '• ' + val.slice(pos);
+      ta.value = val.slice(0, lineStart) + '\u2022 ' + val.slice(pos);
       var cur = lineStart + 2;
       ta.setSelectionRange(cur, cur);
       /* Fire renderPreview immediately (skip the 150 ms debounce) so the
-         preview updates to a real bullet the moment the user types the space. */
-      if (typeof window._bwRenderPreview === 'function') window._bwRenderPreview();
+         preview updates to a real bullet the moment the user types the space.
+         Only relevant for note-content; harmless no-op for Trip note fields. */
+      if (ta.id === 'note-content' && typeof window._bwRenderPreview === 'function') {
+        window._bwRenderPreview();
+      }
       return;
     }
 
