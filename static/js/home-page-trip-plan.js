@@ -52,6 +52,20 @@ if (!_tripPickerListenerAdded) {
   });
 }
 
+// ── Time formatter ───────────────────────────────────────────────────────────
+// Converts HH:MM (24h, from <input type="time">) → "H:MM AM/PM" for display.
+// Falls back to raw value so old free-text data still shows.
+function _formatTime(v) {
+  if (!v) return '';
+  var m = v.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return v;
+  var h   = parseInt(m[1], 10);
+  var min = m[2];
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  var h12  = h % 12 || 12;
+  return h12 + ':' + min + ' ' + ampm;
+}
+
 // ── Entry: called by tripSetTab('plan') and after CRUD refreshes ──────────────
 window.tripLoadPlan = function() {
   if (window._tripActivePlanId) {
@@ -282,7 +296,7 @@ function _tripRenderDaySpotRow(dayId, s) {
   var emoji = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[s.spot_type])
     || '📍';
   var timeLabel = s.time_label
-    ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' + _tripEsc(s.time_label) + '</span>'
+    ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' + _tripEsc(_formatTime(s.time_label)) + '</span>'
     : '';
   return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg ' +
     'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 ' +
@@ -326,7 +340,7 @@ function _tripRenderDayBlockRow(dayId, b) {
     'text-gray-400 hover:text-red-500">🗑️</button>';
   var timeSpan = b.time_label
     ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' +
-        _tripEsc(b.time_label) + '</span>'
+        _tripEsc(_formatTime(b.time_label)) + '</span>'
     : '';
 
   if (b.block_type === 'note') {
