@@ -479,6 +479,42 @@
              style="min-height:200px;max-height:420px"></div>
       </div>
     </div>
+    {# ---- Color picker ---- #}
+    <div class="px-5 py-3 border-t border-gray-100 dark:border-zinc-800">
+      <p class="text-[11px] font-semibold text-gray-400 dark:text-zinc-500 mb-2">Card colour</p>
+      <div class="flex items-center gap-2">
+        {# data-note-color keys must match _TRIP_NOTE_COLORS in home-page-trip-plan.js #}
+        <button type="button" data-note-color="amber"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-amber-400 ring-2 ring-offset-1 ring-amber-400
+                       transition focus:outline-none" aria-label="Amber"></button>
+        <button type="button" data-note-color="blue"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-blue-400 transition focus:outline-none
+                       hover:ring-2 hover:ring-offset-1 hover:ring-blue-400"
+                aria-label="Blue"></button>
+        <button type="button" data-note-color="green"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-green-400 transition focus:outline-none
+                       hover:ring-2 hover:ring-offset-1 hover:ring-green-400"
+                aria-label="Green"></button>
+        <button type="button" data-note-color="rose"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-rose-400 transition focus:outline-none
+                       hover:ring-2 hover:ring-offset-1 hover:ring-rose-400"
+                aria-label="Rose"></button>
+        <button type="button" data-note-color="purple"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-purple-400 transition focus:outline-none
+                       hover:ring-2 hover:ring-offset-1 hover:ring-purple-400"
+                aria-label="Purple"></button>
+        <button type="button" data-note-color="sky"
+                onmousedown="event.preventDefault()" onclick="_tripNotePickColor(this)"
+                class="w-6 h-6 rounded-full bg-sky-400 transition focus:outline-none
+                       hover:ring-2 hover:ring-offset-1 hover:ring-sky-400"
+                aria-label="Sky"></button>
+      </div>
+    </div>
     <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
       <button onclick="tripCloseBlockModal('note')"
               class="px-4 py-2 text-sm rounded-lg border border-gray-200

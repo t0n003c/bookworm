@@ -92,11 +92,21 @@ function _formatTime(v) {
 // ── Note CE formatter ────────────────────────────────────────────────────
 // Called by toolbar buttons (onmousedown=preventDefault keeps CE focused).
 // Mirrors the CE branch of mdFmt in note_form.html.
+// Color palette: key → { border hex, light-mode bg, dark-mode bg }
+// Inline styles used at render time (avoids Tailwind purge of dynamic classes).
+var _TRIP_NOTE_COLORS = {
+  amber:  { border: '#f59e0b', bg: '#fffbeb', bgDark: 'rgba(120,53,15,0.18)' },
+  blue:   { border: '#3b82f6', bg: '#eff6ff', bgDark: 'rgba(30,58,138,0.18)' },
+  green:  { border: '#22c55e', bg: '#f0fdf4', bgDark: 'rgba(20,83,45,0.18)'  },
+  rose:   { border: '#f43f5e', bg: '#fff1f2', bgDark: 'rgba(136,19,55,0.18)' },
+  purple: { border: '#a855f7', bg: '#faf5ff', bgDark: 'rgba(88,28,135,0.18)' },
+  sky:    { border: '#0ea5e9', bg: '#f0f9ff', bgDark: 'rgba(12,74,110,0.18)' },
+};
+
 window._tripNoteCeFmt = function(type) {
-  var ce = document.getElementById('trip-block-note-ce');
-  if (!ce) return;
-  ce.focus();
-  if (type === 'bold')   { document.execCommand('bold'); }
+  // onmousedown=preventDefault on toolbar buttons keeps CE focused & selection intact.
+  // Do NOT call ce.focus() here — it can move the caret / lose selection.
+  if (type === 'bold')        { document.execCommand('bold'); }
   else if (type === 'italic') { document.execCommand('italic'); }
   else if (type === 'strike') { document.execCommand('strikeThrough'); }
   else if (type === 'h1')     { document.execCommand('formatBlock', false, 'H1'); }
@@ -114,7 +124,9 @@ function _tripNoteInit(markdown) {
     marked.use({ gfm: true, breaks: true });
     ce.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
   } else {
-    ce.innerHTML = '';
+    // Always seed with a <p> so the cursor lands inside a block element.
+    // Without this, formatBlock and the auto-bullet block-walker both break.
+    ce.innerHTML = '<p><br></p>';
   }
   if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
   if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
@@ -134,6 +146,16 @@ function _tripNoteToMd() {
   if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
   return td.turndown(ce.innerHTML).trimEnd();
 }
+
+// ── Color swatch picker ───────────────────────────────────────────────
+window._tripNotePickColor = function(btn) {
+  document.querySelectorAll('#trip-block-note-modal [data-note-color]').forEach(function(sw) {
+    sw.classList.remove('ring-2', 'ring-offset-1',
+      'ring-amber-400', 'ring-blue-400', 'ring-green-400',
+      'ring-rose-400',  'ring-purple-400', 'ring-sky-400');
+  });
+  btn.classList.add('ring-2', 'ring-offset-1', 'ring-' + btn.dataset.noteColor + '-400');
+};
 
 function _tripNotePreview(text) {
   if (!text) return '';
@@ -439,8 +461,12 @@ function _tripRenderDayBlockRow(dayId, b) {
 
   if (b.block_type === 'note') {
     var preview = _tripEsc(_tripNotePreview(c.text || ''));
-    return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg group cursor-grab ' +
-      'border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-900/20" ' + dragAttrs + '>' +
+    var nc  = _TRIP_NOTE_COLORS[c.color] || _TRIP_NOTE_COLORS.amber;
+    var dark = document.documentElement.classList.contains('dark');
+    var cardStyle = 'border-left:4px solid ' + nc.border + ';background:' +
+                    (dark ? nc.bgDark : nc.bg) + ';padding:6px 8px;';
+    return '<div class="flex items-start gap-2 rounded-lg group cursor-grab" ' +
+      'style="' + cardStyle + '" ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">📝</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-gray-700 dark:text-zinc-200 truncate leading-snug">' +
@@ -632,7 +658,8 @@ function _tripCollectBlockContent(blockType) {
   if (blockType === 'note') {
     var text = _tripNoteToMd();
     if (!text.trim()) { _tripShowToast('Note text is required', true); return null; }
-    return {text: text.trim()};
+    var colorPicked = document.querySelector('#trip-block-note-modal [data-note-color].ring-2');
+    return { text: text.trim(), color: colorPicked ? colorPicked.dataset.noteColor : 'amber' };
   }
   if (blockType === 'drive') {
     var from = (document.getElementById('trip-block-drive-from') || {}).value || '';
@@ -664,6 +691,12 @@ function _tripFillBlockModal(blockType, timeLabel, c) {
   if (tl) tl.value = timeLabel;
   if (blockType === 'note') {
     _tripNoteInit(c.text || '');
+    // Restore color swatch selection
+    var savedColor = c.color || 'amber';
+    document.querySelectorAll('#trip-block-note-modal [data-note-color]').forEach(function(sw) {
+      sw.classList.toggle('ring-2', sw.dataset.noteColor === savedColor);
+      sw.classList.toggle('ring-offset-1', sw.dataset.noteColor === savedColor);
+    });
   } else if (blockType === 'drive') {
     var ids = ['from','to','duration','distance','map'];
     ids.forEach(function(k) {
@@ -685,7 +718,15 @@ function _tripClearBlockModal(blockType) {
   var modal = document.getElementById('trip-block-' + blockType + '-modal');
   if (!modal) return;
   modal.querySelectorAll('input').forEach(function(el) { el.value = ''; });
-  if (blockType === 'note') _tripNoteInit(''); // clear + re-wire CE
+  if (blockType === 'note') {
+    _tripNoteInit(''); // clear + re-wire CE
+    // Reset to default color (amber)
+    document.querySelectorAll('#trip-block-note-modal [data-note-color]').forEach(function(sw) {
+      var isAmber = sw.dataset.noteColor === 'amber';
+      sw.classList.toggle('ring-2', isAmber);
+      sw.classList.toggle('ring-offset-1', isAmber);
+    });
+  }
 }
 
 // ── Block delete ──────────────────────────────────────────────────────────────────────────
