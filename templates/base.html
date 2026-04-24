@@ -478,25 +478,39 @@
     .dark .md-body td { border-color: #3f3f46; }
     .dark .md-body tr:nth-child(even) td { background: #1f1f22; }
 
-    /* ── Toggle headings ── */
-    .bw-toggle { margin: .6rem 0; border: 1px solid #e5e7eb; border-radius: .5rem; overflow: hidden; }
-    .dark .bw-toggle { border-color: #3f3f46; }
+    /* ── Toggle headings (Notion-style) ───────────────────────────────────────
+       Borderless, transparent, inline triangle caret that rotates on open.
+       No box border, no background fill — blends into the page like a heading. */
+    .bw-toggle { margin: .15rem 0; }
     .bw-toggle > summary {
-      padding: .45rem .75rem; cursor: pointer; list-style: none;
-      display: flex; align-items: center; gap: .45rem;
-      background: #f9fafb; user-select: none;
+      padding: .15rem .25rem; cursor: pointer; list-style: none;
+      display: flex; align-items: center; gap: .35rem;
+      border-radius: .3rem; user-select: none;
+      transition: background .12s;
     }
-    .dark .bw-toggle > summary { background: #27272a; color: #f4f4f5; }
+    /* Suppress the browser’s built-in disclosure triangle — both engines */
     .bw-toggle > summary::-webkit-details-marker { display: none; }
+    .bw-toggle > summary::marker { display: none; }
+    /* Hover pill — barely-there, matches Notion’s ghost hover */
+    .bw-toggle > summary:hover { background: rgba(0,0,0,.05); }
+    .dark .bw-toggle > summary:hover { background: rgba(255,255,255,.07); }
+    /* CSS border-triangle caret — points right (closed), rotates to down (open) */
     .bw-toggle > summary::before {
-      content: '▶'; font-size: .6rem; color: #6b7280;
-      transition: transform .15s; flex-shrink: 0;
+      content: ''; display: inline-block; flex-shrink: 0;
+      width: 0; height: 0;
+      border-top:    .27rem solid transparent;
+      border-bottom: .27rem solid transparent;
+      border-left:   .44rem solid #9ca3af;
+      transition: transform .18s ease;
     }
+    .dark .bw-toggle > summary::before { border-left-color: #71717a; }
     .bw-toggle[open] > summary::before { transform: rotate(90deg); }
+    /* Heading sizes — unchanged from before */
     .bw-toggle-h1 > summary { font-size: 1.35rem; font-weight: 700; }
     .bw-toggle-h2 > summary { font-size: 1.1rem;  font-weight: 700; }
     .bw-toggle-h3 > summary { font-size: .95rem;  font-weight: 600; }
-    .bw-toggle > :not(summary) { padding: .4rem .75rem; }
+    /* Body: indented to align with the heading text (not a padded box) */
+    .bw-toggle > :not(summary) { padding-left: .85rem; }
 
     /* ── Column layouts ── */
     .bw-cols { display: grid; gap: .6rem; margin: .6rem 0; }
@@ -574,6 +588,7 @@
 <script src="/static/js/home-page-subscriptions.js?v={{ static_v }}" defer></script>
 <script src="/static/js/home-page-trip.js?v={{ static_v }}" defer></script>
 <script src="/static/js/home-page-trip-locs.js?v={{ static_v }}" defer></script>
+<script src="/static/js/home-page-trip-filters.js?v={{ static_v }}" defer></script>
 <script src="/static/js/home-page-trip-plan.js?v={{ static_v }}" defer></script>
 <script src="/static/js/home-page-trip-chart.js?v={{ static_v }}" defer></script>
 <script src="/static/js/home-page-grid.js?v={{ static_v }}" defer></script>
