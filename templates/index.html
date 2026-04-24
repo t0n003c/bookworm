@@ -2346,7 +2346,7 @@
        Handled IDs:
          note-content  — main note editor textarea (fires renderPreview on convert)
          tlf-notes     — Trip Location "Notes" field (Trip Spot uses CE, see below)                           */
-    var _BULLET_TEXTAREA_IDS = { 'note-content': true, 'tlf-notes': true };
+    var _BULLET_TEXTAREA_IDS = { 'note-content': true, 'tlf-notes': true, 'trip-block-note-text': true };
     var ta = (e.target && e.target.tagName === 'TEXTAREA' && _BULLET_TEXTAREA_IDS[e.target.id])
              ? e.target : null;
     if (ta) {

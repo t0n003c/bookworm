@@ -592,10 +592,66 @@ window.tripOpenBlockModal = function(dayId, blockType, blockIdOrData) {
       var ta = document.getElementById('trip-block-note-text');
       if (ta && !ta._tripNoteKeyBound) {
         ta._tripNoteKeyBound = true;
+
+        // ── Slash command palette (reuses workspace's slash_commands.js) ──
+        if (typeof _attachTextarea === 'function') _attachTextarea(ta);
+
         ta.addEventListener('keydown', function(e) {
+          // Ctrl+B / Ctrl+I shortcuts
           if (e.ctrlKey || e.metaKey) {
             if (e.key === 'b') { e.preventDefault(); _tripNoteFmt('bold'); }
             if (e.key === 'i') { e.preventDefault(); _tripNoteFmt('italic'); }
+          }
+
+          // ── Smart list continuation on Enter ──────────────────────────
+          // Mirrors the textarea keydown in note_form.html:
+          //   • `• `  (auto-bullet char, from - + Space conversion)
+          //   • `- `  `* ` bullet markers
+          //   • `1. ` numbered list
+          // Empty marker line → escape list (strip marker, plain newline).
+          if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
+          if (typeof scIsOpen === 'function' && scIsOpen()) return;
+          var pos = ta.selectionStart;
+          if (ta.selectionEnd !== pos) return;
+          var val       = ta.value;
+          var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+          var lineText  = val.substring(lineStart, pos);
+
+          var bulletM  = lineText.match(/^(\s*)([\u2022\-*]) /);
+          var orderedM = lineText.match(/^(\s*)(\d+)\. /);
+
+          if (bulletM) {
+            e.preventDefault();
+            var indent  = bulletM[1];
+            var marker  = bulletM[2];
+            var prefix  = indent + marker + ' ';
+            var content = lineText.slice(prefix.length).trim();
+            if (content === '') {
+              // Empty bullet — escape list
+              ta.value = val.slice(0, lineStart) + indent + val.slice(pos);
+              var cur = lineStart + indent.length;
+              ta.setSelectionRange(cur, cur);
+            } else {
+              var ins = '\n' + prefix;
+              ta.value = val.slice(0, pos) + ins + val.slice(pos);
+              ta.setSelectionRange(pos + ins.length, pos + ins.length);
+            }
+            ta.dispatchEvent(new Event('input'));
+          } else if (orderedM) {
+            e.preventDefault();
+            var oIndent  = orderedM[1];
+            var num      = parseInt(orderedM[2], 10);
+            var oPrefix  = oIndent + num + '. ';
+            var oContent = lineText.slice(oPrefix.length).trim();
+            if (oContent === '') {
+              ta.value = val.slice(0, lineStart) + oIndent + val.slice(pos);
+              ta.setSelectionRange(lineStart + oIndent.length, lineStart + oIndent.length);
+            } else {
+              var oIns = '\n' + oIndent + (num + 1) + '. ';
+              ta.value = val.slice(0, pos) + oIns + val.slice(pos);
+              ta.setSelectionRange(pos + oIns.length, pos + oIns.length);
+            }
+            ta.dispatchEvent(new Event('input'));
           }
         });
       }
