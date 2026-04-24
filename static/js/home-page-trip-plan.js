@@ -52,18 +52,41 @@ if (!_tripPickerListenerAdded) {
   });
 }
 
-// ── Time formatter ───────────────────────────────────────────────────────────
-// Converts HH:MM (24h, from <input type="time">) → "H:MM AM/PM" for display.
-// Falls back to raw value so old free-text data still shows.
+// ── Time helpers ───────────────────────────────────────────────────────────
+// _normalizeTime: accepts loose user input → stores as HH:MM (24h).
+// Handles: "9", "9am", "9:30", "9:30am", "2:30 PM", "14:30".
+// Falls back to raw string so no data is ever silently discarded.
+function _normalizeTime(v) {
+  v = (v || '').trim();
+  if (!v) return '';
+  // Already HH:MM or H:MM (24h) — pass through normalised
+  if (/^\d{1,2}:\d{2}$/.test(v)) {
+    var parts = v.split(':');
+    return parts[0].padStart(2,'0') + ':' + parts[1];
+  }
+  // 12h with AM/PM: "9:30 AM", "9:30AM", "9:30pm", "2 PM", "2pm"
+  var m12 = v.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (m12) {
+    var h   = parseInt(m12[1], 10);
+    var min = m12[2] || '00';
+    if (/pm/i.test(m12[3]) && h !== 12) h += 12;
+    if (/am/i.test(m12[3]) && h === 12) h  = 0;
+    return String(h).padStart(2,'0') + ':' + min;
+  }
+  // Bare hour: "9" → "09:00"
+  if (/^\d{1,2}$/.test(v)) return String(parseInt(v,10)).padStart(2,'0') + ':00';
+  return v; // unrecognised — store as-is, _formatTime will display it raw
+}
+
+// _formatTime: HH:MM (24h) → "H:MM AM/PM" for lane display.
+// Falls back to raw value so old data is never broken.
 function _formatTime(v) {
   if (!v) return '';
   var m = v.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return v;
   var h   = parseInt(m[1], 10);
   var min = m[2];
-  var ampm = h >= 12 ? 'PM' : 'AM';
-  var h12  = h % 12 || 12;
-  return h12 + ':' + min + ' ' + ampm;
+  return (h % 12 || 12) + ':' + min + ' ' + (h >= 12 ? 'PM' : 'AM');
 }
 
 // ── Entry: called by tripSetTab('plan') and after CRUD refreshes ──────────────
@@ -497,7 +520,7 @@ window.tripSubmitBlock = function(blockType) {
   if (content === null) return;
 
   var tlEl      = document.getElementById('trip-block-' + blockType + '-time');
-  var timeLabel = tlEl ? tlEl.value.trim() : '';
+  var timeLabel = _normalizeTime(tlEl ? tlEl.value : '');
 
   var fd = new URLSearchParams();
   fd.append('block_type', blockType);
@@ -878,7 +901,7 @@ window.tripCloseTimeModal = function() {
 window.tripSubmitTime = function() {
   if (!_tripTimeDayId) return;
   var input = document.getElementById('trip-time-input');
-  var val   = input ? input.value.trim() : '';
+  var val   = _normalizeTime(input ? input.value : '');
   var fd    = new URLSearchParams();
   fd.append('time_label', val);
   _tripFetch('/home/trip/' + _tripPid + '/days/' + _tripTimeDayId + '/spots/' + _tripTimeSpotId, {
