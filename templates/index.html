@@ -673,8 +673,22 @@
         <!-- ── HOMESPACE section ── -->
         <div class="py-4 px-4 border-b border-gray-200 dark:border-zinc-800">
           <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
-                        text-gray-400 dark:text-zinc-500 select-none">
+
+            <!-- Label doubles as collapse toggle -->
+            <button id="hpg-collapse-btn" type="button" onclick="_hpgCollapseToggle()"
+              aria-expanded="true" title="Collapse / expand Homespace"
+              class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+                     text-gray-400 dark:text-zinc-500 select-none
+                     hover:text-gray-600 dark:hover:text-zinc-300 transition">
+              <!-- Chevron: rotate-90 = expanded (pointing down) -->
+              <svg id="hpg-collapse-icon"
+                   xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 flex-shrink-0
+                          transition-transform duration-150 rotate-90"
+                   fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+              </svg>
+              <!-- House icon -->
               <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 flex-shrink-0" fill="none"
                    viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round"
@@ -682,18 +696,33 @@
                          01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
               </svg>
               <span>Homespace</span>
-            </div>
-            <button type="button" onclick="openNewHomePage()"
-              title="Create a new personal page"
-              class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
-                     dark:hover:bg-zinc-800 transition"
-              aria-label="Create new personal page">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
-                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-              </svg>
             </button>
+
+            <!-- Right-side controls: eye (manage hidden) + new page -->
+            <div class="flex items-center gap-0.5">
+              <button id="hpg-hide-mode-btn" type="button" onclick="_hpgHideModeToggle()"
+                title="Manage hidden pages" aria-pressed="false"
+                class="p-1 rounded-lg transition
+                       text-gray-300 dark:text-zinc-600
+                       hover:text-gray-600 dark:hover:text-zinc-300">
+                <svg id="hpg-hide-mode-icon"
+                     xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                </svg>
+              </button>
+              <button type="button" onclick="openNewHomePage()"
+                title="Create a new personal page"
+                class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
+                       dark:hover:bg-zinc-800 transition"
+                aria-label="Create new personal page">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                </svg>
+              </button>
+            </div>
           </div>
+
           <div id="sb-home-pages">
             {% include "partials/home_sidebar.html" %}
           </div>
@@ -701,15 +730,57 @@
 
         <!-- ── WORKSPACES section ── -->
         <div class="py-5 px-4">
-          <p class="text-[10px] font-bold uppercase tracking-widest
-                     text-gray-400 dark:text-zinc-500 select-none mb-2 flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none"
-                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
-            </svg>
-            Workspaces
-          </p>
+          <div class="flex items-center justify-between mb-2">
+
+            <!-- Label doubles as section collapse toggle -->
+            <button id="ws-collapse-btn" type="button" onclick="_wsSecCollapseToggle()"
+              aria-expanded="true" title="Collapse / expand Workspaces"
+              class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+                     text-gray-400 dark:text-zinc-500 select-none
+                     hover:text-gray-600 dark:hover:text-zinc-300 transition">
+              <!-- Chevron: rotate-90 = expanded -->
+              <svg id="ws-collapse-icon"
+                   xmlns="http://www.w3.org/2000/svg"
+                   class="w-2.5 h-2.5 flex-shrink-0 transition-transform duration-150 rotate-90"
+                   fill="none" viewBox="0 0 24 24"
+                   stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+              </svg>
+              <!-- Folder icon -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 flex-shrink-0" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+              </svg>
+              <span>Workspaces</span>
+            </button>
+
+            <!-- Right-side controls: eye · new workspace -->
+            <div class="flex items-center gap-0.5">
+              <!-- Eye: manage hidden workspaces -->
+              <button id="ws-hide-mode-btn" type="button" onclick="_wsHideModeToggle()"
+                title="Manage hidden workspaces" aria-pressed="false"
+                class="p-1 rounded-lg transition
+                       text-gray-300 dark:text-zinc-600
+                       hover:text-gray-600 dark:hover:text-zinc-300">
+                <svg id="ws-hide-mode-icon"
+                     xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                </svg>
+              </button>
+              <!-- New root workspace -->
+              <button type="button" onclick="openNewWsModal()"
+                title="Create a new workspace" aria-label="Create new workspace"
+                class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
+                       dark:hover:bg-zinc-800 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
           <div id="sidebar-workspace-list">
             {% include "partials/sidebar_workspace_list.html" %}
           </div>
@@ -1593,6 +1664,144 @@
   // Boot: load saved set, apply on first render
   _wsHideLoad();
 
+  // ── Homespace page hide / unhide (localStorage — mirrors workspace pattern) ──
+  var _HPG_HIDE_KEY      = 'bw_hpg_hidden';
+  var _HPG_COLLAPSE_KEY  = 'bw_hpg_collapsed';
+  var _hpgHiddenSet      = new Set();
+  var _hpgHideMode       = false;   // true = manage-hidden mode (dim instead of remove)
+  var _hpgCollapsed      = false;
+
+  function _hpgHideLoad() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(_HPG_HIDE_KEY) || '[]');
+      _hpgHiddenSet = new Set(raw.map(Number));
+    } catch (_) { _hpgHiddenSet = new Set(); }
+  }
+  function _hpgHideSave() {
+    try {
+      localStorage.setItem(_HPG_HIDE_KEY, JSON.stringify([..._hpgHiddenSet]));
+    } catch (_) {}
+  }
+
+  /** Re-apply hide/dim state to every home-page row. */
+  function _hpgHideReapply() {
+    document.querySelectorAll('#sb-home-pages [data-page-id]')
+      .forEach(function(row) {
+        var id       = Number(row.getAttribute('data-page-id'));
+        var isHidden = _hpgHiddenSet.has(id);
+        if (_hpgHideMode) {
+          row.style.display = '';
+          row.style.opacity = isHidden ? '0.35' : '';
+        } else {
+          row.style.display = isHidden ? 'none' : '';
+          row.style.opacity = '';
+        }
+      });
+    _hpgHideModeUpdateBtn();
+  }
+
+  function _hpgHideModeUpdateBtn() {
+    var btn  = document.getElementById('hpg-hide-mode-btn');
+    var icon = document.getElementById('hpg-hide-mode-icon');
+    if (!btn) return;
+    var ON_CLS  = ['text-[#0053e2]', 'bg-blue-50',
+                   'dark:bg-zinc-800', 'dark:text-blue-400'];
+    var OFF_CLS = ['text-gray-300', 'dark:text-zinc-600',
+                   'hover:text-gray-600', 'dark:hover:text-zinc-300'];
+    if (_hpgHideMode) {
+      ON_CLS.forEach(function(c)  { btn.classList.add(c); });
+      OFF_CLS.forEach(function(c) { btn.classList.remove(c); });
+      btn.setAttribute('aria-pressed', 'true');
+      if (icon) icon.innerHTML = _WS_EYE_SLASH_PATHS;
+    } else {
+      OFF_CLS.forEach(function(c) { btn.classList.add(c); });
+      ON_CLS.forEach(function(c)  { btn.classList.remove(c); });
+      btn.setAttribute('aria-pressed', 'false');
+      if (icon) icon.innerHTML = _WS_EYE_PATHS;
+    }
+  }
+
+  function _hpgHideModeToggle() {
+    _hpgHideMode = !_hpgHideMode;
+    _hpgHideReapply();
+  }
+
+  function _hpgHideToggle(pgId) {
+    if (_hpgHiddenSet.has(pgId)) {
+      _hpgHiddenSet.delete(pgId);
+    } else {
+      _hpgHiddenSet.add(pgId);
+    }
+    _hpgHideSave();
+    _hpgHideReapply();
+  }
+
+  // ── Homespace collapse / expand ──
+  function _hpgCollapseLoad() {
+    try {
+      _hpgCollapsed = localStorage.getItem(_HPG_COLLAPSE_KEY) === '1';
+    } catch (_) { _hpgCollapsed = false; }
+  }
+  function _hpgCollapseSave() {
+    try {
+      localStorage.setItem(_HPG_COLLAPSE_KEY, _hpgCollapsed ? '1' : '0');
+    } catch (_) {}
+  }
+  function _hpgCollapseReapply() {
+    var list   = document.getElementById('sb-home-pages');
+    var icon   = document.getElementById('hpg-collapse-icon');
+    var btn    = document.getElementById('hpg-collapse-btn');
+    if (list) list.classList.toggle('hidden', _hpgCollapsed);
+    if (icon) icon.classList.toggle('rotate-90', !_hpgCollapsed);
+    if (btn)  btn.setAttribute('aria-expanded', _hpgCollapsed ? 'false' : 'true');
+  }
+  function _hpgCollapseToggle() {
+    _hpgCollapsed = !_hpgCollapsed;
+    _hpgCollapseSave();
+    _hpgCollapseReapply();
+  }
+
+  // Boot homespace state
+  _hpgHideLoad();
+  _hpgCollapseLoad();
+  _hpgCollapseReapply();
+  _hpgHideReapply();    // dim/hide any pages hidden before this load
+  _hpgHideModeUpdateBtn(); // initialise the eye icon svg paths
+
+  // ── Workspace SECTION collapse / expand (hides the entire list) ──
+  // (Distinct from wsToggleAll which collapses individual tree nodes.)
+  var _WS_SEC_COLLAPSE_KEY = 'bw_ws_sec_collapsed';
+  var _wsSecCollapsed      = false;
+
+  function _wsSecCollapseLoad() {
+    try {
+      _wsSecCollapsed = localStorage.getItem(_WS_SEC_COLLAPSE_KEY) === '1';
+    } catch (_) { _wsSecCollapsed = false; }
+  }
+  function _wsSecCollapseSave() {
+    try {
+      localStorage.setItem(_WS_SEC_COLLAPSE_KEY, _wsSecCollapsed ? '1' : '0');
+    } catch (_) {}
+  }
+  function _wsSecCollapseReapply() {
+    var list = document.getElementById('sidebar-workspace-list');
+    var icon = document.getElementById('ws-collapse-icon');
+    var btn  = document.getElementById('ws-collapse-btn');
+    if (list) list.classList.toggle('hidden', _wsSecCollapsed);
+    if (icon) icon.classList.toggle('rotate-90', !_wsSecCollapsed);
+    if (btn)  btn.setAttribute('aria-expanded', _wsSecCollapsed ? 'false' : 'true');
+  }
+  function _wsSecCollapseToggle() {
+    _wsSecCollapsed = !_wsSecCollapsed;
+    _wsSecCollapseSave();
+    _wsSecCollapseReapply();
+  }
+
+  // Boot workspace section state + initialise zombie buttons
+  _wsSecCollapseLoad();
+  _wsSecCollapseReapply();
+  _wsHideModeUpdateBtn();  // paint eye icon (ws-hide-mode-btn now exists in HTML)
+
   function _wsRowMenuOpen(event, id, name, emoji, parentId) {
     var syntheticBtn = {
       dataset: { wsId: String(id), wsEmoji: emoji, wsName: name,
@@ -1705,7 +1914,11 @@
   wsInitCollapse();
   document.addEventListener('htmx:afterSettle', function() {
     wsInitCollapse();
-    _wsHideReapply(); // restore hidden/dim state after OOB sidebar swap
+    _wsHideReapply();        // restore workspace hidden/dim state after OOB sidebar swap
+    _wsSecCollapseReapply(); // restore workspace section collapse state
+    _wsHideModeUpdateBtn();  // re-paint eye icon after swaps
+    _hpgHideReapply();       // restore homespace page hidden/dim state
+    _hpgCollapseReapply();   // restore homespace collapse state
   });
 
   // True if at least one ws-children div is currently visible.
@@ -2115,6 +2328,114 @@
     const ta = document.getElementById('note-content');
     if (ta && e.target === ta) {
       _bwTaTab(e, ta);
+    }
+  });
+
+  /* ── Permanent auto-bullet handler ─────────────────────────────────────────────
+     Typing `- ` (dash then space) on an otherwise-empty line converts it to
+     a proper bullet list item across ALL BookWorm text surfaces:
+       • Textarea (note-content)  → replaces `- ` with `• ` + fires renderPreview
+       • CE note editor           → execCommand converts the block to <ul><li>
+       • CE Text widget           → same execCommand path (no debounce dispatch)
+       • CE Doc editor            → same execCommand path (no debounce dispatch)
+     Lives here (not in note_form.html) so it survives every HTMX swap.   */
+  document.addEventListener('keydown', function _bwAutoBulletHandler(e) {
+    if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+
+    /* ── Raw textarea path ── */
+    var ta = document.getElementById('note-content');
+    if (ta && e.target === ta) {
+      var pos = ta.selectionStart;
+      if (ta.selectionEnd !== pos) return;           // bail on selection
+      var val       = ta.value;
+      var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      var lineText  = val.substring(lineStart, pos);
+      if (lineText !== '-') return;                  // not a lone dash
+      e.preventDefault();
+      ta.value = val.slice(0, lineStart) + '• ' + val.slice(pos);
+      var cur = lineStart + 2;
+      ta.setSelectionRange(cur, cur);
+      /* Fire renderPreview immediately (skip the 150 ms debounce) so the
+         preview updates to a real bullet the moment the user types the space. */
+      if (typeof window._bwRenderPreview === 'function') window._bwRenderPreview();
+      return;
+    }
+
+    /* ── Contenteditable path — note editor, Text widget, doc editor ─────────
+       closest('[contenteditable="true"]') finds whichever CE surface is active:
+         #md-live-preview  — note editor (has 400 ms markdown-sync debounce)
+         #tw-view-{id}     — Text home-widget (openTextEdit sets contentEditable)
+         #bw-word-paper    — DOCX document editor                              */
+    var ceEl = (e.target && typeof e.target.closest === 'function')
+               ? e.target.closest('[contenteditable="true"]') : null;
+    if (!ceEl) return;
+    var pv = ceEl;   /* keep 'pv' alias so the block-walk below is unchanged */
+
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    var range = sel.getRangeAt(0);
+
+    /* Walk up to the nearest block-level ancestor inside the preview */
+    var node  = range.startContainer;
+    var block = (node.nodeType === 3) ? node.parentElement : node;
+    var BLOCKS = ['P','DIV','H1','H2','H3','H4','H5','H6'];
+    while (block && block !== pv && !BLOCKS.includes(block.tagName)) {
+      block = block.parentElement;
+    }
+    if (!block || block === pv) return;
+
+    /* Get visible text content, ignoring grip spans */
+    var textContent = Array.from(block.childNodes).reduce(function(acc, n) {
+      if (n.nodeType === 1 && n.hasAttribute('data-preview-grip')) return acc;
+      return acc + (n.textContent || '');
+    }, '').trim();
+    if (textContent !== '-') return;                 // not a lone dash
+
+    e.preventDefault();
+
+    /* Use execCommand — the browser owns cursor placement, we don't fight it.
+
+       Every manual addRange / replaceChild / insertBefore approach fails
+       because Chrome clears the Selection whenever the node containing the
+       cursor is mutated or removed, and there is no synchronous hook to
+       reliably restore it before the next browser task runs.
+
+       execCommand is deprecated but still works in all current browsers and,
+       crucially, keeps the cursor inside the resulting element automatically.
+
+       Two-step:
+         1. Select + delete just the '-' text  →  empty block, cursor inside
+         2. insertUnorderedList              →  browser wraps block in <ul><li>
+                                                and parks cursor inside <li>  */
+
+    /* Step 1 — find the text node that holds '-' (node is range.startContainer;
+       it is the text node when the user is mid-typing, which is always true
+       here — but fall back to a child search just in case).               */
+    var dashText = (node.nodeType === 3) ? node : null;
+    if (!dashText) {
+      for (var _ci = 0; _ci < block.childNodes.length; _ci++) {
+        var _cn = block.childNodes[_ci];
+        if (_cn.nodeType === 3 && _cn.textContent.indexOf('-') !== -1) {
+          dashText = _cn; break;
+        }
+      }
+    }
+    if (dashText) {
+      var delR = document.createRange();
+      delR.setStart(dashText, 0);
+      delR.setEnd(dashText, dashText.textContent.length);
+      sel.removeAllRanges();
+      sel.addRange(delR);
+      document.execCommand('delete');
+    }
+
+    /* Step 2 — convert the now-empty block to a list; cursor lands in <li> */
+    document.execCommand('insertUnorderedList');
+
+    /* Only the note editor CE pane has a markdown-sync debounce to reset.
+       Text widget and doc editor save on button click — no debounce needed. */
+    if (ceEl.id === 'md-live-preview') {
+      ceEl.dispatchEvent(new Event('input', { bubbles: true }));
     }
   });
 
