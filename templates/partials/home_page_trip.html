@@ -387,7 +387,7 @@
      role="dialog" aria-modal="true" aria-labelledby="trip-block-note-modal-title">
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
        onclick="tripCloseBlockModal('note')"></div>
-  <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+  <div class="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
               border border-gray-200 dark:border-zinc-800">
     <div class="flex items-center justify-between px-5 py-4
                 border-b border-gray-100 dark:border-zinc-800">
@@ -409,14 +409,76 @@
                       focus:ring-2 focus:ring-[#0053e2]/40">
       </div>
       <div>
-        <label class="block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1">
-          Note <span class="text-red-400">*</span>
-        </label>
-        <textarea id="trip-block-note-text" rows="3" placeholder="e.g. Hotel check-in at 3 PM"
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-xs font-semibold text-gray-500 dark:text-zinc-400">
+            Note <span class="text-red-400">*</span>
+          </label>
+          {# Markdown mini-toolbar #}
+          <div class="flex items-center gap-0.5" role="toolbar" aria-label="Formatting">
+            <button type="button" title="Bold (Ctrl+B)"
+                    onclick="_tripNoteFmt('bold')"
+                    class="w-6 h-6 flex items-center justify-center rounded text-xs font-bold
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              B
+            </button>
+            <button type="button" title="Italic (Ctrl+I)"
+                    onclick="_tripNoteFmt('italic')"
+                    class="w-6 h-6 flex items-center justify-center rounded text-xs italic
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              I
+            </button>
+            <button type="button" title="Strikethrough"
+                    onclick="_tripNoteFmt('strike')"
+                    class="w-6 h-6 flex items-center justify-center rounded text-xs line-through
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              S
+            </button>
+            <span class="w-px h-4 bg-gray-200 dark:bg-zinc-600 mx-0.5"></span>
+            <button type="button" title="Heading 1" onclick="_tripNoteFmt('h1')"
+                    class="w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              H1
+            </button>
+            <button type="button" title="Heading 2" onclick="_tripNoteFmt('h2')"
+                    class="w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              H2
+            </button>
+            <span class="w-px h-4 bg-gray-200 dark:bg-zinc-600 mx-0.5"></span>
+            <button type="button" title="Bullet list" onclick="_tripNoteFmt('ul')"
+                    class="w-6 h-6 flex items-center justify-center rounded
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                      d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+              </svg>
+            </button>
+            <button type="button" title="Numbered list" onclick="_tripNoteFmt('ol')"
+                    class="w-6 h-6 flex items-center justify-center rounded
+                           text-gray-600 dark:text-zinc-300
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M7 8h10M7 12h10M7 16h10M3 8h.01M3 12h.01M3 16h.01"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <textarea id="trip-block-note-text" rows="9"
+                  placeholder="Write your note here… (supports **bold**, *italic*, - lists, # headings)"
                   class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200
                          dark:border-zinc-700 bg-white dark:bg-zinc-800
                          text-gray-800 dark:text-zinc-100 focus:outline-none
-                         focus:ring-2 focus:ring-[#0053e2]/40 resize-none"></textarea>
+                         focus:ring-2 focus:ring-[#0053e2]/40
+                         font-mono resize-y leading-relaxed"></textarea>
       </div>
     </div>
     <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">

@@ -89,7 +89,90 @@ function _formatTime(v) {
   return (h % 12 || 12) + ':' + min + ' ' + (h >= 12 ? 'PM' : 'AM');
 }
 
-// ── Entry: called by tripSetTab('plan') and after CRUD refreshes ──────────────
+// ── Note markdown formatter (mirrors mdFmt in note_form.html, targets note textarea) ─────
+// Called by toolbar buttons AND Ctrl+B/I keyboard shortcuts.
+window._tripNoteFmt = function(type) {
+  var ta    = document.getElementById('trip-block-note-text');
+  if (!ta) return;
+  var start = ta.selectionStart;
+  var end   = ta.selectionEnd;
+  var sel   = ta.value.substring(start, end);
+  var val   = ta.value;
+  var before = val.substring(0, start);
+  var after  = val.substring(end);
+
+  function _prefixLines(text, prefix) {
+    return text.split('\n').map(function(l) { return prefix + l; }).join('\n');
+  }
+  function _numberLines(text) {
+    return text.split('\n').map(function(l, i) { return (i + 1) + '. ' + l; }).join('\n');
+  }
+  function _listLine(wantBullet) {
+    var lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    var lineEnd   = val.indexOf('\n', start);
+    var lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
+    var bulletM   = lineText.match(/^(\s*)([-*]) (.*)$/);
+    var orderedM  = lineText.match(/^(\s*)\d+\. (.*)$/);
+    var newLine;
+    if (wantBullet) {
+      if (bulletM)       newLine = bulletM[3];
+      else if (orderedM) newLine = '- ' + orderedM[2];
+      else               newLine = '- ' + lineText;
+    } else {
+      if (orderedM)      newLine = orderedM[2];
+      else if (bulletM)  newLine = '1. ' + bulletM[3];
+      else               newLine = '1. ' + lineText;
+    }
+    ta.value = val.slice(0, lineStart) + newLine +
+               (lineEnd === -1 ? '' : val.slice(lineEnd));
+    var newPos = lineStart + newLine.length;
+    ta.setSelectionRange(newPos, newPos);
+    ta.focus();
+    return;
+  }
+
+  var insert = '', cursor = 0;
+  if (type === 'bold')   { insert = sel ? '**' + sel + '**' : '**bold**';     cursor = sel ? start + insert.length : start + 2; }
+  else if (type === 'italic') { insert = sel ? '*' + sel + '*' : '*italic*';  cursor = sel ? start + insert.length : start + 1; }
+  else if (type === 'strike') { insert = sel ? '~~' + sel + '~~' : '~~text~~'; cursor = sel ? start + insert.length : start + 2; }
+  else if (type === 'h1') { insert = _prefixLines(sel || 'Heading 1', '# ');   cursor = start + insert.length; }
+  else if (type === 'h2') { insert = _prefixLines(sel || 'Heading 2', '## ');  cursor = start + insert.length; }
+  else if (type === 'ul') { if (!sel) { _listLine(true);  return; } insert = _prefixLines(sel, '- ');  cursor = start + insert.length; }
+  else if (type === 'ol') { if (!sel) { _listLine(false); return; } insert = _numberLines(sel);         cursor = start + insert.length; }
+  else return;
+
+  ta.value = before + insert + after;
+  ta.focus();
+  ta.setSelectionRange(cursor, cursor);
+};
+
+// ── Note lane preview: first line, markdown stripped, max 70 chars ─────────────────────
+function _tripNotePreview(text) {
+  if (!text) return '';
+  // Take first non-empty line
+  var line = '';
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    line = lines[i].trim();
+    if (line) break;
+  }
+  // Strip leading markdown syntax: headings, list markers, blockquote, code fence
+  line = line
+    .replace(/^#{1,6}\s+/, '')   // # Heading
+    .replace(/^[-*+]\s+/, '')    // - bullet
+    .replace(/^\d+\.\s+/, '')    // 1. ordered
+    .replace(/^>\s*/, '')        // > blockquote
+    .replace(/^`{1,3}/, '')      // ` code
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // **bold**
+    .replace(/\*(.*?)\*/g, '$1')       // *italic*
+    .replace(/~~(.*?)~~/g, '$1')       // ~~strike~~
+    .replace(/`(.*?)`/g, '$1')         // `code`
+    .trim();
+  if (line.length > 70) line = line.substring(0, 68) + '…';
+  return line;
+}
+
+
 window.tripLoadPlan = function() {
   if (window._tripActivePlanId) {
     _loadDaysForPlan(window._tripActivePlanId);
@@ -367,12 +450,13 @@ function _tripRenderDayBlockRow(dayId, b) {
     : '';
 
   if (b.block_type === 'note') {
+    var preview = _tripEsc(_tripNotePreview(c.text || ''));
     return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg group cursor-grab ' +
       'border-l-4 border-amber-400 bg-amber-50 dark:bg-amber-900/20" ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">📝</span>' +
       '<div class="flex-1 min-w-0">' +
-        '<p class="text-xs text-gray-700 dark:text-zinc-200 line-clamp-2 leading-snug">' +
-          _tripEsc(c.text || '') + '</p>' +
+        '<p class="text-xs text-gray-700 dark:text-zinc-200 truncate leading-snug">' +
+          (preview || '<span class="italic text-gray-400">(empty)</span>') + '</p>' +
         timeSpan +
       '</div>' +
       editBtn + delBtn +
@@ -503,6 +587,19 @@ window.tripOpenBlockModal = function(dayId, blockType, blockIdOrData) {
       '#trip-block-' + blockType + '-modal textarea'
     );
     if (first) first.focus();
+    // Ctrl+B / Ctrl+I keyboard shortcuts for the note textarea
+    if (blockType === 'note') {
+      var ta = document.getElementById('trip-block-note-text');
+      if (ta && !ta._tripNoteKeyBound) {
+        ta._tripNoteKeyBound = true;
+        ta.addEventListener('keydown', function(e) {
+          if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'b') { e.preventDefault(); _tripNoteFmt('bold'); }
+            if (e.key === 'i') { e.preventDefault(); _tripNoteFmt('italic'); }
+          }
+        });
+      }
+    }
   }, 50);
 };
 
