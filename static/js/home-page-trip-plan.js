@@ -104,16 +104,67 @@ var _TRIP_NOTE_COLORS = {
 };
 
 window._tripNoteCeFmt = function(type) {
-  // onmousedown=preventDefault on toolbar buttons keeps CE focused & selection intact.
-  // Do NOT call ce.focus() here — it can move the caret / lose selection.
-  if (type === 'bold')        { document.execCommand('bold'); }
-  else if (type === 'italic') { document.execCommand('italic'); }
-  else if (type === 'strike') { document.execCommand('strikeThrough'); }
-  else if (type === 'h1')     { document.execCommand('formatBlock', false, 'H1'); }
-  else if (type === 'h2')     { document.execCommand('formatBlock', false, 'H2'); }
-  else if (type === 'ul')     { document.execCommand('insertUnorderedList'); }
-  else if (type === 'ol')     { document.execCommand('insertOrderedList'); }
+  var ce = document.getElementById('trip-block-note-ce');
+  if (!ce) return;
+  // Mirrors _applyCE in slash_commands.js:
+  // Windows/Chrome deactivates the CE selection on mouseup even when focus
+  // hasn't moved. Defer via setTimeout so all mouse events have settled,
+  // then re-focus + restore the last known range before firing execCommand.
+  var savedRange = ce._bwSavedRange || null;
+  setTimeout(function() {
+    ce.focus();
+    if (savedRange) {
+      try {
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+      } catch (_) { /* range stale — ignore, cursor will be at end */ }
+    }
+    if (type === 'bold')        { document.execCommand('bold'); }
+    else if (type === 'italic') { document.execCommand('italic'); }
+    else if (type === 'strike') { document.execCommand('strikeThrough'); }
+    else if (type === 'h1')     { document.execCommand('formatBlock', false, 'H1'); }
+    else if (type === 'h2')     { document.execCommand('formatBlock', false, 'H2'); }
+    else if (type === 'ul')     { _tripNoteInsertList('ul'); }
+    else if (type === 'ol')     { _tripNoteInsertList('ol'); }
+  }, 0);
 };
+
+// Direct DOM list insertion — more reliable than execCommand inside a modal CE.
+// Creates <ul><li> or <ol><li> around the current block and parks caret inside.
+function _tripNoteInsertList(tag) {
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  var range = sel.getRangeAt(0);
+  var node  = range.startContainer;
+  var ce    = document.getElementById('trip-block-note-ce');
+  if (!ce) return;
+  // Find the block element containing the caret
+  var block = (node.nodeType === 3) ? node.parentElement : node;
+  var BLOCKS = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+  while (block && block !== ce && !BLOCKS.includes(block.tagName)) {
+    block = block.parentElement;
+  }
+  var list = document.createElement(tag);
+  var li   = document.createElement('li');
+  if (block && block !== ce) {
+    // Preserve existing text (if any) in the new <li>
+    li.innerHTML = block.innerHTML || '<br>';
+    list.appendChild(li);
+    block.parentNode.replaceChild(list, block);
+  } else {
+    // Fallback: append new empty list at end of CE
+    li.innerHTML = '<br>';
+    list.appendChild(li);
+    ce.appendChild(list);
+  }
+  // Park caret at start of the new <li>
+  var r = document.createRange();
+  r.selectNodeContents(li);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
 
 // ── Note CE init: render markdown → HTML, wire slash commands + fmt toolbar ──────
 // Mirrors _tripSpotNotesInit in home-page-trip.js.
@@ -130,6 +181,70 @@ function _tripNoteInit(markdown) {
   }
   if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
   if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
+
+  // ---- One-time event wiring (survives modal reopen) ----
+  if (!ce._bwTripNoteWired) {
+    ce._bwTripNoteWired = true;
+
+    // Track last-known selection so _tripNoteCeFmt can restore it after
+    // the toolbar-button mouseup deactivates the CE selection on Windows.
+    function _saveRange() {
+      var s = window.getSelection();
+      if (!s || !s.rangeCount) return;
+      try { ce._bwSavedRange = s.getRangeAt(0).cloneRange(); } catch (_) {}
+    }
+    ce.addEventListener('mouseup', _saveRange);
+    ce.addEventListener('keyup',   _saveRange);
+
+    // CE-level auto-list: intercepts `- ` + Space BEFORE the global handler
+    // and converts the current line to a proper <ul><li> using direct DOM
+    // manipulation. The global handler's execCommand path is unreliable in
+    // modal CEs on Windows, so we stopPropagation to prevent it running.
+    ce.addEventListener('keydown', function(e) {
+      if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+      var range = sel.getRangeAt(0);
+      var node  = range.startContainer;
+
+      // Walk to the nearest block ancestor inside CE
+      var block = (node.nodeType === 3) ? node.parentElement : node;
+      var BLOCKS = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+      while (block && block !== ce && !BLOCKS.includes(block.tagName)) {
+        block = block.parentElement;
+      }
+      if (!block || block === ce) return;
+
+      var text = block.textContent.trim();
+
+      if (text === '-') {
+        e.preventDefault();
+        e.stopPropagation(); // prevent global handler double-processing
+        _tripNoteReplaceBlockWithList(block, ce, 'ul');
+        return;
+      }
+      if (text === '1.' || text === '1') {
+        e.preventDefault();
+        e.stopPropagation();
+        _tripNoteReplaceBlockWithList(block, ce, 'ol');
+      }
+    }, true); // capture phase — fires before global document handler
+  }
+}
+
+// Replace a block element with a <ul>/<ol> list and park caret in the first <li>.
+function _tripNoteReplaceBlockWithList(block, ce, tag) {
+  var list = document.createElement(tag);
+  var li   = document.createElement('li');
+  li.innerHTML = '<br>';
+  list.appendChild(li);
+  (block.parentNode || ce).replaceChild(list, block);
+  var r = document.createRange();
+  r.selectNodeContents(li);
+  r.collapse(true);
+  var sel = window.getSelection();
+  if (sel) { sel.removeAllRanges(); sel.addRange(r); }
 }
 
 // ── Note CE → Markdown for persistence ──────────────────────────────────
