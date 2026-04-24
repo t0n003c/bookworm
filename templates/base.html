@@ -479,38 +479,41 @@
     .dark .md-body tr:nth-child(even) td { background: #1f1f22; }
 
     /* ── Toggle headings (Notion-style) ───────────────────────────────────────
-       Borderless, transparent, inline triangle caret that rotates on open.
-       No box border, no background fill — blends into the page like a heading. */
+       Borderless, transparent. Only the icon span [data-bw-ti] toggles —
+       clicking the heading text itself does NOT toggle (see slash_commands.js). */
     .bw-toggle { margin: .15rem 0; }
     .bw-toggle > summary {
-      padding: .15rem .25rem; cursor: pointer; list-style: none;
+      padding: .15rem .25rem; list-style: none; cursor: default;
       display: flex; align-items: center; gap: .35rem;
       border-radius: .3rem; user-select: none;
-      transition: background .12s;
     }
     /* Suppress the browser’s built-in disclosure triangle — both engines */
     .bw-toggle > summary::-webkit-details-marker { display: none; }
     .bw-toggle > summary::marker { display: none; }
-    /* Hover pill — barely-there, matches Notion’s ghost hover */
-    .bw-toggle > summary:hover { background: rgba(0,0,0,.05); }
-    .dark .bw-toggle > summary:hover { background: rgba(255,255,255,.07); }
-    /* CSS border-triangle caret — points right (closed), rotates to down (open) */
-    .bw-toggle > summary::before {
-      content: ''; display: inline-block; flex-shrink: 0;
+    /* Toggle icon — the ONLY clickable part for collapsing/expanding */
+    span[data-bw-ti] {
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0; cursor: pointer; padding: .2rem; border-radius: .2rem;
+      transition: background .1s;
+    }
+    span[data-bw-ti]:hover { background: rgba(0,0,0,.08); }
+    .dark span[data-bw-ti]:hover { background: rgba(255,255,255,.12); }
+    /* CSS border-triangle inside the icon span */
+    span[data-bw-ti]::before {
+      content: ''; display: block;
       width: 0; height: 0;
       border-top:    .27rem solid transparent;
       border-bottom: .27rem solid transparent;
       border-left:   .44rem solid #9ca3af;
       transition: transform .18s ease;
     }
-    .dark .bw-toggle > summary::before { border-left-color: #71717a; }
-    .bw-toggle[open] > summary::before { transform: rotate(90deg); }
-    /* Heading sizes — unchanged from before */
+    .dark span[data-bw-ti]::before { border-left-color: #71717a; }
+    .bw-toggle[open] > summary span[data-bw-ti]::before { transform: rotate(90deg); }
+    /* Heading sizes */
     .bw-toggle-h1 > summary { font-size: 1.35rem; font-weight: 700; }
     .bw-toggle-h2 > summary { font-size: 1.1rem;  font-weight: 700; }
     .bw-toggle-h3 > summary { font-size: .95rem;  font-weight: 600; }
-    /* Body: indented to align with the heading text (not a padded box).
-       Explicit font reset is a safety-net so no heading weight/size bleeds in. */
+    /* Body: indented; explicit font reset so no heading weight/size bleeds in. */
     .bw-toggle > :not(summary) { padding-left: .85rem; font-size: 1rem; font-weight: 400; }
 
     /* ── Column layouts ── */

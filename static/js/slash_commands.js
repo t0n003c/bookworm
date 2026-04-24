@@ -112,9 +112,9 @@ const SLASH_COMMANDS = [
              <polyline points="4 6 8 10 4 14" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
              <text x="11" y="15" font-size="10" fill="currentColor" stroke="none" font-weight="900">H1</text>
            </svg>`,
-    snippet: '<details class="bw-toggle bw-toggle-h1">\n<summary>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
+    snippet: '<details class="bw-toggle bw-toggle-h1">\n<summary><span data-bw-ti></span>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
     cursorFromStart: 50,
-    ceHtml: '<details class="bw-toggle bw-toggle-h1"><summary>Toggle Heading</summary><p>Content here…</p></details>',
+    ceHtml: '<details class="bw-toggle bw-toggle-h1" open><summary><span data-bw-ti></span>Toggle Heading</summary><p>Content here…</p></details><p><br></p>',
   },
   {
     id: 'toggle-h2', label: 'Toggle Heading 2', desc: 'Collapsible H2 section',
@@ -122,9 +122,9 @@ const SLASH_COMMANDS = [
              <polyline points="4 6 8 10 4 14" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
              <text x="11" y="15" font-size="10" fill="currentColor" stroke="none" font-weight="900">H2</text>
            </svg>`,
-    snippet: '<details class="bw-toggle bw-toggle-h2">\n<summary>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
+    snippet: '<details class="bw-toggle bw-toggle-h2">\n<summary><span data-bw-ti></span>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
     cursorFromStart: 50,
-    ceHtml: '<details class="bw-toggle bw-toggle-h2"><summary>Toggle Heading</summary><p>Content here…</p></details>',
+    ceHtml: '<details class="bw-toggle bw-toggle-h2" open><summary><span data-bw-ti></span>Toggle Heading</summary><p>Content here…</p></details><p><br></p>',
   },
   {
     id: 'toggle-h3', label: 'Toggle Heading 3', desc: 'Collapsible H3 section',
@@ -132,9 +132,9 @@ const SLASH_COMMANDS = [
              <polyline points="4 6 8 10 4 14" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
              <text x="11" y="15" font-size="10" fill="currentColor" stroke="none" font-weight="900">H3</text>
            </svg>`,
-    snippet: '<details class="bw-toggle bw-toggle-h3">\n<summary>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
+    snippet: '<details class="bw-toggle bw-toggle-h3">\n<summary><span data-bw-ti></span>Toggle Heading</summary>\n\nContent here\u2026\n\n</details>\n',
     cursorFromStart: 50,
-    ceHtml: '<details class="bw-toggle bw-toggle-h3"><summary>Toggle Heading</summary><p>Content here…</p></details>',
+    ceHtml: '<details class="bw-toggle bw-toggle-h3" open><summary><span data-bw-ti></span>Toggle Heading</summary><p>Content here…</p></details><p><br></p>',
   },
 
   // ── Column Layouts ─────────────────────────────────────────────────────
@@ -865,9 +865,26 @@ document.addEventListener('click', (e) => {
 });
 
 
-/* ─────────────────────────────────────────
+/* ───────────────────────────────────────────
+   Toggle heading — icon-only click
+   Intercepts ALL clicks on .bw-toggle > summary in capture phase (before
+   the browser’s built-in <details> toggle fires). The toggle only opens/
+   closes when the click lands on the [data-bw-ti] icon span.
+   ─────────────────────────────────────────── */
+document.addEventListener('click', (e) => {
+  const summary = e.target.closest('.bw-toggle > summary');
+  if (!summary) return;
+  e.preventDefault(); // always block the browser’s built-in toggle
+  if (e.target.closest('[data-bw-ti]')) {
+    const details = summary.parentElement;
+    if (details) details.open = !details.open;
+  }
+}, true); // capture phase — fires before the browser’s native <details> handler
+
+
+/* ───────────────────────────────────────────
    Init — run on load and after every HTMX swap
-   ───────────────────────────────────────── */
+   ─────────────────────────────────────────── */
 function _scInit() {
   if (!_sc.palette) _sc.palette = _buildPalette();
 
@@ -875,6 +892,16 @@ function _scInit() {
   const ce = document.getElementById('md-live-preview');
   if (ta) _attachTextarea(ta);
   if (ce) _attachCE(ce);
+
+  // Inject [data-bw-ti] icon into any legacy toggle summaries that predate
+  // this feature (i.e. summaries with no icon span yet).
+  document.querySelectorAll('.bw-toggle > summary').forEach(summary => {
+    if (!summary.querySelector('[data-bw-ti]')) {
+      const icon = document.createElement('span');
+      icon.dataset.bwTi = '';
+      summary.prepend(icon);
+    }
+  });
 
   // Tell turndown to preserve our custom HTML blocks instead of stripping them.
   // We wait a tick so initEditor()'s IIFE has had time to assign window._bwTurndown.
