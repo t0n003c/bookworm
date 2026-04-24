@@ -221,13 +221,34 @@ function _tripRenderSpotCard(s) {
         'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
         'select-none">' + emoji + '</div>';
 
-  // Add-to-day dropdown using days from the plan module if loaded
-  var dayOpts = '<option value="">— pick a day —</option>';
+  // Add-to-day section — only useful when a plan is open and has days loaded
+  var daySection = '';
   if (typeof _tripDays !== 'undefined' && _tripDays.length) {
+    var dayOpts = '<option value="">\u2014 pick a day \u2014</option>';
     _tripDays.forEach(function(d) {
       dayOpts += '<option value="' + d.id + '">' +
         _tripEsc(d.day_label || 'Day') + '</option>';
     });
+    daySection =
+      '<div class="flex items-center gap-1 mt-0.5">' +
+        '<select id="trip-add-day-sel-' + s.id + '" ' +
+          'class="flex-1 text-[10px] px-1.5 py-1 rounded-lg border border-gray-200 ' +
+                 'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+                 'text-gray-700 dark:text-zinc-200 focus:outline-none">' +
+          dayOpts +
+        '</select>' +
+        '<button onclick="tripAddSpotToDay(' + s.id + ')" ' +
+          'class="px-2 py-1 text-[10px] rounded-lg bg-[#0053e2] text-white ' +
+                 'hover:bg-[#0046c0] transition font-medium">＋ Day</button>' +
+      '</div>';
+  } else if (typeof window._tripActivePlanId !== 'undefined' && window._tripActivePlanId) {
+    daySection =
+      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 italic">' +
+        'No days yet — add days in Plan tab</p>';
+  } else {
+    daySection =
+      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 italic">' +
+        'Open a trip in Plan tab to schedule</p>';
   }
 
   return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
@@ -260,17 +281,7 @@ function _tripRenderSpotCard(s) {
           '\'' + _tripEsc(s.name.replace(/'/g,'\\\'')) + '\')" ' +
           'class="text-[10px] text-gray-400 hover:text-red-500 transition">🗑️</button>' +
       '</div>' +
-      '<div class="flex items-center gap-1 mt-0.5">' +
-        '<select id="trip-add-day-sel-' + s.id + '" ' +
-          'class="flex-1 text-[10px] px-1.5 py-1 rounded-lg border border-gray-200 ' +
-                 'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-                 'text-gray-700 dark:text-zinc-200 focus:outline-none">' +
-          dayOpts +
-        '</select>' +
-        '<button onclick="tripAddSpotToDay(' + s.id + ')" ' +
-          'class="px-2 py-1 text-[10px] rounded-lg bg-[#0053e2] text-white ' +
-                 'hover:bg-[#0046c0] transition font-medium">＋ Day</button>' +
-      '</div>' +
+      daySection +
     '</div>' +
   '</div>';
 }

@@ -149,6 +149,8 @@ function _loadDaysForPlan(planId) {
     .then(function(data) {
       _tripDays = Array.isArray(data) ? data : [];
       _tripRenderPlan();
+      // Refresh spot cards so the “+ Day” dropdown reflects the loaded days
+      if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
     })
     .catch(function() { _tripShowToast('Failed to load plan', true); });
 }
@@ -176,7 +178,7 @@ function _tripRenderDayLane(d) {
     ? d.spots.map(function(s) { return _tripRenderDaySpotRow(d.id, s); }).join('')
     : '<div class="trip-drop-hint text-xs text-center text-gray-300 dark:text-zinc-600 py-6 px-3 ' +
         'border-2 border-dashed border-gray-200 dark:border-zinc-700 rounded-lg">' +
-        'Drag a spot here or use<br>the ＋ button on a card</div>';
+        'No spots yet — use the<br><strong>picker on Research tab cards</strong></div>';
 
   var dateLabel = d.day_date
     ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500 ml-1">' +
