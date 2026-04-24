@@ -871,6 +871,93 @@ async def init_db() -> None:
             "ON trip_day_spots(day_id)"
         )
 
+        # ── trip_locations (research locations layer, parent of spots) ────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_locations (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                name       TEXT    NOT NULL,
+                priority   INTEGER NOT NULL DEFAULT 3,
+                notes      TEXT    NOT NULL DEFAULT '',
+                cover_url  TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_locations_page "
+            "ON trip_locations(page_id, user_id, sort_order)"
+        )
+
+        # ── trip_location_attrs (user-defined key/value attributes per location)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_location_attrs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                location_id INTEGER NOT NULL
+                            REFERENCES trip_locations(id) ON DELETE CASCADE,
+                attr_key    TEXT    NOT NULL,
+                attr_value  TEXT    NOT NULL DEFAULT '',
+                sort_order  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_loc_attrs_loc "
+            "ON trip_location_attrs(location_id)"
+        )
+
+        # ── trip_spot_attrs (user-defined key/value attributes per spot)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_spot_attrs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                spot_id    INTEGER NOT NULL
+                           REFERENCES trip_spots(id) ON DELETE CASCADE,
+                attr_key   TEXT    NOT NULL,
+                attr_value TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_spot_attrs_spot "
+            "ON trip_spot_attrs(spot_id)"
+        )
+
+        # ── trip_spots.location_id (additive FK to trip_locations) ────────────
+        cur = await db.execute("PRAGMA table_info(trip_spots)")
+        _ts_cols = {r[1] for r in await cur.fetchall()}
+        if "location_id" not in _ts_cols:
+            await db.execute(
+                "ALTER TABLE trip_spots ADD COLUMN "
+                "location_id INTEGER REFERENCES trip_locations(id) ON DELETE SET NULL"
+            )
+
+        # ── trip_plans (itinerary segments; parent of plan-tab days) ───────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_plans (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                plan_name  TEXT    NOT NULL DEFAULT 'Trip',
+                plan_desc  TEXT    NOT NULL DEFAULT '',
+                start_date TEXT    NOT NULL DEFAULT '',
+                end_date   TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_plans_page "
+            "ON trip_plans(page_id, user_id)"
+        )
+        # trip_days.plan_id — nullable so pre-existing days survive
+        cur = await db.execute("PRAGMA table_info(trip_days)")
+        _td_cols = {r[1] for r in await cur.fetchall()}
+        if "plan_id" not in _td_cols:
+            await db.execute(
+                "ALTER TABLE trip_days ADD COLUMN "
+                "plan_id INTEGER REFERENCES trip_plans(id) ON DELETE CASCADE"
+            )
+
         await db.commit()
 
 @asynccontextmanager

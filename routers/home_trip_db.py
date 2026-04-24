@@ -8,12 +8,168 @@ from __future__ import annotations
 from database import get_db
 
 
+# ── Location helpers ──────────────────────────────────────────────────────────
+
+def _loc_row(r) -> dict:
+    return {
+        "id":         r["id"],
+        "page_id":    r["page_id"],
+        "name":       r["name"],
+        "priority":   r["priority"],
+        "notes":      r["notes"],
+        "cover_url":  r["cover_url"],
+        "sort_order": r["sort_order"],
+        "created_at": r["created_at"],
+        "attrs":      [],   # populated by get_trip_locations
+    }
+
+
+async def get_trip_locations(page_id: int, user_id: int) -> list[dict]:
+    """Return all locations for page with nested attrs — no N+1."""
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT l.id, l.page_id, l.name, l.priority, l.notes,
+                   l.cover_url, l.sort_order, l.created_at,
+                   a.id AS attr_id, a.attr_key, a.attr_value, a.sort_order AS attr_sort
+              FROM trip_locations l
+              LEFT JOIN trip_location_attrs a ON a.location_id = l.id
+             WHERE l.page_id=? AND l.user_id=?
+             ORDER BY l.sort_order, l.id, a.sort_order
+            """,
+            (page_id, user_id),
+        )
+        rows = await cur.fetchall()
+
+    locs: dict[int, dict] = {}
+    for r in rows:
+        lid = r["id"]
+        if lid not in locs:
+            locs[lid] = {
+                "id":         lid,
+                "page_id":    r["page_id"],
+                "name":       r["name"],
+                "priority":   r["priority"],
+                "notes":      r["notes"],
+                "cover_url":  r["cover_url"],
+                "sort_order": r["sort_order"],
+                "created_at": r["created_at"],
+                "attrs":      [],
+            }
+        if r["attr_id"] is not None:
+            locs[lid]["attrs"].append({
+                "id":        r["attr_id"],
+                "attr_key":  r["attr_key"],
+                "attr_value": r["attr_value"],
+                "sort_order": r["attr_sort"],
+            })
+    return list(locs.values())
+
+
+async def add_trip_location(
+    page_id: int, user_id: int,
+    name: str, priority: int, notes: str, cover_url: str,
+) -> int:
+    """INSERT a new location; return its id."""
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            INSERT INTO trip_locations
+              (page_id, user_id, name, priority, notes, cover_url, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?,
+              (SELECT COALESCE(MAX(sort_order), 0) + 10
+                 FROM trip_locations WHERE page_id=?))
+            """,
+            (page_id, user_id, name, priority, notes, cover_url, page_id),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def update_trip_location(
+    loc_id: int, page_id: int, user_id: int,
+    name: str, priority: int, notes: str, cover_url: str,
+) -> bool:
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            UPDATE trip_locations
+               SET name=?, priority=?, notes=?, cover_url=?
+             WHERE id=? AND page_id=? AND user_id=?
+            """,
+            (name, priority, notes, cover_url, loc_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def update_trip_location_cover(
+    loc_id: int, page_id: int, user_id: int, cover_url: str
+) -> bool:
+    """Lightweight cover-url-only update (after upload)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE trip_locations SET cover_url=? WHERE id=? AND page_id=? AND user_id=?",
+            (cover_url, loc_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def delete_trip_location(loc_id: int, page_id: int, user_id: int) -> bool:
+    """DELETE location; attrs + spot FK set null via ON DELETE CASCADE/SET NULL."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM trip_locations WHERE id=? AND page_id=? AND user_id=?",
+            (loc_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def set_location_attrs(
+    loc_id: int, attrs: list[dict]
+) -> None:
+    """Replace all attrs for a location atomically (delete-all + re-insert)."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM trip_location_attrs WHERE location_id=?", (loc_id,)
+        )
+        for idx, attr in enumerate(attrs):
+            key = str(attr.get("attr_key", "")).strip()
+            val = str(attr.get("attr_value", "")).strip()
+            if not key:
+                continue
+            await db.execute(
+                """
+                INSERT INTO trip_location_attrs
+                  (location_id, attr_key, attr_value, sort_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                (loc_id, key, val, idx * 10),
+            )
+        await db.commit()
+
+
+async def reorder_trip_locations(
+    page_id: int, user_id: int, ordered_ids: list[int]
+) -> None:
+    async with get_db() as db:
+        for idx, lid in enumerate(ordered_ids):
+            await db.execute(
+                "UPDATE trip_locations SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+                (idx * 10, lid, page_id, user_id),
+            )
+        await db.commit()
+
+
 # ── Spot helpers ──────────────────────────────────────────────────────────────
 
 def _spot_row(r) -> dict:
     return {
         "id":             r["id"],
         "page_id":        r["page_id"],
+        "location_id":    r["location_id"],
         "name":           r["name"],
         "spot_type":      r["spot_type"],
         "cover_url":      r["cover_url"],
@@ -24,6 +180,7 @@ def _spot_row(r) -> dict:
         "currency":       r["currency"],
         "sort_order":     r["sort_order"],
         "created_at":     r["created_at"],
+        "attrs":          [],   # populated by get_trip_spots
     }
 
 
@@ -31,29 +188,84 @@ async def get_trip_spots(
     page_id: int,
     user_id: int,
     spot_type: str | None = None,
+    location_id: int | None = None,
 ) -> list[dict]:
-    """Return all spots for page_id, optionally filtered by spot_type."""
+    """Return spots with nested attrs; no N+1."""
     async with get_db() as db:
+        clauses = ["s.page_id=?", "s.user_id=?"]
+        params: list = [page_id, user_id]
         if spot_type:
-            cur = await db.execute(
-                """
-                SELECT * FROM trip_spots
-                 WHERE page_id=? AND user_id=? AND spot_type=?
-                 ORDER BY sort_order, id
-                """,
-                (page_id, user_id, spot_type),
-            )
-        else:
-            cur = await db.execute(
-                """
-                SELECT * FROM trip_spots
-                 WHERE page_id=? AND user_id=?
-                 ORDER BY sort_order, id
-                """,
-                (page_id, user_id),
-            )
+            clauses.append("s.spot_type=?")
+            params.append(spot_type)
+        if location_id is not None:
+            clauses.append("s.location_id=?")
+            params.append(location_id)
+        where = " AND ".join(clauses)
+        cur = await db.execute(
+            f"""
+            SELECT s.id, s.page_id, s.location_id, s.name, s.spot_type,
+                   s.cover_url, s.map_url, s.notes, s.priority,
+                   s.estimated_cost, s.currency, s.sort_order, s.created_at,
+                   a.id AS attr_id, a.attr_key, a.attr_value,
+                   a.sort_order AS attr_sort
+              FROM trip_spots s
+              LEFT JOIN trip_spot_attrs a ON a.spot_id = s.id
+             WHERE {where}
+             ORDER BY s.sort_order, s.id, a.sort_order
+            """,
+            params,
+        )
         rows = await cur.fetchall()
-    return [_spot_row(r) for r in rows]
+
+    spots: dict[int, dict] = {}
+    for r in rows:
+        sid = r["id"]
+        if sid not in spots:
+            spots[sid] = {
+                "id":             sid,
+                "page_id":        r["page_id"],
+                "location_id":    r["location_id"],
+                "name":           r["name"],
+                "spot_type":      r["spot_type"],
+                "cover_url":      r["cover_url"],
+                "map_url":        r["map_url"],
+                "notes":          r["notes"],
+                "priority":       r["priority"],
+                "estimated_cost": r["estimated_cost"],
+                "currency":       r["currency"],
+                "sort_order":     r["sort_order"],
+                "created_at":     r["created_at"],
+                "attrs":          [],
+            }
+        if r["attr_id"] is not None:
+            spots[sid]["attrs"].append({
+                "id":         r["attr_id"],
+                "attr_key":   r["attr_key"],
+                "attr_value": r["attr_value"],
+                "sort_order": r["attr_sort"],
+            })
+    return list(spots.values())
+
+
+async def set_spot_attrs(spot_id: int, attrs: list[dict]) -> None:
+    """Replace all attrs for spot_id with the given list (idempotent)."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM trip_spot_attrs WHERE spot_id=?", (spot_id,)
+        )
+        for i, a in enumerate(attrs):
+            key = (a.get("attr_key") or "").strip()
+            if not key:
+                continue
+            await db.execute(
+                """
+                INSERT INTO trip_spot_attrs (spot_id, attr_key, attr_value, sort_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                (spot_id, key, (a.get("attr_value") or "").strip(), i * 10),
+            )
+        await db.commit()
+
 
 
 async def add_trip_spot(
@@ -67,17 +279,18 @@ async def add_trip_spot(
     priority: int,
     estimated_cost: float,
     currency: str,
+    location_id: int | None = None,
 ) -> int:
     """INSERT a new spot; return its id."""
     async with get_db() as db:
         cur = await db.execute(
             """
             INSERT INTO trip_spots
-              (page_id, user_id, name, spot_type, cover_url,
+              (page_id, user_id, location_id, name, spot_type, cover_url,
                map_url, notes, priority, estimated_cost, currency)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (page_id, user_id, name, spot_type, cover_url,
+            (page_id, user_id, location_id, name, spot_type, cover_url,
              map_url, notes, priority, estimated_cost, currency),
         )
         await db.commit()
@@ -96,6 +309,7 @@ async def update_trip_spot(
     priority: int,
     estimated_cost: float,
     currency: str,
+    location_id: int | None = None,
 ) -> bool:
     """UPDATE spot with ownership guard. Returns True on success."""
     async with get_db() as db:
@@ -103,12 +317,26 @@ async def update_trip_spot(
             """
             UPDATE trip_spots
                SET name=?, spot_type=?, cover_url=?, map_url=?,
-                   notes=?, priority=?, estimated_cost=?, currency=?
+                   notes=?, priority=?, estimated_cost=?, currency=?,
+                   location_id=?
              WHERE id=? AND page_id=? AND user_id=?
             """,
             (name, spot_type, cover_url, map_url,
              notes, priority, estimated_cost, currency,
-             spot_id, page_id, user_id),
+             location_id, spot_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def update_trip_spot_cover(
+    spot_id: int, page_id: int, user_id: int, cover_url: str
+) -> bool:
+    """Lightweight cover-url-only update (after upload)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE trip_spots SET cover_url=? WHERE id=? AND page_id=? AND user_id=?",
+            (cover_url, spot_id, page_id, user_id),
         )
         await db.commit()
         return cur.rowcount == 1
@@ -151,13 +379,97 @@ async def reorder_trip_spots(
         await db.commit()
 
 
-# ── Day helpers ───────────────────────────────────────────────────────────────
+# ── Plan helpers (itinerary segments; parent of plan-tab days) ──────────────
 
-async def get_trip_days(page_id: int, user_id: int) -> list[dict]:
-    """Return all days with nested spots — single JOIN query, no N+1."""
+async def get_trip_plans(page_id: int, user_id: int) -> list[dict]:
+    """Return all plans with a day_count summary."""
     async with get_db() as db:
         cur = await db.execute(
             """
+            SELECT p.id, p.plan_name, p.plan_desc, p.start_date, p.end_date,
+                   p.sort_order,
+                   COUNT(d.id) AS day_count
+              FROM trip_plans p
+              LEFT JOIN trip_days d ON d.plan_id = p.id
+             WHERE p.page_id=? AND p.user_id=?
+             GROUP BY p.id
+             ORDER BY p.sort_order, p.id
+            """,
+            (page_id, user_id),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "id":         r["id"],
+            "plan_name":  r["plan_name"],
+            "plan_desc":  r["plan_desc"],
+            "start_date": r["start_date"],
+            "end_date":   r["end_date"],
+            "sort_order": r["sort_order"],
+            "day_count":  r["day_count"],
+        }
+        for r in rows
+    ]
+
+
+async def add_trip_plan(
+    page_id: int, user_id: int,
+    plan_name: str, plan_desc: str,
+    start_date: str, end_date: str,
+) -> int:
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            INSERT INTO trip_plans
+                   (page_id, user_id, plan_name, plan_desc, start_date, end_date, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?,
+              (SELECT COALESCE(MAX(sort_order), 0) + 10
+                 FROM trip_plans WHERE page_id=?))
+            """,
+            (page_id, user_id, plan_name, plan_desc, start_date, end_date, page_id),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def update_trip_plan(
+    plan_id: int, page_id: int, user_id: int,
+    plan_name: str, plan_desc: str,
+    start_date: str, end_date: str,
+) -> bool:
+    async with get_db() as db:
+        cur = await db.execute(
+            """UPDATE trip_plans
+                  SET plan_name=?, plan_desc=?, start_date=?, end_date=?
+                WHERE id=? AND page_id=? AND user_id=?""",
+            (plan_name, plan_desc, start_date, end_date, plan_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def delete_trip_plan(plan_id: int, page_id: int, user_id: int) -> bool:
+    """DELETE plan; trip_days with this plan_id cascade-delete."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM trip_plans WHERE id=? AND page_id=? AND user_id=?",
+            (plan_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+# ── Day helpers ───────────────────────────────────────────────────────────────
+
+async def get_trip_days(
+    page_id: int, user_id: int, plan_id: int | None = None
+) -> list[dict]:
+    """Return days (with nested spots) for a page, optionally scoped to plan_id."""
+    plan_clause = "AND td.plan_id=?" if plan_id is not None else "AND td.plan_id IS NULL"
+    params = (page_id, user_id, plan_id) if plan_id is not None else (page_id, user_id)
+    async with get_db() as db:
+        cur = await db.execute(
+            f"""
             SELECT td.id         AS day_id,
                    td.day_label, td.day_date,
                    td.sort_order AS day_sort,
@@ -169,10 +481,10 @@ async def get_trip_days(page_id: int, user_id: int) -> list[dict]:
               FROM trip_days td
               LEFT JOIN trip_day_spots tds ON tds.day_id = td.id
               LEFT JOIN trip_spots     ts  ON ts.id      = tds.spot_id
-             WHERE td.page_id=? AND td.user_id=?
+             WHERE td.page_id=? AND td.user_id=? {plan_clause}
              ORDER BY td.sort_order, td.id, tds.sort_order
             """,
-            (page_id, user_id),
+            params,
         )
         rows = await cur.fetchall()
 
@@ -181,11 +493,11 @@ async def get_trip_days(page_id: int, user_id: int) -> list[dict]:
         did = r["day_id"]
         if did not in days:
             days[did] = {
-                "id":        did,
-                "day_label": r["day_label"],
-                "day_date":  r["day_date"],
+                "id":         did,
+                "day_label":  r["day_label"],
+                "day_date":   r["day_date"],
                 "sort_order": r["day_sort"],
-                "spots":     [],
+                "spots":      [],
             }
         if r["tds_id"] is not None:
             days[did]["spots"].append({
@@ -204,18 +516,21 @@ async def get_trip_days(page_id: int, user_id: int) -> list[dict]:
 
 
 async def add_trip_day(
-    page_id: int, user_id: int, day_label: str, day_date: str | None
+    page_id: int, user_id: int, day_label: str, day_date: str | None,
+    plan_id: int | None = None,
 ) -> int:
     """INSERT a new day; return its id."""
     async with get_db() as db:
         cur = await db.execute(
             """
-            INSERT INTO trip_days (page_id, user_id, day_label, day_date, sort_order)
-            VALUES (?, ?, ?, ?,
+            INSERT INTO trip_days (page_id, user_id, day_label, day_date, plan_id, sort_order)
+            VALUES (?, ?, ?, ?, ?,
               (SELECT COALESCE(MAX(sort_order), 0) + 10
-                 FROM trip_days WHERE page_id=?))
+                 FROM trip_days WHERE page_id=? AND
+                 (CASE WHEN ? IS NULL THEN plan_id IS NULL ELSE plan_id=? END)))
             """,
-            (page_id, user_id, day_label, day_date or None, page_id),
+            (page_id, user_id, day_label, day_date or None, plan_id,
+             page_id, plan_id, plan_id),
         )
         await db.commit()
         return cur.lastrowid
@@ -315,21 +630,24 @@ async def reorder_day_spots(day_id: int, ordered_tds_ids: list[int]) -> None:
 async def get_trip_stats(page_id: int, user_id: int) -> dict:
     """Summary stats for Chart tab."""
     async with get_db() as db:
-        # Total spots
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM trip_locations WHERE page_id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        total_locations = (await cur.fetchone())[0]
+
         cur = await db.execute(
             "SELECT COUNT(*) FROM trip_spots WHERE page_id=? AND user_id=?",
             (page_id, user_id),
         )
         total_spots = (await cur.fetchone())[0]
 
-        # Total days
         cur = await db.execute(
             "SELECT COUNT(*) FROM trip_days WHERE page_id=? AND user_id=?",
             (page_id, user_id),
         )
         total_days = (await cur.fetchone())[0]
 
-        # Spots in plan
         cur = await db.execute(
             """
             SELECT COUNT(DISTINCT tds.spot_id)
@@ -341,7 +659,6 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         )
         spots_in_plan = (await cur.fetchone())[0]
 
-        # By type — count + cost
         cur = await db.execute(
             """
             SELECT spot_type,
@@ -357,11 +674,9 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         )
         by_type_rows = await cur.fetchall()
 
-    # Check for mixed currencies
     currencies = {r["currency"] for r in by_type_rows if r["estimated_cost"]}
     currency_note = "" if len(currencies) <= 1 else "mixed currencies"
 
-    # Aggregate by type (sum costs; flag mixed)
     type_map: dict[str, dict] = {}
     for r in by_type_rows:
         st = r["spot_type"]
@@ -371,7 +686,6 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         type_map[st]["count"] += r["cnt"]
         type_map[st]["total_cost"] += r["total_cost"] or 0.0
 
-    # Grand total — only if single currency
     grand_total: float | None = None
     grand_currency = ""
     if len(currencies) == 1:
@@ -379,11 +693,12 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         grand_total = sum(t["total_cost"] for t in type_map.values())
 
     return {
-        "total_spots":    total_spots,
-        "total_days":     total_days,
-        "spots_in_plan":  spots_in_plan,
-        "grand_total":    grand_total,
-        "grand_currency": grand_currency,
-        "currency_note":  currency_note,
-        "by_type":        list(type_map.values()),
+        "total_locations": total_locations,
+        "total_spots":     total_spots,
+        "total_days":      total_days,
+        "spots_in_plan":   spots_in_plan,
+        "grand_total":     grand_total,
+        "grand_currency":  grand_currency,
+        "currency_note":   currency_note,
+        "by_type":         list(type_map.values()),
     }

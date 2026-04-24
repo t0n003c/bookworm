@@ -106,11 +106,21 @@ window._tripRenderTopbarControls = function() {
           '＋ Add Location</button>';
     }
   } else if (_tripTab === 'plan') {
-    el.innerHTML =
-      '<button onclick="tripOpenAddDay()" ' +
-        'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-               'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-        '＋ Add Day</button>';
+    if (window._tripActivePlanId) {
+      // Inside a trip — show Add Day
+      el.innerHTML =
+        '<button onclick="tripOpenAddDay()" ' +
+          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
+          '＋ Add Day</button>';
+    } else {
+      // Top-level trip cards — show Add Trip
+      el.innerHTML =
+        '<button onclick="tripOpenAddPlan()" ' +
+          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
+          '＋ Add Trip</button>';
+    }
   } else {
     el.innerHTML = '';
   }

@@ -78,16 +78,35 @@
     </div>
   </div>
 
-  {# ── Plan panel ────────────────────────────────────────────────────────── #}
+  {# ── Plan panel ──────────────────────────────────────────── #}
   <div id="trip-panel-plan" class="hidden flex flex-col flex-1 overflow-hidden">
-    <div id="trip-plan-toolbar"
-         class="flex-shrink-0 flex items-center gap-2 px-4 py-2
-                border-b border-gray-100 dark:border-zinc-800
-                bg-gray-50 dark:bg-zinc-900">
+
+    {# Level A: Trip cards — shown by default #}
+    <div id="trip-plans-view" class="flex flex-col flex-1 overflow-hidden">
+      <div id="trip-plans-toolbar"
+           class="flex-shrink-0 flex items-center gap-2 px-4 py-2
+                  border-b border-gray-100 dark:border-zinc-800
+                  bg-gray-50 dark:bg-zinc-900">
+      </div>
+      <div id="trip-plans-grid"
+           class="flex-1 overflow-y-auto p-4
+                  grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4
+                  gap-4 content-start">
+      </div>
     </div>
-    <div id="trip-days-container"
-         class="flex-1 overflow-x-auto overflow-y-hidden p-4 flex gap-4 items-start">
+
+    {# Level B: Day lanes — hidden until a Trip is opened #}
+    <div id="trip-days-view" class="hidden flex flex-col flex-1 overflow-hidden">
+      <div id="trip-plan-toolbar"
+           class="flex-shrink-0 flex items-center gap-2 px-4 py-2
+                  border-b border-gray-100 dark:border-zinc-800
+                  bg-gray-50 dark:bg-zinc-900">
+      </div>
+      <div id="trip-days-container"
+           class="flex-1 overflow-x-auto overflow-y-hidden p-4 flex gap-4 items-start">
+      </div>
     </div>
+
   </div>
 
   {# ── Chart panel ───────────────────────────────────────────────────────── #}
@@ -114,7 +133,72 @@
 </div>{# /trip-page-root #}
 
 
-{# ── Location modal ────────────────────────────────────────────────────────── #}
+{# ── Trip plan modal ──────────────────────────────────────────── #}
+<div id="trip-plan-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     role="dialog" aria-modal="true" aria-labelledby="trip-plan-modal-title">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="tripClosePlanModal()"></div>
+  <div class="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              border border-gray-200 dark:border-zinc-800 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4
+                border-b border-gray-100 dark:border-zinc-800">
+      <h2 id="trip-plan-modal-title"
+          class="font-semibold text-gray-800 dark:text-zinc-100">Add Trip</h2>
+      <button onclick="tripClosePlanModal()"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 transition
+                     text-xl leading-none">&times;</button>
+    </div>
+    <div class="p-5 space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Trip Name *</label>
+        <input id="trip-plan-name" type="text" placeholder="e.g. Weekend in Nashville"
+               class="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700
+                      bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                      px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Description</label>
+        <input id="trip-plan-desc" type="text" placeholder="Optional notes"
+               class="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700
+                      bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                      px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Start Date</label>
+          <input id="trip-plan-start" type="date"
+                 class="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700
+                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                        px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">End Date</label>
+          <input id="trip-plan-end" type="date"
+                 class="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700
+                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                        px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
+        </div>
+      </div>
+    </div>
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
+      <button onclick="tripClosePlanModal()"
+              class="px-4 py-2 text-sm rounded-lg border border-gray-200
+                     dark:border-zinc-700 text-gray-600 dark:text-zinc-300
+                     hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+        Cancel
+      </button>
+      <button id="trip-plan-submit" onclick="tripSubmitPlan()"
+              class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] hover:bg-[#0046c0]
+                     text-white font-medium transition">
+        Add Trip
+      </button>
+    </div>
+  </div>
+</div>
+
+
+{# ── Location modal ──────────────────────────────────────────── #}
 <div id="trip-loc-modal"
      class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
      role="dialog" aria-modal="true" aria-labelledby="trip-loc-modal-title">

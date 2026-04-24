@@ -1,688 +1,430 @@
-# Plan: Subscriptions Summary Widget (Phase 2)
-Date: 2026-04-22
+# Plan: Trip Layer in Plan Tab (Plans → Days Two-Level Nav)
+Date: 2026-04-24
 Estimated complexity: Medium
 
----
-
 ## Summary
+The Plan tab currently shows a flat list of Day lanes for a single implicit itinerary.
+This feature introduces an intermediate **Trip plan** layer — matching the Research tab's
+Location → Spot two-level nav exactly. After the change the hierarchy is:
 
-Add a new `subscriptions_summary` dashboard widget type that lets users pin a
-read-only summary of any Subscriptions page directly on a widget canvas.  The
-widget renders an internal 2-slide carousel (no dependency on the stack widget
-system): Slide 0 shows up to 5 active subscriptions in a compact list with a
-monthly-total footer; Slide 1 shows a Chart.js donut chart broken down by
-category plus annual / monthly totals.  Slide position is saved to
-`localStorage` so it survives browser refresh with zero server round-trips.
-All data comes from the two existing endpoints
-`GET /home/subscriptions/{page_id}/list` and
-`GET /home/subscriptions/{page_id}/summary`.
+> **Plan tab → Plan cards grid** (`#trip-plans-view`) →
+> **click a card** → **Day lanes** (`#trip-days-view`)
 
-No database migrations, no new router files, no auth changes.
+A new `trip_plans` table holds named plans (name, description, start/end dates).
+`trip_days` gains a nullable `plan_id` FK so existing un-scoped days are not lost.
+All day-CRUD API calls pass `plan_id`; the toolbar and JS state machine mirror the
+locs/spots pattern already established in `home-page-trip-locs.js`.
 
 ---
 
 ## Files to Change
-
-Touch in this exact sequence to avoid forward-reference surprises.
+Touch in this exact sequence to avoid import/runtime dependency issues.
 
 | # | File | What changes |
 |---|---|---|
-| 1 | `templates/partials/home_page.html` | Add `render_subscriptions_summary(w)` macro; add `elif` branch in the top-level widget dispatch grid; add `elif` branch in `render_stack_child` |
-| 2 | `templates/partials/home_add_widget_modal.html` | Add `('subscriptions_summary', '💳', 'Subscriptions')` button to the **Advanced** section |
-| 3 | `static/js/home-widgets.js` | Add entry to `WIDGET_STYLES`; add entry to `WIDGET_CONFIG_FIELDS` with a new `select-subs-pages` field type; add `select-subs-pages` handler inside `aw_refreshConfig`; add `initHomeWidgets` dispatch for `.subs-summary-widget` elements |
-| 4 | `static/js/home-widgets-settings.js` | Add `select-subs-pages` handler inside the settings field-renderer loop (mirrors the existing `select-crm-pages` block); add post-save reload call for `subscriptions_summary` widgets |
-| 5 | `static/js/home-widgets-render.js` | Add the full `_loadSubscriptionsSummary(el)` engine function |
-| 6 | `static/js/home-widget-stack.js` | Add label-map entry: `subscriptions_summary: ['Subscriptions', '💳']` |
+| 1 | `database.py` | Add `trip_plans` table + index; add `trip_days.plan_id` FK column via PRAGMA guard |
+| 2 | `routers/home_trip_db.py` | Add 4 plan CRUD helpers; update `get_trip_days` + `add_trip_day` to accept `plan_id` |
+| 3 | `routers/home_trip.py` | Add 4 plan API routes; update `list_days` + `add_day` to pass `plan_id`; add imports |
+| 4 | `templates/partials/home_page_trip.html` | Split plan panel into two sub-views; add `#trip-plan-modal` |
+| 5 | `static/js/home-page-trip-plan.js` | Full rewrite: plan state, plan cards render, open/close plan, plan CRUD, day CRUD updated to pass `plan_id` |
+| 6 | `static/js/home-page-trip.js` | Update `_tripRenderTopbarControls()` to branch on `window._tripActivePlanId` |
+
+---
 
 ## New Files to Create
-
-_None._ All code fits into the existing files above.
+None — all changes are in existing files.
 
 ---
 
 ## DB Migrations Needed
 
-**None.** `config_json` in `home_widgets` already holds arbitrary JSON, so
-`{"page_id": 42}` is valid without any schema change.  The `subscriptions`
-table and all five subscription endpoints already exist from Phase 1.
+### Migration 1 — New table `trip_plans` (additive, safe)
+Place this block inside `init_db()`, immediately after the existing `trip_spot_attrs` block
+and the `location_id` PRAGMA migration, before the `await db.commit()` at the end of the trip section.
 
----
-
-## Widget Config Schema
-
-```json
-{
-  "page_id": 42,
-  "col_span": 1,
-  "row_span": 2
-}
+```sql
+CREATE TABLE IF NOT EXISTS trip_plans (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id    INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL,
+  plan_name  TEXT    NOT NULL DEFAULT 'Trip',
+  plan_desc  TEXT    NOT NULL DEFAULT '',
+  start_date TEXT    NOT NULL DEFAULT '',
+  end_date   TEXT    NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trip_plans_page ON trip_plans(page_id, user_id);
 ```
 
-`page_id` — integer ID of a `subscriptions`-type home page owned by the user.
-             `0` / missing = unconfigured; widget shows a setup prompt.
-`col_span` / `row_span` — standard BookWorm widget sizing keys (managed by the
-             existing size-picker, not this feature).
+### Migration 2 — Add `plan_id` to `trip_days` (additive, PRAGMA-guarded)
+Add this Python block immediately after the `trip_plans` CREATE above.
 
-**No `slide` key in config_json.** Slide position is persisted to
-`localStorage` with key `bw-subs-slide-{widgetId}` to avoid an
-`update-config` POST on every dot click (see Open Questions #1).
+```python
+cur = await db.execute("PRAGMA table_info(trip_days)")
+_td_cols = {r[1] for r in await cur.fetchall()}
+if "plan_id" not in _td_cols:
+    await db.execute(
+        "ALTER TABLE trip_days ADD COLUMN "
+        "plan_id INTEGER REFERENCES trip_plans(id) ON DELETE CASCADE"
+    )
+```
+
+`plan_id` is nullable — existing days retain `NULL` and are not surfaced in the new UI
+(safe data preservation; no rows are lost or modified). This is the deliberate safe choice.
+
+Both migrations are fully additive. No table-swap dance required.
 
 ---
 
 ## Skills to Invoke
-
-- **bookworm-template-audit** — after touching `home_page.html` and the JS
-  files (check `var` usage in partials, `| tojson | safe` on any new data
-  attributes, `?v={{ static_v }}` — no new `<script src>` tags in this
-  feature so the cache-busting risk is low, but audit anyway)
-- **bookworm-qa** — after implementation; verify the widget renders on a
-  dashboard page, the two slides flip, the donut chart paints, and the
-  "Open Subscriptions page" link navigates correctly
-- **bookworm-pre-commit** — before committing; verify no `let`/`const` inside
-  `home-widgets-render.js` additions, no hardcoded IDs
+- **bookworm-db-migration** — after steps 1–3, verify both migrations run idempotently on a
+  fresh DB **and** on an existing DB that already has `trip_days` rows with `plan_id IS NULL`
+- **bookworm-template-audit** — after steps 4–6, to catch `let`/`const`, missing `?v=`,
+  broken `hx-target` IDs
+- **bookworm-qa** — after all steps: walk Plan tab → plan cards → Add Trip → open plan →
+  day lanes → Add Day → add spot to day → back → confirm day_count badge updates
+- **bookworm-pre-commit** — before committing
+- **bookworm-docs-keeper** — after merge, to add `trip_plans` table + `trip_days.plan_id`
+  to the schema section of `CODEPUPPY_NOTES.md`
 
 ---
 
 ## BookWorm Gotchas That Apply to This Feature
 
-**Quirk A — `var` only in `home-widgets-render.js`.**
-The file uses `'use strict';` at the top but every function-scoped variable
-uses `var`.  `initHomeWidgets` re-runs on every HTMX page swap, so `let`/
-`const` at module scope would throw `SyntaxError: Identifier already declared`
-on the second swap.  Every line of `_loadSubscriptionsSummary` must use `var`.
-
-**Quirk B — Chart.js lazy-load promise must be widget-local, not shared.**
-`home-page-subscriptions.js` already has `_subsChartLibsPromise` but that
-module only runs on subscriptions *pages*, not on dashboard pages.  The widget
-engine runs inside `home-widgets-render.js`.  Declare a separate module-level
-`var _subsWgtChartPromise = null;` at the top of the new function block so
-multiple widgets on the same canvas share one load attempt.  The `src` path is
-`/static/js/vendor/chart.umd.min.js` (bundled locally — no CDN).
-
-**Quirk C — Canvas must live inside a fixed-height parent div.**
-Chart.js with `responsive: true` ignores the `<canvas>` element's `height`
-attribute and instead reads the parent element's CSS height.  Wrap the canvas
-in `<div style="position:relative; height:140px;">` (or a Tailwind `h-36`
-class that is already in the built CSS).  Without this the canvas collapses to
-0 px and Chart.js throws a warning.
-
-**Quirk D — `data-widget-config` attribute uses `| tojson | e`, not `| safe`.**
-The card macro already writes:
-```
-data-widget-config='{{ _wcfg | tojson | e }}'
-```
-The new macro must follow the same pattern for any data attribute that embeds
-JSON — use `| tojson | e` (HTML-entity-escaped), **never** `| tojson | safe`
-inside an HTML attribute value.
-
-**Quirk E — Two dispatch locations in `home_page.html`.**
-Every widget type appears in **two** places: (1) the top-level grid loop
-around line 1818, and (2) the `render_stack_child` macro around line 1622.
-Missing either one means the widget breaks when dropped into a stack.
-
-**Quirk F — `select-subs-pages` field type must be handled in both JS files.**
-`aw_refreshConfig` in `home-widgets.js` handles the *add-widget* modal.
-The field-renderer loop in `home-widgets-settings.js` handles the *settings*
-modal.  Both must recognise `f.type === 'select-subs-pages'` and use the
-`GET /home/pages` endpoint filtered to `page_type === 'subscriptions'`.
-Missing either one leaves a broken `<select>` in one of the two contexts.
-
-**Quirk G — `openHomePage` is already global.**
-`home-widgets.js` exports `window.openHomePage` (or it's declared at global
-scope).  The "Open Subscriptions page" link in the widget just calls
-`openHomePage(pageId)` inline — no need to import or re-declare it.
-
----
-
-## Macro Skeleton (Step 1 reference)
-
-Add this macro to `home_page.html` **before** the `render_stack_child` macro
-(so it can be referenced by it):
-
-```jinja2
-{% macro render_subscriptions_summary(w) %}
-{%- set cfg    = w.get('config', {}) -%}
-{%- set pid    = cfg.get('page_id', 0) | int -%}
-{% call card(w) %}
-  {{ widget_header(w, 'Subscriptions', '💳') }}
-  {%- if pid %}
-  {#- JS engine mounts into this div on widget boot -#}
-  <div class="subs-summary-widget flex-1 min-h-0 flex flex-col"
-       id="subs-sw-{{ w.id }}"
-       data-widget-id="{{ w.id }}"
-       data-page-id="{{ pid }}">
-    {#- Skeleton shown until JS paints -#}
-    <div class="flex items-center justify-center h-full
-                text-gray-300 dark:text-zinc-600 text-xs select-none">
-      Loading…
-    </div>
-  </div>
-  {%- else %}
-  <div class="flex-1 flex flex-col items-center justify-center gap-2
-              text-center text-xs text-gray-400 dark:text-zinc-500 px-4">
-    <span class="text-2xl">💳</span>
-    <p>Configure this widget — open <strong>⚙️ Settings</strong>
-       and pick a Subscriptions page.</p>
-  </div>
-  {%- endif %}
-{% endcall %}
-{% endmacro %}
-```
-
----
-
-## Render Function Skeleton (Step 5 reference)
-
-Add to the **bottom** of `home-widgets-render.js`.  Every local variable is
-`var`.  The function is self-contained — no shared state with the subscriptions
-page module.
-
-```javascript
-// ── Subscriptions Summary Widget ─────────────────────────────────────────────
-// Chart.js lib promise — shared across all subs-summary widgets on the page.
-var _subsWgtChartPromise = null;
-
-function _loadSubscriptionsSummary(el) {
-  var wid = el.dataset.widgetId;
-  var pid = el.dataset.pageId;
-  if (!pid || pid === '0') return;  // not configured
-
-  // Show spinner
-  el.innerHTML =
-    '<div class="flex items-center gap-2 text-gray-400 text-xs h-full justify-center">'
-    + '<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-wblue"></div>'
-    + '<span>Loading…</span></div>';
-
-  // Fetch list + summary in parallel
-  Promise.all([
-    fetch('/home/subscriptions/' + pid + '/list',    {credentials: 'same-origin'}).then(function(r){ return r.json(); }),
-    fetch('/home/subscriptions/' + pid + '/summary', {credentials: 'same-origin'}).then(function(r){ return r.json(); }),
-  ]).then(function(results) {
-    var items   = results[0];   // array of subscription objects
-    var summary = results[1];   // {monthly_total, yearly_total, by_category, currency}
-
-    // Handle API errors
-    if (!Array.isArray(items)) {
-      el.innerHTML = '<p class="text-xs text-red-400 p-2">Could not load subscriptions.</p>';
-      return;
-    }
-
-    // Active only
-    var active = items.filter(function(s){ return s.active; });
-
-    // Restore last slide from localStorage (default 0)
-    var savedSlide = parseInt(localStorage.getItem('bw-subs-slide-' + wid) || '0', 10);
-    if (savedSlide !== 0 && savedSlide !== 1) savedSlide = 0;
-
-    // Build HTML
-    el.innerHTML = _subsWgtBuildHtml(wid, pid, active, summary, savedSlide);
-
-    // Paint chart if starting on slide 1, or pre-load lib
-    _subsWgtEnsureChart(function() {
-      if (savedSlide === 1) _subsWgtRenderChart(wid, summary);
-    });
-  }).catch(function(err) {
-    console.error('[subs-widget] load failed:', err);
-    el.innerHTML = '<p class="text-xs text-red-400 p-2">Failed to load data.</p>';
-  });
-}
-
-function _subsWgtBuildHtml(wid, pid, active, summary, slide) {
-  var currency = (summary.currency || 'USD');
-  var monthly  = (summary.monthly_total || 0).toFixed(2);
-  var yearly   = (summary.yearly_total  || 0).toFixed(2);
-  var maxRows  = 5;
-  var shown    = active.slice(0, maxRows);
-  var extra    = active.length - shown.length;
-
-  // ── Slide 0: list ──────────────────────────────────────────────────────
-  var cycleLabel = {1:'daily', 2:'weekly', 3:'monthly', 4:'yearly'};
-  var rows = shown.map(function(s) {
-    var dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
-            + 'background:' + (s.color || '#0053e2') + ';flex-shrink:0;"></span>';
-    var cycle = cycleLabel[s.cycle] || 'mo';
-    return '<div class="flex items-center gap-1.5 py-0.5">'
-      + dot
-      + '<span class="flex-1 min-w-0 text-xs truncate text-gray-700 dark:text-zinc-200">'
-      + _swEsc(s.name) + '</span>'
-      + '<span class="text-xs tabular-nums text-gray-500 dark:text-zinc-400 flex-shrink-0">'
-      + currency + '\u00a0' + Number(s.amount).toFixed(2)
-      + '<span class="text-[10px] text-gray-400 dark:text-zinc-500">/'+cycle+'</span>'
-      + '</span></div>';
-  }).join('');
-
-  var moreRow = extra > 0
-    ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1">+' + extra + ' more</p>'
-    : '';
-
-  var slide0 =
-    '<div class="flex-1 min-h-0 overflow-y-auto">'
-    + (rows || '<p class="text-xs text-gray-400 dark:text-zinc-500">No active subscriptions.</p>')
-    + moreRow + '</div>'
-    + _subsWgtFooter(currency, monthly, pid);
-
-  // ── Slide 1: donut ─────────────────────────────────────────────────────
-  var slide1 =
-    '<div class="flex-1 min-h-0 flex flex-col items-center justify-center">'
-    + '<div style="position:relative;height:140px;width:100%;">'
-    + '<canvas id="subs-sw-chart-' + wid + '"></canvas>'
-    + '</div>'
-    + '<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1 tabular-nums">'
-    + 'Monthly: ' + currency + '\u00a0' + monthly
-    + '\u2002\u00b7\u2002Yearly: ' + currency + '\u00a0' + yearly + '</p>'
-    + '</div>'
-    + _subsWgtFooter(currency, monthly, pid);
-
-  // ── Chrome: dots + arrows ──────────────────────────────────────────────
-  var dot = function(idx) {
-    var active = idx === slide ? 'background:#0053e2;' : 'background:#d1d5db;';
-    return '<button type="button" '
-      + 'onclick="_subsWgtGoto(\'' + wid + '\',' + idx + ')" '
-      + 'aria-label="Slide ' + (idx+1) + '" '
-      + 'style="width:6px;height:6px;border-radius:50%;border:none;cursor:pointer;padding:0;'
-      + active + '"></button>';
-  };
-
-  var nav =
-    '<div class="flex items-center justify-center gap-1.5 pt-1 pb-0.5">'
-    + dot(0) + dot(1) + '</div>';
-
-  return '<div class="flex flex-col h-full" id="subs-sw-inner-' + wid + '">'
-    + '<div id="subs-sw-s0-' + wid + '" class="flex flex-col flex-1 min-h-0"'
-    + (slide === 1 ? ' style="display:none"' : '') + '>' + slide0 + '</div>'
-    + '<div id="subs-sw-s1-' + wid + '" class="flex flex-col flex-1 min-h-0"'
-    + (slide === 0 ? ' style="display:none"' : '') + '>' + slide1 + '</div>'
-    + nav + '</div>';
-}
-
-function _subsWgtFooter(currency, monthly, pid) {
-  return '<div class="border-t border-gray-100 dark:border-zinc-800 pt-1 mt-1'
-    + ' flex items-center justify-between">'
-    + '<span class="text-[11px] text-gray-500 dark:text-zinc-400 tabular-nums">'
-    + 'Monthly: ' + currency + '\u00a0' + monthly + '</span>'
-    + '<button type="button" onclick="openHomePage(' + pid + ')" '
-    + 'class="text-[11px] text-wblue hover:underline">→ Open</button>'
-    + '</div>';
-}
-
-function _subsWgtGoto(wid, idx) {
-  var s0 = document.getElementById('subs-sw-s0-' + wid);
-  var s1 = document.getElementById('subs-sw-s1-' + wid);
-  if (!s0 || !s1) return;
-  s0.style.display = idx === 0 ? '' : 'none';
-  s1.style.display = idx === 1 ? '' : 'none';
-  // Update dots by rebuilding just the nav row — simplest approach:
-  // Re-query all dot buttons inside the widget's nav div and flip their color.
-  var inner = document.getElementById('subs-sw-inner-' + wid);
-  if (inner) {
-    inner.querySelectorAll('button[aria-label^="Slide"]').forEach(function(btn, i) {
-      btn.style.background = (i === idx) ? '#0053e2' : '#d1d5db';
-    });
-  }
-  // Persist slide choice
-  try { localStorage.setItem('bw-subs-slide-' + wid, idx); } catch(_) {}
-  // Paint chart on demand (lazy — only if not already painted)
-  if (idx === 1) {
-    _subsWgtEnsureChart(function() {
-      _subsWgtRenderChart(wid, _subsWgtSummaryCache[wid]);
-    });
-  }
-}
-
-// Cache summary per widget so _subsWgtGoto can pass data to chart renderer
-// without a second fetch.
-var _subsWgtSummaryCache = {};
-
-// --- re-wire _loadSubscriptionsSummary to populate the cache ---
-// (Add the line `_subsWgtSummaryCache[wid] = summary;` inside the .then()
-//  block in _loadSubscriptionsSummary, before calling _subsWgtBuildHtml.)
-
-function _subsWgtEnsureChart(cb) {
-  if (typeof Chart !== 'undefined') { cb(); return; }
-  if (!_subsWgtChartPromise) {
-    _subsWgtChartPromise = new Promise(function(resolve, reject) {
-      var s = document.createElement('script');
-      s.src = '/static/js/vendor/chart.umd.min.js';
-      s.onload  = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-  _subsWgtChartPromise.then(cb).catch(function(e) {
-    console.error('[subs-widget] Chart.js load failed:', e);
-  });
-}
-
-// Map of widgetId → Chart instance for proper destroy-before-recreate
-var _subsWgtCharts = {};
-
-function _subsWgtRenderChart(wid, summary) {
-  var canvas = document.getElementById('subs-sw-chart-' + wid);
-  if (!canvas || typeof Chart === 'undefined') return;
-  if (_subsWgtCharts[wid]) { _subsWgtCharts[wid].destroy(); delete _subsWgtCharts[wid]; }
-
-  var cats    = (summary && summary.by_category) || [];
-  if (cats.length === 0) {
-    if (canvas.parentElement) {
-      canvas.parentElement.innerHTML =
-        '<p class="text-xs text-gray-400 flex items-center justify-center h-full">No category data</p>';
-    }
-    return;
-  }
-
-  var palette = ['#0053e2','#ffc220','#2a8703','#ea1100',
-                 '#6366f1','#f59e0b','#10b981','#8b5cf6','#06b6d4'];
-  var labels  = cats.map(function(c){ return c.category || 'Other'; });
-  var data    = cats.map(function(c){ return c.monthly_total; });
-  var colors  = labels.map(function(_,i){ return palette[i % palette.length]; });
-
-  _subsWgtCharts[wid] = new Chart(canvas, {
-    type: 'doughnut',
-    data: { labels: labels, datasets: [{ data: data, backgroundColor: colors,
-            borderWidth: 1, borderColor: '#ffffff' }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '65%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              return ' ' + ctx.label + ': ' + (summary.currency||'USD') + ' '
-                + Number(ctx.parsed).toFixed(2) + '/mo';
-            }
-          }
-        }
-      }
-    }
-  });
-}
-
-function _swEsc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-```
-
-> **Note on `_subsWgtSummaryCache`:** inside `_loadSubscriptionsSummary`'s
-> `.then()`, add `_subsWgtSummaryCache[wid] = summary;` immediately before
-> the `el.innerHTML = _subsWgtBuildHtml(…)` call.  This lets `_subsWgtGoto`
-> pass the correct summary to the chart renderer without a second fetch.
-
----
-
-## `WIDGET_STYLES` entry (Step 3 reference)
-
-In `home-widgets.js`, add inside the `WIDGET_STYLES` object (after the
-`upload_preview` entry):
-
-```javascript
-subscriptions_summary: [['default', '💳 Summary']],
-```
-
-A single style so the style picker shows one option and sets `style='default'`
-automatically — no user choice needed.
-
----
-
-## `WIDGET_CONFIG_FIELDS` entry (Step 3 reference)
-
-```javascript
-subscriptions_summary: () => [
-  { id: 'cf-subs-page', label: 'Subscriptions page',
-    type: 'select-subs-pages', name: 'page_id' },
-],
-```
-
----
-
-## `select-subs-pages` handler — `aw_refreshConfig` (Step 3 reference)
-
-Inside `aw_refreshConfig` in `home-widgets.js`, add immediately after the
-`if (f.type === 'select-crm-pages') { … }` block:
-
-```javascript
-if (f.type === 'select-subs-pages') {
-  var _subsSelId   = f.id;
-  var _subsSelName = f.name;
-  setTimeout(function() {
-    fetch('/home/pages', { credentials: 'same-origin',
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
-    .then(function(r) { return r.ok ? r.json() : { pages: [] }; })
-    .then(function(data) {
-      var pages = (data.pages || []).filter(function(p) {
-        return p.page_type === 'subscriptions';
-      });
-      var sel = document.getElementById(_subsSelId);
-      if (!sel) return;
-      if (pages.length === 0) {
-        sel.innerHTML = '<option value="">— no Subscriptions pages found —</option>';
-        return;
-      }
-      sel.innerHTML = '<option value="">— pick a page —</option>'
-        + pages.map(function(p) {
-            return '<option value="' + p.id + '">' + p.name + '</option>';
-          }).join('');
-    }).catch(function() {});
-  }, 50);
-  return '<div>' + lbl
-    + '<select id="' + f.id + '" data-name="' + f.name + '"'
-    + ' class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg'
-    + ' px-3 py-2 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
-    + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
-    + '<option value="">Loading…</option></select></div>';
-}
-```
-
----
-
-## `select-subs-pages` handler — settings modal (Step 4 reference)
-
-In `home-widgets-settings.js`, inside the field-renderer loop, add after the
-`} else if (f.type === 'select-crm-pages') { … }` block:
-
-```javascript
-} else if (f.type === 'select-subs-pages') {
-  const _ssId   = f.id;
-  const _ssKey  = f.name;
-  const _ssSaved = String(curVal || '');
-  const _ssSaveFn = `saveWidgetSettings(${widgetId})`;
-  wrap.innerHTML = lbl + `<select id="${_ssId}" data-cfg-key="${_ssKey}"
-    class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
-           bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-           focus:outline-none focus:ring-2 focus:ring-wblue"
-    onchange="${_ssSaveFn}">
-    <option value="">Loading…</option>
-  </select>`;
-  body.appendChild(wrap);
-  fetch('/home/pages', { credentials: 'same-origin',
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
-    .then(r => r.ok ? r.json() : { pages: [] })
-    .then(data => {
-      const sel = document.getElementById(_ssId);
-      if (!sel) return;
-      const pages = (data.pages || []).filter(p => p.page_type === 'subscriptions');
-      sel.innerHTML = '<option value="">— pick a page —</option>'
-        + pages.map(p =>
-            `<option value="${p.id}"${String(p.id) === _ssSaved ? ' selected' : ''}>${p.name}</option>`
-          ).join('');
-    }).catch(() => {});
-  return;  // early-out — already appended
-```
-
-**Post-save reload hook:** At the end of `_saveWidgetFullConfig`, after the
-DOM `dataset.widgetConfig` update block, add:
-
-```javascript
-// Reload subscriptions summary widgets after config save
-if (card && card.dataset.widgetType === 'subscriptions_summary') {
-  var ssEl = card.querySelector('.subs-summary-widget');
-  if (ssEl) {
-    var newPid = config.page_id;
-    if (newPid) {
-      ssEl.dataset.pageId = newPid;
-      if (typeof _loadSubscriptionsSummary === 'function') _loadSubscriptionsSummary(ssEl);
-    }
-  }
-}
-```
-
----
-
-## `initHomeWidgets` dispatch (Step 3 reference)
-
-In `initHomeWidgets()` in `home-widgets.js`, add after the `Upload Preview`
-block and before the `Stack carousel` block:
-
-```javascript
-// Subscriptions Summary widgets
-document.querySelectorAll('.subs-summary-widget').forEach(function(el) {
-  if (typeof _loadSubscriptionsSummary === 'function') _loadSubscriptionsSummary(el);
-});
-```
-
----
-
-## Add-Widget Modal entry (Step 2 reference)
-
-In `home_add_widget_modal.html`, inside the **Advanced** section Jinja2 loop,
-add `('subscriptions_summary', '💳', 'Subscriptions')` after the `buds` entry:
-
-```jinja2
-{% for wtype, icon, label in [
-    ('rss_feed', '📡', 'RSS Feed'),
-    ('buds',     '🌸', 'Buds'),
-    ('subscriptions_summary', '💳', 'Subscriptions'),
-] %}
-```
-
----
-
-## Stack label map entry (Step 6 reference)
-
-In `home-widget-stack.js`, inside the widget label map object, add after the
-`upload_preview` entry:
-
-```javascript
-subscriptions_summary: ['Subscriptions', '💳'],
-```
+**`var` only in JS — `home-page-trip-plan.js` is HTMX-reinjected**
+Every new state variable and loop variable must use `var`. The file is already all-`var`;
+do not introduce `let` or `const` anywhere.
+
+**Expose shared state on `window` — mirrors locs.js pattern**
+`_tripActivePlanId` and `_tripActivePlanName` must be mirrored to `window._tripActivePlanId`
+and `window._tripActivePlanName` so `home-page-trip.js` can read them in
+`_tripRenderTopbarControls()`. The Research tab does exactly this for `window._tripActiveLocId`.
+
+**No `window.confirm()` or `window.alert()` for plan delete**
+Plan delete must reuse the existing shared `#trip-del-modal` — set `#trip-del-msg` text and
+wire `#trip-del-confirm` onclick before un-hiding the modal, identical to `tripConfirmDeleteDay`.
+
+**`get_db()` only in all new DB helpers**
+`routers/home_trip_db.py` already imports and uses `get_db`. Every new plan helper must follow
+the same `async with get_db() as db:` pattern. Never call `aiosqlite.connect()` directly.
+
+**Sort_order sub-query in `add_trip_day` must be scoped by `plan_id`**
+The current INSERT uses `COALESCE(MAX(sort_order),0)+10 FROM trip_days WHERE page_id=?`.
+After adding `plan_id`, extend to `WHERE page_id=? AND plan_id IS ?` so sort_order is
+per-plan, not global across all plans on the page. (Use SQL `IS` not `=` so that the NULL
+case for legacy days also works correctly if ever called without a plan.)
+
+**`?v={{ static_v }}` cache-busting**
+Confirm `home-page-trip-plan.js` already has `?v={{ static_v }}` on its `<script src>` in
+`base.html`. If missing, add it. No new `<script>` tags are needed — the file already exists.
+
+**Tailwind CSS rebuild**
+Plan card grid reuses classes from the loc card grid (`grid-cols-1 sm:grid-cols-2
+md:grid-cols-3 lg:grid-cols-4 gap-4 content-start`) — these are almost certainly already in
+the built CSS. However, run `rebuild_css.bat` and commit the updated `static/css/tailwind.css`
+if any new utility classes appear that are not already used elsewhere.
 
 ---
 
 ## Implementation Checklist
 
-- [ ] **1** — Open `templates/partials/home_page.html`.
-  Add the `render_subscriptions_summary(w)` macro (use skeleton above) just
-  before the `render_stack_child` macro (≈ line 1570).
+### Phase 1 — DB schema (database.py)
+- [ ] 1a. Inside `init_db()`, after the `location_id` PRAGMA migration block (line ~937),
+      add the `CREATE TABLE IF NOT EXISTS trip_plans` statement and its index.
+- [ ] 1b. Immediately after, add the `PRAGMA table_info(trip_days)` guard and `ALTER TABLE`
+      for the `plan_id` column.
+- [ ] 1c. Confirm both additions land before the `await db.commit()` that closes the trip block.
 
-- [ ] **2** — In the same file, find the top-level widget dispatch grid
-  (≈ line 1818, the big `{% for w in widgets %}` loop).
-  Add the branch:
-  ```jinja2
-  {% elif w.widget_type == 'subscriptions_summary' %}  {{ render_subscriptions_summary(w) }}
+### Phase 2 — DB helpers (routers/home_trip_db.py)
+
+- [ ] 2a. Add `get_trip_plans(page_id: int, user_id: int) -> list[dict]`:
+  ```python
+  async def get_trip_plans(page_id: int, user_id: int) -> list[dict]:
+      async with get_db() as db:
+          cur = await db.execute(
+              """
+              SELECT p.id, p.plan_name, p.plan_desc, p.start_date, p.end_date,
+                     p.sort_order, p.created_at,
+                     (SELECT COUNT(*) FROM trip_days d
+                       WHERE d.plan_id = p.id) AS day_count
+                FROM trip_plans p
+               WHERE p.page_id=? AND p.user_id=?
+               ORDER BY p.sort_order, p.id
+              """,
+              (page_id, user_id),
+          )
+          rows = await cur.fetchall()
+      return [dict(r) for r in rows]
   ```
-  immediately after the `upload_preview` branch.
 
-- [ ] **3** — In the same file, find `render_stack_child` (≈ line 1622).
-  Add the branch:
-  ```jinja2
-  {% elif w.widget_type == 'subscriptions_summary' %}  {{ render_subscriptions_summary(w) }}
+- [ ] 2b. Add `add_trip_plan(page_id, user_id, plan_name, plan_desc, start_date, end_date) -> int`:
+  - INSERT with sort_order sub-query: `COALESCE(MAX(sort_order),0)+10 FROM trip_plans WHERE page_id=?`
+  - `await db.commit()`, return `cur.lastrowid`.
+
+- [ ] 2c. Add `update_trip_plan(plan_id, page_id, user_id, plan_name, plan_desc, start_date, end_date) -> bool`:
+  - `UPDATE trip_plans SET plan_name=?, plan_desc=?, start_date=?, end_date=? WHERE id=? AND page_id=? AND user_id=?`
+  - Return `cur.rowcount == 1`.
+
+- [ ] 2d. Add `delete_trip_plan(plan_id, page_id, user_id) -> bool`:
+  - `DELETE FROM trip_plans WHERE id=? AND page_id=? AND user_id=?`
+  - Return `cur.rowcount == 1`.
+  - Days cascade-delete via `ON DELETE CASCADE` on `trip_days.plan_id`; that in turn
+    cascade-deletes `trip_day_spots`. Spots themselves are untouched.
+
+- [ ] 2e. Update `get_trip_days` signature to `(page_id: int, user_id: int, plan_id: int | None = None)`:
+  - When `plan_id` is not None, add `AND td.plan_id=?` to the WHERE clause and append
+    `plan_id` to the params tuple.
+  - When `plan_id` is None, the query is unchanged (returns all days — only used if caller
+    explicitly wants unscoped days; normal UI path always passes a plan_id).
+
+- [ ] 2f. Update `add_trip_day` signature to `(page_id, user_id, day_label, day_date, plan_id=None)`:
+  - Add `plan_id` to the INSERT column list and VALUES.
+  - Sort_order sub-query: `WHERE page_id=? AND plan_id IS ?` (bind `page_id, plan_id`).
+
+### Phase 3 — API routes (routers/home_trip.py)
+
+- [ ] 3a. Import the 4 new helpers:
+  ```python
+  from routers.home_trip_db import (
+      ...existing imports...,
+      get_trip_plans,
+      add_trip_plan,
+      update_trip_plan,
+      delete_trip_plan,
+  )
   ```
-  after the `upload_preview` branch there too.
 
-- [ ] **4** — Open `templates/partials/home_add_widget_modal.html`.
-  Add `('subscriptions_summary', '💳', 'Subscriptions')` to the **Advanced**
-  section Jinja2 loop (after the `buds` entry).
+- [ ] 3b. Add `GET /trip/{page_id}/plans`:
+  ```python
+  @router.get("/trip/{page_id}/plans")
+  async def list_plans(request: Request, page_id: int):
+      try:
+          uid = _uid(request)
+      except PermissionError:
+          return _err("not logged in", 401)
+      if not await _get_trip_page(page_id, uid):
+          return _err("not found", 404)
+      return JSONResponse(await get_trip_plans(page_id, uid))
+  ```
 
-- [ ] **5** — Open `static/js/home-widgets.js`.
-  Add `subscriptions_summary: [['default', '💳 Summary']],` inside
-  `WIDGET_STYLES` after the `upload_preview` entry.
+- [ ] 3c. Add `POST /trip/{page_id}/plans/add` — Form: `plan_name str`, `plan_desc str = ""`,
+      `start_date str = ""`, `end_date str = ""`; return `{"id": new_id}` status 201.
 
-- [ ] **6** — In `home-widgets.js`, add the `WIDGET_CONFIG_FIELDS` entry for
-  `subscriptions_summary` (see reference above) after the `upload_preview`
-  entry.
+- [ ] 3d. Add `PUT /trip/{page_id}/plans/{plan_id}` — same Form params; return `{"ok": bool}`.
 
-- [ ] **7** — In `home-widgets.js`, inside `aw_refreshConfig`, add the
-  `select-subs-pages` handler block (see reference above) immediately after
-  the matching `select-crm-pages` block.
+- [ ] 3e. Add `DELETE /trip/{page_id}/plans/{plan_id}` — return `{"ok": bool}`.
 
-- [ ] **8** — In `home-widgets.js`, inside `initHomeWidgets()`, add the
-  `.subs-summary-widget` dispatch block (see reference above).
+- [ ] 3f. Update `list_days` — add `plan_id: int | None = Query(None)` param; pass to `get_trip_days`:
+  ```python
+  from fastapi import Query
+  ...
+  @router.get("/trip/{page_id}/days")
+  async def list_days(request: Request, page_id: int, plan_id: int | None = Query(None)):
+      ...
+      return JSONResponse(await get_trip_days(page_id, uid, plan_id))
+  ```
 
-- [ ] **9** — Open `static/js/home-widgets-settings.js`.
-  Add the `select-subs-pages` handler in the field-renderer loop (see
-  reference above) immediately after the `select-crm-pages` block.
+- [ ] 3g. Update `add_day` — add `plan_id: int | None = Form(None)` and pass to `add_trip_day`.
 
-- [ ] **10** — In `home-widgets-settings.js`, add the post-save reload hook
-  at the end of `_saveWidgetFullConfig` (see reference above).
+### Phase 4 — Template (templates/partials/home_page_trip.html)
 
-- [ ] **11** — Open `static/js/home-widgets-render.js`.
-  Append the entire `_loadSubscriptionsSummary` engine block (all functions
-  from the skeleton above) to the **bottom** of the file.
-  Confirm every local variable is `var`, not `let`/`const`.
-  Add `_subsWgtSummaryCache[wid] = summary;` inside the `.then()` of
-  `_loadSubscriptionsSummary` before the `el.innerHTML` call.
+- [ ] 4a. Lines 82–91 (the `#trip-panel-plan` inner content): replace the current single-level
+      `#trip-plan-toolbar` + `#trip-days-container` with two sub-views:
 
-- [ ] **12** — Open `static/js/home-widget-stack.js`.
-  Add `subscriptions_summary: ['Subscriptions', '💳'],` to the widget label
-  map after the `upload_preview` entry.
+  ```html
+  {# Plans grid view — shown by default #}
+  <div id="trip-plans-view" class="flex-1 overflow-y-auto p-4">
+    <div id="trip-plans-grid"
+         class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4
+                gap-4 content-start">
+    </div>
+  </div>
 
-- [ ] **13** — Smoke-test locally:
-  - Create a `subscriptions` type home page, add a few subscriptions.
-  - Navigate to a `dashboard` page, add a `Subscriptions Summary` widget.
-  - Open widget ⚙️ Settings → pick the subscriptions page → widget reloads.
-  - Verify Slide 0 (list) renders ≤5 rows + "+N more" if applicable.
-  - Click the dot / arrow to Slide 1 → donut chart paints.
-  - Refresh the browser → correct slide is restored from localStorage.
-  - Click "→ Open" → navigates to the subscriptions page.
-  - Drag the widget into a stack → both slides still work.
+  {# Days view — hidden until a plan is opened #}
+  <div id="trip-days-view" class="hidden flex flex-col flex-1 overflow-hidden">
+    <div id="trip-plan-toolbar"
+         class="flex-shrink-0 flex items-center gap-2 px-4 py-2
+                border-b border-gray-100 dark:border-zinc-800
+                bg-gray-50 dark:bg-zinc-900">
+    </div>
+    <div id="trip-days-container"
+         class="flex-1 overflow-x-auto overflow-y-hidden p-4 flex gap-4 items-start">
+    </div>
+  </div>
+  ```
+  **Critical:** `#trip-plan-toolbar` and `#trip-days-container` IDs are preserved unchanged
+  so all existing day-lane JS continues to work without modification.
 
-- [ ] **14** — Run `bookworm-template-audit` (pass: files changed + what
-  changed).
+- [ ] 4b. Add `#trip-plan-modal` after the closing `</div>` of `#trip-day-modal` (before the
+      `#trip-loc-modal`). Follow the standard BookWorm modal pattern from CODEPUPPY_NOTES.md.
+      Required elements inside the modal body:
+      - `<h2 id="trip-plan-modal-title">Add Trip</h2>` (JS toggles text)
+      - `<input id="trip-plan-name" type="text" required placeholder="e.g. Main Itinerary">`
+      - `<input id="trip-plan-desc" type="text" placeholder="Short description (optional)">`
+      - `<input id="trip-plan-start" type="date">`
+      - `<input id="trip-plan-end" type="date">`
+      - Submit: `<button id="trip-plan-submit" onclick="tripSubmitPlan()">Save</button>`
+      - Cancel: `<button onclick="tripClosePlanModal()">Cancel</button>`
 
-- [ ] **15** — Run `bookworm-qa` (pass: new widget type, endpoints used, what
-  to verify).
+### Phase 5 — Plan JS (static/js/home-page-trip-plan.js)
 
-- [ ] **16** — Run `bookworm-pre-commit` (pass: staged files list).
+- [ ] 5a. Add new state variables at the top of the file (after existing vars):
+  ```javascript
+  var _tripPlans          = [];
+  var _tripActivePlanId   = null;
+  var _tripActivePlanName = '';
+  window._tripActivePlanId   = null;
+  window._tripActivePlanName = '';
+  ```
 
-- [ ] **17** — Run `bookworm-docs-keeper` to add `subscriptions_summary` to
-  the widget table in `CODEPUPPY_NOTES.md`.
+- [ ] 5b. Rewrite `tripLoadPlan()` to branch on `_tripActivePlanId`:
+  ```javascript
+  window.tripLoadPlan = function() {
+    if (_tripActivePlanId) {
+      _tripLoadDaysForPlan(_tripActivePlanId);
+      return;
+    }
+    _tripFetch('/home/trip/' + _tripPid + '/plans')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        _tripPlans = Array.isArray(data) ? data : [];
+        _tripRenderPlanCards();
+      })
+      .catch(function() { _tripShowToast('Failed to load plans', true); });
+  };
+  ```
+
+- [ ] 5c. Add `_tripRenderPlanCards()` — writes HTML into `#trip-plans-grid`.
+  - Empty state: `🗺️ No trip plans yet.<br><span class="text-xs">Click <strong>＋ Add Trip</strong> to start!</span>`
+  - Each plan card (same outer classes as loc cards):
+    - Click opens plan: `onclick="tripOpenPlan(p.id)"`
+    - Gradient emoji header (🗺️), plan name, optional date range, day count badge
+    - Edit button with `event.stopPropagation()` → `tripOpenEditPlan(p.id)`
+    - Delete button with `event.stopPropagation()` → `tripConfirmDeletePlan(p.id, p.plan_name)`
+
+- [ ] 5d. Add `tripOpenPlan(planId)`:
+  - Find plan in `_tripPlans`, set `_tripActivePlanId`, `_tripActivePlanName`, mirror to `window`.
+  - Hide `#trip-plans-view`, show `#trip-days-view`.
+  - Call `_tripRenderTopbarControls()`.
+  - Call `_tripLoadDaysForPlan(planId)`.
+
+- [ ] 5e. Add `tripClosePlan()`:
+  - Clear `_tripActivePlanId`, `_tripActivePlanName`, `window.*`, `_tripDays = []`.
+  - Show `#trip-plans-view`, hide `#trip-days-view`.
+  - Call `_tripRenderTopbarControls()`.
+  - Call `tripLoadPlan()` (refreshes plan cards with updated `day_count`).
+
+- [ ] 5f. Add `_tripLoadDaysForPlan(planId)` (module-private):
+  ```javascript
+  function _tripLoadDaysForPlan(planId) {
+    _tripFetch('/home/trip/' + _tripPid + '/days?plan_id=' + planId)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        _tripDays = Array.isArray(data) ? data : [];
+        _tripRenderPlan();
+      })
+      .catch(function() { _tripShowToast('Failed to load days', true); });
+  }
+  ```
+
+- [ ] 5g. Update `tripOpenAddDay()` — guard at top:
+  ```javascript
+  if (!_tripActivePlanId) {
+    _tripShowToast('Open a trip plan first', true);
+    return;
+  }
+  ```
+
+- [ ] 5h. Update `tripSubmitDay()` — for the add (POST) path, append `plan_id`:
+  ```javascript
+  if (!_tripDayEditing && _tripActivePlanId) {
+    fd.append('plan_id', _tripActivePlanId);
+  }
+  ```
+
+- [ ] 5i. Add plan CRUD functions (all `window.*` exports):
+  - `tripOpenAddPlan()` — reset form fields, set `#trip-plan-modal-title` to `'Add Trip'`,
+    set `#trip-plan-submit` text to `'Add Trip'`, show `#trip-plan-modal`, focus `#trip-plan-name`
+  - `tripOpenEditPlan(planId)` — find in `_tripPlans`, populate form, title/button text = `'Edit Trip'`/`'Save'`, show modal
+  - `tripClosePlanModal()` — hide `#trip-plan-modal`
+  - `tripSubmitPlan()` — read form, POST or PUT, on success: `tripClosePlanModal()` + `tripLoadPlan()` + toast
+  - `tripConfirmDeletePlan(planId, name)` — set `#trip-del-msg` to
+    `'Delete "' + name + '"? All days in this plan will be deleted. Spots are not affected.'`;
+    wire `#trip-del-confirm` onclick to `tripDeletePlan(planId)`; un-hide `#trip-del-modal`
+  - `tripDeletePlan(planId)` — close del-modal, DELETE call, on success: `tripClosePlan()` + toast
+
+### Phase 6 — Toolbar (static/js/home-page-trip.js)
+
+- [ ] 6a. In `_tripRenderTopbarControls()` (the `else if (_tripTab === 'plan')` branch),
+      replace the current single-button HTML with a two-branch conditional:
+
+  ```javascript
+  } else if (_tripTab === 'plan') {
+    if (window._tripActivePlanId) {
+      el.innerHTML =
+        '<button onclick="tripClosePlan()" ' +
+          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'border border-gray-200 dark:border-zinc-700 text-gray-600 ' +
+                 'dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">' +
+          '← Back</button>' +
+        '<span class="text-sm font-medium text-gray-700 dark:text-zinc-200 ' +
+               'truncate max-w-[160px]">' +
+          _tripEsc(window._tripActivePlanName || '') +
+        '</span>' +
+        '<button onclick="tripOpenAddDay()" ' +
+          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
+          '＋ Add Day</button>';
+    } else {
+      el.innerHTML =
+        '<button onclick="tripOpenAddPlan()" ' +
+          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
+          '＋ Add Trip</button>';
+    }
+  ```
+
+### Phase 7 — Verification & Cleanup
+
+- [ ] 7a. Run `bookworm-db-migration` — confirm idempotent on fresh and existing DBs.
+- [ ] 7b. Run `bookworm-template-audit` — check `home_page_trip.html`, `home-page-trip-plan.js`,
+      `home-page-trip.js` for `let`/`const`, missing `?v=`, broken IDs.
+- [ ] 7c. Check `<script src>` for `home-page-trip-plan.js` in `base.html` — add `?v={{ static_v }}`
+      if missing.
+- [ ] 7d. Run `rebuild_css.bat` if any new Tailwind classes were introduced; commit updated
+      `static/css/tailwind.css`.
+- [ ] 7e. Run `bookworm-qa` — full walkthrough of the Plan tab two-level nav.
+- [ ] 7f. Run `bookworm-pre-commit`.
+- [ ] 7g. Run `bookworm-docs-keeper` to sync `CODEPUPPY_NOTES.md` schema section.
 
 ---
 
 ## Open Questions
 
-**Q1 — Slide persistence: `localStorage` vs `config_json`?**
-The brief says store `slide` in `config_json` but then says "no extra endpoints
-needed" — those two statements are contradictory (writing `config_json`
-_requires_ a POST to `/home/widgets/{id}/update-config`).  This plan uses
-`localStorage` (zero network cost, survives refresh, cleared only if the user
-clears browser storage).  If server-side persistence is required instead, add
-a debounced call to `_saveWidgetFullConfig` on slide change and include
-`slide` in the config schema.  Confirm with the developer before coding.
+1. **Orphaned days** — existing `trip_days` rows with `plan_id IS NULL` are invisible in the
+   new UI. If Trip homespace pages already have real user data with days, add a data-migration
+   step in `init_db()` that: for each distinct `(page_id, user_id)` that has un-scoped days,
+   creates a default `trip_plans` row named `"My Trip"` and sets `trip_days.plan_id` to its
+   new id. If no production data exists yet, skip this and close the question.
 
-**Q2 — Widget default size?**
-The brief doesn't specify a default `col_span`/`row_span` for this widget.
-The add-widget flow in `aw_submit` uses `col_span: 1, row_span: 1` as the
-default unless overridden.  The donut chart at slide 1 needs at least `row_span:
-2` (≈15rem) to look good.  Should `aw_submit` set a taller default for this
-type, or should the user always resize manually?  Current plan: let the user
-resize; add a note in the widget placeholder text ("Tip: resize to 2+ rows for
-the best chart view").
+2. **Day add-to-spot dropdown in Research tab** — `_tripRenderSpotCard()` in
+   `home-page-trip.js` reads `_tripDays` to build a "Add to day" `<select>`. After this
+   change, `_tripDays` is only populated when the user has opened a plan this session.
+   Confirm: is an empty dropdown acceptable when no plan has been opened? If not, decide
+   whether to (a) load all days across all plans eagerly at init, or (b) remove the inline
+   dropdown from spot cards entirely (user must drag onto a day lane instead).
 
-**Q3 — Currency display when subscriptions use mixed currencies?**
-`get_summary_data` sums `monthly_equiv` across all currencies without
-conversion (Phase 1 design decision).  The widget will display whatever
-currency string comes back from the API (`summary.currency`).  If a user has
-subscriptions in USD + EUR the total will be meaningless.  Out of scope for
-this widget — document the limitation in the widget footer (e.g.
-"Monthly: USD 45.00 *" with a note).  Or simply display the raw number and let
-the user understand.  Confirm desired behaviour before coding.
+3. **Plan cover images** — `trip_plans` has no `cover_url` column. Cards use a gradient + 🗺️.
+   If a cover image is wanted later, add `cover_url TEXT NOT NULL DEFAULT ''` to the
+   CREATE TABLE in Migration 1 now (one extra column is trivial; retrofitting it via
+   ALTER TABLE later is a separate migration with an upload endpoint change).
 
-**Q4 — Empty-state for no subscriptions pages?**
-If the user has zero pages of type `subscriptions`, the `select-subs-pages`
-picker shows "— no Subscriptions pages found —" (already handled in the
-skeleton).  Should the Add Widget button be disabled in that case, or let the
-user add the widget unconfigured and show the setup-prompt placeholder?
-Current plan: allow adding unconfigured — the placeholder tells them what to
-do.
+4. **`reorder_trip_days`** — the existing day reorder endpoint only uses `id + page_id +
+   user_id`. It does not need `plan_id` because it updates `sort_order` by primary key;
+   `plan_id` is irrelevant to the ordering. No change needed — confirm this is understood.
+
+5. **Session restore (sessionStorage)** — the Research tab persists the active location ID
+   to `sessionStorage` so a page refresh restores the drill-in state. Consider whether the
+   Plan tab should do the same for `_tripActivePlanId` (store key `bw-trip-plan-{pid}`).
+   This is a nice-to-have; not required for the initial implementation.
