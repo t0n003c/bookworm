@@ -421,21 +421,43 @@ window.tripRemoveSpotFromDay = function(dayId, spotId) {
     .catch(function() { _tripShowToast('Remove failed', true); });
 };
 
-// ── Edit time label inline ────────────────────────────────────────────────────
+// ── Time label modal ───────────────────────────────────────────────────────────────
+var _tripTimeDayId  = null;
+var _tripTimeSpotId = null;
+var _tripTimeTdsId  = null;
+
 window.tripEditDaySpotTime = function(dayId, spotId, tdsId) {
+  _tripTimeDayId  = dayId;
+  _tripTimeSpotId = spotId;
+  _tripTimeTdsId  = tdsId;
   var cur = _tripDays.reduce(function(acc, d) {
     if (d.id !== dayId) return acc;
     var sp = d.spots.find(function(s) { return s.tds_id === tdsId; });
     return sp ? sp.time_label : acc;
   }, '');
-  var newTime = window.prompt('Time label (e.g. "9:00 AM"):', cur || '');
-  if (newTime === null) return;
-  var fd = new URLSearchParams();
-  fd.append('time_label', newTime.trim());
-  _tripFetch('/home/trip/' + _tripPid + '/days/' + dayId + '/spots/' + spotId, {
+  var input = document.getElementById('trip-time-input');
+  if (input) input.value = cur || '';
+  document.getElementById('trip-time-modal').classList.remove('hidden');
+  setTimeout(function() { if (input) input.focus(); }, 50);
+};
+
+window.tripCloseTimeModal = function() {
+  document.getElementById('trip-time-modal').classList.add('hidden');
+  _tripTimeDayId = _tripTimeSpotId = _tripTimeTdsId = null;
+};
+
+window.tripSubmitTime = function() {
+  if (!_tripTimeDayId) return;
+  var input = document.getElementById('trip-time-input');
+  var val   = input ? input.value.trim() : '';
+  var fd    = new URLSearchParams();
+  fd.append('time_label', val);
+  _tripFetch('/home/trip/' + _tripPid + '/days/' + _tripTimeDayId + '/spots/' + _tripTimeSpotId, {
     method: 'PUT', body: fd,
-  }).then(function() { tripLoadPlan(); })
-    .catch(function() { _tripShowToast('Save failed', true); });
+  }).then(function() {
+    tripCloseTimeModal();
+    tripLoadPlan();
+  }).catch(function() { _tripShowToast('Save failed', true); });
 };
 
 // ── Drag-and-drop: Research → Day lane ───────────────────────────────────────
