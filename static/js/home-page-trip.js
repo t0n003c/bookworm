@@ -98,8 +98,15 @@ window._tripRenderTopbarControls = function() {
                  'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
           '＋ Add Spot</button>';
     } else {
-      // Top-level locations view
+      // Top-level locations view — search + add
       el.innerHTML =
+        '<input id="trip-search" type="search" placeholder="Search locations…" ' +
+          'oninput="tripSearchLoc()" ' +
+          'value="' + (typeof _locQuery !== 'undefined' ? _locQuery : '').replace(/"/g, '&quot;') + '" ' +
+          'class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 ' +
+                 'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+                 'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
+                 'focus:ring-2 focus:ring-[#0053e2]/40 w-36">' +
         '<button onclick="tripOpenAddLoc()" ' +
           'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
                  'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +

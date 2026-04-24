@@ -19,12 +19,13 @@ var _tripGroupBy = 'none';    // 'none' | 'type' | 'priority' | attr key string
 var _tripAttrKey = '';        // filter: attr key  ('' = off)
 var _tripAttrVal = '';        // filter: attr value ('' = any)
 
-// ── Location filter/sort/group state ─────────────────────────────────────────
+// ── Location filter/sort/group state ─────────────────────────────────────────────
 var _locSortBy  = 'default';  // 'default' | 'name' | 'priority' | 'attr:<key>'
 var _locSortDir = 'asc';
 var _locGroupBy = 'none';     // 'none' | 'priority' | attr key string
 var _locAttrKey = '';
 var _locAttrVal = '';
+var _locQuery   = '';         // text search across name + notes
 
 // ── Spot filter bar ───────────────────────────────────────────────────────────
 window._tripRenderFilterBar = function() {
@@ -145,9 +146,12 @@ window._tripApplySpotOps = function(spots) {
   return _groupItems(items, _tripGroupBy);
 };
 
-// ── Location ops: filter → sort → group ──────────────────────────────────────
+// ── Location ops: filter → sort → group ───────────────────────────────────────────
 window._tripApplyLocOps = function(locs) {
+  var q = _locQuery.toLowerCase();
   var items = locs.filter(function(l) {
+    if (q && l.name.toLowerCase().indexOf(q) === -1 &&
+             (l.notes || '').toLowerCase().indexOf(q) === -1) return false;
     if (_locAttrKey) {
       var match = (l.attrs || []).some(function(a) {
         return a.attr_key === _locAttrKey &&
@@ -200,7 +204,13 @@ window.tripSetSpotAttrVal = function(val) {
   if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
 };
 
-// ── Location controls ─────────────────────────────────────────────────────────
+// ── Location controls ─────────────────────────────────────────────────────
+window.tripSearchLoc = function() {
+  var el = document.getElementById('trip-search');
+  _locQuery = el ? el.value : '';
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
+};
+
 window.tripSetLocSort = function(val) {
   _locSortBy = val;
   if (val === 'default') _locSortDir = 'asc';
