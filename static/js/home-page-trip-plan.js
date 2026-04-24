@@ -315,6 +315,27 @@ window.tripDeletePlan = function(planId) {
 };
 
 // ── Day modal ─────────────────────────────────────────────────────────────────
+
+// Apply min/max from active plan to the date input, and show/hide hint.
+function _applyDayDateRange() {
+  var plan  = _tripPlans.find(function(p) { return p.id === window._tripActivePlanId; });
+  var input = document.getElementById('trip-day-date');
+  var hint  = document.getElementById('trip-day-date-hint');
+  if (!input) return;
+  var start = (plan && plan.start_date) ? plan.start_date : '';
+  var end   = (plan && plan.end_date)   ? plan.end_date   : '';
+  input.min = start;
+  input.max = end;
+  if (hint) {
+    if (start || end) {
+      hint.textContent = '📅 Trip range: ' + (start || '—') + ' → ' + (end || '—');
+      hint.classList.remove('hidden');
+    } else {
+      hint.classList.add('hidden');
+    }
+  }
+}
+
 window.tripOpenAddDay = function() {
   if (!window._tripActivePlanId) {
     _tripShowToast('Open a trip first, then add a day.', true); return;
@@ -324,6 +345,7 @@ window.tripOpenAddDay = function() {
   document.getElementById('trip-day-submit').textContent      = 'Add Day';
   document.getElementById('trip-day-label').value = '';
   document.getElementById('trip-day-date').value  = '';
+  _applyDayDateRange();
   document.getElementById('trip-day-modal').classList.remove('hidden');
   setTimeout(function() {
     var el = document.getElementById('trip-day-label');
@@ -339,6 +361,7 @@ window.tripOpenEditDay = function(dayId) {
   document.getElementById('trip-day-submit').textContent      = 'Save';
   document.getElementById('trip-day-label').value = d.day_label || '';
   document.getElementById('trip-day-date').value  = d.day_date  || '';
+  _applyDayDateRange();
   document.getElementById('trip-day-modal').classList.remove('hidden');
 };
 
