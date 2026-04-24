@@ -871,6 +871,22 @@ async def init_db() -> None:
             "ON trip_day_spots(day_id)"
         )
 
+        # ── trip_day_blocks (flexible block content inside day lanes) ───────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_day_blocks (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                day_id     INTEGER NOT NULL REFERENCES trip_days(id) ON DELETE CASCADE,
+                block_type TEXT    NOT NULL DEFAULT 'note',
+                order_idx  INTEGER NOT NULL DEFAULT 0,
+                time_label TEXT    NOT NULL DEFAULT '',
+                content    TEXT    NOT NULL DEFAULT '{}'
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_day_blocks_day "
+            "ON trip_day_blocks(day_id)"
+        )
+
         # ── trip_locations (research locations layer, parent of spots) ────────
         await db.execute("""
             CREATE TABLE IF NOT EXISTS trip_locations (

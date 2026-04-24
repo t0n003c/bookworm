@@ -46,6 +46,12 @@ from routers.home_trip_db import (
     remove_spot_from_day,
     reorder_day_spots,
     update_day_spot_time,
+    # day-blocks
+    add_day_block,
+    delete_day_block,
+    get_day_blocks,
+    reorder_day_lane,
+    update_day_block,
     # stats
     get_trip_stats,
 )
@@ -57,6 +63,7 @@ _SPOT_TYPES = frozenset({
     "Restaurant", "Hotel", "Camping", "Hiking",
     "City Attraction", "Beach", "Museum", "Other",
 })
+_BLOCK_TYPES = frozenset({"note", "drive", "bookmark", "divider"})
 _ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _ALLOWED_IMG_EXT   = {"jpg", "jpeg", "png", "gif", "webp"}
 _MAX_COVER_MB      = 5
@@ -616,7 +623,104 @@ async def reorder_day_spot_order(request: Request, page_id: int, day_id: int):
     return JSONResponse({"ok": True})
 
 
-# ── Stats (Chart tab) ─────────────────────────────────────────────────────────
+# ── Day blocks ───────────────────────────────────────────────────────────────────
+
+# IMPORTANT: PATCH /reorder MUST be declared before PUT /{block_id}
+# or Starlette will try to coerce "reorder" as an integer block_id.
+
+@router.patch("/trip/{page_id}/days/{day_id}/blocks/reorder")
+async def reorder_day_blocks_route(request: Request, page_id: int, day_id: int):
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    body  = await request.json()
+    items = body.get("items", [])
+    await reorder_day_lane(day_id, page_id, uid, items)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/trip/{page_id}/days/{day_id}/blocks")
+async def list_day_blocks(request: Request, page_id: int, day_id: int):
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    return JSONResponse(await get_day_blocks(day_id, page_id, uid))
+
+
+@router.post("/trip/{page_id}/days/{day_id}/blocks")
+async def create_day_block(
+    request: Request, page_id: int, day_id: int,
+    block_type: str = Form("note"),
+    content:    str = Form("{}"),
+    time_label: str = Form(""),
+):
+    import json as _json
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    if block_type not in _BLOCK_TYPES:
+        return _err("invalid block_type")
+    try:
+        _json.loads(content)
+    except Exception:
+        return _err("content must be valid JSON")
+    new_id = await add_day_block(
+        day_id, page_id, uid, block_type, content, time_label.strip()
+    )
+    if new_id is None:
+        return _err("not found", 404)
+    return JSONResponse({"id": new_id}, status_code=201)
+
+
+@router.put("/trip/{page_id}/days/{day_id}/blocks/{block_id}")
+async def update_day_block_route(
+    request: Request, page_id: int, day_id: int, block_id: int,
+    content:    str = Form("{}"),
+    time_label: str = Form(""),
+):
+    import json as _json
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    try:
+        _json.loads(content)
+    except Exception:
+        return _err("content must be valid JSON")
+    ok = await update_day_block(block_id, day_id, page_id, uid, content, time_label.strip())
+    if not ok:
+        return _err("not found", 404)
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/trip/{page_id}/days/{day_id}/blocks/{block_id}")
+async def delete_day_block_route(
+    request: Request, page_id: int, day_id: int, block_id: int,
+):
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    ok = await delete_day_block(block_id, day_id, page_id, uid)
+    if not ok:
+        return _err("not found", 404)
+    return JSONResponse({"ok": True})
+
+
+# ── Stats (Chart tab) ────────────────────────────────────────────────────────────────
 
 @router.get("/trip/{page_id}/stats")
 async def trip_stats(request: Request, page_id: int):

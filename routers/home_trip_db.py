@@ -625,6 +625,131 @@ async def reorder_day_spots(day_id: int, ordered_tds_ids: list[int]) -> None:
         await db.commit()
 
 
+# ── Day-block helpers ──────────────────────────────────────────────────────────────
+
+async def _day_owned(db, day_id: int, page_id: int, user_id: int) -> bool:
+    """Quick ownership check: does this day belong to this user+page?"""
+    cur = await db.execute(
+        "SELECT 1 FROM trip_days WHERE id=? AND page_id=? AND user_id=?",
+        (day_id, page_id, user_id),
+    )
+    return await cur.fetchone() is not None
+
+
+async def get_day_blocks(day_id: int, page_id: int, user_id: int) -> list[dict]:
+    """Return all blocks for a day ordered by order_idx."""
+    async with get_db() as db:
+        if not await _day_owned(db, day_id, page_id, user_id):
+            return []
+        cur = await db.execute(
+            "SELECT id, block_type, order_idx, time_label, content "
+            "FROM trip_day_blocks WHERE day_id=? ORDER BY order_idx",
+            (day_id,),
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "id":         r["id"],
+                "block_type": r["block_type"],
+                "order_idx":  r["order_idx"],
+                "time_label": r["time_label"],
+                "content":    r["content"],
+            }
+            for r in rows
+        ]
+
+
+async def add_day_block(
+    day_id: int, page_id: int, user_id: int,
+    block_type: str, content: str, time_label: str,
+) -> int | None:
+    """INSERT a new block. Returns new id or None if ownership check fails."""
+    async with get_db() as db:
+        if not await _day_owned(db, day_id, page_id, user_id):
+            return None
+        # Append after the highest existing order value across spots AND blocks
+        cur = await db.execute(
+            """
+            SELECT MAX(v) FROM (
+                SELECT COALESCE(MAX(sort_order), -10) AS v
+                  FROM trip_day_spots WHERE day_id=?
+                UNION ALL
+                SELECT COALESCE(MAX(order_idx), -10) AS v
+                  FROM trip_day_blocks WHERE day_id=?
+            )
+            """,
+            (day_id, day_id),
+        )
+        row = await cur.fetchone()
+        order_idx = (row[0] if row and row[0] is not None else -10) + 10
+        await db.execute(
+            "INSERT INTO trip_day_blocks "
+            "(day_id, block_type, order_idx, time_label, content) "
+            "VALUES (?,?,?,?,?)",
+            (day_id, block_type, order_idx, time_label, content),
+        )
+        await db.commit()
+        cur = await db.execute("SELECT last_insert_rowid()")
+        return (await cur.fetchone())[0]
+
+
+async def update_day_block(
+    block_id: int, day_id: int, page_id: int, user_id: int,
+    content: str, time_label: str,
+) -> bool:
+    """Update block content + time_label. Returns False if not found/owned."""
+    async with get_db() as db:
+        if not await _day_owned(db, day_id, page_id, user_id):
+            return False
+        await db.execute(
+            "UPDATE trip_day_blocks SET content=?, time_label=? "
+            "WHERE id=? AND day_id=?",
+            (content, time_label, block_id, day_id),
+        )
+        await db.commit()
+        return True
+
+
+async def delete_day_block(
+    block_id: int, day_id: int, page_id: int, user_id: int,
+) -> bool:
+    """Delete a block. Returns False if not found/owned."""
+    async with get_db() as db:
+        if not await _day_owned(db, day_id, page_id, user_id):
+            return False
+        await db.execute(
+            "DELETE FROM trip_day_blocks WHERE id=? AND day_id=?",
+            (block_id, day_id),
+        )
+        await db.commit()
+        return True
+
+
+async def reorder_day_lane(
+    day_id: int, page_id: int, user_id: int,
+    items: list[dict],
+) -> None:
+    """Bulk-update sort_order on trip_day_spots and order_idx on
+    trip_day_blocks in a single transaction."""
+    async with get_db() as db:
+        if not await _day_owned(db, day_id, page_id, user_id):
+            return
+        for item in items:
+            oidx = item.get("order_idx", 0)
+            if item.get("kind") == "spot":
+                await db.execute(
+                    "UPDATE trip_day_spots SET sort_order=? WHERE id=? AND day_id=?",
+                    (oidx, item["id"], day_id),
+                )
+            elif item.get("kind") == "block":
+                await db.execute(
+                    "UPDATE trip_day_blocks SET order_idx=? WHERE id=? AND day_id=?",
+                    (oidx, item["id"], day_id),
+                )
+        await db.commit()
+
+
+
 # ── Stats helper ──────────────────────────────────────────────────────────────
 
 async def get_trip_stats(page_id: int, user_id: int) -> dict:
