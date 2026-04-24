@@ -89,64 +89,52 @@ function _formatTime(v) {
   return (h % 12 || 12) + ':' + min + ' ' + (h >= 12 ? 'PM' : 'AM');
 }
 
-// ── Note markdown formatter (mirrors mdFmt in note_form.html, targets note textarea) ─────
-// Called by toolbar buttons AND Ctrl+B/I keyboard shortcuts.
-window._tripNoteFmt = function(type) {
-  var ta    = document.getElementById('trip-block-note-text');
-  if (!ta) return;
-  var start = ta.selectionStart;
-  var end   = ta.selectionEnd;
-  var sel   = ta.value.substring(start, end);
-  var val   = ta.value;
-  var before = val.substring(0, start);
-  var after  = val.substring(end);
-
-  function _prefixLines(text, prefix) {
-    return text.split('\n').map(function(l) { return prefix + l; }).join('\n');
-  }
-  function _numberLines(text) {
-    return text.split('\n').map(function(l, i) { return (i + 1) + '. ' + l; }).join('\n');
-  }
-  function _listLine(wantBullet) {
-    var lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    var lineEnd   = val.indexOf('\n', start);
-    var lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
-    var bulletM   = lineText.match(/^(\s*)([-*]) (.*)$/);
-    var orderedM  = lineText.match(/^(\s*)\d+\. (.*)$/);
-    var newLine;
-    if (wantBullet) {
-      if (bulletM)       newLine = bulletM[3];
-      else if (orderedM) newLine = '- ' + orderedM[2];
-      else               newLine = '- ' + lineText;
-    } else {
-      if (orderedM)      newLine = orderedM[2];
-      else if (bulletM)  newLine = '1. ' + bulletM[3];
-      else               newLine = '1. ' + lineText;
-    }
-    ta.value = val.slice(0, lineStart) + newLine +
-               (lineEnd === -1 ? '' : val.slice(lineEnd));
-    var newPos = lineStart + newLine.length;
-    ta.setSelectionRange(newPos, newPos);
-    ta.focus();
-    return;
-  }
-
-  var insert = '', cursor = 0;
-  if (type === 'bold')   { insert = sel ? '**' + sel + '**' : '**bold**';     cursor = sel ? start + insert.length : start + 2; }
-  else if (type === 'italic') { insert = sel ? '*' + sel + '*' : '*italic*';  cursor = sel ? start + insert.length : start + 1; }
-  else if (type === 'strike') { insert = sel ? '~~' + sel + '~~' : '~~text~~'; cursor = sel ? start + insert.length : start + 2; }
-  else if (type === 'h1') { insert = _prefixLines(sel || 'Heading 1', '# ');   cursor = start + insert.length; }
-  else if (type === 'h2') { insert = _prefixLines(sel || 'Heading 2', '## ');  cursor = start + insert.length; }
-  else if (type === 'ul') { if (!sel) { _listLine(true);  return; } insert = _prefixLines(sel, '- ');  cursor = start + insert.length; }
-  else if (type === 'ol') { if (!sel) { _listLine(false); return; } insert = _numberLines(sel);         cursor = start + insert.length; }
-  else return;
-
-  ta.value = before + insert + after;
-  ta.focus();
-  ta.setSelectionRange(cursor, cursor);
+// ── Note CE formatter ────────────────────────────────────────────────────
+// Called by toolbar buttons (onmousedown=preventDefault keeps CE focused).
+// Mirrors the CE branch of mdFmt in note_form.html.
+window._tripNoteCeFmt = function(type) {
+  var ce = document.getElementById('trip-block-note-ce');
+  if (!ce) return;
+  ce.focus();
+  if (type === 'bold')   { document.execCommand('bold'); }
+  else if (type === 'italic') { document.execCommand('italic'); }
+  else if (type === 'strike') { document.execCommand('strikeThrough'); }
+  else if (type === 'h1')     { document.execCommand('formatBlock', false, 'H1'); }
+  else if (type === 'h2')     { document.execCommand('formatBlock', false, 'H2'); }
+  else if (type === 'ul')     { document.execCommand('insertUnorderedList'); }
+  else if (type === 'ol')     { document.execCommand('insertOrderedList'); }
 };
 
-// ── Note lane preview: first line, markdown stripped, max 70 chars ─────────────────────
+// ── Note CE init: render markdown → HTML, wire slash commands + fmt toolbar ──────
+// Mirrors _tripSpotNotesInit in home-page-trip.js.
+function _tripNoteInit(markdown) {
+  var ce = document.getElementById('trip-block-note-ce');
+  if (!ce) return;
+  if (markdown && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    marked.use({ gfm: true, breaks: true });
+    ce.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
+  } else {
+    ce.innerHTML = '';
+  }
+  if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
+  if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
+}
+
+// ── Note CE → Markdown for persistence ──────────────────────────────────
+// Mirrors _tripSpotNotesToMd in home-page-trip.js.
+function _tripNoteToMd() {
+  var ce = document.getElementById('trip-block-note-ce');
+  if (!ce) return '';
+  if (typeof TurndownService === 'undefined') return ce.innerText || '';
+  var td = new TurndownService({
+    bulletListMarker: '-',
+    headingStyle:     'atx',
+    codeBlockStyle:   'fenced',
+  });
+  if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
+  return td.turndown(ce.innerHTML).trimEnd();
+}
+
 function _tripNotePreview(text) {
   if (!text) return '';
   // Take first non-empty line
@@ -582,79 +570,21 @@ window.tripOpenBlockModal = function(dayId, blockType, blockIdOrData) {
 
   document.getElementById('trip-block-' + blockType + '-modal').classList.remove('hidden');
   setTimeout(function() {
-    var first = document.querySelector(
-      '#trip-block-' + blockType + '-modal input, ' +
-      '#trip-block-' + blockType + '-modal textarea'
-    );
-    if (first) first.focus();
-    // Ctrl+B / Ctrl+I keyboard shortcuts for the note textarea
     if (blockType === 'note') {
-      var ta = document.getElementById('trip-block-note-text');
-      if (ta && !ta._tripNoteKeyBound) {
-        ta._tripNoteKeyBound = true;
-
-        // ── Slash command palette (reuses workspace's slash_commands.js) ──
-        if (typeof _attachTextarea === 'function') _attachTextarea(ta);
-
-        ta.addEventListener('keydown', function(e) {
-          // Ctrl+B / Ctrl+I shortcuts
-          if (e.ctrlKey || e.metaKey) {
-            if (e.key === 'b') { e.preventDefault(); _tripNoteFmt('bold'); }
-            if (e.key === 'i') { e.preventDefault(); _tripNoteFmt('italic'); }
-          }
-
-          // ── Smart list continuation on Enter ──────────────────────────
-          // Mirrors the textarea keydown in note_form.html:
-          //   • `• `  (auto-bullet char, from - + Space conversion)
-          //   • `- `  `* ` bullet markers
-          //   • `1. ` numbered list
-          // Empty marker line → escape list (strip marker, plain newline).
-          if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
-          if (typeof scIsOpen === 'function' && scIsOpen()) return;
-          var pos = ta.selectionStart;
-          if (ta.selectionEnd !== pos) return;
-          var val       = ta.value;
-          var lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-          var lineText  = val.substring(lineStart, pos);
-
-          var bulletM  = lineText.match(/^(\s*)([\u2022\-*]) /);
-          var orderedM = lineText.match(/^(\s*)(\d+)\. /);
-
-          if (bulletM) {
-            e.preventDefault();
-            var indent  = bulletM[1];
-            var marker  = bulletM[2];
-            var prefix  = indent + marker + ' ';
-            var content = lineText.slice(prefix.length).trim();
-            if (content === '') {
-              // Empty bullet — escape list
-              ta.value = val.slice(0, lineStart) + indent + val.slice(pos);
-              var cur = lineStart + indent.length;
-              ta.setSelectionRange(cur, cur);
-            } else {
-              var ins = '\n' + prefix;
-              ta.value = val.slice(0, pos) + ins + val.slice(pos);
-              ta.setSelectionRange(pos + ins.length, pos + ins.length);
-            }
-            ta.dispatchEvent(new Event('input'));
-          } else if (orderedM) {
-            e.preventDefault();
-            var oIndent  = orderedM[1];
-            var num      = parseInt(orderedM[2], 10);
-            var oPrefix  = oIndent + num + '. ';
-            var oContent = lineText.slice(oPrefix.length).trim();
-            if (oContent === '') {
-              ta.value = val.slice(0, lineStart) + oIndent + val.slice(pos);
-              ta.setSelectionRange(lineStart + oIndent.length, lineStart + oIndent.length);
-            } else {
-              var oIns = '\n' + oIndent + (num + 1) + '. ';
-              ta.value = val.slice(0, pos) + oIns + val.slice(pos);
-              ta.setSelectionRange(pos + oIns.length, pos + oIns.length);
-            }
-            ta.dispatchEvent(new Event('input'));
-          }
-        });
+      // CE editor — slash commands + fmt toolbar already wired by _tripNoteInit.
+      // Just focus and place cursor at end.
+      var ce = document.getElementById('trip-block-note-ce');
+      if (ce) {
+        ce.focus();
+        var r = document.createRange();
+        r.selectNodeContents(ce);
+        r.collapse(false);
+        var s = window.getSelection();
+        if (s) { s.removeAllRanges(); s.addRange(r); }
       }
+    } else {
+      var first = document.querySelector('#trip-block-' + blockType + '-modal input');
+      if (first) first.focus();
     }
   }, 50);
 };
@@ -700,7 +630,7 @@ window.tripSubmitBlock = function(blockType) {
 
 function _tripCollectBlockContent(blockType) {
   if (blockType === 'note') {
-    var text = (document.getElementById('trip-block-note-text') || {}).value || '';
+    var text = _tripNoteToMd();
     if (!text.trim()) { _tripShowToast('Note text is required', true); return null; }
     return {text: text.trim()};
   }
@@ -733,8 +663,7 @@ function _tripFillBlockModal(blockType, timeLabel, c) {
   var tl = document.getElementById('trip-block-' + blockType + '-time');
   if (tl) tl.value = timeLabel;
   if (blockType === 'note') {
-    var el = document.getElementById('trip-block-note-text');
-    if (el) el.value = c.text || '';
+    _tripNoteInit(c.text || '');
   } else if (blockType === 'drive') {
     var ids = ['from','to','duration','distance','map'];
     ids.forEach(function(k) {
@@ -755,7 +684,8 @@ function _tripFillBlockModal(blockType, timeLabel, c) {
 function _tripClearBlockModal(blockType) {
   var modal = document.getElementById('trip-block-' + blockType + '-modal');
   if (!modal) return;
-  modal.querySelectorAll('input, textarea').forEach(function(el) { el.value = ''; });
+  modal.querySelectorAll('input').forEach(function(el) { el.value = ''; });
+  if (blockType === 'note') _tripNoteInit(''); // clear + re-wire CE
 }
 
 // ── Block delete ──────────────────────────────────────────────────────────────────────────

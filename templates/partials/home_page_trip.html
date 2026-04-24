@@ -413,44 +413,37 @@
           <label class="text-xs font-semibold text-gray-500 dark:text-zinc-400">
             Note <span class="text-red-400">*</span>
           </label>
-          {# Markdown mini-toolbar #}
+          {# Toolbar — onmousedown prevents focus leaving the CE div #}
           <div class="flex items-center gap-0.5" role="toolbar" aria-label="Formatting">
             <button type="button" title="Bold (Ctrl+B)"
-                    onclick="_tripNoteFmt('bold')"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('bold')"
                     class="w-6 h-6 flex items-center justify-center rounded text-xs font-bold
                            text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
-              B
-            </button>
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">B</button>
             <button type="button" title="Italic (Ctrl+I)"
-                    onclick="_tripNoteFmt('italic')"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('italic')"
                     class="w-6 h-6 flex items-center justify-center rounded text-xs italic
                            text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
-              I
-            </button>
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">I</button>
             <button type="button" title="Strikethrough"
-                    onclick="_tripNoteFmt('strike')"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('strike')"
                     class="w-6 h-6 flex items-center justify-center rounded text-xs line-through
                            text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
-              S
-            </button>
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">S</button>
             <span class="w-px h-4 bg-gray-200 dark:bg-zinc-600 mx-0.5"></span>
-            <button type="button" title="Heading 1" onclick="_tripNoteFmt('h1')"
+            <button type="button" title="Heading 1"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('h1')"
                     class="w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold
                            text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
-              H1
-            </button>
-            <button type="button" title="Heading 2" onclick="_tripNoteFmt('h2')"
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">H1</button>
+            <button type="button" title="Heading 2"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('h2')"
                     class="w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold
                            text-gray-600 dark:text-zinc-300
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
-              H2
-            </button>
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition">H2</button>
             <span class="w-px h-4 bg-gray-200 dark:bg-zinc-600 mx-0.5"></span>
-            <button type="button" title="Bullet list" onclick="_tripNoteFmt('ul')"
+            <button type="button" title="Bullet list"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('ul')"
                     class="w-6 h-6 flex items-center justify-center rounded
                            text-gray-600 dark:text-zinc-300
                            hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
@@ -460,7 +453,8 @@
                       d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
               </svg>
             </button>
-            <button type="button" title="Numbered list" onclick="_tripNoteFmt('ol')"
+            <button type="button" title="Numbered list"
+                    onmousedown="event.preventDefault()" onclick="_tripNoteCeFmt('ol')"
                     class="w-6 h-6 flex items-center justify-center rounded
                            text-gray-600 dark:text-zinc-300
                            hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
@@ -472,13 +466,17 @@
             </button>
           </div>
         </div>
-        <textarea id="trip-block-note-text" rows="9"
-                  placeholder="Write your note here… (supports **bold**, *italic*, - lists, # headings)"
-                  class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200
-                         dark:border-zinc-700 bg-white dark:bg-zinc-800
-                         text-gray-800 dark:text-zinc-100 focus:outline-none
-                         focus:ring-2 focus:ring-[#0053e2]/40
-                         font-mono resize-y leading-relaxed"></textarea>
+        {# Contenteditable preview div — same pattern as Trip Spot notes (tsf-notes-ce) #}
+        <div id="trip-block-note-ce"
+             contenteditable="true" spellcheck="true"
+             aria-label="Note" aria-multiline="true"
+             class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200
+                    dark:border-zinc-700 bg-white dark:bg-zinc-800
+                    text-gray-800 dark:text-zinc-100 focus:outline-none
+                    focus:ring-2 focus:ring-[#0053e2]/40
+                    overflow-y-auto cursor-text prose prose-sm dark:prose-invert
+                    max-w-none"
+             style="min-height:200px;max-height:420px"></div>
       </div>
     </div>
     <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
