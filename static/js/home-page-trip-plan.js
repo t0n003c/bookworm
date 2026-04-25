@@ -1288,95 +1288,88 @@ window.tripViewDetail = function(kind, dayId, id) {
     if (day) (day.spots || []).forEach(function(s) { if (s.tds_id === id) ds = s; });
     if (!ds) return;
 
-    // Full spot from research list
+    // ds already carries: name, spot_type, cover_url, priority, estimated_cost,
+    // currency, time_label from the days API join.
+    // Optionally augment with full spot from _tripSpots (loaded by Research tab)
+    // for extras: map_url, attrs, notes.
     var spot = null;
     (typeof _tripSpots !== 'undefined' ? _tripSpots : []).forEach(function(s) {
       if (s.id === ds.spot_id) spot = s;
     });
-    if (!spot) return;
 
-    var emoji  = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[spot.spot_type]) || '📍';
-    var tc     = (typeof _tripTypeColor   !== 'undefined') ? _tripTypeColor(spot.spot_type) : '#0053e2';
-    var stars  = (typeof _tripStars       !== 'undefined') ? _tripStars(spot.priority, spot.id) : '';
-    var dark   = document.documentElement.classList.contains('dark');
+    // Merge: prefer spot (full) but fall back to ds (subset)
+    var name     = (spot && spot.name)           || ds.name       || '';
+    var spotType = (spot && spot.spot_type)      || ds.spot_type  || '';
+    var coverUrl = (spot && spot.cover_url)      || ds.cover_url  || '';
+    var priority = (spot != null ? spot.priority : null) != null ? spot.priority : ds.priority;
+    var estCost  = (spot && spot.estimated_cost) || ds.estimated_cost || 0;
+    var currency = (spot && spot.currency)       || ds.currency   || '';
+    var mapUrl   = spot ? (spot.map_url   || '') : '';
+    var attrs    = spot ? (spot.attrs     || []) : [];
+    var notes    = spot ? (spot.notes     || '') : '';
 
-    // Cover image or emoji banner
-    var coverHtml = spot.cover_url
+    var emoji  = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[spotType]) || '📍';
+    var tc     = (typeof _tripTypeColor   !== 'undefined') ? _tripTypeColor(spotType) : '#0053e2';
+    var stars  = (typeof _tripStars       !== 'undefined') ? _tripStars(priority, ds.spot_id) : '';
+
+    var coverHtml = coverUrl
       ? '<div class="w-full h-44 rounded-xl overflow-hidden mb-4 bg-gray-100 dark:bg-zinc-800">' +
-          '<img src="' + _tripEsc(spot.cover_url) + '" alt="" ' +
-               'class="w-full h-full object-cover" ' +
-               'onerror="this.parentNode.style.display=\'none\'">' +
+          '<img src="' + _tripEsc(coverUrl) + '" alt="" class="w-full h-full object-cover" ' +
+          'onerror="this.parentNode.style.display=\'none\'">' +
         '</div>'
       : '<div class="w-full h-24 rounded-xl mb-4 flex items-center justify-center text-6xl ' +
           'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 select-none">' +
-          emoji +
-        '</div>';
+          emoji + '</div>';
 
-    // Type badge
     var badge =
       '<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" ' +
-           'style="background:' + tc + '">' +
-        emoji + ' ' + _tripEsc(spot.spot_type) +
-      '</span>';
+           'style="background:' + tc + '">' + emoji + ' ' + _tripEsc(spotType) + '</span>';
 
-    // Time / cost row
     var meta = [];
     if (ds.time_label) {
-      meta.push('<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">' +
-        '🕒 ' + _tripEsc(_formatTime(ds.time_label)) + '</span>');
+      meta.push('<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">🕒 ' +
+        _tripEsc(_formatTime(ds.time_label)) + '</span>');
     }
-    if (spot.estimated_cost > 0) {
-      meta.push('<span class="text-xs text-gray-500 dark:text-zinc-400">' +
-        '💰 ' + _tripEsc(spot.currency || '') + ' ' +
-        Number(spot.estimated_cost).toFixed(2) + '</span>');
+    if (estCost > 0) {
+      meta.push('<span class="text-xs text-gray-500 dark:text-zinc-400">💰 ' +
+        _tripEsc(currency) + ' ' + Number(estCost).toFixed(2) + '</span>');
     }
     var metaRow = meta.length ? '<div class="flex flex-wrap gap-3">' + meta.join('') + '</div>' : '';
 
-    // Map button
-    var mapBtn = spot.map_url
-      ? '<a href="' + _tripEsc(spot.map_url) + '" target="_blank" rel="noopener noreferrer" ' +
+    var mapBtn = mapUrl
+      ? '<a href="' + _tripEsc(mapUrl) + '" target="_blank" rel="noopener noreferrer" ' +
           'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
                  'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
           '📍 Open in Maps</a>'
       : '';
 
-    // Attributes
     var attrsHtml = '';
-    if (spot.attrs && spot.attrs.length) {
-      attrsHtml =
-        '<div class="grid grid-cols-2 gap-2">' +
-        spot.attrs.map(function(a) {
+    if (attrs.length) {
+      attrsHtml = '<div class="grid grid-cols-2 gap-2">' +
+        attrs.map(function(a) {
           return '<div class="rounded-lg bg-gray-50 dark:bg-zinc-800 px-3 py-2">' +
             '<p class="text-[10px] text-gray-400 dark:text-zinc-500 uppercase tracking-wide">' +
               _tripEsc(a.attr_key) + '</p>' +
             '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 mt-0.5">' +
-              _tripEsc(a.attr_value) + '</p>' +
-          '</div>';
-        }).join('') +
-        '</div>';
+              _tripEsc(a.attr_value) + '</p></div>';
+        }).join('') + '</div>';
     }
 
-    // Notes
     var notesHtml = '';
-    if (spot.notes && spot.notes.trim()) {
+    if (notes && notes.trim()) {
       notesHtml =
-        '<div>' +
-          '<p class="text-[10px] font-semibold uppercase tracking-wide ' +
-                   'text-gray-400 dark:text-zinc-500 mb-1">Notes</p>' +
+        '<div><p class="text-[10px] font-semibold uppercase tracking-wide ' +
+                      'text-gray-400 dark:text-zinc-500 mb-1">Notes</p>' +
           '<div class="text-sm text-gray-700 dark:text-zinc-200 md-body leading-relaxed">' +
-            _tripMdToHtml(spot.notes) +
-          '</div>' +
-        '</div>';
+            _tripMdToHtml(notes) + '</div></div>';
     }
 
     var headerHtml = coverHtml +
       '<div class="flex flex-wrap items-center gap-2 mb-1">' + badge + stars + '</div>' +
       '<h2 class="text-lg font-bold text-gray-800 dark:text-zinc-100 leading-snug">' +
-        _tripEsc(spot.name) + '</h2>';
-
+        _tripEsc(name) + '</h2>';
     var bodyHtml = [metaRow, mapBtn ? '<div>' + mapBtn + '</div>' : '', attrsHtml, notesHtml]
       .filter(Boolean).join('');
-
     _tripShowDrawer(headerHtml, bodyHtml || '<p class="text-sm text-gray-400">No additional details.</p>');
     return;
   }
