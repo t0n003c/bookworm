@@ -272,10 +272,6 @@ function _tripRenderSpotCard(s) {
           emoji + ' ' + _tripEsc(s.spot_type) + '</span>' +
       '</div>' +
       '<div class="flex items-center gap-1">' + stars + cost + '</div>' +
-      (s.notes
-        ? '<p class="text-[11px] text-gray-500 dark:text-zinc-400 line-clamp-2">' +
-            _tripEsc(s.notes) + '</p>'
-        : '') +
       attrs +
       '<div class="flex items-center gap-2 mt-auto pt-1">' +
         mapBtn +
