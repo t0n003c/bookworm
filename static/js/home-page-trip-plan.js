@@ -12,6 +12,7 @@ var _tripPlanUploadedCoverUrl = '';   // URL returned by upload-cover endpoint
 
 var _tripDays         = [];
 var _tripDayEditing   = null;   // null = add mode, int = day id being edited
+var _tripPlanMode     = 'edit'; // 'edit' | 'view'
 
 // Active plan — exposed on window so home-page-trip.js topbar can branch
 window._tripActivePlanId   = null;
@@ -20,6 +21,12 @@ window._tripActivePlanName = '';
 // ── Day card width (slider) ───────────────────────────────────────────────────
 var _TRIP_DAY_W_KEY     = 'bw-trip-day-card-width';
 var _tripDayCardWidth   = parseInt(localStorage.getItem(_TRIP_DAY_W_KEY) || '256', 10);
+
+window.tripToggleMode = function() {
+  _tripPlanMode = _tripPlanMode === 'edit' ? 'view' : 'edit';
+  _tripRenderDaysToolbar();
+  _tripRenderPlan();
+};
 
 window.tripSetDayCardWidth = function(w) {
   _tripDayCardWidth = parseInt(w, 10);
@@ -595,6 +602,14 @@ window.tripClosePlan = function() {
 function _tripRenderDaysToolbar() {
   var tb = document.getElementById('trip-plan-toolbar');
   if (!tb) return;
+  var isEdit   = _tripPlanMode === 'edit';
+  var modeLbl  = isEdit ? '👁️ View' : '✏️ Edit';
+  var modeCls  = isEdit
+    ? 'text-xs px-2.5 py-1 rounded-full border border-gray-200 dark:border-zinc-700 ' +
+      'text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2] ' +
+      'dark:hover:text-blue-400 transition'
+    : 'text-xs px-2.5 py-1 rounded-full bg-[#0053e2] text-white ' +
+      'hover:bg-[#0046c0] transition font-medium';
   tb.innerHTML =
     '<button onclick="tripClosePlan()" ' +
       'class="flex items-center gap-1 text-sm text-gray-500 dark:text-zinc-400 ' +
@@ -602,9 +617,12 @@ function _tripRenderDaysToolbar() {
       '← Trips' +
     '</button>' +
     '<span class="text-gray-300 dark:text-zinc-600 select-none">|</span>' +
-    '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate">' +
+    '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate flex-1">' +
       '🗓️ ' + _tripEsc(window._tripActivePlanName) +
-    '</p>';
+    '</p>' +
+    '<button onclick="tripToggleMode()" class="' + modeCls + '" title="Switch mode">' +
+      modeLbl +
+    '</button>';
 }
 
 // ── Day list ──────────────────────────────────────────────────────────────────
@@ -650,6 +668,8 @@ function _tripRenderPlan() {
 }
 
 function _tripRenderDayLane(d) {
+  var isEdit = _tripPlanMode === 'edit';
+
   // Merge spots + blocks into one sorted list
   var allItems = [];
   (d.spots || []).forEach(function(s) {
@@ -660,19 +680,51 @@ function _tripRenderDayLane(d) {
   });
   allItems.sort(function(a, b) { return a.order_idx - b.order_idx; });
 
+  var emptyHint = isEdit
+    ? '<div class="trip-drop-hint text-xs text-center text-gray-300 dark:text-zinc-600 py-6 px-3 ' +
+        'border-2 border-dashed border-gray-200 dark:border-zinc-700 rounded-lg">' +
+        'No items yet —<br>use <strong>＋ Add</strong> below</div>'
+    : '<p class="text-xs text-center text-gray-300 dark:text-zinc-600 py-6">Nothing scheduled</p>';
+
   var itemsHtml = allItems.length
     ? allItems.map(function(item) {
         return item.kind === 'spot'
           ? _tripRenderDaySpotRow(d.id, item.data)
           : _tripRenderDayBlockRow(d.id, item.data);
       }).join('')
-    : '<div class="trip-drop-hint text-xs text-center text-gray-300 dark:text-zinc-600 py-6 px-3 ' +
-        'border-2 border-dashed border-gray-200 dark:border-zinc-700 rounded-lg">' +
-        'No items yet —<br>use <strong>＋ Add</strong> below</div>';
+    : emptyHint;
 
   var dateLabel = d.day_date
     ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500 ml-1">' +
         _tripEsc(d.day_date) + '</span>'
+    : '';
+
+  // Header: edit controls only in edit mode
+  var headerBtns = isEdit
+    ? '<button onclick="tripOpenEditDay(' + d.id + ')" ' +
+        'class="text-gray-400 hover:text-[#0053e2] transition text-xs">✏️</button>' +
+      '<button onclick="tripConfirmDeleteDay(' + d.id + ',\'' +
+        _tripEsc((d.day_label || 'Day').replace(/'/g, "\\'")) + '\')" ' +
+        'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5">🗑️</button>'
+    : '';
+
+  // Drop zone attrs only in edit mode
+  var dropAttrs = isEdit
+    ? 'ondragover="tripDragDayOver(event,' + d.id + ')" ' +
+      'ondragleave="tripDragDayLeave(event,' + d.id + ')" ' +
+      'ondrop="tripDragDayDrop(event,' + d.id + ')"'
+    : '';
+
+  // ＋ Add footer only in edit mode
+  var footer = isEdit
+    ? '<div class="flex-shrink-0 px-2 pb-2 pt-1">' +
+        '<button onclick="tripToggleBlockPicker(' + d.id + ', event)" ' +
+          'class="w-full text-xs text-gray-400 dark:text-zinc-500 ' +
+                 'hover:text-[#0053e2] dark:hover:text-blue-400 transition ' +
+                 'border border-dashed border-gray-200 dark:border-zinc-700 ' +
+                 'rounded-lg py-1 hover:border-[#0053e2]/40">' +
+          '＋ Add</button>' +
+      '</div>'
     : '';
 
   return '<div class="trip-day-lane-card flex-shrink-0 bg-white dark:bg-zinc-900 rounded-xl ' +
@@ -683,39 +735,40 @@ function _tripRenderDayLane(d) {
       '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
         _tripEsc(d.day_label || 'Day') + dateLabel +
       '</p>' +
-      '<button onclick="tripOpenEditDay(' + d.id + ')" ' +
-        'class="text-gray-400 hover:text-[#0053e2] transition text-xs">✏️</button>' +
-      '<button onclick="tripConfirmDeleteDay(' + d.id + ',\'' +
-        _tripEsc((d.day_label || 'Day').replace(/'/g, "\\'")) + '\')" ' +
-        'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5">🗑️</button>' +
+      headerBtns +
     '</div>' +
     '<div id="trip-day-lane-' + d.id + '" ' +
       'class="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-16" ' +
-      'ondragover="tripDragDayOver(event,' + d.id + ')" ' +
-      'ondragleave="tripDragDayLeave(event,' + d.id + ')" ' +
-      'ondrop="tripDragDayDrop(event,' + d.id + ')">' +
+      dropAttrs + '>' +
       itemsHtml +
     '</div>' +
-    '<div class="flex-shrink-0 px-2 pb-2 pt-1">' +
-      '<button onclick="tripToggleBlockPicker(' + d.id + ', event)" ' +
-        'class="w-full text-xs text-gray-400 dark:text-zinc-500 ' +
-               'hover:text-[#0053e2] dark:hover:text-blue-400 transition ' +
-               'border border-dashed border-gray-200 dark:border-zinc-700 ' +
-               'rounded-lg py-1 hover:border-[#0053e2]/40">' +
-        '＋ Add</button>' +
-    '</div>' +
+    footer +
   '</div>';
 }
 
 function _tripRenderDaySpotRow(dayId, s) {
-  var emoji = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[s.spot_type])
-    || '📍';
+  var isEdit = _tripPlanMode === 'edit';
+  var emoji  = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[s.spot_type]) || '📍';
   var timeLabel = s.time_label
-    ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' + _tripEsc(_formatTime(s.time_label)) + '</span>'
+    ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' +
+        _tripEsc(_formatTime(s.time_label)) + '</span>'
     : '';
+
+  if (!isEdit) {
+    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg ' +
+      'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">' +
+      '<span class="text-base flex-shrink-0">' + emoji + '</span>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
+          _tripEsc(s.name) + '</p>' +
+        timeLabel +
+      '</div>' +
+    '</div>';
+  }
+
+  // Edit mode — always-visible action buttons, drag enabled
   return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg ' +
-    'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 ' +
-    'group cursor-grab active:cursor-grabbing" ' +
+    'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing" ' +
     'draggable="true" ' +
     'data-tds-id="' + s.tds_id + '" ' +
     'ondragstart="tripDragDaySpotStart(event,' + dayId + ',' + s.tds_id + ')" ' +
@@ -729,30 +782,34 @@ function _tripRenderDaySpotRow(dayId, s) {
     '</div>' +
     '<button onclick="tripEditDaySpotTime(' + dayId + ',' + s.spot_id + ',' + s.tds_id + ')" ' +
       'title="Set time" ' +
-      'class="opacity-0 group-hover:opacity-100 transition text-[10px] ' +
-             'text-gray-400 hover:text-[#0053e2]">🕐</button>' +
+      'class="text-[10px] text-gray-400 hover:text-[#0053e2] transition">🕐</button>' +
     '<button onclick="tripRemoveSpotFromDay(' + dayId + ',' + s.spot_id + ')" ' +
-      'class="opacity-0 group-hover:opacity-100 transition text-[10px] ' +
-             'text-gray-400 hover:text-red-500">✕</button>' +
+      'class="text-[10px] text-gray-400 hover:text-red-500 transition">✕</button>' +
   '</div>';
 }
 
 // ── Day block row renderer ────────────────────────────────────────────────────────────
 function _tripRenderDayBlockRow(dayId, b) {
+  var isEdit = _tripPlanMode === 'edit';
   var c = {};
   try { c = JSON.parse(b.content); } catch(e) {}
 
-  var dragAttrs = 'draggable="true" data-block-id="' + b.id + '" ' +
-    'ondragstart="tripDragBlockStart(event,' + dayId + ',' + b.id + ')" ' +
-    'ondragover="tripDragDaySpotOver(event)" ' +
-    'ondrop="tripDragLaneItemDrop(event,' + dayId + ',' + b.id + ',null)"';
+  var dragAttrs = isEdit
+    ? 'draggable="true" data-block-id="' + b.id + '" ' +
+      'ondragstart="tripDragBlockStart(event,' + dayId + ',' + b.id + ')" ' +
+      'ondragover="tripDragDaySpotOver(event)" ' +
+      'ondrop="tripDragLaneItemDrop(event,' + dayId + ',' + b.id + ',null)"'
+    : 'data-block-id="' + b.id + '"';
 
-  var editBtn  = '<button onclick="tripOpenBlockModal(' + dayId + ',\'' + b.block_type +
-    '\',' + b.id + ')" class="opacity-0 group-hover:opacity-100 transition text-[10px] ' +
-    'text-gray-400 hover:text-[#0053e2]">✏️</button>';
-  var delBtn   = '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
-    'class="opacity-0 group-hover:opacity-100 transition text-[10px] ' +
-    'text-gray-400 hover:text-red-500">🗑️</button>';
+  var editBtn = isEdit
+    ? '<button onclick="tripOpenBlockModal(' + dayId + ',\'' + b.block_type +
+        '\',' + b.id + ')" class="text-[10px] text-gray-400 hover:text-[#0053e2] transition">✏️</button>'
+    : '';
+  var delBtn  = isEdit
+    ? '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
+        'class="text-[10px] text-gray-400 hover:text-red-500 transition">🗑️</button>'
+    : '';
+  var grabCls  = isEdit ? ' group cursor-grab active:cursor-grabbing' : '';
   var timeSpan = b.time_label
     ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' +
         _tripEsc(_formatTime(b.time_label)) + '</span>'
@@ -764,7 +821,7 @@ function _tripRenderDayBlockRow(dayId, b) {
     var dark = document.documentElement.classList.contains('dark');
     var cardStyle = 'border-left:4px solid ' + nc.border + ';background:' +
                     (dark ? nc.bgDark : nc.bg) + ';padding:6px 8px;';
-    return '<div class="flex items-start gap-2 rounded-lg group cursor-grab" ' +
+    return '<div class="flex items-start gap-2 rounded-lg' + grabCls + '" ' +
       'style="' + cardStyle + '" ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">📝</span>' +
       '<div class="flex-1 min-w-0">' +
@@ -785,7 +842,7 @@ function _tripRenderDayBlockRow(dayId, b) {
       ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
           [c.duration, c.distance].filter(Boolean).join(' · ') + mapLink + '</p>'
       : (c.map_url ? '<p class="text-[10px]">' + mapLink + '</p>' : '');
-    return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg group cursor-grab ' +
+    return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg' + grabCls + ' ' +
       'border border-dashed border-blue-300 dark:border-blue-700 ' +
       'bg-blue-50/50 dark:bg-blue-900/10" ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">🚗</span>' +
@@ -799,7 +856,7 @@ function _tripRenderDayBlockRow(dayId, b) {
   }
 
   if (b.block_type === 'bookmark') {
-    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg group cursor-grab ' +
+    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + grabCls + ' ' +
       'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700" ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0">🔖</span>' +
       '<div class="flex-1 min-w-0">' +
@@ -814,6 +871,12 @@ function _tripRenderDayBlockRow(dayId, b) {
   }
 
   if (b.block_type === 'divider') {
+    var divEditBtns = isEdit
+      ? '<button onclick="tripOpenBlockModal(' + dayId + ',\'divider\',' + b.id + ')" ' +
+          'class="text-[10px] text-gray-300 dark:text-zinc-600 hover:text-gray-500 transition">✏️</button>' +
+        '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
+          'class="text-[10px] text-gray-300 dark:text-zinc-600 hover:text-red-400 transition">×</button>'
+      : '';
     return '<div class="flex items-center gap-2 py-1 select-none" data-block-id="' + b.id + '">' +
       '<hr class="flex-1 border-gray-200 dark:border-zinc-700">' +
       (c.label
@@ -821,10 +884,7 @@ function _tripRenderDayBlockRow(dayId, b) {
             _tripEsc(c.label) + '</span>' +
           '<hr class="flex-1 border-gray-200 dark:border-zinc-700">'
         : '') +
-      '<button onclick="tripOpenBlockModal(' + dayId + ',\'divider\',' + b.id + ')" ' +
-        'class="text-[10px] text-gray-300 dark:text-zinc-600 hover:text-gray-500 transition">✏️</button>' +
-      '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
-        'class="text-[10px] text-gray-300 dark:text-zinc-600 hover:text-red-400 transition">×</button>' +
+      divEditBtns +
     '</div>';
   }
 
