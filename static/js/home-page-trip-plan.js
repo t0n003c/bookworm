@@ -330,49 +330,175 @@ function _tripRenderPlanCards() {
       '</div>';
     return;
   }
-  grid.innerHTML = _tripPlans.map(function(p) {
-    return _tripRenderPlanCard(p);
-  }).join('');
+
+  // ── Group by status ──────────────────────────────────────────────────
+  var groups = { active: [], upcoming: [], past: [], undated: [] };
+  _tripPlans.forEach(function(p) {
+    groups[_tripPlanStatus(p).key].push(p);
+  });
+
+  // Sort within each group
+  function byDate(field, asc) {
+    return function(a, b) {
+      var av = a[field] || '', bv = b[field] || '';
+      return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+    };
+  }
+  groups.active.sort(byDate('end_date', true));       // ending soonest first
+  groups.upcoming.sort(byDate('start_date', true));   // starting soonest first
+  groups.past.sort(byDate('end_date', false));         // most recent first
+
+  // Section header definition
+  var SECTIONS = [
+    { key: 'active',   emoji: '✈️', label: 'Happening Now',
+      cls: 'text-green-600 dark:text-green-400 border-green-200 dark:border-green-900' },
+    { key: 'upcoming', emoji: '📅', label: 'Upcoming',
+      cls: 'text-[#0053e2] dark:text-blue-400 border-blue-200 dark:border-blue-900' },
+    { key: 'past',     emoji: '🗂️', label: 'Past Trips',
+      cls: 'text-gray-400 dark:text-zinc-500 border-gray-200 dark:border-zinc-800' },
+    { key: 'undated',  emoji: '📋', label: 'No Date Set',
+      cls: 'text-gray-400 dark:text-zinc-500 border-gray-200 dark:border-zinc-800' },
+  ];
+
+  var html = '';
+  SECTIONS.forEach(function(sec) {
+    var plans = groups[sec.key];
+    if (!plans.length) return;
+    html +=
+      '<div class="col-span-full flex items-center gap-2 mt-4 mb-1 first:mt-0">' +
+        '<span class="text-xs font-bold uppercase tracking-wider ' + sec.cls + '">' +
+          sec.emoji + ' ' + sec.label +
+          ' <span class="font-normal normal-case opacity-70">('+plans.length+')</span>' +
+        '</span>' +
+        '<div class="flex-1 border-t ' + sec.cls + '"></div>' +
+      '</div>';
+    html += plans.map(_tripRenderPlanCard).join('');
+  });
+  grid.innerHTML = html;
+}
+
+// ── Status helpers ──────────────────────────────────────────────────────────
+function _tripPlanStatus(p) {
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var todayStr = today.toISOString().slice(0, 10);
+  var s = p.start_date || null;
+  var e = p.end_date   || null;
+  if (!s && !e) return { key: 'undated' };
+  if (s && e) {
+    if (todayStr >= s && todayStr <= e) return { key: 'active' };
+    if (todayStr < s)                  return { key: 'upcoming' };
+    return { key: 'past' };
+  }
+  if (s && !e) return todayStr < s ? { key: 'upcoming' } : { key: 'active' };
+  /* !s && e */  return todayStr <= e ? { key: 'upcoming' } : { key: 'past' };
+}
+
+// Format ISO date → "Jun 15, 2025"
+function _tripFmtDate(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso + 'T12:00:00').toLocaleDateString('en-US',
+      { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (_) { return iso; }
+}
+
+// Build a human-readable countdown/progress string
+function _tripPlanMeta(p) {
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var status = _tripPlanStatus(p);
+
+  if (status.key === 'active' && p.start_date && p.end_date) {
+    var dayN    = Math.floor((today - new Date(p.start_date + 'T12:00:00')) / 86400000) + 1;
+    var totalD  = Math.round((new Date(p.end_date + 'T12:00:00') - new Date(p.start_date + 'T12:00:00')) / 86400000) + 1;
+    return '• Day ' + dayN + ' of ' + totalD;
+  }
+  if (status.key === 'upcoming' && p.start_date) {
+    var ms   = new Date(p.start_date + 'T12:00:00') - today;
+    var days = Math.ceil(ms / 86400000);
+    if (days === 0)  return '• Tomorrow';
+    if (days <= 30)  return '• In ' + days + ' day' + (days !== 1 ? 's' : '');
+    var months = Math.round(days / 30.4);
+    return '• In ~' + months + ' month' + (months !== 1 ? 's' : '');
+  }
+  if (status.key === 'past' && p.end_date) {
+    var msAgo   = today - new Date(p.end_date + 'T12:00:00');
+    var daysAgo = Math.floor(msAgo / 86400000);
+    if (daysAgo <= 30)  return '• ' + daysAgo + ' day' + (daysAgo !== 1 ? 's' : '') + ' ago';
+    var moAgo = Math.round(daysAgo / 30.4);
+    return '• ' + moAgo + ' month' + (moAgo !== 1 ? 's' : '') + ' ago';
+  }
+  return '';
 }
 
 function _tripRenderPlanCard(p) {
   var safeName = _tripEsc(p.plan_name);
   var jsName   = safeName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var status   = _tripPlanStatus(p);
+  var meta     = _tripPlanMeta(p);
+
+  // ── Status badge ─────────────────────────────────────────────────────
+  var BADGE = {
+    active:   '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ' +
+               'font-semibold bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">' +
+               '✈️ Active</span>',
+    upcoming: '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ' +
+               'font-semibold bg-blue-100 dark:bg-blue-900/40 text-[#0053e2] dark:text-blue-400">' +
+               '📅 Upcoming</span>',
+    past:     '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ' +
+               'font-semibold bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">' +
+               '🗂️ Past</span>',
+    undated:  '',
+  };
+
+  // ── Date range ─────────────────────────────────────────────────────
   var dateRange = '';
   if (p.start_date || p.end_date) {
+    var fStart = _tripFmtDate(p.start_date);
+    var fEnd   = _tripFmtDate(p.end_date);
     dateRange =
-      '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-        (p.start_date ? _tripEsc(p.start_date) : '') +
-        (p.start_date && p.end_date ? ' → ' : '') +
-        (p.end_date ? _tripEsc(p.end_date) : '') +
+      '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 flex items-center gap-1">' +
+        (fStart ? fStart : '') +
+        (fStart && fEnd ? ' → ' : '') +
+        (fEnd   ? fEnd   : '') +
+        (meta ? ' <span class="text-[10px] opacity-70">' + _tripEsc(meta) + '</span>' : '') +
       '</p>';
   }
+
   var descHtml = p.plan_desc
     ? '<p class="text-xs text-gray-500 dark:text-zinc-400 mt-1 line-clamp-2">' +
         _tripEsc(p.plan_desc) + '</p>'
     : '';
   var dayLabel = p.day_count + ' day' + (p.day_count !== 1 ? 's' : '');
 
-  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
-    'dark:border-zinc-800 shadow-sm overflow-hidden cursor-pointer group ' +
-    'hover:shadow-md hover:border-[#0053e2]/40 transition-all" ' +
+  // Active card gets a subtle left-accent border
+  var cardBorder = status.key === 'active'
+    ? 'border-green-300 dark:border-green-700'
+    : status.key === 'past'
+      ? 'border-gray-200 dark:border-zinc-800 opacity-80'
+      : 'border-gray-200 dark:border-zinc-800';
+
+  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
+    'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all ' + cardBorder + '" ' +
     'onclick="tripOpenPlan(' + p.id + ',\'' + jsName + '\')">' +
     '<div class="p-4">' +
       '<div class="flex items-start justify-between gap-2">' +
         '<div class="flex-1 min-w-0">' +
           '<p class="font-semibold text-gray-800 dark:text-zinc-100 truncate text-sm">' +
-            '🗓️ ' + safeName +
+            '🗺️ ' + safeName +
           '</p>' +
           dateRange + descHtml +
         '</div>' +
-        '<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" ' +
-             'onclick="event.stopPropagation()">' +
-          '<button onclick="tripOpenEditPlan(' + p.id + ')" ' +
-            'class="text-gray-400 hover:text-[#0053e2] transition text-xs" ' +
-            'title="Edit trip">✏️</button>' +
-          '<button onclick="tripConfirmDeletePlan(' + p.id + ',\'' + jsName + '\')" ' +
-            'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5" ' +
-            'title="Delete trip">🗑️</button>' +
+        '<div class="flex flex-col items-end gap-1.5 flex-shrink-0">' +
+          (BADGE[status.key] || '') +
+          '<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" ' +
+               'onclick="event.stopPropagation()">' +
+            '<button onclick="tripOpenEditPlan(' + p.id + ')" ' +
+              'class="text-gray-400 hover:text-[#0053e2] transition text-xs" ' +
+              'title="Edit trip">✏️</button>' +
+            '<button onclick="tripConfirmDeletePlan(' + p.id + ',\'' + jsName + '\')" ' +
+              'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5" ' +
+              'title="Delete trip">🗑️</button>' +
+          '</div>' +
         '</div>' +
       '</div>' +
       '<p class="mt-3 text-xs text-gray-400 dark:text-zinc-500">📅 ' + dayLabel + '</p>' +
