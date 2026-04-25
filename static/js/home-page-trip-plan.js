@@ -756,13 +756,17 @@ function _tripRenderDaySpotRow(dayId, s) {
 
   if (!isEdit) {
     return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg ' +
-      'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">' +
+      'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 ' +
+      'cursor-pointer hover:border-[#0053e2]/40 hover:bg-blue-50/30 ' +
+      'dark:hover:bg-blue-900/10 transition" ' +
+      'onclick="tripViewDetail(\'spot\',' + dayId + ',' + s.tds_id + ')">' +
       '<span class="text-base flex-shrink-0">' + emoji + '</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
           _tripEsc(s.name) + '</p>' +
         timeLabel +
       '</div>' +
+      '<span class="text-gray-300 dark:text-zinc-600 text-[10px] flex-shrink-0">›</span>' +
     '</div>';
   }
 
@@ -809,7 +813,21 @@ function _tripRenderDayBlockRow(dayId, b) {
     ? '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
         'class="text-[10px] text-gray-400 hover:text-red-500 transition">🗑️</button>'
     : '';
-  var grabCls  = isEdit ? ' group cursor-grab active:cursor-grabbing' : '';
+  // itemCls: drag cursor in edit, tap cursor + hover in view (via class, not style)
+  var itemCls;
+  if (isEdit) {
+    itemCls = ' group cursor-grab active:cursor-grabbing';
+  } else if (b.block_type !== 'divider') {
+    itemCls = ' cursor-pointer hover:opacity-90 transition-opacity';
+  } else {
+    itemCls = '';
+  }
+  var viewClick = (!isEdit && b.block_type !== 'divider')
+    ? 'onclick="tripViewDetail(\'block\',' + dayId + ',' + b.id + ')"'
+    : '';
+  var viewChevron = (!isEdit && b.block_type !== 'divider')
+    ? '<span class="text-gray-300 dark:text-zinc-600 text-[10px] flex-shrink-0 ml-auto">›</span>'
+    : '';
   var timeSpan = b.time_label
     ? '<span class="text-[10px] text-[#0053e2] dark:text-blue-400 font-medium">' +
         _tripEsc(_formatTime(b.time_label)) + '</span>'
@@ -821,15 +839,15 @@ function _tripRenderDayBlockRow(dayId, b) {
     var dark = document.documentElement.classList.contains('dark');
     var cardStyle = 'border-left:4px solid ' + nc.border + ';background:' +
                     (dark ? nc.bgDark : nc.bg) + ';padding:6px 8px;';
-    return '<div class="flex items-start gap-2 rounded-lg' + grabCls + '" ' +
-      'style="' + cardStyle + '" ' + dragAttrs + '>' +
+    return '<div class="flex items-start gap-2 rounded-lg' + itemCls + '" ' +
+      'style="' + cardStyle + '" ' + viewClick + ' ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">📝</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-gray-700 dark:text-zinc-200 truncate leading-snug">' +
           (preview || '<span class="italic text-gray-400">(empty)</span>') + '</p>' +
         timeSpan +
       '</div>' +
-      editBtn + delBtn +
+      editBtn + delBtn + viewChevron +
     '</div>';
   }
 
@@ -842,22 +860,22 @@ function _tripRenderDayBlockRow(dayId, b) {
       ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
           [c.duration, c.distance].filter(Boolean).join(' · ') + mapLink + '</p>'
       : (c.map_url ? '<p class="text-[10px]">' + mapLink + '</p>' : '');
-    return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg' + grabCls + ' ' +
+    return '<div class="flex items-start gap-2 px-2 py-1.5 rounded-lg' + itemCls + ' ' +
       'border border-dashed border-blue-300 dark:border-blue-700 ' +
-      'bg-blue-50/50 dark:bg-blue-900/10" ' + dragAttrs + '>' +
+      'bg-blue-50/50 dark:bg-blue-900/10" ' + viewClick + ' ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0 mt-0.5">🚗</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
           _tripEsc(c.from || '') + ' → ' + _tripEsc(c.to || '') + '</p>' +
         meta + timeSpan +
       '</div>' +
-      editBtn + delBtn +
+      editBtn + delBtn + viewChevron +
     '</div>';
   }
 
   if (b.block_type === 'bookmark') {
-    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + grabCls + ' ' +
-      'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700" ' + dragAttrs + '>' +
+    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + itemCls + ' ' +
+      'bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700" ' + viewClick + ' ' + dragAttrs + '>' +
       '<span class="text-sm flex-shrink-0">🔖</span>' +
       '<div class="flex-1 min-w-0">' +
         '<a href="' + _tripEsc(c.url || '#') + '" target="_blank" rel="noopener" ' +
@@ -866,7 +884,7 @@ function _tripRenderDayBlockRow(dayId, b) {
           _tripEsc(c.title || c.url || '') + '</a>' +
         timeSpan +
       '</div>' +
-      editBtn + delBtn +
+      editBtn + delBtn + viewChevron +
     '</div>';
   }
 
@@ -1172,6 +1190,299 @@ window.tripDragLaneItemDrop = function(event, dayId, targetBlockId, targetTdsId)
     body: JSON.stringify({items: payload}),
   }).then(function() { tripLoadPlan(); })
     .catch(function() { _tripShowToast('Reorder failed', true); });
+};
+
+// ── View-mode detail drawer ────────────────────────────────────────────────────────────────────
+// Slides up from the bottom when the user clicks an item in View mode.
+// Reads all data from in-memory module state — no extra fetch needed.
+
+function _tripMdToHtml(text) {
+  if (!text) return '';
+  if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    marked.use({ gfm: true, breaks: true });
+    return DOMPurify.sanitize(marked.parse(text));
+  }
+  // Fallback: escaped plain text with <br> line-breaks
+  return _tripEsc(text).replace(/\n/g, '<br>');
+}
+
+window.tripCloseDetailDrawer = function() {
+  var bd = document.getElementById('trip-detail-backdrop');
+  var dr = document.getElementById('trip-detail-drawer');
+  if (dr && dr._escHandler) {
+    document.removeEventListener('keydown', dr._escHandler);
+  }
+  if (dr)  { dr.style.transform  = 'translateY(100%)'; }
+  if (bd)  { bd.style.opacity    = '0'; }
+  setTimeout(function() {
+    if (bd) bd.remove();
+    if (dr) dr.remove();
+  }, 260);
+};
+
+function _tripShowDrawer(headerHtml, bodyHtml) {
+  // Remove any existing drawer
+  window.tripCloseDetailDrawer();
+
+  // Backdrop
+  var bd = document.createElement('div');
+  bd.id        = 'trip-detail-backdrop';
+  bd.className = 'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200';
+  bd.style.opacity = '0';
+  bd.setAttribute('aria-hidden', 'true');
+  bd.onclick   = window.tripCloseDetailDrawer;
+  document.body.appendChild(bd);
+
+  // Drawer
+  var dr = document.createElement('div');
+  dr.id        = 'trip-detail-drawer';
+  dr.setAttribute('role', 'dialog');
+  dr.setAttribute('aria-modal', 'true');
+  dr.className =
+    'fixed bottom-0 left-0 right-0 z-50 ' +
+    'bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl ' +
+    'flex flex-col transition-transform duration-200 ease-out ' +
+    'max-h-[72vh]';
+  dr.style.transform = 'translateY(100%)';
+  dr.innerHTML =
+    // Drag handle
+    '<div class="flex-shrink-0 flex justify-center pt-3 pb-1">' +
+      '<div class="w-10 h-1 rounded-full bg-gray-200 dark:bg-zinc-700"></div>' +
+    '</div>' +
+    // Header row
+    '<div class="flex-shrink-0 flex items-start justify-between px-5 pb-3 pt-1">' +
+      '<div class="flex-1 min-w-0">' + headerHtml + '</div>' +
+      '<button onclick="tripCloseDetailDrawer()" ' +
+        'class="ml-3 mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 ' +
+               'text-xl leading-none flex-shrink-0" aria-label="Close">' +
+        '×' +
+      '</button>' +
+    '</div>' +
+    // Scrollable body
+    '<div class="flex-1 overflow-y-auto px-5 pb-6 space-y-4">' +
+      bodyHtml +
+    '</div>';
+  document.body.appendChild(dr);
+
+  // ESC closes
+  dr._escHandler = function(e) {
+    if (e.key === 'Escape') window.tripCloseDetailDrawer();
+  };
+  document.addEventListener('keydown', dr._escHandler);
+
+  // Animate in
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      bd.style.opacity   = '1';
+      dr.style.transform = 'translateY(0)';
+    });
+  });
+}
+
+window.tripViewDetail = function(kind, dayId, id) {
+  if (kind === 'spot') {
+    // Find the day-spot entry to get time_label
+    var day = null;
+    _tripDays.forEach(function(d) { if (d.id === dayId) day = d; });
+    var ds = null;
+    if (day) (day.spots || []).forEach(function(s) { if (s.tds_id === id) ds = s; });
+    if (!ds) return;
+
+    // Full spot from research list
+    var spot = null;
+    (typeof _tripSpots !== 'undefined' ? _tripSpots : []).forEach(function(s) {
+      if (s.id === ds.spot_id) spot = s;
+    });
+    if (!spot) return;
+
+    var emoji  = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[spot.spot_type]) || '📍';
+    var tc     = (typeof _tripTypeColor   !== 'undefined') ? _tripTypeColor(spot.spot_type) : '#0053e2';
+    var stars  = (typeof _tripStars       !== 'undefined') ? _tripStars(spot.priority, spot.id) : '';
+    var dark   = document.documentElement.classList.contains('dark');
+
+    // Cover image or emoji banner
+    var coverHtml = spot.cover_url
+      ? '<div class="w-full h-44 rounded-xl overflow-hidden mb-4 bg-gray-100 dark:bg-zinc-800">' +
+          '<img src="' + _tripEsc(spot.cover_url) + '" alt="" ' +
+               'class="w-full h-full object-cover" ' +
+               'onerror="this.parentNode.style.display=\'none\'">' +
+        '</div>'
+      : '<div class="w-full h-24 rounded-xl mb-4 flex items-center justify-center text-6xl ' +
+          'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 select-none">' +
+          emoji +
+        '</div>';
+
+    // Type badge
+    var badge =
+      '<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" ' +
+           'style="background:' + tc + '">' +
+        emoji + ' ' + _tripEsc(spot.spot_type) +
+      '</span>';
+
+    // Time / cost row
+    var meta = [];
+    if (ds.time_label) {
+      meta.push('<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">' +
+        '🕒 ' + _tripEsc(_formatTime(ds.time_label)) + '</span>');
+    }
+    if (spot.estimated_cost > 0) {
+      meta.push('<span class="text-xs text-gray-500 dark:text-zinc-400">' +
+        '💰 ' + _tripEsc(spot.currency || '') + ' ' +
+        Number(spot.estimated_cost).toFixed(2) + '</span>');
+    }
+    var metaRow = meta.length ? '<div class="flex flex-wrap gap-3">' + meta.join('') + '</div>' : '';
+
+    // Map button
+    var mapBtn = spot.map_url
+      ? '<a href="' + _tripEsc(spot.map_url) + '" target="_blank" rel="noopener noreferrer" ' +
+          'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
+                 'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
+          '📍 Open in Maps</a>'
+      : '';
+
+    // Attributes
+    var attrsHtml = '';
+    if (spot.attrs && spot.attrs.length) {
+      attrsHtml =
+        '<div class="grid grid-cols-2 gap-2">' +
+        spot.attrs.map(function(a) {
+          return '<div class="rounded-lg bg-gray-50 dark:bg-zinc-800 px-3 py-2">' +
+            '<p class="text-[10px] text-gray-400 dark:text-zinc-500 uppercase tracking-wide">' +
+              _tripEsc(a.attr_key) + '</p>' +
+            '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 mt-0.5">' +
+              _tripEsc(a.attr_value) + '</p>' +
+          '</div>';
+        }).join('') +
+        '</div>';
+    }
+
+    // Notes
+    var notesHtml = '';
+    if (spot.notes && spot.notes.trim()) {
+      notesHtml =
+        '<div>' +
+          '<p class="text-[10px] font-semibold uppercase tracking-wide ' +
+                   'text-gray-400 dark:text-zinc-500 mb-1">Notes</p>' +
+          '<div class="text-sm text-gray-700 dark:text-zinc-200 md-body leading-relaxed">' +
+            _tripMdToHtml(spot.notes) +
+          '</div>' +
+        '</div>';
+    }
+
+    var headerHtml = coverHtml +
+      '<div class="flex flex-wrap items-center gap-2 mb-1">' + badge + stars + '</div>' +
+      '<h2 class="text-lg font-bold text-gray-800 dark:text-zinc-100 leading-snug">' +
+        _tripEsc(spot.name) + '</h2>';
+
+    var bodyHtml = [metaRow, mapBtn ? '<div>' + mapBtn + '</div>' : '', attrsHtml, notesHtml]
+      .filter(Boolean).join('');
+
+    _tripShowDrawer(headerHtml, bodyHtml || '<p class="text-sm text-gray-400">No additional details.</p>');
+    return;
+  }
+
+  if (kind === 'block') {
+    var blocks = _tripBlocks[dayId] || [];
+    var blk    = null;
+    blocks.forEach(function(b) { if (b.id === id) blk = b; });
+    if (!blk) return;
+
+    var bc = {};
+    try { bc = JSON.parse(blk.content); } catch(e) {}
+    var bTime = blk.time_label
+      ? '<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">🕒 ' +
+          _tripEsc(_formatTime(blk.time_label)) + '</span>'
+      : '';
+
+    if (blk.block_type === 'note') {
+      var nc   = (typeof _TRIP_NOTE_COLORS !== 'undefined' && _TRIP_NOTE_COLORS[bc.color])
+                  || (typeof _TRIP_NOTE_COLORS !== 'undefined' && _TRIP_NOTE_COLORS.amber)
+                  || {border: '#f59e0b', bg: '#fffbeb', bgDark: '#1c1a0e'};
+      var isDark = document.documentElement.classList.contains('dark');
+      var noteBodyHtml =
+        '<div style="border-left:4px solid ' + nc.border + ';padding:10px 14px;border-radius:0 8px 8px 0;' +
+             'background:' + (isDark ? nc.bgDark : nc.bg) + '">' +
+          '<div class="text-sm text-gray-800 dark:text-zinc-100 md-body leading-relaxed">' +
+            _tripMdToHtml(bc.text || '') +
+          '</div>' +
+        '</div>';
+      _tripShowDrawer(
+        '<div class="flex items-center gap-2">' +
+          '<span class="text-2xl">📝</span>' +
+          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Note</h2>' +
+          (bTime ? '<span class="ml-auto">' + bTime + '</span>' : '') +
+        '</div>',
+        noteBodyHtml || '<p class="text-sm text-gray-400 italic">(empty note)</p>'
+      );
+      return;
+    }
+
+    if (blk.block_type === 'drive') {
+      var routeHtml =
+        '<div class="space-y-3">' +
+          bTime +
+          '<div class="flex items-center gap-3 text-sm font-medium text-gray-800 dark:text-zinc-100">' +
+            '<span class="text-2xl">🚗</span>' +
+            '<div>' +
+              '<p class="text-xs text-gray-400 dark:text-zinc-500">From</p>' +
+              '<p>' + _tripEsc(bc.from || '—') + '</p>' +
+            '</div>' +
+            '<span class="text-gray-300 dark:text-zinc-600 text-lg">→</span>' +
+            '<div>' +
+              '<p class="text-xs text-gray-400 dark:text-zinc-500">To</p>' +
+              '<p>' + _tripEsc(bc.to || '—') + '</p>' +
+            '</div>' +
+          '</div>' +
+          ((bc.duration || bc.distance)
+            ? '<p class="text-sm text-gray-500 dark:text-zinc-400">' +
+                [bc.duration, bc.distance].filter(Boolean).join(' · ') +
+              '</p>'
+            : '') +
+          (bc.map_url
+            ? '<a href="' + _tripEsc(bc.map_url) + '" target="_blank" rel="noopener" ' +
+                'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
+                       'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
+                '🗺️ Open Route</a>'
+            : '') +
+        '</div>';
+      _tripShowDrawer(
+        '<div class="flex items-center gap-2">' +
+          '<span class="text-2xl">🚗</span>' +
+          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Drive</h2>' +
+        '</div>',
+        routeHtml
+      );
+      return;
+    }
+
+    if (blk.block_type === 'bookmark') {
+      var bmHtml =
+        '<div class="space-y-3">' +
+          bTime +
+          '<p class="text-base font-semibold text-gray-800 dark:text-zinc-100">' +
+            _tripEsc(bc.title || '') + '</p>' +
+          (bc.url
+            ? '<a href="' + _tripEsc(bc.url) + '" target="_blank" rel="noopener" ' +
+                'class="text-xs text-[#0053e2] dark:text-blue-400 hover:underline break-all">' +
+                _tripEsc(bc.url) + '</a>' +
+              '<div class="mt-2">' +
+              '<a href="' + _tripEsc(bc.url) + '" target="_blank" rel="noopener" ' +
+                'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
+                       'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
+                '🔗 Open Link</a>' +
+              '</div>'
+            : '') +
+        '</div>';
+      _tripShowDrawer(
+        '<div class="flex items-center gap-2">' +
+          '<span class="text-2xl">🔖</span>' +
+          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Bookmark</h2>' +
+        '</div>',
+        bmHtml
+      );
+      return;
+    }
+  }
 };
 
 // ── Plan modal (Add / Edit Trip) ──────────────────────────────────────────────
