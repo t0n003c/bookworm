@@ -1210,67 +1210,81 @@ window.tripCloseDetailDrawer = function() {
   var bd = document.getElementById('trip-detail-backdrop');
   var dr = document.getElementById('trip-detail-drawer');
   if (dr && dr._escHandler) document.removeEventListener('keydown', dr._escHandler);
-  if (dr) dr.style.transform = 'translateY(100%)';
   if (bd) bd.style.opacity   = '0';
+  if (dr) { dr.style.opacity = '0'; dr.style.transform = 'scale(0.96)'; }
   setTimeout(function() {
-    if (document.getElementById('trip-detail-backdrop')) document.getElementById('trip-detail-backdrop').remove();
-    if (document.getElementById('trip-detail-drawer'))   document.getElementById('trip-detail-drawer').remove();
-  }, 250);
+    var b = document.getElementById('trip-detail-backdrop');
+    var d = document.getElementById('trip-detail-drawer');
+    if (b) b.remove();
+    if (d) d.remove();
+  }, 200);
 };
 
 // _tripShowDrawer(contentHtml)
-// contentHtml = full inner content; close button is always pinned top-right.
+// Renders a centred popup modal; close button always pinned top-right.
 function _tripShowDrawer(contentHtml) {
-  // Dismiss any open drawer first (synchronous DOM remove — no timeout race)
+  // Dismiss any existing modal synchronously
   var oldBd = document.getElementById('trip-detail-backdrop');
   var oldDr = document.getElementById('trip-detail-drawer');
   if (oldDr && oldDr._escHandler) document.removeEventListener('keydown', oldDr._escHandler);
   if (oldBd) oldBd.remove();
   if (oldDr) oldDr.remove();
 
-  // Backdrop — z-40, covers whole viewport, click to close
+  var dk = document.documentElement.classList.contains('dark');
+
+  // Backdrop — full-screen dimmer, click outside to close
   var bd = document.createElement('div');
-  bd.id            = 'trip-detail-backdrop';
-  bd.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(0,0,0,0.45);' +
-                     'transition:opacity 200ms;opacity:0';
+  bd.id = 'trip-detail-backdrop';
+  bd.style.cssText =
+    'position:fixed;inset:0;z-index:40;' +
+    'background:rgba(0,0,0,0.5);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;' +
+    'transition:opacity 180ms;opacity:0';
   bd.setAttribute('aria-hidden', 'true');
-  bd.onclick = window.tripCloseDetailDrawer;
+  // Click on backdrop itself (not the panel) closes
+  bd.addEventListener('click', function(e) {
+    if (e.target === bd) window.tripCloseDetailDrawer();
+  });
   document.body.appendChild(bd);
 
-  // Drawer — z-50, fixed bottom sheet, relative so the abs close btn works
+  // Panel
   var dr = document.createElement('div');
   dr.id = 'trip-detail-drawer';
   dr.setAttribute('role', 'dialog');
   dr.setAttribute('aria-modal', 'true');
   dr.style.cssText =
-    'position:fixed;bottom:0;left:0;right:0;z-index:50;' +
-    'border-radius:20px 20px 0 0;' +
-    'box-shadow:0 -4px 32px rgba(0,0,0,0.18);' +
-    'transition:transform 220ms cubic-bezier(.32,.72,0,1);' +
-    'transform:translateY(100%);' +
-    'max-height:80vh;display:flex;flex-direction:column;' +
-    'background:' + (document.documentElement.classList.contains('dark') ? '#18181b' : '#fff');
+    'position:relative;z-index:50;' +
+    'width:100%;max-width:480px;max-height:85vh;' +
+    'border-radius:16px;overflow:hidden;' +
+    'display:flex;flex-direction:column;' +
+    'box-shadow:0 8px 48px rgba(0,0,0,0.28);' +
+    'background:' + (dk ? '#18181b' : '#ffffff') + ';' +
+    'transition:opacity 180ms,transform 180ms cubic-bezier(.4,0,.2,1);' +
+    'opacity:0;transform:scale(0.96)';
 
-  dr.innerHTML =
-    // Drag-handle pill
-    '<div style="flex-shrink:0;display:flex;justify-content:center;padding:12px 0 6px">' +
-      '<div style="width:40px;height:4px;border-radius:2px;' +
-                 'background:' + (document.documentElement.classList.contains('dark') ? '#3f3f46' : '#e5e7eb') + '"></div>' +
-    '</div>' +
-    // Close button — absolutely pinned top-right, always reachable
-    '<button id="trip-detail-close-btn" onclick="tripCloseDetailDrawer()" ' +
-      'style="position:absolute;top:10px;right:14px;z-index:10;' +
-             'width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;' +
-             'display:flex;align-items:center;justify-content:center;font-size:18px;' +
-             'background:' + (document.documentElement.classList.contains('dark') ? '#3f3f46' : '#f3f4f6') + ';' +
-             'color:' + (document.documentElement.classList.contains('dark') ? '#a1a1aa' : '#6b7280') + '" ' +
-      'aria-label="Close">×</button>' +
-    // Scrollable content area
-    '<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 32px">' +
-      contentHtml +
-    '</div>';
+  // Close button — absolute top-right, always visible
+  var closeBtn = document.createElement('button');
+  closeBtn.id          = 'trip-detail-close-btn';
+  closeBtn.innerHTML   = '×';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.onclick     = window.tripCloseDetailDrawer;
+  closeBtn.style.cssText =
+    'position:absolute;top:10px;right:12px;z-index:60;' +
+    'width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;' +
+    'font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;' +
+    'background:rgba(0,0,0,0.35);color:#fff;' +
+    'transition:background 150ms';
+  closeBtn.onmouseover = function() { this.style.background = 'rgba(0,0,0,0.55)'; };
+  closeBtn.onmouseout  = function() { this.style.background = 'rgba(0,0,0,0.35)'; };
 
-  document.body.appendChild(dr);
+  // Scrollable content
+  var scroll = document.createElement('div');
+  scroll.style.cssText = 'flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:28px';
+  scroll.innerHTML     = contentHtml;
+
+  dr.appendChild(closeBtn);
+  dr.appendChild(scroll);
+  bd.appendChild(dr);
 
   // ESC key
   dr._escHandler = function(e) {
@@ -1278,11 +1292,12 @@ function _tripShowDrawer(contentHtml) {
   };
   document.addEventListener('keydown', dr._escHandler);
 
-  // Animate in (double rAF ensures paint before transform)
+  // Animate in
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {
       bd.style.opacity   = '1';
-      dr.style.transform = 'translateY(0)';
+      dr.style.opacity   = '1';
+      dr.style.transform = 'scale(1)';
     });
   });
 }
