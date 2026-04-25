@@ -17,6 +17,7 @@ var _TPP_TYPES = {
   budget:    { icon: '💰', label: 'Budget',        desc: 'Track spend vs budget' },
   emergency: { icon: '🆘', label: 'Emergency',    desc: 'Contacts, insurance, medical' },
   notes:     { icon: '📝', label: 'Trip Notes',   desc: 'Free-form scratchpad' },
+  settle:    { icon: '🤝', label: 'Settle Up',    desc: 'Split costs & settle debts' },
 };
 
 var _tppModalMode    = 'add';   // 'add' | 'edit'
@@ -190,6 +191,7 @@ function _tppBody(p, data, isEdit) {
   if (p.panel_type === 'budget')    return _tppBudget(p, data, isEdit);
   if (p.panel_type === 'emergency') return _tppEmerg(p, data, isEdit);
   if (p.panel_type === 'notes')     return _tppNotes(p, data, isEdit);
+  if (p.panel_type === 'settle')    return _tppSettle(p, data, isEdit);
   return _tppEmpty('Unknown type');
 }
 
@@ -447,25 +449,28 @@ function _tppEmerg(p, data, isEdit) {
 function _tppNotes(p, data, isEdit) {
   var text = data.text || '';
   if (isEdit) {
-    return '<div class="flex-1 flex flex-col p-2 min-h-0">' +
+    return '<div class="flex-1 flex flex-col p-2 gap-1.5 min-h-0">' +
       '<textarea id="tpp-notes-' + p.id + '" ' +
-        'class="flex-1 w-full text-xs text-gray-700 dark:text-zinc-200 ' +
-               'bg-transparent resize-none outline-none leading-relaxed ' +
-               'border-0 focus:ring-0 min-h-[8rem]" ' +
+        'class="flex-1 w-full text-xs ' +
+               'text-gray-800 dark:text-zinc-100 ' +
+               'bg-white dark:bg-zinc-800 ' +
+               'border border-gray-200 dark:border-zinc-600 ' +
+               'rounded-lg px-2 py-2 ' +
+               'resize-none focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 ' +
+               'leading-relaxed min-h-[8rem] placeholder-gray-400 dark:placeholder-zinc-500" ' +
         'placeholder="Write anything… Markdown supported.">' +
         _tripEsc(text) +
       '</textarea>' +
-      '<div class="flex-shrink-0 pt-1">' +
-        '<button onclick="tppSaveNotes(' + p.id + ')" ' +
-          'class="' + _tppBtnPrimary() + ' w-full">💾 Save Notes</button>' +
-      '</div>' +
+      '<button onclick="tppSaveNotes(' + p.id + ')" ' +
+        'class="' + _tppBtnPrimary() + ' w-full flex-shrink-0">💾 Save Notes</button>' +
     '</div>';
   }
   return '<div class="flex-1 overflow-y-auto p-3">' +
-    '<div class="md-body text-xs text-gray-700 dark:text-zinc-200 leading-relaxed">' +
+    '<div class="md-body text-xs text-gray-800 dark:text-zinc-100 leading-relaxed ' +
+         'prose prose-xs dark:prose-invert max-w-none">' +
       (text.trim()
-        ? (typeof _tripMdToHtml === 'function' ? _tripMdToHtml(text) : _tripEsc(text))
-        : '<span class="text-gray-400 italic">No notes yet.</span>') +
+        ? (typeof _tripMdToHtml === 'function' ? _tripMdToHtml(text) : _tripEsc(text).replace(/\n/g, '<br>'))
+        : '<span class="text-gray-400 dark:text-zinc-500 italic">No notes yet.</span>') +
     '</div>' +
   '</div>';
 }
@@ -666,7 +671,291 @@ window.tppSaveNotes = function(panelId) {
   _tppSave(panelId, d, function() { _tripShowToast('Notes saved ✓'); });
 };
 
-// ── Panel-level CRUD ──────────────────────────────────────────────────────────
+// ── Settle Up ────────────────────────────────────────────────────────────────────
+
+function _tppSettle(p, data, isEdit) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  var cur      = data.currency || 'USD';
+
+  // ─ Currency row (edit mode) ─────────────────────────────────
+  var curRow = isEdit
+    ? '<div class="flex items-center gap-1.5 px-3 pt-2 pb-1">' +
+        '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Currency:</span>' +
+        '<input id="tpp-settle-cur-' + p.id + '" type="text" maxlength="5" ' +
+          'value="' + _tripEsc(cur) + '" ' +
+          'class="w-14 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
+                 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+                 'px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" />' +
+        '<button onclick="tppSettleSaveCur(' + p.id + ')" ' +
+          'class="text-[10px] px-2 py-1 rounded bg-gray-100 dark:bg-zinc-700 ' +
+                 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 transition">Set</button>' +
+      '</div>'
+    : '';
+
+  // ─ People chips ───────────────────────────────────────
+  var chips = people.map(function(name, idx) {
+    var del = isEdit
+      ? '<button onclick="tppRemoveSettlePerson(' + p.id + ',' + idx + ')" ' +
+          'class="ml-0.5 text-gray-400 hover:text-red-400 leading-none">&times;</button>'
+      : '';
+    return '<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] ' +
+      'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300 border ' +
+      'border-blue-200 dark:border-blue-700">' +
+      _tripEsc(name) + del + '</span>';
+  }).join('');
+
+  var addPersonRow = isEdit
+    ? '<div class="flex gap-1 mt-1">' +
+        '<input id="tpp-settle-person-' + p.id + '" type="text" maxlength="40" ' +
+          'placeholder="Name" ' +
+          'class="flex-1 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
+                 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+                 'px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" ' +
+          'onkeydown="if(event.key===\'Enter\'){tppAddSettlePerson(' + p.id + ');event.preventDefault();}" />' +
+        '<button onclick="tppAddSettlePerson(' + p.id + ')" ' +
+          'class="flex-shrink-0 px-2 py-1 text-xs rounded bg-[#0053e2] text-white ' +
+                 'hover:bg-[#0046c0] transition">＋</button>' +
+      '</div>'
+    : '';
+
+  var peopleSection =
+    '<div class="px-3 py-2 flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
+      '<p class="text-[10px] font-semibold uppercase tracking-wide ' +
+         'text-gray-400 dark:text-zinc-500 mb-1">👥 People</p>' +
+      '<div class="flex flex-wrap gap-1">' +
+        (chips || '<span class="text-[10px] text-gray-400 dark:text-zinc-500 italic">No people yet</span>') +
+      '</div>' +
+      addPersonRow +
+    '</div>';
+
+  // ─ Expenses list ──────────────────────────────────────
+  var expRows = expenses.map(function(exp, idx) {
+    var payer    = people[exp.paid_by] || '?';
+    var splitNames = (exp.split || []).map(function(i) { return people[i] || '?'; }).join(', ');
+    var del = isEdit
+      ? '<button onclick="tppDeleteSettleExp(' + p.id + ',' + idx + ')" ' +
+          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
+      : '';
+    return '<div class="flex items-start gap-1 px-3 py-1.5 border-b ' +
+             'border-gray-50 dark:border-zinc-800/60 last:border-0">' +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="flex items-baseline justify-between gap-1">' +
+          '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
+            _tripEsc(exp.desc || 'Expense') + '</span>' +
+          '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-shrink-0">' +
+            cur + ' ' + parseFloat(exp.amount || 0).toFixed(2) + '</span>' +
+        '</div>' +
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 truncate">' +
+          '💳 ' + _tripEsc(payer) +
+          ' · split: ' + _tripEsc(splitNames) + '</p>' +
+      '</div>' + del + '</div>';
+  }).join('');
+
+  var expSection =
+    '<div class="flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
+      '<p class="text-[10px] font-semibold uppercase tracking-wide ' +
+         'text-gray-400 dark:text-zinc-500 px-3 pt-2 pb-0.5">💸 Expenses</p>' +
+      '<div class="max-h-40 overflow-y-auto">' +
+        (expRows || '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic px-3 py-1">No expenses yet</p>') +
+      '</div>' +
+    '</div>';
+
+  // ─ Expense add form ──────────────────────────────────
+  var splitBtns = people.length
+    ? people.map(function(name, idx) {
+        return '<button type="button" data-split-idx="' + idx + '" data-selected="1" ' +
+          'onclick="tppToggleSettleSplit(this)" ' +
+          'class="tpp-split-btn px-1.5 py-0.5 text-[10px] rounded-full border transition ' +
+                 'bg-[#0053e2] border-[#0053e2] text-white ' +
+                 'dark:bg-[#0053e2] dark:border-[#0053e2]">' +
+          _tripEsc(name) + '</button>';
+      }).join('')
+    : '<span class="text-[10px] text-gray-400 dark:text-zinc-500 italic">Add people first</span>';
+
+  var expForm = isEdit && people.length >= 2
+    ? '<div id="tpp-settle-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
+        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
+        '<input id="tpp-settle-desc-' + p.id + '" type="text" placeholder="What was it?" maxlength="60" ' +
+          'class="' + _tppInputCls() + '" />' +
+        '<div class="flex gap-1.5">' +
+          '<input id="tpp-settle-amt-' + p.id + '" type="number" step="0.01" min="0" ' +
+            'placeholder="Amount" class="' + _tppInputCls() + ' flex-1" />' +
+          '<select id="tpp-settle-payer-' + p.id + '" class="' + _tppInputCls() + ' flex-1">' +
+            people.map(function(name, i) {
+              return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
+            }).join('') +
+          '</select>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-[10px] text-gray-500 dark:text-zinc-400 mb-1">Split between:</p>' +
+          '<div id="tpp-settle-split-' + p.id + '" class="flex flex-wrap gap-1">' +
+            splitBtns +
+          '</div>' +
+        '</div>' +
+        _tppFormBtns('tppSaveSettleExp(' + p.id + ')', 'tppHideForm(' + p.id + ',\'settle\')') +
+      '</div>'
+    : '';
+
+  // ─ Settlement summary ─────────────────────────────────
+  var txns = _tppComputeSettlement(data);
+  var txnRows = txns.map(function(t) {
+    return '<div class="flex items-center gap-1 py-1">' +
+      '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate max-w-[35%]">' +
+        _tripEsc(people[t.from] || '?') + '</span>' +
+      '<span class="text-[10px] text-gray-400 flex-shrink-0">→ pays</span>' +
+      '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate flex-1 max-w-[35%]">' +
+        _tripEsc(people[t.to] || '?') + '</span>' +
+      '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0 ml-auto">' +
+        cur + ' ' + t.amt.toFixed(2) + '</span>' +
+    '</div>';
+  }).join('');
+
+  var settleSection = expenses.length && people.length >= 2
+    ? '<div class="flex-shrink-0 px-3 py-2 ' +
+        'bg-blue-50/50 dark:bg-blue-900/10 ' +
+        'border-t border-blue-100 dark:border-blue-900/30">' +
+        '<p class="text-[10px] font-semibold uppercase tracking-wide ' +
+           'text-[#0053e2] dark:text-blue-400 mb-1">✅ Who Pays Who</p>' +
+        (txnRows ||
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic">All square! 🎉</p>') +
+      '</div>'
+    : '';
+
+  var footer = isEdit && people.length >= 2
+    ? _tppAddBtn('tppShowForm(' + p.id + ',\'settle\')', '＋ Add Expense')
+    : (isEdit && people.length < 2
+      ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic text-center py-2">' +
+          'Add at least 2 people to start</p>'
+      : '');
+
+  return curRow + peopleSection + expSection + expForm + settleSection + footer;
+}
+
+// Compute minimum transactions to settle all debts (greedy algorithm)
+function _tppComputeSettlement(data) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  if (people.length < 2 || !expenses.length) return [];
+
+  // Net balance: positive = owed money, negative = owes money
+  var bal = people.map(function() { return 0; });
+  expenses.forEach(function(exp) {
+    var amt   = parseFloat(exp.amount) || 0;
+    var payer = parseInt(exp.paid_by, 10);
+    var split = exp.split || [];
+    if (!split.length || isNaN(payer) || payer < 0 || payer >= people.length) return;
+    var share = amt / split.length;
+    bal[payer] += amt;
+    split.forEach(function(idx) {
+      if (idx >= 0 && idx < people.length) bal[idx] -= share;
+    });
+  });
+
+  // Separate into creditors (positive) and debtors (negative)
+  var cred = [], debt = [];
+  bal.forEach(function(b, i) {
+    if (b >  0.005) cred.push({ idx: i, amt: b });
+    if (b < -0.005) debt.push({ idx: i, amt: -b });
+  });
+  cred.sort(function(a, b) { return b.amt - a.amt; });
+  debt.sort(function(a, b) { return b.amt - a.amt; });
+
+  var txns = [], ci = 0, di = 0;
+  while (ci < cred.length && di < debt.length) {
+    var settle = Math.min(cred[ci].amt, debt[di].amt);
+    if (settle > 0.005) {
+      txns.push({ from: debt[di].idx, to: cred[ci].idx, amt: Math.round(settle * 100) / 100 });
+    }
+    cred[ci].amt -= settle;
+    debt[di].amt -= settle;
+    if (cred[ci].amt < 0.005) ci++;
+    if (debt[di].amt < 0.005) di++;
+  }
+  return txns;
+}
+
+// Settle Up window functions
+window.tppToggleSettleSplit = function(btn) {
+  var sel = btn.getAttribute('data-selected') === '1';
+  btn.setAttribute('data-selected', sel ? '0' : '1');
+  if (!sel) {
+    btn.className = btn.className
+      .replace('bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-600',
+               'bg-[#0053e2] border-[#0053e2] text-white dark:bg-[#0053e2] dark:border-[#0053e2]');
+  } else {
+    btn.className = btn.className
+      .replace('bg-[#0053e2] border-[#0053e2] text-white dark:bg-[#0053e2] dark:border-[#0053e2]',
+               'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-600');
+  }
+};
+
+window.tppAddSettlePerson = function(panelId) {
+  var inp  = document.getElementById('tpp-settle-person-' + panelId);
+  var name = inp ? inp.value.trim() : '';
+  if (!name) return;
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.people) d.people = [];
+  d.people.push(name);
+  _tppSave(panelId, d);
+};
+
+window.tppRemoveSettlePerson = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  // Remove person, then remap expense references
+  d.people.splice(idx, 1);
+  var total = d.people.length;
+  d.expenses = (d.expenses || []).filter(function(exp) {
+    exp.split    = (exp.split || []).filter(function(i) { return i !== idx; })
+                                    .map(function(i) { return i > idx ? i - 1 : i; });
+    if (exp.paid_by === idx) return false;         // remove expenses paid by deleted person
+    if (exp.paid_by > idx) exp.paid_by -= 1;
+    return exp.split.length > 0 && exp.paid_by >= 0 && exp.paid_by < total;
+  });
+  _tppSave(panelId, d);
+};
+
+window.tppSaveSettleExp = function(panelId) {
+  var desc  = ((document.getElementById('tpp-settle-desc-'  + panelId) || {}).value || '').trim();
+  var amt   = parseFloat((document.getElementById('tpp-settle-amt-' + panelId) || {}).value || '0');
+  var payer = parseInt((document.getElementById('tpp-settle-payer-' + panelId) || {}).value || '0', 10);
+  var splitContainer = document.getElementById('tpp-settle-split-' + panelId);
+  var splitIdxs = [];
+  if (splitContainer) {
+    var btns = splitContainer.querySelectorAll('.tpp-split-btn');
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].getAttribute('data-selected') === '1') {
+        splitIdxs.push(parseInt(btns[i].getAttribute('data-split-idx'), 10));
+      }
+    }
+  }
+  if (!desc) { _tripShowToast('Description required', true); return; }
+  if (!amt || amt <= 0) { _tripShowToast('Amount required', true); return; }
+  if (!splitIdxs.length) { _tripShowToast('Select at least one person to split with', true); return; }
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.expenses) d.expenses = [];
+  d.expenses.push({ desc: desc, paid_by: payer, amount: amt, split: splitIdxs });
+  _tppSave(panelId, d);
+};
+
+window.tppDeleteSettleExp = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  (d.expenses || []).splice(idx, 1);
+  _tppSave(panelId, d);
+};
+
+window.tppSettleSaveCur = function(panelId) {
+  var cur = ((document.getElementById('tpp-settle-cur-' + panelId) || {}).value || 'USD').trim().toUpperCase();
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content); d.currency = cur;
+  _tppSave(panelId, d);
+};
+
+// ── Panel-level CRUD ────────────────────────────────────────────────
 
 window.tppDeletePanel = function(panelId, label) {
   var modal = document.getElementById('trip-del-modal');
