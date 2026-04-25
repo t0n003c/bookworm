@@ -14,6 +14,9 @@ var _tripDays         = [];
 var _tripDayEditing   = null;   // null = add mode, int = day id being edited
 var _tripPlanMode     = 'edit'; // 'edit' | 'view'
 
+// Panels — populated by home-page-trip-panels.js via window._tripLoadPanels()
+window._tripPanels    = [];
+
 // Active plan — exposed on window so home-page-trip.js topbar can branch
 window._tripActivePlanId   = null;
 window._tripActivePlanName = '';
@@ -644,6 +647,10 @@ function _loadDaysForPlan(planId) {
     .then(function() {
       _tripRenderPlan();
       if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+      // Panels module (home-page-trip-panels.js) — defensive guard
+      if (typeof window._tripLoadPanels === 'function') {
+        window._tripLoadPanels(planId);
+      }
     })
     .catch(function() { _tripShowToast('Failed to load plan', true); });
 }
@@ -664,6 +671,10 @@ function _tripRenderPlan() {
   container.innerHTML = _tripDays.map(function(d) {
     return _tripRenderDayLane(d);
   }).join('');
+  // Append panel cards (home-page-trip-panels.js) — defensive guard
+  if (typeof window._tripRenderPanelCards === 'function') {
+    window._tripRenderPanelCards(container);
+  }
   _tripSyncSizeSlider();
 }
 

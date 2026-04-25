@@ -981,6 +981,26 @@ async def init_db() -> None:
                 "plan_id INTEGER REFERENCES trip_plans(id) ON DELETE CASCADE"
             )
 
+        # 🗂️ trip_plan_panels — trip-scoped utility cards (documents, packing,
+        #    budget, emergency info, notes) rendered alongside day lanes.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS trip_plan_panels (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL REFERENCES home_pages(id) ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
+                plan_id     INTEGER NOT NULL REFERENCES trip_plans(id)  ON DELETE CASCADE,
+                panel_type  TEXT    NOT NULL,
+                title       TEXT    NOT NULL DEFAULT '',
+                content     TEXT    NOT NULL DEFAULT '{}',
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trip_plan_panels_plan "
+            "ON trip_plan_panels(plan_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager
