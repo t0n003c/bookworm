@@ -510,6 +510,12 @@ function _tripSpotNotesInit(markdown) {
   if (markdown && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
     marked.use({ gfm: true, breaks: true });
     ce.innerHTML = DOMPurify.sanitize(marked.parse(markdown));
+  } else {
+    // Seed with a block element so the cursor lands inside a <p> on focus.
+    // Without this, formatBlock (quote, headings) and insertHTML (code block)
+    // operate on a bare text node at the CE root and fail silently in Chrome.
+    // Mirrors _tripNoteInit in home-page-trip-plan.js.
+    ce.innerHTML = '<p><br></p>';
   }
   if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
   if (typeof window.bwFmtAttach    === 'function') window.bwFmtAttach(ce);

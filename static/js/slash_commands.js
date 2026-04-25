@@ -75,8 +75,16 @@ const SLASH_COMMANDS = [
              <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101 m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                    stroke-linecap="round" stroke-linejoin="round"/>
            </svg>`,
-    // action: erase the /query text, then open the link modal
-    action: () => { if (typeof window.showLinkModal === 'function') window.showLinkModal(); },
+    // After the slash text is deleted the CE still has focus — prompt for URL,
+    // then insertHTML so Turndown converts it to [text](url) on save.
+    action: () => {
+      const url = window.prompt('Link URL:', 'https://');
+      if (!url || !url.trim()) return;
+      const text    = window.prompt('Link text (leave blank to use URL):', '') || url.trim();
+      const safeUrl = url.trim().replace(/"/g, '%22');
+      const safeTxt = text.trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') || safeUrl;
+      document.execCommand('insertHTML', false, '<a href="' + safeUrl + '">' + safeTxt + '</a>');
+    },
   },
   {
     id: 'quote', label: 'Blockquote', desc: 'Indented quote block',
