@@ -10,18 +10,21 @@ from __future__ import annotations
 
 import json
 import logging
+from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from database import get_db
+from routers.attachments_db import UPLOAD_DIR
 from routers.home_db import get_home_page
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
-_PANEL_TYPES = frozenset({"documents", "packing", "budget", "emergency", "notes"})
-_DEMO_NOOP   = Response(status_code=204, headers={"HX-Reswap": "none"})
+_PANEL_TYPES  = frozenset({"documents", "packing", "budget", "emergency", "notes"})
+_DEMO_NOOP    = Response(status_code=204, headers={"HX-Reswap": "none"})
+_MAX_DOC_MB   = 20
 
 
 def _demo_guard(request: Request):
@@ -226,7 +229,34 @@ async def reorder_panels(page_id: int, plan_id: int, request: Request):
     return JSONResponse({"ok": True})
 
 
-# ── Default content per panel type ────────────────────────────────────────────
+@router.post("/trip/{page_id}/plans/{plan_id}/panels/{panel_id}/upload-doc")
+async def upload_panel_doc(
+    request: Request, page_id: int, plan_id: int, panel_id: int,
+    file: UploadFile = File(...),
+):
+    """Upload a file to a Documents panel. Returns {url, name}."""
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if guard := _demo_guard(request):
+        return guard
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    data = await file.read()
+    if len(data) > _MAX_DOC_MB * 1024 * 1024:
+        return _err(f"File too large — max {_MAX_DOC_MB} MB")
+    original_name = (file.filename or "file").strip()
+    raw_ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else "bin"
+    stored_name = f"pdoc{panel_id}_{uuid4().hex[:10]}.{raw_ext}"
+    doc_dir = UPLOAD_DIR / "trip-panel-docs"
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    (doc_dir / stored_name).write_bytes(data)
+    url = f"/uploads/trip-panel-docs/{stored_name}"
+    return JSONResponse({"url": url, "name": original_name})
+
+
+# ── Default content per panel type ────────────────────────────────────────────────
 
 def _default_content(panel_type: str) -> dict:
     defaults = {

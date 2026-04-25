@@ -198,22 +198,28 @@ function _tppBody(p, data, isEdit) {
 function _tppDocs(p, data, isEdit) {
   var items = data.items || [];
   var rows = items.map(function(item, idx) {
+    var isUpload = item.url && item.url.indexOf('/uploads/') === 0;
+    var icon     = isUpload ? '📄' : '🔗';
+    var linkHtml = item.url
+      ? '<a href="' + _tripEsc(item.url) + '" target="_blank" rel="noopener" ' +
+          'onclick="event.stopPropagation()" ' +
+          'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline truncate block">' +
+          (isUpload
+            ? _tripEsc(item.url.split('/').pop())
+            : _tripEsc(item.url)) +
+        '</a>'
+      : '';
     var del = isEdit
       ? '<button onclick="tppDeleteDocItem(' + p.id + ',' + idx + ')" ' +
           'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
       : '';
     return '<div class="flex items-start gap-2 px-3 py-2 border-b ' +
            'border-gray-50 dark:border-zinc-800 last:border-0">' +
-      '<span class="text-sm flex-shrink-0 mt-0.5">🔗</span>' +
+      '<span class="text-sm flex-shrink-0 mt-0.5">' + icon + '</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
-          _tripEsc(item.title || 'Link') + '</p>' +
-        (item.url
-          ? '<a href="' + _tripEsc(item.url) + '" target="_blank" rel="noopener" ' +
-              'onclick="event.stopPropagation()" ' +
-              'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline truncate block">' +
-              _tripEsc(item.url) + '</a>'
-          : '') +
+          _tripEsc(item.title || 'Document') + '</p>' +
+        linkHtml +
         (item.note ? '<p class="text-[10px] text-gray-400 truncate">' + _tripEsc(item.note) + '</p>' : '') +
       '</div>' + del + '</div>';
   }).join('');
@@ -223,8 +229,21 @@ function _tppDocs(p, data, isEdit) {
         'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
         '<input id="tpp-doc-title-' + p.id + '" type="text" placeholder="Title" maxlength="80" ' +
           'class="' + _tppInputCls() + '" />' +
-        '<input id="tpp-doc-url-' + p.id + '" type="url" placeholder="https://…" ' +
-          'class="' + _tppInputCls() + '" />' +
+        '<div class="flex gap-1.5 items-center">' +
+          '<input id="tpp-doc-url-' + p.id + '" type="text" placeholder="https://… or upload a file" ' +
+            'class="' + _tppInputCls() + ' flex-1" />' +
+          '<button type="button" onclick="tppPickDocFile(' + p.id + ')" ' +
+            'title="Upload a file" ' +
+            'class="flex-shrink-0 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
+                   'dark:border-zinc-700 text-gray-500 dark:text-zinc-400 ' +
+                   'hover:bg-gray-100 dark:hover:bg-zinc-700 transition whitespace-nowrap">' +
+            '📁 Upload' +
+          '</button>' +
+        '</div>' +
+        '<input id="tpp-doc-file-' + p.id + '" type="file" ' +
+          'onchange="tppUploadDocFile(' + p.id + ')" ' +
+          'style="display:none" />' +
+        '<p id="tpp-doc-status-' + p.id + '" class="text-[10px] text-gray-400 -mt-0.5 min-h-[1rem]"></p>' +
         '<input id="tpp-doc-note-' + p.id + '" type="text" placeholder="Note (optional)" maxlength="120" ' +
           'class="' + _tppInputCls() + '" />' +
         _tppFormBtns('tppSaveDocItem(' + p.id + ')', 'tppHideForm(' + p.id + ',\'doc\')') +
@@ -232,10 +251,10 @@ function _tppDocs(p, data, isEdit) {
     : '';
 
   var footer = isEdit
-    ? _tppAddBtn('tppShowForm(' + p.id + ',\'doc\')', '＋ Add Link')
+    ? _tppAddBtn('tppShowForm(' + p.id + ',\'doc\')', '＋ Add Document')
     : '';
 
-  return '<div class="flex-1 overflow-y-auto">' + (rows || _tppEmpty('No links yet')) + '</div>' +
+  return '<div class="flex-1 overflow-y-auto">' + (rows || _tppEmpty('No documents yet')) + '</div>' +
          form + footer;
 }
 
@@ -516,6 +535,47 @@ window.tppSaveDocItem = function(panelId) {
   if (!d.items) d.items = [];
   d.items.push({ title: title, url: url, note: note });
   _tppSave(panelId, d);
+};
+
+// Trigger hidden file picker
+window.tppPickDocFile = function(panelId) {
+  var inp = document.getElementById('tpp-doc-file-' + panelId);
+  if (inp) inp.click();
+};
+
+// Upload selected file → populate URL + title fields
+window.tppUploadDocFile = function(panelId) {
+  var fileInp   = document.getElementById('tpp-doc-file-' + panelId);
+  var urlInp    = document.getElementById('tpp-doc-url-'  + panelId);
+  var titleInp  = document.getElementById('tpp-doc-title-' + panelId);
+  var statusEl  = document.getElementById('tpp-doc-status-' + panelId);
+  var addBtn    = fileInp && fileInp.closest('div[id^="tpp-doc-form"]') &&
+                  fileInp.closest('div[id^="tpp-doc-form"]').querySelector('button[onclick^="tppSaveDocItem"]');
+  if (!fileInp || !fileInp.files || !fileInp.files[0]) return;
+  var file = fileInp.files[0];
+
+  if (statusEl) statusEl.textContent = '⏳ Uploading…';
+  if (addBtn)   addBtn.setAttribute('disabled', '');
+
+  var fd = new FormData();
+  fd.append('file', file);
+  _tripFetch(
+    '/home/trip/' + _tripPid + '/plans/' + _tppPlanId + '/panels/' + panelId + '/upload-doc',
+    { method: 'POST', body: fd }
+  ).then(function(r) { return r.json(); })
+   .then(function(data) {
+     if (data.error) throw new Error(data.error);
+     if (urlInp)   urlInp.value   = data.url;
+     if (titleInp && !titleInp.value.trim()) titleInp.value = data.name;
+     if (statusEl) statusEl.textContent = '✓ Ready — click Add to save';
+     if (addBtn)   addBtn.removeAttribute('disabled');
+     // Reset file input so the same file can be re-picked
+     fileInp.value = '';
+   })
+   .catch(function(err) {
+     if (statusEl) statusEl.textContent = '❌ ' + (err.message || 'Upload failed');
+     if (addBtn)   addBtn.removeAttribute('disabled');
+   });
 };
 
 // Packing
