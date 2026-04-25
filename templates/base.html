@@ -385,6 +385,31 @@
     .dark .md-body hr { border-color: #3f3f46; }
     .md-body a { color: #0053e2; text-decoration: underline; }
 
+    /* ── Trip Spot notes CE prose styles ────────────────────────────────
+       #tsf-notes-ce uses contenteditable but has no md-body/prose class,
+       so blockquote / pre / code / a elements need explicit rules here. */
+    #tsf-notes-ce blockquote {
+      border-left: 3px solid #0053e2;
+      padding-left: .6rem;
+      margin: .25rem 0;
+      color: #6b7280;
+    }
+    .dark #tsf-notes-ce blockquote { color: #a1a1aa; border-left-color: #3b82f6; }
+    #tsf-notes-ce pre {
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: .4rem .7rem;
+      margin: .25rem 0;
+      overflow-x: auto;
+    }
+    .dark #tsf-notes-ce pre { background: #27272a; }
+    #tsf-notes-ce pre code, #tsf-notes-ce code {
+      font-family: ui-monospace, 'Courier New', monospace;
+      font-size: .85em;
+    }
+    #tsf-notes-ce a { color: #0053e2; text-decoration: underline; }
+    .dark #tsf-notes-ce a { color: #60a5fa; }
+
     /* ── Rich-link components: mention pill, bookmark card, embed card ────
        Colours live here (not inline) so light↔dark toggle works instantly. */
 

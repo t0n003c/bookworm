@@ -678,20 +678,28 @@ function _ceLinkDialog(ce, postDeleteRange) {
     const url  = (urlInput.value  || '').trim();
     if (!url) { urlInput.focus(); return; }
     const text = (textInput.value || '').trim() || url;
-    const safeUrl = url.replace(/"/g, '%22');
-    const safeTxt = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     close();
-    // Restore focus + cursor so insertHTML lands at the right spot
-    ce.focus();
+    // Use Range.insertNode() — pure DOM, no execCommand, no focus/selection dependency.
+    // postDeleteRange is a collapsed Range pointing to the deletion site inside
+    // the CE, captured before the dialog opened. The <p> is still there; just insert.
     if (postDeleteRange) {
       try {
+        const a   = document.createElement('a');
+        a.href        = url.replace(/"/g, '%22');
+        a.textContent = text;
+        const r = postDeleteRange.cloneRange();
+        r.insertNode(a);          // inserts at the deletion site
+        r.setStartAfter(a);       // move cursor to just after the link
+        r.collapse(true);
+        ce.focus();
         const s = window.getSelection();
         s.removeAllRanges();
-        s.addRange(postDeleteRange);
-      } catch (_) {}
+        s.addRange(r);
+      } catch (err) {
+        // Absolute fallback — log and carry on
+        console.warn('[bw-link] insertNode failed:', err);
+      }
     }
-    document.execCommand('insertHTML', false,
-      '<a href="' + safeUrl + '">' + safeTxt + '</a>');
     ce.dispatchEvent(new Event('input'));
   }
 
@@ -850,6 +858,34 @@ function _applyCE(cmd) {
       deleteRange.setEnd(container, offset);
     }
 
+    // ── Action path: use Range.deleteContents() instead of execCommand ────
+    // execCommand('delete') corrupts Chrome's internal selection state in
+    // modal CEs — subsequent window.getSelection() returns a stale or empty
+    // range that _ceFindBlock() cannot use to locate the enclosing block.
+    // Range.deleteContents() is a pure DOM operation with no side-effects on
+    // the selection API state, making it safe to use before DOM insertions.
+    if (cmd.action) {
+      let actRange = null;
+      if (deleteRange) {
+        deleteRange.deleteContents();       // collapses deleteRange in-place
+        sel.removeAllRanges();
+        sel.addRange(deleteRange);          // selection = collapsed point at deletion site
+        actRange = deleteRange.cloneRange();
+      } else {
+        // Fallback: span across multiple text nodes — execCommand is acceptable
+        // here because the action helpers fall back to actRange, not live selection
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+        for (let i = 0; i < charsToDelete; i++) sel.modify('extend', 'backward', 'character');
+        document.execCommand('delete');
+        if (sel.rangeCount) actRange = sel.getRangeAt(0).cloneRange();
+      }
+      ce.dispatchEvent(new Event('input'));
+      cmd.action(ce, actRange);
+      return;
+    }
+
+    // ── Non-action path (ceHtml / ceExec / ceInsert) ──────────────────────
     if (deleteRange) {
       sel.removeAllRanges();
       sel.addRange(deleteRange);
@@ -862,19 +898,6 @@ function _applyCE(cmd) {
       }
     }
     document.execCommand('delete');
-
-    // action commands: /query text is gone — fire the callback and done.
-    // Pass `ce` so the action can refocus it, and `postDeleteRange` so the
-    // action can restore the cursor if a dialog stole focus in the interim.
-    if (cmd.action) {
-      ce.dispatchEvent(new Event('input'));
-      const sel2 = window.getSelection();
-      const postDeleteRange = (sel2 && sel2.rangeCount)
-        ? sel2.getRangeAt(0).cloneRange()
-        : null;
-      cmd.action(ce, postDeleteRange);
-      return;
-    }
 
     // Apply — priority: ceHtml > ceExec > ceInsert / snippet
     if (cmd.ceHtml) {
