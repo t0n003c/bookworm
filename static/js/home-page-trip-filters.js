@@ -359,7 +359,6 @@ function _dirToggle(fn, dir) {
 // Plan filter / sort (trip-plans-view top toolbar)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-var _planStatusFilter = 'all';     // 'all' | 'active' | 'upcoming' | 'past' | 'undated'
 var _planYearFilter   = 'all';     // 'all' | '2024' | '2025' | …
 var _planSortBy       = 'default'; // 'default' | 'name' | 'start_date' | 'end_date' | 'days'
 var _planSortDir      = 'asc';
@@ -380,14 +379,6 @@ window._tripRenderPlanFilterBar = function() {
   var plans = typeof _tripPlans !== 'undefined' ? _tripPlans : [];
   if (!plans.length) { bar.innerHTML = ''; return; }
 
-  var statusOpts = [
-    ['all',     'Status: All'],
-    ['active',  '\u2708\ufe0f Active'],
-    ['upcoming','\ud83d\udcc5 Upcoming'],
-    ['past',    '\ud83d\uddc2\ufe0f Past'],
-    ['undated', '\ud83d\udccb No Date'],
-  ];
-
   var years    = _planYears(plans);
   var yearOpts = [['all', 'Year: All']].concat(
     years.map(function(y) { return [y, y]; })
@@ -401,10 +392,8 @@ window._tripRenderPlanFilterBar = function() {
     ['days',       'Sort: Day Count'],
   ];
 
-  // All controls live on the right side of the bar
   bar.innerHTML =
     '<div class="flex items-center gap-2 ml-auto flex-shrink-0">' +
-      _selectCtrl('tripSetPlanStatus', _planStatusFilter, statusOpts) +
       (years.length ? _selectCtrl('tripSetPlanYear', _planYearFilter, yearOpts) : '') +
       _selectCtrl('tripSetPlanSort', _planSortBy, sortOpts) +
       (_planSortBy !== 'default' ? _dirToggle('tripTogglePlanSortDir', _planSortDir) : '') +
@@ -415,12 +404,6 @@ window._tripRenderPlanFilterBar = function() {
 // When sort is 'default', _tripRenderPlanCards groups by status internally.
 window._tripApplyPlanOps = function(plans) {
   var items = plans.filter(function(p) {
-    // Status filter
-    if (_planStatusFilter !== 'all') {
-      var st = (typeof _tripPlanStatus === 'function')
-        ? _tripPlanStatus(p).key : 'undated';
-      if (st !== _planStatusFilter) return false;
-    }
     // Year filter: plan overlaps the selected year if either date is in that year.
     // Plans with no dates are excluded when any specific year is selected.
     if (_planYearFilter !== 'all') {
@@ -444,12 +427,6 @@ window._tripApplyPlanOps = function(plans) {
 };
 
 // ── Plan filter controls ──────────────────────────────────────────────────────
-window.tripSetPlanStatus = function(val) {
-  _planStatusFilter = val;
-  window._tripRenderPlanFilterBar();
-  if (typeof _tripRenderPlanCards === 'function') _tripRenderPlanCards();
-};
-
 window.tripSetPlanYear = function(val) {
   _planYearFilter = val;
   window._tripRenderPlanFilterBar();

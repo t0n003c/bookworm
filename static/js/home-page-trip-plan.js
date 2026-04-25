@@ -564,6 +564,12 @@ window.tripOpenPlan = function(planId, planName) {
   if (plansView) plansView.classList.add('hidden');
   if (daysView)  daysView.classList.remove('hidden');
 
+  // Show card-width slider now that Day lanes are visible
+  var sizeWrap = document.getElementById('trip-day-size-wrap');
+  var sl       = document.getElementById('trip-day-size-slider');
+  if (sizeWrap) { sizeWrap.classList.remove('hidden'); sizeWrap.classList.add('flex'); }
+  if (sl)       { sl.value = _tripDayCardWidth; }
+
   _tripRenderDaysToolbar();
   _loadDaysForPlan(planId);
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();
@@ -577,6 +583,10 @@ window.tripClosePlan = function() {
   var daysView  = document.getElementById('trip-days-view');
   if (daysView)  daysView.classList.add('hidden');
   if (plansView) plansView.classList.remove('hidden');
+
+  // Hide card-width slider — not relevant on the trip cards grid
+  var sizeWrap = document.getElementById('trip-day-size-wrap');
+  if (sizeWrap) { sizeWrap.classList.add('hidden'); sizeWrap.classList.remove('flex'); }
 
   _loadPlans();
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();

@@ -74,11 +74,10 @@ window.tripSetTab = function(tab) {
     }
   });
   _tripRenderTopbarControls();
+  // Slider only belongs in the Day lanes view (inside a trip).
+  // tripOpenPlan / tripClosePlan own its visibility — always hide on tab switch.
   var sizeWrap = document.getElementById('trip-day-size-wrap');
-  if (sizeWrap) {
-    if (tab === 'plan') { sizeWrap.classList.remove('hidden'); sizeWrap.classList.add('flex'); }
-    else               { sizeWrap.classList.add('hidden');    sizeWrap.classList.remove('flex'); }
-  }
+  if (sizeWrap) { sizeWrap.classList.add('hidden'); sizeWrap.classList.remove('flex'); }
   if (tab === 'plan'  && typeof tripLoadPlan  === 'function') tripLoadPlan();
   if (tab === 'chart' && typeof tripLoadChart === 'function') tripLoadChart();
 };
