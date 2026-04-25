@@ -17,6 +17,10 @@
      ceExec                  — optional { cmd, arg } passed to execCommand in CE mode
      ceInsert                — optional raw text inserted via insertText in CE mode
                                (falls back to snippet when both are absent)
+     action(ce, postDeleteRange) — custom CE handler; called after slash text deleted.
+                               ce = the contenteditable el; postDeleteRange = collapsed
+                               Range at the deletion point (restore before insertHTML
+                               if focus is stolen, e.g., by a dialog).
    ───────────────────────────────────────── */
 const SLASH_COMMANDS = [
   {
@@ -75,16 +79,8 @@ const SLASH_COMMANDS = [
              <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101 m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                    stroke-linecap="round" stroke-linejoin="round"/>
            </svg>`,
-    // After the slash text is deleted the CE still has focus — prompt for URL,
-    // then insertHTML so Turndown converts it to [text](url) on save.
-    action: () => {
-      const url = window.prompt('Link URL:', 'https://');
-      if (!url || !url.trim()) return;
-      const text    = window.prompt('Link text (leave blank to use URL):', '') || url.trim();
-      const safeUrl = url.trim().replace(/"/g, '%22');
-      const safeTxt = text.trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') || safeUrl;
-      document.execCommand('insertHTML', false, '<a href="' + safeUrl + '">' + safeTxt + '</a>');
-    },
+    // Opens a styled dialog; restores cursor position on confirm before insertHTML.
+    action: (ce, postDeleteRange) => { _ceLinkDialog(ce, postDeleteRange); },
   },
   {
     id: 'quote', label: 'Blockquote', desc: 'Indented quote block',
@@ -92,7 +88,9 @@ const SLASH_COMMANDS = [
              <path d="M3 6h4v5H3zm0 7h4v5H3zm9-7h4v5h-4zm0 7h4v5h-4z" opacity=".6"/>
            </svg>`,
     snippet: '> ', cursorOffset: 2,
-    ceExec: { cmd: 'formatBlock', arg: 'BLOCKQUOTE' },
+    // CE mode: direct DOM insertion — execCommand('formatBlock') is unreliable in modal CEs
+    // (Chrome's internal selection state is dirty after a prior execCommand('delete'))
+    action: (ce) => { _ceInsertBlockquote(ce); },
   },
   {
     id: 'code', label: 'Code Block', desc: 'Fenced code block',
@@ -101,8 +99,9 @@ const SLASH_COMMANDS = [
              <polyline points="8 6 2 12 8 18"/>
            </svg>`,
     snippet: '```\n\n```', cursorOffset: 4, placeCursorMiddle: true,
-    // CE mode: insert real <pre><code> block and place cursor inside via marker attr
-    ceHtml: '<pre><code data-bwcc=""></code></pre><p><br></p>',
+    // CE mode: direct DOM insertion — execCommand('insertHTML') is unreliable after
+    // execCommand('delete') in a modal CE; direct DOM avoids the compositing state issue
+    action: (ce) => { _ceInsertCode(ce); },
   },
   {
     id: 'divider', label: 'Divider', desc: 'Horizontal rule',
@@ -558,6 +557,261 @@ function _cePrefixBeforeCaret(ce) {
 
 
 /* ─────────────────────────────────────────
+   CE action helpers
+   Used by quote, code-block, and link slash commands.
+   These bypass execCommand (unreliable after a prior execCommand('delete')
+   in a modal CE) and manipulate the DOM directly.
+   ───────────────────────────────────────── */
+
+/** Find the nearest block-level direct child of `ce` that contains the cursor. */
+function _ceFindBlock(ce) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const BLOCKS = new Set(['P','DIV','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE']);
+  let el = sel.getRangeAt(0).startContainer;
+  if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
+  while (el && el !== ce) {
+    if (BLOCKS.has(el.tagName) && el.parentElement === ce) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/** Insert a <blockquote> at the current cursor position via DOM APIs. */
+function _ceInsertBlockquote(ce) {
+  const block = _ceFindBlock(ce);
+  const bq    = document.createElement('blockquote');
+  bq.innerHTML = '<br>';
+  const after = document.createElement('p');
+  after.innerHTML = '<br>';
+
+  if (block) {
+    block.after(bq, after);
+    if (!block.textContent.trim()) block.remove();
+  } else {
+    ce.appendChild(bq);
+    ce.appendChild(after);
+  }
+
+  // Park cursor at the start of the new blockquote
+  const r = document.createRange();
+  r.setStart(bq, 0);
+  r.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  ce.dispatchEvent(new Event('input'));
+}
+
+/** Insert a <pre><code> block at the current cursor position via DOM APIs. */
+function _ceInsertCode(ce) {
+  const block = _ceFindBlock(ce);
+  const pre   = document.createElement('pre');
+  const code  = document.createElement('code');
+  code.contentEditable = 'plaintext-only';
+  code.spellcheck      = false;
+  pre.appendChild(code);
+  const after = document.createElement('p');
+  after.innerHTML = '<br>';
+
+  if (block) {
+    block.after(pre, after);
+    if (!block.textContent.trim()) block.remove();
+  } else {
+    ce.appendChild(pre);
+    ce.appendChild(after);
+  }
+
+  // Park cursor inside the code element
+  const r = document.createRange();
+  r.setStart(code, 0);
+  r.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  ce.dispatchEvent(new Event('input'));
+}
+
+/**
+ * Show a BookWorm-styled link dialog.
+ * `postDeleteRange` is a collapsed Range at the spot where the slash text was;
+ * we restore it into the CE before calling insertHTML so the anchor lands
+ * exactly where the user typed `/link`.
+ */
+function _ceLinkDialog(ce, postDeleteRange) {
+  // One dialog at a time
+  const prev = document.getElementById('bw-link-dialog');
+  if (prev) prev.remove();
+
+  const dark = document.documentElement.classList.contains('dark');
+
+  /* ---- overlay ---- */
+  const overlay = document.createElement('div');
+  overlay.id = 'bw-link-dialog';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '10001',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)',
+  });
+
+  /* ---- card ---- */
+  const card = document.createElement('div');
+  Object.assign(card.style, {
+    background:   dark ? '#18181b' : '#ffffff',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '16px',
+    padding:      '24px',
+    width:        '100%',
+    maxWidth:     '380px',
+    boxShadow:    '0 20px 60px rgba(0,0,0,0.25)',
+    boxSizing:    'border-box',
+    fontFamily:   'inherit',
+  });
+  card.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  /* ---- helpers ---- */
+  function close() { overlay.remove(); }
+
+  function insert() {
+    const url  = (urlInput.value  || '').trim();
+    if (!url) { urlInput.focus(); return; }
+    const text = (textInput.value || '').trim() || url;
+    const safeUrl = url.replace(/"/g, '%22');
+    const safeTxt = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    close();
+    // Restore focus + cursor so insertHTML lands at the right spot
+    ce.focus();
+    if (postDeleteRange) {
+      try {
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(postDeleteRange);
+      } catch (_) {}
+    }
+    document.execCommand('insertHTML', false,
+      '<a href="' + safeUrl + '">' + safeTxt + '</a>');
+    ce.dispatchEvent(new Event('input'));
+  }
+
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.addEventListener('keydown',   (e) => { if (e.key === 'Escape') close(); });
+
+  /* ---- header ---- */
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: '16px',
+  });
+  const titleEl = document.createElement('div');
+  Object.assign(titleEl.style, {
+    display: 'flex', alignItems: 'center', gap: '6px',
+    fontWeight: '600', fontSize: '15px',
+    color: dark ? '#f4f4f5' : '#111827',
+  });
+  titleEl.innerHTML = '<span>&#128279;</span><span>Insert Link</span>';
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  Object.assign(closeBtn.style, {
+    background: 'none', border: 'none', cursor: 'pointer',
+    fontSize: '20px', lineHeight: '1', padding: '0 2px',
+    color: dark ? '#71717a' : '#9ca3af',
+  });
+  closeBtn.addEventListener('mouseenter', () => closeBtn.style.color = dark ? '#d4d4d8' : '#374151');
+  closeBtn.addEventListener('mouseleave', () => closeBtn.style.color = dark ? '#71717a' : '#9ca3af');
+  closeBtn.onclick = close;
+  header.appendChild(titleEl);
+  header.appendChild(closeBtn);
+
+  /* ---- input factory ---- */
+  function mkLabel(txt) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = txt;
+    Object.assign(lbl.style, {
+      display: 'block', fontSize: '12px', fontWeight: '500',
+      marginBottom: '4px', color: dark ? '#a1a1aa' : '#6b7280',
+    });
+    return lbl;
+  }
+  function mkInput(type, placeholder, value) {
+    const inp = document.createElement('input');
+    inp.type        = type;
+    inp.placeholder = placeholder;
+    if (value) inp.value = value;
+    Object.assign(inp.style, {
+      display: 'block', width: '100%', boxSizing: 'border-box',
+      padding: '8px 12px',
+      border:  dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+      borderRadius: '8px', fontSize: '14px',
+      background: dark ? '#27272a' : '#ffffff',
+      color:      dark ? '#f4f4f5'  : '#111827',
+      outline: 'none', marginBottom: '12px', fontFamily: 'inherit',
+    });
+    inp.addEventListener('focus',  () => inp.style.borderColor = '#0053e2');
+    inp.addEventListener('blur',   () => inp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+    return inp;
+  }
+
+  const urlLabel  = mkLabel('URL');
+  const urlInput  = mkInput('url',  'https://…', 'https://');
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); textInput.focus(); } });
+
+  const textLabel = mkLabel('Display text <span style="opacity:0.6">(leave blank to use URL)</span>');
+  const textInput = mkInput('text', 'Link text…', '');
+  textInput.style.marginBottom = '20px';
+  textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } });
+
+  /* ---- buttons ---- */
+  const btnRow = document.createElement('div');
+  Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px' });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    padding: '8px 16px', cursor: 'pointer', fontSize: '14px',
+    border:        dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius:  '8px',
+    color:         dark ? '#e4e4e7' : '#374151',
+    background:    'transparent', fontFamily: 'inherit',
+  });
+  cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = dark ? '#27272a' : '#f9fafb');
+  cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
+  cancelBtn.onclick = close;
+
+  const insertBtn = document.createElement('button');
+  insertBtn.textContent = 'Insert ↵';
+  Object.assign(insertBtn.style, {
+    padding: '8px 16px', background: '#0053e2', color: 'white',
+    border: 'none', borderRadius: '8px', fontSize: '14px',
+    cursor: 'pointer', fontWeight: '500', fontFamily: 'inherit',
+  });
+  insertBtn.addEventListener('mouseenter', () => insertBtn.style.background = '#0046c0');
+  insertBtn.addEventListener('mouseleave', () => insertBtn.style.background = '#0053e2');
+  insertBtn.onclick = insert;
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(insertBtn);
+
+  /* ---- assemble ---- */
+  card.appendChild(header);
+  card.appendChild(urlLabel);
+  card.appendChild(urlInput);
+  card.appendChild(textLabel);
+  card.appendChild(textInput);
+  card.appendChild(btnRow);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  // Focus URL input, cursor at end of 'https://'
+  requestAnimationFrame(() => {
+    urlInput.focus();
+    urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
+  });
+}
+
+
+/* ─────────────────────────────────────────
    Apply — contenteditable path
    Captures query length + caret range NOW (before _close() wipes state),
    then defers all DOM work to requestAnimationFrame so focus has settled
@@ -609,10 +863,16 @@ function _applyCE(cmd) {
     }
     document.execCommand('delete');
 
-    // action commands: /query text is gone — fire the callback and done
+    // action commands: /query text is gone — fire the callback and done.
+    // Pass `ce` so the action can refocus it, and `postDeleteRange` so the
+    // action can restore the cursor if a dialog stole focus in the interim.
     if (cmd.action) {
       ce.dispatchEvent(new Event('input'));
-      cmd.action();
+      const sel2 = window.getSelection();
+      const postDeleteRange = (sel2 && sel2.rangeCount)
+        ? sel2.getRangeAt(0).cloneRange()
+        : null;
+      cmd.action(ce, postDeleteRange);
       return;
     }
 
