@@ -387,7 +387,7 @@ async def get_trip_plans(page_id: int, user_id: int) -> list[dict]:
         cur = await db.execute(
             """
             SELECT p.id, p.plan_name, p.plan_desc, p.start_date, p.end_date,
-                   p.sort_order,
+                   p.cover_url, p.sort_order,
                    COUNT(d.id) AS day_count
               FROM trip_plans p
               LEFT JOIN trip_days d ON d.plan_id = p.id
@@ -405,6 +405,7 @@ async def get_trip_plans(page_id: int, user_id: int) -> list[dict]:
             "plan_desc":  r["plan_desc"],
             "start_date": r["start_date"],
             "end_date":   r["end_date"],
+            "cover_url":  r["cover_url"],
             "sort_order": r["sort_order"],
             "day_count":  r["day_count"],
         }
@@ -416,17 +417,18 @@ async def add_trip_plan(
     page_id: int, user_id: int,
     plan_name: str, plan_desc: str,
     start_date: str, end_date: str,
+    cover_url: str = "",
 ) -> int:
     async with get_db() as db:
         cur = await db.execute(
             """
             INSERT INTO trip_plans
-                   (page_id, user_id, plan_name, plan_desc, start_date, end_date, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?,
+                   (page_id, user_id, plan_name, plan_desc, start_date, end_date, cover_url, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?,
               (SELECT COALESCE(MAX(sort_order), 0) + 10
                  FROM trip_plans WHERE page_id=?))
             """,
-            (page_id, user_id, plan_name, plan_desc, start_date, end_date, page_id),
+            (page_id, user_id, plan_name, plan_desc, start_date, end_date, cover_url, page_id),
         )
         await db.commit()
         return cur.lastrowid
@@ -436,16 +438,29 @@ async def update_trip_plan(
     plan_id: int, page_id: int, user_id: int,
     plan_name: str, plan_desc: str,
     start_date: str, end_date: str,
+    cover_url: str = "",
 ) -> bool:
     async with get_db() as db:
         cur = await db.execute(
             """UPDATE trip_plans
-                  SET plan_name=?, plan_desc=?, start_date=?, end_date=?
+                  SET plan_name=?, plan_desc=?, start_date=?, end_date=?, cover_url=?
                 WHERE id=? AND page_id=? AND user_id=?""",
-            (plan_name, plan_desc, start_date, end_date, plan_id, page_id, user_id),
+            (plan_name, plan_desc, start_date, end_date, cover_url, plan_id, page_id, user_id),
         )
         await db.commit()
         return cur.rowcount == 1
+
+
+async def update_trip_plan_cover(
+    plan_id: int, page_id: int, user_id: int, cover_url: str
+) -> None:
+    """Lightweight cover-url-only update (after upload)."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE trip_plans SET cover_url=? WHERE id=? AND page_id=? AND user_id=?",
+            (cover_url, plan_id, page_id, user_id),
+        )
+        await db.commit()
 
 
 async def delete_trip_plan(plan_id: int, page_id: int, user_id: int) -> bool:

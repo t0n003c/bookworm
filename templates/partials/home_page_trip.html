@@ -187,6 +187,42 @@
                         px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
         </div>
       </div>
+      {# Cover image #}
+      <div>
+        <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Cover Image</label>
+        <div id="trip-plan-cover-preview" class="hidden mb-2 relative">
+          <img id="trip-plan-cover-img" src="" alt="cover preview"
+               class="w-full h-32 object-cover rounded-lg border border-gray-200 dark:border-zinc-700" />
+          <button type="button" onclick="tripPlanClearCover()"
+                  class="absolute top-1 right-1 bg-black/50 text-white rounded-full
+                         w-5 h-5 text-xs flex items-center justify-center
+                         hover:bg-black/70 transition" title="Remove cover">✕</button>
+        </div>
+        <div class="flex gap-1 mb-2 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 w-fit">
+          <button type="button" id="trip-plan-tab-url" onclick="tripPlanCoverTab('url')"
+                  class="px-3 py-1 text-xs rounded-md font-medium transition
+                         bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm">🔗 URL</button>
+          <button type="button" id="trip-plan-tab-file" onclick="tripPlanCoverTab('file')"
+                  class="px-3 py-1 text-xs rounded-md font-medium transition
+                         text-gray-500 dark:text-zinc-400 hover:text-gray-700">📁 Upload</button>
+        </div>
+        <div id="trip-plan-cover-url-wrap">
+          <input id="trip-plan-cover-url" type="url" placeholder="https://…"
+                 oninput="tripPlanCoverUrlPreview()"
+                 class="w-full text-sm rounded-lg border border-gray-200 dark:border-zinc-700
+                        bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                        px-3 py-2 outline-none focus:ring-2 focus:ring-[#0053e2]/40" />
+        </div>
+        <div id="trip-plan-cover-file-wrap" class="hidden">
+          <input id="trip-plan-cover-file" type="file" accept="image/*"
+                 onchange="tripPlanUploadCover()"
+                 class="block w-full text-sm text-gray-500 dark:text-zinc-400
+                        file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                        file:text-sm file:font-medium file:bg-[#0053e2] file:text-white
+                        file:cursor-pointer hover:file:bg-[#0046c0]" />
+          <p id="trip-plan-upload-status" class="text-[10px] text-gray-400 mt-1"></p>
+        </div>
+      </div>
     </div>
     <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-2">
       <button onclick="tripClosePlanModal()"

@@ -6,8 +6,9 @@
  */
 
 // ── Module state ──────────────────────────────────────────────────────────────
-var _tripPlans        = [];
-var _tripPlanEditing  = null;   // null = add mode, int = plan id being edited
+var _tripPlans               = [];
+var _tripPlanEditing         = null;  // null = add mode, int = plan id being edited
+var _tripPlanUploadedCoverUrl = '';   // URL returned by upload-cover endpoint
 
 var _tripDays         = [];
 var _tripDayEditing   = null;   // null = add mode, int = day id being edited
@@ -312,6 +313,7 @@ function _loadPlans() {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       _tripPlans = Array.isArray(data) ? data : [];
+      if (typeof window._tripRenderPlanFilterBar === 'function') window._tripRenderPlanFilterBar();
       _tripRenderPlanCards();
     })
     .catch(function() { _tripShowToast('Failed to load trips', true); });
@@ -320,6 +322,12 @@ function _loadPlans() {
 function _tripRenderPlanCards() {
   var grid = document.getElementById('trip-plans-grid');
   if (!grid) return;
+
+  // Apply filter/sort ops from filters module (may be identity if no filter active)
+  var visible = (typeof window._tripApplyPlanOps === 'function')
+    ? window._tripApplyPlanOps(_tripPlans)
+    : _tripPlans;
+
   if (!_tripPlans.length) {
     grid.innerHTML =
       '<div class="flex flex-col items-center justify-center col-span-full h-48 ' +
@@ -331,24 +339,37 @@ function _tripRenderPlanCards() {
     return;
   }
 
-  // ── Group by status ──────────────────────────────────────────────────
-  var groups = { active: [], upcoming: [], past: [], undated: [] };
-  _tripPlans.forEach(function(p) {
-    groups[_tripPlanStatus(p).key].push(p);
-  });
+  if (!visible.length) {
+    grid.innerHTML =
+      '<div class="col-span-full text-center py-16 text-gray-400 dark:text-zinc-500 text-sm">' +
+        '🔍 No trips match the filter.' +
+      '</div>';
+    return;
+  }
 
-  // Sort within each group
+  // When a custom sort is active, render flat (filter already applied above).
+  // When on default sort, group by status (applying filter to each group).
+  var _planSortByVal = typeof _planSortBy !== 'undefined' ? _planSortBy : 'default';
+
+  if (_planSortByVal !== 'default') {
+    grid.innerHTML = visible.map(_tripRenderPlanCard).join('');
+    return;
+  }
+
+  // ── Grouped by status (default sort) ─────────────────────────────────────────
+  var groups = { active: [], upcoming: [], past: [], undated: [] };
+  visible.forEach(function(p) { groups[_tripPlanStatus(p).key].push(p); });
+
   function byDate(field, asc) {
     return function(a, b) {
       var av = a[field] || '', bv = b[field] || '';
       return asc ? av.localeCompare(bv) : bv.localeCompare(av);
     };
   }
-  groups.active.sort(byDate('end_date', true));       // ending soonest first
-  groups.upcoming.sort(byDate('start_date', true));   // starting soonest first
-  groups.past.sort(byDate('end_date', false));         // most recent first
+  groups.active.sort(byDate('end_date', true));
+  groups.upcoming.sort(byDate('start_date', true));
+  groups.past.sort(byDate('end_date', false));
 
-  // Section header definition
   var SECTIONS = [
     { key: 'active',   emoji: '✈️', label: 'Happening Now',
       cls: 'text-green-600 dark:text-green-400 border-green-200 dark:border-green-900' },
@@ -436,7 +457,6 @@ function _tripRenderPlanCard(p) {
   var status   = _tripPlanStatus(p);
   var meta     = _tripPlanMeta(p);
 
-  // ── Status badge ─────────────────────────────────────────────────────
   var BADGE = {
     active:   '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ' +
                'font-semibold bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">' +
@@ -450,19 +470,14 @@ function _tripRenderPlanCard(p) {
     undated:  '',
   };
 
-  // ── Date range ─────────────────────────────────────────────────────
-  var dateRange = '';
-  if (p.start_date || p.end_date) {
-    var fStart = _tripFmtDate(p.start_date);
-    var fEnd   = _tripFmtDate(p.end_date);
-    dateRange =
-      '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 flex items-center gap-1">' +
-        (fStart ? fStart : '') +
-        (fStart && fEnd ? ' → ' : '') +
-        (fEnd   ? fEnd   : '') +
+  var fStart = _tripFmtDate(p.start_date);
+  var fEnd   = _tripFmtDate(p.end_date);
+  var dateRange = (fStart || fEnd)
+    ? '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5 flex items-center gap-1">' +
+        (fStart || '') + (fStart && fEnd ? ' → ' : '') + (fEnd || '') +
         (meta ? ' <span class="text-[10px] opacity-70">' + _tripEsc(meta) + '</span>' : '') +
-      '</p>';
-  }
+      '</p>'
+    : '';
 
   var descHtml = p.plan_desc
     ? '<p class="text-xs text-gray-500 dark:text-zinc-400 mt-1 line-clamp-2">' +
@@ -470,16 +485,60 @@ function _tripRenderPlanCard(p) {
     : '';
   var dayLabel = p.day_count + ' day' + (p.day_count !== 1 ? 's' : '');
 
-  // Active card gets a subtle left-accent border
+  // ── Cover image or gradient placeholder ────────────────────────────────────
+  var cover = p.cover_url
+    ? '<div class="relative h-36 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
+        '<img src="' + _tripEsc(p.cover_url) + '" alt="" ' +
+             'class="w-full h-full object-cover" ' +
+             'onerror="this.parentNode.style.display=\'none\'">' +
+        // Status badge overlaid on cover top-right
+        (BADGE[status.key]
+          ? '<div class="absolute top-2 right-2">' + BADGE[status.key] + '</div>'
+          : '') +
+        // Edit/delete overlay on cover top-left
+        '<div class="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" ' +
+             'onclick="event.stopPropagation()">' +
+          '<button onclick="tripOpenEditPlan(' + p.id + ')" ' +
+            'class="bg-black/50 text-white rounded-full w-6 h-6 text-xs flex items-center ' +
+                   'justify-center hover:bg-black/70 transition" title="Edit trip">✏️</button>' +
+          '<button onclick="tripConfirmDeletePlan(' + p.id + ',\'' + jsName + '\')" ' +
+            'class="bg-black/50 text-white rounded-full w-6 h-6 text-xs flex items-center ' +
+                   'justify-center hover:bg-red-600/80 transition" title="Delete trip">🗑️</button>' +
+        '</div>' +
+      '</div>'
+    : '<div class="h-28 flex items-center justify-center bg-gradient-to-br ' +
+        (status.key === 'active'
+          ? 'from-green-50 to-emerald-100 dark:from-zinc-800 dark:to-zinc-900'
+          : status.key === 'past'
+            ? 'from-gray-50 to-gray-100 dark:from-zinc-800 dark:to-zinc-900'
+            : 'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900') +
+        ' text-5xl select-none">🗺️</div>';
+
   var cardBorder = status.key === 'active'
     ? 'border-green-300 dark:border-green-700'
     : status.key === 'past'
       ? 'border-gray-200 dark:border-zinc-800 opacity-80'
       : 'border-gray-200 dark:border-zinc-800';
 
+  // When no cover: badge + edit/delete go in the body header row
+  var headerActions = p.cover_url ? '' :
+    '<div class="flex flex-col items-end gap-1.5 flex-shrink-0">' +
+      (BADGE[status.key] || '') +
+      '<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" ' +
+           'onclick="event.stopPropagation()">' +
+        '<button onclick="tripOpenEditPlan(' + p.id + ')" ' +
+          'class="text-gray-400 hover:text-[#0053e2] transition text-xs" ' +
+          'title="Edit trip">✏️</button>' +
+        '<button onclick="tripConfirmDeletePlan(' + p.id + ',\'' + jsName + '\')" ' +
+          'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5" ' +
+          'title="Delete trip">🗑️</button>' +
+      '</div>' +
+    '</div>';
+
   return '<div class="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
     'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all ' + cardBorder + '" ' +
     'onclick="tripOpenPlan(' + p.id + ',\'' + jsName + '\')">' +
+    cover +
     '<div class="p-4">' +
       '<div class="flex items-start justify-between gap-2">' +
         '<div class="flex-1 min-w-0">' +
@@ -488,18 +547,7 @@ function _tripRenderPlanCard(p) {
           '</p>' +
           dateRange + descHtml +
         '</div>' +
-        '<div class="flex flex-col items-end gap-1.5 flex-shrink-0">' +
-          (BADGE[status.key] || '') +
-          '<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" ' +
-               'onclick="event.stopPropagation()">' +
-            '<button onclick="tripOpenEditPlan(' + p.id + ')" ' +
-              'class="text-gray-400 hover:text-[#0053e2] transition text-xs" ' +
-              'title="Edit trip">✏️</button>' +
-            '<button onclick="tripConfirmDeletePlan(' + p.id + ',\'' + jsName + '\')" ' +
-              'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5" ' +
-              'title="Delete trip">🗑️</button>' +
-          '</div>' +
-        '</div>' +
+        headerActions +
       '</div>' +
       '<p class="mt-3 text-xs text-gray-400 dark:text-zinc-500">📅 ' + dayLabel + '</p>' +
     '</div>' +
@@ -1057,6 +1105,89 @@ window.tripDragLaneItemDrop = function(event, dayId, targetBlockId, targetTdsId)
 };
 
 // ── Plan modal (Add / Edit Trip) ──────────────────────────────────────────────
+// ── Plan modal helpers ─────────────────────────────────────────────────────────
+function _tripPlanResetCoverUI() {
+  _tripPlanUploadedCoverUrl = '';
+  var urlIn = document.getElementById('trip-plan-cover-url');
+  var prev  = document.getElementById('trip-plan-cover-preview');
+  var fi    = document.getElementById('trip-plan-cover-file');
+  var stat  = document.getElementById('trip-plan-upload-status');
+  if (urlIn) urlIn.value = '';
+  if (prev)  prev.classList.add('hidden');
+  if (fi)    fi.value = '';
+  if (stat)  stat.textContent = '';
+  _tripPlanCoverTabSwitch('url');
+}
+
+function _tripPlanSetCoverPreview(url) {
+  var img  = document.getElementById('trip-plan-cover-img');
+  var prev = document.getElementById('trip-plan-cover-preview');
+  if (img && prev && url) {
+    img.src = url;
+    prev.classList.remove('hidden');
+  } else if (prev) {
+    prev.classList.add('hidden');
+  }
+}
+
+function _tripPlanCoverTabSwitch(tab) {
+  var urlWrap  = document.getElementById('trip-plan-cover-url-wrap');
+  var fileWrap = document.getElementById('trip-plan-cover-file-wrap');
+  var tabUrl   = document.getElementById('trip-plan-tab-url');
+  var tabFile  = document.getElementById('trip-plan-tab-file');
+  var activeCls   = ['bg-white','dark:bg-zinc-700','text-gray-800','dark:text-zinc-100','shadow-sm'];
+  var inactiveCls = ['text-gray-500','dark:text-zinc-400','hover:text-gray-700'];
+  if (tab === 'url') {
+    if (urlWrap)  urlWrap.classList.remove('hidden');
+    if (fileWrap) fileWrap.classList.add('hidden');
+    if (tabUrl)   { activeCls.forEach(function(c){tabUrl.classList.add(c);}); inactiveCls.forEach(function(c){tabUrl.classList.remove(c);}); }
+    if (tabFile)  { inactiveCls.forEach(function(c){tabFile.classList.add(c);}); activeCls.forEach(function(c){tabFile.classList.remove(c);}); }
+  } else {
+    if (urlWrap)  urlWrap.classList.add('hidden');
+    if (fileWrap) fileWrap.classList.remove('hidden');
+    if (tabFile)  { activeCls.forEach(function(c){tabFile.classList.add(c);}); inactiveCls.forEach(function(c){tabFile.classList.remove(c);}); }
+    if (tabUrl)   { inactiveCls.forEach(function(c){tabUrl.classList.add(c);}); activeCls.forEach(function(c){tabUrl.classList.remove(c);}); }
+  }
+}
+
+window.tripPlanCoverTab = function(tab) { _tripPlanCoverTabSwitch(tab); };
+
+window.tripPlanCoverUrlPreview = function() {
+  var url = (document.getElementById('trip-plan-cover-url') || {}).value || '';
+  _tripPlanSetCoverPreview(url.trim());
+};
+
+window.tripPlanClearCover = function() {
+  _tripPlanUploadedCoverUrl = '';
+  _tripPlanResetCoverUI();
+};
+
+window.tripPlanUploadCover = function() {
+  if (!_tripPlanEditing) {
+    var stat = document.getElementById('trip-plan-upload-status');
+    if (stat) stat.textContent = 'Save the trip first, then upload a cover image.';
+    return;
+  }
+  var fi = document.getElementById('trip-plan-cover-file');
+  if (!fi || !fi.files[0]) return;
+  var stat = document.getElementById('trip-plan-upload-status');
+  if (stat) stat.textContent = 'Uploading…';
+  var fd = new FormData();
+  fd.append('file', fi.files[0]);
+  _tripFetch(
+    '/home/trip/' + _tripPid + '/plans/' + _tripPlanEditing + '/upload-cover',
+    {method: 'POST', body: fd}
+  ).then(function(r) { return r.json(); })
+   .then(function(d) {
+     if (d.error) { if (stat) stat.textContent = d.error; return; }
+     _tripPlanUploadedCoverUrl = d.url;
+     _tripPlanSetCoverPreview(d.url);
+     if (stat) stat.textContent = '✓ Uploaded!';
+   })
+   .catch(function() { if (stat) stat.textContent = 'Upload failed.'; });
+};
+
+// ── Plan modal open/close/submit ────────────────────────────────────────────────────
 window.tripOpenAddPlan = function() {
   _tripPlanEditing = null;
   document.getElementById('trip-plan-modal-title').textContent = 'Add Trip';
@@ -1065,6 +1196,7 @@ window.tripOpenAddPlan = function() {
   document.getElementById('trip-plan-desc').value  = '';
   document.getElementById('trip-plan-start').value = '';
   document.getElementById('trip-plan-end').value   = '';
+  _tripPlanResetCoverUI();
   document.getElementById('trip-plan-modal').classList.remove('hidden');
   setTimeout(function() {
     var el = document.getElementById('trip-plan-name');
@@ -1075,19 +1207,27 @@ window.tripOpenAddPlan = function() {
 window.tripOpenEditPlan = function(planId) {
   var p = _tripPlans.find(function(x) { return x.id === planId; });
   if (!p) return;
-  _tripPlanEditing = planId;
+  _tripPlanEditing          = planId;
+  _tripPlanUploadedCoverUrl = p.cover_url || '';
   document.getElementById('trip-plan-modal-title').textContent = 'Edit Trip';
   document.getElementById('trip-plan-submit').textContent      = 'Save';
   document.getElementById('trip-plan-name').value  = p.plan_name  || '';
   document.getElementById('trip-plan-desc').value  = p.plan_desc  || '';
   document.getElementById('trip-plan-start').value = p.start_date || '';
   document.getElementById('trip-plan-end').value   = p.end_date   || '';
+  _tripPlanResetCoverUI();
+  // Pre-fill cover URL if set
+  var coverUrl = p.cover_url || '';
+  var urlIn = document.getElementById('trip-plan-cover-url');
+  if (urlIn) urlIn.value = coverUrl;
+  _tripPlanSetCoverPreview(coverUrl);
   document.getElementById('trip-plan-modal').classList.remove('hidden');
 };
 
 window.tripClosePlanModal = function() {
   document.getElementById('trip-plan-modal').classList.add('hidden');
-  _tripPlanEditing = null;
+  _tripPlanEditing          = null;
+  _tripPlanUploadedCoverUrl = '';
 };
 
 window.tripSubmitPlan = function() {
@@ -1095,12 +1235,16 @@ window.tripSubmitPlan = function() {
   var desc  = (document.getElementById('trip-plan-desc')  || {}).value || '';
   var start = (document.getElementById('trip-plan-start') || {}).value || '';
   var end   = (document.getElementById('trip-plan-end')   || {}).value || '';
+  // cover_url: prefer the uploaded file URL, fall back to URL-input
+  var urlIn    = document.getElementById('trip-plan-cover-url');
+  var coverUrl = _tripPlanUploadedCoverUrl || (urlIn ? urlIn.value.trim() : '');
   if (!name.trim()) { _tripShowToast('Trip name is required', true); return; }
   var fd = new URLSearchParams();
   fd.append('plan_name',  name.trim());
   fd.append('plan_desc',  desc.trim());
   fd.append('start_date', start);
   fd.append('end_date',   end);
+  fd.append('cover_url',  coverUrl);
   var url    = _tripPlanEditing
     ? '/home/trip/' + _tripPid + '/plans/' + _tripPlanEditing
     : '/home/trip/' + _tripPid + '/plans/add';

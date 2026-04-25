@@ -354,3 +354,131 @@ function _dirToggle(fn, dir) {
            'hover:bg-gray-50 dark:hover:bg-zinc-700 transition cursor-pointer font-medium">' +
     label + '</button>';
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Plan filter / sort (trip-plans-view top toolbar)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var _planQuery        = '';
+var _planStatusFilter = 'all';   // 'all' | 'active' | 'upcoming' | 'past' | 'undated'
+var _planSortBy       = 'default'; // 'default' | 'name' | 'start_date' | 'end_date' | 'days'
+var _planSortDir      = 'asc';
+
+window._tripRenderPlanFilterBar = function() {
+  var bar = document.getElementById('trip-plans-toolbar');
+  if (!bar) return;
+  var plans = typeof _tripPlans !== 'undefined' ? _tripPlans : [];
+  if (!plans.length) { bar.innerHTML = ''; return; }
+
+  // Status pills
+  var STATUS_DEFS = [
+    { key: 'all',     label: 'All' },
+    { key: 'active',  label: '\u2708\ufe0f Active' },
+    { key: 'upcoming',label: '\ud83d\udcc5 Upcoming' },
+    { key: 'past',    label: '\ud83d\uddc2\ufe0f Past' },
+    { key: 'undated', label: '\ud83d\udccb No Date' },
+  ];
+
+  var pillsHtml = STATUS_DEFS.map(function(s) {
+    var active = _planStatusFilter === s.key;
+    return '<button onclick="tripSetPlanStatus(\'' + s.key + '\')" ' +
+      'class="trip-pill px-2.5 py-1 rounded-full text-xs font-medium transition ' +
+      (active
+        ? 'bg-[#0053e2] text-white'
+        : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 ' +
+          'hover:bg-gray-200 dark:hover:bg-zinc-700') + '">' +
+      s.label + '</button>';
+  }).join('');
+
+  var sortOpts = [
+    ['default',    'Sort: Default'],
+    ['name',       'Sort: Name'],
+    ['start_date', 'Sort: Start Date'],
+    ['end_date',   'Sort: End Date'],
+    ['days',       'Sort: Day Count'],
+  ];
+
+  var rightHtml = '<div class="flex items-center gap-2 ml-auto flex-shrink-0">';
+  rightHtml += _selectCtrl('tripSetPlanSort', _planSortBy, sortOpts);
+  if (_planSortBy !== 'default') rightHtml += _dirToggle('tripTogglePlanSortDir', _planSortDir);
+  rightHtml += '</div>';
+
+  bar.innerHTML =
+    '<div class="flex items-center gap-2 flex-wrap min-w-0 flex-1">' +
+      '<input id="trip-plan-search" type="search" placeholder="Search trips\u2026" ' +
+             'value="' + _tripEsc(_planQuery).replace(/"/g, '&quot;') + '" ' +
+             'oninput="tripSearchPlan()" ' +
+             'class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 ' +
+                    'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+                    'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
+                    'focus:ring-2 focus:ring-[#0053e2]/40 w-32">' +
+      pillsHtml +
+    '</div>' +
+    rightHtml;
+};
+
+// Apply filter + sort to plan list; returns a filtered+sorted flat array.
+// When sort is 'default', _tripRenderPlanCards groups by status — it uses
+// this function only for the text/status filter, then re-groups internally.
+window._tripApplyPlanOps = function(plans) {
+  var q = _planQuery.toLowerCase();
+  var items = plans.filter(function(p) {
+    // Text filter
+    if (q && (p.plan_name || '').toLowerCase().indexOf(q) === -1 &&
+             (p.plan_desc || '').toLowerCase().indexOf(q) === -1) return false;
+    // Status filter
+    if (_planStatusFilter !== 'all') {
+      var st = (typeof _tripPlanStatus === 'function')
+        ? _tripPlanStatus(p).key
+        : 'undated';
+      if (st !== _planStatusFilter) return false;
+    }
+    return true;
+  });
+
+  if (_planSortBy === 'default') return items;  // caller handles grouping
+
+  var rev = _planSortDir === 'desc' ? -1 : 1;
+  items = items.slice().sort(function(a, b) {
+    if (_planSortBy === 'name') {
+      return rev * (a.plan_name || '').localeCompare(b.plan_name || '');
+    }
+    if (_planSortBy === 'start_date') {
+      return rev * (a.start_date || '').localeCompare(b.start_date || '');
+    }
+    if (_planSortBy === 'end_date') {
+      return rev * (a.end_date || '').localeCompare(b.end_date || '');
+    }
+    if (_planSortBy === 'days') {
+      return rev * ((a.day_count || 0) - (b.day_count || 0));
+    }
+    return 0;
+  });
+  return items;
+};
+
+// ── Plan filter controls ──────────────────────────────────────────────────────
+window.tripSetPlanStatus = function(key) {
+  _planStatusFilter = key;
+  window._tripRenderPlanFilterBar();
+  if (typeof _tripRenderPlanCards === 'function') _tripRenderPlanCards();
+};
+
+window.tripSearchPlan = function() {
+  var el = document.getElementById('trip-plan-search');
+  _planQuery = el ? el.value : '';
+  if (typeof _tripRenderPlanCards === 'function') _tripRenderPlanCards();
+};
+
+window.tripSetPlanSort = function(val) {
+  _planSortBy = val;
+  if (val === 'default') _planSortDir = 'asc';
+  window._tripRenderPlanFilterBar();
+  if (typeof _tripRenderPlanCards === 'function') _tripRenderPlanCards();
+};
+
+window.tripTogglePlanSortDir = function() {
+  _planSortDir = _planSortDir === 'asc' ? 'desc' : 'asc';
+  window._tripRenderPlanFilterBar();
+  if (typeof _tripRenderPlanCards === 'function') _tripRenderPlanCards();
+};

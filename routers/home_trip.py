@@ -18,6 +18,7 @@ from routers.home_trip_db import (
     delete_trip_plan,
     get_trip_plans,
     update_trip_plan,
+    update_trip_plan_cover,
     # locations
     add_trip_location,
     delete_trip_location,
@@ -438,6 +439,7 @@ async def add_plan(
     plan_desc:  str = Form(""),
     start_date: str = Form(""),
     end_date:   str = Form(""),
+    cover_url:  str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -449,6 +451,7 @@ async def add_plan(
         page_id, uid,
         plan_name.strip() or "Trip",
         plan_desc.strip(), start_date.strip(), end_date.strip(),
+        cover_url.strip(),
     )
     return JSONResponse({"id": new_id}, status_code=201)
 
@@ -460,6 +463,7 @@ async def update_plan(
     plan_desc:  str = Form(""),
     start_date: str = Form(""),
     end_date:   str = Form(""),
+    cover_url:  str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -471,8 +475,37 @@ async def update_plan(
         plan_id, page_id, uid,
         plan_name.strip() or "Trip",
         plan_desc.strip(), start_date.strip(), end_date.strip(),
+        cover_url.strip(),
     )
     return JSONResponse({"ok": ok})
+
+
+@router.post("/trip/{page_id}/plans/{plan_id}/upload-cover")
+async def upload_plan_cover(
+    request: Request, page_id: int, plan_id: int,
+    file: UploadFile = File(...),
+):
+    """Upload a cover image for a plan. Returns {url: str}."""
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    if file.content_type not in _ALLOWED_IMG_TYPES:
+        return _err("Only JPG, PNG, GIF, WEBP images are allowed")
+    raw_ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    ext = raw_ext if raw_ext in _ALLOWED_IMG_EXT else "jpg"
+    data = await file.read()
+    if len(data) > _MAX_COVER_MB * 1024 * 1024:
+        return _err(f"File too large — max {_MAX_COVER_MB} MB")
+    cover_dir = UPLOAD_DIR / "trip-covers"
+    cover_dir.mkdir(parents=True, exist_ok=True)
+    fpath = cover_dir / f"plan{page_id}_{plan_id}.{ext}"
+    fpath.write_bytes(data)
+    url = f"/uploads/trip-covers/{fpath.name}"
+    await update_trip_plan_cover(plan_id, page_id, uid, url)
+    return JSONResponse({"url": url})
 
 
 @router.delete("/trip/{page_id}/plans/{plan_id}")

@@ -965,6 +965,13 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_trip_plans_page "
             "ON trip_plans(page_id, user_id)"
         )
+        # trip_plans.cover_url (added 2026-04)
+        cur = await db.execute("PRAGMA table_info(trip_plans)")
+        _tp_cols = {r[1] for r in await cur.fetchall()}
+        if "cover_url" not in _tp_cols:
+            await db.execute(
+                "ALTER TABLE trip_plans ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''"
+            )
         # trip_days.plan_id — nullable so pre-existing days survive
         cur = await db.execute("PRAGMA table_info(trip_days)")
         _td_cols = {r[1] for r in await cur.fetchall()}
