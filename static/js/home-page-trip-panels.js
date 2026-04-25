@@ -55,11 +55,11 @@ window._tripRenderPanelCards = function(container) {
   // Nothing to show in view mode with no panels
   if (!panels.length && !isEdit) return;
 
-  // ─ Vertical divider ───────────────────────────────────
+  // ─ Horizontal divider ───────────────────────────────────
   var divider = document.createElement('div');
   divider.className =
-    'trip-panel-group-divider flex-shrink-0 self-stretch ' +
-    'border-l border-dashed border-gray-200 dark:border-zinc-700 mx-2';
+    'trip-panel-group-divider ' +
+    'border-t border-dashed border-gray-200 dark:border-zinc-700';
   container.appendChild(divider);
 
   // ─ Panels group wrapper ────────────────────────────
@@ -77,7 +77,7 @@ window._tripRenderPanelCards = function(container) {
 
   // Inner flex row for cards
   var row = document.createElement('div');
-  row.className = 'flex gap-4 flex-shrink-0';
+  row.className = 'flex gap-4 overflow-x-auto pb-2';
   group.appendChild(row);
 
   // Panel cards

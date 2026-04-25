@@ -673,7 +673,7 @@ function _tripRenderPlan() {
     '<div id="trip-days-group" class="flex flex-col flex-shrink-0 gap-1">' +
       '<p class="text-[10px] font-semibold uppercase tracking-widest ' +
          'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none">📅 Itinerary</p>' +
-      '<div class="flex gap-4 flex-shrink-0">' + dayCardsHtml + '</div>' +
+      '<div class="flex gap-4 overflow-x-auto pb-2">' + dayCardsHtml + '</div>' +
     '</div>';
 
   // Panel cards group (home-page-trip-panels.js) — defensive guard
