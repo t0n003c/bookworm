@@ -35,7 +35,7 @@ window.tripSetDayCardWidth = function(w) {
   _tripDayCardWidth = parseInt(w, 10);
   try { localStorage.setItem(_TRIP_DAY_W_KEY, _tripDayCardWidth); } catch(e) {}
   // Update all rendered lanes live — no full re-render needed
-  document.querySelectorAll('.trip-day-lane-card').forEach(function(el) {
+  document.querySelectorAll('.trip-day-lane-card, .trip-panel-card').forEach(function(el) {
     el.style.width = _tripDayCardWidth + 'px';
   });
 };
@@ -659,19 +659,24 @@ function _loadDaysForPlan(planId) {
 function _tripRenderPlan() {
   var container = document.getElementById('trip-days-container');
   if (!container) return;
-  if (!_tripDays.length) {
-    container.innerHTML =
-      '<div class="flex flex-col items-center justify-center w-full h-48 ' +
-        'text-gray-400 dark:text-zinc-500 text-center">' +
+
+  // Days group — always rendered (may show empty state)
+  var dayCardsHtml = _tripDays.length
+    ? _tripDays.map(_tripRenderDayLane).join('')
+    : '<div class="flex flex-col items-center justify-center h-40 ' +
+        'text-gray-400 dark:text-zinc-500 text-center px-4" style="width:220px">' +
         '<span class="text-sm">🗓️ No days yet.</span>' +
         '<span class="text-xs mt-1">Click <strong>＋ Add Day</strong> to build your itinerary.</span>' +
       '</div>';
-    return;
-  }
-  container.innerHTML = _tripDays.map(function(d) {
-    return _tripRenderDayLane(d);
-  }).join('');
-  // Append panel cards (home-page-trip-panels.js) — defensive guard
+
+  container.innerHTML =
+    '<div id="trip-days-group" class="flex flex-col flex-shrink-0 gap-1">' +
+      '<p class="text-[10px] font-semibold uppercase tracking-widest ' +
+         'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none">📅 Itinerary</p>' +
+      '<div class="flex gap-4 flex-shrink-0">' + dayCardsHtml + '</div>' +
+    '</div>';
+
+  // Panel cards group (home-page-trip-panels.js) — defensive guard
   if (typeof window._tripRenderPanelCards === 'function') {
     window._tripRenderPanelCards(container);
   }

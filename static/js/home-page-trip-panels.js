@@ -42,17 +42,45 @@ function _tppReload() {
   if (_tppPlanId) window._tripLoadPanels(_tppPlanId);
 }
 
-// ── Render cards row ──────────────────────────────────────────────────────────
-
+// ── Render cards row ──────────────────────────────────────────────────────
 window._tripRenderPanelCards = function(container) {
-  // Remove stale panel DOM
+  // Remove stale panel DOM (divider + group)
   Array.prototype.slice.call(
-    container.querySelectorAll('.trip-panel-card, .trip-panel-add-btn')
+    container.querySelectorAll('.trip-panel-group-divider, #trip-panels-group')
   ).forEach(function(el) { el.remove(); });
 
   var isEdit = _tripPlanMode === 'edit';
   var panels = window._tripPanels || [];
 
+  // Nothing to show in view mode with no panels
+  if (!panels.length && !isEdit) return;
+
+  // ─ Vertical divider ───────────────────────────────────
+  var divider = document.createElement('div');
+  divider.className =
+    'trip-panel-group-divider flex-shrink-0 self-stretch ' +
+    'border-l border-dashed border-gray-200 dark:border-zinc-700 mx-2';
+  container.appendChild(divider);
+
+  // ─ Panels group wrapper ────────────────────────────
+  var group = document.createElement('div');
+  group.id        = 'trip-panels-group';
+  group.className = 'flex flex-col flex-shrink-0 gap-1';
+
+  // Group label
+  var label = document.createElement('p');
+  label.className =
+    'text-[10px] font-semibold uppercase tracking-widest ' +
+    'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none';
+  label.textContent = '🗂️ Quick Cards';
+  group.appendChild(label);
+
+  // Inner flex row for cards
+  var row = document.createElement('div');
+  row.className = 'flex gap-4 flex-shrink-0';
+  group.appendChild(row);
+
+  // Panel cards
   panels.forEach(function(p) {
     var card = document.createElement('div');
     card.className =
@@ -62,9 +90,10 @@ window._tripRenderPanelCards = function(container) {
       'width:' + _tripDayCardWidth + 'px;max-height:calc(100vh - 12rem)';
     card.id = 'trip-panel-card-' + p.id;
     card.innerHTML = _tppBuildCard(p, isEdit);
-    container.appendChild(card);
+    row.appendChild(card);
   });
 
+  // ✕ Add Card button (edit mode only)
   if (isEdit) {
     var addCard = document.createElement('div');
     addCard.className =
@@ -79,8 +108,10 @@ window._tripRenderPanelCards = function(container) {
         '<p class="text-2xl mb-1 text-gray-300 dark:text-zinc-600">＋</p>' +
         '<p class="text-xs text-gray-400 dark:text-zinc-500 font-medium">Add Card</p>' +
       '</div>';
-    container.appendChild(addCard);
+    row.appendChild(addCard);
   }
+
+  container.appendChild(group);
 };
 
 function _tppBuildCard(p, isEdit) {
