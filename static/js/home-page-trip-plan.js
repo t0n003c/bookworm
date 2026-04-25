@@ -1202,75 +1202,83 @@ function _tripMdToHtml(text) {
     marked.use({ gfm: true, breaks: true });
     return DOMPurify.sanitize(marked.parse(text));
   }
-  // Fallback: escaped plain text with <br> line-breaks
   return _tripEsc(text).replace(/\n/g, '<br>');
 }
 
+// ── Close ────────────────────────────────────────────────────────────────────
 window.tripCloseDetailDrawer = function() {
   var bd = document.getElementById('trip-detail-backdrop');
   var dr = document.getElementById('trip-detail-drawer');
-  if (dr && dr._escHandler) {
-    document.removeEventListener('keydown', dr._escHandler);
-  }
-  if (dr)  { dr.style.transform  = 'translateY(100%)'; }
-  if (bd)  { bd.style.opacity    = '0'; }
+  if (dr && dr._escHandler) document.removeEventListener('keydown', dr._escHandler);
+  if (dr) dr.style.transform = 'translateY(100%)';
+  if (bd) bd.style.opacity   = '0';
   setTimeout(function() {
-    if (bd) bd.remove();
-    if (dr) dr.remove();
-  }, 260);
+    if (document.getElementById('trip-detail-backdrop')) document.getElementById('trip-detail-backdrop').remove();
+    if (document.getElementById('trip-detail-drawer'))   document.getElementById('trip-detail-drawer').remove();
+  }, 250);
 };
 
-function _tripShowDrawer(headerHtml, bodyHtml) {
-  // Remove any existing drawer
-  window.tripCloseDetailDrawer();
+// _tripShowDrawer(contentHtml)
+// contentHtml = full inner content; close button is always pinned top-right.
+function _tripShowDrawer(contentHtml) {
+  // Dismiss any open drawer first (synchronous DOM remove — no timeout race)
+  var oldBd = document.getElementById('trip-detail-backdrop');
+  var oldDr = document.getElementById('trip-detail-drawer');
+  if (oldDr && oldDr._escHandler) document.removeEventListener('keydown', oldDr._escHandler);
+  if (oldBd) oldBd.remove();
+  if (oldDr) oldDr.remove();
 
-  // Backdrop
+  // Backdrop — z-40, covers whole viewport, click to close
   var bd = document.createElement('div');
-  bd.id        = 'trip-detail-backdrop';
-  bd.className = 'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200';
-  bd.style.opacity = '0';
+  bd.id            = 'trip-detail-backdrop';
+  bd.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(0,0,0,0.45);' +
+                     'transition:opacity 200ms;opacity:0';
   bd.setAttribute('aria-hidden', 'true');
-  bd.onclick   = window.tripCloseDetailDrawer;
+  bd.onclick = window.tripCloseDetailDrawer;
   document.body.appendChild(bd);
 
-  // Drawer
+  // Drawer — z-50, fixed bottom sheet, relative so the abs close btn works
   var dr = document.createElement('div');
-  dr.id        = 'trip-detail-drawer';
+  dr.id = 'trip-detail-drawer';
   dr.setAttribute('role', 'dialog');
   dr.setAttribute('aria-modal', 'true');
-  dr.className =
-    'fixed bottom-0 left-0 right-0 z-50 ' +
-    'bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl ' +
-    'flex flex-col transition-transform duration-200 ease-out ' +
-    'max-h-[72vh]';
-  dr.style.transform = 'translateY(100%)';
+  dr.style.cssText =
+    'position:fixed;bottom:0;left:0;right:0;z-index:50;' +
+    'border-radius:20px 20px 0 0;' +
+    'box-shadow:0 -4px 32px rgba(0,0,0,0.18);' +
+    'transition:transform 220ms cubic-bezier(.32,.72,0,1);' +
+    'transform:translateY(100%);' +
+    'max-height:80vh;display:flex;flex-direction:column;' +
+    'background:' + (document.documentElement.classList.contains('dark') ? '#18181b' : '#fff');
+
   dr.innerHTML =
-    // Drag handle
-    '<div class="flex-shrink-0 flex justify-center pt-3 pb-1">' +
-      '<div class="w-10 h-1 rounded-full bg-gray-200 dark:bg-zinc-700"></div>' +
+    // Drag-handle pill
+    '<div style="flex-shrink:0;display:flex;justify-content:center;padding:12px 0 6px">' +
+      '<div style="width:40px;height:4px;border-radius:2px;' +
+                 'background:' + (document.documentElement.classList.contains('dark') ? '#3f3f46' : '#e5e7eb') + '"></div>' +
     '</div>' +
-    // Header row
-    '<div class="flex-shrink-0 flex items-start justify-between px-5 pb-3 pt-1">' +
-      '<div class="flex-1 min-w-0">' + headerHtml + '</div>' +
-      '<button onclick="tripCloseDetailDrawer()" ' +
-        'class="ml-3 mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 ' +
-               'text-xl leading-none flex-shrink-0" aria-label="Close">' +
-        '×' +
-      '</button>' +
-    '</div>' +
-    // Scrollable body
-    '<div class="flex-1 overflow-y-auto px-5 pb-6 space-y-4">' +
-      bodyHtml +
+    // Close button — absolutely pinned top-right, always reachable
+    '<button id="trip-detail-close-btn" onclick="tripCloseDetailDrawer()" ' +
+      'style="position:absolute;top:10px;right:14px;z-index:10;' +
+             'width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;' +
+             'display:flex;align-items:center;justify-content:center;font-size:18px;' +
+             'background:' + (document.documentElement.classList.contains('dark') ? '#3f3f46' : '#f3f4f6') + ';' +
+             'color:' + (document.documentElement.classList.contains('dark') ? '#a1a1aa' : '#6b7280') + '" ' +
+      'aria-label="Close">×</button>' +
+    // Scrollable content area
+    '<div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 32px">' +
+      contentHtml +
     '</div>';
+
   document.body.appendChild(dr);
 
-  // ESC closes
+  // ESC key
   dr._escHandler = function(e) {
     if (e.key === 'Escape') window.tripCloseDetailDrawer();
   };
   document.addEventListener('keydown', dr._escHandler);
 
-  // Animate in
+  // Animate in (double rAF ensures paint before transform)
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {
       bd.style.opacity   = '1';
@@ -1280,100 +1288,137 @@ function _tripShowDrawer(headerHtml, bodyHtml) {
 }
 
 window.tripViewDetail = function(kind, dayId, id) {
+  var dk = document.documentElement.classList.contains('dark');
+  var C  = {
+    text:    dk ? '#e4e4e7' : '#111827',
+    sub:     dk ? '#a1a1aa' : '#6b7280',
+    bg:      dk ? '#27272a' : '#f3f4f6',
+    border:  dk ? '#3f3f46' : '#e5e7eb',
+    accent:  '#0053e2',
+    cardBg:  dk ? '#1f1f23' : '#ffffff',
+  };
+  var px = 'padding:0 20px';
+
+  // ── SPOT ────────────────────────────────────────────────────────────────────
   if (kind === 'spot') {
-    // Find the day-spot entry to get time_label
     var day = null;
     _tripDays.forEach(function(d) { if (d.id === dayId) day = d; });
     var ds = null;
     if (day) (day.spots || []).forEach(function(s) { if (s.tds_id === id) ds = s; });
     if (!ds) return;
 
-    // ds already carries: name, spot_type, cover_url, priority, estimated_cost,
-    // currency, time_label from the days API join.
-    // Optionally augment with full spot from _tripSpots (loaded by Research tab)
-    // for extras: map_url, attrs, notes.
+    // Augment from _tripSpots if Research tab was visited
     var spot = null;
     (typeof _tripSpots !== 'undefined' ? _tripSpots : []).forEach(function(s) {
       if (s.id === ds.spot_id) spot = s;
     });
+    var name     = (spot && spot.name)            || ds.name        || '';
+    var spotType = (spot && spot.spot_type)       || ds.spot_type   || '';
+    var coverUrl = (spot && spot.cover_url)       || ds.cover_url   || '';
+    var priority = spot ? spot.priority           : ds.priority;
+    var estCost  = (spot && spot.estimated_cost)  || ds.estimated_cost || 0;
+    var currency = (spot && spot.currency)        || ds.currency    || '';
+    var mapUrl   = spot ? (spot.map_url  || '')   : '';
+    var attrs    = spot ? (spot.attrs    || [])   : [];
+    var notes    = spot ? (spot.notes    || '')   : '';
 
-    // Merge: prefer spot (full) but fall back to ds (subset)
-    var name     = (spot && spot.name)           || ds.name       || '';
-    var spotType = (spot && spot.spot_type)      || ds.spot_type  || '';
-    var coverUrl = (spot && spot.cover_url)      || ds.cover_url  || '';
-    var priority = (spot != null ? spot.priority : null) != null ? spot.priority : ds.priority;
-    var estCost  = (spot && spot.estimated_cost) || ds.estimated_cost || 0;
-    var currency = (spot && spot.currency)       || ds.currency   || '';
-    var mapUrl   = spot ? (spot.map_url   || '') : '';
-    var attrs    = spot ? (spot.attrs     || []) : [];
-    var notes    = spot ? (spot.notes     || '') : '';
+    var emoji = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[spotType]) || '📍';
+    var tc    = (typeof _tripTypeColor   !== 'undefined') ? _tripTypeColor(spotType)    : C.accent;
+    var stars = (typeof _tripStars       !== 'undefined') ? _tripStars(priority, ds.spot_id) : '';
 
-    var emoji  = (typeof _TRIP_TYPE_EMOJI !== 'undefined' && _TRIP_TYPE_EMOJI[spotType]) || '📍';
-    var tc     = (typeof _tripTypeColor   !== 'undefined') ? _tripTypeColor(spotType) : '#0053e2';
-    var stars  = (typeof _tripStars       !== 'undefined') ? _tripStars(priority, ds.spot_id) : '';
-
-    var coverHtml = coverUrl
-      ? '<div class="w-full h-44 rounded-xl overflow-hidden mb-4 bg-gray-100 dark:bg-zinc-800">' +
-          '<img src="' + _tripEsc(coverUrl) + '" alt="" class="w-full h-full object-cover" ' +
-          'onerror="this.parentNode.style.display=\'none\'">' +
+    // Cover: full-bleed image OR coloured emoji banner
+    var cover = coverUrl
+      ? '<div style="width:100%;height:180px;overflow:hidden;background:#e5e7eb;flex-shrink:0">' +
+          '<img src="' + _tripEsc(coverUrl) + '" alt="" ' +
+               'style="width:100%;height:100%;object-fit:cover" ' +
+               'onerror="this.parentNode.style.display=\'none\'">' +
         '</div>'
-      : '<div class="w-full h-24 rounded-xl mb-4 flex items-center justify-center text-6xl ' +
-          'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 select-none">' +
-          emoji + '</div>';
+      : '<div style="width:100%;height:96px;display:flex;align-items:center;justify-content:center;' +
+          'font-size:52px;flex-shrink:0;' +
+          'background:' + (dk ? 'linear-gradient(135deg,#27272a,#18181b)' : 'linear-gradient(135deg,#eff6ff,#e0e7ff)') + '">' +
+          emoji +
+        '</div>';
 
+    // Type badge
     var badge =
-      '<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white font-medium" ' +
-           'style="background:' + tc + '">' + emoji + ' ' + _tripEsc(spotType) + '</span>';
+      '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;' +
+             'padding:2px 8px;border-radius:99px;color:#fff;font-weight:600;' +
+             'background:' + tc + '">' +
+        emoji + ' ' + _tripEsc(spotType) +
+      '</span>';
 
-    var meta = [];
+    // Chips row (time + cost)
+    var chips = [];
     if (ds.time_label) {
-      meta.push('<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">🕒 ' +
+      chips.push('<span style="font-size:12px;font-weight:500;color:' + C.accent + '">🕒 ' +
         _tripEsc(_formatTime(ds.time_label)) + '</span>');
     }
     if (estCost > 0) {
-      meta.push('<span class="text-xs text-gray-500 dark:text-zinc-400">💰 ' +
-        _tripEsc(currency) + ' ' + Number(estCost).toFixed(2) + '</span>');
+      chips.push('<span style="font-size:12px;color:' + C.sub + '">💰 ' +
+        _tripEsc(currency) + ' ' + Number(estCost).toFixed(2) + '</span>');
     }
-    var metaRow = meta.length ? '<div class="flex flex-wrap gap-3">' + meta.join('') + '</div>' : '';
+    var chipsRow = chips.length
+      ? '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">' + chips.join('') + '</div>'
+      : '';
 
+    // Map button
     var mapBtn = mapUrl
       ? '<a href="' + _tripEsc(mapUrl) + '" target="_blank" rel="noopener noreferrer" ' +
-          'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
-                 'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
+          'style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;' +
+                 'padding:9px 18px;border-radius:10px;color:#fff;text-decoration:none;' +
+                 'background:' + C.accent + ';margin-top:16px">' +
           '📍 Open in Maps</a>'
       : '';
 
+    // Attributes grid
     var attrsHtml = '';
     if (attrs.length) {
-      attrsHtml = '<div class="grid grid-cols-2 gap-2">' +
-        attrs.map(function(a) {
-          return '<div class="rounded-lg bg-gray-50 dark:bg-zinc-800 px-3 py-2">' +
-            '<p class="text-[10px] text-gray-400 dark:text-zinc-500 uppercase tracking-wide">' +
-              _tripEsc(a.attr_key) + '</p>' +
-            '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 mt-0.5">' +
-              _tripEsc(a.attr_value) + '</p></div>';
-        }).join('') + '</div>';
+      attrsHtml =
+        '<div style="margin-top:20px;' + px + '">' +
+          '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;' +
+                   'color:' + C.sub + ';margin-bottom:8px">Details</p>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+          attrs.map(function(a) {
+            return '<div style="background:' + C.bg + ';border-radius:10px;padding:10px 12px">' +
+              '<p style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;' +
+                       'color:' + C.sub + ';margin:0 0 3px">' + _tripEsc(a.attr_key) + '</p>' +
+              '<p style="font-size:13px;font-weight:500;color:' + C.text + ';margin:0">' +
+                _tripEsc(a.attr_value) + '</p>' +
+            '</div>';
+          }).join('') +
+          '</div>' +
+        '</div>';
     }
 
+    // Notes section
     var notesHtml = '';
     if (notes && notes.trim()) {
       notesHtml =
-        '<div><p class="text-[10px] font-semibold uppercase tracking-wide ' +
-                      'text-gray-400 dark:text-zinc-500 mb-1">Notes</p>' +
-          '<div class="text-sm text-gray-700 dark:text-zinc-200 md-body leading-relaxed">' +
-            _tripMdToHtml(notes) + '</div></div>';
+        '<div style="margin-top:20px;' + px + '">' +
+          '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;' +
+                   'color:' + C.sub + ';margin-bottom:8px">Notes</p>' +
+          '<div class="md-body" style="font-size:14px;line-height:1.65;color:' + C.text + '">' +
+            _tripMdToHtml(notes) +
+          '</div>' +
+        '</div>';
     }
 
-    var headerHtml = coverHtml +
-      '<div class="flex flex-wrap items-center gap-2 mb-1">' + badge + stars + '</div>' +
-      '<h2 class="text-lg font-bold text-gray-800 dark:text-zinc-100 leading-snug">' +
-        _tripEsc(name) + '</h2>';
-    var bodyHtml = [metaRow, mapBtn ? '<div>' + mapBtn + '</div>' : '', attrsHtml, notesHtml]
-      .filter(Boolean).join('');
-    _tripShowDrawer(headerHtml, bodyHtml || '<p class="text-sm text-gray-400">No additional details.</p>');
+    _tripShowDrawer(
+      cover +
+      '<div style="' + px + ';padding-top:16px">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + badge + stars + '</div>' +
+        '<h2 style="margin:8px 0 0;font-size:20px;font-weight:700;line-height:1.3;color:' + C.text + '">' +
+          _tripEsc(name) + '</h2>' +
+        chipsRow +
+        (mapBtn ? '<div>' + mapBtn + '</div>' : '') +
+      '</div>' +
+      attrsHtml +
+      notesHtml
+    );
     return;
   }
 
+  // ── BLOCK ─────────────────────────────────────────────────────────────────
   if (kind === 'block') {
     var blocks = _tripBlocks[dayId] || [];
     var blk    = null;
@@ -1382,96 +1427,105 @@ window.tripViewDetail = function(kind, dayId, id) {
 
     var bc = {};
     try { bc = JSON.parse(blk.content); } catch(e) {}
-    var bTime = blk.time_label
-      ? '<span class="text-xs font-medium text-[#0053e2] dark:text-blue-400">🕒 ' +
+    var timeChip = blk.time_label
+      ? '<span style="font-size:12px;font-weight:500;color:' + C.accent + '">🕒 ' +
           _tripEsc(_formatTime(blk.time_label)) + '</span>'
       : '';
 
+    // ── NOTE ──
     if (blk.block_type === 'note') {
-      var nc   = (typeof _TRIP_NOTE_COLORS !== 'undefined' && _TRIP_NOTE_COLORS[bc.color])
-                  || (typeof _TRIP_NOTE_COLORS !== 'undefined' && _TRIP_NOTE_COLORS.amber)
-                  || {border: '#f59e0b', bg: '#fffbeb', bgDark: '#1c1a0e'};
-      var isDark = document.documentElement.classList.contains('dark');
-      var noteBodyHtml =
-        '<div style="border-left:4px solid ' + nc.border + ';padding:10px 14px;border-radius:0 8px 8px 0;' +
-             'background:' + (isDark ? nc.bgDark : nc.bg) + '">' +
-          '<div class="text-sm text-gray-800 dark:text-zinc-100 md-body leading-relaxed">' +
-            _tripMdToHtml(bc.text || '') +
-          '</div>' +
-        '</div>';
+      var nc = (typeof _TRIP_NOTE_COLORS !== 'undefined' && _TRIP_NOTE_COLORS[bc.color])
+                || { border: '#f59e0b', bg: '#fffbeb', bgDark: '#1c180a' };
       _tripShowDrawer(
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-2xl">📝</span>' +
-          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Note</h2>' +
-          (bTime ? '<span class="ml-auto">' + bTime + '</span>' : '') +
-        '</div>',
-        noteBodyHtml || '<p class="text-sm text-gray-400 italic">(empty note)</p>'
+        '<div style="' + px + ';padding-top:20px;padding-bottom:8px;' +
+             'display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-size:24px">📝</span>' +
+          '<span style="font-size:17px;font-weight:700;color:' + C.text + '">Note</span>' +
+          timeChip +
+        '</div>' +
+        '<div style="' + px + ';padding-bottom:24px">' +
+          '<div style="border-left:4px solid ' + nc.border + ';padding:12px 16px;border-radius:0 10px 10px 0;' +
+               'background:' + (dk ? nc.bgDark : nc.bg) + '">' +
+            '<div class="md-body" style="font-size:14px;line-height:1.7;color:' + C.text + '">' +
+              _tripMdToHtml(bc.text || '(empty)') +
+            '</div>' +
+          '</div>' +
+        '</div>'
       );
       return;
     }
 
+    // ── DRIVE ──
     if (blk.block_type === 'drive') {
-      var routeHtml =
-        '<div class="space-y-3">' +
-          bTime +
-          '<div class="flex items-center gap-3 text-sm font-medium text-gray-800 dark:text-zinc-100">' +
-            '<span class="text-2xl">🚗</span>' +
-            '<div>' +
-              '<p class="text-xs text-gray-400 dark:text-zinc-500">From</p>' +
-              '<p>' + _tripEsc(bc.from || '—') + '</p>' +
-            '</div>' +
-            '<span class="text-gray-300 dark:text-zinc-600 text-lg">→</span>' +
-            '<div>' +
-              '<p class="text-xs text-gray-400 dark:text-zinc-500">To</p>' +
-              '<p>' + _tripEsc(bc.to || '—') + '</p>' +
-            '</div>' +
+      var fromTo =
+        '<div style="display:flex;align-items:center;gap:0;margin-top:4px">' +
+          '<div style="flex:1;background:' + C.bg + ';border-radius:10px 0 0 10px;padding:12px 14px;' +
+               'border:1px solid ' + C.border + ';border-right:none">' +
+            '<p style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;' +
+                     'color:' + C.sub + ';margin:0 0 2px">From</p>' +
+            '<p style="font-size:14px;font-weight:500;color:' + C.text + ';margin:0">' +
+              _tripEsc(bc.from || '—') + '</p>' +
           '</div>' +
-          ((bc.duration || bc.distance)
-            ? '<p class="text-sm text-gray-500 dark:text-zinc-400">' +
-                [bc.duration, bc.distance].filter(Boolean).join(' · ') +
-              '</p>'
-            : '') +
-          (bc.map_url
-            ? '<a href="' + _tripEsc(bc.map_url) + '" target="_blank" rel="noopener" ' +
-                'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
-                       'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
-                '🗺️ Open Route</a>'
-            : '') +
+          '<div style="font-size:20px;color:' + C.sub + ';padding:0 6px;flex-shrink:0">→</div>' +
+          '<div style="flex:1;background:' + C.bg + ';border-radius:0 10px 10px 0;padding:12px 14px;' +
+               'border:1px solid ' + C.border + ';border-left:none">' +
+            '<p style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;' +
+                     'color:' + C.sub + ';margin:0 0 2px">To</p>' +
+            '<p style="font-size:14px;font-weight:500;color:' + C.text + ';margin:0">' +
+              _tripEsc(bc.to || '—') + '</p>' +
+          '</div>' +
         '</div>';
+      var driveMeta = (bc.duration || bc.distance)
+        ? '<p style="font-size:13px;color:' + C.sub + ';margin-top:10px">' +
+            [bc.duration, bc.distance].filter(Boolean).join(' · ') + '</p>'
+        : '';
+      var routeBtn = bc.map_url
+        ? '<a href="' + _tripEsc(bc.map_url) + '" target="_blank" rel="noopener" ' +
+            'style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;' +
+                   'padding:9px 18px;border-radius:10px;color:#fff;text-decoration:none;' +
+                   'background:' + C.accent + ';margin-top:16px">' +
+            '🗺️ Open Route</a>'
+        : '';
       _tripShowDrawer(
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-2xl">🚗</span>' +
-          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Drive</h2>' +
-        '</div>',
-        routeHtml
+        '<div style="' + px + ';padding-top:20px;padding-bottom:8px;' +
+             'display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-size:24px">🚗</span>' +
+          '<span style="font-size:17px;font-weight:700;color:' + C.text + '">Drive</span>' +
+          timeChip +
+        '</div>' +
+        '<div style="' + px + ';padding-bottom:24px">' +
+          fromTo + driveMeta +
+          (routeBtn ? '<div>' + routeBtn + '</div>' : '') +
+        '</div>'
       );
       return;
     }
 
+    // ── BOOKMARK ──
     if (blk.block_type === 'bookmark') {
-      var bmHtml =
-        '<div class="space-y-3">' +
-          bTime +
-          '<p class="text-base font-semibold text-gray-800 dark:text-zinc-100">' +
+      var openBtn = bc.url
+        ? '<a href="' + _tripEsc(bc.url) + '" target="_blank" rel="noopener" ' +
+            'style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;' +
+                   'padding:9px 18px;border-radius:10px;color:#fff;text-decoration:none;' +
+                   'background:' + C.accent + ';margin-top:16px">' +
+            '🔗 Open Link</a>'
+        : '';
+      _tripShowDrawer(
+        '<div style="' + px + ';padding-top:20px;padding-bottom:8px;' +
+             'display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-size:24px">🔖</span>' +
+          '<span style="font-size:17px;font-weight:700;color:' + C.text + '">Bookmark</span>' +
+          timeChip +
+        '</div>' +
+        '<div style="' + px + ';padding-bottom:24px">' +
+          '<p style="font-size:16px;font-weight:600;color:' + C.text + ';margin:0 0 8px">' +
             _tripEsc(bc.title || '') + '</p>' +
           (bc.url
-            ? '<a href="' + _tripEsc(bc.url) + '" target="_blank" rel="noopener" ' +
-                'class="text-xs text-[#0053e2] dark:text-blue-400 hover:underline break-all">' +
-                _tripEsc(bc.url) + '</a>' +
-              '<div class="mt-2">' +
-              '<a href="' + _tripEsc(bc.url) + '" target="_blank" rel="noopener" ' +
-                'class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg ' +
-                       'bg-[#0053e2] text-white hover:bg-[#0046c0] transition font-medium">' +
-                '🔗 Open Link</a>' +
-              '</div>'
+            ? '<p style="font-size:12px;color:' + C.sub + ';word-break:break-all;margin:0">' +
+                _tripEsc(bc.url) + '</p>'
             : '') +
-        '</div>';
-      _tripShowDrawer(
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-2xl">🔖</span>' +
-          '<h2 class="text-base font-bold text-gray-800 dark:text-zinc-100">Bookmark</h2>' +
-        '</div>',
-        bmHtml
+          (openBtn ? '<div>' + openBtn + '</div>' : '') +
+        '</div>'
       );
       return;
     }
