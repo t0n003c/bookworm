@@ -57,9 +57,6 @@ window.tppToggleQcCollapse = function() {
   chevron.textContent = open ? '▾' : '▸';
   if (btn) btn.setAttribute('aria-expanded', String(open));
 };
-  var btn = document.querySelector('#trip-panels-group > button');
-  if (btn) btn.setAttribute('aria-expanded', String(open));
-};
 
 // ── Render cards row ──────────────────────────────────────────────────────
 window._tripRenderPanelCards = function(container) {
@@ -134,6 +131,8 @@ window._tripRenderPanelCards = function(container) {
     card.addEventListener('dragend', function() { card.style.opacity = ''; });
     card.innerHTML = _tppBuildCard(p, isEdit);
     row.appendChild(card);
+    // Notes CE needs DOM to exist before it can be seeded
+    if (p.panel_type === 'notes' && isEdit) window.tppNotesInitCe(p.id);
   });
 
   // ✕ Add Card button (edit mode only)
@@ -202,8 +201,13 @@ function _tppBuildCard(p, isEdit) {
 function _tppRefreshCard(panelId) {
   var p = _tppGetPanel(panelId);
   if (!p) return;
+  var isEdit = _tripPlanMode === 'edit';
   var card = document.getElementById('trip-panel-card-' + panelId);
-  if (card) card.innerHTML = _tppBuildCard(p, _tripPlanMode === 'edit');
+  if (card) {
+    card.innerHTML = _tppBuildCard(p, isEdit);
+    // Notes CE must be seeded after innerHTML is set
+    if (p.panel_type === 'notes' && isEdit) window.tppNotesInitCe(panelId);
+  }
   // Also refresh the floating settle modal if it's currently showing this panel
   var modal = document.getElementById('tpp-settle-modal');
   if (modal && modal.dataset.panelId === String(panelId)) {
@@ -532,18 +536,18 @@ function _tppEmerg(p, data, isEdit) {
 function _tppNotes(p, data, isEdit) {
   var text = data.text || '';
   if (isEdit) {
+    // Use a CE div (not textarea) so slash commands + auto-bullet work.
+    // data-md stores the raw markdown; tppNotesInitCe() seeds the DOM after insertion.
     return '<div class="flex-1 flex flex-col p-2 gap-1.5 min-h-0">' +
-      '<textarea id="tpp-notes-' + p.id + '" ' +
-        'class="flex-1 w-full text-xs ' +
-               'text-gray-800 dark:text-zinc-100 ' +
-               'bg-white dark:bg-zinc-800 ' +
-               'border border-gray-200 dark:border-zinc-600 ' +
-               'rounded-lg px-2 py-2 ' +
-               'resize-none focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 ' +
-               'leading-relaxed min-h-[8rem] placeholder-gray-400 dark:placeholder-zinc-500" ' +
-        'placeholder="Write anything… Markdown supported.">' +
-        _tripEsc(text) +
-      '</textarea>' +
+      '<div id="tpp-notes-ce-' + p.id + '" contenteditable="true" ' +
+           'data-md="' + _tripEsc(text) + '" ' +
+           'class="flex-1 w-full text-xs text-gray-800 dark:text-zinc-100 ' +
+                  'bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-600 ' +
+                  'rounded-lg px-2 py-2 overflow-y-auto ' +
+                  'focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 ' +
+                  'leading-relaxed min-h-[8rem] ' +
+                  'prose prose-xs dark:prose-invert max-w-none">' +
+      '</div>' +
       '<button onclick="tppSaveNotes(' + p.id + ')" ' +
         'class="' + _tppBtnPrimary() + ' w-full flex-shrink-0">💾 Save Notes</button>' +
     '</div>';
@@ -747,8 +751,88 @@ window.tppSaveEmergItem = function(panelId) {
 };
 
 // Notes
+// ── Notes CE editor init ────────────────────────────────────────────────────────────
+// Call this after inserting a notes-type panel card into the DOM.
+// Seeds markdown, wires slash commands, fmt toolbar, and `- ` → bullet shortcut.
+window.tppNotesInitCe = function(panelId) {
+  var ce = document.getElementById('tpp-notes-ce-' + panelId);
+  if (!ce) return;
+
+  var md = ce.getAttribute('data-md') || '';
+  if (md && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    marked.use({ gfm: true, breaks: true });
+    ce.innerHTML = DOMPurify.sanitize(marked.parse(md));
+  } else {
+    if (!ce.innerHTML.trim()) ce.innerHTML = '<p><br></p>';
+  }
+
+  if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
+  if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
+
+  // One-time keyboard wiring (guard against re-init on re-render)
+  if (ce._bwTppNoteWired) return;
+  ce._bwTppNoteWired = true;
+
+  // Track saved selection so external toolbar buttons can restore it
+  function _saveRange() {
+    var s = window.getSelection();
+    if (!s || !s.rangeCount) return;
+    try { ce._bwSavedRange = s.getRangeAt(0).cloneRange(); } catch (_) {}
+  }
+  ce.addEventListener('mouseup', _saveRange);
+  ce.addEventListener('keyup',   _saveRange);
+
+  // Capture-phase keydown: `- ` → <ul><li>  |  `1. ` → <ol><li>
+  ce.addEventListener('keydown', function(e) {
+    if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    var node  = sel.getRangeAt(0).startContainer;
+    var block = (node.nodeType === 3) ? node.parentElement : node;
+    var BLOCKS = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+    while (block && block !== ce && BLOCKS.indexOf(block.tagName) === -1) {
+      block = block.parentElement;
+    }
+    if (!block || block === ce) return;
+    var text = block.textContent.trim();
+    if (text === '-') {
+      e.preventDefault(); e.stopPropagation();
+      _tppNoteReplaceBlockWithList(block, ce, 'ul');
+    } else if (text === '1.') {
+      e.preventDefault(); e.stopPropagation();
+      _tppNoteReplaceBlockWithList(block, ce, 'ol');
+    }
+  }, true); // capture so it fires before bwSlashAttachCE
+};
+
+function _tppNoteReplaceBlockWithList(block, ce, tag) {
+  var list = document.createElement(tag);
+  var li   = document.createElement('li');
+  li.innerHTML = '<br>';
+  list.appendChild(li);
+  (block.parentNode || ce).replaceChild(list, block);
+  var r = document.createRange();
+  r.selectNodeContents(li);
+  r.collapse(true);
+  var s = window.getSelection();
+  if (s) { s.removeAllRanges(); s.addRange(r); }
+}
+
 window.tppSaveNotes = function(panelId) {
-  var text = ((document.getElementById('tpp-notes-' + panelId) || {}).value || '');
+  var ce  = document.getElementById('tpp-notes-ce-' + panelId);
+  var text;
+  if (ce) {
+    if (typeof TurndownService !== 'undefined') {
+      var td = new TurndownService({ bulletListMarker: '-', headingStyle: 'atx', codeBlockStyle: 'fenced' });
+      if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
+      text = td.turndown(ce.innerHTML).trimEnd();
+    } else {
+      text = ce.innerText || '';
+    }
+  } else {
+    // Fallback: old textarea (should never be reached post-upgrade)
+    text = ((document.getElementById('tpp-notes-' + panelId) || {}).value || '');
+  }
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content); d.text = text;
   _tppSave(panelId, d, function() { _tripShowToast('Notes saved ✓'); });
