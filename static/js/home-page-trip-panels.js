@@ -78,7 +78,7 @@ window._tripRenderPanelCards = function(container) {
 
   // Inner flex row for cards
   var row = document.createElement('div');
-  row.className = 'flex gap-4 overflow-x-auto pb-2';
+  row.className = 'flex flex-wrap gap-4 pb-2';
   group.appendChild(row);
 
   // Panel cards
