@@ -69,6 +69,18 @@ window._tripRenderFilterBar = function() {
   attrKeys.forEach(function(k) { groupOpts.push([k, 'Group: ' + k]); });
 
   var rightHtml = '<div class="flex items-center gap-2 ml-auto flex-shrink-0">';
+  // Assign to Days button — leftmost item in the right control group
+  var _assignCls = (typeof _tripAssignDrawerOpen !== 'undefined' && _tripAssignDrawerOpen)
+    ? 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+      'bg-[#0053e2] text-white font-medium transition'
+    : 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border ' +
+      'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+      'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 ' +
+      'dark:hover:bg-zinc-700 transition';
+  rightHtml += '<button onclick="tripToggleAssignDrawer()" ' +
+    'id="trip-assign-toggle" title="Quick-assign spots to day cards" ' +
+    'class="' + _assignCls + '">' +
+    '🗓️ Assign to Days</button>';
   rightHtml += _selectCtrl('tripSetSpotSort', _tripSortBy, sortOpts);
   if (_tripSortBy !== 'default') rightHtml += _dirToggle('tripToggleSpotSortDir', _tripSortDir);
   rightHtml += _selectCtrl('tripSetSpotGroup', _tripGroupBy, groupOpts);

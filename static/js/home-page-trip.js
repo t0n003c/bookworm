@@ -107,14 +107,7 @@ window._tripRenderTopbarControls = function() {
   var inLoc = !!(window._tripActiveLocId);
   if (_tripTab === 'research') {
     if (inLoc) {
-      // Inside a location — show search + add spot + quick-assign drawer toggle
-      var _assignBtnCls = _tripAssignDrawerOpen
-        ? 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-          'bg-[#0053e2] text-white font-medium transition'
-        : 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border ' +
-          'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-          'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 ' +
-          'dark:hover:bg-zinc-700 transition';
+      // Inside a location — show search + add spot (Assign to Days is in the filter bar)
       el.innerHTML =
         '<input id="trip-search" type="search" placeholder="Search spots…" ' +
           'oninput="tripSearch()" ' +
@@ -125,11 +118,7 @@ window._tripRenderTopbarControls = function() {
         '<button onclick="tripOpenAddSpot()" ' +
           'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
                  'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Spot</button>' +
-        '<button onclick="tripToggleAssignDrawer()" ' +
-          'id="trip-assign-toggle" title="Quick-assign spots to day cards" ' +
-          'class="' + _assignBtnCls + '">' +
-          '🗓️ Assign to Days</button>';
+          '＋ Add Spot</button>';
     } else {
       // Top-level locations view — search + add
       el.innerHTML =
@@ -751,7 +740,7 @@ window.tripToggleAssignDrawer = function() {
   _tripAssignDrawerOpen = !_tripAssignDrawerOpen;
   var drawer = document.getElementById('trip-assign-drawer');
   if (drawer) drawer.classList.toggle('hidden', !_tripAssignDrawerOpen);
-  _tripRenderTopbarControls();
+  _tripRenderFilterBar();   // re-renders filter bar so the Assign button updates its active state
   window._tripRenderAssignDrawer();
 };
 
