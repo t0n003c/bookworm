@@ -441,9 +441,13 @@ function _tppBudget(p, data, isEdit) {
     var sdPeople = sd.people || [];
     linkedPersonName = linkedPersonIdx !== null ? (sdPeople[linkedPersonIdx] || '') : '';
     (sd.expenses || []).forEach(function(exp) {
-      if (parseInt(exp.paid_by, 10) === linkedPersonIdx) {
-        linkedExps.push(exp);
-        linkedSpent += parseFloat(exp.amount) || 0;
+      // Use the person's actual SHARE, not the full amount they may have fronted.
+      // An expense only touches this person's budget if they're in the split array.
+      var splitArr = exp.split || [];
+      if (splitArr.indexOf(linkedPersonIdx) !== -1 && splitArr.length > 0) {
+        var share = (parseFloat(exp.amount) || 0) / splitArr.length;
+        linkedExps.push({ desc: exp.desc, amount: share, splitCount: splitArr.length });
+        linkedSpent += share;
       }
     });
   } else {
@@ -559,12 +563,19 @@ function _tppBudget(p, data, isEdit) {
       '<p class="text-[10px] font-semibold uppercase tracking-wide text-[#0053e2] dark:text-blue-400 ' +
          'px-3 pt-2 pb-0.5 select-none">🔗 From Settle Up</p>' +
       linkedExps.map(function(exp) {
-        return '<div class="flex items-center gap-2 px-3 py-1.5 border-b ' +
+        var splitNote = exp.splitCount > 1
+          ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500">your share &middot; split ' +
+              exp.splitCount + ' ways</p>'
+          : '';
+        return '<div class="flex items-start gap-2 px-3 py-1.5 border-b ' +
                'border-gray-50 dark:border-zinc-800 last:border-0">' +
-          '<p class="text-xs text-gray-600 dark:text-zinc-300 flex-1 truncate">' +
-            _tripEsc(exp.desc || 'Expense') + '</p>' +
-          '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0">' +
-            cur + ' ' + (parseFloat(exp.amount) || 0).toFixed(2) + '</span>' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-xs text-gray-600 dark:text-zinc-300 truncate">' +
+              _tripEsc(exp.desc || 'Expense') + '</p>' +
+            splitNote +
+          '</div>' +
+          '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0 mt-0.5">' +
+            cur + ' ' + exp.amount.toFixed(2) + '</span>' +
         '</div>';
       }).join('');
   }
