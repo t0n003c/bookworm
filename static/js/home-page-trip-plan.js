@@ -12,7 +12,7 @@ var _tripPlanUploadedCoverUrl = '';   // URL returned by upload-cover endpoint
 
 var _tripDays         = [];
 var _tripDayEditing   = null;   // null = add mode, int = day id being edited
-var _tripPlanMode     = 'edit'; // 'edit' | 'view'
+var _tripPlanMode     = 'view'; // 'edit' | 'view'
 
 // Panels — populated by home-page-trip-panels.js via window._tripLoadPanels()
 window._tripPanels    = [];
