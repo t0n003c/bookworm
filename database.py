@@ -255,6 +255,12 @@ async def init_db() -> None:
                 "ON workspaces(parent_id, sort_order)"
             )
 
+        # ── workspaces.ws_type — database node support (reuses ws_cols from above)
+        if "ws_type" not in ws_cols:
+            await db.execute(
+                "ALTER TABLE workspaces ADD COLUMN ws_type TEXT NOT NULL DEFAULT 'workspace'"
+            )
+
         # ── users migrations (single PRAGMA read) ─────────────────────────────
         cursor = await db.execute("PRAGMA table_info(users)")
         u_cols = {r[1] for r in await cursor.fetchall()}
@@ -1000,6 +1006,46 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_trip_plan_panels_plan "
             "ON trip_plan_panels(plan_id)"
         )
+
+        # ── Workspace Databases: card tables ────────────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS db_cards (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                db_id           INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                user_id         INTEGER NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
+                title           TEXT    NOT NULL DEFAULT 'Untitled',
+                cover_url       TEXT    NOT NULL DEFAULT '',
+                note_content    TEXT    NOT NULL DEFAULT '',
+                note_box_height INTEGER NOT NULL DEFAULT 200,
+                sort_order      INTEGER NOT NULL DEFAULT 0,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_db_cards_db "
+            "ON db_cards(db_id, sort_order)"
+        )
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS db_card_attrs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id    INTEGER NOT NULL REFERENCES db_cards(id) ON DELETE CASCADE,
+                attr_key   TEXT    NOT NULL,
+                attr_value TEXT    NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_db_card_attrs_card "
+            "ON db_card_attrs(card_id, sort_order)"
+        )
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS db_cards_updated_at
+            AFTER UPDATE ON db_cards
+            BEGIN
+                UPDATE db_cards SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END
+        """)
 
         await db.commit()
 

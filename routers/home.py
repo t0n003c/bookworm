@@ -818,11 +818,6 @@ async def home_page_view(request: Request, page_id: int):
             pass
         log.error(msg)
 
-    # ── Request-level log so we can confirm the fetch is reaching the server ──
-    import datetime as _dt
-    with open("debug_requests.log", "a") as _f:
-        _f.write(f"{_dt.datetime.now().isoformat()} GET /home/pages/{page_id}  uid={request.session.get('user_id', '?')}\n")
-
     try:
         uid  = _uid(request)
     except Exception as e:

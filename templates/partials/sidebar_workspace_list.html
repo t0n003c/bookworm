@@ -220,8 +220,23 @@
               text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800
             {% endif %}"
         >
+          {# ── emoji / icon ── #}
+          {% if node.ws_type == 'database' %}
+          <span class="text-base leading-none flex-shrink-0 text-purple-500 dark:text-purple-400" aria-hidden="true">
+            <svg class="w-4 h-4 inline-block" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 3h8v8H3V3zm0 10h8v8H3v-8zM13 3h8v8h-8V3zm0 10h8v8h-8v-8z"/>
+            </svg>
+          </span>
+          {% else %}
           <span class="text-base leading-none flex-shrink-0" aria-hidden="true">{{ node.emoji }}</span>
-          <span class="flex-1 truncate">{{ node.name }}</span>
+          {% endif %}
+          {# ── name ── #}
+          <span class="flex-1 truncate {% if node.ws_type == 'database' %}text-purple-600 dark:text-purple-400{% endif %}">{{ node.name }}</span>
+          {# ── DB badge ── #}
+          {% if node.ws_type == 'database' %}
+          <span class="text-[9px] font-bold uppercase tracking-wider px-1 rounded flex-shrink-0
+                       bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400">DB</span>
+          {% endif %}
           {% if is_open %}
           <span class="w-2 h-2 rounded-full bg-wblue flex-shrink-0"
                 title="Pinned to top bar" aria-label="Pinned"></span>
@@ -265,7 +280,7 @@
         {# ⋮ row menu (Add sub / Duplicate / Edit / Delete) #}
         <button
           type="button"
-          onclick="event.stopPropagation(); _wsRowMenuOpen(event, {{ node.id }}, '{{ node.name | e }}', '{{ node.emoji | e }}', '{{ node.parent_id or '' }}')"
+          onclick="event.stopPropagation(); _wsRowMenuOpen(event, {{ node.id }}, {{ node.name | tojson }}, {{ node.emoji | tojson }}, {{ node.parent_id | tojson }}, {{ node.ws_type | tojson }})"
           title="More actions"
           aria-label="More actions for {{ node.name }}"
           aria-haspopup="menu"

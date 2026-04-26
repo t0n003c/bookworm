@@ -1,7 +1,7 @@
 """FastAPI router for workspace management (HTMX partials)."""
 from typing import Optional
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from templates_env import templates
 
@@ -27,6 +27,7 @@ from routers.workspaces_db import (
     get_workspace_tree,
     get_workspace_breadcrumb,
     get_descendant_ids,
+    get_workspace_by_id,
     create_workspace,
     update_workspace,
     open_workspace,
@@ -41,6 +42,7 @@ from routers.workspaces_db import (
     permanent_delete_workspace,
     get_trashed_workspaces,
 )
+from routers.workspace_db_cards import get_db_cards
 from routers.notes_db import search_notes
 from routers.categories_db import (
     get_categories_for_workspace,
@@ -54,6 +56,26 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 def _uid(request: Request) -> int:
     """Extract the logged-in user's id from the session."""
     return request.session["user_id"]
+
+
+async def _enforce_type_constraint(
+    child_ws_id: int, new_parent_id: Optional[int]
+) -> None:
+    """Raise 400 if placing child_ws_id under new_parent_id violates the rule:
+    a 'workspace' node may never be nested under a 'database' node.
+    """
+    if new_parent_id is None:
+        return  # root level — always OK
+    child  = await get_workspace_by_id(child_ws_id)
+    parent = await get_workspace_by_id(new_parent_id)
+    if not child or not parent:
+        return
+    if (child.get("ws_type") or "workspace") == "workspace" \
+            and (parent.get("ws_type") or "workspace") == "database":
+        raise HTTPException(
+            status_code=400,
+            detail="A workspace cannot be nested inside a database.",
+        )
 
 
 async def _ws_context(
@@ -79,6 +101,15 @@ async def _ws_context(
     # also include the active workspace even if it isn't pinned to the top bar
     if active_ws_id is not None and active_ws_id not in breadcrumbs:
         breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id, user_id)
+    # Determine if the active workspace is a database node, and load its cards
+    active_ws_type = "workspace"
+    db_cards: list = []
+    if active_ws_id is not None:
+        ws_row = next((w for w in all_wss if w["id"] == active_ws_id), None)
+        if ws_row:
+            active_ws_type = ws_row.get("ws_type") or "workspace"
+            if active_ws_type == "database":
+                db_cards = await get_db_cards(db_id=active_ws_id, user_id=user_id)
     return {
         "notes":              notes,
         "categories":         categories,
@@ -91,6 +122,8 @@ async def _ws_context(
         "active_ws_id":       active_ws_id,
         "open_count":         len(open_wss),
         "open_ws_ids":        open_ids,
+        "active_ws_type":     active_ws_type,
+        "db_cards":           db_cards,
     }
 
 
@@ -101,9 +134,6 @@ async def switch_workspace(
     sort_by: list[str] = Query(default=[]),
 ):
     uid = _uid(request)
-    import datetime
-    with open("debug_requests.log", "a") as _f:
-        _f.write(f"{datetime.datetime.now().isoformat()} GET /workspaces/switch/{workspace_id}  uid={uid}\n")
     # Security guard: only allow switching to workspaces that belong to this user.
     # A stale localStorage value or a hand-crafted URL must never expose another
     # user's notes — return the welcome/empty state instead.
@@ -124,20 +154,31 @@ async def create_workspace_handler(
     name: str = Form(...),
     emoji: str = Form(default="\U0001f4c1"),
     parent_id: Optional[str] = Form(default=None),
+    ws_type: str = Form(default="workspace"),
 ):
-    """Create a workspace (optionally as a child), open it, switch to it.
+    """Create a workspace or database node (optionally as a child), open it, switch to it.
 
     Category inheritance rules:
     - Child workspace  → copies parent's category set (then independently editable)
     - Root workspace   → gets all existing categories as a starting set
+    - Database nodes   → no category seeding (cards have their own attr system)
     """
     uid = _uid(request)
     pid = int(parent_id) if parent_id and parent_id.strip().isdigit() else None
-    ws_id = await create_workspace(name=name, emoji=emoji, parent_id=pid, user_id=uid)
-    if pid:
-        await copy_categories_to_workspace(from_ws_id=pid, to_ws_id=ws_id)
-    else:
-        await seed_default_categories_for_workspace(ws_id)
+    # Validate ws_type
+    if ws_type not in ("workspace", "database"):
+        ws_type = "workspace"
+    # Enforce: a plain workspace cannot be created inside a database node
+    if ws_type == "workspace" and pid is not None:
+        parent_ws = await get_workspace_by_id(pid)
+        if parent_ws and (parent_ws.get("ws_type") or "workspace") == "database":
+            raise HTTPException(status_code=400, detail="A workspace cannot be nested inside a database.")
+    ws_id = await create_workspace(name=name, emoji=emoji, parent_id=pid, user_id=uid, ws_type=ws_type)
+    if ws_type == "workspace":
+        if pid:
+            await copy_categories_to_workspace(from_ws_id=pid, to_ws_id=ws_id)
+        else:
+            await seed_default_categories_for_workspace(ws_id)
     ctx = await _ws_context(ws_id, uid)
     return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
 
@@ -152,6 +193,7 @@ async def update_workspace_handler(
 ):
     """Rename / re-icon / re-parent a workspace."""
     pid = int(parent_id) if parent_id and parent_id.strip().isdigit() else None
+    await _enforce_type_constraint(child_ws_id=workspace_id, new_parent_id=pid)
     await update_workspace(
         workspace_id=workspace_id,
         name=name,
@@ -291,6 +333,7 @@ async def reparent_workspace_handler(
             # Invalid drop — just re-render without changes
             ctx = await _ws_context(_parse_ws_id(active_ws_id), uid)
             return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    await _enforce_type_constraint(child_ws_id=workspace_id, new_parent_id=parsed_parent)
     await reparent_workspace(workspace_id, parsed_parent)
     ctx = await _ws_context(_parse_ws_id(active_ws_id), uid)
     return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)

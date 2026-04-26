@@ -1,7 +1,11 @@
 {# OOB response: note list (primary target) + top-bar tabs + sidebar list + breadcrumb + hidden ws input #}
 
-{# ---- primary swap: note list ---- #}
-{% include "partials/note_list.html" %}
+{# ---- primary swap: note list OR database card grid ---- #}
+{% if active_ws_type == 'database' %}
+  {% include "partials/workspace_database_view.html" %}
+{% else %}
+  {% include "partials/note_list.html" %}
+{% endif %}
 
 {# ---- OOB: top-bar workspace tab strip ---- #}
 <div hx-swap-oob="innerHTML:#workspace-tabs">

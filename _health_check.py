@@ -27,6 +27,8 @@ try:
         "partials/note_form.html",
         "partials/sidebar_workspace_list.html",
     "partials/sidebar_trash.html",
+    "partials/workspace_switch.html",
+    "partials/workspace_database_view.html",
     ]
     all_ok = True
     for t in to_check:
