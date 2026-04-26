@@ -662,11 +662,13 @@ window.tripToggleItinCollapse = function() {
   localStorage.setItem(_ITIN_LS_KEY, _itinIsOpen() ? 'false' : 'true');
   var row     = document.getElementById('trip-days-row');
   var chevron = document.getElementById('trip-itin-chevron');
+  var btn     = document.getElementById('trip-itin-toggle-btn');
   if (!row || !chevron) return;
   var open = _itinIsOpen();
   row.classList.toggle('hidden', !open);
   chevron.textContent = open ? '▾' : '▸';
-  // WCAG 4.1.2 — keep aria-expanded in sync with visual state
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+};
   var btn = document.querySelector('[onclick="tripToggleItinCollapse()"]');
   if (btn) btn.setAttribute('aria-expanded', String(open));
 };
@@ -689,7 +691,7 @@ function _tripRenderPlan() {
 
   container.innerHTML =
     '<div id="trip-days-group" class="flex flex-col flex-shrink-0 gap-1">' +
-      '<button type="button" onclick="tripToggleItinCollapse()" ' +
+      '<button type="button" id="trip-itin-toggle-btn" onclick="tripToggleItinCollapse()" ' +
         'aria-expanded="' + itinOpen + '" ' +
         'class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest ' +
                'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none ' +

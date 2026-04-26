@@ -48,13 +48,15 @@ var _QC_LS_KEY = 'bw-trip-qc-open';
 function _tppQcIsOpen() { return localStorage.getItem(_QC_LS_KEY) !== 'false'; }
 window.tppToggleQcCollapse = function() {
   localStorage.setItem(_QC_LS_KEY, _tppQcIsOpen() ? 'false' : 'true');
-  var row = document.getElementById('trip-panels-row');
+  var row     = document.getElementById('trip-panels-row');
   var chevron = document.getElementById('trip-qc-chevron');
+  var btn     = document.getElementById('trip-qc-toggle-btn');
   if (!row || !chevron) return;
   var open = _tppQcIsOpen();
   row.classList.toggle('hidden', !open);
   chevron.textContent = open ? '▾' : '▸';
-  // WCAG 4.1.2 — keep aria-expanded in sync with visual state
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+};
   var btn = document.querySelector('#trip-panels-group > button');
   if (btn) btn.setAttribute('aria-expanded', String(open));
 };
@@ -89,6 +91,8 @@ window._tripRenderPanelCards = function(container) {
   // Group label — collapse toggle button
   var label = document.createElement('button');
   label.type = 'button';
+  label.id = 'trip-qc-toggle-btn';
+  label.setAttribute('aria-expanded', String(qcOpen));
   label.onclick = window.tppToggleQcCollapse;
   // WCAG 4.1.2 — set initial aria-expanded so screen readers know the state
   label.setAttribute('aria-expanded', String(qcOpen));
