@@ -950,7 +950,7 @@ function _tripRenderDayBlockRow(dayId, b) {
   if (b.block_type === 'panel_ref') {
     // panel_ref: only delete is valid — no editable modal exists for this type
     var panelRefDel = isEdit
-      ? '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
+      ? '<button onclick="event.stopPropagation();tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
           'class="text-[10px] text-gray-400 hover:text-red-500 transition">🗑️</button>'
       : '';
     // Synced reference to a Quick Card — resolve live panel data if available
@@ -972,7 +972,8 @@ function _tripRenderDayBlockRow(dayId, b) {
       : '';
     return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + itemCls + ' ' +
       'border border-blue-200 dark:border-blue-800 ' +
-      'bg-blue-50/40 dark:bg-blue-900/10" ' + dragAttrs + '>' +
+      'bg-blue-50/40 dark:bg-blue-900/10 cursor-pointer" ' + dragAttrs +
+      ' onclick="if(typeof tppShowPanelRefPopup===\'function\')tppShowPanelRefPopup(' + panelId + ')">' +
       '<span class="text-base flex-shrink-0">' + _tripEsc(refIcon) + '</span>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate flex items-center">' +

@@ -131,8 +131,8 @@ window._tripRenderPanelCards = function(container) {
     card.addEventListener('dragend', function() { card.style.opacity = ''; });
     card.innerHTML = _tppBuildCard(p, isEdit);
     row.appendChild(card);
-    // Notes CE needs DOM to exist before it can be seeded
-    if (p.panel_type === 'notes' && isEdit) window.tppNotesInitCe(p.id);
+    // Notes CE must be seeded after the element is in the DOM
+    if (p.panel_type === 'notes') window.tppNotesInitCe(p.id);
   });
 
   // ✕ Add Card button (edit mode only)
@@ -206,7 +206,7 @@ function _tppRefreshCard(panelId) {
   if (card) {
     card.innerHTML = _tppBuildCard(p, isEdit);
     // Notes CE must be seeded after innerHTML is set
-    if (p.panel_type === 'notes' && isEdit) window.tppNotesInitCe(panelId);
+    if (p.panel_type === 'notes') window.tppNotesInitCe(panelId);
   }
   // Also refresh the floating settle modal if it's currently showing this panel
   var modal = document.getElementById('tpp-settle-modal');
@@ -534,31 +534,20 @@ function _tppEmerg(p, data, isEdit) {
 // ── Trip Notes ────────────────────────────────────────────────────────────────
 
 function _tppNotes(p, data, isEdit) {
-  var text = data.text || '';
-  if (isEdit) {
-    // Use a CE div (not textarea) so slash commands + auto-bullet work.
-    // data-md stores the raw markdown; tppNotesInitCe() seeds the DOM after insertion.
-    return '<div class="flex-1 flex flex-col p-2 gap-1.5 min-h-0">' +
-      '<div id="tpp-notes-ce-' + p.id + '" contenteditable="true" ' +
-           'data-md="' + _tripEsc(text) + '" ' +
-           'class="flex-1 w-full text-xs text-gray-800 dark:text-zinc-100 ' +
-                  'bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-600 ' +
-                  'rounded-lg px-2 py-2 overflow-y-auto ' +
-                  'focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 ' +
-                  'leading-relaxed min-h-[8rem] ' +
-                  'prose prose-xs dark:prose-invert max-w-none">' +
-      '</div>' +
-      '<button onclick="tppSaveNotes(' + p.id + ')" ' +
-        'class="' + _tppBtnPrimary() + ' w-full flex-shrink-0">💾 Save Notes</button>' +
-    '</div>';
-  }
-  return '<div class="flex-1 overflow-y-auto p-3">' +
-    '<div class="md-body text-xs text-gray-800 dark:text-zinc-100 leading-relaxed ' +
-         'prose prose-xs dark:prose-invert max-w-none">' +
-      (text.trim()
-        ? (typeof _tripMdToHtml === 'function' ? _tripMdToHtml(text) : _tripEsc(text).replace(/\n/g, '<br>'))
-        : '<span class="text-gray-400 dark:text-zinc-500 italic">No notes yet.</span>') +
+  // Notes are ALWAYS rendered as a CE editor — regardless of plan edit/view mode.
+  // tppNotesInitCe() seeds the content + wires slash commands after DOM insertion.
+  // isEdit only affects whether the card header shows move/delete controls.
+  return '<div class="flex-1 flex flex-col p-2 gap-1.5 min-h-0">' +
+    '<div id="tpp-notes-ce-' + p.id + '" contenteditable="true" ' +
+         'class="flex-1 w-full text-xs text-gray-800 dark:text-zinc-100 ' +
+                'bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-600 ' +
+                'rounded-lg px-2 py-2 overflow-y-auto ' +
+                'focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 ' +
+                'leading-relaxed min-h-[8rem] ' +
+                'prose prose-xs dark:prose-invert max-w-none">' +
     '</div>' +
+    '<button onclick="tppSaveNotes(' + p.id + ')" ' +
+      'class="' + _tppBtnPrimary() + ' w-full flex-shrink-0">💾 Save</button>' +
   '</div>';
 }
 
@@ -753,56 +742,61 @@ window.tppSaveEmergItem = function(panelId) {
 // Notes
 // ── Notes CE editor init ────────────────────────────────────────────────────────────
 // Call this after inserting a notes-type panel card into the DOM.
-// Seeds markdown, wires slash commands, fmt toolbar, and `- ` → bullet shortcut.
+// Seeds markdown from panel data, wires slash commands, fmt toolbar, auto-bullet.
+// Uses setTimeout(0) so all defer'd scripts (slash_commands.js etc.) are ready.
 window.tppNotesInitCe = function(panelId) {
-  var ce = document.getElementById('tpp-notes-ce-' + panelId);
-  if (!ce) return;
+  setTimeout(function() {
+    var ce = document.getElementById('tpp-notes-ce-' + panelId);
+    if (!ce) return;
 
-  var md = ce.getAttribute('data-md') || '';
-  if (md && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
-    marked.use({ gfm: true, breaks: true });
-    ce.innerHTML = DOMPurify.sanitize(marked.parse(md));
-  } else {
-    if (!ce.innerHTML.trim()) ce.innerHTML = '<p><br></p>';
-  }
+    // Look up markdown from live panel data—no data-attr needed (no newline loss)
+    var p  = _tppGetPanel(panelId);
+    var md = p ? (_tppParse(p.content).text || '') : '';
 
-  if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
-  if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
-
-  // One-time keyboard wiring (guard against re-init on re-render)
-  if (ce._bwTppNoteWired) return;
-  ce._bwTppNoteWired = true;
-
-  // Track saved selection so external toolbar buttons can restore it
-  function _saveRange() {
-    var s = window.getSelection();
-    if (!s || !s.rangeCount) return;
-    try { ce._bwSavedRange = s.getRangeAt(0).cloneRange(); } catch (_) {}
-  }
-  ce.addEventListener('mouseup', _saveRange);
-  ce.addEventListener('keyup',   _saveRange);
-
-  // Capture-phase keydown: `- ` → <ul><li>  |  `1. ` → <ol><li>
-  ce.addEventListener('keydown', function(e) {
-    if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
-    var sel = window.getSelection();
-    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
-    var node  = sel.getRangeAt(0).startContainer;
-    var block = (node.nodeType === 3) ? node.parentElement : node;
-    var BLOCKS = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
-    while (block && block !== ce && BLOCKS.indexOf(block.tagName) === -1) {
-      block = block.parentElement;
+    if (md && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+      marked.use({ gfm: true, breaks: true });
+      ce.innerHTML = DOMPurify.sanitize(marked.parse(md));
+    } else {
+      if (!ce.innerHTML.trim()) ce.innerHTML = '<p><br></p>';
     }
-    if (!block || block === ce) return;
-    var text = block.textContent.trim();
-    if (text === '-') {
-      e.preventDefault(); e.stopPropagation();
-      _tppNoteReplaceBlockWithList(block, ce, 'ul');
-    } else if (text === '1.') {
-      e.preventDefault(); e.stopPropagation();
-      _tppNoteReplaceBlockWithList(block, ce, 'ol');
+
+    if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
+    if (typeof window.bwFmtAttach     === 'function') window.bwFmtAttach(ce);
+
+    // One-time keyboard wiring (guard against re-init on the same element)
+    if (ce._bwTppNoteWired) return;
+    ce._bwTppNoteWired = true;
+
+    function _saveRange() {
+      var s = window.getSelection();
+      if (!s || !s.rangeCount) return;
+      try { ce._bwSavedRange = s.getRangeAt(0).cloneRange(); } catch (_) {}
     }
-  }, true); // capture so it fires before bwSlashAttachCE
+    ce.addEventListener('mouseup', _saveRange);
+    ce.addEventListener('keyup',   _saveRange);
+
+    // Capture-phase keydown: `- ` → <ul><li>  |  `1. ` → <ol><li>
+    ce.addEventListener('keydown', function(e) {
+      if (e.key !== ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+      var node  = sel.getRangeAt(0).startContainer;
+      var block = (node.nodeType === 3) ? node.parentElement : node;
+      var BLOCKS = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+      while (block && block !== ce && BLOCKS.indexOf(block.tagName) === -1) {
+        block = block.parentElement;
+      }
+      if (!block || block === ce) return;
+      var text = block.textContent.trim();
+      if (text === '-') {
+        e.preventDefault(); e.stopPropagation();
+        _tppNoteReplaceBlockWithList(block, ce, 'ul');
+      } else if (text === '1.') {
+        e.preventDefault(); e.stopPropagation();
+        _tppNoteReplaceBlockWithList(block, ce, 'ol');
+      }
+    }, true);
+  }, 0);
 };
 
 function _tppNoteReplaceBlockWithList(block, ce, tag) {
@@ -896,6 +890,69 @@ window.tppOpenSettleModal = function(panelId) {
 
 window.tppCloseSettleModal = function() {
   var m = document.getElementById('tpp-settle-modal');
+  if (m) m.remove();
+};
+
+// ── Panel-ref popup (click a synced day block → view the Quick Card detail) ──────────
+window.tppShowPanelRefPopup = function(panelId) {
+  var p = _tppGetPanel(panelId);
+  if (!p) { _tripShowToast('Quick Card not found', true); return; }
+
+  // Remove any existing popup
+  var old = document.getElementById('tpp-panelref-popup');
+  if (old) old.remove();
+
+  var cfg   = _TPP_TYPES[p.panel_type] || { icon: '📋', label: p.panel_type };
+  var title = p.title || cfg.label;
+
+  var overlay = document.createElement('div');
+  overlay.id = 'tpp-panelref-popup';
+  overlay.className =
+    'fixed inset-0 z-50 flex items-center justify-center ' +
+    'bg-black/40 dark:bg-black/60 backdrop-blur-sm';
+  overlay.onclick = function(e) {
+    if (e.target === overlay) window.tppClosePanelRefPopup();
+  };
+
+  overlay.innerHTML =
+    '<div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden" ' +
+         'style="width:380px;max-width:96vw;max-height:85vh" onclick="event.stopPropagation()">' +
+      // Header
+      '<div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 ' +
+               'border-b border-gray-100 dark:border-zinc-800 ' +
+               'bg-gradient-to-r from-blue-50/60 to-white dark:from-zinc-800 dark:to-zinc-900">' +
+        '<span class="text-lg flex-shrink-0">' + _tripEsc(cfg.icon) + '</span>' +
+        '<span class="flex-1 text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate">' +
+          _tripEsc(title) + '</span>' +
+        '<span class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ' +
+          'bg-blue-100 dark:bg-blue-900/40 text-[#0053e2] dark:text-blue-300 flex-shrink-0">sync</span>' +
+        '<button onclick="tppClosePanelRefPopup()" ' +
+          'class="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 ' +
+                 'text-xl leading-none transition flex-shrink-0" aria-label="Close">&times;</button>' +
+      '</div>' +
+      // Body — notes get read-only markdown; others use the standard view body
+      '<div class="flex-1 overflow-y-auto">' +
+        (p.panel_type === 'notes'
+          ? (function() {
+              var md = _tppParse(p.content).text || '';
+              return '<div class="p-3 text-xs text-gray-800 dark:text-zinc-100 leading-relaxed ' +
+                'prose prose-xs dark:prose-invert max-w-none">' +
+                (md.trim()
+                  ? (typeof _tripMdToHtml === 'function'
+                      ? _tripMdToHtml(md)
+                      : _tripEsc(md).replace(/\n/g, '<br>'))
+                  : '<span class="text-gray-400 dark:text-zinc-500 italic">No notes yet.</span>') +
+              '</div>';
+            })()
+          : _tppBody(p, _tppParse(p.content), false)) +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+};
+
+window.tppClosePanelRefPopup = function() {
+  var m = document.getElementById('tpp-panelref-popup');
   if (m) m.remove();
 };
 
@@ -1016,32 +1073,31 @@ function _tppSettle(p, data, isEdit) {
   var cur      = data.currency || 'USD';
   var layout   = data.layout   || 'standard';
 
-  // ─ View mode: dispatch to chosen layout ───────────────────────────────────
-  if (!isEdit) {
-    if (layout === 'compact') return _tppSettleCompact(p, data);
-    if (layout === 'ledger')  return _tppSettleLedger(p, data);
-    if (layout === 'receipt') return _tppSettleReceipt(p, data);
-    // 'standard' falls through to the shared standard renderer below
-  }
-
-  // ─ Layout picker row (edit mode) ───────────────────────────────────
+  // ─ Layout picker (shown in BOTH view and edit mode) ─────────────────────────────
   var layouts = ['standard','compact','ledger','receipt'];
-  var layoutPicker = isEdit
-    ? '<div class="flex items-center gap-1.5 px-3 pt-2 pb-1 flex-shrink-0 ' +
-        'border-b border-gray-100 dark:border-zinc-800">' +
-        '<span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Layout:</span>' +
-        layouts.map(function(l) {
-          var active = l === layout;
-          return '<button type="button" onclick="tppSettleSetLayout(' + p.id + ',\'' + l + '\')" ' +
-            'class="px-2 py-0.5 rounded text-[10px] font-semibold transition ' +
-            (active
-              ? 'bg-[#0053e2] text-white'
-              : 'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 ' +
-                'hover:bg-gray-200 dark:hover:bg-zinc-600') + '">' +
-            l.charAt(0).toUpperCase() + l.slice(1) + '</button>';
-        }).join('') +
-      '</div>'
-    : '';
+  var layoutPicker =
+    '<div class="flex items-center gap-1 px-3 pt-2 pb-1 flex-shrink-0 ' +
+      'border-b border-gray-100 dark:border-zinc-800">' +
+      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1 flex-shrink-0">View:</span>' +
+      layouts.map(function(l) {
+        var active = l === layout;
+        return '<button type="button" onclick="tppSettleSetLayout(' + p.id + ',\'' + l + '\')" ' +
+          'class="px-1.5 py-0.5 rounded text-[10px] font-semibold transition ' +
+          (active
+            ? 'bg-[#0053e2] text-white'
+            : 'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 ' +
+              'hover:bg-gray-200 dark:hover:bg-zinc-600') + '">' +
+          l.charAt(0).toUpperCase() + l.slice(1) + '</button>';
+      }).join('') +
+    '</div>';
+
+  // ─ View mode: dispatch non-standard layouts (standard falls through) ─────────
+  if (!isEdit) {
+    if (layout === 'compact') return layoutPicker + _tppSettleCompact(p, data);
+    if (layout === 'ledger')  return layoutPicker + _tppSettleLedger(p, data);
+    if (layout === 'receipt') return layoutPicker + _tppSettleReceipt(p, data);
+    // 'standard' falls through to the full standard renderer below
+  }
 
   // ─ Currency row (edit mode) ────────────────────────────────────
   var curRow = isEdit
