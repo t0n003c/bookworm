@@ -178,6 +178,13 @@ function _tppBuildCard(p, isEdit) {
         'class="text-gray-400 hover:text-red-500 transition text-xs ml-0.5" title="Delete">🗑️</button>'
     : '';
 
+  // Settle Up: show an edit icon even in view mode
+  var settleViewEdit = (!isEdit && p.panel_type === 'settle')
+    ? '<button onclick="tppOpenSettleModal(' + p.id + ')" ' +
+        'class="text-gray-400 hover:text-[#0053e2] transition text-xs ml-1" ' +
+        'title="Add / edit expenses">✏️</button>'
+    : '';
+
   var header =
     '<div class="flex items-center gap-1 px-3 py-2 flex-shrink-0 ' +
          'border-b border-gray-100 dark:border-zinc-800 ' +
@@ -185,19 +192,24 @@ function _tppBuildCard(p, isEdit) {
       '<span class="text-base flex-shrink-0">' + cfg.icon + '</span>' +
       '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
         _tripEsc(title) + '</p>' +
-      moveBtns + actBtns +
+      moveBtns + actBtns + settleViewEdit +
     '</div>';
 
   return header + _tppBody(p, data, isEdit);
 }
 
-// Refresh a single card in place
+// Refresh a single card in place (and the settle modal if it's open for this card)
 function _tppRefreshCard(panelId) {
   var p = _tppGetPanel(panelId);
   if (!p) return;
   var card = document.getElementById('trip-panel-card-' + panelId);
-  if (!card) return;
-  card.innerHTML = _tppBuildCard(p, _tripPlanMode === 'edit');
+  if (card) card.innerHTML = _tppBuildCard(p, _tripPlanMode === 'edit');
+  // Also refresh the floating settle modal if it's currently showing this panel
+  var modal = document.getElementById('tpp-settle-modal');
+  if (modal && modal.dataset.panelId === String(panelId)) {
+    var body = document.getElementById('tpp-settle-modal-body');
+    if (body) body.innerHTML = _tppSettleModalContent(p);
+  }
 }
 
 function _tppParse(raw) {
@@ -744,12 +756,210 @@ window.tppSaveNotes = function(panelId) {
 
 // ── Settle Up ────────────────────────────────────────────────────────────────────
 
+// ── Settle Up — view-mode modal ─────────────────────────────────────────────────────
+
+// Build the content rendered inside the settle modal (full edit UI for the panel)
+function _tppSettleModalContent(p) {
+  var data = _tppParse(p.content);
+  // _tppSettle(p, data, true) already includes the layout picker row
+  return _tppSettle(p, data, true);
+}
+
+window.tppOpenSettleModal = function(panelId) {
+  var p = _tppGetPanel(panelId);
+  if (!p) return;
+
+  // Remove any existing modal
+  var old = document.getElementById('tpp-settle-modal');
+  if (old) old.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id             = 'tpp-settle-modal';
+  overlay.dataset.panelId = String(panelId);
+  overlay.className      = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+  overlay.style.background = 'rgba(0,0,0,0.45)';
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) window.tppCloseSettleModal();
+  });
+
+  var cfg   = _TPP_TYPES.settle;
+  var title = p.title || cfg.label;
+  overlay.innerHTML =
+    '<div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden" ' +
+         'style="width:420px;max-width:96vw;max-height:88vh">' +
+      '<div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 ' +
+               'border-b border-gray-100 dark:border-zinc-800 ' +
+               'bg-gradient-to-r from-blue-50/60 to-white dark:from-zinc-800 dark:to-zinc-900">' +
+        '<span class="text-lg">' + cfg.icon + '</span>' +
+        '<p class="flex-1 text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate">' +
+          _tripEsc(title) + '</p>' +
+        '<button onclick="tppCloseSettleModal()" ' +
+          'class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 text-xl leading-none ' +
+                 'transition ml-1" aria-label="Close">&times;</button>' +
+      '</div>' +
+      '<div id="tpp-settle-modal-body" class="flex-1 overflow-y-auto">' +
+        _tppSettleModalContent(p) +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+  // Trap focus: focus the first input
+  setTimeout(function() {
+    var inp = overlay.querySelector('input');
+    if (inp) inp.focus();
+  }, 60);
+};
+
+window.tppCloseSettleModal = function() {
+  var m = document.getElementById('tpp-settle-modal');
+  if (m) m.remove();
+};
+
+// Change the layout of a Settle Up card and persist it
+window.tppSettleSetLayout = function(panelId, layout) {
+  var p = _tppGetPanel(panelId);
+  if (!p) return;
+  var d = _tppParse(p.content);
+  d.layout = layout;
+  _tppSave(panelId, d, null); // _tppRefreshCard fires inside _tppSave
+};
+
+function _tppSettleCompact(p, data) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  var cur      = data.currency || 'USD';
+  var total    = expenses.reduce(function(s, e) { return s + (parseFloat(e.amount) || 0); }, 0);
+  var txns     = _tppComputeSettlement(data);
+  var txnRows  = txns.map(function(t) {
+    return '<div class="flex items-center gap-1 py-0.5">' +
+      '<span class="text-xs font-medium truncate max-w-[35%]">' + _tripEsc(people[t.from] || '?') + '</span>' +
+      '<span class="text-[10px] text-gray-400 flex-shrink-0">→</span>' +
+      '<span class="text-xs font-medium truncate flex-1">' + _tripEsc(people[t.to] || '?') + '</span>' +
+      '<span class="text-xs font-semibold text-[#0053e2] ml-auto">' + cur + ' ' + t.amt.toFixed(2) + '</span>' +
+    '</div>';
+  }).join('');
+  return '<div class="px-3 py-2 text-center border-b border-gray-100 dark:border-zinc-800">' +
+      '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' + expenses.length + ' expenses</p>' +
+      '<p class="text-xl font-bold text-gray-700 dark:text-zinc-200">' + cur + ' ' + total.toFixed(2) + '</p>' +
+    '</div>' +
+    '<div class="px-3 py-2">' +
+      (txnRows || '<p class="text-[10px] text-gray-400 italic text-center py-2">🎉 All settled!</p>') +
+    '</div>';
+}
+
+function _tppSettleLedger(p, data) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  var cur      = data.currency || 'USD';
+  if (!people.length) return '<p class="text-[10px] text-gray-400 italic px-3 py-2">No people yet</p>';
+
+  var paid  = people.map(function() { return 0; });
+  var share = people.map(function() { return 0; });
+  expenses.forEach(function(exp) {
+    var amt   = parseFloat(exp.amount) || 0;
+    var payer = parseInt(exp.paid_by, 10);
+    var spl   = exp.split || [];
+    if (isNaN(payer) || payer < 0 || payer >= people.length || !spl.length) return;
+    paid[payer] += amt;
+    var perHead = amt / spl.length;
+    spl.forEach(function(i) { if (i >= 0 && i < people.length) share[i] += perHead; });
+  });
+
+  var rows = people.map(function(name, i) {
+    var net = paid[i] - share[i];
+    var netCls = net > 0.005
+      ? 'text-[#2a8703] dark:text-green-400 font-semibold'
+      : (net < -0.005 ? 'text-[#ea1100] dark:text-red-400 font-semibold' : 'text-gray-400 dark:text-zinc-500');
+    var netStr = (net >= 0 ? '+' : '') + net.toFixed(2);
+    return '<tr class="border-b border-gray-50 dark:border-zinc-800 last:border-0">' +
+      '<td class="py-1.5 px-2 text-xs font-medium text-gray-700 dark:text-zinc-200 max-w-[80px] truncate">' + _tripEsc(name) + '</td>' +
+      '<td class="py-1.5 px-2 text-xs text-right text-gray-600 dark:text-zinc-300">' + paid[i].toFixed(2) + '</td>' +
+      '<td class="py-1.5 px-2 text-xs text-right text-gray-600 dark:text-zinc-300">' + share[i].toFixed(2) + '</td>' +
+      '<td class="py-1.5 px-2 text-xs text-right ' + netCls + '">' + netStr + '</td>' +
+    '</tr>';
+  }).join('');
+
+  return '<div class="overflow-x-auto">' +
+    '<table class="w-full text-left">' +
+      '<thead>' +
+        '<tr class="border-b border-gray-100 dark:border-zinc-700">' +
+          '<th class="py-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Person</th>' +
+          '<th class="py-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Paid</th>' +
+          '<th class="py-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Share</th>' +
+          '<th class="py-1.5 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Net</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table>' +
+  '</div>' +
+  '<p class="text-[10px] text-gray-400 dark:text-zinc-500 px-3 py-1">' + cur + ' • + owed to you / − you owe</p>';
+}
+
+function _tppSettleReceipt(p, data) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  var cur      = data.currency || 'USD';
+  if (!expenses.length) return '<p class="text-[10px] text-gray-400 italic px-3 py-2">No expenses recorded</p>';
+
+  var total = 0;
+  var rows = expenses.map(function(exp) {
+    var amt      = parseFloat(exp.amount) || 0;
+    total += amt;
+    var payer    = people[parseInt(exp.paid_by, 10)] || '?';
+    var splitNames = (exp.split || []).map(function(i) { return people[i] || '?'; }).join(', ');
+    return '<div class="flex items-start gap-2 px-3 py-1.5 border-b border-gray-50 dark:border-zinc-800 last:border-0">' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' + _tripEsc(exp.desc || 'Expense') + '</p>' +
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 truncate">💳 ' + _tripEsc(payer) + ' · 🧑‍🧑‍🧒 ' + _tripEsc(splitNames) + '</p>' +
+      '</div>' +
+      '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-shrink-0">' + cur + ' ' + amt.toFixed(2) + '</span>' +
+    '</div>';
+  }).join('');
+
+  return '<div class="max-h-60 overflow-y-auto">' + rows + '</div>' +
+    '<div class="flex justify-between items-center px-3 py-2 border-t border-gray-200 dark:border-zinc-700 ' +
+               'bg-gray-50 dark:bg-zinc-800">' +
+      '<span class="text-xs font-semibold text-gray-500 dark:text-zinc-400">Total</span>' +
+      '<span class="text-sm font-bold text-gray-700 dark:text-zinc-200">' + cur + ' ' + total.toFixed(2) + '</span>' +
+    '</div>';
+}
+
+// ── Settle Up (main renderer) ───────────────────────────────────────────────────
+
 function _tppSettle(p, data, isEdit) {
   var people   = data.people   || [];
   var expenses = data.expenses || [];
   var cur      = data.currency || 'USD';
+  var layout   = data.layout   || 'standard';
 
-  // ─ Currency row (edit mode) ─────────────────────────────────
+  // ─ View mode: dispatch to chosen layout ───────────────────────────────────
+  if (!isEdit) {
+    if (layout === 'compact') return _tppSettleCompact(p, data);
+    if (layout === 'ledger')  return _tppSettleLedger(p, data);
+    if (layout === 'receipt') return _tppSettleReceipt(p, data);
+    // 'standard' falls through to the shared standard renderer below
+  }
+
+  // ─ Layout picker row (edit mode) ───────────────────────────────────
+  var layouts = ['standard','compact','ledger','receipt'];
+  var layoutPicker = isEdit
+    ? '<div class="flex items-center gap-1.5 px-3 pt-2 pb-1 flex-shrink-0 ' +
+        'border-b border-gray-100 dark:border-zinc-800">' +
+        '<span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Layout:</span>' +
+        layouts.map(function(l) {
+          var active = l === layout;
+          return '<button type="button" onclick="tppSettleSetLayout(' + p.id + ',\'' + l + '\')" ' +
+            'class="px-2 py-0.5 rounded text-[10px] font-semibold transition ' +
+            (active
+              ? 'bg-[#0053e2] text-white'
+              : 'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 ' +
+                'hover:bg-gray-200 dark:hover:bg-zinc-600') + '">' +
+            l.charAt(0).toUpperCase() + l.slice(1) + '</button>';
+        }).join('') +
+      '</div>'
+    : '';
+
+  // ─ Currency row (edit mode) ────────────────────────────────────
   var curRow = isEdit
     ? '<div class="flex items-center gap-1.5 px-3 pt-2 pb-1">' +
         '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Currency:</span>' +
@@ -900,7 +1110,7 @@ function _tppSettle(p, data, isEdit) {
           'Add at least 2 people to start</p>'
       : '');
 
-  return curRow + peopleSection + expSection + expForm + settleSection + footer;
+  return layoutPicker + curRow + peopleSection + expSection + expForm + settleSection + footer;
 }
 
 // Compute minimum transactions to settle all debts (greedy algorithm)

@@ -951,6 +951,11 @@ function _tripRenderDayBlockRow(dayId, b) {
   }
 
   if (b.block_type === 'panel_ref') {
+    // panel_ref: only delete is valid — no editable modal exists for this type
+    var panelRefDel = isEdit
+      ? '<button onclick="tripDeleteBlock(' + dayId + ',' + b.id + ')" ' +
+          'class="text-[10px] text-gray-400 hover:text-red-500 transition">🗑️</button>'
+      : '';
     // Synced reference to a Quick Card — resolve live panel data if available
     var panelId  = c.panel_id;
     var refTitle = c.title      || 'Quick Card';
@@ -978,7 +983,7 @@ function _tripRenderDayBlockRow(dayId, b) {
         '</p>' +
         timeSpan +
       '</div>' +
-      editBtn + delBtn +
+      panelRefDel +
     '</div>';
   }
 
