@@ -669,9 +669,6 @@ window.tripToggleItinCollapse = function() {
   chevron.textContent = open ? '▾' : '▸';
   if (btn) btn.setAttribute('aria-expanded', String(open));
 };
-  var btn = document.querySelector('[onclick="tripToggleItinCollapse()"]');
-  if (btn) btn.setAttribute('aria-expanded', String(open));
-};
 
 // ── Render all day lanes ────────────────────────────────────────────────────
 function _tripRenderPlan() {
