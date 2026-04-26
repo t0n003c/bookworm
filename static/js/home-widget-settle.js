@@ -36,14 +36,15 @@ function _settleUpInit(el) {
     people:          [],
     expenses:        [],
     currency:        'USD',
+    style:           el.dataset.style || 'default',
     synced:          synced,
     synced_page_id:  syncPgId,
     synced_plan_id:  syncPlId,
     synced_panel_id: syncPaId,
     page_id:         pageId,
     busy:            false,
-    panel_title:     '',    // preserved for sync writes
-    editingExpIdx:   -2,    // -2 = no form open, -1 = new, ≥0 = editing idx
+    panel_title:     '',
+    editingExpIdx:   -2,
   };
 
   if (synced) {
@@ -88,6 +89,87 @@ function _suFetchSync(wid, el) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function _suRender(wid, el) {
+  if (!el) el = document.getElementById('settle-up-' + wid);
+  if (!el) return;
+  var st = _suState[wid];
+  if (st.style === 'compact') { _suRenderCompact(wid, el); return; }
+  _suRenderFull(wid, el);
+}
+
+// ── Compact render — read-only summary: totals + settlement rows ──────────────
+function _suRenderCompact(wid, el) {
+  var st       = _suState[wid];
+  var people   = st.people   || [];
+  var expenses = st.expenses || [];
+  var cur      = _suSym(st.currency);
+
+  var total = 0;
+  for (var i = 0; i < expenses.length; i++) {
+    total += parseFloat(expenses[i].amount) || 0;
+  }
+
+  var syncBadge = st.synced
+    ? '<span class="text-[9px] font-semibold uppercase tracking-wide px-1 py-0.5 rounded '
+      + 'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400 ml-1">⇄</span>'
+    : '';
+
+  // Totals bar
+  var header = '<div class="flex items-center justify-between px-3 pt-2 pb-1 border-b '
+    + 'border-gray-50 dark:border-zinc-800">';
+  header += '<span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">';
+  header += st.currency + syncBadge + '</span>';
+  header += '<span class="text-xs font-bold text-gray-700 dark:text-zinc-200">';
+  header += cur + ' ' + total.toFixed(2);
+  header += '<span class="text-[9px] font-normal text-gray-400 dark:text-zinc-500 ml-1">'
+    + expenses.length + ' exp</span></span>';
+  header += '<span id="su-status-' + wid + '" class="text-[10px] ml-1"></span>';
+  header += '</div>';
+
+  // People pills — tiny, no delete buttons
+  var peopleLine = '';
+  if (people.length) {
+    var pills = people.map(function(name) {
+      return '<span class="text-[10px] px-1.5 py-0.5 rounded-full '
+        + 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300">' + _suEsc(name) + '</span>';
+    }).join(' ');
+    peopleLine = '<div class="flex flex-wrap gap-1 px-3 py-1.5">' + pills + '</div>';
+  }
+
+  // Settlement rows
+  var settlements = (people.length >= 2 && expenses.length)
+    ? _suSettlementCalc(people, expenses)
+    : [];
+
+  var settlementRows = '';
+  if (!settlements.length && expenses.length) {
+    settlementRows = '<p class="text-xs text-green-600 dark:text-green-400 font-medium px-3 py-1.5">✓ All settled up!</p>';
+  } else if (settlements.length) {
+    settlementRows = settlements.map(function(s) {
+      return '<div class="flex items-center gap-1.5 px-3 py-1 border-b '
+        + 'border-gray-50 dark:border-zinc-800 last:border-0 flex-wrap">';
+      // intentional fall-through via concat below
+    }).join(''); // placeholder — rebuilt below
+    settlementRows = '';
+    for (var j = 0; j < settlements.length; j++) {
+      var s = settlements[j];
+      settlementRows += '<div class="flex items-center gap-1.5 px-3 py-1 border-b '
+        + 'border-gray-50 dark:border-zinc-800 last:border-0 flex-wrap">'
+        + '<span class="text-[11px] text-gray-700 dark:text-zinc-200 font-medium">' + _suEsc(people[s.fromIdx]) + '</span>'
+        + '<span class="text-[10px] text-gray-400 dark:text-zinc-500">owes</span>'
+        + '<span class="text-[11px] font-bold text-[#0053e2] dark:text-blue-400">' + cur + ' ' + s.amount.toFixed(2) + '</span>'
+        + '<span class="text-[10px] text-gray-400 dark:text-zinc-500">to</span>'
+        + '<span class="text-[11px] text-gray-700 dark:text-zinc-200 font-medium">' + _suEsc(people[s.toIdx]) + '</span>'
+        + '</div>';
+    }
+  } else if (!expenses.length) {
+    settlementRows = '<p class="text-xs text-gray-300 dark:text-zinc-600 px-3 py-2">No expenses yet.</p>';
+  }
+
+  el.innerHTML = header + peopleLine + settlementRows;
+}
+
+// ── Full (standard) render ────────────────────────────────────────────────────
+function _suRenderFull(wid, el) {
   if (!el) el = document.getElementById('settle-up-' + wid);
   if (!el) return;
   var st       = _suState[wid];
