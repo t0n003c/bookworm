@@ -21,6 +21,10 @@ var _tripSpotUploadedCoverUrl = '';   // set by upload-cover endpoint
 var _tripAssignDrawerOpen = false;   // is the drawer currently visible?
 var _tripAssignDays       = [];      // days fetched by drawer (owned separately from _tripDays)
 
+// Touch DnD fallback state
+var _tripTouchMode      = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+var _tripSelectedSpotId = 0;         // spot id selected for tap-assign; 0 = none
+
 var _TRIP_TYPES = [
   'Restaurant', 'Hotel', 'Camping', 'Hiking',
   'City Attraction', 'Beach', 'Museum', 'Other'
@@ -53,6 +57,7 @@ window.initTripPage = function(pid) {
   _tripSpotUploadedCoverUrl = '';
   _tripAssignDrawerOpen     = false;
   _tripAssignDays           = [];
+  _tripSelectedSpotId       = 0;
   tripSetTab('research');
   // Load locations — pass true so sessionStorage drill-in is restored exactly once
   if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
@@ -260,13 +265,13 @@ function _tripRenderSpotCard(s) {
     daySection =
       '<div class="flex items-center gap-1 mt-0.5">' +
         '<select id="trip-add-day-sel-' + s.id + '" ' +
-          'class="flex-1 text-[10px] px-1.5 py-1 rounded-lg border border-gray-200 ' +
+          'class="flex-1 text-xs px-1.5 py-1.5 rounded-lg border border-gray-200 ' +
                  'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
                  'text-gray-700 dark:text-zinc-200 focus:outline-none">' +
           dayOpts +
         '</select>' +
         '<button onclick="tripAddSpotToDay(' + s.id + ')" ' +
-          'class="px-2 py-1 text-[10px] rounded-lg bg-[#0053e2] text-white ' +
+          'class="px-3 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white ' +
                  'hover:bg-[#0046c0] transition font-medium">＋ Day</button>' +
       '</div>';
   } else if (typeof window._tripActivePlanId !== 'undefined' && window._tripActivePlanId) {
@@ -299,6 +304,14 @@ function _tripRenderSpotCard(s) {
       attrs +
       '<div class="flex items-center gap-2 mt-auto pt-1">' +
         mapBtn +
+        (_tripTouchMode
+          ? '<button onclick="event.stopPropagation();tripSelectSpotForAssign(' + s.id + ')" ' +
+              'class="text-xs ' +
+              (_tripSelectedSpotId === s.id
+                ? 'text-[#0053e2] font-bold'
+                : 'text-gray-400 hover:text-[#0053e2]') +
+              ' transition" title="Select for tap-assign">📌</button>'
+          : '') +
         '<button onclick="event.stopPropagation();tripOpenEditSpot(' + s.id + ')" ' +
           'class="text-[10px] text-gray-400 hover:text-[#0053e2] transition ml-auto">✏️ Edit</button>' +
         '<button onclick="event.stopPropagation();tripConfirmDeleteSpot(' + s.id + ',' +
@@ -770,6 +783,7 @@ window._tripRenderAssignDrawer = function() {
   days.forEach(function(d) {
     html +=
       '<div id="trip-assign-chip-' + d.id + '" ' +
+        'onclick="tripAssignChipTap(event,' + d.id + ')" ' +
         'ondragover="tripAssignDragOver(event)" ' +
         'ondragleave="tripAssignDragLeave(event)" ' +
         'ondrop="tripAssignDrop(event,' + d.id + ')" ' +
@@ -777,7 +791,7 @@ window._tripRenderAssignDrawer = function() {
                'px-3 py-2 rounded-xl border-2 border-dashed border-gray-300 ' +
                'dark:border-zinc-600 bg-white dark:bg-zinc-800 text-center ' +
                'select-none transition" ' +
-        'style="min-width:5.5rem; max-width:7rem; cursor:default;">' +
+        'style="min-width:5.5rem; max-width:7rem; cursor:pointer;">' +
         '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 ' +
                'truncate w-full text-center">' +
           _tripEsc(d.day_label || 'Day') +
@@ -786,7 +800,9 @@ window._tripRenderAssignDrawer = function() {
           ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500">' +
               _tripEsc(d.day_date) + '</span>'
           : '') +
-        '<span class="text-[10px] text-[#0053e2]">Drop here ↓</span>' +
+        '<span class="text-[10px] text-[#0053e2]">' +
+          (_tripTouchMode ? '👆 Tap to assign' : 'Drop here ↓') +
+        '</span>' +
       '</div>';
   });
   inner.innerHTML = html;
@@ -850,6 +866,46 @@ window.tripAssignDrop = function(event, dayId) {
     // The Plan tab refreshes its own state the next time it is activated.
   })
   .catch(function() { _tripShowToast('Drop failed', true); });
+};
+
+// ── Touch-mode tap-select flow ───────────────────────────────────────────────────────
+window.tripSelectSpotForAssign = function(spotId) {
+  _tripSelectedSpotId = (_tripSelectedSpotId === spotId) ? 0 : spotId;
+  _tripRenderResearch();   // re-render cards to update 📌 active state
+  _tripShowToast(
+    _tripSelectedSpotId
+      ? '📌 Spot selected — tap a day chip in the Assign drawer'
+      : 'Spot deselected'
+  );
+};
+
+window.tripAssignChipTap = function(event, dayId) {
+  // On desktop this fires too, but drag-drop already handles it;
+  // skip if this is the end of a drag operation (no selectedSpotId set)
+  if (!_tripSelectedSpotId) {
+    if (!_tripTouchMode) return;  // desktop: silently ignore chip click
+    _tripShowToast('Select a spot first (📌 button on the card)', true);
+    return;
+  }
+  var spotId = _tripSelectedSpotId;
+  _tripFetch('/home/trip/' + _tripPid + '/days/' + dayId + '/spots/' + spotId, {
+    method: 'POST',
+    body: new URLSearchParams({time_label: ''}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { _tripShowToast(d.error || 'Could not add spot', true); return; }
+    _tripSelectedSpotId = 0;
+    var chip = document.getElementById('trip-assign-chip-' + dayId);
+    if (chip) {
+      chip.style.background = 'rgba(0,83,226,0.12)';
+      setTimeout(function() { if (chip) chip.style.background = ''; }, 800);
+    }
+    _tripShowToast('✅ Added to day!');
+    _tripRenderResearch();          // update 📌 button active state
+    window._tripRenderAssignDrawer(); // clear selection hint
+  })
+  .catch(function() { _tripShowToast('Tap-assign failed', true); });
 };
 
 // ── Drag source (spot card → day lane) ────────────────────────────────────────────

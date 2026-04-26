@@ -1996,16 +1996,100 @@
     switchSidebarTab(saved);
   })();
 
-  /* ---- Sidebar open/close ---- */
-  let sidebarOpen = true;
+  /* ---- Sidebar open/close — mobile overlay + desktop push ---- */
+  let sidebarOpen = window.innerWidth >= 768; // collapsed by default on mobile
+
+  // Collapse immediately if mobile — runs before first paint, no flash
+  (function _sbInit() {
+    const sb  = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebar-toggle');
+    if (!sidebarOpen) {
+      sb.classList.remove('w-72');
+      sb.classList.add('w-0');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  })();
+
+  function _isMobile() { return window.innerWidth < 768; }
+
+  function _mobileSidebarOpen() {
+    const sb = document.getElementById('sidebar');
+    sb.classList.remove('w-0', 'w-72');
+    // Offset below demo banner (6.5rem) or standard nav (4rem)
+    const topOff = document.getElementById('demo-banner') ? '6.5rem' : '4rem';
+    sb.style.cssText = [
+      'position:fixed', 'top:' + topOff, 'left:0', 'bottom:0',
+      'width:18rem', 'z-index:23', 'overflow-y:auto'
+    ].join(';');
+    const bd = document.createElement('div');
+    bd.id = '_sb-mobile-backdrop';
+    bd.setAttribute('aria-hidden', 'true');
+    bd.style.cssText = [
+      'position:fixed', 'top:' + topOff, 'left:0', 'right:0', 'bottom:0',
+      'z-index:22', 'background:rgba(0,0,0,0.4)'
+    ].join(';');
+    bd.addEventListener('click', _mobileSidebarClose);
+    document.body.appendChild(bd);
+  }
+
+  function _mobileSidebarClose() {
+    const sb  = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebar-toggle');
+    sb.style.cssText = '';
+    sb.classList.remove('w-72');
+    sb.classList.add('w-0');
+    const bd = document.getElementById('_sb-mobile-backdrop');
+    if (bd) bd.remove();
+    sidebarOpen = false;
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
   function toggleSidebar() {
     const sb  = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-toggle');
     sidebarOpen = !sidebarOpen;
-    sb.classList.toggle('w-72', sidebarOpen);
-    sb.classList.toggle('w-0',  !sidebarOpen);
+    if (_isMobile()) {
+      if (sidebarOpen) {
+        _mobileSidebarOpen();
+      } else {
+        _mobileSidebarClose();
+      }
+    } else {
+      // Desktop: normal flex sibling — just toggle width classes
+      sb.style.cssText = '';    // clear any leftover mobile inline styles
+      sb.classList.toggle('w-72', sidebarOpen);
+      sb.classList.toggle('w-0',  !sidebarOpen);
+    }
     btn.setAttribute('aria-expanded', String(sidebarOpen));
   }
+
+  // Resize: clean up when crossing the mobile/desktop breakpoint
+  window.addEventListener('resize', function() {
+    const sb = document.getElementById('sidebar');
+    if (window.innerWidth >= 768) {
+      // Entered desktop — remove any mobile overlay artifacts
+      const bd = document.getElementById('_sb-mobile-backdrop');
+      if (bd) bd.remove();
+      sb.style.cssText = '';
+      sb.classList.toggle('w-72', sidebarOpen);
+      sb.classList.toggle('w-0',  !sidebarOpen);
+    } else {
+      // Entered mobile — if sidebar is "open" in desktop mode it is now an overlay
+      if (sidebarOpen) _mobileSidebarOpen();
+    }
+  });
+
+  // Auto-close sidebar on mobile when a nav link is clicked
+  document.getElementById('sidebar').addEventListener('click', function(e) {
+    if (!_isMobile() || !sidebarOpen) return;
+    const link = e.target.closest('a, [data-sb-close]');
+    if (!link) return;
+    // Don't close when clicking the tab-strip buttons themselves
+    if (link.id === 'sb-tab-workspaces' ||
+        link.id === 'sb-tab-search'     ||
+        link.id === 'sb-tab-folders')    return;
+    _mobileSidebarClose();
+  });
 
   /* ---- Panel / Fullscreen ---- */
   /* ── helpers shared by openPanel / closePanel ── */
