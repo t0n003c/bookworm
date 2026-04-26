@@ -76,6 +76,17 @@
                   border-b border-gray-100 dark:border-zinc-800
                   bg-gray-50 dark:bg-zinc-900">
       </div>
+      {# ── Quick-Assign drawer: horizontal day-chip drop strip ─────────── #}
+      <div id="trip-assign-drawer"
+           class="hidden flex-shrink-0 border-b border-gray-200 dark:border-zinc-800
+                  bg-gray-50 dark:bg-zinc-900"
+           style="overflow-x:auto; overflow-y:hidden; max-height:6.5rem;">
+        <div id="trip-assign-drawer-inner"
+             class="flex items-center gap-2 px-4 py-2"
+             style="min-width:max-content;">
+        </div>
+      </div>
+
       {# Spot card grid #}
       <div id="trip-spots-grid"
            class="flex-1 overflow-y-auto p-4

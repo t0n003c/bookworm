@@ -20,12 +20,27 @@ window._tripActiveLocId = null;
 window._tripActiveLoc   = null;
 
 // ── Entry: called from initTripPage() in home-page-trip.js ───────────────────
-window.tripLoadLocations = function() {
+// Pass restoreSession=true only on initial page load so session state is
+// restored exactly once.  Subsequent calls (e.g. from tripCloseLocView) should
+// NOT restore — that caused a race condition where the user's click got
+// overridden by a stale sessionStorage key.
+window.tripLoadLocations = function(restoreSession) {
   _tripFetch('/home/trip/' + _tripPid + '/locations')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       _tripLocations = Array.isArray(data) ? data : [];
       window._tripLocations = _tripLocations;
+      if (restoreSession) {
+        var savedKey = 'bw-trip-loc-' + _tripPid;
+        var savedId  = sessionStorage.getItem(savedKey);
+        if (savedId) {
+          var restoredId = parseInt(savedId, 10);
+          var found = _tripLocations.find(function(l) { return l.id === restoredId; });
+          if (found) { tripOpenLoc(restoredId); return; }
+          // Stale key (location deleted) — clean up silently
+          try { sessionStorage.removeItem(savedKey); } catch(e) {}
+        }
+      }
       _tripRenderLocGrid();
     })
     .catch(function() { _tripShowToast('Failed to load locations', true); });
@@ -39,6 +54,8 @@ window.tripOpenLoc = function(locId) {
   _tripActiveLoc            = loc;
   window._tripActiveLocId   = locId;
   window._tripActiveLoc     = loc;
+  // Persist so a page refresh restores this view
+  try { sessionStorage.setItem('bw-trip-loc-' + _tripPid, locId); } catch(e) {}
 
   var locsView  = document.getElementById('trip-locs-view');
   var spotsView = document.getElementById('trip-spots-view');
@@ -56,19 +73,29 @@ window.tripCloseLocView = function() {
   _tripActiveLoc            = null;
   window._tripActiveLocId   = null;
   window._tripActiveLoc     = null;
+  try { sessionStorage.removeItem('bw-trip-loc-' + _tripPid); } catch(e) {}
 
   var locsView  = document.getElementById('trip-locs-view');
   var spotsView = document.getElementById('trip-spots-view');
   if (locsView)  locsView.classList.remove('hidden');
   if (spotsView) spotsView.classList.add('hidden');
 
+  // Reset Quick-Assign drawer so it starts closed on next location open
+  _tripAssignDrawerOpen = false;
+  _tripAssignDays       = [];
+  var _adr = document.getElementById('trip-assign-drawer');
+  if (_adr) _adr.classList.add('hidden');
+
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();
   // Refresh locations in case a spot count changed
   tripLoadLocations();
 };
 
-// ── Render location grid ──────────────────────────────────────────────────────
+// ── Render location grid ────────────────────────────────────────────────────
 function _tripRenderLocGrid() {
+  // Sync filter bar first
+  if (typeof window._tripRenderLocFilterBar === 'function') window._tripRenderLocFilterBar();
+
   var grid = document.getElementById('trip-locs-grid');
   if (!grid) return;
   if (!_tripLocations.length) {
@@ -79,7 +106,31 @@ function _tripRenderLocGrid() {
       '</div>';
     return;
   }
-  grid.innerHTML = _tripLocations.map(_tripRenderLocCard).join('');
+
+  var groups = (typeof _tripApplyLocOps === 'function')
+    ? _tripApplyLocOps(_tripLocations)
+    : [{groupLabel: null, items: _tripLocations}];
+
+  var totalVisible = groups.reduce(function(n, g) { return n + g.items.length; }, 0);
+  if (!totalVisible) {
+    grid.innerHTML =
+      '<div class="col-span-full text-center py-20 text-gray-400 dark:text-zinc-500 text-sm">' +
+        '🔍 No locations match the filter.</div>';
+    return;
+  }
+
+  var html = '';
+  groups.forEach(function(g) {
+    if (g.groupLabel) {
+      html += '<div class="col-span-full text-xs font-semibold text-gray-500 ' +
+        'dark:text-zinc-400 uppercase tracking-wide pt-2 pb-0.5 border-b ' +
+        'border-gray-100 dark:border-zinc-800">' +
+        _tripEsc(g.groupLabel) + ' <span class="font-normal normal-case">(' + g.items.length + ')</span>' +
+        '</div>';
+    }
+    html += g.items.map(_tripRenderLocCard).join('');
+  });
+  grid.innerHTML = html;
 }
 
 function _tripRenderLocCard(loc) {
@@ -133,7 +184,7 @@ function _tripRenderLocCard(loc) {
             _tripEsc(loc.notes) + '</p>'
         : '') +
       attrs +
-      '<p class="text-[10px] text-[#0053e2] mt-auto pt-1">Tap to explore spots →</p>' +
+
     '</div>' +
   '</div>';
 }
@@ -233,15 +284,24 @@ function _tripRenderLocForm(v) {
       '<input id="tlf-name" type="text" value="' + _tripEsc(v.name || '') + '" ' +
         'placeholder="e.g. Smoky Mountains" class="' + _tripLocInputCls() + '">' +
     '</div>' +
-    // Priority stars
+    // Priority — big clickable stars
     '<div>' +
       '<label class="' + _tripLocLabelCls() + '">Priority</label>' +
-      '<select id="tlf-priority" class="' + _tripLocInputCls() + '">' +
+      '<div class="flex items-center gap-0.5">' +
         [1,2,3,4,5].map(function(n) {
-          return '<option value="' + n + '"' + ((v.priority || 3) === n ? ' selected' : '') + '>' +
-            '★'.repeat(n) + '☆'.repeat(5 - n) + '</option>';
+          var filled = n <= (v.priority || 3);
+          return '<button type="button" id="tlf-pstar-' + n + '" ' +
+            'onclick="tripLocSetPriorityModal(' + n + ')" ' +
+            'class="text-3xl leading-none transition-transform hover:scale-125 active:scale-95 ' +
+            (filled ? 'text-[#ffc220]' : 'text-gray-300 dark:text-zinc-600') + '" ' +
+            'title="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>';
         }).join('') +
-      '</select>' +
+        '<span id="tlf-priority-label" ' +
+          'class="ml-2 text-sm font-semibold text-gray-600 dark:text-zinc-300">' +
+          (v.priority || 3) + '/5' +
+        '</span>' +
+      '</div>' +
+      '<input type="hidden" id="tlf-priority" value="' + (v.priority || 3) + '">' +
     '</div>' +
     // Cover image: URL or Upload
     '<div>' +
@@ -319,6 +379,25 @@ window.tripLocAddAttrRow = function() {
 window.tripLocRemoveAttrRow = function(idx) {
   var row = document.getElementById('tlf-attr-row-' + idx);
   if (row) row.remove();
+};
+
+// Star priority picker inside the modal
+window.tripLocSetPriorityModal = function(n) {
+  var input = document.getElementById('tlf-priority');
+  var label = document.getElementById('tlf-priority-label');
+  if (input) input.value = n;
+  if (label) label.textContent = n + '/5';
+  for (var i = 1; i <= 5; i++) {
+    var star = document.getElementById('tlf-pstar-' + i);
+    if (!star) continue;
+    if (i <= n) {
+      star.classList.add('text-[#ffc220]');
+      star.classList.remove('text-gray-300', 'dark:text-zinc-600');
+    } else {
+      star.classList.remove('text-[#ffc220]');
+      star.classList.add('text-gray-300', 'dark:text-zinc-600');
+    }
+  }
 };
 
 // Cover image tab toggle

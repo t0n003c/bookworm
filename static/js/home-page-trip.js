@@ -17,6 +17,10 @@ var _tripQuery      = '';
 var _tripEditingId  = null;   // null = adding, int = editing
 var _tripSpotUploadedCoverUrl = '';   // set by upload-cover endpoint
 
+// Quick-Assign Drawer state
+var _tripAssignDrawerOpen = false;   // is the drawer currently visible?
+var _tripAssignDays       = [];      // days fetched by drawer (owned separately from _tripDays)
+
 var _TRIP_TYPES = [
   'Restaurant', 'Hotel', 'Camping', 'Hiking',
   'City Attraction', 'Beach', 'Museum', 'Other'
@@ -47,6 +51,8 @@ window.initTripPage = function(pid) {
   _tripQuery                = '';
   _tripEditingId            = null;
   _tripSpotUploadedCoverUrl = '';
+  _tripAssignDrawerOpen     = false;
+  _tripAssignDays           = [];
   tripSetTab('research');
   // Load locations — pass true so sessionStorage drill-in is restored exactly once
   if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
@@ -74,6 +80,13 @@ window.tripSetTab = function(tab) {
     }
   });
   _tripRenderTopbarControls();
+  // Close the Quick-Assign drawer when leaving the research tab
+  if (tab !== 'research') {
+    _tripAssignDrawerOpen = false;
+    _tripAssignDays       = [];
+    var _adr = document.getElementById('trip-assign-drawer');
+    if (_adr) _adr.classList.add('hidden');
+  }
   // Slider only belongs in the Day lanes view (inside a trip).
   // tripOpenPlan / tripClosePlan own its visibility — always hide on tab switch.
   var sizeWrap = document.getElementById('trip-day-size-wrap');
@@ -89,7 +102,14 @@ window._tripRenderTopbarControls = function() {
   var inLoc = !!(window._tripActiveLocId);
   if (_tripTab === 'research') {
     if (inLoc) {
-      // Inside a location — show search + add spot
+      // Inside a location — show search + add spot + quick-assign drawer toggle
+      var _assignBtnCls = _tripAssignDrawerOpen
+        ? 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+          'bg-[#0053e2] text-white font-medium transition'
+        : 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border ' +
+          'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+          'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 ' +
+          'dark:hover:bg-zinc-700 transition';
       el.innerHTML =
         '<input id="trip-search" type="search" placeholder="Search spots…" ' +
           'oninput="tripSearch()" ' +
@@ -100,7 +120,11 @@ window._tripRenderTopbarControls = function() {
         '<button onclick="tripOpenAddSpot()" ' +
           'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
                  'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Spot</button>';
+          '＋ Add Spot</button>' +
+        '<button onclick="tripToggleAssignDrawer()" ' +
+          'id="trip-assign-toggle" title="Quick-assign spots to day cards" ' +
+          'class="' + _assignBtnCls + '">' +
+          '🗓️ Assign to Days</button>';
     } else {
       // Top-level locations view — search + add
       el.innerHTML =
@@ -709,7 +733,126 @@ window.tripDeleteSpot = function(id) {
     .catch(function() { _tripShowToast('Delete failed', true); });
 };
 
-// ── Drag source (spot card → day lane) ────────────────────────────────────────
+// ── Quick-Assign Drawer ────────────────────────────────────────────────────────────────────────────
+window.tripToggleAssignDrawer = function() {
+  _tripAssignDrawerOpen = !_tripAssignDrawerOpen;
+  var drawer = document.getElementById('trip-assign-drawer');
+  if (drawer) drawer.classList.toggle('hidden', !_tripAssignDrawerOpen);
+  _tripRenderTopbarControls();
+  window._tripRenderAssignDrawer();
+};
+
+window._tripRenderAssignDrawer = function() {
+  var inner = document.getElementById('trip-assign-drawer-inner');
+  if (!inner) return;
+
+  if (!window._tripActivePlanId) {
+    inner.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-2">' +
+        '🗓️ Open a trip in the <strong>Plan</strong> tab first, then drag spots here.' +
+      '</p>';
+    return;
+  }
+
+  // Prefer _tripDays (Plan tab state) if it has data; else fall back to own fetch
+  var days = (typeof _tripDays !== 'undefined' && _tripDays.length)
+    ? _tripDays
+    : _tripAssignDays;
+
+  if (!days.length) {
+    inner.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-2">Loading days…</p>';
+    window._tripAssignLoadDays();
+    return;
+  }
+
+  var html = '';
+  days.forEach(function(d) {
+    html +=
+      '<div id="trip-assign-chip-' + d.id + '" ' +
+        'ondragover="tripAssignDragOver(event)" ' +
+        'ondragleave="tripAssignDragLeave(event)" ' +
+        'ondrop="tripAssignDrop(event,' + d.id + ')" ' +
+        'class="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ' +
+               'px-3 py-2 rounded-xl border-2 border-dashed border-gray-300 ' +
+               'dark:border-zinc-600 bg-white dark:bg-zinc-800 text-center ' +
+               'select-none transition" ' +
+        'style="min-width:5.5rem; max-width:7rem; cursor:default;">' +
+        '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 ' +
+               'truncate w-full text-center">' +
+          _tripEsc(d.day_label || 'Day') +
+        '</span>' +
+        (d.day_date
+          ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+              _tripEsc(d.day_date) + '</span>'
+          : '') +
+        '<span class="text-[10px] text-[#0053e2]">Drop here ↓</span>' +
+      '</div>';
+  });
+  inner.innerHTML = html;
+};
+
+window._tripAssignLoadDays = function() {
+  if (!window._tripActivePlanId) return;
+  _tripFetch('/home/trip/' + _tripPid + '/days?plan_id=' + window._tripActivePlanId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      _tripAssignDays = Array.isArray(data) ? data : [];
+      window._tripRenderAssignDrawer();
+    })
+    .catch(function() {
+      var inner = document.getElementById('trip-assign-drawer-inner');
+      if (inner) {
+        inner.innerHTML =
+          '<p class="text-xs text-red-500 italic py-2">Failed to load days.</p>';
+      }
+    });
+};
+
+window.tripAssignDragOver = function(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  var el = event.currentTarget;
+  el.style.outline    = '2px solid #0053e2';
+  el.style.background = 'rgba(0,83,226,0.06)';
+};
+
+window.tripAssignDragLeave = function(event) {
+  var el = event.currentTarget;
+  el.style.outline    = '';
+  el.style.background = '';
+};
+
+window.tripAssignDrop = function(event, dayId) {
+  event.preventDefault();
+  event.stopPropagation();
+  var el = event.currentTarget;
+  el.style.outline    = '';
+  el.style.background = '';
+  var spotId = parseInt(event.dataTransfer.getData('bw-spot-id'), 10);
+  if (!spotId) return;
+  _tripFetch('/home/trip/' + _tripPid + '/days/' + dayId + '/spots/' + spotId, {
+    method: 'POST',
+    body: new URLSearchParams({time_label: ''}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { _tripShowToast(d.error || 'Could not add spot', true); return; }
+    // Brief flash on the chip to confirm
+    var chip = document.getElementById('trip-assign-chip-' + dayId);
+    if (chip) {
+      chip.style.background = 'rgba(0,83,226,0.12)';
+      setTimeout(function() { if (chip) chip.style.background = ''; }, 800);
+    }
+    _tripShowToast('✅ Added to day!');
+    // NOTE: do NOT call tripLoadPlan() here — it would re-render the Plan tab
+    // DOM and wipe #trip-topbar-controls while the user is still on Research.
+    // The Plan tab refreshes its own state the next time it is activated.
+  })
+  .catch(function() { _tripShowToast('Drop failed', true); });
+};
+
+// ── Drag source (spot card → day lane) ────────────────────────────────────────────
 window.tripDragSpotStart = function(event, spotId) {
   event.dataTransfer.setData('bw-spot-id', String(spotId));
   event.dataTransfer.effectAllowed = 'copy';
@@ -741,7 +884,7 @@ function _tripFetch(url, opts) { return window._tripFetch(url, opts); }
 window._tripShowToast = function(msg, isErr) {
   var wrap = document.getElementById('rem-fun-popup-wrap') ||
              document.querySelector('[data-toast-wrap]');
-  if (!wrap) { console.log('[Trip]', msg); return; }
+  if (!wrap) { return; }
   var el = document.createElement('div');
   el.className = 'pointer-events-auto px-4 py-2 rounded-xl shadow-lg text-sm font-medium ' +
     'border animate-[bw-slideup_.3s_ease_both] ' +
