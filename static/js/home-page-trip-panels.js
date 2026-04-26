@@ -8,7 +8,8 @@
  *   tripOpenAddPanelModal, tripClosePanelModal, tripSubmitPanelModal,
  *   tppSelectType, tppEditPanel, tppDeletePanel, tppMovePanel,
  *   tppTogglePack, tppClearDone, tppShowForm, tppHideForm,
- *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal
+ *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal,
+ *   tppSaveBudgetLink, tppBudgetSettleChanged, tppUnlinkBudget
  */
 
 var _TPP_TYPES = {
@@ -48,14 +49,16 @@ var _QC_LS_KEY = 'bw-trip-qc-open';
 function _tppQcIsOpen() { return localStorage.getItem(_QC_LS_KEY) !== 'false'; }
 window.tppToggleQcCollapse = function() {
   localStorage.setItem(_QC_LS_KEY, _tppQcIsOpen() ? 'false' : 'true');
-  var row     = document.getElementById('trip-panels-row');
-  var chevron = document.getElementById('trip-qc-chevron');
-  var btn     = document.getElementById('trip-qc-toggle-btn');
+  var row      = document.getElementById('trip-panels-row');
+  var chevron  = document.getElementById('trip-qc-chevron');
+  var btn      = document.getElementById('trip-qc-toggle-btn');
+  var subtitle = document.getElementById('trip-qc-subtitle');
   if (!row || !chevron) return;
   var open = _tppQcIsOpen();
   row.classList.toggle('hidden', !open);
   chevron.textContent = open ? '▾' : '▸';
-  if (btn) btn.setAttribute('aria-expanded', String(open));
+  if (btn)      btn.setAttribute('aria-expanded', String(open));
+  if (subtitle) subtitle.classList.toggle('hidden', !open);
 };
 
 // ── Render cards row ──────────────────────────────────────────────────────
@@ -99,8 +102,16 @@ window._tripRenderPanelCards = function(container) {
     'hover:text-gray-600 dark:hover:text-zinc-300 transition w-fit';
   label.innerHTML =
     '<span id="trip-qc-chevron">' + (qcOpen ? '▾' : '▸') + '</span>' +
-    '<span>🗂️ Quick Cards</span>';
+    '<span>🗂️ Trip Resources</span>';
   group.appendChild(label);
+
+  // Subtitle — explains the concept; hidden when collapsed
+  var subtitle = document.createElement('p');
+  subtitle.id        = 'trip-qc-subtitle';
+  subtitle.className = 'text-[10px] text-gray-400 dark:text-zinc-500 px-1 pb-1 leading-snug' +
+                       (qcOpen ? '' : ' hidden');
+  subtitle.textContent = 'Planning docs for the whole trip — drag any card onto a day lane to link it.';
+  group.appendChild(subtitle);
 
   // Inner flex row for cards (hidden when collapsed)
   var row = document.createElement('div');
@@ -405,17 +416,57 @@ function _tppPacking(p, data, isEdit) {
     form + footer;
 }
 
-// ── Budget ────────────────────────────────────────────────────────────────────
+// ── Budget ────────────────────────────────────────────────────────────────────────────────
 
 function _tppBudget(p, data, isEdit) {
-  var total = parseFloat(data.total) || 0;
-  var cur   = data.currency || 'USD';
-  var items = data.items || [];
-  var spent = 0;
-  items.forEach(function(it) { spent += parseFloat(it.amount) || 0; });
-  var pct      = total > 0 ? Math.min(Math.round(spent / total * 100), 100) : 0;
-  var barColor = pct >= 90 ? '#ea1100' : pct >= 70 ? '#f59e0b' : '#2a8703';
+  var total  = parseFloat(data.total) || 0;
+  var cur    = data.currency || 'USD';
+  var items  = data.items   || [];   // manual expenses
+
+  // ── Resolve linked Settle Up ───────────────────────────────────────────────
+  var linkedSettleId  = data.linked_settle_id  != null ? parseInt(data.linked_settle_id,  10) : null;
+  var linkedPersonIdx = data.linked_person_idx != null ? parseInt(data.linked_person_idx, 10) : null;
+  var settlePanel = null;
+  var linkedPersonName = '';
+  var linkedExps  = [];
+  var linkedSpent = 0;
+
+  if (linkedSettleId !== null) {
+    (window._tripPanels || []).forEach(function(x) {
+      if (x.id === linkedSettleId) settlePanel = x;
+    });
+  }
+  if (settlePanel) {
+    var sd = _tppParse(settlePanel.content);
+    var sdPeople = sd.people || [];
+    linkedPersonName = linkedPersonIdx !== null ? (sdPeople[linkedPersonIdx] || '') : '';
+    (sd.expenses || []).forEach(function(exp) {
+      if (parseInt(exp.paid_by, 10) === linkedPersonIdx) {
+        linkedExps.push(exp);
+        linkedSpent += parseFloat(exp.amount) || 0;
+      }
+    });
+  } else {
+    // linked panel gone — ignore stale IDs in this render
+    linkedSettleId  = null;
+    linkedPersonIdx = null;
+  }
+
+  // ── Totals ─────────────────────────────────────────────────────────────────────────
+  var manualSpent = 0;
+  items.forEach(function(it) { manualSpent += parseFloat(it.amount) || 0; });
+  var spent     = linkedSpent + manualSpent;
+  var pct       = total > 0 ? Math.min(Math.round(spent / total * 100), 100) : 0;
+  var barColor  = pct >= 90 ? '#ea1100' : pct >= 70 ? '#f59e0b' : '#2a8703';
   var remaining = total - spent;
+
+  // ── Summary / progress bar ───────────────────────────────────────────────────
+  var linkedBadge = linkedPersonName
+    ? '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ' +
+        'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium mb-1">' +
+        '🔗 ' + _tripEsc(linkedPersonName) + ' · Settle Up' +
+      '</span>'
+    : '';
 
   var summary =
     '<div class="px-3 py-2 flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
@@ -431,20 +482,100 @@ function _tppBudget(p, data, isEdit) {
               'class="' + _tppBtnPrimary() + '">Set</button>' +
           '</div>'
         : '') +
+      (linkedBadge ? '<div>' + linkedBadge + '</div>' : '') +
       '<div class="flex items-end justify-between mb-1">' +
         '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200">' +
           cur + ' ' + spent.toFixed(2) + ' spent</span>' +
         '<span class="text-[10px] text-gray-400">' +
-          (remaining >= 0 ? cur + ' ' + remaining.toFixed(2) + ' left' : 'Over budget') +
+          (remaining >= 0 ? cur + ' ' + remaining.toFixed(2) + ' left' : '⚠️ Over budget') +
         '</span>' +
       '</div>' +
       '<div class="h-2 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden">' +
         '<div class="h-full rounded-full transition-all" ' +
              'style="width:' + pct + '%;background:' + barColor + '"></div>' +
       '</div>' +
+      // Breakdown line only when both sources have data
+      (linkedSpent > 0 && manualSpent > 0
+        ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1">' +
+            cur + ' ' + linkedSpent.toFixed(2) + ' from Settle Up · ' +
+            cur + ' ' + manualSpent.toFixed(2) + ' manual' +
+          '</p>'
+        : '') +
     '</div>';
 
-  var rows = items.map(function(item, idx) {
+  // ── Link / Unlink UI (edit mode only) ────────────────────────────────────────────
+  var settlePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; });
+  var linkSection  = '';
+  if (isEdit) {
+    if (linkedPersonName && settlePanel) {
+      // Already linked — show status + unlink
+      linkSection =
+        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
+             'bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-2">' +
+          '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-1">' +
+            'Tracking expenses paid by <strong>' + _tripEsc(linkedPersonName) + '</strong>' +
+          '</span>' +
+          '<button onclick="tppUnlinkBudget(' + p.id + ')" ' +
+            'class="text-[10px] text-gray-400 hover:text-red-500 transition whitespace-nowrap">Unlink</button>' +
+        '</div>';
+    } else if (settlePanels.length > 0) {
+      // Show settle panel + person pickers
+      var settleOpts = settlePanels.map(function(sp) {
+        return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
+      }).join('');
+      var firstSd   = _tppParse(settlePanels[0].content);
+      var firstPpl  = firstSd.people || [];
+      var personOpts = firstPpl.length
+        ? firstPpl.map(function(name, i) {
+            return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
+          }).join('')
+        : '<option value="">Add people to Settle Up first</option>';
+      linkSection =
+        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
+             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' +
+          '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
+               'dark:text-zinc-500">🔗 Link to Settle Up person</p>' +
+          '<div class="flex gap-1.5 items-center">' +
+            '<select id="tpp-budget-link-settle-' + p.id + '" ' +
+              'onchange="tppBudgetSettleChanged(' + p.id + ')" ' +
+              'class="' + _tppInputCls() + ' flex-1">' +
+              settleOpts +
+            '</select>' +
+            '<select id="tpp-budget-link-person-' + p.id + '" ' +
+              'class="' + _tppInputCls() + ' flex-1">' +
+              personOpts +
+            '</select>' +
+            '<button onclick="tppSaveBudgetLink(' + p.id + ')" ' +
+              'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+
+  // ── Linked expenses (read-only rows from Settle Up) ──────────────────────────
+  var linkedRows = '';
+  if (linkedExps.length) {
+    linkedRows =
+      '<p class="text-[10px] font-semibold uppercase tracking-wide text-[#0053e2] dark:text-blue-400 ' +
+         'px-3 pt-2 pb-0.5 select-none">🔗 From Settle Up</p>' +
+      linkedExps.map(function(exp) {
+        return '<div class="flex items-center gap-2 px-3 py-1.5 border-b ' +
+               'border-gray-50 dark:border-zinc-800 last:border-0">' +
+          '<p class="text-xs text-gray-600 dark:text-zinc-300 flex-1 truncate">' +
+            _tripEsc(exp.desc || 'Expense') + '</p>' +
+          '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0">' +
+            cur + ' ' + (parseFloat(exp.amount) || 0).toFixed(2) + '</span>' +
+        '</div>';
+      }).join('');
+  }
+
+  // ── Manual expenses ─────────────────────────────────────────────────────────────────
+  var manualLabel = (linkedRows || (isEdit && settlePanels.length > 0))
+    ? '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
+        'dark:text-zinc-500 px-3 pt-2 pb-0.5 select-none">✏️ Manual</p>'
+    : '';
+
+  var manualRows = items.map(function(item, idx) {
     var del = isEdit
       ? '<button onclick="tppDeleteBudgetItem(' + p.id + ',' + idx + ')" ' +
           'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
@@ -476,10 +607,13 @@ function _tppBudget(p, data, isEdit) {
       '</div>'
     : '';
 
-  var footer = isEdit ? _tppAddBtn('tppShowForm(' + p.id + ',\'budget\')', '＋ Add Expense') : '';
+  var footer = isEdit ? _tppAddBtn('tppShowForm(' + p.id + ',\'budget\')', '＋ Add Manual Expense') : '';
+  var allEmpty = !linkedRows && !manualRows;
 
-  return summary +
-    '<div class="flex-1 overflow-y-auto">' + (rows || _tppEmpty('No expenses yet')) + '</div>' +
+  return summary + linkSection +
+    '<div class="flex-1 overflow-y-auto">' +
+      (allEmpty ? _tppEmpty('No expenses yet — add one or link to Settle Up') : linkedRows + manualLabel + manualRows) +
+    '</div>' +
     form + footer;
 }
 
@@ -718,6 +852,46 @@ window.tppSaveBudgetTotal = function(panelId) {
   var cur   = ((document.getElementById('tpp-budget-cur-' + panelId) || {}).value || 'USD').trim().toUpperCase();
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content); d.total = total; d.currency = cur;
+  _tppSave(panelId, d);
+};
+
+// When the Settle Up dropdown changes, repopulate the person dropdown
+window.tppBudgetSettleChanged = function(panelId) {
+  var settleEl  = document.getElementById('tpp-budget-link-settle-' + panelId);
+  var personEl  = document.getElementById('tpp-budget-link-person-' + panelId);
+  if (!settleEl || !personEl) return;
+  var sid = parseInt(settleEl.value, 10);
+  var sp = null;
+  (window._tripPanels || []).forEach(function(x) { if (x.id === sid) sp = x; });
+  var people = sp ? (_tppParse(sp.content).people || []) : [];
+  personEl.innerHTML = people.length
+    ? people.map(function(name, i) {
+        return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
+      }).join('')
+    : '<option value="">Add people to Settle Up first</option>';
+};
+
+// Save the Budget ↔ Settle Up person link
+window.tppSaveBudgetLink = function(panelId) {
+  var settleEl = document.getElementById('tpp-budget-link-settle-' + panelId);
+  var personEl = document.getElementById('tpp-budget-link-person-' + panelId);
+  if (!settleEl || !personEl || personEl.value === '') {
+    _tripShowToast('Select a Settle Up card and a person first', true);
+    return;
+  }
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  d.linked_settle_id  = parseInt(settleEl.value, 10);
+  d.linked_person_idx = parseInt(personEl.value, 10);
+  _tppSave(panelId, d);
+};
+
+// Remove the Budget ↔ Settle Up person link
+window.tppUnlinkBudget = function(panelId) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  delete d.linked_settle_id;
+  delete d.linked_person_idx;
   _tppSave(panelId, d);
 };
 
