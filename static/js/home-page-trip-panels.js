@@ -43,6 +43,22 @@ function _tppReload() {
   if (_tppPlanId) window._tripLoadPanels(_tppPlanId);
 }
 
+// ── Collapse state helpers (Quick Cards) ─────────────────────────────────────
+var _QC_LS_KEY = 'bw-trip-qc-open';
+function _tppQcIsOpen() { return localStorage.getItem(_QC_LS_KEY) !== 'false'; }
+window.tppToggleQcCollapse = function() {
+  localStorage.setItem(_QC_LS_KEY, _tppQcIsOpen() ? 'false' : 'true');
+  var row = document.getElementById('trip-panels-row');
+  var chevron = document.getElementById('trip-qc-chevron');
+  if (!row || !chevron) return;
+  var open = _tppQcIsOpen();
+  row.classList.toggle('hidden', !open);
+  chevron.textContent = open ? '▾' : '▸';
+  // WCAG 4.1.2 — keep aria-expanded in sync with visual state
+  var btn = document.querySelector('#trip-panels-group > button');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+};
+
 // ── Render cards row ──────────────────────────────────────────────────────
 window._tripRenderPanelCards = function(container) {
   // Remove stale panel DOM (divider + group)
@@ -63,25 +79,35 @@ window._tripRenderPanelCards = function(container) {
     'border-t border-dashed border-gray-200 dark:border-zinc-700';
   container.appendChild(divider);
 
+  var qcOpen = _tppQcIsOpen();
+
   // ─ Panels group wrapper ────────────────────────────
   var group = document.createElement('div');
   group.id        = 'trip-panels-group';
   group.className = 'flex flex-col flex-shrink-0 gap-1';
 
-  // Group label
-  var label = document.createElement('p');
+  // Group label — collapse toggle button
+  var label = document.createElement('button');
+  label.type = 'button';
+  label.onclick = window.tppToggleQcCollapse;
+  // WCAG 4.1.2 — set initial aria-expanded so screen readers know the state
+  label.setAttribute('aria-expanded', String(qcOpen));
   label.className =
-    'text-[10px] font-semibold uppercase tracking-widest ' +
-    'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none';
-  label.textContent = '🗂️ Quick Cards';
+    'flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest ' +
+    'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none ' +
+    'hover:text-gray-600 dark:hover:text-zinc-300 transition w-fit';
+  label.innerHTML =
+    '<span id="trip-qc-chevron">' + (qcOpen ? '▾' : '▸') + '</span>' +
+    '<span>🗂️ Quick Cards</span>';
   group.appendChild(label);
 
-  // Inner flex row for cards
+  // Inner flex row for cards (hidden when collapsed)
   var row = document.createElement('div');
-  row.className = 'flex flex-wrap gap-4 pb-2';
+  row.id        = 'trip-panels-row';
+  row.className = 'flex flex-wrap gap-4 pb-2' + (qcOpen ? '' : ' hidden');
   group.appendChild(row);
 
-  // Panel cards
+  // Panel cards — draggable so they can be dropped onto day lanes
   panels.forEach(function(p) {
     var card = document.createElement('div');
     card.className =
@@ -90,6 +116,18 @@ window._tripRenderPanelCards = function(container) {
     card.style.cssText =
       'width:' + _tripDayCardWidth + 'px;max-height:calc(100vh - 12rem)';
     card.id = 'trip-panel-card-' + p.id;
+    card.setAttribute('draggable', 'true');
+    card.setAttribute('data-panel-id', String(p.id));
+    card.addEventListener('dragstart', function(ev) {
+      var cfg = _TPP_TYPES[p.panel_type] || { icon: '📋', label: p.panel_type };
+      ev.dataTransfer.setData('bw-panel-id',    String(p.id));
+      ev.dataTransfer.setData('bw-panel-title', p.title || cfg.label);
+      ev.dataTransfer.setData('bw-panel-icon',  cfg.icon);
+      ev.dataTransfer.setData('bw-panel-type',  p.panel_type);
+      ev.dataTransfer.effectAllowed = 'copy';
+      setTimeout(function() { card.style.opacity = '0.5'; }, 0);
+    });
+    card.addEventListener('dragend', function() { card.style.opacity = ''; });
     card.innerHTML = _tppBuildCard(p, isEdit);
     row.appendChild(card);
   });
@@ -160,6 +198,25 @@ function _tppRefreshCard(panelId) {
 
 function _tppParse(raw) {
   try { return JSON.parse(raw); } catch(e) { return {}; }
+}
+
+// ── Phone number detector / formatter ────────────────────────────────────
+// Returns {tel, label} if `raw` looks like a phone number, null otherwise.
+function _tppFormatPhone(raw) {
+  var digits = (raw || '').replace(/\D/g, '');
+  if (digits.length === 10) {
+    return {
+      tel:   '+1' + digits,
+      label: '(' + digits.slice(0,3) + ')' + digits.slice(3,6) + '-' + digits.slice(6),
+    };
+  }
+  if (digits.length === 11 && digits[0] === '1') {
+    return {
+      tel:   '+' + digits,
+      label: '+1(' + digits.slice(1,4) + ')' + digits.slice(4,7) + '-' + digits.slice(7),
+    };
+  }
+  return null;
 }
 
 function _tppGetPanel(panelId) {
@@ -415,13 +472,23 @@ function _tppEmerg(p, data, isEdit) {
       ? '<button onclick="tppDeleteEmergItem(' + p.id + ',' + idx + ')" ' +
           'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
       : '';
+    // Auto-detect phone numbers and render as clickable tel: links
+    var phone = _tppFormatPhone(item.value);
+    var valueHtml = phone
+      ? '<a href="tel:' + _tripEsc(phone.tel) + '" ' +
+          'onclick="event.stopPropagation()" ' +
+          'class="text-xs text-[#0053e2] dark:text-blue-400 hover:underline ' +
+                 'break-words leading-snug font-medium">' +
+          '📞 ' + _tripEsc(phone.label) +
+        '</a>'
+      : '<p class="text-xs text-gray-700 dark:text-zinc-200 break-words leading-snug">' +
+          _tripEsc(item.value) + '</p>';
     return '<div class="flex items-start gap-2 px-3 py-2 border-b ' +
            'border-gray-50 dark:border-zinc-800 last:border-0">' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
            'dark:text-zinc-500">' + _tripEsc(item.key) + '</p>' +
-        '<p class="text-xs text-gray-700 dark:text-zinc-200 break-words leading-snug">' +
-          _tripEsc(item.value) + '</p>' +
+        valueHtml +
       '</div>' + del + '</div>';
   }).join('');
 

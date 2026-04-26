@@ -64,7 +64,7 @@ _SPOT_TYPES = frozenset({
     "Restaurant", "Hotel", "Camping", "Hiking",
     "City Attraction", "Beach", "Museum", "Other",
 })
-_BLOCK_TYPES = frozenset({"note", "drive", "bookmark", "divider"})
+_BLOCK_TYPES = frozenset({"note", "drive", "bookmark", "divider", "panel_ref"})
 _ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _ALLOWED_IMG_EXT   = {"jpg", "jpeg", "png", "gif", "webp"}
 _MAX_COVER_MB      = 5

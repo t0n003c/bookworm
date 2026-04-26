@@ -655,25 +655,51 @@ function _loadDaysForPlan(planId) {
     .catch(function() { _tripShowToast('Failed to load plan', true); });
 }
 
-// ── Render all day lanes ──────────────────────────────────────────────────────
+// ── Itinerary collapse state ─────────────────────────────────────────────────────
+var _ITIN_LS_KEY = 'bw-trip-itin-open';
+function _itinIsOpen() { return localStorage.getItem(_ITIN_LS_KEY) !== 'false'; }
+window.tripToggleItinCollapse = function() {
+  localStorage.setItem(_ITIN_LS_KEY, _itinIsOpen() ? 'false' : 'true');
+  var row     = document.getElementById('trip-days-row');
+  var chevron = document.getElementById('trip-itin-chevron');
+  if (!row || !chevron) return;
+  var open = _itinIsOpen();
+  row.classList.toggle('hidden', !open);
+  chevron.textContent = open ? '▾' : '▸';
+  // WCAG 4.1.2 — keep aria-expanded in sync with visual state
+  var btn = document.querySelector('[onclick="tripToggleItinCollapse()"]');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+};
+
+// ── Render all day lanes ────────────────────────────────────────────────────
 function _tripRenderPlan() {
   var container = document.getElementById('trip-days-container');
   if (!container) return;
+
+  var itinOpen = _itinIsOpen();
 
   // Days group — always rendered (may show empty state)
   var dayCardsHtml = _tripDays.length
     ? _tripDays.map(_tripRenderDayLane).join('')
     : '<div class="flex flex-col items-center justify-center h-40 ' +
         'text-gray-400 dark:text-zinc-500 text-center px-4" style="width:220px">' +
-        '<span class="text-sm">🗓️ No days yet.</span>' +
+        '<span class="text-sm">📅 No days yet.</span>' +
         '<span class="text-xs mt-1">Click <strong>＋ Add Day</strong> to build your itinerary.</span>' +
       '</div>';
 
   container.innerHTML =
     '<div id="trip-days-group" class="flex flex-col flex-shrink-0 gap-1">' +
-      '<p class="text-[10px] font-semibold uppercase tracking-widest ' +
-         'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none">📅 Itinerary</p>' +
-      '<div class="flex flex-wrap gap-4 pb-2">' + dayCardsHtml + '</div>' +
+      '<button type="button" onclick="tripToggleItinCollapse()" ' +
+        'aria-expanded="' + itinOpen + '" ' +
+        'class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest ' +
+               'text-gray-400 dark:text-zinc-500 px-1 pb-0.5 select-none ' +
+               'hover:text-gray-600 dark:hover:text-zinc-300 transition w-fit">' +
+        '<span id="trip-itin-chevron">' + (itinOpen ? '▾' : '▸') + '</span>' +
+        '<span>📅 Itinerary</span>' +
+      '</button>' +
+      '<div id="trip-days-row" class="flex flex-wrap gap-4 pb-2' + (itinOpen ? '' : ' hidden') + '">' +
+        dayCardsHtml +
+      '</div>' +
     '</div>';
 
   // Panel cards group (home-page-trip-panels.js) — defensive guard
@@ -919,6 +945,38 @@ function _tripRenderDayBlockRow(dayId, b) {
           '<hr class="flex-1 border-gray-200 dark:border-zinc-700">'
         : '') +
       divEditBtns +
+    '</div>';
+  }
+
+  if (b.block_type === 'panel_ref') {
+    // Synced reference to a Quick Card — resolve live panel data if available
+    var panelId  = c.panel_id;
+    var refTitle = c.title      || 'Quick Card';
+    var refIcon  = c.icon       || '📋';
+    var refType  = c.panel_type || '';
+    var livePanel = null;
+    (window._tripPanels || []).forEach(function(x) { if (x.id === panelId) livePanel = x; });
+    if (livePanel) {
+      var cfg2 = (typeof _TPP_TYPES !== 'undefined') ? (_TPP_TYPES[livePanel.panel_type] || {}) : {};
+      refTitle = livePanel.title || cfg2.label || refTitle;
+      refIcon  = cfg2.icon  || refIcon;
+      refType  = livePanel.panel_type || refType;
+    }
+    var syncBadge = refType
+      ? '<span class="ml-1 text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded ' +
+          'bg-blue-100 dark:bg-blue-900/40 text-[#0053e2] dark:text-blue-300">sync</span>'
+      : '';
+    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + itemCls + ' ' +
+      'border border-blue-200 dark:border-blue-800 ' +
+      'bg-blue-50/40 dark:bg-blue-900/10" ' + dragAttrs + '>' +
+      '<span class="text-base flex-shrink-0">' + _tripEsc(refIcon) + '</span>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate flex items-center">' +
+          _tripEsc(refTitle) + syncBadge +
+        '</p>' +
+        timeSpan +
+      '</div>' +
+      editBtn + delBtn +
     '</div>';
   }
 
@@ -1898,6 +1956,28 @@ window.tripDragDayDrop = function(event, dayId) {
   var lane = document.getElementById('trip-day-lane-' + dayId);
   if (lane) lane.style.outline = '';
 
+  // ─ Drop a Quick Card → create a synced panel_ref block ──────────────────────
+  var panelId = event.dataTransfer.getData('bw-panel-id');
+  if (panelId) {
+    panelId = parseInt(panelId, 10);
+    var pTitle    = event.dataTransfer.getData('bw-panel-title') || 'Quick Card';
+    var pIcon     = event.dataTransfer.getData('bw-panel-icon')  || '📋';
+    var pType     = event.dataTransfer.getData('bw-panel-type')  || '';
+    var content   = JSON.stringify({ panel_id: panelId, title: pTitle, icon: pIcon, panel_type: pType });
+    _tripFetch('/home/trip/' + _tripPid + '/days/' + dayId + '/blocks', {
+      method: 'POST',
+      body: new URLSearchParams({ block_type: 'panel_ref', content: content, time_label: '' }),
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { _tripShowToast(d.error, true); return; }
+        _tripShowToast('📋 Synced to day!');
+        tripLoadPlan();
+      })
+      .catch(function() { _tripShowToast('Drop failed', true); });
+    return;
+  }
+
+  // ─ Drop a Spot card → existing behaviour ──────────────────────────────
   var spotId = event.dataTransfer.getData('bw-spot-id');
   if (!spotId) return;
   spotId = parseInt(spotId, 10);
