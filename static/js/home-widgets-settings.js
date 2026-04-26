@@ -360,6 +360,67 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
               ).join('');
         }).catch(() => {});
       return; // early-out — already appended
+    } else if (f.type === 'select-trip-pages') {
+      // Cascade picker 1: trip pages for Settle Up sync.
+      const tpId   = f.id;
+      const tpKey  = f.name;
+      const tpSaved = String(curVal);
+      wrap.innerHTML = lbl + `<select id="${tpId}" data-cfg-key="${tpKey}"
+        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-2 focus:ring-wblue"
+        onchange="_suCascadePlans(this);${saveFn}">
+        <option value="">— none (standalone) —</option>
+      </select>`;
+      body.appendChild(wrap);
+      fetch('/home/settle-up/trip-pages', { credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.ok ? r.json() : { pages: [] })
+        .then(data => {
+          const sel = document.getElementById(tpId);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— none (standalone) —</option>'
+            + (data.pages || []).map(p =>
+                `<option value="${p.id}"${String(p.id) === tpSaved ? ' selected' : ''}>${p.emoji || '✈️'} ${p.name}</option>`
+              ).join('');
+          // If a page is already saved, repopulate plans
+          if (tpSaved && sel.value) _suCascadePlans(sel);
+        }).catch(() => {});
+      return;
+    } else if (f.type === 'select-trip-plans') {
+      // Cascade picker 2: plans for the selected trip page.
+      const plId   = f.id;
+      const plKey  = f.name;
+      const plSaved = String(curVal);
+      wrap.innerHTML = lbl + `<select id="${plId}" data-cfg-key="${plKey}"
+        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-2 focus:ring-wblue"
+        onchange="_suCascadePanels(this);${saveFn}">
+        <option value="">— pick a plan —</option>
+      </select>`;
+      body.appendChild(wrap);
+      // Plans are restored after trip-pages fires _suCascadePlans.
+      // We store the saved value so _suCascadePlans can select it.
+      const _plWrap = document.getElementById(plId);
+      if (_plWrap) _plWrap.dataset.savedVal = plSaved;
+      return;
+    } else if (f.type === 'select-settle-panels') {
+      // Cascade picker 3: settle-type panels in the selected plan.
+      const panId   = f.id;
+      const panKey  = f.name;
+      const panSaved = String(curVal);
+      wrap.innerHTML = lbl + `<select id="${panId}" data-cfg-key="${panKey}"
+        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-2 focus:ring-wblue"
+        onchange="${saveFn}">
+        <option value="">— pick a card —</option>
+      </select>`;
+      body.appendChild(wrap);
+      const _panWrap = document.getElementById(panId);
+      if (_panWrap) _panWrap.dataset.savedVal = panSaved;
+      return;
     } else if (f.type === 'upload-picker') {
       // Shows current count + a button that opens the file-picker modal.
       // The hidden input carries upload_ids through saveWidgetSettings.

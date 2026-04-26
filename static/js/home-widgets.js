@@ -697,7 +697,18 @@ function _hpgMenuOpen(event, id, name, emoji, type) {
   }
   items.push(
     { label: 'Duplicate', icon: _IC_HPG_DUP,
-      action: function() { duplicateHomePage(id, name); } },
+      action: function() { duplicateHomePage(id, name); } }
+  );
+  // Hide / Unhide — only visible when manage-hidden mode is active
+  if (typeof _hpgHideMode !== 'undefined' && _hpgHideMode) {
+    var _isHid = (typeof _hpgHiddenSet !== 'undefined') && _hpgHiddenSet.has(id);
+    items.push({
+      label: _isHid ? 'Unhide' : 'Hide',
+      icon:  _isHid ? _IC_WS_EYE : _IC_WS_EYE_SLASH,
+      action: (function(pid) { return function() { _hpgHideToggle(pid); }; }(id))
+    });
+  }
+  items.push(
     { sep: true, label: 'Delete', icon: _IC_HPG_DEL, danger: true,
       action: function() { deleteHomePage(id, name); } }
   );
@@ -799,6 +810,8 @@ const WIDGET_STYLES = {
   rss_feed:[['card','📰 Card'],['compact','📋 Compact'],['minimal','🔗 Minimal']],
   buds:    [['default','🌸 Full'],['compact','🌿 Compact']],
   upload_preview: [['grid', '🙌 Grid'], ['carousel', '🎠 Carousel']],
+  subscriptions_summary: [['default', '💳 Standard']],
+  settle_up: [['default', '💰 Standard'], ['compact', '📋 Compact']],
 };
 
 const WIDGET_CONFIG_FIELDS = {
@@ -940,6 +953,15 @@ const WIDGET_CONFIG_FIELDS = {
     { id: 'cf-subs-bg', label: 'Widget background color', type: 'color',
       name: 'bg_color', default: '#1a2b3c' },
   ],
+  settle_up: () => [
+    { id: 'cf-su-currency', label: 'Currency', type: 'select', name: 'currency',
+      options: [['USD','$ USD'],['EUR','€ EUR'],['GBP','£ GBP'],
+                ['JPY','¥ JPY'],['CAD','CA$ CAD'],['AUD','A$ AUD'],
+                ['VND','₫ VND'],['KRW','₩ KRW'],['THB','฿ THB']] },
+    { id: 'cf-su-page',  label: '🔗 Sync: Trip page',      type: 'select-trip-pages',    name: 'synced_page_id'  },
+    { id: 'cf-su-plan',  label: 'Sync: Plan',            type: 'select-trip-plans',    name: 'synced_plan_id'  },
+    { id: 'cf-su-panel', label: 'Sync: Settle Up card',  type: 'select-settle-panels', name: 'synced_panel_id' },
+  ],
 };
 
 function selectWidgetType(wtype) {
@@ -1077,6 +1099,63 @@ function aw_refreshConfig(wtype, style) {
           <option value="">Loading…</option>
         </select></div>`;
     }
+    if (f.type === 'settle-sync-hint') {
+      // Hint shown in add-widget modal; actual cascade pickers live in Settings.
+      return '<div class="text-xs text-gray-400 dark:text-zinc-500 py-2">'
+        + '🔗 To sync with a Trip Planning Settle Up card, open '
+        + '<strong>⚙️ Settings</strong> after adding the widget.</div>'
+        + '<input type="hidden" id="' + f.id + '" data-name="synced_page_id" value="">'
+        + '<input type="hidden" data-name="synced_plan_id" value="">'
+        + '<input type="hidden" data-name="synced_panel_id" value="">';
+    }
+    if (f.type === 'select-trip-pages') {
+      // Cascade picker step 1 — pick a trip-type home page.
+      var tpPgId   = f.id;
+      var tpPgName = f.name;
+      setTimeout(function() {
+        fetch('/home/settle-up/trip-pages', {credentials: 'same-origin',
+          headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function(r) { return r.ok ? r.json() : {pages:[]}; })
+        .then(function(data) {
+          var sel = document.getElementById(tpPgId);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— pick a trip page —</option>'
+            + (data.pages || []).map(function(p) {
+                return '<option value="'+p.id+'">'+(p.emoji||'✈️')+' '+p.name+'</option>';
+              }).join('');
+        }).catch(function() {});
+      }, 50);
+      return '<div>' + lbl
+        + '<select id="'+tpPgId+'" data-name="'+tpPgName+'"'
+        + ' onchange="_suCascadePlans(this)"'
+        + ' class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2'
+        + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+        + '<option value="">Loading…</option></select></div>';
+    }
+    if (f.type === 'select-trip-plans') {
+      // Cascade picker step 2 — pick a plan; repopulated when trip page changes.
+      var tpPlId   = f.id;
+      var tpPlName = f.name;
+      return '<div>' + lbl
+        + '<select id="'+tpPlId+'" data-name="'+tpPlName+'"'
+        + ' onchange="_suCascadePanels(this)"'
+        + ' class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2'
+        + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+        + '<option value="">— pick a plan —</option></select></div>';
+    }
+    if (f.type === 'select-settle-panels') {
+      // Cascade picker step 3 — pick a settle panel; repopulated when plan changes.
+      var tpPanId   = f.id;
+      var tpPanName = f.name;
+      return '<div>' + lbl
+        + '<select id="'+tpPanId+'" data-name="'+tpPanName+'"'
+        + ' class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2'
+        + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+        + '<option value="">— pick a card —</option></select></div>';
+    }
     if (f.type === 'upload-picker') {
       // No widgetId exists yet (widget hasn’t been saved). Show a hint.
       return `<div>${lbl}
@@ -1093,6 +1172,53 @@ function aw_refreshConfig(wtype, style) {
                     bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                     focus:outline-none focus:ring-2 focus:ring-wblue"></div>`;
   }).join('');
+}
+
+// ── Settle Up cascade picker helpers (used by add-modal + settings onchange) ──
+function _suCascadePlans(tripPageSel) {
+  var pageId   = tripPageSel ? tripPageSel.value : '';
+  var planSel  = document.querySelector('[data-name="synced_plan_id"],[data-cfg-key="synced_plan_id"]');
+  var panelSel = document.querySelector('[data-name="synced_panel_id"],[data-cfg-key="synced_panel_id"]');
+  if (planSel)  planSel.innerHTML  = '<option value="">— pick a plan —</option>';
+  if (panelSel) panelSel.innerHTML = '<option value="">— pick a card —</option>';
+  if (!pageId) return;
+  fetch('/home/settle-up/trip-plans?page_id='+encodeURIComponent(pageId),
+    {credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}})
+  .then(function(r) { return r.ok ? r.json() : {plans:[]}; })
+  .then(function(data) {
+    if (!planSel) return;
+    var savedPlan = planSel.dataset.savedVal || '';
+    planSel.innerHTML = '<option value="">— pick a plan —</option>'
+      + (data.plans || []).map(function(p) {
+          var sel = String(p.id) === savedPlan ? ' selected' : '';
+          return '<option value="'+p.id+'"'+sel+'>'+(p.plan_name||'Plan')+'</option>';
+        }).join('');
+    // Cascade to panels if plan is already saved
+    if (savedPlan && planSel.value) _suCascadePanels(planSel);
+  }).catch(function() {});
+}
+
+function _suCascadePanels(planSel) {
+  var planId  = planSel ? planSel.value : '';
+  var pageSel = document.querySelector('[data-name="synced_page_id"],[data-cfg-key="synced_page_id"]');
+  var pageId  = pageSel ? pageSel.value : '';
+  var panSel  = document.querySelector('[data-name="synced_panel_id"],[data-cfg-key="synced_panel_id"]');
+  if (panSel) panSel.innerHTML = '<option value="">— pick a card —</option>';
+  if (!pageId || !planId) return;
+  var savedPanel = panSel ? (panSel.dataset.savedVal || '') : '';
+  var url = '/home/settle-up/settle-panels?page_id='+encodeURIComponent(pageId)
+            +'&plan_id='+encodeURIComponent(planId);
+  fetch(url, {credentials: 'same-origin',
+    headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}})
+  .then(function(r) { return r.ok ? r.json() : {panels:[]}; })
+  .then(function(data) {
+    if (!panSel) return;
+    panSel.innerHTML = '<option value="">— pick a card —</option>'
+      + (data.panels || []).map(function(p) {
+          var sel = String(p.id) === savedPanel ? ' selected' : '';
+          return '<option value="'+p.id+'"'+sel+'>'+(p.title||'Settle Up')+'</option>';
+        }).join('');
+  }).catch(function() {});
 }
 
 function aw_back() {
@@ -1632,6 +1758,11 @@ function initHomeWidgets() {
   // Subscriptions Summary widgets
   document.querySelectorAll('.subs-summary-widget').forEach(function(el) {
     if (typeof _loadSubscriptionsSummary === 'function') _loadSubscriptionsSummary(el);
+  });
+
+  // Settle Up widgets
+  document.querySelectorAll('.settle-up-widget').forEach(function(el) {
+    if (typeof _settleUpInit === 'function') _settleUpInit(el);
   });
 
   // Stack carousel cards

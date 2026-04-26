@@ -1588,7 +1588,7 @@
 {% endcall %}
 {% endmacro %}
 
-{# ── Subscriptions Summary widget ─────────────────────────────────────────────────────── #}
+{# ── Subscriptions Summary widget ─────────────────────────────────────────────────────────── #}
 {% macro render_subscriptions_summary(w) %}
 {%- set cfg = w.get('config', {}) -%}
 {%- set pid = cfg.get('page_id', 0) | int -%}
@@ -1615,7 +1615,36 @@
 {% endcall %}
 {% endmacro %}
 
-{# ── Stack widget macros ─────────────────────────────────────────────────────────────────────────────── #}
+{# ── Settle Up widget ─────────────────────────────────────────────────────────────────────────────────── #}
+{% macro render_settle_up(w) %}
+{%- set cfg          = w.get('config', {}) -%}
+{%- set currency     = cfg.get('currency', 'USD') -%}
+{%- set people       = cfg.get('people', []) -%}
+{%- set expenses     = cfg.get('expenses', []) -%}
+{%- set synced_pid   = cfg.get('synced_page_id',  0) | int -%}
+{%- set synced_plid  = cfg.get('synced_plan_id',  0) | int -%}
+{%- set synced_panid = cfg.get('synced_panel_id', 0) | int -%}
+{% call card(w) %}
+  {{ widget_header(w, 'Settle Up', '💰') }}
+  <div class="settle-up-widget flex-1 min-h-0 overflow-y-auto"
+       id="settle-up-{{ w.id }}"
+       data-widget-id="{{ w.id }}"
+       data-page-id="{{ w.page_id }}"
+       data-synced-page-id="{{ synced_pid }}"
+       data-synced-plan-id="{{ synced_plid }}"
+       data-synced-panel-id="{{ synced_panid }}">
+    <div class="text-xs text-gray-300 dark:text-zinc-600 text-center py-4 select-none">
+      Loading…
+    </div>
+  </div>
+  {#- Standalone data seed — read by _settleUpInit when not synced -#}
+  <script id="su-data-{{ w.id }}" type="application/json">
+  {{ {'currency': currency, 'people': people, 'expenses': expenses} | tojson | safe }}
+  </script>
+{% endcall %}
+{% endmacro %}
+
+{# ── Stack widget macros ──────────────────────────────────────────────────────────────────────────────────────────── #}
 
 {#-
   render_stack_child(w): renders just the body of a child widget inside a
@@ -1647,6 +1676,7 @@
   {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
   {% elif w.widget_type == 'upload_preview' %} {{ render_upload_preview(w) }}
   {% elif w.widget_type == 'subscriptions_summary' %} {{ render_subscriptions_summary(w) }}
+  {% elif w.widget_type == 'settle_up' %} {{ render_settle_up(w) }}
   {% endif %}
 </div>
 {% endmacro %}
@@ -1842,7 +1872,8 @@
       {% elif w.widget_type == 'buds' %}           {{ render_buds(w) }}
       {% elif w.widget_type == 'upload_preview' %}  {{ render_upload_preview(w) }}
       {% elif w.widget_type == 'subscriptions_summary' %} {{ render_subscriptions_summary(w) }}
-      {% elif w.widget_type == 'stack' %}           {{ render_stack(w) }}
+      {% elif w.widget_type == 'settle_up' %}           {{ render_settle_up(w) }}
+      {% elif w.widget_type == 'stack' %}               {{ render_stack(w) }}
       {% endif %}
     {% endfor %}
   </div>

@@ -78,6 +78,24 @@ async def _list_panels(page_id: int, user_id: int, plan_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def _get_panel(panel_id: int, user_id: int, page_id: int) -> dict | None:
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT id, panel_type, title, content, sort_order
+              FROM trip_plan_panels
+             WHERE id=? AND user_id=? AND page_id=?
+            """,
+            (panel_id, user_id, page_id),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    r = dict(row)
+    r["content"] = _parse_content(r["content"])
+    return r
+
+
 async def _add_panel(
     page_id: int, user_id: int, plan_id: int,
     panel_type: str, title: str, content: str,
@@ -140,6 +158,21 @@ async def _reorder_panels(
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/trip/{page_id}/plans/{plan_id}/panels/{panel_id}")
+async def get_panel(page_id: int, plan_id: int, panel_id: int, request: Request):
+    """Return a single panel — used by the Settle Up dashboard widget sync mode."""
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return _err("not logged in", 401)
+    if not await _get_trip_page(page_id, uid):
+        return _err("not found", 404)
+    panel = await _get_panel(panel_id, uid, page_id)
+    if not panel:
+        return _err("panel not found", 404)
+    return JSONResponse(panel)
+
 
 @router.get("/trip/{page_id}/plans/{plan_id}/panels")
 async def list_panels(page_id: int, plan_id: int, request: Request):

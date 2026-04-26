@@ -67,6 +67,7 @@ from routers import home_crm as home_crm_router
 from routers import home_subscriptions as home_subscriptions_router
 from routers import home_trip as home_trip_router
 from routers import home_trip_panels as home_trip_panels_router
+from routers import home_settle as home_settle_router
 from routers import home_buds as home_buds_router
 from routers import home_grid as home_grid_router
 from routers import home_uploads as home_uploads_router
@@ -147,6 +148,7 @@ app.include_router(home_crm_router.router)
 app.include_router(home_subscriptions_router.router)
 app.include_router(home_trip_router.router)
 app.include_router(home_trip_panels_router.router)
+app.include_router(home_settle_router.router)
 app.include_router(home_buds_router.router)
 app.include_router(home_grid_router.router)
 app.include_router(home_uploads_router.router)
