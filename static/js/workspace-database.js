@@ -962,7 +962,6 @@ function _dbApplyHljs(code) {
     /* Built-in tokenizer — HTML-escapes + adds hljs-* spans for known languages */
     code.innerHTML = _dbTokenize(code.textContent, lang);
   }
-  }
 
   if (pre && pre.tagName === 'PRE') {
     _dbInjectCodeHeader(pre, lang);
