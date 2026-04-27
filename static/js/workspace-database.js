@@ -400,6 +400,46 @@ function _dbSelToolbarInit() {
   szDnBtn.addEventListener('mousedown', function(e) { e.preventDefault(); _dbChangeSizeStep(-2); });
   row.appendChild(szUpBtn); row.appendChild(szDnBtn);
 
+  /* Link row — shown only when selection is inside / on an <a> */
+  var linkRow = document.createElement('div');
+  linkRow.className = 'db-sb-row';
+  linkRow.style.display = 'none';
+  linkRow.style.borderTop = '1px solid';
+
+  var _linkAnchor = null;   // captured on each selectionchange
+
+  var lkOpenBtn = _mkBtn('Open link', '&#128279; Open link');
+  lkOpenBtn.style.width = 'auto';
+  lkOpenBtn.style.padding = '0 8px';
+  lkOpenBtn.style.fontSize = '12px';
+  lkOpenBtn.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    if (_linkAnchor) window.open(_linkAnchor.href, '_blank', 'noopener,noreferrer');
+  });
+
+  var lkRemBtn = _mkBtn('Remove link', '&#10005; Remove link');
+  lkRemBtn.style.width = 'auto';
+  lkRemBtn.style.padding = '0 8px';
+  lkRemBtn.style.fontSize = '12px';
+  lkRemBtn.style.color = '#ea1100';
+  lkRemBtn.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    if (!_linkAnchor) return;
+    /* Unwrap: replace the <a> with its children in the DOM */
+    var parent = _linkAnchor.parentNode;
+    while (_linkAnchor.firstChild) parent.insertBefore(_linkAnchor.firstChild, _linkAnchor);
+    parent.removeChild(_linkAnchor);
+    _linkAnchor = null;
+    linkRow.style.display = 'none';
+    /* Trigger autosave */
+    var noteEl = document.querySelector('[data-db-note]');
+    if (noteEl) noteEl.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  linkRow.appendChild(lkOpenBtn);
+  linkRow.appendChild(lkRemBtn);
+  bar.appendChild(linkRow);
+
   /* ---- build flyout swatches ---- */
   function _buildSwatches(flyout, palette, applyFn) {
     palette.forEach(function(item) {
@@ -446,19 +486,30 @@ function _dbSelToolbarInit() {
         _dbSelBar.style.display = 'none';
         hlFlyout.classList.remove('open');
         tcFlyout.classList.remove('open');
+        linkRow.style.display = 'none';
         return;
       }
       /* Only show inside a [data-db-note] element */
       var anchor = sel.anchorNode;
       var el = anchor && anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
-      var insideNote = false;
+      var noteContainer = null;
       while (el) {
-        if (el.dataset && el.dataset.dbNote) { insideNote = true; break; }
+        if (el.dataset && el.dataset.dbNote) { noteContainer = el; break; }
         el = el.parentElement;
       }
-      if (!insideNote) { _dbSelBar.style.display = 'none'; return; }
+      if (!noteContainer) { _dbSelBar.style.display = 'none'; return; }
 
-      /* Apply theme and position */
+      /* Detect if selection is inside an <a> element — show link row */
+      _linkAnchor = null;
+      var checkEl = sel.getRangeAt(0).commonAncestorContainer;
+      if (checkEl && checkEl.nodeType === Node.TEXT_NODE) checkEl = checkEl.parentElement;
+      while (checkEl && checkEl !== noteContainer) {
+        if (checkEl.tagName === 'A' && checkEl.href) { _linkAnchor = checkEl; break; }
+        checkEl = checkEl.parentElement;
+      }
+      linkRow.style.display  = _linkAnchor ? 'flex' : 'none';
+      linkRow.style.borderTopColor = dark() ? '#3f3f46' : '#e5e7eb';
+
       _theme(bar);
       bar.style.border = dark() ? '1px solid #3f3f46' : '1px solid #e5e7eb';
       [hlFlyout, tcFlyout].forEach(function(f) {
@@ -541,23 +592,59 @@ function _dbAttachNoteTools(noteEl) {
   if (window.bwPasteAs && typeof window.bwPasteAs.initForCE === 'function') {
     window.bwPasteAs.initForCE(noteEl);
   }
-  /* Click on empty space below content — append a new paragraph and focus it */
-  if (!noteEl._dbNewLineWired) {
-    noteEl._dbNewLineWired = true;
-    noteEl.addEventListener('click', function(e) {
-      if (e.target !== noteEl) return;  /* clicked a child element — let it be */
-      var p = document.createElement('p');
-      p.innerHTML = '<br>';
-      noteEl.appendChild(p);
-      var r = document.createRange();
-      r.setStart(p, 0);
-      r.collapse(true);
-      var s = window.getSelection();
-      s.removeAllRanges();
-      s.addRange(r);
-      noteEl.focus({ preventScroll: true });
-    });
-  }
+
+  if (noteEl._dbToolsWired) return;   /* idempotent — only wire DOM handlers once */
+  noteEl._dbToolsWired = true;
+
+  /* ── Click on empty space below content — append a paragraph ---- */
+  noteEl.addEventListener('click', function(e) {
+    /* Link click — open in new tab (must check BEFORE empty-space check) */
+    var a = e.target.closest('a[href]');
+    if (a) {
+      e.preventDefault();
+      window.open(a.href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    /* Empty space below content */
+    if (e.target !== noteEl) return;
+    var p = document.createElement('p');
+    p.innerHTML = '<br>';
+    noteEl.appendChild(p);
+    var r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    var s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    noteEl.focus({ preventScroll: true });
+  });
+
+  /* ── Code block: strip hljs on focus, reapply on blur ─────────────── */
+  noteEl.addEventListener('focusin', function(e) {
+    var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
+    if (!code || !code.closest('[contenteditable]')) return;
+    /* Store plain text and strip hljs decoration for clean editing */
+    var plain = code.textContent.replace(/\n$/, '');
+    var langMatch = (code.className || '').match(/language-(\S+)/);
+    var lang = langMatch ? langMatch[1] : '';
+    /* Only reset if hljs was applied (className contains 'hljs') */
+    if (code.classList.contains('hljs') || code.querySelector('.hljs')) {
+      code.className   = lang ? 'language-' + lang : '';
+      code.textContent = plain;
+    }
+    code.contentEditable = 'plaintext-only';
+    code.spellcheck = false;
+  });
+
+  noteEl.addEventListener('focusout', function(e) {
+    var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
+    if (!code) return;
+    if (typeof hljs !== 'undefined' && code.textContent.trim()) {
+      try { hljs.highlightElement(code); } catch (_) {}
+    }
+    /* Dispatch input so autosave picks up the highlighted content */
+    noteEl.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

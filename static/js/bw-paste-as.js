@@ -368,6 +368,17 @@
     pv.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  /**
+   * Insert block-level HTML (bookmark card, embed card) into CE and then
+   * collapse the selection so no floating toolbar appears on top of the
+   * freshly inserted card.
+   */
+  function _insertCEBlock(html) {
+    _insertCE(html);
+    const sel = window.getSelection();
+    if (sel) sel.collapseToEnd();
+  }
+
   /** Insert text at saved textarea caret, replacing any prior selection. */
   function _insertTA(text) {
     const ta  = document.getElementById('note-content');
@@ -403,12 +414,12 @@
           break;
 
         case 'bookmark':
-          _insertCE(_bookmarkHtml(url, dom));
+          _insertCEBlock(_bookmarkHtml(url, dom));
           break;
 
         case 'embed': {
           const src = _embedSrc(url);
-          _insertCE(src ? _embedHtml(src) : _embedFallbackHtml(url, dom));
+          _insertCEBlock(src ? _embedHtml(src) : _embedFallbackHtml(url, dom));
           break;
         }
       }
