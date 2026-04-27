@@ -959,8 +959,12 @@ function _dbApplyHljs(code) {
     });
     if (hljsCls) lang = hljsCls.replace('language-', '');
   } else if (code.textContent.trim()) {
-    /* Built-in tokenizer — HTML-escapes + adds hljs-* spans for known languages */
+    /* Temporarily remove contenteditable so Chrome doesn’t strip our spans.
+       Setting innerHTML on a plaintext-only host causes Chrome to normalise
+       away all markup and collapse whitespace — a silent no-op nightmare. */
+    code.removeAttribute('contenteditable');
     code.innerHTML = _dbTokenize(code.textContent, lang);
+    code.contentEditable = 'plaintext-only';
   }
 
   if (pre && pre.tagName === 'PRE') {
@@ -978,6 +982,17 @@ function _dbApplyHljs(code) {
 function _dbNoteHtml(el) {
   var clone = el.cloneNode(true);
   clone.querySelectorAll('[data-db-transient]').forEach(function(n) { n.remove(); });
+  /* Strip editing attributes from pre/code — Chrome normalises away nested
+     <span> elements when it parses saved HTML that has contenteditable on <code>.
+     These attrs are re-applied fresh on every load by _dbAttachNoteTools. */
+  clone.querySelectorAll('pre').forEach(function(pre) {
+    pre.removeAttribute('contenteditable');
+    var code = pre.querySelector('code');
+    if (code) {
+      code.removeAttribute('contenteditable');
+      code.removeAttribute('spellcheck');
+    }
+  });
   return clone.innerHTML;
 }
 
