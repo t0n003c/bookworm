@@ -267,7 +267,7 @@ function _dbInitStyles() {
     /* svg icons inside the copy button */
     '[data-db-note] .db-code-hdr-copy svg{display:block;}',
     /* code element handles horizontal scroll; hljs bg/padding overrides stripped */
-    '[data-db-note] pre code{display:block;overflow-x:auto;padding:.6rem 1rem;',
+    '[data-db-note] pre code{display:block;overflow-x:auto;padding:.6rem 1rem;white-space:pre;',
     'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;background:none!important;color:inherit;}',
     '[data-db-note] pre code.hljs{background:none!important;padding:.6rem 1rem!important;}',
     /* strip any leftover inline background/color set by paste corruption */
