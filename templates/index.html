@@ -2877,6 +2877,12 @@
     // notes with its own default order.  Re-fetch now to apply the saved sort.
     var _initWsId = '{{ active_ws_id if active_ws_id is not none else "" }}';
     if (localStorage.getItem(_sortKey(_initWsId))) _sortRefreshNotes();
+    // Hard-refresh (Ctrl+Shift+R) lands here without an htmx:afterSettle swap.
+    // Boot the database view if it was server-rendered into the initial HTML.
+    var _dbRootEl = document.getElementById('db-view-root');
+    if (_dbRootEl && typeof initDatabaseView === 'function') {
+      initDatabaseView(parseInt(_dbRootEl.dataset.wsId, 10));
+    }
   });
 
   /* ---- Category filter refresh ---- */

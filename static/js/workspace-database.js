@@ -1,20 +1,22 @@
 /* workspace-database.js
  * Client-side logic for workspace Database nodes (Notion-inspired card grid).
  * Rules: ALL var — no let/const. All public funcs prefixed db, private _db.
- * Booted by initDatabaseView() called from index.html htmx:afterSettle.
+ * Booted by initDatabaseView() — called from htmx:afterSettle AND DOMContentLoaded in index.html.
  */
 
 /* ── module state ─────────────────────────────────────────────────────────── */
-var _dbWsId       = null;   // current database workspace id (int)
-var _dbCards      = [];     // array of card objects from server
-var _dbSaveTimers = {};     // {cardId: timeoutId} — per-card note debounce
-var _dbDetailId   = null;   // card id currently open in detail panel
-var _dbDelTarget  = null;   // card id staged for deletion
+var _dbWsId              = null;   // current database workspace id (int)
+var _dbCards             = [];     // array of card objects from server
+var _dbSaveTimers        = {};     // {cardId: timeoutId} — per-card note debounce
+var _dbDetailId          = null;   // card id currently open in detail panel
+var _dbDelTarget         = null;   // card id staged for deletion
+var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 
-/* ── slash command palette state ─────────────────────────────────────────── */
+/* ── slash command palette state ────────────────────────────────────────── */
 var _dbSlashEl    = null;   // active contenteditable element
 var _dbSlashPal   = null;   // palette DOM element (created once)
 var _dbSlashIdx   = 0;      // keyboard selection index
+var _dbSlashRange = null;   // saved Range when palette opened (restored before execCommand)
 var _dbSlashCmds  = [
   { cmd: 'heading1',  label: 'Heading 1',  tag: 'H1'          },
   { cmd: 'heading2',  label: 'Heading 2',  tag: 'H2'          },
@@ -254,9 +256,12 @@ function _dbBuildSlashPalette() {
   pal.setAttribute('role', 'listbox');
   pal.setAttribute('aria-label', 'Insert block');
   pal.innerHTML = _dbSlashCmds.map(function(c, i) {
+    // onmousedown + return false: prevents blur on the contenteditable so the
+    // selection (and cursor position) is intact when _dbApplySlashCmd runs.
     return '<div class="db-slash-item px-3 py-1.5 text-sm cursor-pointer text-gray-700'
       + ' dark:text-zinc-300 hover:bg-purple-50 dark:hover:bg-purple-900/30"'
-      + ' role="option" data-idx="' + i + '" onclick="_dbApplySlashCmd(\'' + c.cmd + '\')">'
+      + ' role="option" data-idx="' + i + '"'
+      + ' onmousedown="_dbApplySlashCmd(\'' + c.cmd + '\'); return false;">'
       + c.label + '</div>';
   }).join('');
   document.body.appendChild(pal);
@@ -318,6 +323,10 @@ function _dbSlashKeydown(e, el, cardId) {
 
 function _dbShowSlashPalette(el) {
   if (!_dbSlashPal) return;
+  // Save the current selection so we can restore it in _dbApplySlashCmd
+  // (clicking the palette would normally steal focus + nuke the range).
+  var sel = window.getSelection();
+  _dbSlashRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
   var rect = el.getBoundingClientRect();
   _dbSlashPal.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
   _dbSlashPal.style.left = (rect.left + window.scrollX) + 'px';
@@ -345,17 +354,38 @@ function _dbSlashHighlight() {
 function _dbApplySlashCmd(cmd) {
   _dbHideSlashPalette();
   if (!_dbSlashEl) return;
-  // Clear the '/' that triggered the palette
-  var sel = window.getSelection();
-  if (sel && sel.rangeCount) {
-    var range = sel.getRangeAt(0);
-    // Try to clear the current block's text
-    var node = range.startContainer;
-    if (node.nodeType === Node.TEXT_NODE) {
-      node.textContent = '';
+
+  // Restore the saved selection so execCommand inserts at the right spot.
+  // With onmousedown+return-false the caret is still live; _dbSlashRange is
+  // a belt-and-suspenders fallback for keyboard-triggered applies.
+  if (_dbSlashRange) {
+    var sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(_dbSlashRange);
+    }
+    _dbSlashRange = null;
+  }
+
+  // Focus the target element (needed after keyboard Enter applies the cmd)
+  _dbSlashEl.focus();
+
+  // Remove the '/' trigger character from the current text node
+  var sel2 = window.getSelection();
+  if (sel2 && sel2.rangeCount) {
+    var node = sel2.getRangeAt(0).startContainer;
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      // Strip the trailing '/' (and any space after it)
+      node.textContent = node.textContent.replace(/\/$/, '');
+      // Move cursor to end of that node
+      var r = document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(false);
+      sel2.removeAllRanges();
+      sel2.addRange(r);
     }
   }
-  var html = '';
+
   var tagMap = {
     heading1:  '<h1>&#8203;</h1>',
     heading2:  '<h2>&#8203;</h2>',
@@ -368,7 +398,7 @@ function _dbApplySlashCmd(cmd) {
     italic:    '<em>&#8203;</em>',
     code:      '<code>&#8203;</code>',
   };
-  html = tagMap[cmd] || '';
+  var html = tagMap[cmd] || '';
   if (html) document.execCommand('insertHTML', false, html);
 }
 
@@ -426,12 +456,30 @@ function _dbOpenDetail(cardId) {
     _dbRenderDetailPanel(card);
     // Honour the user’s chosen view mode (panel / center / fullscreen)
     if (typeof openPanel === 'function') openPanel(false);
+    // Clicking the empty panel area (outside the card content) closes it.
+    // Only applies when the panel is a full-viewport flex container (center/fullscreen modes),
+    // but attaching in all modes is harmless — a side panel has no empty flex space to click.
+    var panelEl = document.getElementById('panel');
+    if (panelEl) {
+      if (_dbPanelClickHandler) panelEl.removeEventListener('click', _dbPanelClickHandler);
+      _dbPanelClickHandler = function(e) {
+        // Only fire when the click lands directly on #panel itself, not its children
+        if (e.target === panelEl) _dbCloseDetail();
+      };
+      panelEl.addEventListener('click', _dbPanelClickHandler);
+    }
   })
   .catch(function(e) { _dbToast('Could not open card: ' + e.message, true); });
 }
 
 function _dbCloseDetail() {
   _dbDetailId = null;
+  // Remove the click-outside listener
+  var panelEl = document.getElementById('panel');
+  if (panelEl && _dbPanelClickHandler) {
+    panelEl.removeEventListener('click', _dbPanelClickHandler);
+    _dbPanelClickHandler = null;
+  }
   // Reuse the app’s panel close so all three view modes get cleaned up correctly
   if (typeof closePanel === 'function') { closePanel(); return; }
   // Fallback (should never happen)
@@ -619,6 +667,31 @@ function _dbShowCoverModal(cardId) {
   );
 
   document.body.appendChild(modal);
+
+  // Wire drag-and-drop on the upload zone now that it’s in the DOM
+  var dropLabel = document.querySelector('#db-cover-panel-upload label');
+  if (dropLabel) {
+    dropLabel.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      dropLabel.style.background  = 'rgba(124,58,237,0.08)';
+      dropLabel.style.borderColor = '#7c3aed';
+    });
+    dropLabel.addEventListener('dragleave', function() {
+      dropLabel.style.background  = '';
+      dropLabel.style.borderColor = '';
+    });
+    dropLabel.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dropLabel.style.background  = '';
+      dropLabel.style.borderColor = '';
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!file) return;
+      var status = document.getElementById('db-cover-upload-status');
+      if (status) status.textContent = 'Uploading…';
+      _dbUploadCoverFile(cardId, file);
+    });
+  }
+
   modal.addEventListener('click', function(e) {
     if (e.target === modal) _dbCloseCoverModal();
   });
@@ -695,12 +768,17 @@ function _dbRemoveCover(cardId) {
   .catch(function(e) { _dbToast('Could not remove cover: ' + e.message, true); });
 }
 
+// Input-change handler (file picker)
 function _dbUploadCover(cardId, input) {
   var file = input.files && input.files[0];
   if (!file) return;
   var status = document.getElementById('db-cover-upload-status');
   if (status) status.textContent = 'Uploading…';
+  _dbUploadCoverFile(cardId, file);
+}
 
+// Core upload — shared by file picker + drag-and-drop
+function _dbUploadCoverFile(cardId, file) {
   var fd = new FormData();
   fd.append('file', file);
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/cover-upload', {
@@ -720,7 +798,8 @@ function _dbUploadCover(cardId, input) {
     _dbToast('Cover updated — also saved to your Uploads page 🎉');
   })
   .catch(function(e) {
-    if (status) status.textContent = '⚠️ ' + e.message;
+    var statusEl = document.getElementById('db-cover-upload-status');
+    if (statusEl) statusEl.textContent = '⚠️ ' + e.message;
     else _dbToast(e.message, true);
   });
 }
@@ -796,6 +875,8 @@ function _dbDeleteAttr(cardId, attrId) {
    MODAL BINDING
 ═══════════════════════════════════════════════════════════════════════════ */
 
+var _dbModalsWired = false;
+
 function _dbBindModals() {
   // Close add-card modal on Enter key in the title input
   var inp = document.getElementById('db-new-card-title');
@@ -804,6 +885,9 @@ function _dbBindModals() {
       if (e.key === 'Enter') { e.preventDefault(); _dbSubmitAddCard(); }
     });
   }
+  // Document-level listeners are global — only wire once to avoid stacking
+  if (_dbModalsWired) return;
+  _dbModalsWired = true;
   // Hide slash palette on outside click
   document.addEventListener('click', function(e) {
     if (_dbSlashPal && !_dbSlashPal.classList.contains('hidden')) {
