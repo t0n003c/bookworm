@@ -247,19 +247,38 @@ function _dbInitStyles() {
     '[data-db-note] blockquote{border-left:3px solid #a78bfa;margin:.5em 0;padding:.25em .75em;',
     'color:#6b7280;font-style:italic;}',
     '.dark [data-db-note] blockquote{border-color:#7c3aed;color:#a1a1aa;}',
-    /* code block */
-    '[data-db-note] pre{background:#f3f4f6;border-radius:.5rem;padding:.75em 1em;overflow-x:auto;margin:.5em 0;position:relative;}',
+    /* code block — overflow:hidden keeps border-radius clean; scrolling handled by <code> */
+    '[data-db-note] pre{background:#f3f4f6;border-radius:.5rem;overflow:hidden;margin:.5em 0;}',
     '.dark [data-db-note] pre{background:#27272a;}',
-    /* language badge — top-right corner, pure CSS, never serialised to HTML */
-    '[data-db-note] pre[data-lang]::after{content:attr(data-lang);position:absolute;top:.35rem;right:.5rem;',
-    'font-size:.6rem;font-weight:700;font-family:ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;',
-    'letter-spacing:.06em;color:#6b7280;opacity:.8;pointer-events:none;user-select:none;}',
-    '.dark [data-db-note] pre[data-lang]::after{color:#a1a1aa;}',
+    /* header bar inside pre — JS-injected language label + copy btn; stripped before save */
+    '[data-db-note] .db-code-hdr{display:flex;align-items:center;justify-content:space-between;',
+    'padding:.22rem .65rem;border-bottom:1px solid rgba(0,0,0,.07);user-select:none;}',
+    '.dark [data-db-note] .db-code-hdr{border-color:rgba(255,255,255,.06);}',
+    '[data-db-note] .db-code-hdr-lang{font-size:.6rem;font-weight:700;font-family:ui-sans-serif,system-ui,sans-serif;',
+    'text-transform:uppercase;letter-spacing:.06em;color:#6b7280;}',
+    '.dark [data-db-note] .db-code-hdr-lang{color:#a1a1aa;}',
+    '[data-db-note] .db-code-hdr-copy{background:none;border:none;cursor:pointer;color:#9ca3af;',
+    'padding:.1rem .35rem;border-radius:.25rem;font-size:.68rem;line-height:1;',
+    'display:inline-flex;align-items:center;gap:.2rem;transition:background .12s,color .12s;}',
+    '[data-db-note] .db-code-hdr-copy:hover{background:rgba(0,0,0,.07);color:#374151;}',
+    '.dark [data-db-note] .db-code-hdr-copy:hover{background:rgba(255,255,255,.09);color:#d4d4d8;}',
+    '[data-db-note] .db-code-hdr-copy.copied{color:#2a8703;}',
+    '.dark [data-db-note] .db-code-hdr-copy.copied{color:#4ade80;}',
+    /* svg icons inside the copy button */
+    '[data-db-note] .db-code-hdr-copy svg{display:block;}',
+    /* code element handles horizontal scroll; hljs bg/padding overrides stripped */
+    '[data-db-note] pre code{display:block;overflow-x:auto;padding:.6rem 1rem;',
+    'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;background:none!important;color:inherit;}',
+    '[data-db-note] pre code.hljs{background:none!important;padding:.6rem 1rem!important;}',
+    /* strip any leftover inline background/color set by paste corruption */
+    '[data-db-note] pre code span{background:none!important;}',
+    /* special: pre with no content yet (fresh slash-command block) hides header */
+    '[data-db-note] pre:not([data-has-content]) .db-code-hdr{display:none;}',
+    /* when editing (code focused) shift header down slightly so caret starts right */
     /* plain URL links inserted via paste-as popup */
     '[data-db-note] [data-bw-url]{color:#0053e2;text-decoration:underline;text-underline-offset:2px;cursor:pointer;}',
     '.dark [data-db-note] [data-bw-url]{color:#60a5fa;}',
-    '[data-db-note] pre code{font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;',
-    'background:none;color:inherit;padding:0;}',
+    /* (pre code rule moved above with overflow and hljs overrides) */
     /* inline code */
     '[data-db-note] code{background:#f3f4f6;border-radius:.25rem;padding:.1em .3em;',
     'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;}',
@@ -589,47 +608,154 @@ function _dbChangeSizeStep(delta) {
 }
 
 /**
- * Run hljs on a <code> element, stamp data-lang on its <pre>, and ensure
- * the element stays plaintext-only editable.
- * Includes the same heuristic fallbacks as _bwApplyCodeHighlighting so that
- * shell / SQL / HTML / JSON snippets get a label even when hljs says "no idea".
+ * Detect language for a <code> element without running hljs.
+ * Returns a label string (e.g. 'yaml', 'python') or '' if unknown.
  */
 var _DB_HLJS_NOISE = new Set(['plaintext', 'undefined', 'txt', 'text', '']);
-function _dbApplyHljs(code) {
-  if (typeof hljs === 'undefined') return;
-  if (!code || !code.textContent.trim()) return;
-  try { hljs.highlightElement(code); } catch (_) {}
-
+function _dbDetectLang(code) {
+  /* 1) From existing class hint left by slash command or previous save */
   var langCls = Array.prototype.find.call(code.classList, function(c) {
     return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
   });
+  if (langCls) return langCls.replace('language-', '');
 
-  /* Heuristic fallbacks — mirrors _bwApplyCodeHighlighting */
-  if (!langCls) {
-    var raw = (code.textContent || '').trimStart();
-    var hint = '';
-    if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw)) {
-      hint = 'shell';
-    } else if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\b/i.test(raw)) {
-      hint = 'sql';
-    } else if (/^\s*<[a-zA-Z]/.test(raw)) {
-      hint = 'html';
-    } else if (/^\s*\{/.test(raw) && raw.includes(':')) {
-      hint = 'json';
-    }
-    if (hint) langCls = 'language-' + hint;
+  /* 2) Heuristic content scan */
+  var raw = (code.textContent || '').trimStart();
+  if (!raw) return '';
+  if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw)) return 'shell';
+  if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\b/i.test(raw)) return 'sql';
+  if (/^\s*<[a-zA-Z]/.test(raw)) return 'html';
+  if (/^(version:|services:|networks:|volumes:|steps:|jobs:|name:)/m.test(raw) && raw.includes(':\n')) return 'yaml';
+  if (/^\s*[\[{]/.test(raw) && (/"[^"]+"\s*:/.test(raw) || /\[/.test(raw))) return 'json';
+  return '';
+}
+
+/**
+ * Inject (or refresh) the language + copy header bar inside a <pre>.
+ * Idempotent — removes stale header first.
+ */
+function _dbInjectCodeHeader(pre, lang) {
+  /* Remove any stale header */
+  var old = pre.querySelector('.db-code-hdr');
+  if (old) old.remove();
+
+  var code = pre.querySelector('code');
+  var hasContent = code && code.textContent.trim().length > 0;
+
+  /* Mark content presence on pre (controls header visibility via CSS) */
+  if (hasContent) pre.setAttribute('data-has-content', '1');
+  else            pre.removeAttribute('data-has-content');
+
+  /* Build header */
+  var hdr = document.createElement('div');
+  hdr.className = 'db-code-hdr';
+  hdr.setAttribute('contenteditable', 'false');
+  hdr.setAttribute('data-db-transient', '1');
+
+  /* Language label */
+  var lbl = document.createElement('span');
+  lbl.className = 'db-code-hdr-lang';
+  lbl.textContent = lang || '\u00a0';  /* nbsp keeps row height when no lang */
+  hdr.appendChild(lbl);
+
+  /* Copy button — only when there’s content */
+  if (hasContent) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'db-code-hdr-copy';
+    btn.title = 'Copy code';
+    btn.setAttribute('aria-label', 'Copy code');
+    btn.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"'
+      + ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      + '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
+      + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
+      + '</svg><span class="db-code-hdr-copy-txt">Copy</span>';
+    btn.addEventListener('mousedown', function(e) {
+      /* Prevent focus leaving the code element so focusout doesn't
+         re-render the header mid-click, detaching the button before
+         the click event fires.                                        */
+      e.preventDefault();
+    });
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var text = code ? code.textContent : '';
+      if (!text.trim()) return;
+      navigator.clipboard.writeText(text).then(function() {
+        btn.classList.add('copied');
+        btn.querySelector('.db-code-hdr-copy-txt').textContent = 'Copied!';
+        setTimeout(function() {
+          btn.classList.remove('copied');
+          btn.querySelector('.db-code-hdr-copy-txt').textContent = 'Copy';
+        }, 2000);
+      }).catch(function() {
+        /* Fallback for non-https or blocked clipboard API */
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          btn.classList.add('copied');
+          btn.querySelector('.db-code-hdr-copy-txt').textContent = 'Copied!';
+          setTimeout(function() {
+            btn.classList.remove('copied');
+            btn.querySelector('.db-code-hdr-copy-txt').textContent = 'Copy';
+          }, 2000);
+        } catch (_) {}
+      });
+    });
+    hdr.appendChild(btn);
   }
 
+  /* Insert as first child of pre (before <code>) */
+  pre.insertBefore(hdr, pre.firstChild);
+}
+
+/**
+ * Run hljs on a <code> element, detect language, inject the UI header bar,
+ * and lock the <pre> wrapper against direct editing.
+ */
+function _dbApplyHljs(code) {
+  if (!code) return;
   var pre = code.parentElement;
+
+  /* Detect language first (works even when hljs is blocked/offline) */
+  var lang = _dbDetectLang(code);
+
+  /* Apply hljs syntax colours when available */
+  if (typeof hljs !== 'undefined' && code.textContent.trim()) {
+    /* Give hljs a language hint so it doesn’t have to guess */
+    if (lang && !code.classList.contains('language-' + lang)) {
+      code.classList.add('language-' + lang);
+    }
+    try { hljs.highlightElement(code); } catch (_) {}
+    /* Re-read detected language in case hljs overrode our hint */
+    var hljsCls = Array.prototype.find.call(code.classList, function(c) {
+      return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
+    });
+    if (hljsCls) lang = hljsCls.replace('language-', '');
+  }
+
   if (pre && pre.tagName === 'PRE') {
-    if (langCls) pre.dataset.lang = langCls.replace('language-', '');
-    else         delete pre.dataset.lang;
-    /* Keep the wrapper non-editable so the cursor can't land in <pre>'s
-       padding and let rich-text land as sibling spans of <code>. */
+    _dbInjectCodeHeader(pre, lang);
     pre.contentEditable = 'false';
   }
   code.contentEditable = 'plaintext-only';
   code.spellcheck = false;
+}
+
+/**
+ * Serialise noteEl to a clean HTML string suitable for saving.
+ * Strips all transient elements (header bars) injected by _dbInjectCodeHeader.
+ */
+function _dbNoteHtml(el) {
+  var clone = el.cloneNode(true);
+  clone.querySelectorAll('[data-db-transient]').forEach(function(n) { n.remove(); });
+  return clone.innerHTML;
 }
 
 function _dbAttachNoteTools(noteEl) {
@@ -914,7 +1040,7 @@ function _dbDetailTitleBlur(cardId, el) {
 function _dbDetailNoteInput(cardId, el) {
   if (_dbSaveTimers['detail_' + cardId]) clearTimeout(_dbSaveTimers['detail_' + cardId]);
   _dbSaveTimers['detail_' + cardId] = setTimeout(function() {
-    _dbSaveNote(cardId, el.innerHTML);
+    _dbSaveNote(cardId, _dbNoteHtml(el));
   }, 800);
 }
 
@@ -923,7 +1049,7 @@ function _dbDetailNoteBlur(cardId, el) {
     clearTimeout(_dbSaveTimers['detail_' + cardId]);
     delete _dbSaveTimers['detail_' + cardId];
   }
-  _dbSaveNote(cardId, el.innerHTML);
+  _dbSaveNote(cardId, _dbNoteHtml(el));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
