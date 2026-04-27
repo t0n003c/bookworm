@@ -663,6 +663,135 @@ function _dbChangeSizeStep(delta) {
   if (ce) ce.dispatchEvent(new Event('input'));
 }
 
+/* ─── Built-in syntax tokenizer — no CDN dependency ─────────────────────
+   Produces <span class="hljs-*"> HTML matching the inline CSS colour palette.
+   _dbApplyHljs calls this whenever the CDN highlight.js is unavailable.
+──────────────────────────────────────────────────────────────────────── */
+var _DB_LANG_DEFS = (function(){
+  var w=function(s){return new Set(s.split(/\s+/).filter(Boolean));};
+  return {
+    vbnet:{lc:"'",str:['"'],
+      kw:w('AddHandler AddressOf And AndAlso As Boolean ByRef Byte ByVal Call Case Catch CBool CByte CChar CDate CDbl CDec CInt CLng CObj CSByte CShort CSng CStr CType CUInt CULng CUShort Class Const Continue Decimal Declare Default Delegate Dim DirectCast Do Double Each Else ElseIf End Enum Erase Error Event Exit False Finally For Friend Function Get GetType Global GoTo Handles If Implements Imports In Inherits Integer Interface Is IsNot Let Lib Like Long Loop Me Mid Module MustInherit MustOverride MyBase MyClass Namespace Narrowing New Next Not Nothing NotInheritable NotOverridable Object Of On Operator Option Optional Or OrElse Out Overloads Overridable Overrides ParamArray Partial Private Property Protected Public RaiseEvent ReadOnly ReDim RemoveHandler Resume Return SByte Select Set Shadows Shared Short Single Static Step Stop String Structure Sub SyncLock Then Throw To True Try TryCast TypeOf UInteger ULong UShort Using When While Widening With WithEvents WriteOnly Xor'),
+      bi:w('MsgBox InputBox Len Left Right Mid UCase LCase Trim CStr CInt CDbl CBool Format Val IsNumeric IsNull IsEmpty Now Today DateAdd Print Console')},
+    python:{lc:'#',tc:['"""',"'''"],str:['"',"'"],
+      kw:w('False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'),
+      bi:w('abs all any bin bool bytes callable chr complex delattr dict dir divmod enumerate eval exec filter float format frozenset getattr globals hasattr hash help hex id input int isinstance issubclass iter len list locals map max min next object oct open ord pow print property range repr reversed round set setattr slice sorted staticmethod str sum super tuple type vars zip')},
+    javascript:{lc:'//',bc:['/*','*/'],str:['"',"'",'`'],
+      kw:w('break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new of return static super switch this throw try typeof var void while with yield async await'),
+      bi:w('Array Boolean Date Error Function JSON Math Number Object Promise RegExp String Symbol console document window undefined null true false NaN Infinity parseInt parseFloat isNaN isFinite')},
+    shell:{lc:'#',str:['"',"'"],kw:w('if then else elif fi for while do done case esac function in return export unset local readonly declare')},
+    sql:{lc:'--',bc:['/*','*/'],str:["'",'"'],
+      kw:w('SELECT INSERT UPDATE DELETE CREATE DROP ALTER TABLE FROM WHERE AND OR NOT IN EXISTS BETWEEN LIKE IS NULL GROUP BY HAVING ORDER LIMIT OFFSET JOIN LEFT RIGHT INNER OUTER FULL CROSS ON AS DISTINCT ALL UNION INTERSECT EXCEPT WITH RECURSIVE INDEX VIEW TRIGGER PROCEDURE FUNCTION DATABASE SCHEMA GRANT REVOKE COMMIT ROLLBACK TRANSACTION BEGIN END CASE WHEN THEN ELSE CAST CONVERT SET INTO VALUES DEFAULT RETURNS DECLARE EXEC EXECUTE'),
+      bi:w('COUNT SUM AVG MIN MAX COALESCE NULLIF UPPER LOWER TRIM SUBSTR SUBSTRING LEN LENGTH REPLACE NOW GETDATE CURRENT_TIMESTAMP DATEADD DATEDIFF YEAR MONTH DAY ISNULL IFNULL NVL ROW_NUMBER RANK DENSE_RANK OVER PARTITION')},
+    yaml:{lc:'#',str:['"',"'"],kw:w('true false null yes no on off')},
+    json:{str:['"'],kw:w('true false null')},
+    dockerfile:{lc:'#',str:['"',"'"],kw:w('FROM RUN CMD COPY ADD EXPOSE WORKDIR ENV LABEL ARG ENTRYPOINT VOLUME USER ONBUILD STOPSIGNAL HEALTHCHECK SHELL MAINTAINER')},
+    powershell:{lc:'#',bc:['<#','#>'],str:['"',"'"],
+      kw:w('if else elseif switch foreach for while do until break continue return function param begin process end filter class try catch finally throw exit where in'),
+      bi:w('Write-Host Write-Output Write-Error Write-Warning Get-Item Set-Item Get-Content Set-Content Get-Process Stop-Process Get-Service Start-Service Stop-Service Get-ChildItem Remove-Item Copy-Item Move-Item New-Item Invoke-Command Invoke-Expression ForEach-Object Where-Object Select-Object Sort-Object Group-Object Import-Module')},
+  };
+})();
+
+function _dbEsc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _dbSpan(c,s){return '<span class="hljs-'+c+'">'+_dbEsc(s)+'</span>';}
+
+function _dbTokenize(src,lang){
+  if(lang==='html')return _dbTokHtml(src);
+  var def=_DB_LANG_DEFS[lang];
+  if(!def)return _dbEsc(src);
+  var out='',i=0,n=src.length,m,j,tok;
+  while(i<n){
+    var rest=src.slice(i),ch=src[i];
+    /* block comment */
+    if(def.bc&&rest.startsWith(def.bc[0])){
+      j=src.indexOf(def.bc[1],i+def.bc[0].length);if(j<0)j=n-def.bc[1].length;
+      out+=_dbSpan('comment',src.slice(i,j+def.bc[1].length));i=j+def.bc[1].length;continue;
+    }
+    /* line comment */
+    if(def.lc&&rest.startsWith(def.lc)){
+      j=src.indexOf('\n',i);tok=j<0?src.slice(i):src.slice(i,j);
+      out+=_dbSpan('comment',tok);i+=tok.length;continue;
+    }
+    /* triple-quoted strings (Python) */
+    if(def.tc){var th=false;
+      for(var t=0;t<def.tc.length;t++){var tq=def.tc[t];
+        if(rest.startsWith(tq)){j=src.indexOf(tq,i+tq.length);if(j<0)j=n-tq.length;
+          out+=_dbSpan('string',src.slice(i,j+tq.length));i=j+tq.length;th=true;break;}
+      } if(th)continue;
+    }
+    /* string literals */
+    if(def.str&&def.str.indexOf(ch)>=0){
+      j=i+1;
+      while(j<n){if(src[j]==='\\'){j+=2;continue;}if(src[j]===ch){j++;break;}if(src[j]==='\n'&&ch!=='`')break;j++;}
+      out+=_dbSpan('string',src.slice(i,j));i=j;continue;
+    }
+    /* $variable sigil (PowerShell / shell) */
+    if(ch==='$'){m=rest.match(/^\$\w+/);if(m){out+=_dbSpan('variable',m[0]);i+=m[0].length;continue;}}
+    /* number */
+    if(/\d/.test(ch)&&(i===0||!/[A-Za-z_$]/.test(src[i-1]))){
+      m=rest.match(/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+      if(m){out+=_dbSpan('number',m[0]);i+=m[0].length;continue;}
+    }
+    /* identifier / keyword / built-in */
+    if(/[A-Za-z_]/.test(ch)){
+      m=rest.match(/^[A-Za-z_][\w]*(?:-[A-Za-z]\w*)*/);
+      if(m){var word=m[0];
+        /* YAML key: word immediately followed by ':' */
+        if(lang==='yaml'&&/^\s*:/.test(src.slice(i+word.length))){
+          out+=_dbSpan('attr',word);i+=word.length;continue;
+        }
+        var ks=[word,word.toUpperCase(),word.toLowerCase(),word[0].toUpperCase()+word.slice(1).toLowerCase()];
+        var isKw=def.kw&&ks.some(function(k){return def.kw.has(k);});
+        var isBi=def.bi&&ks.some(function(k){return def.bi.has(k);});
+        if(isKw)out+=_dbSpan('keyword',word);
+        else if(isBi)out+=_dbSpan('built_in',word);
+        else out+=_dbEsc(word);
+        i+=word.length;continue;
+      }
+    }
+    out+=_dbEsc(ch);i++;
+  }
+  return out;
+}
+
+function _dbTokHtml(src){
+  var out='',i=0,n=src.length;
+  while(i<n){
+    if(src.slice(i,i+4)==='<!--'){var e=src.indexOf('-->',i+4);if(e<0)e=n-3;out+=_dbSpan('comment',src.slice(i,e+3));i=e+3;continue;}
+    if(src[i]==='<'){
+      var j=i+1,inQ=false,qCh='';
+      while(j<n){if(inQ){if(src[j]===qCh)inQ=false;}else if(src[j]=='"'||src[j]==="'"){inQ=true;qCh=src[j];}else if(src[j]==='>'){j++;break;}j++;}
+      out+=_dbTokHtmlTag(src.slice(i,j));i=j;continue;
+    }
+    out+=_dbEsc(src[i]);i++;
+  }
+  return out;
+}
+
+function _dbTokHtmlTag(tag){
+  var out='',i=1,n=tag.length;
+  out+=_dbEsc('<');
+  if(i<n&&(tag[i]==='/'||tag[i]==='!')){out+=_dbEsc(tag[i]);i++;}
+  var nm='';while(i<n&&/[A-Za-z0-9:-]/.test(tag[i])){nm+=tag[i];i++;}
+  if(nm)out+=_dbSpan('name',nm);
+  while(i<n&&tag[i]!=='>'){
+    if(/\s/.test(tag[i])||tag[i]==='/'){out+=_dbEsc(tag[i]);i++;continue;}
+    var an='';while(i<n&&/[A-Za-z0-9_:-]/.test(tag[i])){an+=tag[i];i++;}
+    if(!an){out+=_dbEsc(tag[i]);i++;continue;}
+    var ws='';while(i<n&&tag[i]===' '){ws+=tag[i];i++;}
+    if(i<n&&tag[i]==='='){
+      out+=_dbSpan('attr',an)+_dbEsc(ws)+'=';i++;
+      var vws='';while(i<n&&tag[i]===' '){vws+=tag[i];i++;}
+      if(i<n&&(tag[i]=='"'||tag[i]==="'")){
+        var q=tag[i],vs=i;i++;while(i<n&&tag[i]!==q)i++;if(i<n)i++;
+        out+=_dbEsc(vws)+_dbSpan('string',tag.slice(vs,i));
+      }else{var vs2=i;while(i<n&&!/[\s>]/.test(tag[i]))i++;out+=_dbEsc(vws)+_dbSpan('number',tag.slice(vs2,i));}
+    }else{out+=_dbSpan('attr',an)+_dbEsc(ws);}
+  }
+  if(i<n&&tag[i]==='>') out+=_dbEsc('>');
+  return out;
+}
+
 /**
  * Detect language for a <code> element without running hljs.
  * Returns a label string (e.g. 'yaml', 'python') or '' if unknown.
@@ -710,9 +839,11 @@ function _dbDetectLang(code) {
   /* HTML / XML */
   if (/^\s*<[a-zA-Z]/.test(raw)) return 'html';
 
-  /* YAML — colon-indented structure with known top-level keys */
-  if (/^(version:|services:|networks:|volumes:|steps:|jobs:|name:|config:|settings:|app:)/m.test(raw) &&
-      raw.includes(':\n')) return 'yaml';
+  /* YAML — any file with 2+ key: lines that isn't JSON */
+  if (!raw.startsWith('{') && !raw.startsWith('[')) {
+    var yKeys = (raw.match(/^\s*[\w.-]+\s*:/mg) || []).length;
+    if (yKeys >= 2) return 'yaml';
+  }
 
   /* JSON */
   if (/^\s*[\[{]/.test(raw) && /"[^"]+"\s*:/.test(raw)) return 'json';
@@ -815,10 +946,9 @@ function _dbApplyHljs(code) {
 
   /* Detect language first (works even when hljs is blocked/offline) */
   var lang = _dbDetectLang(code);
-
-  /* Apply hljs syntax colours when available */
+  /* Apply hljs when available, fall back to built-in tokenizer (CDN blocked) */
   if (typeof hljs !== 'undefined' && code.textContent.trim()) {
-    /* Give hljs a language hint so it doesn’t have to guess */
+    /* Give hljs a language hint so it doesn't have to guess */
     if (lang && !code.classList.contains('language-' + lang)) {
       code.classList.add('language-' + lang);
     }
@@ -828,6 +958,10 @@ function _dbApplyHljs(code) {
       return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
     });
     if (hljsCls) lang = hljsCls.replace('language-', '');
+  } else if (code.textContent.trim()) {
+    /* Built-in tokenizer — HTML-escapes + adds hljs-* spans for known languages */
+    code.innerHTML = _dbTokenize(code.textContent, lang);
+  }
   }
 
   if (pre && pre.tagName === 'PRE') {
@@ -917,7 +1051,22 @@ function _dbAttachNoteTools(noteEl) {
     document.execCommand('insertText', false, text);
   });
 
-  /* ── Code block: strip hljs on focus, reapply on blur ─────────────── */
+  /* ── Ctrl+A inside a code block — select only that block’s content ────────── */
+  noteEl.addEventListener('keydown', function(e) {
+    if (!((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey))) return;
+    var sel = window.getSelection();
+    if (!sel || !sel.anchorNode) return;
+    var node = sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode;
+    var code = (node.tagName === 'CODE') ? node : node.closest('code');
+    if (!code) return;              /* cursor not in a code block — let default Ctrl+A run */
+    e.preventDefault();
+    var range = document.createRange();
+    range.selectNodeContents(code);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  /* ── Code block: strip hljs on focus, reapply on blur ──────────────────── */
   noteEl.addEventListener('focusin', function(e) {
     var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
     if (!code || !code.closest('[contenteditable]')) return;
@@ -925,8 +1074,8 @@ function _dbAttachNoteTools(noteEl) {
     var plain = code.textContent.replace(/\n$/, '');
     var langMatch = (code.className || '').match(/language-(\S+)/);
     var lang = langMatch ? langMatch[1] : '';
-    /* Only reset if hljs was applied (className contains 'hljs') */
-    if (code.classList.contains('hljs') || code.querySelector('.hljs')) {
+    /* Strip decoration from both hljs AND built-in tokenizer spans */
+    if (code.classList.contains('hljs') || code.querySelector('.hljs, [class*="hljs-"]')) {
       code.className   = lang ? 'language-' + lang : '';
       code.textContent = plain;
     }
