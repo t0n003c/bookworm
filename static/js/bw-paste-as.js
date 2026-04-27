@@ -404,7 +404,7 @@
       switch (key) {
         case 'url':
           _insertCE(
-            `<a href="${url}" target="_blank" rel="noopener noreferrer">${dom}</a>`
+            `<a href="${url}" target="_blank" rel="noopener noreferrer" data-bw-url="1">${dom}</a>`
           );
           break;
 

@@ -248,8 +248,16 @@ function _dbInitStyles() {
     'color:#6b7280;font-style:italic;}',
     '.dark [data-db-note] blockquote{border-color:#7c3aed;color:#a1a1aa;}',
     /* code block */
-    '[data-db-note] pre{background:#f3f4f6;border-radius:.5rem;padding:.75em 1em;overflow-x:auto;margin:.5em 0;}',
+    '[data-db-note] pre{background:#f3f4f6;border-radius:.5rem;padding:.75em 1em;overflow-x:auto;margin:.5em 0;position:relative;}',
     '.dark [data-db-note] pre{background:#27272a;}',
+    /* language badge — top-right corner, pure CSS, never serialised to HTML */
+    '[data-db-note] pre[data-lang]::after{content:attr(data-lang);position:absolute;top:.35rem;right:.5rem;',
+    'font-size:.6rem;font-weight:700;font-family:ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;',
+    'letter-spacing:.06em;color:#6b7280;opacity:.8;pointer-events:none;user-select:none;}',
+    '.dark [data-db-note] pre[data-lang]::after{color:#a1a1aa;}',
+    /* plain URL links inserted via paste-as popup */
+    '[data-db-note] [data-bw-url]{color:#0053e2;text-decoration:underline;text-underline-offset:2px;cursor:pointer;}',
+    '.dark [data-db-note] [data-bw-url]{color:#60a5fa;}',
     '[data-db-note] pre code{font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;',
     'background:none;color:inherit;padding:0;}',
     /* inline code */
@@ -641,6 +649,16 @@ function _dbAttachNoteTools(noteEl) {
     if (!code) return;
     if (typeof hljs !== 'undefined' && code.textContent.trim()) {
       try { hljs.highlightElement(code); } catch (_) {}
+      /* Read back the language hljs detected and stamp it on <pre> for the CSS badge */
+      var NOISE = new Set(['plaintext', 'undefined', 'txt', 'text', '']);
+      var langCls = Array.prototype.find.call(code.classList, function(c) {
+        return c.startsWith('language-') && !NOISE.has(c.replace('language-', ''));
+      });
+      var pre = code.parentElement;
+      if (pre && pre.tagName === 'PRE') {
+        if (langCls) pre.dataset.lang = langCls.replace('language-', '');
+        else         delete pre.dataset.lang;
+      }
     }
     /* Dispatch input so autosave picks up the highlighted content */
     noteEl.dispatchEvent(new Event('input', { bubbles: true }));
