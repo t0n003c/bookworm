@@ -314,6 +314,62 @@ function _dbInitStyles() {
     '#db-sel-bar .db-sb-swatch{width:20px;height:20px;border-radius:4px;border:2px solid transparent;',
     'cursor:pointer;flex-shrink:0;transition:transform .1s;}',
     '#db-sel-bar .db-sb-swatch:hover{transform:scale(1.2);border-color:#0053e2;}',
+    /* ── Inline hljs token colours — GitHub palette, scoped to [data-db-note].
+       These work whether or not the CDN stylesheet loads.           ── */
+    /* light: keywords/types */
+    '[data-db-note] pre code .hljs-keyword,[data-db-note] pre code .hljs-type,',
+    '[data-db-note] pre code .hljs-template-variable,[data-db-note] pre code .hljs-variable.language_,',
+    '[data-db-note] pre code .hljs-meta .hljs-keyword{color:#d73a49;}',
+    /* light: strings */
+    '[data-db-note] pre code .hljs-string,[data-db-note] pre code .hljs-regexp,',
+    '[data-db-note] pre code .hljs-meta .hljs-string{color:#032f62;}',
+    /* light: comments */
+    '[data-db-note] pre code .hljs-comment,[data-db-note] pre code .hljs-quote{color:#6a737d;font-style:italic;}',
+    /* light: numbers / literals / attrs / operators */
+    '[data-db-note] pre code .hljs-number,[data-db-note] pre code .hljs-literal,',
+    '[data-db-note] pre code .hljs-attr,[data-db-note] pre code .hljs-attribute,',
+    '[data-db-note] pre code .hljs-variable,[data-db-note] pre code .hljs-operator{color:#005cc5;}',
+    /* light: titles / class names / selectors */
+    '[data-db-note] pre code .hljs-title,[data-db-note] pre code .hljs-title.function_,',
+    '[data-db-note] pre code .hljs-title.class_,[data-db-note] pre code .hljs-title.class_.inherited__,',
+    '[data-db-note] pre code .hljs-selector-class,[data-db-note] pre code .hljs-selector-id{color:#6f42c1;}',
+    /* light: built-ins / symbols */
+    '[data-db-note] pre code .hljs-built_in,[data-db-note] pre code .hljs-symbol{color:#e36209;}',
+    /* light: tag names */
+    '[data-db-note] pre code .hljs-name,[data-db-note] pre code .hljs-tag,',
+    '[data-db-note] pre code .hljs-selector-tag,[data-db-note] pre code .hljs-selector-pseudo{color:#22863a;}',
+    '[data-db-note] pre code .hljs-section{color:#005cc5;font-weight:700;}',
+    '[data-db-note] pre code .hljs-bullet{color:#735c0f;}',
+    '[data-db-note] pre code .hljs-emphasis{font-style:italic;}',
+    '[data-db-note] pre code .hljs-strong{font-weight:700;}',
+    '[data-db-note] pre code .hljs-addition{color:#22863a;background:#f0fff4;}',
+    '[data-db-note] pre code .hljs-deletion{color:#b31d28;background:#ffeef0;}',
+    /* dark: keywords/types */
+    '.dark [data-db-note] pre code .hljs-keyword,.dark [data-db-note] pre code .hljs-type,',
+    '.dark [data-db-note] pre code .hljs-template-variable,.dark [data-db-note] pre code .hljs-variable.language_,',
+    '.dark [data-db-note] pre code .hljs-meta .hljs-keyword{color:#f47067;}',
+    /* dark: strings */
+    '.dark [data-db-note] pre code .hljs-string,.dark [data-db-note] pre code .hljs-regexp,',
+    '.dark [data-db-note] pre code .hljs-meta .hljs-string{color:#96d0ff;}',
+    /* dark: comments */
+    '.dark [data-db-note] pre code .hljs-comment,.dark [data-db-note] pre code .hljs-quote{color:#636e7b;font-style:italic;}',
+    /* dark: numbers / literals / attrs / operators */
+    '.dark [data-db-note] pre code .hljs-number,.dark [data-db-note] pre code .hljs-literal,',
+    '.dark [data-db-note] pre code .hljs-attr,.dark [data-db-note] pre code .hljs-attribute,',
+    '.dark [data-db-note] pre code .hljs-variable,.dark [data-db-note] pre code .hljs-operator{color:#6cb6ff;}',
+    /* dark: titles / selectors */
+    '.dark [data-db-note] pre code .hljs-title,.dark [data-db-note] pre code .hljs-title.function_,',
+    '.dark [data-db-note] pre code .hljs-title.class_,.dark [data-db-note] pre code .hljs-title.class_.inherited__,',
+    '.dark [data-db-note] pre code .hljs-selector-class,.dark [data-db-note] pre code .hljs-selector-id{color:#dcbdfb;}',
+    /* dark: built-ins */
+    '.dark [data-db-note] pre code .hljs-built_in,.dark [data-db-note] pre code .hljs-symbol{color:#f69d50;}',
+    /* dark: tag names */
+    '.dark [data-db-note] pre code .hljs-name,.dark [data-db-note] pre code .hljs-tag,',
+    '.dark [data-db-note] pre code .hljs-selector-tag,.dark [data-db-note] pre code .hljs-selector-pseudo{color:#8ddb8c;}',
+    '.dark [data-db-note] pre code .hljs-section{color:#316dca;font-weight:700;}',
+    '.dark [data-db-note] pre code .hljs-bullet{color:#eac55f;}',
+    '.dark [data-db-note] pre code .hljs-addition{color:#b4f1b4;background:#1b4721;}',
+    '.dark [data-db-note] pre code .hljs-deletion{color:#ffd8d3;background:#78191b;}',
   ].join('');
   document.head.appendChild(s);
 }
@@ -619,14 +675,48 @@ function _dbDetectLang(code) {
   });
   if (langCls) return langCls.replace('language-', '');
 
-  /* 2) Heuristic content scan */
+  /* 2) Heuristic content scan — ordered most-specific first to avoid false positives */
   var raw = (code.textContent || '').trimStart();
   if (!raw) return '';
-  if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw)) return 'shell';
+
+  /* Visual Basic / VB.NET — Dim...As and End Sub/Function are unique to VB */
+  if (/\b(Dim\s+\w+\s+As\b|End\s+(?:Sub|Function|Class|If|Module)\b|Public\s+Sub\b|Private\s+Sub\b)/i.test(raw))
+    return 'vbnet';
+
+  /* Dockerfile — uppercase instruction verbs at line start */
+  if (/^(FROM |RUN |CMD[\s\[\{]|COPY |EXPOSE |WORKDIR |ENTRYPOINT |ENV |LABEL |ARG )/m.test(raw))
+    return 'dockerfile';
+
+  /* PowerShell — cmdlet-verb pattern + $ sigil required */
+  if (/\$/.test(raw) &&
+      /^(\$\w+\s*=|Write-(?:Host|Output|Error|Warning)|Get-\w+|Set-\w+|param\s*\(|\[CmdletBinding\])/m.test(raw))
+    return 'powershell';
+
+  /* Python — def/class with colon, import patterns */
+  if (/^(def |async def |class \w+.*:|import |from .* import|if __name__|@\w+)/m.test(raw))
+    return 'python';
+
+  /* JavaScript / TypeScript */
+  if (/\b(function\s+\w+\s*\(|const\s+\w+\s*=|let\s+\w+\s*=|=>\s*[{(]|require\s*\(|export\s+default|export\s+function|import\s+\w+\s+from)/.test(raw))
+    return 'javascript';
+
+  /* Shell — common CLI commands at line start */
+  if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw))
+    return 'shell';
+
+  /* SQL */
   if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\b/i.test(raw)) return 'sql';
+
+  /* HTML / XML */
   if (/^\s*<[a-zA-Z]/.test(raw)) return 'html';
-  if (/^(version:|services:|networks:|volumes:|steps:|jobs:|name:)/m.test(raw) && raw.includes(':\n')) return 'yaml';
-  if (/^\s*[\[{]/.test(raw) && (/"[^"]+"\s*:/.test(raw) || /\[/.test(raw))) return 'json';
+
+  /* YAML — colon-indented structure with known top-level keys */
+  if (/^(version:|services:|networks:|volumes:|steps:|jobs:|name:|config:|settings:|app:)/m.test(raw) &&
+      raw.includes(':\n')) return 'yaml';
+
+  /* JSON */
+  if (/^\s*[\[{]/.test(raw) && /"[^"]+"\s*:/.test(raw)) return 'json';
+
   return '';
 }
 
