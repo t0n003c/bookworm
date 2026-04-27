@@ -6,12 +6,18 @@ None of these routes are public — all require a logged-in session.
 """
 from __future__ import annotations
 
+import mimetypes
+import uuid
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from database import get_db
+from routers.attachments_db import UPLOAD_DIR
+from routers.uploads_db import create_page_upload
 from routers.workspace_db_cards import (
     create_db_card,
     delete_card_attr,
@@ -23,6 +29,21 @@ from routers.workspace_db_cards import (
     upsert_card_attr,
 )
 from routers.workspaces_db import get_workspace_by_id
+
+_MAX_COVER_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+async def _first_uploads_page_id(user_id: int) -> Optional[int]:
+    """Return the id of the user's first uploads home page, or None."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id FROM home_pages "
+            "WHERE user_id=? AND page_type='uploads' AND deleted_at IS NULL "
+            "ORDER BY id LIMIT 1",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
 
 router = APIRouter(prefix="/workspaces", tags=["workspace-databases"])
 
@@ -182,3 +203,79 @@ async def remove_attr(
     if not deleted:
         raise HTTPException(status_code=404, detail="Attribute not found")
     return JSONResponse({"ok": True})
+
+
+# ── Cover image: inline serve ─────────────────────────────────────────────────
+
+@router.get("/covers/{filename}")
+async def serve_cover(filename: str, request: Request) -> FileResponse:
+    """Auth-gated inline serve for card cover images stored in UPLOAD_DIR."""
+    _uid(request)  # 401 if no session
+    # Sanitise: no path traversal
+    safe_name = Path(filename).name
+    disk_path = UPLOAD_DIR / safe_name
+    if not disk_path.exists():
+        raise HTTPException(status_code=404, detail="Cover not found")
+    mime = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    # No 'filename' arg → no Content-Disposition header → browser renders inline
+    return FileResponse(path=str(disk_path), media_type=mime)
+
+
+# ── Cover image: upload ───────────────────────────────────────────────────────
+
+@router.post("/{ws_id}/db/cards/{card_id}/cover-upload")
+async def upload_card_cover(
+    ws_id: int,
+    card_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Upload a cover image for a card.
+
+    - Saves file to UPLOAD_DIR.
+    - Creates a page_uploads record on the user's first uploads home page (if
+      one exists) so the image appears in the Homespace Uploads gallery.
+    - PATCHes the card's cover_url.
+    - Returns {ok, cover_url}.
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    existing = await get_db_card(card_id=card_id, db_id=ws_id, user_id=user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    data = await file.read()
+    if len(data) > _MAX_COVER_BYTES:
+        raise HTTPException(status_code=413, detail="Cover image too large (max 20 MB)")
+
+    original_name = file.filename or "cover"
+    suffix = Path(original_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"}:
+        raise HTTPException(status_code=415, detail="Unsupported image format")
+
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+    mime = file.content_type or mimetypes.guess_type(original_name)[0] or "image/jpeg"
+    (UPLOAD_DIR / stored_name).write_bytes(data)
+
+    # Register in the uploads gallery (best-effort — don't fail if page missing)
+    uploads_page_id = await _first_uploads_page_id(user_id)
+    if uploads_page_id:
+        await create_page_upload(
+            page_id=uploads_page_id,
+            user_id=user_id,
+            filename=stored_name,
+            original_name=original_name,
+            mime_type=mime,
+            size=len(data),
+        )
+
+    cover_url = f"/workspaces/covers/{stored_name}"
+    await update_db_card(
+        card_id=card_id,
+        db_id=ws_id,
+        user_id=user_id,
+        title=existing["title"],
+        cover_url=cover_url,
+        note_content=existing.get("note_content") or "",
+    )
+    return JSONResponse({"ok": True, "cover_url": cover_url})

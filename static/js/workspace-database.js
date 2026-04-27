@@ -452,17 +452,16 @@ function _dbRenderDetailPanel(card) {
       + ' class="relative overflow-hidden bg-gray-100 dark:bg-zinc-800">'
       + '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
       + ' style="width:100%;height:10rem;object-fit:cover;display:block;"/>'
-      + '<button type="button" onclick="_dbChangeCover(' + card.id + ')"'
+      + '<button type="button" onclick="_dbShowCoverModal(' + card.id + ')"'
       + ' style="position:absolute;top:0.75rem;right:0.75rem;background:rgba(0,0,0,0.45);"'
-      + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition">Change cover</button></div>';
+      + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition">📷 Change cover</button></div>';
   } else {
     coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
-      + ' class="flex items-center justify-between px-4 py-5'
+      + ' class="flex items-center justify-end px-4 py-5'
       + ' bg-gradient-to-r from-purple-500 to-purple-700">'
-      + '<span class="text-white font-bold text-base truncate">' + _esc(card.title) + '</span>'
-      + '<button type="button" onclick="_dbChangeCover(' + card.id + ')"'
+      + '<button type="button" onclick="_dbShowCoverModal(' + card.id + ')"'
       + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition"'
-      + ' style="background:rgba(255,255,255,0.2);">Add cover</button></div>';
+      + ' style="background:rgba(255,255,255,0.2);">📷 Add cover</button></div>';
   }
 
   var created = card.created_at ? card.created_at.replace('T', ' ').slice(0, 16) : 'Unknown';
@@ -551,10 +550,127 @@ function _dbDetailNoteBlur(cardId, el) {
    CUSTOM ATTRIBUTES (detail panel)
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function _dbChangeCover(cardId) {
-  var url = prompt('Enter image URL for cover (leave blank to remove):');
-  if (url === null) return; // cancelled
-  url = url.trim();
+function _dbShowCoverModal(cardId) {
+  // Build-once overlay; destroy on close
+  var existing = document.getElementById('db-cover-modal');
+  if (existing) existing.remove();
+
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#18181b' : '#ffffff';
+  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
+
+  var modal = document.createElement('div');
+  modal.id = 'db-cover-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Set card cover');
+  modal.style.cssText = 'position:fixed;inset:0;z-index:200;display:flex;'
+    + 'align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+
+  modal.innerHTML = (
+    '<div style="background:' + bg + ';border:1px solid ' + bdr + ';border-radius:1rem;'
+    + 'width:min(28rem,95vw);padding:1.5rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);">'
+    // Header
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">'
+    + '<h3 style="font-weight:700;font-size:1rem;margin:0;">🖼️ Card cover</h3>'
+    + '<button type="button" onclick="_dbCloseCoverModal()" aria-label="Close"'
+    + ' style="background:none;border:none;cursor:pointer;font-size:1.25rem;line-height:1;">'
+    + '&times;</button></div>'
+    // Tab bar
+    + '<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">'
+    + '<button type="button" id="db-cover-tab-url"'
+    + ' onclick="_dbCoverTab(\'url\')"'
+    + ' style="flex:1;padding:0.4rem 0;border-radius:0.5rem;border:none;cursor:pointer;'
+    + 'font-size:0.8rem;font-weight:600;background:#0053e2;color:#fff;">'
+    + '🔗 URL</button>'
+    + '<button type="button" id="db-cover-tab-upload"'
+    + ' onclick="_dbCoverTab(\'upload\')"'
+    + ' style="flex:1;padding:0.4rem 0;border-radius:0.5rem;border:1px solid ' + bdr + ';'
+    + 'cursor:pointer;font-size:0.8rem;font-weight:600;background:transparent;">'
+    + '⬆️ Upload</button>'
+    + '</div>'
+    // URL panel
+    + '<div id="db-cover-panel-url">'
+    + '<input id="db-cover-url-input" type="url" placeholder="https://..." autocomplete="off"'
+    + ' style="width:100%;box-sizing:border-box;padding:0.5rem 0.75rem;border-radius:0.5rem;'
+    + 'border:1px solid ' + bdr + ';background:transparent;font-size:0.875rem;margin-bottom:0.75rem;"/>'
+    + '<div style="display:flex;gap:0.5rem;">'
+    + '<button type="button" onclick="_dbApplyCoverUrl(' + cardId + ')"'
+    + ' style="flex:1;padding:0.5rem;border-radius:0.5rem;border:none;cursor:pointer;'
+    + 'background:#0053e2;color:#fff;font-size:0.875rem;font-weight:600;">Apply</button>'
+    + '<button type="button" onclick="_dbRemoveCover(' + cardId + ')"'
+    + ' style="flex:1;padding:0.5rem;border-radius:0.5rem;border:1px solid #ea1100;'
+    + 'cursor:pointer;background:transparent;color:#ea1100;font-size:0.875rem;">Remove</button>'
+    + '</div></div>'
+    // Upload panel (hidden initially)
+    + '<div id="db-cover-panel-upload" style="display:none;">'
+    + '<label style="display:block;border:2px dashed ' + bdr + ';border-radius:0.75rem;'
+    + 'padding:2rem;text-align:center;cursor:pointer;">'
+    + '<span style="display:block;font-size:1.5rem;margin-bottom:0.5rem;">🖼️</span>'
+    + '<span style="font-size:0.875rem;">Click to choose an image</span><br>'
+    + '<span style="font-size:0.75rem;color:#9ca3af;">JPG, PNG, GIF, WebP • max 20 MB</span>'
+    + '<input id="db-cover-file-input" type="file" accept="image/*"'
+    + ' style="display:none;" onchange="_dbUploadCover(' + cardId + ',this)"/>'
+    + '</label>'
+    + '<div id="db-cover-upload-status" style="margin-top:0.75rem;font-size:0.8rem;'
+    + 'text-align:center;min-height:1.2em;"></div>'
+    + '</div>'
+    + '</div>'
+  );
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) _dbCloseCoverModal();
+  });
+  // Focus the URL input
+  setTimeout(function() {
+    var inp = document.getElementById('db-cover-url-input');
+    if (inp) inp.focus();
+  }, 50);
+}
+
+function _dbCloseCoverModal() {
+  var m = document.getElementById('db-cover-modal');
+  if (m) m.remove();
+}
+
+function _dbCoverTab(tab) {
+  var urlPanel    = document.getElementById('db-cover-panel-url');
+  var uploadPanel = document.getElementById('db-cover-panel-upload');
+  var urlBtn      = document.getElementById('db-cover-tab-url');
+  var uplBtn      = document.getElementById('db-cover-tab-upload');
+  if (!urlPanel) return;
+  var isDark = document.documentElement.classList.contains('dark');
+  var bdr = isDark ? '#3f3f46' : '#e5e7eb';
+  if (tab === 'url') {
+    urlPanel.style.display    = '';
+    uploadPanel.style.display = 'none';
+    urlBtn.style.background   = '#0053e2';
+    urlBtn.style.color        = '#fff';
+    urlBtn.style.border       = 'none';
+    uplBtn.style.background   = 'transparent';
+    uplBtn.style.color        = '';
+    uplBtn.style.border       = '1px solid ' + bdr;
+    setTimeout(function() {
+      var inp = document.getElementById('db-cover-url-input');
+      if (inp) inp.focus();
+    }, 30);
+  } else {
+    urlPanel.style.display    = 'none';
+    uploadPanel.style.display = '';
+    uplBtn.style.background   = '#0053e2';
+    uplBtn.style.color        = '#fff';
+    uplBtn.style.border       = 'none';
+    urlBtn.style.background   = 'transparent';
+    urlBtn.style.color        = '';
+    urlBtn.style.border       = '1px solid ' + bdr;
+  }
+}
+
+function _dbApplyCoverUrl(cardId) {
+  var inp = document.getElementById('db-cover-url-input');
+  var url = inp ? inp.value.trim() : '';
+  _dbCloseCoverModal();
   var card = _dbCards.find(function(c) { return c.id === cardId; });
   if (card) card.cover_url = url;
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId, {
@@ -562,11 +678,51 @@ function _dbChangeCover(cardId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cover_url: url }),
   })
-  .then(function() {
+  .then(function() { _dbRenderGrid(); if (_dbDetailId === cardId) _dbOpenDetail(cardId); })
+  .catch(function(e) { _dbToast('Could not update cover: ' + e.message, true); });
+}
+
+function _dbRemoveCover(cardId) {
+  _dbCloseCoverModal();
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  if (card) card.cover_url = '';
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cover_url: '' }),
+  })
+  .then(function() { _dbRenderGrid(); if (_dbDetailId === cardId) _dbOpenDetail(cardId); })
+  .catch(function(e) { _dbToast('Could not remove cover: ' + e.message, true); });
+}
+
+function _dbUploadCover(cardId, input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var status = document.getElementById('db-cover-upload-status');
+  if (status) status.textContent = 'Uploading…';
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/cover-upload', {
+    method: 'POST',
+    body: fd,
+  })
+  .then(function(r) {
+    if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Upload failed'); });
+    return r.json();
+  })
+  .then(function(data) {
+    _dbCloseCoverModal();
+    var card = _dbCards.find(function(c) { return c.id === cardId; });
+    if (card) card.cover_url = data.cover_url;
     _dbRenderGrid();
     if (_dbDetailId === cardId) _dbOpenDetail(cardId);
+    _dbToast('Cover updated — also saved to your Uploads page 🎉');
   })
-  .catch(function(e) { _dbToast('Could not update cover: ' + e.message, true); });
+  .catch(function(e) {
+    if (status) status.textContent = '⚠️ ' + e.message;
+    else _dbToast(e.message, true);
+  });
 }
 
 function _dbAddAttrRow(cardId) {
