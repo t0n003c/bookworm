@@ -352,23 +352,25 @@ function _dbSlashHighlight() {
 }
 
 function _dbApplySlashCmd(cmd) {
+  // Snapshot BEFORE _dbHideSlashPalette() — that function nulls _dbSlashEl.
+  var targetEl   = _dbSlashEl;
+  var savedRange = _dbSlashRange;
   _dbHideSlashPalette();
-  if (!_dbSlashEl) return;
+  if (!targetEl) return;
 
   // Restore the saved selection so execCommand inserts at the right spot.
-  // With onmousedown+return-false the caret is still live; _dbSlashRange is
-  // a belt-and-suspenders fallback for keyboard-triggered applies.
-  if (_dbSlashRange) {
+  // With onmousedown+return-false the caret is still live in most browsers;
+  // savedRange is the belt-and-suspenders fallback for keyboard Enter.
+  if (savedRange) {
     var sel = window.getSelection();
     if (sel) {
       sel.removeAllRanges();
-      sel.addRange(_dbSlashRange);
+      sel.addRange(savedRange);
     }
-    _dbSlashRange = null;
   }
 
-  // Focus the target element (needed after keyboard Enter applies the cmd)
-  _dbSlashEl.focus();
+  // Re-focus the contenteditable (needed after keyboard Enter applies the cmd)
+  targetEl.focus();
 
   // Remove the '/' trigger character from the current text node
   var sel2 = window.getSelection();

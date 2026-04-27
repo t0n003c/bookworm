@@ -843,7 +843,11 @@
     </style>
 
     <div id="note-list">
-      {% include "partials/note_list.html" %}
+      {% if active_ws_type == 'database' %}
+        {% include "partials/workspace_database_view.html" %}
+      {% else %}
+        {% include "partials/note_list.html" %}
+      {% endif %}
     </div>
 
     <!-- Home / Personal Page canvas (hidden by default) -->

@@ -54,9 +54,11 @@ from routers.workspaces_db import (
     purge_expired_trash,
 )
 from routers.home_db import get_home_pages, get_trashed_home_pages, purge_expired_home_pages
+from routers.workspace_db_cards import get_db_cards
 from routers import notes as notes_router
 from routers import categories as categories_router
 from routers import workspaces as workspaces_router
+from routers import workspace_databases as workspace_databases_router
 from routers import attachments as attachments_router
 from routers import auth as auth_router
 from routers import account as account_router
@@ -162,6 +164,7 @@ app.include_router(notes_router.router)
 app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
+app.include_router(workspace_databases_router.router)
 
 
 @app.get("/health")
@@ -228,6 +231,17 @@ async def index(request: Request, ws: Optional[int] = None):
     trashed_home_pages  = trashed_hp
     current_username = request.session.get("username", "")
     current_role     = request.session.get("role", "user")
+    # Determine if the active workspace is a database node, and load its cards.
+    # Required so the initial hard-refresh render shows the card grid, not
+    # note_list.html (which knows nothing about database workspaces).
+    active_ws_type = "workspace"
+    db_cards: list = []
+    if active_ws_id is not None:
+        ws_row = next((w for w in all_workspaces if w["id"] == active_ws_id), None)
+        if ws_row:
+            active_ws_type = ws_row.get("ws_type") or "workspace"
+            if active_ws_type == "database":
+                db_cards = await get_db_cards(db_id=active_ws_id, user_id=user_id)
     response = templates.TemplateResponse(
         request,
         "index.html",
@@ -247,6 +261,8 @@ async def index(request: Request, ws: Optional[int] = None):
             "active_ws_id":       active_ws_id,
             "open_count":         len(open_workspaces),
             "open_ws_ids":        open_ws_ids,
+            "active_ws_type":     active_ws_type,
+            "db_cards":           db_cards,
             "home_pages":         home_pages,
             "trashed_home_pages": trashed_home_pages,
             "is_demo":            request.session.get("is_demo", False),
