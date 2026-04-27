@@ -8,7 +8,6 @@
 var _dbWsId       = null;   // current database workspace id (int)
 var _dbCards      = [];     // array of card objects from server
 var _dbSaveTimers = {};     // {cardId: timeoutId} — per-card note debounce
-var _dbResizing   = null;   // {cardId, startY, startH} or null
 var _dbDetailId   = null;   // card id currently open in detail panel
 var _dbDelTarget  = null;   // card id staged for deletion
 
@@ -64,21 +63,12 @@ function _dbRenderGrid() {
   if (empty) empty.classList.add('hidden');
 
   grid.innerHTML = _dbCards.map(function(c) { return _dbCardHtml(c); }).join('');
-
-  // Attach resize-handle listeners after rendering
-  _dbCards.forEach(function(c) {
-    var handle = document.getElementById('db-resize-' + c.id);
-    if (handle) {
-      handle.addEventListener('mousedown', function(e) { _dbResizeStart(c.id, e); });
-    }
-  });
 }
 
 function _dbCardHtml(card) {
-  var cover    = _dbCoverHtml(card);
-  var pills    = _dbAttrPills(card.attrs || []);
-  var noteArea = _dbNoteAreaHtml(card);
-  var updated  = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : '';
+  var cover   = _dbCoverHtml(card);
+  var pills   = _dbAttrPills(card.attrs || []);
+  var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : '';
 
   return (
     '<div class="db-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700'
@@ -112,7 +102,6 @@ function _dbCardHtml(card) {
     + (pills ? '<div class="flex flex-wrap gap-1">' + pills + '</div>' : '')
     + '<div class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">'
     + (updated ? 'Updated ' + updated : '') + '</div>'
-    + noteArea
     + '</div></div>'
   );
 }
@@ -163,31 +152,6 @@ function _dbAttrPills(attrs) {
     html += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extra + ' more</span>';
   }
   return html;
-}
-
-function _dbNoteAreaHtml(card) {
-  var h = Math.max(80, card.note_box_height || 200);
-  return (
-    '<div class="relative mt-1">'
-    + '<div id="db-note-' + card.id + '" contenteditable="true"'
-    + ' class="w-full rounded-lg border border-gray-200 dark:border-zinc-700'
-    + ' bg-gray-50 dark:bg-zinc-800 text-sm text-gray-800 dark:text-zinc-100'
-    + ' p-2 outline-none overflow-y-auto"'
-    + ' style="min-height:' + h + 'px; max-height:600px;"'
-    + ' oninput="_dbNoteInput(' + card.id + ',this)"'
-    + ' onblur="_dbNoteBlur(' + card.id + ',this)"'
-    + ' onkeydown="_dbSlashKeydown(event,this,' + card.id + ')"'
-    + ' aria-label="Notes for ' + _esc(card.title) + '">'
-    + (card.note_content || '') + '</div>'
-    // Resize handle
-    + '<div id="db-resize-' + card.id + '"'
-    + ' class="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize'
-    + ' flex items-end justify-end pr-0.5 pb-0.5 text-gray-300 hover:text-purple-400 transition'
-    + ' select-none" title="Drag to resize" aria-hidden="true">'
-    + '<svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 6 6">'
-    + '<path d="M6 0L0 6h6V0z"/></svg>'
-    + '</div></div>'
-  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -251,23 +215,8 @@ function _dbConfirmDelete() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   AUTOSAVE — note content + title
+   AUTOSAVE — note content (detail panel only) + title
 ═══════════════════════════════════════════════════════════════════════════ */
-
-function _dbNoteInput(cardId, el) {
-  if (_dbSaveTimers[cardId]) clearTimeout(_dbSaveTimers[cardId]);
-  _dbSaveTimers[cardId] = setTimeout(function() {
-    _dbSaveNote(cardId, el.innerHTML);
-  }, 800);
-}
-
-function _dbNoteBlur(cardId, el) {
-  if (_dbSaveTimers[cardId]) {
-    clearTimeout(_dbSaveTimers[cardId]);
-    delete _dbSaveTimers[cardId];
-  }
-  _dbSaveNote(cardId, el.innerHTML);
-}
 
 function _dbSaveNote(cardId, html) {
   var card = _dbCards.find(function(c) { return c.id === cardId; });
@@ -290,43 +239,6 @@ function _dbTitleBlur(cardId, el) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: title }),
   }).catch(function(e) { console.warn('Title save failed', e); });
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   RESIZE HANDLE
-═══════════════════════════════════════════════════════════════════════════ */
-
-function _dbResizeStart(cardId, e) {
-  e.preventDefault();
-  var noteEl = document.getElementById('db-note-' + cardId);
-  if (!noteEl) return;
-  _dbResizing = { cardId: cardId, startY: e.clientY, startH: noteEl.offsetHeight };
-  document.addEventListener('mousemove', _dbResizeMove);
-  document.addEventListener('mouseup', function() { _dbResizeEnd(cardId); }, { once: true });
-}
-
-function _dbResizeMove(e) {
-  if (!_dbResizing) return;
-  var newH   = Math.max(80, _dbResizing.startH + (e.clientY - _dbResizing.startY));
-  var noteEl = document.getElementById('db-note-' + _dbResizing.cardId);
-  if (noteEl) noteEl.style.minHeight = newH + 'px';
-}
-
-function _dbResizeEnd(cardId) {
-  if (!_dbResizing) return;
-  var noteEl = document.getElementById('db-note-' + cardId);
-  var height = noteEl ? noteEl.offsetHeight : 200;
-  _dbResizing = null;
-  document.removeEventListener('mousemove', _dbResizeMove);
-
-  // Persist height
-  var card = _dbCards.find(function(c) { return c.id === cardId; });
-  if (card) card.note_box_height = height;
-  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/note-height', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ height: height }),
-  }).catch(function(e) { console.warn('Height save failed', e); });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -509,41 +421,48 @@ function _dbOpenDetail(cardId) {
     return r.json();
   })
   .then(function(card) {
-    // Update local state
     var idx = _dbCards.findIndex(function(c) { return c.id === cardId; });
     if (idx >= 0) _dbCards[idx] = card;
     _dbRenderDetailPanel(card);
+    // Honour the user’s chosen view mode (panel / center / fullscreen)
+    if (typeof openPanel === 'function') openPanel(false);
   })
   .catch(function(e) { _dbToast('Could not open card: ' + e.message, true); });
 }
 
 function _dbCloseDetail() {
   _dbDetailId = null;
-  var panel = document.getElementById('db-detail-panel');
-  if (panel) {
-    panel.classList.add('hidden');
-    panel.innerHTML = '';
-  }
+  // Reuse the app’s panel close so all three view modes get cleaned up correctly
+  if (typeof closePanel === 'function') { closePanel(); return; }
+  // Fallback (should never happen)
+  var dp = document.getElementById('detail-panel');
+  if (dp) dp.innerHTML = '';
 }
 
 function _dbRenderDetailPanel(card) {
-  var panel = document.getElementById('db-detail-panel');
-  if (!panel) return;
-  panel.classList.remove('hidden');
+  // Inject into the app’s shared #detail-panel (inside #panel aside).
+  // openPanel() is called by the caller after this returns.
+  var dp = document.getElementById('detail-panel');
+  if (!dp) return;
 
+  // Cover: bleed edge-to-edge past the p-6 padding of #detail-panel
   var coverHtml;
   if (card.cover_url) {
-    coverHtml = '<div class="relative h-52 w-full flex-shrink-0 bg-gray-100 dark:bg-zinc-800">'
-      + '<img src="' + _esc(card.cover_url) + '" alt="Cover" class="w-full h-full object-cover" />'
+    coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
+      + ' class="relative overflow-hidden bg-gray-100 dark:bg-zinc-800">'
+      + '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
+      + ' style="width:100%;height:10rem;object-fit:cover;display:block;"/>'
       + '<button type="button" onclick="_dbChangeCover(' + card.id + ')"'
-      + ' class="absolute top-3 right-3 px-2 py-1 rounded bg-black/40 text-white text-xs hover:bg-black/60 transition">'
-      + 'Change cover</button></div>';
+      + ' style="position:absolute;top:0.75rem;right:0.75rem;background:rgba(0,0,0,0.45);"'
+      + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition">Change cover</button></div>';
   } else {
-    coverHtml = '<div class="h-20 w-full bg-gradient-to-r from-purple-500 to-purple-700 flex items-center justify-between px-4">'
-      + '<span class="text-white font-bold text-lg truncate">' + _esc(card.title) + '</span>'
+    coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
+      + ' class="flex items-center justify-between px-4 py-5'
+      + ' bg-gradient-to-r from-purple-500 to-purple-700">'
+      + '<span class="text-white font-bold text-base truncate">' + _esc(card.title) + '</span>'
       + '<button type="button" onclick="_dbChangeCover(' + card.id + ')"'
-      + ' class="px-2 py-1 rounded bg-white/20 text-white text-xs hover:bg-white/30 transition">'
-      + 'Add cover</button></div>';
+      + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition"'
+      + ' style="background:rgba(255,255,255,0.2);">Add cover</button></div>';
   }
 
   var created = card.created_at ? card.created_at.replace('T', ' ').slice(0, 16) : 'Unknown';
@@ -561,12 +480,12 @@ function _dbRenderDetailPanel(card) {
       + '&times;</button></div>';
   }).join('');
 
-  panel.innerHTML = (
-    '<div class="flex flex-col h-full">'
-    + coverHtml
-    + '<div class="flex items-center justify-between px-5 pt-4 pb-0">'
+  dp.innerHTML = (
+    coverHtml
+    // Title + close row
+    + '<div class="flex items-start gap-2 mb-1">'
     + '<div contenteditable="true"'
-    + ' class="text-xl font-bold text-gray-900 dark:text-zinc-100 outline-none flex-1 mr-4"'
+    + ' class="flex-1 text-xl font-bold text-gray-900 dark:text-zinc-100 outline-none leading-snug"'
     + ' onblur="_dbDetailTitleBlur(' + card.id + ',this)"'
     + ' aria-label="Card title">' + _esc(card.title) + '</div>'
     + '<button type="button" onclick="_dbCloseDetail()"'
@@ -576,27 +495,26 @@ function _dbRenderDetailPanel(card) {
     + '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
     + '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
     + '</button></div>'
-    + '<div class="px-5 pt-1 pb-2 text-[11px] text-gray-400 dark:text-zinc-500 flex gap-4">'
-    + '<span>Created ' + created + '</span><span>Updated ' + updated + '</span>'
-    + '</div>'
-    + '<div class="px-5 py-2 border-t border-b border-gray-100 dark:border-zinc-800">'
+    // Timestamps
+    + '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3">'
+    + 'Created ' + created + ' &nbsp;·&nbsp; Updated ' + updated + '</p>'
+    // Attributes
+    + '<div style="margin:0 -1.5rem;padding:0.5rem 1.5rem;" class="border-t border-b border-gray-100 dark:border-zinc-800 mb-4">'
     + attrsHtml
     + '<button type="button" onclick="_dbAddAttrRow(' + card.id + ')"'
     + ' class="mt-1.5 text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1">'
     + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
     + '<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>'
-    + 'Add attribute</button>'
-    + '</div>'
-    + '<div class="flex-1 overflow-y-auto px-5 py-3">'
+    + 'Add attribute</button></div>'
+    // Notes area
     + '<div id="db-detail-note-' + card.id + '" contenteditable="true"'
-    + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100 prose prose-sm dark:prose-invert max-w-none"'
+    + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
     + ' oninput="_dbDetailNoteInput(' + card.id + ',this)"'
     + ' onblur="_dbDetailNoteBlur(' + card.id + ',this)"'
     + ' onkeydown="_dbSlashKeydown(event,this,' + card.id + ')"'
     + ' aria-label="Card notes">'
-    + (card.note_content || '<p class=\"text-gray-300 dark:text-zinc-600 italic\">Start writing...</p>')
+    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing…</p>')
     + '</div>'
-    + '</div></div>'
   );
 }
 
