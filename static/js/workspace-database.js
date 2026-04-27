@@ -948,6 +948,12 @@ function _dbApplyHljs(code) {
   var lang = _dbDetectLang(code);
   /* Apply hljs when available, fall back to built-in tokenizer (CDN blocked) */
   if (typeof hljs !== 'undefined' && code.textContent.trim()) {
+    /* MUST remove contenteditable before hljs touches innerHTML.
+       hljs calls code.innerHTML = ... internally; if the element still has
+       contenteditable="plaintext-only", Chrome normalises away every span
+       and collapses whitespace → single-line code block.  Same hazard as
+       the tokenizer branch below — fix applied to both paths. */
+    code.removeAttribute('contenteditable');
     /* Give hljs a language hint so it doesn't have to guess */
     if (lang && !code.classList.contains('language-' + lang)) {
       code.classList.add('language-' + lang);
@@ -1121,8 +1127,8 @@ function _dbAttachNoteTools(noteEl) {
     var node = e.target;
     var code = (node.tagName === 'CODE') ? node : node.closest('code');
     if (!code) return;
-    /* Only act when code is in display mode (has span children = highlighted) */
-    if (!code.children.length) return;
+    /* Skip if already in edit mode (contenteditable already set by a prior click) */
+    if (code.contentEditable === 'plaintext-only') return;
     var pre = code.closest('pre');
     if (!pre || pre.contentEditable !== 'false') return;
     /* ── Record click position while spans are still in the DOM ── */
