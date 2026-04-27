@@ -589,9 +589,46 @@ function _dbChangeSizeStep(delta) {
 }
 
 /**
- * Wire the real slash-command palette + paste-as popup to a card note CE.
- * Idempotent — safe to call on every panel re-render.
+ * Run hljs on a <code> element, stamp data-lang on its <pre>, and ensure
+ * the element stays plaintext-only editable.
+ * Includes the same heuristic fallbacks as _bwApplyCodeHighlighting so that
+ * shell / SQL / HTML / JSON snippets get a label even when hljs says "no idea".
  */
+var _DB_HLJS_NOISE = new Set(['plaintext', 'undefined', 'txt', 'text', '']);
+function _dbApplyHljs(code) {
+  if (typeof hljs === 'undefined') return;
+  if (!code || !code.textContent.trim()) return;
+  try { hljs.highlightElement(code); } catch (_) {}
+
+  var langCls = Array.prototype.find.call(code.classList, function(c) {
+    return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
+  });
+
+  /* Heuristic fallbacks — mirrors _bwApplyCodeHighlighting */
+  if (!langCls) {
+    var raw = (code.textContent || '').trimStart();
+    var hint = '';
+    if (/^(cd |ls |mkdir |echo |export |git |npm |pip |uv |python |node |curl |wget |set |rmdir |del |copy |move |touch |chmod |chown |sudo |docker |kubectl |bash |sh )/i.test(raw)) {
+      hint = 'shell';
+    } else if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\b/i.test(raw)) {
+      hint = 'sql';
+    } else if (/^\s*<[a-zA-Z]/.test(raw)) {
+      hint = 'html';
+    } else if (/^\s*\{/.test(raw) && raw.includes(':')) {
+      hint = 'json';
+    }
+    if (hint) langCls = 'language-' + hint;
+  }
+
+  var pre = code.parentElement;
+  if (pre && pre.tagName === 'PRE') {
+    if (langCls) pre.dataset.lang = langCls.replace('language-', '');
+    else         delete pre.dataset.lang;
+  }
+  code.contentEditable = 'plaintext-only';
+  code.spellcheck = false;
+}
+
 function _dbAttachNoteTools(noteEl) {
   if (!noteEl) return;
   /* Slash commands — full palette with headings / callouts / columns */
@@ -613,18 +650,37 @@ function _dbAttachNoteTools(noteEl) {
       window.open(a.href, '_blank', 'noopener,noreferrer');
       return;
     }
-    /* Empty space below content */
+    /* Only handle clicks directly on the note container itself */
     if (e.target !== noteEl) return;
-    var p = document.createElement('p');
-    p.innerHTML = '<br>';
-    noteEl.appendChild(p);
+    /* Reuse the existing trailing empty paragraph instead of appending a new one */
+    var last = noteEl.lastElementChild;
+    var isEmptyP = last && last.tagName === 'P' &&
+                   !last.textContent.trim() &&
+                   (last.innerHTML === '<br>' || last.innerHTML === '');
+    var target = isEmptyP ? last : null;
+    if (!target) {
+      target = document.createElement('p');
+      target.innerHTML = '<br>';
+      noteEl.appendChild(target);
+    }
     var r = document.createRange();
-    r.setStart(p, 0);
+    r.setStart(target, 0);
     r.collapse(true);
     var s = window.getSelection();
     s.removeAllRanges();
     s.addRange(r);
     noteEl.focus({ preventScroll: true });
+  });
+
+  /* ── Paste inside a code block — always plain text, strip background/colours */
+  noteEl.addEventListener('paste', function(e) {
+    var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
+    if (!code) return;
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    /* Normalise CRLF / CR → LF */
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    document.execCommand('insertText', false, text);
   });
 
   /* ── Code block: strip hljs on focus, reapply on blur ─────────────── */
@@ -647,22 +703,25 @@ function _dbAttachNoteTools(noteEl) {
   noteEl.addEventListener('focusout', function(e) {
     var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
     if (!code) return;
-    if (typeof hljs !== 'undefined' && code.textContent.trim()) {
-      try { hljs.highlightElement(code); } catch (_) {}
-      /* Read back the language hljs detected and stamp it on <pre> for the CSS badge */
-      var NOISE = new Set(['plaintext', 'undefined', 'txt', 'text', '']);
-      var langCls = Array.prototype.find.call(code.classList, function(c) {
-        return c.startsWith('language-') && !NOISE.has(c.replace('language-', ''));
-      });
-      var pre = code.parentElement;
-      if (pre && pre.tagName === 'PRE') {
-        if (langCls) pre.dataset.lang = langCls.replace('language-', '');
-        else         delete pre.dataset.lang;
-      }
-    }
+    _dbApplyHljs(code);
     /* Dispatch input so autosave picks up the highlighted content */
     noteEl.dispatchEvent(new Event('input', { bubbles: true }));
   });
+
+  /* ── Initial hljs scan — highlights code blocks already in the loaded note ── */
+  setTimeout(function() {
+    noteEl.querySelectorAll('pre code').forEach(function(code) {
+      /* Strip stale hljs spans first so re-detection is clean */
+      var plain = code.textContent.replace(/\n$/, '');
+      var langMatch = (code.className || '').match(/language-(\S+)/);
+      var lang = langMatch ? langMatch[1] : '';
+      if (code.classList.contains('hljs') || code.querySelector('.hljs')) {
+        code.className   = lang ? 'language-' + lang : '';
+        code.textContent = plain;
+      }
+      _dbApplyHljs(code);
+    });
+  }, 80);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
