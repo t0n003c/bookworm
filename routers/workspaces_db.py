@@ -10,7 +10,7 @@ async def _all_workspaces_raw() -> list[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at, user_id "
+            "       sort_order, created_at, user_id, ws_type "
             "FROM workspaces WHERE deleted_at IS NULL ORDER BY sort_order ASC"
         )
         rows = await cursor.fetchall()
@@ -24,7 +24,7 @@ async def get_all_workspaces(user_id: int) -> list[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at "
+            "       sort_order, created_at, ws_type "
             "FROM workspaces WHERE deleted_at IS NULL AND user_id = ? "
             "ORDER BY sort_order ASC",
             (user_id,),
@@ -90,7 +90,7 @@ async def get_open_workspaces(user_id: int) -> list[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at "
+            "       sort_order, created_at, ws_type "
             "FROM workspaces WHERE is_open = 1 AND deleted_at IS NULL "
             "AND user_id = ? ORDER BY sort_order ASC",
             (user_id,),
@@ -103,7 +103,7 @@ async def get_workspace_by_id(workspace_id: int) -> Optional[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at "
+            "       sort_order, created_at, user_id, ws_type "
             "FROM workspaces WHERE id = ? AND deleted_at IS NULL",
             (workspace_id,),
         )
@@ -162,6 +162,7 @@ async def create_workspace(
     user_id: int,
     emoji: str = "\U0001f4c1",
     parent_id: Optional[int] = None,
+    ws_type: str = "workspace",
 ) -> int:
     """Insert a workspace for the given user and return its new id.
 
@@ -180,9 +181,9 @@ async def create_workspace(
         row = await cur.fetchone()
         new_sort_order = (row[0] if row else -10) + 10
         cursor = await db.execute(
-            "INSERT INTO workspaces (name, emoji, parent_id, sort_order, user_id) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (unique_name, emoji, parent_id, new_sort_order, user_id),
+            "INSERT INTO workspaces (name, emoji, parent_id, sort_order, user_id, ws_type) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (unique_name, emoji, parent_id, new_sort_order, user_id, ws_type),
         )
         await db.commit()
         return cursor.lastrowid
@@ -231,7 +232,7 @@ async def get_favorite_workspaces(user_id: int) -> list[dict]:
     """Return active workspaces marked as favorite for a user, ordered by name."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, name, emoji, is_open, is_favorite, parent_id, created_at "
+            "SELECT id, name, emoji, is_open, is_favorite, parent_id, created_at, ws_type "
             "FROM workspaces WHERE is_favorite = 1 AND deleted_at IS NULL "
             "AND user_id = ? ORDER BY name ASC",
             (user_id,),
@@ -382,7 +383,7 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
     async with get_db() as db:
         # ── fetch source root ────────────────────────────────────────────
         cur = await db.execute(
-            "SELECT name, emoji, parent_id FROM workspaces "
+            "SELECT name, emoji, parent_id, ws_type FROM workspaces "
             "WHERE id = ? AND deleted_at IS NULL",
             (workspace_id,),
         )
@@ -392,6 +393,7 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
         src_name    = row["name"]
         src_emoji   = row["emoji"]
         src_parent  = row["parent_id"]
+        src_type    = row["ws_type"] or "workspace"
 
         # ── create root clone ────────────────────────────────────────────
         clone_name = await _unique_sibling_name(
@@ -405,9 +407,9 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
         new_sort = (await cur.fetchone())[0] + 10
 
         cur = await db.execute(
-            "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open) "
-            "VALUES(?, ?, ?, ?, ?, 1)",
-            (clone_name, src_emoji, src_parent, new_sort, user_id),
+            "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open, ws_type) "
+            "VALUES(?, ?, ?, ?, ?, 1, ?)",
+            (clone_name, src_emoji, src_parent, new_sort, user_id, src_type),
         )
         new_root_id = cur.lastrowid
 
@@ -469,9 +471,39 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
                         (new_note_id, ar["key"], ar["value"], ar["attr_def_id"]),
                     )
 
+            # db_cards + db_card_attrs (only for database-type nodes)
+            src_type_cur = await db.execute(
+                "SELECT ws_type FROM workspaces WHERE id = ?", (src_id,)
+            )
+            src_type_row = await src_type_cur.fetchone()
+            if src_type_row and (src_type_row[0] or "workspace") == "database":
+                cards_cur = await db.execute(
+                    "SELECT id, title, cover_url, note_content, note_box_height, sort_order "
+                    "FROM db_cards WHERE db_id = ?", (src_id,)
+                )
+                for card_row in await cards_cur.fetchall():
+                    nc = await db.execute(
+                        "INSERT INTO db_cards (db_id, user_id, title, cover_url, "
+                        "note_content, note_box_height, sort_order) VALUES(?,?,?,?,?,?,?)",
+                        (new_id, user_id, card_row["title"], card_row["cover_url"],
+                         card_row["note_content"], card_row["note_box_height"],
+                         card_row["sort_order"]),
+                    )
+                    new_card_id = nc.lastrowid
+                    a_cur = await db.execute(
+                        "SELECT attr_key, attr_value, sort_order FROM db_card_attrs "
+                        "WHERE card_id = ?", (card_row["id"],)
+                    )
+                    for a in await a_cur.fetchall():
+                        await db.execute(
+                            "INSERT INTO db_card_attrs (card_id, attr_key, attr_value, sort_order) "
+                            "VALUES(?,?,?,?)",
+                            (new_card_id, a["attr_key"], a["attr_value"], a["sort_order"]),
+                        )
+
             # enqueue children
             child_cur = await db.execute(
-                "SELECT id, name, emoji, sort_order FROM workspaces "
+                "SELECT id, name, emoji, sort_order, ws_type FROM workspaces "
                 "WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC",
                 (src_id,),
             )
@@ -480,9 +512,10 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
                     db, child["name"], user_id, new_id
                 )
                 nc2 = await db.execute(
-                    "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open) "
-                    "VALUES(?, ?, ?, ?, ?, 0)",
-                    (child_name, child["emoji"], new_id, child["sort_order"], user_id),
+                    "INSERT INTO workspaces(name, emoji, parent_id, sort_order, user_id, is_open, ws_type) "
+                    "VALUES(?, ?, ?, ?, ?, 0, ?)",
+                    (child_name, child["emoji"], new_id, child["sort_order"], user_id,
+                     child["ws_type"] or "workspace"),
                 )
                 queue.append((child["id"], nc2.lastrowid))
 
