@@ -12,23 +12,9 @@ var _dbDetailId          = null;   // card id currently open in detail panel
 var _dbDelTarget         = null;   // card id staged for deletion
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 
-/* ── slash command palette state ────────────────────────────────────────── */
-var _dbSlashEl    = null;   // active contenteditable element
-var _dbSlashPal   = null;   // palette DOM element (created once)
-var _dbSlashIdx   = 0;      // keyboard selection index
-var _dbSlashRange = null;   // saved Range when palette opened (restored before execCommand)
-var _dbSlashCmds  = [
-  { cmd: 'heading1',  label: 'Heading 1',  tag: 'H1'          },
-  { cmd: 'heading2',  label: 'Heading 2',  tag: 'H2'          },
-  { cmd: 'heading3',  label: 'Heading 3',  tag: 'H3'          },
-  { cmd: 'bullet',    label: 'Bullet List', tag: 'UL'         },
-  { cmd: 'numbered',  label: 'Numbered List', tag: 'OL'       },
-  { cmd: 'quote',     label: 'Quote',       tag: 'BLOCKQUOTE' },
-  { cmd: 'divider',   label: 'Divider',     tag: 'HR'         },
-  { cmd: 'bold',      label: 'Bold',        tag: 'STRONG'     },
-  { cmd: 'italic',    label: 'Italic',      tag: 'EM'         },
-  { cmd: 'code',      label: 'Code',        tag: 'CODE'       },
-];
+/* ── selection toolbar state ─────────────────────────────────────────────── */
+var _dbSelBar       = null;  // floating toolbar DOM element
+var _dbSelBarTimer  = null;  // hide-debounce timer
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ENTRY POINT
@@ -40,7 +26,8 @@ function initDatabaseView(wsId) {
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
   _dbRenderGrid();
   _dbBindModals();
-  _dbBuildSlashPalette();
+  _dbInitStyles();
+  _dbSelToolbarInit();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -244,200 +231,332 @@ function _dbTitleBlur(cardId, el) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SLASH COMMANDS + AUTO-CONVERSION
+   NOTE AREA TOOLS  —  heading CSS + slash palette + selection toolbar + paste-as
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function _dbBuildSlashPalette() {
-  if (_dbSlashPal) return;
-  var pal = document.createElement('div');
-  pal.id = 'db-slash-palette';
-  pal.className = 'hidden fixed z-[200] w-52 bg-white dark:bg-zinc-900 border border-gray-200'
-    + ' dark:border-zinc-700 rounded-xl shadow-xl py-1 overflow-hidden';
-  pal.setAttribute('role', 'listbox');
-  pal.setAttribute('aria-label', 'Insert block');
-  pal.innerHTML = _dbSlashCmds.map(function(c, i) {
-    // onmousedown + return false: prevents blur on the contenteditable so the
-    // selection (and cursor position) is intact when _dbApplySlashCmd runs.
-    return '<div class="db-slash-item px-3 py-1.5 text-sm cursor-pointer text-gray-700'
-      + ' dark:text-zinc-300 hover:bg-purple-50 dark:hover:bg-purple-900/30"'
-      + ' role="option" data-idx="' + i + '"'
-      + ' onmousedown="_dbApplySlashCmd(\'' + c.cmd + '\'); return false;">'
-      + c.label + '</div>';
-  }).join('');
-  document.body.appendChild(pal);
-  _dbSlashPal = pal;
+function _dbInitStyles() {
+  if (document.getElementById('db-note-styles')) return;
+  var s = document.createElement('style');
+  s.id = 'db-note-styles';
+  s.textContent = [
+    /* Heading hierarchy inside the card note area */
+    '[data-db-note] h1{font-size:2em;font-weight:800;line-height:1.2;margin:.7em 0 .3em}',
+    '[data-db-note] h2{font-size:1.5em;font-weight:700;line-height:1.25;margin:.6em 0 .25em}',
+    '[data-db-note] h3{font-size:1.25em;font-weight:700;line-height:1.3;margin:.5em 0 .2em}',
+    /* blockquote */
+    '[data-db-note] blockquote{border-left:3px solid #a78bfa;margin:.5em 0;padding:.25em .75em;',
+    'color:#6b7280;font-style:italic;}',
+    '.dark [data-db-note] blockquote{border-color:#7c3aed;color:#a1a1aa;}',
+    /* code block */
+    '[data-db-note] pre{background:#f3f4f6;border-radius:.5rem;padding:.75em 1em;overflow-x:auto;margin:.5em 0;}',
+    '.dark [data-db-note] pre{background:#27272a;}',
+    '[data-db-note] pre code{font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;',
+    'background:none;color:inherit;padding:0;}',
+    /* inline code */
+    '[data-db-note] code{background:#f3f4f6;border-radius:.25rem;padding:.1em .3em;',
+    'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;}',
+    '.dark [data-db-note] code{background:#3f3f46;}',
+    /* callout blocks (reuse note-form classes) */
+    '[data-db-note] .bw-callout{display:flex;gap:.6rem;border-radius:.6rem;padding:.6rem .8rem;margin:.5em 0;}',
+    '[data-db-note] .bw-callout-info{background:#eff6ff;}[data-db-note] .bw-callout-warning{background:#fffbeb;}',
+    '[data-db-note] .bw-callout-tip{background:#f0fdf4;}[data-db-note] .bw-callout-danger{background:#fef2f2;}',
+    '.dark [data-db-note] .bw-callout-info{background:#172554;}.dark [data-db-note] .bw-callout-warning{background:#451a03;}',
+    '.dark [data-db-note] .bw-callout-tip{background:#052e16;}.dark [data-db-note] .bw-callout-danger{background:#450a0a;}',
+    /* columns */
+    '[data-db-note] .bw-cols{display:grid;gap:.75rem;margin:.5em 0;}',
+    '[data-db-note] .bw-cols-2{grid-template-columns:repeat(2,1fr);}',
+    '[data-db-note] .bw-cols-3{grid-template-columns:repeat(3,1fr);}',
+    '[data-db-note] .bw-col{min-width:0;}',
+    /* toggle / details */
+    '[data-db-note] details.bw-toggle{border-left:3px solid #7c3aed;padding-left:.6rem;margin:.5em 0;}',
+    '[data-db-note] details.bw-toggle summary{cursor:pointer;font-weight:700;list-style:none;}',
+    '[data-db-note] details.bw-toggle summary::-webkit-details-marker{display:none;}',
+    '[data-db-note] .bw-toggle-h1 summary{font-size:2em;}',
+    '[data-db-note] .bw-toggle-h2 summary{font-size:1.5em;}',
+    '[data-db-note] .bw-toggle-h3 summary{font-size:1.25em;}',
+    /* selection toolbar — base row */
+    '#db-sel-bar{position:fixed;z-index:9998;display:none;flex-direction:column;',
+    'border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.2);overflow:hidden;}',
+    '#db-sel-bar .db-sb-row{display:flex;align-items:center;gap:2px;padding:4px 6px;}',
+    '#db-sel-bar button{width:28px;height:28px;border:none;border-radius:5px;background:transparent;',
+    'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:13px;transition:background .1s;}',
+    '#db-sel-bar .db-sb-sep{width:1px;height:18px;margin:0 2px;flex-shrink:0;}',
+    /* flyout rows for highlight and text color */
+    '#db-sel-bar .db-sb-flyout{display:none;flex-wrap:wrap;gap:4px;padding:6px 8px;border-top:1px solid;}',
+    '#db-sel-bar .db-sb-flyout.open{display:flex;}',
+    '#db-sel-bar .db-sb-swatch{width:20px;height:20px;border-radius:4px;border:2px solid transparent;',
+    'cursor:pointer;flex-shrink:0;transition:transform .1s;}',
+    '#db-sel-bar .db-sb-swatch:hover{transform:scale(1.2);border-color:#0053e2;}',
+  ].join('');
+  document.head.appendChild(s);
 }
 
-function _dbSlashKeydown(e, el, cardId) {
-  // Auto-convert on Space
-  if (e.key === ' ' || e.code === 'Space') {
-    _dbAutoConvert(el);
+/* Floating selection toolbar — B / I / S + highlight flyout + text-color flyout + A+/A- */
+function _dbSelToolbarInit() {
+  if (_dbSelBar) return;
+
+  var HL_COLORS = [
+    { label: 'Remove', color: null          },
+    { label: 'Yellow',  color: '#fef08a'    },
+    { label: 'Green',   color: '#bbf7d0'    },
+    { label: 'Blue',    color: '#bfdbfe'    },
+    { label: 'Pink',    color: '#fbcfe8'    },
+    { label: 'Orange',  color: '#fed7aa'    },
+    { label: 'Spark',   color: '#fff0a0'    },
+    { label: 'Red',     color: '#fecaca'    },
+    { label: 'Purple',  color: '#e9d5ff'    },
+  ];
+  var TC_COLORS = [
+    { label: 'Remove',  color: null         },
+    { label: 'Black',   color: '#111111'    },
+    { label: 'Gray',    color: '#6b7280'    },
+    { label: 'Red',     color: '#ea1100'    },
+    { label: 'Orange',  color: '#f97316'    },
+    { label: 'Yellow',  color: '#b87800'    },
+    { label: 'Green',   color: '#2a8703'    },
+    { label: 'Blue',    color: '#0053e2'    },
+    { label: 'Purple',  color: '#7c3aed'    },
+  ];
+
+  var dark = function() { return document.documentElement.classList.contains('dark'); };
+
+  /* ---- helpers ---- */
+  function _theme(el) {
+    el.style.background = dark() ? '#18181b' : '#ffffff';
+    el.style.borderColor = dark() ? '#3f3f46' : '#e5e7eb';
+    el.style.color = dark() ? '#f4f4f5' : '#111827';
+  }
+  function _btnHover(b) {
+    b.addEventListener('mouseenter', function() { b.style.background = dark() ? '#27272a' : '#f3f4f6'; });
+    b.addEventListener('mouseleave', function() { b.style.background = 'transparent'; });
+  }
+  function _sep() {
+    var s = document.createElement('div');
+    s.className = 'db-sb-sep';
+    s.style.background = 'rgba(0,0,0,.12)';
+    return s;
+  }
+  function _mkBtn(label, html) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.title = label;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = html;
+    _btnHover(b);
+    return b;
   }
 
-  // Slash palette navigation
-  if (_dbSlashPal && !_dbSlashPal.classList.contains('hidden')) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      _dbSlashIdx = Math.min(_dbSlashIdx + 1, _dbSlashCmds.length - 1);
-      _dbSlashHighlight();
-      return;
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      _dbSlashIdx = Math.max(_dbSlashIdx - 1, 0);
-      _dbSlashHighlight();
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      _dbApplySlashCmd(_dbSlashCmds[_dbSlashIdx].cmd);
-      return;
-    }
-    if (e.key === 'Escape') {
-      _dbHideSlashPalette();
-      return;
-    }
-  }
+  /* ---- build bar ---- */
+  var bar = document.createElement('div');
+  bar.id = 'db-sel-bar';
+  bar.setAttribute('role', 'toolbar');
+  bar.setAttribute('aria-label', 'Text formatting');
 
-  // Show palette on '/' in empty block
-  if (e.key === '/') {
-    // Short delay so '/' is in the DOM before checking
-    setTimeout(function() {
-      var sel   = window.getSelection();
-      var range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-      if (!range) return;
-      var text = range.startContainer.textContent || '';
-      if (text.trim() === '/') {
-        _dbSlashEl  = el;
-        _dbSlashIdx = 0;
-        _dbShowSlashPalette(el);
+  /* Main button row */
+  var row = document.createElement('div');
+  row.className = 'db-sb-row';
+  bar.appendChild(row);
+
+  /* B / I / S */
+  var bBtn = _mkBtn('Bold',          '<b style="font-size:13px">B</b>');
+  var iBtn = _mkBtn('Italic',        '<i style="font-size:13px">I</i>');
+  var sBtn = _mkBtn('Strikethrough', '<s style="font-size:13px">S</s>');
+  bBtn.addEventListener('mousedown', function(e) { e.preventDefault(); document.execCommand('bold'); });
+  iBtn.addEventListener('mousedown', function(e) { e.preventDefault(); document.execCommand('italic'); });
+  sBtn.addEventListener('mousedown', function(e) { e.preventDefault(); document.execCommand('strikeThrough'); });
+  row.appendChild(bBtn); row.appendChild(iBtn); row.appendChild(sBtn);
+  row.appendChild(_sep());
+
+  /* Highlight flyout toggle */
+  var hlFlyout = document.createElement('div');
+  hlFlyout.className = 'db-sb-flyout';
+  var hlBtn = _mkBtn('Highlight color',
+    '<span style="font-size:14px;border-bottom:3px solid #fef08a;line-height:1">A</span>');
+  hlBtn.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var open = hlFlyout.classList.contains('open');
+    tcFlyout.classList.remove('open');
+    hlFlyout.classList.toggle('open', !open);
+  });
+  row.appendChild(hlBtn);
+
+  /* Text color flyout toggle */
+  var tcFlyout = document.createElement('div');
+  tcFlyout.className = 'db-sb-flyout';
+  var tcBtn = _mkBtn('Text color',
+    '<span style="font-size:14px;border-bottom:3px solid #3b82f6;line-height:1">A</span>');
+  tcBtn.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var open = tcFlyout.classList.contains('open');
+    hlFlyout.classList.remove('open');
+    tcFlyout.classList.toggle('open', !open);
+  });
+  row.appendChild(tcBtn);
+  row.appendChild(_sep());
+
+  /* A+ / A- size buttons */
+  var szUpBtn = _mkBtn('Increase size', '<span style="font-size:13px">A<sup>+</sup></span>');
+  var szDnBtn = _mkBtn('Decrease size', '<span style="font-size:11px">A<sub>-</sub></span>');
+  szUpBtn.addEventListener('mousedown', function(e) { e.preventDefault(); _dbChangeSizeStep(+2); });
+  szDnBtn.addEventListener('mousedown', function(e) { e.preventDefault(); _dbChangeSizeStep(-2); });
+  row.appendChild(szUpBtn); row.appendChild(szDnBtn);
+
+  /* ---- build flyout swatches ---- */
+  function _buildSwatches(flyout, palette, applyFn) {
+    palette.forEach(function(item) {
+      var sw = document.createElement('button');
+      sw.type = 'button';
+      sw.className = 'db-sb-swatch';
+      sw.title = item.label;
+      if (item.color) {
+        sw.style.background = item.color;
+      } else {
+        sw.style.background = '#f3f4f6';
+        sw.style.backgroundImage = 'repeating-linear-gradient(135deg,#e5e7eb 0 2px,transparent 0 8px)';
+        sw.style.border = '2px solid #d1d5db';
       }
-    }, 10);
-  } else if (_dbSlashPal && !_dbSlashPal.classList.contains('hidden')) {
-    // Hide palette on most other keys
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') {
-      _dbHideSlashPalette();
-    }
+      sw.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        applyFn(item.color);
+        hlFlyout.classList.remove('open');
+        tcFlyout.classList.remove('open');
+      });
+      flyout.appendChild(sw);
+    });
   }
-}
 
-function _dbShowSlashPalette(el) {
-  if (!_dbSlashPal) return;
-  // Save the current selection so we can restore it in _dbApplySlashCmd
-  // (clicking the palette would normally steal focus + nuke the range).
-  var sel = window.getSelection();
-  _dbSlashRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
-  var rect = el.getBoundingClientRect();
-  _dbSlashPal.style.top  = (rect.bottom + window.scrollY + 4) + 'px';
-  _dbSlashPal.style.left = (rect.left + window.scrollX) + 'px';
-  _dbSlashPal.classList.remove('hidden');
-  _dbSlashHighlight();
-}
+  _buildSwatches(hlFlyout, HL_COLORS, function(c) {
+    document.execCommand('hiliteColor', false, c || 'transparent');
+  });
+  _buildSwatches(tcFlyout, TC_COLORS, function(c) {
+    if (c) document.execCommand('foreColor', false, c);
+    else   document.execCommand('removeFormat');
+  });
 
-function _dbHideSlashPalette() {
-  if (_dbSlashPal) _dbSlashPal.classList.add('hidden');
-  _dbSlashEl = null;
-}
+  bar.appendChild(hlFlyout);
+  bar.appendChild(tcFlyout);
+  document.body.appendChild(bar);
+  _dbSelBar = bar;
 
-function _dbSlashHighlight() {
-  if (!_dbSlashPal) return;
-  var items = _dbSlashPal.querySelectorAll('.db-slash-item');
-  items.forEach(function(item, i) {
-    if (i === _dbSlashIdx) {
-      item.classList.add('bg-purple-50', 'dark:bg-purple-900/30');
-    } else {
-      item.classList.remove('bg-purple-50', 'dark:bg-purple-900/30');
-    }
+  /* ---- show / hide on selectionchange ---- */
+  document.addEventListener('selectionchange', function() {
+    if (_dbSelBarTimer) clearTimeout(_dbSelBarTimer);
+    _dbSelBarTimer = setTimeout(function() {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        _dbSelBar.style.display = 'none';
+        hlFlyout.classList.remove('open');
+        tcFlyout.classList.remove('open');
+        return;
+      }
+      /* Only show inside a [data-db-note] element */
+      var anchor = sel.anchorNode;
+      var el = anchor && anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
+      var insideNote = false;
+      while (el) {
+        if (el.dataset && el.dataset.dbNote) { insideNote = true; break; }
+        el = el.parentElement;
+      }
+      if (!insideNote) { _dbSelBar.style.display = 'none'; return; }
+
+      /* Apply theme and position */
+      _theme(bar);
+      bar.style.border = dark() ? '1px solid #3f3f46' : '1px solid #e5e7eb';
+      [hlFlyout, tcFlyout].forEach(function(f) {
+        f.style.borderTopColor = dark() ? '#3f3f46' : '#e5e7eb';
+        f.style.background     = dark() ? '#18181b' : '#ffffff';
+      });
+      bar.querySelectorAll('.db-sb-sep').forEach(function(s) {
+        s.style.background = dark() ? 'rgba(255,255,255,.15)' : 'rgba(0,0,0,.12)';
+      });
+
+      _dbSelBar.style.display = 'flex';
+      var r   = sel.getRangeAt(0).getBoundingClientRect();
+      var bw  = _dbSelBar.offsetWidth  || 240;
+      var bh  = _dbSelBar.offsetHeight || 40;
+      var left = Math.max(4, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 4));
+      var top  = r.top - bh - 8;
+      if (top < 4) top = r.bottom + 8;
+      _dbSelBar.style.left = left + 'px';
+      _dbSelBar.style.top  = top  + 'px';
+    }, 80);
   });
 }
 
-function _dbApplySlashCmd(cmd) {
-  // Snapshot BEFORE _dbHideSlashPalette() — that function nulls _dbSlashEl.
-  var targetEl   = _dbSlashEl;
-  var savedRange = _dbSlashRange;
-  _dbHideSlashPalette();
-  if (!targetEl) return;
+/**
+ * Step the font size of the current CE selection up or down by `delta` px.
+ * Mirrors note_form.html’s _changeSizeStep but CE-only (DB notes are always CE).
+ */
+function _dbChangeSizeStep(delta) {
+  var sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
 
-  // Restore the saved selection so execCommand inserts at the right spot.
-  // With onmousedown+return-false the caret is still live in most browsers;
-  // savedRange is the belt-and-suspenders fallback for keyboard Enter.
-  if (savedRange) {
-    var sel = window.getSelection();
-    if (sel) {
-      sel.removeAllRanges();
-      sel.addRange(savedRange);
+  /* Walk up from anchor to find an existing size span */
+  var node = sel.anchorNode;
+  if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  var sizeSpan = null;
+  var ce = node;
+  while (ce && !ce.dataset.dbNote) ce = ce.parentElement;
+  var cur = node;
+  while (cur && cur !== ce) {
+    if (cur.nodeName === 'SPAN' && cur.style && cur.style.fontSize) { sizeSpan = cur; break; }
+    cur = cur.parentElement;
+  }
+
+  var currentPx = parseFloat(getComputedStyle(node).fontSize) || 14;
+  var newPx     = Math.max(10, Math.min(96, currentPx + delta));
+
+  var targetSpan;
+  if (sizeSpan) {
+    sizeSpan.style.fontSize = newPx + 'px';
+    targetSpan = sizeSpan;
+  } else {
+    var range = sel.getRangeAt(0);
+    targetSpan = document.createElement('span');
+    targetSpan.style.fontSize = newPx + 'px';
+    try {
+      range.surroundContents(targetSpan);
+    } catch (_) {
+      targetSpan.appendChild(range.extractContents());
+      range.insertNode(targetSpan);
     }
   }
 
-  // Re-focus the contenteditable (needed after keyboard Enter applies the cmd)
-  targetEl.focus();
-
-  // Remove the '/' trigger character from the current text node
-  var sel2 = window.getSelection();
-  if (sel2 && sel2.rangeCount) {
-    var node = sel2.getRangeAt(0).startContainer;
-    if (node && node.nodeType === Node.TEXT_NODE) {
-      // Strip the trailing '/' (and any space after it)
-      node.textContent = node.textContent.replace(/\/$/, '');
-      // Move cursor to end of that node
-      var r = document.createRange();
-      r.selectNodeContents(node);
-      r.collapse(false);
-      sel2.removeAllRanges();
-      sel2.addRange(r);
-    }
-  }
-
-  var tagMap = {
-    heading1:  '<h1>&#8203;</h1>',
-    heading2:  '<h2>&#8203;</h2>',
-    heading3:  '<h3>&#8203;</h3>',
-    bullet:    '<ul><li>&#8203;</li></ul>',
-    numbered:  '<ol><li>&#8203;</li></ol>',
-    quote:     '<blockquote>&#8203;</blockquote>',
-    divider:   '<hr/>',
-    bold:      '<strong>&#8203;</strong>',
-    italic:    '<em>&#8203;</em>',
-    code:      '<code>&#8203;</code>',
-  };
-  var html = tagMap[cmd] || '';
-  if (html) document.execCommand('insertHTML', false, html);
+  /* Re-select so further A+/A- steps keep working */
+  sel.removeAllRanges();
+  var nr = document.createRange();
+  nr.selectNodeContents(targetSpan);
+  sel.addRange(nr);
+  if (ce) ce.dispatchEvent(new Event('input'));
 }
 
-function _dbAutoConvert(el) {
-  var sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
-  var range = sel.getRangeAt(0);
-  var node  = range.startContainer;
-  if (!node) return;
-  var text  = (node.textContent || '').trimEnd();
-
-  var conversions = [
-    { pattern: /^#+$/, fn: function(t) {
-      var level = t.length;
-      document.execCommand('insertHTML', false, '<h' + level + '>&#8203;</h' + level + '>');
-    }},
-    { pattern: /^-$/, fn: function() {
-      document.execCommand('insertHTML', false, '<ul><li>&#8203;</li></ul>');
-    }},
-    { pattern: /^\d+\.$/, fn: function() {
-      document.execCommand('insertHTML', false, '<ol><li>&#8203;</li></ol>');
-    }},
-    { pattern: /^>$/, fn: function() {
-      document.execCommand('insertHTML', false, '<blockquote>&#8203;</blockquote>');
-    }},
-    { pattern: /^---$/, fn: function() {
-      document.execCommand('insertHTML', false, '<hr/>');
-    }},
-  ];
-
-  for (var i = 0; i < conversions.length; i++) {
-    if (conversions[i].pattern.test(text)) {
-      // Clear the trigger text
-      if (node.nodeType === Node.TEXT_NODE) node.textContent = '';
-      conversions[i].fn(text);
-      break;
-    }
+/**
+ * Wire the real slash-command palette + paste-as popup to a card note CE.
+ * Idempotent — safe to call on every panel re-render.
+ */
+function _dbAttachNoteTools(noteEl) {
+  if (!noteEl) return;
+  /* Slash commands — full palette with headings / callouts / columns */
+  if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(noteEl);
+  /* URL paste-as popup */
+  if (window.bwPasteAs && typeof window.bwPasteAs.initForCE === 'function') {
+    window.bwPasteAs.initForCE(noteEl);
+  }
+  /* Click on empty space below content — append a new paragraph and focus it */
+  if (!noteEl._dbNewLineWired) {
+    noteEl._dbNewLineWired = true;
+    noteEl.addEventListener('click', function(e) {
+      if (e.target !== noteEl) return;  /* clicked a child element — let it be */
+      var p = document.createElement('p');
+      p.innerHTML = '<br>';
+      noteEl.appendChild(p);
+      var r = document.createRange();
+      r.setStart(p, 0);
+      r.collapse(true);
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      noteEl.focus({ preventScroll: true });
+    });
   }
 }
 
@@ -466,7 +585,10 @@ function _dbOpenDetail(cardId) {
       if (_dbPanelClickHandler) panelEl.removeEventListener('click', _dbPanelClickHandler);
       _dbPanelClickHandler = function(e) {
         // Only fire when the click lands directly on #panel itself, not its children
-        if (e.target === panelEl) _dbCloseDetail();
+        if (e.target !== panelEl) return;
+        // Don’t close if the user just finished drag-selecting text inside the panel
+        if (window.getSelection && window.getSelection().toString().trim()) return;
+        _dbCloseDetail();
       };
       panelEl.addEventListener('click', _dbPanelClickHandler);
     }
@@ -556,15 +678,18 @@ function _dbRenderDetailPanel(card) {
     + '<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>'
     + 'Add attribute</button></div>'
     // Notes area
-    + '<div id="db-detail-note-' + card.id + '" contenteditable="true"'
+    + '<div id="db-detail-note-' + card.id + '" contenteditable="true" data-db-note="1"'
     + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
     + ' oninput="_dbDetailNoteInput(' + card.id + ',this)"'
     + ' onblur="_dbDetailNoteBlur(' + card.id + ',this)"'
-    + ' onkeydown="_dbSlashKeydown(event,this,' + card.id + ')"'
     + ' aria-label="Card notes">'
-    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing…</p>')
+    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing… (type / for commands)</p>')
     + '</div>'
   );
+
+  /* Attach slash palette + paste-as to the note CE after HTML is in the DOM */
+  var noteEl = dp.querySelector('#db-detail-note-' + card.id);
+  _dbAttachNoteTools(noteEl);
 }
 
 function _dbDetailTitleBlur(cardId, el) {
@@ -890,12 +1015,6 @@ function _dbBindModals() {
   // Document-level listeners are global — only wire once to avoid stacking
   if (_dbModalsWired) return;
   _dbModalsWired = true;
-  // Hide slash palette on outside click
-  document.addEventListener('click', function(e) {
-    if (_dbSlashPal && !_dbSlashPal.classList.contains('hidden')) {
-      if (!_dbSlashPal.contains(e.target)) _dbHideSlashPalette();
-    }
-  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

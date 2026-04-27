@@ -41,6 +41,7 @@
   let _urlPreviewEl = null;   // header URL preview span — updated on each open
   let _mouseX      = 0;      // last known mouse X (viewport-relative)
   let _mouseY      = 0;      // last known mouse Y (viewport-relative)
+  let _pasteTargetCE = null; // CE element that most recently received a URL paste
 
   // Track mouse continuously so the popup can follow the actual cursor
   // even when paste is triggered by Ctrl+V (keyboard, no click coords).
@@ -351,18 +352,17 @@
 
   // ── Insertion helpers ──────────────────────────────────────────────────────
 
-  /** Restore saved CE range and exec-insert HTML. */
+  /** Restore saved CE range and exec-insert HTML.
+   *  Uses _pasteTargetCE when available (DB card notes, any extra CE),
+   *  falling back to #md-live-preview for the note form. */
   function _insertCE(html) {
-    const pv = document.getElementById('md-live-preview');
+    const pv = _pasteTargetCE || document.getElementById('md-live-preview');
     if (!pv) return;
-    // Restore selection BEFORE focus so the browser doesn't reset the
-    // cursor to end-of-document when the contenteditable regains focus.
     const sel = window.getSelection();
     if (sel && _savedRange) {
       sel.removeAllRanges();
       sel.addRange(_savedRange);
     }
-    // preventScroll stops the page jumping to the cursor on focus.
     pv.focus({ preventScroll: true });
     document.execCommand('insertHTML', false, html);
     pv.dispatchEvent(new Event('input', { bubbles: true }));
@@ -647,46 +647,61 @@
   // ── Init ───────────────────────────────────────────────────────────────────
 
   /**
-   * Register paste listeners on both editors.
-   * Uses capture:true to fire before the image handler in note_form.html
-   * and stopImmediatePropagation so only one of the two handlers runs.
+  /**
+   * Module-level paste handler — hoisted out of init() so initForCE() can
+   * call it too.  `ta` is resolved lazily via getElementById each time so
+   * it works even when the note form hasn’t been rendered yet.
    */
+  function _handle(e, isCE) {
+    const text  = (e.clipboardData || window.clipboardData)?.getData('text/plain') || '';
+    if (!_isUrl(text)) return;                                   // not a URL — let default paste happen
+    const items = Array.from(e.clipboardData?.items || []);
+    if (items.some(i => i.type.startsWith('image/'))) return;   // image takes priority
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    _url  = text.trim();
+    _isCE = isCE;
+
+    if (isCE) {
+      const sel = window.getSelection();
+      _savedRange  = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
+      _savedTaPos  = null;
+      _savedTaEnd  = null;
+    } else {
+      const ta     = document.getElementById('note-content');
+      _savedTaPos  = ta ? ta.selectionStart : 0;
+      _savedTaEnd  = ta ? ta.selectionEnd   : 0;
+      _savedRange  = null;
+    }
+
+    _showPopup(_mouseX, _mouseY);
+  }
+
   function init() {
     const ta = document.getElementById('note-content');
     const pv = document.getElementById('md-live-preview');
     if (!ta || !pv) return;
 
-    function _handle(e, isCE) {
-      const text  = (e.clipboardData || window.clipboardData)?.getData('text/plain') || '';
-      if (!_isUrl(text)) return;                                   // not a URL — let default paste happen
-      const items = Array.from(e.clipboardData?.items || []);
-      if (items.some(i => i.type.startsWith('image/'))) return;   // image takes priority
+    // _handle is now module-level; wire up listeners directly
 
-      e.preventDefault();
-      e.stopImmediatePropagation();
-
-      _url  = text.trim();
-      _isCE = isCE;
-
-      if (isCE) {
-        const sel = window.getSelection();
-        _savedRange  = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
-        _savedTaPos  = null;
-        _savedTaEnd  = null;
-      } else {
-        _savedTaPos  = ta.selectionStart;
-        _savedTaEnd  = ta.selectionEnd;   // preserve end so highlighted text gets replaced
-        _savedRange  = null;
-      }
-
-      // Use the live mouse position — accurate for both Ctrl+V and right-click
-      // paste, and works even when the caret range is collapsed (zero-size rect).
-      _showPopup(_mouseX, _mouseY);
-    }
-
-    pv.addEventListener('paste', e => _handle(e, true),  { capture: true });
-    ta.addEventListener('paste', e => _handle(e, false), { capture: true });
+    pv.addEventListener('paste', e => { _pasteTargetCE = pv; _handle(e, true);  }, { capture: true });
+    ta.addEventListener('paste', e => { _pasteTargetCE = null; _handle(e, false); }, { capture: true });
   }
 
-  window.bwPasteAs = { init };
+  /**
+   * Attach URL paste-as popup to any contenteditable element (e.g. DB card notes).
+   * Idempotent — safe to call every time the CE is re-rendered.
+   */
+  function initForCE(ce) {
+    if (!ce || ce._bwPaAttached) return;
+    ce._bwPaAttached = true;
+    ce.addEventListener('paste', e => {
+      _pasteTargetCE = ce;   // remember which CE triggered this paste
+      _handle(e, true);
+    }, { capture: true });
+  }
+
+  window.bwPasteAs = { init, initForCE };
 })();
