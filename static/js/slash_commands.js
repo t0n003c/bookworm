@@ -610,6 +610,10 @@ function _ceInsertCode(ce) {
   const code  = document.createElement('code');
   code.contentEditable = 'plaintext-only';
   code.spellcheck      = false;
+  /* contentEditable=false on the wrapper prevents the browser from placing
+     the cursor inside <pre>'s padding area (outside <code>), which would
+     let rich-text pastes land as sibling spans instead of plain text.   */
+  pre.contentEditable  = 'false';
   pre.appendChild(code);
   const after = document.createElement('p');
   after.innerHTML = '<br>';

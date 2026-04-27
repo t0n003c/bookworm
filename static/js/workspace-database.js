@@ -624,6 +624,9 @@ function _dbApplyHljs(code) {
   if (pre && pre.tagName === 'PRE') {
     if (langCls) pre.dataset.lang = langCls.replace('language-', '');
     else         delete pre.dataset.lang;
+    /* Keep the wrapper non-editable so the cursor can't land in <pre>'s
+       padding and let rich-text land as sibling spans of <code>. */
+    pre.contentEditable = 'false';
   }
   code.contentEditable = 'plaintext-only';
   code.spellcheck = false;
@@ -640,6 +643,14 @@ function _dbAttachNoteTools(noteEl) {
 
   if (noteEl._dbToolsWired) return;   /* idempotent — only wire DOM handlers once */
   noteEl._dbToolsWired = true;
+
+  /* ── Synchronous: lock every <pre> immediately so the cursor can never land
+     in its padding area before the async hljs scan fires.            ── */
+  noteEl.querySelectorAll('pre').forEach(function(pre) {
+    pre.contentEditable = 'false';
+    var code = pre.querySelector('code');
+    if (code) { code.contentEditable = 'plaintext-only'; code.spellcheck = false; }
+  });
 
   /* ── Click on empty space below content — append a paragraph ---- */
   noteEl.addEventListener('click', function(e) {
@@ -674,7 +685,14 @@ function _dbAttachNoteTools(noteEl) {
 
   /* ── Paste inside a code block — always plain text, strip background/colours */
   noteEl.addEventListener('paste', function(e) {
-    var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
+    /* e.target is unreliable for nested contenteditable — Chrome often reports
+       the outer note div even when the cursor is inside a nested <code>.
+       Walk up from the selection's anchor node instead.              */
+    var sel = window.getSelection();
+    var anchor = sel && sel.anchorNode;
+    if (!anchor) return;
+    var node = anchor.nodeType === 3 ? anchor.parentElement : anchor;
+    var code = (node.tagName === 'CODE') ? node : node.closest('code');
     if (!code) return;
     e.preventDefault();
     var text = (e.clipboardData || window.clipboardData).getData('text/plain');
@@ -710,8 +728,30 @@ function _dbAttachNoteTools(noteEl) {
 
   /* ── Initial hljs scan — highlights code blocks already in the loaded note ── */
   setTimeout(function() {
-    noteEl.querySelectorAll('pre code').forEach(function(code) {
-      /* Strip stale hljs spans first so re-detection is clean */
+    noteEl.querySelectorAll('pre').forEach(function(pre) {
+      var code = pre.querySelector('code');
+      if (!code) return;
+
+      /* ―― Corruption recovery ――
+         If <code> is empty but <pre> has other children that contain text,
+         those are rich-paste debris (spans with colours/backgrounds).
+         Salvage their plain text into <code> and remove the garbage nodes. */
+      if (!code.textContent.trim()) {
+        var salvaged = Array.prototype.filter.call(
+          pre.childNodes,
+          function(n) { return n !== code; }
+        ).map(function(n) { return n.textContent || ''; }).join('');
+        salvaged = salvaged.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        if (salvaged) {
+          /* Remove debris nodes */
+          Array.prototype.slice.call(pre.childNodes).forEach(function(n) {
+            if (n !== code) pre.removeChild(n);
+          });
+          code.textContent = salvaged;
+        }
+      }
+
+      /* ―― Strip stale hljs spans first so re-detection is clean ―― */
       var plain = code.textContent.replace(/\n$/, '');
       var langMatch = (code.className || '').match(/language-(\S+)/);
       var lang = langMatch ? langMatch[1] : '';
@@ -719,6 +759,7 @@ function _dbAttachNoteTools(noteEl) {
         code.className   = lang ? 'language-' + lang : '';
         code.textContent = plain;
       }
+
       _dbApplyHljs(code);
     });
   }, 80);
