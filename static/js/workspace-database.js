@@ -944,44 +944,51 @@ function _dbApplyHljs(code) {
   if (!code) return;
   var pre = code.parentElement;
 
-  /* Detect language first (works even when hljs is blocked/offline) */
+  /* Step 1: exit editing-host mode unconditionally ─────────────────────────
+     Must happen before any DOM mutation.  While contenteditable is set,
+     Chrome can fight back against textContent/innerHTML writes.           */
+  code.removeAttribute('contenteditable');
+
+  /* Step 2: normalise <br> / block-level junk Chrome inserts ───────────────
+     When contenteditable="true" is active and the user presses Enter,
+     Chrome inserts a <br> element rather than a literal \n text node.
+     textContent silently skips <br> elements, so without this step every
+     newline in multi-line code vanishes and the block collapses to one line.
+     The same pass catches <div>/<p> wrappers from older-Chrome rich-edit
+     fallback behaviour.                                                    */
+  Array.prototype.slice.call(code.querySelectorAll('br')).forEach(function(br) {
+    br.parentNode.insertBefore(document.createTextNode('\n'), br);
+    br.parentNode.removeChild(br);
+  });
+  Array.prototype.slice.call(code.querySelectorAll('div,p')).forEach(function(blk) {
+    blk.parentNode.insertBefore(document.createTextNode('\n'), blk);
+    while (blk.firstChild) blk.parentNode.insertBefore(blk.firstChild, blk);
+    blk.parentNode.removeChild(blk);
+  });
+
+  /* Step 3: detect language on now-clean textContent ───────────────────── */
   var lang = _dbDetectLang(code);
-  /* Apply hljs when available, fall back to built-in tokenizer (CDN blocked) */
+
+  /* Step 4: highlight ───────────────────────────────────────────────────── */
   if (typeof hljs !== 'undefined' && code.textContent.trim()) {
-    /* MUST remove contenteditable before hljs touches innerHTML.
-       hljs calls code.innerHTML = ... internally; if the element still has
-       contenteditable="plaintext-only", Chrome normalises away every span
-       and collapses whitespace → single-line code block.  Same hazard as
-       the tokenizer branch below — fix applied to both paths. */
-    code.removeAttribute('contenteditable');
-    /* Give hljs a language hint so it doesn't have to guess */
+    /* contenteditable already removed in Step 1 */
     if (lang && !code.classList.contains('language-' + lang)) {
       code.classList.add('language-' + lang);
     }
     try { hljs.highlightElement(code); } catch (_) {}
-    /* Re-read detected language in case hljs overrode our hint */
     var hljsCls = Array.prototype.find.call(code.classList, function(c) {
       return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
     });
     if (hljsCls) lang = hljsCls.replace('language-', '');
   } else if (code.textContent.trim()) {
-    /* Temporarily remove contenteditable so Chrome doesn’t strip our spans.
-       Setting innerHTML on a plaintext-only host causes Chrome to normalise
-       away all markup and collapse whitespace — a silent no-op nightmare. */
-    code.removeAttribute('contenteditable');
+    /* contenteditable already removed in Step 1 */
     code.innerHTML = _dbTokenize(code.textContent, lang);
-    /* Do NOT re-set contentEditable here — setting plaintext-only while span
-       children are present triggers Chrome's normalization pass which strips
-       the spans and collapses all newlines into a single line. */
   }
 
   if (pre && pre.tagName === 'PRE') {
     _dbInjectCodeHeader(pre, lang);
     pre.contentEditable = 'false';
   }
-  /* contentEditable on code is managed solely by the mousedown activate-
-     handler and the focusin strip handler — never set it here while spans
-     may be present.  Only spellcheck is safe to set unconditionally. */
   code.spellcheck = false;
 }
 
@@ -1080,6 +1087,24 @@ function _dbAttachNoteTools(noteEl) {
 
   /* ── Ctrl+A inside a code block — select only that block’s content ────────── */
   noteEl.addEventListener('keydown', function(e) {
+    /* Enter inside an active code block → insert literal \n.
+       Without this guard, Chrome inserts a <br> (or <div> in rich-edit
+       fallback) which textContent silently skips, so when _dbApplyHljs
+       reads the block on blur every newline vanishes → single line.    */
+    if (e.key === 'Enter') {
+      var sel = window.getSelection();
+      if (sel && sel.anchorNode) {
+        var eNode = sel.anchorNode.nodeType === 3
+          ? sel.anchorNode.parentElement : sel.anchorNode;
+        var eCode = (eNode.tagName === 'CODE') ? eNode : eNode.closest('code');
+        if (eCode && eCode.contentEditable === 'true') {
+          e.preventDefault();
+          document.execCommand('insertText', false, '\n');
+          return;
+        }
+      }
+      return;  /* Enter outside a code block — let the note handle it */
+    }
     if (!((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey))) return;
     var sel = window.getSelection();
     if (!sel || !sel.anchorNode) return;
@@ -1106,7 +1131,7 @@ function _dbAttachNoteTools(noteEl) {
       code.className   = lang ? 'language-' + lang : '';
       code.textContent = plain;
     }
-    code.contentEditable = 'plaintext-only';
+    code.contentEditable = 'true';
     code.spellcheck = false;
   });
 
@@ -1127,8 +1152,8 @@ function _dbAttachNoteTools(noteEl) {
     var node = e.target;
     var code = (node.tagName === 'CODE') ? node : node.closest('code');
     if (!code) return;
-    /* Skip if already in edit mode (contenteditable already set by a prior click) */
-    if (code.contentEditable === 'plaintext-only') return;
+    /* Skip if already in edit mode (we set contentEditable='true' on activation) */
+    if (code.contentEditable === 'true') return;
     var pre = code.closest('pre');
     if (!pre || pre.contentEditable !== 'false') return;
     /* ── Record click position while spans are still in the DOM ── */
@@ -1147,8 +1172,13 @@ function _dbAttachNoteTools(noteEl) {
     /* ── Switch to edit mode: strip spans → set contentEditable → focus ── */
     /* No e.preventDefault() — browser completes its event sequence cleanly. */
     var plain = code.textContent;
-    code.textContent = plain;               /* strips all span children        */
-    code.contentEditable = 'plaintext-only'; /* safe — element is now plain-text */
+    code.textContent = plain;      /* strips all span children */
+    /* Use contentEditable='true', NOT 'plaintext-only'.
+       Chrome normalises the \n character in the text node the instant
+       contenteditable="plaintext-only" is set on an element that already
+       has child nodes (even just a text node) — converting it to a <br>,
+       which textContent then skips, collapsing every newline.           */
+    code.contentEditable = 'true';
     code.spellcheck = false;
     code.focus();
     /* Restore cursor at the character offset we computed from the click position */
