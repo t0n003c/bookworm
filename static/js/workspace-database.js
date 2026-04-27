@@ -1105,16 +1105,27 @@ function _dbAttachNoteTools(noteEl) {
   });
 
   /* ── Code block: click on highlighted block → activate plain-text edit mode ── */
-  noteEl.addEventListener('mousedown', function(e) {
+  /* WHY click, not mousedown:
+     Calling e.preventDefault() on mousedown was the root cause of three bugs:
+     1. The span element gets removed mid-event, Chrome bubbles the subsequent
+        click to a stale ancestor (#panel) → detail view closes unexpectedly.
+     2. Setting contenteditable during mousedown before Chrome commits its
+        rendering cycle triggered editing-host normalisation → multi-line code
+        collapsed to one line.
+     3. preventDefault blocked proper cursor ownership; mouseup cleared the
+        selection set by code.focus() → delete/backspace did nothing.
+     Using 'click' instead lets the full mouse-event sequence complete first.
+     caretRangeFromPoint is coordinate-based so it still works at click time. */
+  noteEl.addEventListener('click', function(e) {
     /* Only fire when the click target is inside a <code> element */
     var node = e.target;
     var code = (node.tagName === 'CODE') ? node : node.closest('code');
     if (!code) return;
-    /* Only act when code is in display mode (has span children) */
+    /* Only act when code is in display mode (has span children = highlighted) */
     if (!code.children.length) return;
     var pre = code.closest('pre');
     if (!pre || pre.contentEditable !== 'false') return;
-    /* ── Record cursor position BEFORE touching the DOM ── */
+    /* ── Record click position while spans are still in the DOM ── */
     var charOffset = 0;
     if (document.caretRangeFromPoint) {
       var cr = document.caretRangeFromPoint(e.clientX, e.clientY);
@@ -1127,14 +1138,14 @@ function _dbAttachNoteTools(noteEl) {
         }
       }
     }
-    /* ── Switch to edit mode: strip spans first, THEN set contentEditable ── */
-    e.preventDefault();
+    /* ── Switch to edit mode: strip spans → set contentEditable → focus ── */
+    /* No e.preventDefault() — browser completes its event sequence cleanly. */
     var plain = code.textContent;
-    code.textContent = plain;              /* strips all span children       */
-    code.contentEditable = 'plaintext-only'; /* safe — element is plain-text   */
+    code.textContent = plain;               /* strips all span children        */
+    code.contentEditable = 'plaintext-only'; /* safe — element is now plain-text */
     code.spellcheck = false;
     code.focus();
-    /* Restore cursor position in the now-plain-text node */
+    /* Restore cursor at the character offset we computed from the click position */
     var textNode = code.firstChild;
     if (textNode && textNode.nodeType === Node.TEXT_NODE) {
       var offset = Math.min(charOffset, textNode.length);
