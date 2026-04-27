@@ -964,14 +964,18 @@ function _dbApplyHljs(code) {
        away all markup and collapse whitespace — a silent no-op nightmare. */
     code.removeAttribute('contenteditable');
     code.innerHTML = _dbTokenize(code.textContent, lang);
-    code.contentEditable = 'plaintext-only';
+    /* Do NOT re-set contentEditable here — setting plaintext-only while span
+       children are present triggers Chrome's normalization pass which strips
+       the spans and collapses all newlines into a single line. */
   }
 
   if (pre && pre.tagName === 'PRE') {
     _dbInjectCodeHeader(pre, lang);
     pre.contentEditable = 'false';
   }
-  code.contentEditable = 'plaintext-only';
+  /* contentEditable on code is managed solely by the mousedown activate-
+     handler and the focusin strip handler — never set it here while spans
+     may be present.  Only spellcheck is safe to set unconditionally. */
   code.spellcheck = false;
 }
 
@@ -1012,8 +1016,11 @@ function _dbAttachNoteTools(noteEl) {
      in its padding area before the async hljs scan fires.            ── */
   noteEl.querySelectorAll('pre').forEach(function(pre) {
     pre.contentEditable = 'false';
-    var code = pre.querySelector('code');
-    if (code) { code.contentEditable = 'plaintext-only'; code.spellcheck = false; }
+    /* NOTE: do NOT set code.contentEditable here.
+       Chrome normalises all HTML children (spans + newlines) of the code
+       element the instant contenteditable="plaintext-only" is applied to an
+       element that already has child nodes.  The mousedown handler activates
+       edit mode by stripping spans FIRST, then safely setting the attribute. */
   });
 
   /* ── Click on empty space below content — append a paragraph ---- */
@@ -1097,12 +1104,62 @@ function _dbAttachNoteTools(noteEl) {
     code.spellcheck = false;
   });
 
+  /* ── Code block: click on highlighted block → activate plain-text edit mode ── */
+  noteEl.addEventListener('mousedown', function(e) {
+    /* Only fire when the click target is inside a <code> element */
+    var node = e.target;
+    var code = (node.tagName === 'CODE') ? node : node.closest('code');
+    if (!code) return;
+    /* Only act when code is in display mode (has span children) */
+    if (!code.children.length) return;
+    var pre = code.closest('pre');
+    if (!pre || pre.contentEditable !== 'false') return;
+    /* ── Record cursor position BEFORE touching the DOM ── */
+    var charOffset = 0;
+    if (document.caretRangeFromPoint) {
+      var cr = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (cr && code.contains(cr.startContainer)) {
+        var walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT, null, false);
+        while (walker.nextNode()) {
+          var tn = walker.currentNode;
+          if (tn === cr.startContainer) { charOffset += cr.startOffset; break; }
+          charOffset += tn.textContent.length;
+        }
+      }
+    }
+    /* ── Switch to edit mode: strip spans first, THEN set contentEditable ── */
+    e.preventDefault();
+    var plain = code.textContent;
+    code.textContent = plain;              /* strips all span children       */
+    code.contentEditable = 'plaintext-only'; /* safe — element is plain-text   */
+    code.spellcheck = false;
+    code.focus();
+    /* Restore cursor position in the now-plain-text node */
+    var textNode = code.firstChild;
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+      var offset = Math.min(charOffset, textNode.length);
+      var range = document.createRange();
+      range.setStart(textNode, offset);
+      range.collapse(true);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
   noteEl.addEventListener('focusout', function(e) {
     var code = e.target.tagName === 'CODE' ? e.target : e.target.closest('code');
     if (!code) return;
-    _dbApplyHljs(code);
-    /* Dispatch input so autosave picks up the highlighted content */
-    noteEl.dispatchEvent(new Event('input', { bubbles: true }));
+    /* Defer DOM mutation past the current pointer-event sequence.
+       Replacing code.innerHTML synchronously during focusout shifts the DOM;
+       the subsequent mouseup/click then lands on #panel (the backdrop) and
+       fires _dbCloseDetail() — closing the detail view mid-edit. */
+    var capturedCode = code;
+    var capturedNote = noteEl;
+    setTimeout(function() {
+      _dbApplyHljs(capturedCode);
+      capturedNote.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 0);
   });
 
   /* ── Initial hljs scan — highlights code blocks already in the loaded note ── */
