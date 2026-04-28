@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from database import get_db
 from routers.attachments_db import UPLOAD_DIR
-from routers.uploads_db import create_page_upload
+from routers.uploads_db import create_page_upload, delete_page_upload
 from routers.workspace_db_cards import (
     create_db_card,
     delete_card_attr,
@@ -123,7 +123,12 @@ async def get_card(ws_id: int, card_id: int, request: Request) -> JSONResponse:
 async def update_card(
     ws_id: int, card_id: int, request: Request, body: CardUpdateBody
 ) -> JSONResponse:
-    """Update title, cover_url, and/or note_content of a card."""
+    """Update title, cover_url, and/or note_content of a card.
+
+    When cover_url is explicitly cleared (empty string) or changed to an
+    external URL while the card had an uploaded cover, the old page_uploads
+    record and its disk file are cleaned up automatically.
+    """
     user_id = _uid(request)
     # Fetch existing card to fill in missing fields (partial update)
     existing = await get_db_card(card_id=card_id, db_id=ws_id, user_id=user_id)
@@ -133,6 +138,17 @@ async def update_card(
     title        = body.title        if body.title        is not None else existing["title"]
     cover_url    = body.cover_url    if body.cover_url    is not None else existing["cover_url"]
     note_content = body.note_content if body.note_content is not None else existing["note_content"]
+
+    # Detect cover change away from an uploaded file — clean up the old upload
+    old_upload_id = existing.get("cover_upload_id")
+    cover_changed = body.cover_url is not None and body.cover_url != existing["cover_url"]
+    clear_upload  = False
+    if cover_changed and old_upload_id:
+        fname = await delete_page_upload(old_upload_id, user_id)
+        if fname:
+            (UPLOAD_DIR / fname).unlink(missing_ok=True)
+        clear_upload = True
+
     updated_at = await update_db_card(
         card_id=card_id,
         db_id=ws_id,
@@ -140,6 +156,7 @@ async def update_card(
         title=title,
         cover_url=cover_url,
         note_content=note_content,
+        clear_cover_upload=clear_upload,
     )
     if updated_at is None:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -148,9 +165,18 @@ async def update_card(
 
 @router.delete("/{ws_id}/db/cards/{card_id}")
 async def delete_card(ws_id: int, card_id: int, request: Request) -> JSONResponse:
-    """Delete a card."""
+    """Delete a card, cleaning up any linked cover upload."""
     user_id = _uid(request)
     await _get_database_ws(ws_id, user_id)
+
+    # Clean up cover upload BEFORE deleting the card (trigger handles DB side,
+    # but we also need to remove the file from disk)
+    existing = await get_db_card(card_id=card_id, db_id=ws_id, user_id=user_id)
+    if existing and existing.get("cover_upload_id"):
+        fname = await delete_page_upload(existing["cover_upload_id"], user_id)
+        if fname:
+            (UPLOAD_DIR / fname).unlink(missing_ok=True)
+
     deleted = await delete_db_card(card_id=card_id, db_id=ws_id, user_id=user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -258,9 +284,10 @@ async def upload_card_cover(
     (UPLOAD_DIR / stored_name).write_bytes(data)
 
     # Register in the uploads gallery (best-effort — don't fail if page missing)
+    new_upload_id: Optional[int] = None
     uploads_page_id = await _first_uploads_page_id(user_id)
     if uploads_page_id:
-        await create_page_upload(
+        new_upload_id = await create_page_upload(
             page_id=uploads_page_id,
             user_id=user_id,
             filename=stored_name,
@@ -268,6 +295,14 @@ async def upload_card_cover(
             mime_type=mime,
             size=len(data),
         )
+
+    # Clean up any previous uploaded cover (delete the old page_uploads row +
+    # its disk file) so we don't leave orphaned files in the uploads gallery.
+    old_upload_id = existing.get("cover_upload_id")
+    if old_upload_id:
+        old_fname = await delete_page_upload(old_upload_id, user_id)
+        if old_fname:
+            (UPLOAD_DIR / old_fname).unlink(missing_ok=True)
 
     cover_url = f"/workspaces/covers/{stored_name}"
     await update_db_card(
@@ -277,5 +312,7 @@ async def upload_card_cover(
         title=existing["title"],
         cover_url=cover_url,
         note_content=existing.get("note_content") or "",
+        cover_upload_id=new_upload_id,
+        clear_cover_upload=new_upload_id is None,  # no uploads page → clear stale link
     )
     return JSONResponse({"ok": True, "cover_url": cover_url})

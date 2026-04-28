@@ -26,6 +26,7 @@ def _collapse_card_rows(rows: list) -> list[dict]:
                 "user_id":         r["user_id"],
                 "title":           r["title"],
                 "cover_url":       r["cover_url"],
+                "cover_upload_id": r["cover_upload_id"],
                 "note_content":    r["note_content"],
                 "note_box_height": r["note_box_height"],
                 "sort_order":      r["sort_order"],
@@ -49,8 +50,8 @@ async def get_db_cards(db_id: int, user_id: int) -> list[dict]:
     """Return all cards for a database, with nested attrs — no N+1."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.note_content, "
-            "       c.note_box_height, c.sort_order, c.created_at, c.updated_at, "
+            "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
+            "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
             "       a.id AS attr_id, a.attr_key, a.attr_value, a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
@@ -78,7 +79,7 @@ async def create_db_card(db_id: int, user_id: int, title: str = "Untitled") -> d
         new_id = cur.lastrowid
         await db.commit()
         fetch = await db.execute(
-            "SELECT id, db_id, user_id, title, cover_url, note_content, "
+            "SELECT id, db_id, user_id, title, cover_url, cover_upload_id, note_content, "
             "note_box_height, sort_order, created_at, updated_at "
             "FROM db_cards WHERE id = ?",
             (new_id,),
@@ -93,8 +94,8 @@ async def get_db_card(card_id: int, db_id: int, user_id: int) -> Optional[dict]:
     """Return a single card with nested attrs, or None if not found / wrong owner."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.note_content, "
-            "       c.note_box_height, c.sort_order, c.created_at, c.updated_at, "
+            "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
+            "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
             "       a.id AS attr_id, a.attr_key, a.attr_value, a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
@@ -116,14 +117,34 @@ async def update_db_card(
     title: str,
     cover_url: str,
     note_content: str,
+    cover_upload_id: Optional[int] = None,
+    clear_cover_upload: bool = False,
 ) -> Optional[str]:
-    """Update card fields. Returns updated_at string, or None if not found."""
+    """Update card fields. Returns updated_at string, or None if not found.
+
+    cover_upload_id  — pass the new page_uploads.id when setting an uploaded cover.
+    clear_cover_upload=True — explicitly NULL out cover_upload_id (e.g. when
+                              cover is removed or replaced with an external URL).
+    """
     async with get_db() as db:
-        cur = await db.execute(
-            "UPDATE db_cards SET title=?, cover_url=?, note_content=? "
-            "WHERE id=? AND db_id=? AND user_id=?",
-            (title, cover_url, note_content, card_id, db_id, user_id),
-        )
+        if clear_cover_upload:
+            cur = await db.execute(
+                "UPDATE db_cards SET title=?, cover_url=?, note_content=?, cover_upload_id=NULL "
+                "WHERE id=? AND db_id=? AND user_id=?",
+                (title, cover_url, note_content, card_id, db_id, user_id),
+            )
+        elif cover_upload_id is not None:
+            cur = await db.execute(
+                "UPDATE db_cards SET title=?, cover_url=?, note_content=?, cover_upload_id=? "
+                "WHERE id=? AND db_id=? AND user_id=?",
+                (title, cover_url, note_content, cover_upload_id, card_id, db_id, user_id),
+            )
+        else:
+            cur = await db.execute(
+                "UPDATE db_cards SET title=?, cover_url=?, note_content=? "
+                "WHERE id=? AND db_id=? AND user_id=?",
+                (title, cover_url, note_content, card_id, db_id, user_id),
+            )
         await db.commit()
         if cur.rowcount == 0:
             return None

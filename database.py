@@ -1047,6 +1047,27 @@ async def init_db() -> None:
             END
         """)
 
+        # ── db_cards: cover_upload_id link (migration) ───────────────────────────
+        # Ties a card cover to its page_uploads row so deletions on either side
+        # stay consistent.  The BEFORE DELETE trigger fires while OLD.id is still
+        # matchable in db_cards, clearing both fields before the upload row goes.
+        cur = await db.execute("PRAGMA table_info(db_cards)")
+        _dc_cols = {row[1] for row in await cur.fetchall()}
+        if "cover_upload_id" not in _dc_cols:
+            await db.execute(
+                "ALTER TABLE db_cards ADD COLUMN cover_upload_id INTEGER"
+            )
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS page_uploads_cover_unlink
+            BEFORE DELETE ON page_uploads
+            BEGIN
+                UPDATE db_cards
+                   SET cover_url       = '',
+                       cover_upload_id = NULL
+                 WHERE cover_upload_id = OLD.id;
+            END
+        """)
+
         await db.commit()
 
 @asynccontextmanager
