@@ -421,27 +421,67 @@
     display: block !important;
     padding: .75rem 1rem !important;
     font-size: .82rem;
-    line-height: 1.45;
+    line-height: 1.6;
     background: transparent !important;
     color: #d4d4d4;
     white-space: pre;
     overflow-x: auto;
   }
-  /* Language badge — pure CSS, never serialised */
-  #md-live-preview pre[data-lang]::before {
-    content: attr(data-lang);
-    display: block;
+  /* JS-injected header bar (lang label + line-nums toggle + copy).
+     The ::before badge is gone — the header is injected by _decorateEditorCode
+     and stripped by syncPreviewToMd before Turndown runs.                   */
+  #md-live-preview .bw-code-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: .22rem .65rem;
-    font-size: .65rem;
-    font-weight: 600;
-    font-family: ui-sans-serif, system-ui, sans-serif;
-    text-transform: uppercase;
-    letter-spacing: .05em;
     background: #27272a;
-    color: #a1a1aa;
     border-bottom: 1px solid #3f3f46;
     user-select: none;
+    font-family: ui-sans-serif, system-ui, sans-serif;
   }
+  #md-live-preview .bw-code-hdr-lang {
+    font-size: .65rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; color: #a1a1aa;
+  }
+  #md-live-preview .bw-code-hdr-actions { display: flex; align-items: center; gap: .25rem; }
+  #md-live-preview .bw-code-hdr-ln,
+  #md-live-preview .bw-code-hdr-copy {
+    background: none; border: none; cursor: pointer; color: #71717a;
+    display: flex; align-items: center; gap: .2rem;
+    padding: .1rem .3rem; border-radius: .25rem;
+    font-size: .6rem; line-height: 1;
+    transition: background .12s, color .12s;
+  }
+  #md-live-preview .bw-code-hdr-ln {
+    font-family: ui-monospace, 'Cascadia Code', monospace;
+    font-weight: 700; letter-spacing: -.02em;
+  }
+  #md-live-preview .bw-code-hdr-copy svg { display: block; }
+  #md-live-preview .bw-code-hdr-ln:hover,
+  #md-live-preview .bw-code-hdr-copy:hover { background: rgba(255,255,255,.1); color: #d4d4d8; }
+  #md-live-preview .bw-code-hdr-ln.active { color: #60a5fa; }
+  /* Line numbers — CSS grid layout on pre[data-line-nums] */
+  #md-live-preview pre[data-line-nums] {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto;
+  }
+  #md-live-preview pre[data-line-nums] .bw-code-hdr { grid-column: 1 / -1; }
+  #md-live-preview pre[data-line-nums] .bw-line-nums { grid-column: 1; grid-row: 2; }
+  #md-live-preview pre[data-line-nums] code { grid-column: 2; grid-row: 2; padding-left: .5rem !important; }
+  #md-live-preview .bw-line-nums {
+    display: none;
+    user-select: none; pointer-events: none;
+    text-align: right;
+    padding: .75rem .4rem .75rem .75rem;
+    font-size: .82rem;
+    font-family: ui-monospace, 'Cascadia Code', monospace;
+    line-height: 1.6; color: #52525b;
+    border-right: 1px solid #3f3f46;
+  }
+  #md-live-preview pre[data-line-nums] .bw-line-nums { display: block; }
+  #md-live-preview .bw-line-nums span { display: block; }
 
   /* ── Preview block drag-and-drop ── */
   #md-live-preview { padding-left: 1.5rem !important; }
@@ -730,24 +770,6 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); mdFmt('bold'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); mdFmt('italic'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); }
-
-    /* ── Auto-bullet: typing `- ` at line start → `• ` ── */
-    if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const ta  = e.target;
-      const pos = ta.selectionStart;
-      if (ta.selectionEnd === pos) {                    // no selection
-        const val       = ta.value;
-        const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-        const lineText  = val.substring(lineStart, pos);
-        if (lineText === '-') {                         // exactly a dash, nothing else
-          e.preventDefault();
-          ta.value = val.slice(0, lineStart) + '• ' + val.slice(pos);
-          const cur = lineStart + 2;
-          ta.setSelectionRange(cur, cur);
-          ta.dispatchEvent(new Event('input'));
-        }
-      }
-    }
 
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       const ta  = e.target;
@@ -1308,23 +1330,142 @@
     function _liveTa()  { return document.getElementById('note-content'); }
     function _livePv()  { return document.getElementById('md-live-preview'); }
 
+    /* Session state: which code-block indices have line numbers on.
+       Survives re-renders (renderPreview wipes the DOM each keystroke).
+       Index = position of this <pre> among all <pre code> blocks in the preview. */
+    const _bwCodeLineNums = new Set();
+
+    /* Inject (or refresh) the line-number gutter for one <pre>. */
+    function _bwApplyPreviewLineNums(pre, idx) {
+      const old = pre.querySelector('.bw-line-nums');
+      if (old) old.remove();
+      if (!_bwCodeLineNums.has(idx)) { pre.removeAttribute('data-line-nums'); return; }
+      pre.dataset.lineNums = '1';
+      const code = pre.querySelector('code');
+      if (!code || !code.textContent.trim()) return;
+      const lines = code.textContent.split('\n');
+      if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+      const gutter = document.createElement('span');
+      gutter.className = 'bw-line-nums';
+      gutter.setAttribute('contenteditable', 'false');
+      gutter.setAttribute('data-bw-code-ui', '1');
+      gutter.setAttribute('aria-hidden', 'true');
+      let html = '';
+      for (let i = 1; i <= lines.length; i++) html += '<span>' + i + '</span>';
+      gutter.innerHTML = html;
+      pre.insertBefore(gutter, code);
+    }
+
     /* Decorate code blocks in the EDITOR preview:
-       - Sets data-lang on <pre> so CSS shows the language badge (::before)
-       - Runs hljs syntax highlighting (safe: Turndown reads .textContent, not .innerHTML)
-       Only called from renderPreview() (textarea-driven), never from contenteditable input. */
+       - Injects a header bar (lang label + line-nums toggle + copy button)
+       - Runs hljs syntax highlighting
+       - Restores line-number gutters for blocks that had them toggled on
+       Only called from renderPreview() (textarea-driven). */
     function _decorateEditorCode(pv) {
       if (!pv) return;
-      pv.querySelectorAll('pre code').forEach(codeEl => {
+      pv.querySelectorAll('pre code').forEach((codeEl, idx) => {
         const pre = codeEl.parentElement;
         if (!pre || pre.tagName !== 'PRE' || pre.dataset.bwE) return;
         pre.dataset.bwE = '1';  // prevent double-run on same element
-        // Language badge via data-lang attr + CSS ::before
-        const lang = (codeEl.className.match(/\blanguage-(\w+)\b/) || [])[1] || '';
-        if (lang && lang !== 'undefined') pre.dataset.lang = lang;
-        // Syntax colours (hljs modifies .innerHTML; Turndown ignores spans via .textContent)
+        pre.dataset.bwIdx = String(idx);
+
+        // ── Syntax highlighting ──────────────────────────────────────────
+        let langLabel = '';
+        const langCls = [...codeEl.classList].find(c => c.startsWith('language-'));
+        if (langCls) langLabel = langCls.replace('language-', '');
         if (typeof hljs !== 'undefined') {
           try { hljs.highlightElement(codeEl); } catch (_) { /* silent */ }
+          // Re-read after hljs may have added its own language class
+          if (!langLabel || langLabel === 'text' || langLabel === 'plaintext') {
+            const det = [...codeEl.classList].find(c => {
+              if (!c.startsWith('language-')) return false;
+              const l = c.replace('language-', '');
+              return !['plaintext','undefined','txt','','text'].includes(l);
+            });
+            if (det) langLabel = det.replace('language-', '');
+          }
         }
+        // Heuristic fallback when hljs can't guess
+        if (!langLabel || ['plaintext','undefined','txt','','text'].includes(langLabel)) {
+          const raw = (codeEl.textContent || '').trimStart();
+          if (/\b(function[\s(]|var\s+\w+|const\s+\w+\s*=|let\s+\w+\s*=|=>\s*[{(]|require\s*\(|export\s+default|import\s+\w+\s+from)/.test(raw)) langLabel = 'javascript';
+          else if (/^(def |class |import |from |if __name__|@)/.test(raw))                                                                            langLabel = 'python';
+          else if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\s/i.test(raw))                                                         langLabel = 'sql';
+          else if (/^\s*<[a-zA-Z]/.test(raw))                                                                                                          langLabel = 'html';
+          else if (/^(cd |ls |mkdir |echo |export |git |npm |pip |docker |kubectl |bash |sh )/i.test(raw))                                             langLabel = 'shell';
+          else if (/^\s*\{/.test(raw) && raw.includes(':'))                                                                                            langLabel = 'json';
+        }
+
+        // ── Header bar ───────────────────────────────────────────────────
+        const hdr = document.createElement('div');
+        hdr.className = 'bw-code-hdr';
+        hdr.setAttribute('contenteditable', 'false');
+        hdr.setAttribute('data-bw-code-ui', '1');
+
+        const lbl = document.createElement('span');
+        lbl.className = 'bw-code-hdr-lang';
+        lbl.textContent = langLabel || 'code';
+        hdr.appendChild(lbl);
+
+        const actions = document.createElement('span');
+        actions.className = 'bw-code-hdr-actions';
+
+        // Line numbers toggle
+        const lnBtn = document.createElement('button');
+        lnBtn.type = 'button';
+        lnBtn.className = 'bw-code-hdr-ln' + (_bwCodeLineNums.has(idx) ? ' active' : '');
+        lnBtn.title = 'Toggle line numbers';
+        lnBtn.setAttribute('aria-label', 'Toggle line numbers');
+        lnBtn.textContent = '123';
+        lnBtn.addEventListener('mousedown', e => e.preventDefault());
+        lnBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const blockIdx = parseInt(pre.dataset.bwIdx, 10);
+          if (_bwCodeLineNums.has(blockIdx)) _bwCodeLineNums.delete(blockIdx);
+          else _bwCodeLineNums.add(blockIdx);
+          lnBtn.classList.toggle('active', _bwCodeLineNums.has(blockIdx));
+          _bwApplyPreviewLineNums(pre, blockIdx);
+        });
+        actions.appendChild(lnBtn);
+
+        // Copy button
+        const COPY_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 01-2-2V4a2 2 012-2h9a2 2 012 2v1"/></svg>';
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'bw-code-hdr-copy';
+        copyBtn.title = 'Copy code';
+        copyBtn.setAttribute('aria-label', 'Copy code');
+        copyBtn.innerHTML = COPY_SVG + '<span>Copy</span>';
+        copyBtn.addEventListener('mousedown', e => e.preventDefault());
+        copyBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const text = codeEl.textContent || '';
+          if (!text.trim()) return;
+          const done = () => {
+            copyBtn.classList.add('bw-copied');
+            copyBtn.querySelector('span').textContent = 'Copied!';
+            setTimeout(() => { copyBtn.classList.remove('bw-copied'); copyBtn.querySelector('span').textContent = 'Copy'; }, 2000);
+          };
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => {}).finally(done);
+          } else {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+              document.body.appendChild(ta); ta.select();
+              document.execCommand('copy'); document.body.removeChild(ta);
+            } catch (_) {}
+            done();
+          }
+        });
+        actions.appendChild(copyBtn);
+        hdr.appendChild(actions);
+
+        // Insert header as first child of <pre> (before <code>)
+        pre.insertBefore(hdr, pre.firstChild);
+
+        // Restore line-number gutter if this block was toggled on earlier
+        _bwApplyPreviewLineNums(pre, idx);
       });
     }
 
@@ -1422,9 +1563,15 @@
       // Clone so we can strip grip handles without mutating the live DOM
       const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+      // Strip JS-injected code-block UI (header bars, gutters) — Turndown's GFM
+      // fenced-code rule checks node.firstChild.nodeName === 'CODE', so the header
+      // div must be gone before Turndown processes the clone or it corrupts MD output.
+      clone.querySelectorAll('[data-bw-code-ui]').forEach(el => el.remove());
       // Strip editor-only decoration attrs so they never leak into markdown
       clone.querySelectorAll('pre[data-lang]').forEach(p => p.removeAttribute('data-lang'));
       clone.querySelectorAll('pre[data-bw-e]').forEach(p => p.removeAttribute('data-bw-e'));
+      clone.querySelectorAll('pre[data-bw-idx]').forEach(p => p.removeAttribute('data-bw-idx'));
+      clone.querySelectorAll('pre[data-line-nums]').forEach(p => p.removeAttribute('data-line-nums'));
       // .trimEnd() strips the trailing "\n\n" Turndown always emits,
       // which prevents a phantom empty <p> from being re-rendered on the
       // next renderPreview() call (the empty trailing line the user sees
