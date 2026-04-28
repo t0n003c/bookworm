@@ -1428,6 +1428,10 @@
                                                               return 'bash';
       /* JSON */
       if (/^\s*[\[{]/.test(raw) && /"\s*:/.test(raw))        return 'json';
+      /* VBScript / VBA — Sub/Function keywords or VBA object-model calls */
+      if (/^(Sub |Function |End Sub|End Function|Dim |Private Sub|Public Sub|Private Function|Public Function|Option Explicit)/m.test(raw) ||
+          /\b(ActiveSheet\b|ActiveWorkbook\b|Worksheets\(|Range\(|Cells\(|MsgBox )/.test(raw))
+                                                              return 'vbscript';
       /* PowerShell */
       if (/(\$\w+\s*=|Write-Host|Get-\w+|Set-\w+|New-\w+|Invoke-\w+)/.test(raw))
                                                               return 'powershell';
@@ -1937,6 +1941,20 @@
     const saved = localStorage.getItem('bw-editor-mode') || 'md';
     window.setEditorMode(saved, false);
     renderPreview();
+
+    // ── Decorate code blocks pasted/inserted directly into the WYSIWYG editor ──
+    // renderPreview() only fires on TA-driven changes; CE-driven pastes and
+    // bw-paste-as code insertions never trigger it.  Listen for CE input and
+    // run _decorateEditorCode whenever an undecorated <pre> appears.
+    // rAF gives the browser time to settle the DOM after paste; the data-bw-e
+    // guard on each <pre> prevents double-runs on already-decorated blocks.
+    if (!preview._bwCeDecWired) {
+      preview._bwCeDecWired = true;
+      preview.addEventListener('input', function() {
+        if (!preview.querySelector('pre:not([data-bw-e])')) return;
+        requestAnimationFrame(function() { _decorateEditorCode(preview); });
+      });
+    }
 
     // Attach spell-check suggestion handler (right-click on misspelled word).
     if (typeof window.bwSpellInit === 'function') window.bwSpellInit();
