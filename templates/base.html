@@ -416,6 +416,25 @@
     .bw-code-block pre::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
     .dark .bw-code-block pre::-webkit-scrollbar-thumb { background: #3f3f46; }
     .dark .bw-code-block pre { scrollbar-color: #3f3f46 transparent; }
+    /* ── Token-colour overrides for .bw-code-block read-only views ──────────────────
+       The CDN github themes group .hljs-attr / .hljs-string / .hljs-number on
+       the same blue hue, making YAML keys vs values basically indistinguishable.
+       Three distinct hues: blue = keys/attrs, amber = strings, orange = numbers.
+       Light-mode uses darker variants for contrast on the #f6f8fa code bg.
+       Dark-mode mirrors the note editor (#md-live-preview) palette exactly.    */
+    .bw-code-block pre code .hljs-string,
+    .bw-code-block pre code .hljs-regexp                  { color: #9a5c00; } /* amber  */
+    .bw-code-block pre code .hljs-number,
+    .bw-code-block pre code .hljs-literal                 { color: #b06000; } /* orange */
+    .dark .bw-code-block pre code .hljs-attr,
+    .dark .bw-code-block pre code .hljs-attribute,
+    .dark .bw-code-block pre code .hljs-variable,
+    .dark .bw-code-block pre code .hljs-operator          { color: #79c0ff; } /* bright blue  */
+    .dark .bw-code-block pre code .hljs-string,
+    .dark .bw-code-block pre code .hljs-regexp,
+    .dark .bw-code-block pre code .hljs-meta .hljs-string { color: #e3b341; } /* amber        */
+    .dark .bw-code-block pre code .hljs-number,
+    .dark .bw-code-block pre code .hljs-literal           { color: #f69d50; } /* orange       */
     .md-body blockquote { border-left: 3px solid #0053e2; padding-left: .75rem;
                           color: #6b7280; margin: .5rem 0; }
     .md-body hr { border-color: #e5e7eb; margin: 1rem 0; }
