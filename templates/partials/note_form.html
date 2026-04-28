@@ -1455,35 +1455,35 @@
         const langCls = [...codeEl.classList].find(c => c.startsWith('language-'));
         if (langCls) langLabel = langCls.replace('language-', '');
 
-        // ① Pre-hint hljs BEFORE it runs so it never auto-guesses wrong.
-        //   hljs respects a pre-set language-* class and won't auto-detect.
-        if (!langLabel || _HLJS_NOISE.has(langLabel)) {
-          const preGuess = _bwGuessLang((codeEl.textContent || '').trimStart());
-          if (preGuess) {
-            const old = [...codeEl.classList].find(c => c.startsWith('language-'));
-            if (old) codeEl.classList.remove(old);
-            codeEl.classList.add('language-' + preGuess);
-            langLabel = preGuess;
-          }
+        // ① ALWAYS run _bwGuessLang first — even when an explicit language-*
+        //   class is present.  Reason: hljs previously auto-detected 'ruby'
+        //   for YAML/docker-compose content and Turndown persisted that as
+        //   ```ruby in saved markdown.  Every future open re-reads that wrong
+        //   class and skips the heuristic — so the fix must override it.
+        //   Our patterns are specific enough not to false-positive on real Ruby.
+        var _preGuess = _bwGuessLang((codeEl.textContent || '').trimStart());
+        if (_preGuess) {
+          var _oldCls = [...codeEl.classList].find(c => c.startsWith('language-'));
+          if (_oldCls) codeEl.classList.remove(_oldCls);
+          codeEl.classList.add('language-' + _preGuess);
+          langLabel = _preGuess;
         }
 
-        // ② Run hljs — uses pre-hinted class if present, auto-detects otherwise.
+        // ② Run hljs — uses the pre-hinted class; re-reads what hljs stamped.
         if (typeof hljs !== 'undefined') {
           try { hljs.highlightElement(codeEl); } catch (_) { /* silent */ }
-          // Re-read the authoritative language class hljs stamped.
-          // Prefer a non-noise value from hljs; keep our pre-hint if hljs
-          // produced noise (it won't when a class was pre-set, but be safe).
-          const det = [...codeEl.classList].find(c => {
+          var _det = [...codeEl.classList].find(function(c) {
             if (!c.startsWith('language-')) return false;
             return !_HLJS_NOISE.has(c.replace('language-', ''));
           });
-          if (det) langLabel = det.replace('language-', '');
+          // Only let hljs override if we had NO confident pre-guess
+          if (_det && !_preGuess) langLabel = _det.replace('language-', '');
         }
 
-        // ③ Last resort — heuristic again when both passes produced nothing.
+        // ③ Final net — heuristic again when both passes produced nothing.
         if (!langLabel || _HLJS_NOISE.has(langLabel)) {
-          const fb = _bwGuessLang((codeEl.textContent || '').trimStart());
-          if (fb) langLabel = fb;
+          var _fb = _bwGuessLang((codeEl.textContent || '').trimStart());
+          if (_fb) langLabel = _fb;
         }
 
         // ── Header bar ───────────────────────────────────────────────────
