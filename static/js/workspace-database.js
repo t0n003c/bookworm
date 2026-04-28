@@ -1010,6 +1010,12 @@ function _dbApplyHljs(code) {
     if (lang && !code.classList.contains('language-' + lang)) {
       code.classList.add('language-' + lang);
     }
+    /* hljs v11 bails immediately when data-highlighted="yes" is present —
+       it assumes the element is already done and skips tokenisation entirely.
+       Strip it unconditionally here so every _dbApplyHljs call always runs
+       a fresh highlight pass, whether this is first-time or a re-highlight
+       after stripping stale spans on reopen.                               */
+    code.removeAttribute('data-highlighted');
     try { hljs.highlightElement(code); } catch (_) {}
     var hljsCls = Array.prototype.find.call(code.classList, function(c) {
       return c.startsWith('language-') && !_DB_HLJS_NOISE.has(c.replace('language-', ''));
@@ -1089,6 +1095,10 @@ function _dbNoteHtml(el) {
     if (code) {
       code.removeAttribute('contenteditable');
       code.removeAttribute('spellcheck');
+      /* data-highlighted is a hljs v11 guard that prevents re-highlighting.
+         Strip it from saved HTML so reopening the detail panel always gets
+         a clean re-highlight pass from _dbApplyHljs on the next load.    */
+      code.removeAttribute('data-highlighted');
     }
   });
   return clone.innerHTML;
@@ -1322,6 +1332,9 @@ function _dbAttachNoteTools(noteEl) {
       if (code.classList.contains('hljs') || code.querySelector('.hljs')) {
         code.className   = lang ? 'language-' + lang : '';
         code.textContent = plain;
+        /* data-highlighted is hljs v11's re-highlight guard — must be cleared
+           here too so the _dbApplyHljs call below always runs a fresh pass.  */
+        code.removeAttribute('data-highlighted');
       }
 
       _dbApplyHljs(code);
