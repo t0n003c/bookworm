@@ -539,6 +539,13 @@
   /* diff addition/deletion — keep per-line tints but use dark-mode palette */
   #md-live-preview pre code .hljs-addition           { color: #b4f1b4; background: #1b4721; }
   #md-live-preview pre code .hljs-deletion           { color: #ffd8d3; background: #78191b; }
+  /* Code blocks in the live editor always use the dark-dimmed palette regardless
+     of the app's light/dark theme.  Without this, light-mode users see dark-dimmed
+     token colours (#96d0ff strings, #6cb6ff attrs) on a white background — contrast
+     below WCAG 3:1 and basically invisible.  Forcing the dark background makes the
+     inline token-colour overrides above always legible. */
+  #md-live-preview pre { background: #22272e; border-color: #3f3f46; }
+  #md-live-preview pre code.hljs { background: #22272e !important; color: #adbac7; }
 </style>
 
 <script>
@@ -1431,7 +1438,7 @@
       /* VBScript / VBA — Sub/Function keywords or VBA object-model calls */
       if (/^(Sub |Function |End Sub|End Function|Dim |Private Sub|Public Sub|Private Function|Public Function|Option Explicit)/m.test(raw) ||
           /\b(ActiveSheet\b|ActiveWorkbook\b|Worksheets\(|Range\(|Cells\(|MsgBox )/.test(raw))
-                                                              return 'vbscript';
+                                                              return 'vbnet';
       /* PowerShell */
       if (/(\$\w+\s*=|Write-Host|Get-\w+|Set-\w+|New-\w+|Invoke-\w+)/.test(raw))
                                                               return 'powershell';
@@ -1943,16 +1950,53 @@
     renderPreview();
 
     // ── Decorate code blocks pasted/inserted directly into the WYSIWYG editor ──
-    // renderPreview() only fires on TA-driven changes; CE-driven pastes and
-    // bw-paste-as code insertions never trigger it.  Listen for CE input and
-    // run _decorateEditorCode whenever an undecorated <pre> appears.
-    // rAF gives the browser time to settle the DOM after paste; the data-bw-e
-    // guard on each <pre> prevents double-runs on already-decorated blocks.
+    // Two scenarios are handled:
+    //   A) Slash-command or bw-paste-as inserts a NEW <pre><code> block →
+    //      data-bw-e is not set yet → caught by the 'input' listener which
+    //      calls _decorateEditorCode (adds header bar + hljs colours).
+    //   B) User pastes content INTO an already-decorated block → data-bw-e=1
+    //      so _decorateEditorCode guards it as "already done" → language label
+    //      stays stale (e.g. "code") even though pasted content is now VBA.
+    //      Fix: 'paste' listener re-runs _bwGuessLang on block text and
+    //      surgically updates the label + re-highlights without duplicating UI.
     if (!preview._bwCeDecWired) {
       preview._bwCeDecWired = true;
+
+      // (A) New undecorated blocks — fire on any CE input event
       preview.addEventListener('input', function() {
         if (!preview.querySelector('pre:not([data-bw-e])')) return;
         requestAnimationFrame(function() { _decorateEditorCode(preview); });
+      });
+
+      // (B) Paste into already-decorated blocks — re-detect language after DOM settles
+      preview.addEventListener('paste', function() {
+        requestAnimationFrame(function() {
+          var pv = document.getElementById('md-live-preview');
+          if (!pv) return;
+          // May also have NEW blocks if HTML was pasted (e.g. from another editor)
+          if (pv.querySelector('pre:not([data-bw-e])')) _decorateEditorCode(pv);
+          // Re-detect language for decorated blocks — content may have just changed
+          pv.querySelectorAll('pre[data-bw-e] code').forEach(function(codeEl) {
+            var raw = (codeEl.textContent || '').trimStart();
+            if (!raw.trim()) return;
+            var guess = _bwGuessLang(raw);
+            if (!guess) return;
+            var pre = codeEl.parentElement;
+            var lbl = pre.querySelector('.bw-code-hdr-lang');
+            if (!lbl || lbl.textContent === guess) return; // already correct
+            // Swap the language-* class
+            var oldCls = [...codeEl.classList].find(function(c) { return c.startsWith('language-'); });
+            if (oldCls) codeEl.classList.remove(oldCls);
+            codeEl.classList.add('language-' + guess);
+            // Clear hljs stamps so it re-highlights cleanly on the new class
+            codeEl.removeAttribute('data-highlighted');
+            codeEl.classList.remove('hljs');
+            if (typeof hljs !== 'undefined') {
+              try { hljs.highlightElement(codeEl); } catch(_) {}
+            }
+            lbl.textContent = guess;
+          });
+        });
       });
     }
 

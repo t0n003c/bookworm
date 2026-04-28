@@ -154,6 +154,32 @@
         const langCls = [...codeEl.classList].find(c => c.startsWith('language-'));
         if (langCls) langLabel = langCls.replace('language-', '');
 
+        // 0️⃣ Heuristic pre-pass — runs BEFORE hljs so stale/wrong language classes
+        //    (e.g. "ruby" persisted from a bad hljs auto-detect) get overridden.
+        //    Mirrors the _bwGuessLang heuristics in note_form.html so read-only
+        //    and edit views always agree on the displayed language label.
+        {
+          const _hr = (codeEl.textContent || '').trimStart();
+          let _hg = '';
+          if (/^[a-z][\w-]*\s*:\s*$/m.test(_hr) && /^\s{2,}[a-z][\w-]*\s*:/m.test(_hr) && !/[(){};]/.test(_hr))
+            _hg = 'yaml';
+          else if (/^---/.test(_hr.trimStart()))
+            _hg = 'yaml';
+          else if (/^(FROM|RUN|CMD|COPY|ADD|EXPOSE|WORKDIR|ENV|ENTRYPOINT|LABEL|ARG|HEALTHCHECK|SHELL)\s/m.test(_hr))
+            _hg = 'dockerfile';
+          else if (/^(Sub |Function |End Sub|End Function|Dim |Private Sub|Public Sub|Private Function|Public Function|Option Explicit)/m.test(_hr) ||
+                   /\b(ActiveSheet\b|ActiveWorkbook\b|Worksheets\(|Range\(|Cells\(|MsgBox )/.test(_hr))
+            _hg = 'vbnet';
+          else if (/(\$\w+\s*=|Write-Host|Get-\w+|Set-\w+|New-\w+|Invoke-\w+)/.test(_hr))
+            _hg = 'powershell';
+          if (_hg) {
+            const _ho = [...codeEl.classList].find(c => c.startsWith('language-'));
+            if (_ho) codeEl.classList.remove(_ho);
+            codeEl.classList.add('language-' + _hg);
+            langLabel = _hg;
+          }
+        }
+
         // 2️⃣ Apply hljs — syntax-color the code AND auto-detect language when no hint
         const _hljs_noise = new Set(['plaintext', 'undefined', 'txt', '', 'text']);
         if (typeof hljs !== 'undefined') {
