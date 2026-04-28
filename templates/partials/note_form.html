@@ -1393,6 +1393,50 @@
       pre.insertBefore(gutter, code);
     }
 
+    /* Guess code language from raw source text.
+       Called BEFORE hljs so we can pre-set a language-* class; hljs honours
+       that class and skips auto-detection, preventing classic misdetections
+       (e.g. YAML / docker-compose being tagged as Ruby because both use
+       '#' comments and ':' sigils heavily).
+       Returns a language string or '' when uncertain.                       */
+    function _bwGuessLang(raw) {
+      /* Docker Compose / generic YAML:
+         • bare top-level key on its own line  (services:\n)
+         • at least one indented sub-key       (  image:)
+         • no code-punctuation that rules YAML out                          */
+      if (/^[a-z][\w-]*\s*:\s*$/m.test(raw) &&
+          /^\s{2,}[a-z][\w-]*\s*:/m.test(raw) &&
+          !/[(){};]/.test(raw))                               return 'yaml';
+      if (/^---/.test(raw.trimStart()))                       return 'yaml';
+      /* Dockerfile — very specific ALL-CAPS keywords at line start */
+      if (/^(FROM|RUN|CMD|COPY|ADD|EXPOSE|WORKDIR|ENV|ENTRYPOINT|LABEL|ARG|HEALTHCHECK|SHELL)\s/m.test(raw))
+                                                              return 'dockerfile';
+      /* JavaScript */
+      if (/\b(function[\s(]|var\s+\w|const\s+\w|let\s+\w|=>\s*[{(]|require\s*\(|export\s+(default|const|function)|import\s+\w+\s+from)\b/.test(raw))
+                                                              return 'javascript';
+      /* Python */
+      if (/^(def |class |import |from |if __name__|@\w+)/m.test(raw))
+                                                              return 'python';
+      /* SQL */
+      if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\s/im.test(raw))
+                                                              return 'sql';
+      /* HTML / XML */
+      if (/^<(!DOCTYPE|html|head|body|[a-z]+[\s>\/])/i.test(raw.trimStart()))
+                                                              return 'html';
+      /* Shell / Bash */
+      if (/^(#!\/bin\/(ba)?sh|cd |ls |mkdir |echo |export |git |npm |pip |docker\s|kubectl )/m.test(raw))
+                                                              return 'bash';
+      /* JSON */
+      if (/^\s*[\[{]/.test(raw) && /"\s*:/.test(raw))        return 'json';
+      /* PowerShell */
+      if (/(\$\w+\s*=|Write-Host|Get-\w+|Set-\w+|New-\w+|Invoke-\w+)/.test(raw))
+                                                              return 'powershell';
+      return '';
+    }
+
+    /* Labels hljs emits when it has no real idea. */
+    const _HLJS_NOISE = new Set(['plaintext','undefined','txt','','text']);
+
     /* Decorate code blocks in the EDITOR preview:
        - Injects a header bar (lang label + line-nums toggle + copy button)
        - Runs hljs syntax highlighting
@@ -1410,27 +1454,36 @@
         let langLabel = '';
         const langCls = [...codeEl.classList].find(c => c.startsWith('language-'));
         if (langCls) langLabel = langCls.replace('language-', '');
-        if (typeof hljs !== 'undefined') {
-          try { hljs.highlightElement(codeEl); } catch (_) { /* silent */ }
-          // Re-read after hljs may have added its own language class
-          if (!langLabel || langLabel === 'text' || langLabel === 'plaintext') {
-            const det = [...codeEl.classList].find(c => {
-              if (!c.startsWith('language-')) return false;
-              const l = c.replace('language-', '');
-              return !['plaintext','undefined','txt','','text'].includes(l);
-            });
-            if (det) langLabel = det.replace('language-', '');
+
+        // ① Pre-hint hljs BEFORE it runs so it never auto-guesses wrong.
+        //   hljs respects a pre-set language-* class and won't auto-detect.
+        if (!langLabel || _HLJS_NOISE.has(langLabel)) {
+          const preGuess = _bwGuessLang((codeEl.textContent || '').trimStart());
+          if (preGuess) {
+            const old = [...codeEl.classList].find(c => c.startsWith('language-'));
+            if (old) codeEl.classList.remove(old);
+            codeEl.classList.add('language-' + preGuess);
+            langLabel = preGuess;
           }
         }
-        // Heuristic fallback when hljs can't guess
-        if (!langLabel || ['plaintext','undefined','txt','','text'].includes(langLabel)) {
-          const raw = (codeEl.textContent || '').trimStart();
-          if (/\b(function[\s(]|var\s+\w+|const\s+\w+\s*=|let\s+\w+\s*=|=>\s*[{(]|require\s*\(|export\s+default|import\s+\w+\s+from)/.test(raw)) langLabel = 'javascript';
-          else if (/^(def |class |import |from |if __name__|@)/.test(raw))                                                                            langLabel = 'python';
-          else if (/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM)\s/i.test(raw))                                                         langLabel = 'sql';
-          else if (/^\s*<[a-zA-Z]/.test(raw))                                                                                                          langLabel = 'html';
-          else if (/^(cd |ls |mkdir |echo |export |git |npm |pip |docker |kubectl |bash |sh )/i.test(raw))                                             langLabel = 'shell';
-          else if (/^\s*\{/.test(raw) && raw.includes(':'))                                                                                            langLabel = 'json';
+
+        // ② Run hljs — uses pre-hinted class if present, auto-detects otherwise.
+        if (typeof hljs !== 'undefined') {
+          try { hljs.highlightElement(codeEl); } catch (_) { /* silent */ }
+          // Re-read the authoritative language class hljs stamped.
+          // Prefer a non-noise value from hljs; keep our pre-hint if hljs
+          // produced noise (it won't when a class was pre-set, but be safe).
+          const det = [...codeEl.classList].find(c => {
+            if (!c.startsWith('language-')) return false;
+            return !_HLJS_NOISE.has(c.replace('language-', ''));
+          });
+          if (det) langLabel = det.replace('language-', '');
+        }
+
+        // ③ Last resort — heuristic again when both passes produced nothing.
+        if (!langLabel || _HLJS_NOISE.has(langLabel)) {
+          const fb = _bwGuessLang((codeEl.textContent || '').trimStart());
+          if (fb) langLabel = fb;
         }
 
         // ── Header bar ───────────────────────────────────────────────────
