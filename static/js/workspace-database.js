@@ -268,8 +268,8 @@ function _dbInitStyles() {
     '[data-db-note] .db-code-hdr-copy svg{display:block;}',
     /* code element handles horizontal scroll; hljs bg/padding overrides stripped */
     '[data-db-note] pre code{display:block;overflow-x:auto;padding:.6rem 1rem;white-space:pre;',
-    'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;background:none!important;color:inherit;}',
-    '[data-db-note] pre code.hljs{background:none!important;padding:.6rem 1rem!important;}',
+    'font-size:.875em;font-family:ui-monospace,"Cascadia Code",monospace;background:none!important;color:inherit;line-height:1.6;}',
+    '[data-db-note] pre code.hljs{background:none!important;padding:.6rem 1rem!important;line-height:1.6;}',
     /* strip any leftover inline background/color set by paste corruption */
     '[data-db-note] pre code span{background:none!important;}',
     /* special: pre with no content yet (fresh slash-command block) hides header */
@@ -370,6 +370,28 @@ function _dbInitStyles() {
     '.dark [data-db-note] pre code .hljs-bullet{color:#eac55f;}',
     '.dark [data-db-note] pre code .hljs-addition{color:#b4f1b4;background:#1b4721;}',
     '.dark [data-db-note] pre code .hljs-deletion{color:#ffd8d3;background:#78191b;}',
+    /* line numbers — grid layout when data-line-nums attr present on pre */
+    '[data-db-note] pre[data-line-nums]{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto;}',
+    '[data-db-note] pre[data-line-nums] .db-code-hdr{grid-column:1/-1;}',
+    '[data-db-note] pre[data-line-nums] .db-line-nums{grid-column:1;grid-row:2;}',
+    '[data-db-note] pre[data-line-nums] code{grid-column:2;grid-row:2;padding-left:.5rem;}',
+    '[data-db-note] .db-line-nums{display:none;user-select:none;pointer-events:none;text-align:right;',
+    'padding:.6rem .4rem .6rem .75rem;font-size:.875em;',
+    'font-family:ui-monospace,"Cascadia Code",monospace;line-height:1.6;',
+    'color:#9ca3af;border-right:1px solid rgba(0,0,0,.08);}',
+    '[data-db-note] pre[data-line-nums] .db-line-nums{display:block;}',
+    '[data-db-note] .db-line-nums span{display:block;}',
+    '.dark [data-db-note] .db-line-nums{color:#52525b;border-color:rgba(255,255,255,.07);}',
+    /* line numbers toggle button in the code header bar */
+    '[data-db-note] .db-code-hdr-ln{background:none;border:none;cursor:pointer;color:#9ca3af;',
+    'padding:.1rem .35rem;border-radius:.25rem;font-size:.6rem;line-height:1;',
+    'font-family:ui-monospace,"Cascadia Code",monospace;font-weight:700;',
+    'letter-spacing:-.02em;transition:background .12s,color .12s;}',
+    '[data-db-note] .db-code-hdr-ln:hover{background:rgba(0,0,0,.07);color:#374151;}',
+    '[data-db-note] .db-code-hdr-ln.active{color:#0053e2;}',
+    '.dark [data-db-note] .db-code-hdr-ln{color:#52525b;}',
+    '.dark [data-db-note] .db-code-hdr-ln:hover{background:rgba(255,255,255,.09);color:#d4d4d8;}',
+    '.dark [data-db-note] .db-code-hdr-ln.active{color:#60a5fa;}',
   ].join('');
   document.head.appendChild(s);
 }
@@ -881,6 +903,19 @@ function _dbInjectCodeHeader(pre, lang) {
 
   /* Copy button — only when there’s content */
   if (hasContent) {
+    var lnBtn = document.createElement('button');
+    lnBtn.type = 'button';
+    lnBtn.className = 'db-code-hdr-ln' + (pre.dataset.lineNums ? ' active' : '');
+    lnBtn.title = 'Toggle line numbers';
+    lnBtn.setAttribute('aria-label', 'Toggle line numbers');
+    lnBtn.textContent = '123';
+    lnBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    lnBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _dbToggleLineNums(pre);
+    });
+    hdr.appendChild(lnBtn);
+
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'db-code-hdr-copy';
@@ -987,9 +1022,55 @@ function _dbApplyHljs(code) {
 
   if (pre && pre.tagName === 'PRE') {
     _dbInjectCodeHeader(pre, lang);
+    _dbApplyLineNums(pre);
     pre.contentEditable = 'false';
   }
   code.spellcheck = false;
+}
+
+/**
+ * Inject (or refresh) the line-number gutter inside a <pre>.
+ * Reads line count from code.textContent. Idempotent.
+ * The gutter element is transient (stripped on save); data-line-nums on <pre>
+ * is the persistent flag that triggers re-injection on every _dbApplyHljs call.
+ */
+function _dbApplyLineNums(pre) {
+  var old = pre.querySelector('.db-line-nums');
+  if (old) old.remove();
+  if (!pre.dataset.lineNums) return;
+  var code = pre.querySelector('code');
+  if (!code || !code.textContent.trim()) return;
+  var lines = code.textContent.split('\n');
+  /* Drop single trailing empty line that appears when saved HTML ends with \n */
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  var gutter = document.createElement('span');
+  gutter.className = 'db-line-nums';
+  gutter.setAttribute('contenteditable', 'false');
+  gutter.setAttribute('data-db-transient', '1');
+  gutter.setAttribute('aria-hidden', 'true');
+  var html = '';
+  for (var i = 1; i <= lines.length; i++) html += '<span>' + i + '</span>';
+  gutter.innerHTML = html;
+  pre.insertBefore(gutter, code);
+}
+
+/**
+ * Toggle line numbers on/off for one code block.
+ * Persists choice as data-line-nums on <pre> (saved with note HTML),
+ * refreshes the gutter, syncs the toggle button state, and fires an
+ * input event so the debounced auto-save picks up the change.
+ */
+function _dbToggleLineNums(pre) {
+  if (pre.dataset.lineNums) pre.removeAttribute('data-line-nums');
+  else pre.dataset.lineNums = '1';
+  _dbApplyLineNums(pre);
+  var btn = pre.querySelector('.db-code-hdr-ln');
+  if (btn) {
+    if (pre.dataset.lineNums) btn.classList.add('active');
+    else btn.classList.remove('active');
+  }
+  var noteEl = pre.closest('[data-db-note]');
+  if (noteEl) noteEl.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /**
