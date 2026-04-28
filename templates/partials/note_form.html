@@ -503,25 +503,30 @@
   /* :hover/:active on the grip itself are removed — they can't fire with
      pointer-events:none.  Active state is handled via JS. */
 
-  /* ── Inline hljs token colours (editor preview is always dark #1e1e1e) ──
-     Mirrors github-dark-dimmed palette so they match when CDN loads.
-     Without these, if the CDN stylesheet is blocked the spans are invisible. */
+  /* ── Inline hljs token colours (editor preview is always dark #22272e) ──
+     Base: github-dark-dimmed palette. Strings deliberately shifted to amber
+     (#e3b341) so YAML keys (.hljs-attr, blue) vs values (.hljs-string, amber)
+     are immediately distinct — no more "two shades of blue" in YAML/JSON/SQL.
+     Without these overrides, a blocked CDN stylesheet leaves spans invisible. */
   #md-live-preview pre code .hljs-keyword,
   #md-live-preview pre code .hljs-type,
   #md-live-preview pre code .hljs-template-variable,
   #md-live-preview pre code .hljs-variable.language_,
   #md-live-preview pre code .hljs-meta .hljs-keyword { color: #f47067; }
+  /* Strings → warm amber so they contrast clearly with blue attr/key tokens */
   #md-live-preview pre code .hljs-string,
   #md-live-preview pre code .hljs-regexp,
-  #md-live-preview pre code .hljs-meta .hljs-string  { color: #96d0ff; }
+  #md-live-preview pre code .hljs-meta .hljs-string  { color: #e3b341; }
   #md-live-preview pre code .hljs-comment,
   #md-live-preview pre code .hljs-quote              { color: #636e7b; font-style: italic; }
+  /* Numbers/literals → orange so they differ from both attr-blue and string-amber */
   #md-live-preview pre code .hljs-number,
-  #md-live-preview pre code .hljs-literal,
+  #md-live-preview pre code .hljs-literal            { color: #f69d50; }
+  /* Keys / attributes → bright blue (YAML keys, CSS props, HTML attrs, JSON keys) */
   #md-live-preview pre code .hljs-attr,
   #md-live-preview pre code .hljs-attribute,
   #md-live-preview pre code .hljs-variable,
-  #md-live-preview pre code .hljs-operator           { color: #6cb6ff; }
+  #md-live-preview pre code .hljs-operator           { color: #79c0ff; }
   #md-live-preview pre code .hljs-title,
   #md-live-preview pre code .hljs-title.function_,
   #md-live-preview pre code .hljs-title.class_,
