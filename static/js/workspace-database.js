@@ -826,7 +826,7 @@ function _dbDetectLang(code) {
     return 'python';
 
   /* JavaScript / TypeScript */
-  if (/\b(function\s+\w+\s*\(|const\s+\w+\s*=|let\s+\w+\s*=|=>\s*[{(]|require\s*\(|export\s+default|export\s+function|import\s+\w+\s+from)/.test(raw))
+  if (/\b(function[\s(]|var\s+\w+|const\s+\w+\s*=|let\s+\w+\s*=|=>\s*[{(]|require\s*\(|export\s+default|export\s+function|import\s+\w+\s+from)/.test(raw))
     return 'javascript';
 
   /* Shell — common CLI commands at line start */
