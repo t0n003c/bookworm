@@ -363,14 +363,25 @@
     .dark .bw-copy-btn.bw-copied { color: #4ade80; border-color: #4ade80;
                                     background: rgba(74,222,128,.10); }
     .bw-code-block pre { margin: 0 !important; border-radius: 0 !important;
-                         border: none !important; }
+                         border: none !important;
+                         /* Explicit light/dark bg on the <pre> so the CDN
+                            .hljs{background} and .md-body code{background}
+                            don't fight over the code element.              */
+                         background: #f6f8fa; }
+    .dark .bw-code-block pre { background: #22272e; }
     /* Target both the plain <code> and <code class="hljs"> so the rule fires
        even when the CDN is blocked and hljs never adds its class.
+       background:transparent lets the <pre> colour above show through and
+       beats .md-body code{background:rgba(0,0,0,.08)} (which is for inline
+       code only and has lower effective priority once !important is here).
        !important beats any inherited leading-relaxed (1.625) from the parent. */
     .bw-code-block pre code,
-    .bw-code-block pre code.hljs { padding: .75rem 1rem; font-size: .82rem;
+    .bw-code-block pre code.hljs { padding: .75rem 1rem !important;
+                                    font-size: .82rem;
                                     line-height: 1.45 !important;
-                                    white-space: pre !important; }
+                                    white-space: pre !important;
+                                    background: transparent !important;
+                                    border-radius: 0 !important; }
 
     /* ── Muted scrollbars inside code blocks (dark mode especially) ── */
     .bw-code-block pre { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }

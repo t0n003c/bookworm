@@ -502,6 +502,43 @@
   #md-live-preview li:hover         > [data-preview-grip] { color: #9ca3af; }
   /* :hover/:active on the grip itself are removed — they can't fire with
      pointer-events:none.  Active state is handled via JS. */
+
+  /* ── Inline hljs token colours (editor preview is always dark #1e1e1e) ──
+     Mirrors github-dark-dimmed palette so they match when CDN loads.
+     Without these, if the CDN stylesheet is blocked the spans are invisible. */
+  #md-live-preview pre code .hljs-keyword,
+  #md-live-preview pre code .hljs-type,
+  #md-live-preview pre code .hljs-template-variable,
+  #md-live-preview pre code .hljs-variable.language_,
+  #md-live-preview pre code .hljs-meta .hljs-keyword { color: #f47067; }
+  #md-live-preview pre code .hljs-string,
+  #md-live-preview pre code .hljs-regexp,
+  #md-live-preview pre code .hljs-meta .hljs-string  { color: #96d0ff; }
+  #md-live-preview pre code .hljs-comment,
+  #md-live-preview pre code .hljs-quote              { color: #636e7b; font-style: italic; }
+  #md-live-preview pre code .hljs-number,
+  #md-live-preview pre code .hljs-literal,
+  #md-live-preview pre code .hljs-attr,
+  #md-live-preview pre code .hljs-attribute,
+  #md-live-preview pre code .hljs-variable,
+  #md-live-preview pre code .hljs-operator           { color: #6cb6ff; }
+  #md-live-preview pre code .hljs-title,
+  #md-live-preview pre code .hljs-title.function_,
+  #md-live-preview pre code .hljs-title.class_,
+  #md-live-preview pre code .hljs-title.class_.inherited__,
+  #md-live-preview pre code .hljs-selector-class,
+  #md-live-preview pre code .hljs-selector-id        { color: #dcbdfb; }
+  #md-live-preview pre code .hljs-built_in,
+  #md-live-preview pre code .hljs-symbol             { color: #f69d50; }
+  #md-live-preview pre code .hljs-name,
+  #md-live-preview pre code .hljs-tag,
+  #md-live-preview pre code .hljs-selector-tag,
+  #md-live-preview pre code .hljs-selector-pseudo    { color: #8ddb8c; }
+  #md-live-preview pre code .hljs-section            { color: #316dca; font-weight: 700; }
+  #md-live-preview pre code .hljs-bullet             { color: #eac55f; }
+  /* diff addition/deletion — keep per-line tints but use dark-mode palette */
+  #md-live-preview pre code .hljs-addition           { color: #b4f1b4; background: #1b4721; }
+  #md-live-preview pre code .hljs-deletion           { color: #ffd8d3; background: #78191b; }
 </style>
 
 <script>
