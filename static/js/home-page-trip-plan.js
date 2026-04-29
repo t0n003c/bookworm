@@ -815,7 +815,8 @@ function _tripRenderDayLane(d) {
       headerBtns +
     '</div>' +
     '<div id="trip-day-lane-' + d.id + '" ' +
-      'class="trip-day-items-area flex-1 overflow-y-auto p-2 space-y-1.5 min-h-16" ' +
+      'class="trip-day-items-area overflow-y-auto p-2 space-y-1.5" ' +
+      'style="max-height:calc(100vh - 16rem)" ' +
       dropAttrs + '>' +
       itemsHtml +
     '</div>' +
