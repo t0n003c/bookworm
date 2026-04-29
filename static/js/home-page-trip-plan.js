@@ -806,7 +806,7 @@ function _tripRenderDayLane(d) {
 
   return '<div class="trip-day-lane-card flex-shrink-0 bg-white dark:bg-zinc-900 rounded-xl ' +
     'border border-gray-200 dark:border-zinc-800 flex flex-col overflow-hidden ' +
-    'shadow-sm" style="width:' + _tripDayCardWidth + 'px;">'  // height is content-driven +
+    'shadow-sm" style="width:' + _tripDayCardWidth + 'px;">' +
     '<div class="flex items-center gap-1 px-3 py-2 ' +
       'border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">' +
       '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
