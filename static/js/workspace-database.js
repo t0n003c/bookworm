@@ -1266,10 +1266,12 @@ function _dbGripUp() {
   if (_dbGripGhost)     { _dbGripGhost.remove();     _dbGripGhost = null; }
   if (_dbGripIndicator) { _dbGripIndicator.remove(); _dbGripIndicator = null; }
 
-  var dragging  = _dbGripDragging;
-  var noteEl    = _dbGripNoteEl;
-  var didDrag   = _dbGripDidDrag;
-  var container = _dbGripContainer;
+  var dragging     = _dbGripDragging;
+  var noteEl        = _dbGripNoteEl;
+  var didDrag       = _dbGripDidDrag;
+  var container     = _dbGripContainer;
+  var insertBefore  = _dbGripInsertBefore;   /* save BEFORE nulling */
+  var dropParent    = _dbGripDropParent;     /* save BEFORE nulling */
 
   _dbGripDragging = _dbGripContainer = _dbGripNoteEl = null;
   _dbGripInsertBefore = _dbGripDropParent = null;
@@ -1280,9 +1282,9 @@ function _dbGripUp() {
 
   if (didDrag) {
     /* Commit reorder */
-    var parent = _dbGripDropParent || container;
-    if (_dbGripInsertBefore && _dbGripInsertBefore.parentElement === parent) {
-      parent.insertBefore(dragging, _dbGripInsertBefore);
+    var parent = dropParent || container;
+    if (insertBefore && insertBefore.parentElement === parent) {
+      parent.insertBefore(dragging, insertBefore);
     } else {
       parent.appendChild(dragging);
     }

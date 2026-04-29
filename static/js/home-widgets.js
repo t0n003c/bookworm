@@ -600,6 +600,7 @@ function _bwRowMenu(event, items) {
       var hr = document.createElement('div');
       hr.className = 'my-1 border-t border-gray-100 dark:border-zinc-800';
       menu.appendChild(hr);
+      return;   /* separator — no button */
     }
     var btn = document.createElement('button');
     btn.setAttribute('role', 'menuitem');
