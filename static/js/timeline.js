@@ -20,9 +20,9 @@ window.bwTimeline = (function () {
   const PX_MIN    = 0.8;
   const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
-  const CARD_W    = 240;
-  const CARD_H    = 104;   // approx. card height for vertical lane stacking
-  const STEM_H    = 68;
+  const CARD_W    = 272;
+  const CARD_H    = 118;   // approx. card height for vertical lane stacking
+  const STEM_H    = 80;
   const PAD_ENDS  = 120;   // left & right padding inside the rail
 
   // ── Module state ──────────────────────────────────────────────────

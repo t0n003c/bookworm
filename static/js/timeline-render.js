@@ -143,7 +143,7 @@ window._bwTLRender = (function () {
   // the dot from the spine line for a clean "pin" appearance.
   function buildPin(rail, note, x, above, laneIdx, cfg, t) {
     const { SPINE_Y, STEM_H, CARD_H, CARD_W, esc, fmtDate } = cfg;
-    const DOT = 13, GAP = 10;
+    const DOT = 15, GAP = 12;
     const stemH   = STEM_H + laneIdx * (CARD_H + GAP);
     const pinClr  = note.catColor || t.spine;
     const stemClr = note.catColor ? (note.catColor + '50') : t.spineFade;
@@ -192,23 +192,23 @@ window._bwTLRender = (function () {
     Object.assign(card.style, {
       position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
       background: t.cardBg, border: `1px solid ${t.cardBord}`,
-      borderRadius: '10px', padding: '13px 16px', boxShadow: t.shadow,
+      borderRadius: '10px', padding: '15px 18px', boxShadow: t.shadow,
       cursor: 'pointer', pointerEvents: 'all', zIndex: '4',
       transition: 'box-shadow .15s, border-color .15s', ...vert,
     });
     card.innerHTML =
-      `<h3 style="font-size:.95rem;font-weight:700;color:${t.titleClr};
-                  margin:0 0 5px;line-height:1.35;
+      `<h3 style="font-size:1.05rem;font-weight:700;color:${t.titleClr};
+                  margin:0 0 6px;line-height:1.35;
                   display:-webkit-box;-webkit-line-clamp:2;
                   -webkit-box-orient:vertical;overflow:hidden;">
         ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
       </h3>
-      <time style="font-size:.8rem;color:${t.subClr};display:block;">
+      <time style="font-size:.875rem;color:${t.subClr};display:block;">
         ${note.isDb ? '&#128197; Updated ' : '&#128197; '}${fmtDate(note.dateStr)}
       </time>
       ${note.isDb
-        ? `<span style="display:inline-block;margin-top:6px;font-size:.72rem;font-weight:700;
-                        letter-spacing:.06em;padding:2px 6px;border-radius:4px;
+        ? `<span style="display:inline-block;margin-top:7px;font-size:.78rem;font-weight:700;
+                        letter-spacing:.06em;padding:2px 7px;border-radius:4px;
                         background:#7c3aed18;color:#7c3aed;">&#x1F5C3;&#xFE0F; DB CARD</span>`
         : ''}`;
 

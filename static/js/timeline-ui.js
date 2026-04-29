@@ -258,7 +258,7 @@ window._bwTLUi = (function () {
         // Single clean hop — up then back down, no spinning
         '@keyframes _bwHop {',
         '  0%   { transform:translateY(0)     scale(1); }',
-        '  30%  { transform:translateY(-20px) scale(1.5); }',
+        '  30%  { transform:translateY(-48px) scale(1.5); }',
         '  60%  { transform:translateY(-8px)  scale(1.2); }',
         '  80%  { transform:translateY(-2px)  scale(1.05); }',
         '  100% { transform:translateY(0)     scale(1); }',
@@ -285,7 +285,7 @@ window._bwTLUi = (function () {
     const inner = document.createElement('span');
     inner.textContent = '\uD83D\uDC1B';  // \uD83D\uDC1B caterpillar
     Object.assign(inner.style, {
-      fontSize:        '14px',           // smaller default
+      fontSize:        '42px',           // large, clearly visible on the spine
       display:         'inline-block',
       animation:       '_bwIdle 2.6s ease-in-out infinite',
       transformOrigin: 'bottom center',
@@ -293,7 +293,7 @@ window._bwTLUi = (function () {
     wrap.appendChild(inner);
 
     // ─ Movement state ───────────────────────────────────
-    const WORM_W   = 18;    // approx. pixel width at 14px font
+    const WORM_W   = 48;    // approx. pixel width at 42px font
     const PEEK     = 8;     // min gap from viewport edges
     const SPEED_W  = 0.55;  // px per frame while wandering (slow crawl)
     const SPEED_H  = 1.5;   // px per frame while homing to today
