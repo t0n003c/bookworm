@@ -11,6 +11,7 @@ var _dbSaveTimers        = {};     // {cardId: timeoutId} — per-card note debo
 var _dbDetailId          = null;   // card id currently open in detail panel
 var _dbDelTarget         = null;   // card id staged for deletion
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
+var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -33,13 +34,51 @@ var _dbSelBarTimer  = null;  // hide-debounce timer
 
 function initDatabaseView(wsId) {
   _dbWsId = wsId;
+  // Databases have their own Add Card flow — New Note doesn't apply here.
+  var btnNN = document.getElementById('btn-new-note');
+  if (btnNN) btnNN.classList.add('hidden');
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
+  // Restore saved size preference (stored per-workspace so each DB is independent)
+  var saved = parseInt(localStorage.getItem('_dbSize_' + wsId), 10);
+  _dbSizeStep = (saved >= 1 && saved <= 5) ? saved : 3;
+  _dbApplySize(_dbSizeStep);
   _dbRenderGrid();
   _dbBindModals();
   _dbInitStyles();
   _dbSelToolbarInit();
 }
+
+/* ── card size slider ─────────────────────────────────────────────────────────────── */
+// Five discrete steps. minW drives auto-fill columns; cover/grad heights scale in sync.
+var _dbSizeCfg = [
+  { minW: '140px', coverH: '5rem',   gradH: '3rem'   },  // 1 — compact
+  { minW: '200px', coverH: '7rem',   gradH: '4rem'   },  // 2
+  { minW: '260px', coverH: '9rem',   gradH: '5rem'   },  // 3 — default
+  { minW: '340px', coverH: '11rem',  gradH: '6rem'   },  // 4
+  { minW: '420px', coverH: '14rem',  gradH: '7.5rem' },  // 5 — spacious
+];
+
+function _dbApplySize(step) {
+  var cfg  = _dbSizeCfg[(step - 1)] || _dbSizeCfg[2];
+  var root = document.getElementById('db-view-root');
+  var grid = document.getElementById('db-card-grid');
+  if (root) {
+    root.style.setProperty('--db-cover-h', cfg.coverH);
+    root.style.setProperty('--db-grad-h',  cfg.gradH);
+  }
+  if (grid) {
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
+  }
+  var slider = document.getElementById('db-size-slider');
+  if (slider && slider.value != step) slider.value = step;
+}
+
+window._dbSetSize = function(step) {
+  _dbSizeStep = parseInt(step, 10) || 3;
+  if (_dbWsId) localStorage.setItem('_dbSize_' + _dbWsId, _dbSizeStep);
+  _dbApplySize(_dbSizeStep);
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    GRID RENDERING
@@ -123,7 +162,8 @@ function _dbCoverHtml(card) {
       : '<img src="' + _esc(card.cover_url) + '" alt="Cover" loading="lazy"'
         + ' class="w-full h-full object-cover" />';
     return (
-      '<div class="relative h-36 w-full flex-shrink-0 bg-gray-100 dark:bg-zinc-800 cursor-pointer"'
+      '<div class="relative w-full flex-shrink-0 bg-gray-100 dark:bg-zinc-800 cursor-pointer"'
+      + ' style="height:var(--db-cover-h,9rem);"'
       + ' onclick="_dbOpenDetail(' + card.id + ')">'
       + media
       + '</div>'
@@ -139,7 +179,7 @@ function _dbCoverHtml(card) {
   ];
   var grad = gradients[card.id % gradients.length];
   return (
-    '<div class="h-20 w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
+    '<div style="height:var(--db-grad-h,5rem);" class="w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
     + ' bg-gradient-to-br ' + grad + ' opacity-70 dark:opacity-80"'
     + ' onclick="_dbOpenDetail(' + card.id + ')">'
     + '<span class="text-3xl font-bold text-white opacity-50 select-none">'

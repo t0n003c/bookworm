@@ -23,6 +23,22 @@
           class="text-xs text-gray-400 dark:text-zinc-500 tabular-nums flex-shrink-0">
       — cards
     </span>
+
+    {# ── card size slider ── #}
+    <div class="flex items-center gap-1.5 flex-shrink-0" title="Adjust card size">
+      <svg class="w-3 h-3 text-gray-400" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="0" y="3" width="5" height="6" rx="0.8"/>
+        <rect x="7" y="1" width="5" height="10" rx="0.8" opacity="0.4"/>
+      </svg>
+      <input id="db-size-slider" type="range" min="1" max="5" step="1" value="3"
+             oninput="window._dbSetSize && _dbSetSize(this.value)"
+             class="w-20 h-1 accent-purple-600 cursor-pointer"
+             aria-label="Card display size" />
+      <svg class="w-4 h-4 text-gray-400" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+        <rect x="0" y="2" width="5" height="8" rx="0.8"/>
+        <rect x="7" y="0" width="5" height="12" rx="0.8" opacity="0.4"/>
+      </svg>
+    </div>
     <button type="button" onclick="dbAddCard()"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700
                    text-white text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -55,7 +71,8 @@
 
     {# card grid — populated entirely by workspace-database.js #}
     <div id="db-card-grid"
-         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+         class="grid gap-4"
+         style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr))"
          aria-label="Database cards">
     </div>
 
