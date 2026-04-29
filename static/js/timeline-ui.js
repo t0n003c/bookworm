@@ -373,20 +373,29 @@ window._bwTLUi = (function () {
 
     // ─ Public API ──────────────────────────────────────
     function update(railLeft, pxPerDay, PAD_ENDS) {
-      // Zoom-out detection: compare against the pxPerDay recorded when
-      // wander mode started, NOT the previous frame.  A single wheel step
-      // only changes zoom by ~1/1.15 ≈ 0.87, so per-frame comparison never
-      // crosses the threshold.  Cumulative zoom-out from the wander baseline
-      // is what actually matters.
-      if (wanderBasePx > 0 && mode === 'wander' &&
-          pxPerDay / wanderBasePx < 0.70) {
-        mode         = 'home';
-        pausing      = false;
-        wanderBasePx = 0;
-      }
+      // Update state first so _todayScreenX uses fresh values.
       _rl  = railLeft;
       _px  = pxPerDay;
       _pad = PAD_ENDS;
+
+      // Only evaluate fright while wandering (pausing between legs counts too).
+      if (mode !== 'wander') return;
+
+      // Trigger 1 — zoom-out: cumulative zoom from wander baseline drops >30%.
+      const zoomScared = wanderBasePx > 0 && _px / wanderBasePx < 0.70;
+
+      // Trigger 2 — Today drifted off-screen (drag or zoom).
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const d = Math.round((today - earliest) / 86_400_000);
+      const todayScreenX  = _rl + _pad + d * _px;
+      const ow            = outer.offsetWidth || 800;
+      const todayOffscreen = todayScreenX < -20 || todayScreenX > ow + 20;
+
+      if (zoomScared || todayOffscreen) {
+        mode         = 'home';
+        pausing      = false;   // interrupt any rest between wander legs
+        wanderBasePx = 0;
+      }
     }
 
     function burst() {
