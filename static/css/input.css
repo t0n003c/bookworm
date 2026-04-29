@@ -31,6 +31,24 @@
 #bw-word-paper    li  {
   margin: 0.1rem 0;
 }
+
+/* Nested ul levels: disc ● → circle ◦ → square ▪ */
+[contenteditable] ul ul,
+#md-live-preview  ul ul,
+#bw-word-paper    ul ul  { list-style-type: circle; }
+
+[contenteditable] ul ul ul,
+#md-live-preview  ul ul ul,
+#bw-word-paper    ul ul ul  { list-style-type: square; }
+
+/* Nested ol levels: 1 2 3 → a b c → i ii iii */
+[contenteditable] ol ol,
+#md-live-preview  ol ol,
+#bw-word-paper    ol ol  { list-style-type: lower-alpha; }
+
+[contenteditable] ol ol ol,
+#md-live-preview  ol ol ol,
+#bw-word-paper    ol ol ol  { list-style-type: lower-roman; }
 [contenteditable] h1,
 #md-live-preview  h1  { font-size: 1.5rem;  font-weight: 700; margin: 0.5rem 0 0.25rem; line-height: 1.2; }
 [contenteditable] h2,
