@@ -541,6 +541,11 @@ function _tripSpotNotesInit(markdown) {
   }
   if (typeof window.bwSlashAttachCE === 'function') window.bwSlashAttachCE(ce);
   if (typeof window.bwFmtAttach    === 'function') window.bwFmtAttach(ce);
+  // Tab / Shift+Tab in a <li> → indent / dedent.
+  // Guard against listener stacking when the modal is closed and reopened.
+  if (ce._bwTabHandler) ce.removeEventListener('keydown', ce._bwTabHandler);
+  ce._bwTabHandler = function(e) { if (typeof window._bwCeTabIndent === 'function') window._bwCeTabIndent(e); };
+  ce.addEventListener('keydown', ce._bwTabHandler);
 }
 
 // Convert the CE’s HTML back to Markdown for persistence.

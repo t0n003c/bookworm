@@ -703,7 +703,13 @@ function _uplWordEditorMount() {
 
   // Wire toolbar buttons — update active states on every selection change
   var paper = document.getElementById('bw-word-paper');
-  if (paper) paper.focus();
+  if (paper) {
+    paper.focus();
+    // Tab / Shift+Tab in a <li> → indent / dedent (otherwise Tab escapes to Cancel).
+    if (paper._bwTabHandler) paper.removeEventListener('keydown', paper._bwTabHandler);
+    paper._bwTabHandler = function(e) { if (typeof window._bwCeTabIndent === 'function') window._bwCeTabIndent(e); };
+    paper.addEventListener('keydown', paper._bwTabHandler);
+  }
   document.addEventListener('selectionchange', _uplWordUpdateBar);
   _uplViewerEditMode = 'docx';
   // Re-apply zoom so editing starts at same level as view mode (or auto-fit on first open)

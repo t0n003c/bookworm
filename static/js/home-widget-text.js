@@ -199,6 +199,49 @@ function _handleCodeBlockKeys(e) {
   sel.addRange(r);
 }
 
+// ── Shared Tab-indent helper (exposed globally for CE editors across the app) ────────────
+// Handles Tab (indent) and Shift+Tab (dedent) when the caret is inside a <li>.
+// Returns without preventDefault() when the caret is NOT in a list, so the
+// browser's normal Tab focus-move fires as expected in every other context.
+window._bwCeTabIndent = function(e) {
+  if (e.key !== 'Tab') return;
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  var n = sel.getRangeAt(0).startContainer;
+  if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+  var li = n ? n.closest('li') : null;
+  if (!li) return;                          // not in a list — let Tab move focus normally
+  e.preventDefault();
+  var parentList = li.parentElement;
+  if (!e.shiftKey) {
+    // Indent: move li into a nested sub-list under the previous sibling
+    var prevLi = li.previousElementSibling;
+    if (!prevLi) return;                    // already the first item — can't indent further
+    var tag    = parentList.tagName;
+    var nested = prevLi.querySelector(':scope > ' + tag);
+    if (!nested) { nested = document.createElement(tag); prevLi.appendChild(nested); }
+    nested.appendChild(li);
+  } else {
+    // Dedent: lift li up one level; trailing siblings travel with it as a new sub-list
+    var grandLi = parentList.parentElement;
+    if (!grandLi || grandLi.tagName !== 'LI') return; // already top-level
+    var outerList = grandLi.parentElement;
+    var trailing = [];
+    var sib = li.nextElementSibling;
+    while (sib) { trailing.push(sib); sib = sib.nextElementSibling; }
+    if (trailing.length) {
+      var carry = document.createElement(parentList.tagName);
+      trailing.forEach(function(s) { carry.appendChild(s); });
+      li.appendChild(carry);
+    }
+    outerList.insertBefore(li, grandLi.nextSibling);
+    if (!parentList.children.length) grandLi.removeChild(parentList);
+  }
+  var r = document.createRange();
+  r.setStart(li, 0); r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+};
+
 // ── Enter edit mode ───────────────────────────────────────────────────────────────────────
 window.openTextEdit = function (widgetId) {
   const view = document.getElementById(`tw-view-${widgetId}`);

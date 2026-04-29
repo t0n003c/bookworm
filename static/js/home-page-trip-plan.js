@@ -241,6 +241,12 @@ function _tripNoteInit(markdown) {
         _tripNoteReplaceBlockWithList(block, ce, 'ol');
       }
     }, true); // capture phase — fires before global document handler
+
+    // Tab / Shift+Tab inside a <li> → indent / dedent the list item.
+    // Without this, Tab escapes to the Cancel button (browser default focus-move).
+    ce.addEventListener('keydown', function(e) {
+      if (typeof window._bwCeTabIndent === 'function') window._bwCeTabIndent(e);
+    });
   }
 }
 
