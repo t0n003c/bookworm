@@ -7,6 +7,11 @@
      home-page-trip-chart.js — Chart tab (lazy Chart.js)
    initTripPage(pid) called by _initSwappedPage() in home-widgets.js. #}
 
+{# One CSS rule drives all day-item heights via --trip-item-h set by the slider JS #}
+<style>
+  .trip-day-items-area > * { min-height: var(--trip-item-h, 40px); box-sizing: border-box; }
+</style>
+
 <div id="trip-page-root"
      data-page-id="{{ page.id }}"
      class="flex flex-col w-full"
