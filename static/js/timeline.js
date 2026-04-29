@@ -494,9 +494,9 @@ window.bwTimeline = (function () {
       dateBtn.textContent = isUpdated ? '\uD83D\uDD04 Updated' : '\uD83D\uDCC5 Created';
       dateBtn.title       = isUpdated ? 'Showing updated date — click for created' : 'Showing created date — click for updated';
       dateBtn.setAttribute('aria-label', dateBtn.title);
-      dateBtn.style.background   = isUpdated ? '#7c3aed22' : t.btnBg;
-      dateBtn.style.borderColor  = isUpdated ? '#7c3aed'   : t.btnBord;
-      dateBtn.style.color        = isUpdated ? '#7c3aed'   : t.btnClr;
+      dateBtn.style.background   = isUpdated ? '#7c3aed'  : t.btnBg;
+      dateBtn.style.borderColor  = isUpdated ? '#7c3aed'  : t.btnBord;
+      dateBtn.style.color        = isUpdated ? '#ffffff'  : t.btnClr;
     }
     Object.assign(dateBtn.style, {
       height: '32px', padding: '0 10px', borderRadius: '8px',
