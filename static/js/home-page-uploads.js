@@ -296,7 +296,8 @@ function _uplCard(f) {
                          bg-gray-100 dark:bg-zinc-800 text-gray-300">${emoji}</div>`;
   }
 
-  // Source badge: note-attached = blue, grid-linked = green (clickable), standalone = gray
+  // Source badge: note-attached = blue, grid-linked = green (clickable),
+  //   db-card cover = amber, standalone = gray
   const gridTag = Array.isArray(f.tags) && f.tags.find(function(t){ return t.startsWith('grid:'); });
   const gridPid = gridTag ? parseInt(gridTag.split(':')[1], 10) : null;
   const srcBadge = f.src === 'note'
@@ -311,6 +312,12 @@ function _uplCard(f) {
                        transition-colors cursor-pointer"
                 title="Click to see which grid page this belongs to"
                 aria-haspopup="true">&#128248; Grid &#9660;</button>`
+    : f.db_card_id
+    ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
+                    bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                    truncate max-w-full"
+             title="Cover image for DB card: ${_uplEsc(f.db_card_title || 'Card')} in ${_uplEsc(f.db_card_ws_name || '')}"
+        >&#128247; ${_uplEsc((f.db_card_title || 'Card').substring(0,18))}</span>`
     : `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Standalone</span>`;
 
@@ -477,6 +484,18 @@ function _uplRenderDetail(f) {
          <button onclick="_uplDeleteNoteAttachment(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
+    : f.db_card_id
+    ? `<div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 mb-3">
+         <p class="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1 font-bold">&#128247; DB Card Cover Image</p>
+         <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate"
+            title="${_uplEsc(f.db_card_title||'Card')}">${_uplEsc(f.db_card_title||'Untitled card')}</p>
+         <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.db_card_ws_name||'')}</p>
+         <p class="text-[10px] text-amber-600/70 dark:text-amber-400/60 mt-1 italic">
+           Deleting this file will clear the cover on that card.
+         </p>
+         <button onclick="_uplConfirmDelete(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
+                 border border-red-200 dark:border-red-800 text-red-500
+                 hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`
     : `<div class="p-3 rounded-xl bg-gray-50 dark:bg-zinc-800 mb-3">
          <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-1 font-bold">Standalone Upload</p>
          ${f.folder_id != null ? '<button onclick="_uplRemoveFromFolder(' + f.id + ')" class="mt-2 w-full py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-700 transition">' + "\uD83D\uDCC2" + ' Remove from folder</button>' : ''}

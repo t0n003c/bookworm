@@ -121,6 +121,10 @@ async def get_uploads_page(
                     w.name              AS workspace_name,
                     NULL                AS page_id,
                     NULL                AS folder_id,
+                    NULL                AS db_card_id,
+                    NULL                AS db_card_title,
+                    NULL                AS db_card_ws_name,
+                    NULL                AS db_card_ws_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM note_attachments na
                 JOIN notes      n ON n.id  = na.note_id
@@ -147,8 +151,14 @@ async def get_uploads_page(
                     NULL                AS workspace_name,
                     pu.page_id          AS page_id,
                     pu.folder_id        AS folder_id,
+                    dc.id               AS db_card_id,
+                    dc.title            AS db_card_title,
+                    dbws.name           AS db_card_ws_name,
+                    dbws.id             AS db_card_ws_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM page_uploads pu
+                LEFT JOIN db_cards dc ON dc.cover_upload_id = pu.id
+                LEFT JOIN workspaces dbws ON dbws.id = dc.db_id
                 LEFT JOIN page_upload_tags t
                        ON t.upload_src = 'page' AND t.upload_id = pu.id
                       AND t.user_id = ?
@@ -177,9 +187,15 @@ async def get_uploads_page(
                     NULL                AS workspace_name,
                     pu.page_id          AS page_id,
                     pu.folder_id        AS folder_id,
+                    dc.id               AS db_card_id,
+                    dc.title            AS db_card_title,
+                    dbws.name           AS db_card_ws_name,
+                    dbws.id             AS db_card_ws_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM page_uploads pu
                 """ + catalog_join + """
+                LEFT JOIN db_cards dc ON dc.cover_upload_id = pu.id
+                LEFT JOIN workspaces dbws ON dbws.id = dc.db_id
                 LEFT JOIN page_upload_tags t
                        ON t.upload_src = 'page' AND t.upload_id = pu.id
                       AND t.user_id = ?
