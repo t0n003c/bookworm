@@ -42,7 +42,7 @@ window._bwTLRender = (function () {
       position: 'absolute', left: x + 'px',
       top:  `calc(${SPINE_Y * 100}% - 20px)`,
       transform: 'translateX(-50%) translateY(-100%)',
-      fontSize: '9px', fontWeight: '800', letterSpacing: '.1em',
+      fontSize: '11px', fontWeight: '800', letterSpacing: '.1em',
       color: '#ffc220', whiteSpace: 'nowrap',
       pointerEvents: 'none', zIndex: '6',
       background: t.mainBg, padding: '1px 5px', borderRadius: '3px',
@@ -85,7 +85,7 @@ window._bwTLRender = (function () {
         position: 'absolute', left: x + 'px',
         top: `calc(${SPINE_Y * 100}% + 18px)`,
         transform: 'translateX(-50%)',
-        fontSize: isJan ? '11px' : '9px', fontWeight: isJan ? '700' : '400',
+        fontSize: isJan ? '13px' : '11px', fontWeight: isJan ? '700' : '400',
         color: isJan ? t.labelYear : t.label,
         whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
       });
@@ -129,7 +129,7 @@ window._bwTLRender = (function () {
           position: 'absolute', left: x + 'px',
           top: `calc(${SPINE_Y * 100}% + 18px)`,
           transform: 'translateX(-50%)',
-          fontSize: '8px', color: t.label,
+          fontSize: '10px', color: t.label,
           whiteSpace: 'nowrap', pointerEvents: 'none',
         });
         rail.appendChild(dlbl);
@@ -143,7 +143,7 @@ window._bwTLRender = (function () {
   // the dot from the spine line for a clean "pin" appearance.
   function buildPin(rail, note, x, above, laneIdx, cfg, t) {
     const { SPINE_Y, STEM_H, CARD_H, CARD_W, esc, fmtDate } = cfg;
-    const DOT = 10, GAP = 8;
+    const DOT = 13, GAP = 10;
     const stemH   = STEM_H + laneIdx * (CARD_H + GAP);
     const pinClr  = note.catColor || t.spine;
     const stemClr = note.catColor ? (note.catColor + '50') : t.spineFade;
@@ -192,23 +192,23 @@ window._bwTLRender = (function () {
     Object.assign(card.style, {
       position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
       background: t.cardBg, border: `1px solid ${t.cardBord}`,
-      borderRadius: '10px', padding: '10px 12px', boxShadow: t.shadow,
+      borderRadius: '10px', padding: '13px 16px', boxShadow: t.shadow,
       cursor: 'pointer', pointerEvents: 'all', zIndex: '4',
       transition: 'box-shadow .15s, border-color .15s', ...vert,
     });
     card.innerHTML =
-      `<h3 style="font-size:.8rem;font-weight:700;color:${t.titleClr};
-                  margin:0 0 4px;line-height:1.35;
+      `<h3 style="font-size:.95rem;font-weight:700;color:${t.titleClr};
+                  margin:0 0 5px;line-height:1.35;
                   display:-webkit-box;-webkit-line-clamp:2;
                   -webkit-box-orient:vertical;overflow:hidden;">
         ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
       </h3>
-      <time style="font-size:.7rem;color:${t.subClr};display:block;">
+      <time style="font-size:.8rem;color:${t.subClr};display:block;">
         ${note.isDb ? '&#128197; Updated ' : '&#128197; '}${fmtDate(note.dateStr)}
       </time>
       ${note.isDb
-        ? `<span style="display:inline-block;margin-top:5px;font-size:.6rem;font-weight:700;
-                        letter-spacing:.06em;padding:1px 5px;border-radius:4px;
+        ? `<span style="display:inline-block;margin-top:6px;font-size:.72rem;font-weight:700;
+                        letter-spacing:.06em;padding:2px 6px;border-radius:4px;
                         background:#7c3aed18;color:#7c3aed;">&#x1F5C3;&#xFE0F; DB CARD</span>`
         : ''}`;
 
