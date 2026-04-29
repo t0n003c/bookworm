@@ -52,11 +52,11 @@ function initDatabaseView(wsId) {
 /* ── card size slider ─────────────────────────────────────────────────────────────── */
 // Five discrete steps. minW drives auto-fill columns; cover/grad heights scale in sync.
 var _dbSizeCfg = [
-  { minW: '140px', coverH: '5rem',   gradH: '3rem'   },  // 1 — compact
-  { minW: '200px', coverH: '7rem',   gradH: '4rem'   },  // 2
-  { minW: '260px', coverH: '9rem',   gradH: '5rem'   },  // 3 — default
-  { minW: '340px', coverH: '11rem',  gradH: '6rem'   },  // 4
-  { minW: '420px', coverH: '14rem',  gradH: '7.5rem' },  // 5 — spacious
+  { minW: '180px', coverH: '6rem',   gradH: '3.5rem' },  // 1 — compact
+  { minW: '260px', coverH: '9rem',   gradH: '5rem'   },  // 2
+  { minW: '360px', coverH: '12rem',  gradH: '6.5rem' },  // 3 — default
+  { minW: '480px', coverH: '16rem',  gradH: '8.5rem' },  // 4
+  { minW: '600px', coverH: '20rem',  gradH: '11rem'  },  // 5 — spacious
 ];
 
 function _dbApplySize(step) {
