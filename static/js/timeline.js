@@ -25,7 +25,7 @@ window.bwTimeline = (function () {
   const STEM_H    = 52;
   const PAD_ENDS  = 120;   // left & right padding inside the rail
 
-  // ── Module state ─────────────────────────────────────────────
+  // ── Module state ──────────────────────────────────────────────────
   let _mounted         = false;
   let _savedMainStyles = {};
   let _rafId           = null;
@@ -33,6 +33,7 @@ window.bwTimeline = (function () {
   let _dragCleanup     = null;
   let _keyCleanup      = null;   // keyboard shortcut teardown
   let _wormCleanup     = null;   // bookworm RAF loop teardown
+  let _tlDateMode      = 'created'; // 'created' | 'updated'
 
   // ── Date utilities ───────────────────────────────────────────
   function _parseDate(str) {
@@ -88,9 +89,12 @@ window.bwTimeline = (function () {
         const id       = el.getAttribute('data-note-id');
         const title    = el.getAttribute('data-title')        || 'Untitled';
         const icon     = el.getAttribute('data-icon')         || '';
-        const dateStr  = el.getAttribute('data-meeting-date') ||
-                         el.getAttribute('data-created-at')   || '';
         const catColor = el.getAttribute('data-cat-color')    || '';
+        // 'created' mode: meeting_date → created_at (event date wins when set)
+        // 'updated' mode: updated_at only
+        const dateStr  = _tlDateMode === 'updated'
+          ? (el.getAttribute('data-updated-at') || el.getAttribute('data-created-at') || '')
+          : (el.getAttribute('data-meeting-date') || el.getAttribute('data-created-at') || '');
         const date     = _parseDate(dateStr);
         if (!id || !date) return;
         out.push({ id, title, icon, dateStr, date, catColor });
@@ -106,7 +110,9 @@ window.bwTimeline = (function () {
     if (!window._dbCards || !window._dbCards.length) return [];
     const out = [];
     window._dbCards.forEach(c => {
-      const dateStr = c.updated_at || c.created_at || '';
+      const dateStr = _tlDateMode === 'updated'
+        ? (c.updated_at || c.created_at || '')
+        : (c.created_at || c.updated_at || '');
       const date    = _parseDate(dateStr);
       if (!date) return;
       out.push({
@@ -480,6 +486,34 @@ window.bwTimeline = (function () {
       _doAutofit(outer, notes, t, getRail, setRail);
       onAllMove();
     }));
+
+    // ── Date mode toggle: Created ↔ Updated ────────────────────
+    const dateBtn = document.createElement('button');
+    function _syncDateBtn() {
+      const isUpdated = _tlDateMode === 'updated';
+      dateBtn.textContent = isUpdated ? '\uD83D\uDD04 Updated' : '\uD83D\uDCC5 Created';
+      dateBtn.title       = isUpdated ? 'Showing updated date — click for created' : 'Showing created date — click for updated';
+      dateBtn.setAttribute('aria-label', dateBtn.title);
+      dateBtn.style.background   = isUpdated ? '#7c3aed22' : t.btnBg;
+      dateBtn.style.borderColor  = isUpdated ? '#7c3aed'   : t.btnBord;
+      dateBtn.style.color        = isUpdated ? '#7c3aed'   : t.btnClr;
+    }
+    Object.assign(dateBtn.style, {
+      height: '32px', padding: '0 10px', borderRadius: '8px',
+      border: `1px solid ${t.btnBord}`, fontSize: '11px', fontWeight: '600',
+      lineHeight: '1', cursor: 'pointer', whiteSpace: 'nowrap',
+      boxShadow: '0 1px 4px rgba(0,0,0,.12)', flexShrink: '0',
+      transition: 'background .15s, color .15s, border-color .15s',
+    });
+    _syncDateBtn();
+    dateBtn.addEventListener('pointerdown', e => e.stopPropagation());
+    dateBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      _tlDateMode = _tlDateMode === 'created' ? 'updated' : 'created';
+      remount();   // re-collect with new mode and repaint
+    });
+    bar.appendChild(dateBtn);
+
     outer.appendChild(bar);
 
     // ── T key → jump to today ───────────────────────────
@@ -522,7 +556,7 @@ window.bwTimeline = (function () {
       fontSize: '10px', color: t.hintClr,
       pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap',
     });
-    hint.textContent = '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today';
+    hint.textContent = '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today  \u00b7  \uD83D\uDCC5 / \uD83D\uDD04 = date mode';
     outer.appendChild(hint);
 
     // ── Auto-fit on first render (after layout is available) ─
