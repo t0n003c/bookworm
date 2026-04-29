@@ -55,11 +55,11 @@ function initDatabaseView(wsId) {
 /* ── card size slider ─────────────────────────────────────────────────────────────── */
 // Five discrete steps. minW drives auto-fill columns; cover/grad heights scale in sync.
 var _dbSizeCfg = [
-  { minW: '180px', coverH: '6rem',   gradH: '3.5rem' },  // 1 — compact
-  { minW: '260px', coverH: '9rem',   gradH: '5rem'   },  // 2
-  { minW: '360px', coverH: '12rem',  gradH: '6.5rem' },  // 3 — default
-  { minW: '480px', coverH: '16rem',  gradH: '8.5rem' },  // 4
-  { minW: '600px', coverH: '20rem',  gradH: '11rem'  },  // 5 — spacious
+  { minW: '180px', coverH: '6rem'   },  // 1 — compact
+  { minW: '260px', coverH: '9rem'   },  // 2
+  { minW: '360px', coverH: '12rem'  },  // 3 — default
+  { minW: '480px', coverH: '16rem'  },  // 4
+  { minW: '600px', coverH: '20rem'  },  // 5 — spacious
 ];
 
 function _dbApplySize(step) {
@@ -68,7 +68,6 @@ function _dbApplySize(step) {
   var grid = document.getElementById('db-card-grid');
   if (root) {
     root.style.setProperty('--db-cover-h', cfg.coverH);
-    root.style.setProperty('--db-grad-h',  cfg.gradH);
   }
   if (grid) {
     grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
@@ -182,7 +181,7 @@ function _dbCoverHtml(card) {
   ];
   var grad = gradients[card.id % gradients.length];
   return (
-    '<div style="height:var(--db-grad-h,5rem);" class="w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
+    '<div style="height:var(--db-cover-h,9rem);" class="w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
     + ' bg-gradient-to-br ' + grad + ' opacity-70 dark:opacity-80"'
     + ' onclick="_dbOpenDetail(' + card.id + ')">'
     + '<span class="text-3xl font-bold text-white opacity-50 select-none">'
