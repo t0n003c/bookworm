@@ -126,7 +126,7 @@ window._tripRenderPanelCards = function(container) {
       'trip-panel-card flex-shrink-0 bg-white dark:bg-zinc-900 rounded-xl ' +
       'border border-gray-200 dark:border-zinc-800 flex flex-col overflow-hidden shadow-sm';
     card.style.cssText =
-      'width:' + _tripDayCardWidth + 'px;height:' + _tripDayCardHeight() + 'px;max-height:calc(100vh - 12rem)';
+      'width:' + _tripDayCardWidth + 'px;min-height:' + _tripDayCardHeight() + 'px;max-height:calc(100vh - 12rem)';
     card.id = 'trip-panel-card-' + p.id;
     card.setAttribute('draggable', 'true');
     card.setAttribute('data-panel-id', String(p.id));

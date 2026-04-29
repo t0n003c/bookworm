@@ -42,8 +42,9 @@ window.tripSetDayCardWidth = function(w) {
   // Update all rendered lanes live — no full re-render needed
   var h = _tripDayCardHeight() + 'px';
   document.querySelectorAll('.trip-day-lane-card, .trip-panel-card').forEach(function(el) {
-    el.style.width  = _tripDayCardWidth + 'px';
-    el.style.height = h;
+    el.style.width     = _tripDayCardWidth + 'px';
+    el.style.minHeight = h;
+    el.style.height    = '';   // clear fixed height so flex-row equalization works
   });
 };
 
@@ -783,7 +784,7 @@ function _tripRenderDayLane(d) {
 
   return '<div class="trip-day-lane-card flex-shrink-0 bg-white dark:bg-zinc-900 rounded-xl ' +
     'border border-gray-200 dark:border-zinc-800 flex flex-col overflow-hidden ' +
-    'shadow-sm" style="width:' + _tripDayCardWidth + 'px;height:' + _tripDayCardHeight() + 'px;max-height:calc(100vh - 12rem);">' +
+    'shadow-sm" style="width:' + _tripDayCardWidth + 'px;min-height:' + _tripDayCardHeight() + 'px;max-height:calc(100vh - 12rem);">' +
     '<div class="flex items-center gap-1 px-3 py-2 ' +
       'border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">' +
       '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
