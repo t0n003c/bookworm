@@ -30,6 +30,8 @@
       <span class="text-[10px] text-gray-400 dark:text-zinc-500 select-none" title="Card width">▣</span>
       <input id="trip-day-size-slider" type="range" min="200" max="480" step="10" value="256"
              oninput="tripSetDayCardWidth(this.value)"
+             ondblclick="tripSetDayCardWidth(Math.round((+this.min + +this.max) / 2))"
+             title="Drag to resize • Double-click to reset to middle"
              class="w-20 h-1.5 accent-[#0053e2] cursor-pointer">
     </div>
     {# Tab buttons #}

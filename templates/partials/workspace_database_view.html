@@ -32,6 +32,8 @@
       </svg>
       <input id="db-size-slider" type="range" min="1" max="5" step="1" value="3"
              oninput="window._dbSetSize && _dbSetSize(this.value)"
+             ondblclick="window._dbSetSize && _dbSetSize(Math.round((+this.min + +this.max) / 2))"
+             title="Drag to resize • Double-click to reset to middle"
              class="w-20 h-1 accent-purple-600 cursor-pointer"
              aria-label="Card display size" />
       <svg class="w-4 h-4 text-gray-400" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
