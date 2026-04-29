@@ -416,8 +416,17 @@ function _dbInitStyles() {
     '.dark [data-db-note] .db-code-hdr-ln{color:#52525b;}',
     '.dark [data-db-note] .db-code-hdr-ln:hover{background:rgba(255,255,255,.09);color:#d4d4d8;}',
     '.dark [data-db-note] .db-code-hdr-ln.active{color:#60a5fa;}',
+  /* lists — Tailwind base resets list-style:none + padding:0 on ul/ol,
+     so we must explicitly restore markers and indentation. */
+  '[data-db-note] ul{list-style-type:disc;padding-left:1.5em;margin:.25em 0;}',
+  '[data-db-note] ol{list-style-type:decimal;padding-left:1.5em;margin:.25em 0;}',
+  '[data-db-note] ul ul{list-style-type:circle;}',
+  '[data-db-note] ol ol{list-style-type:lower-alpha;}',
+  '[data-db-note] ul ul ul{list-style-type:square;}',
+  '[data-db-note] ol ol ol{list-style-type:lower-roman;}',
+  '[data-db-note] li{margin:.1em 0;}',
   ].join('');
-  document.head.appendChild(s);
+document.head.appendChild(s);
 }
 
 /* Floating selection toolbar — B / I / S + highlight flyout + text-color flyout + A+/A- */
