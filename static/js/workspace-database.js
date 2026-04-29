@@ -1316,6 +1316,80 @@ function _dbGripUp() {
   }
 }
 
+/* ── Tab / Shift+Tab indent for DB card note list items ─────────────────────
+   Mirrors _bwCeTab in index.html but targets data-db-note contenteditable divs.
+   Returns true if it handled the keydown (caller should return immediately).   */
+function _dbNoteTabIndent(e, noteEl) {
+  if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return false;
+
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+
+  /* Walk up from cursor to find the <li> containing the caret */
+  var li = sel.getRangeAt(0).startContainer;
+  while (li && li !== noteEl) {
+    if (li.nodeName === 'LI') break;
+    li = li.parentNode;
+  }
+  if (!li || li === noteEl) return false;   /* cursor not in a list item */
+
+  e.preventDefault();
+  var parentList = li.parentElement;   /* the <ul> or <ol> the <li> lives in */
+
+  if (!e.shiftKey) {
+    /* ── INDENT: nest under the previous sibling <li> ─────────────────────
+       If there is no previous sibling we still swallow Tab (return true)
+       so the browser doesn't focus the next form field.                   */
+    var prevLi = li.previousElementSibling;
+    if (!prevLi || prevLi.nodeName !== 'LI') return true;
+    /* Re-use existing nested list or create one matching parent type */
+    var nested = null;
+    Array.prototype.forEach.call(prevLi.children, function(c) {
+      if (!nested && (c.nodeName === 'UL' || c.nodeName === 'OL')) nested = c;
+    });
+    if (!nested) {
+      nested = document.createElement(parentList.tagName);  /* same ul/ol type */
+      prevLi.appendChild(nested);
+    }
+    nested.appendChild(li);
+  } else {
+    /* ── OUTDENT: lift out to the grandparent list ─────────────────────────
+       If already at root level swallow Shift+Tab (return true) so the
+       browser doesn't focus the previous form field.                       */
+    var parentLi    = parentList ? parentList.parentElement : null;
+    if (!parentLi || parentLi.nodeName !== 'LI') return true;
+    var grandparent = parentLi.parentElement;
+    grandparent.insertBefore(li, parentLi.nextSibling);
+    if (parentList.children.length === 0) parentList.remove();
+  }
+
+  /* Re-inject grips (moved <li> loses its span) + persist */
+  _dbInjectGrips(noteEl);
+  var cardId = parseInt((noteEl.id || '').replace('db-detail-note-', ''), 10);
+  if (cardId) _dbSaveNote(cardId, _dbNoteHtml(noteEl));
+
+  /* Restore cursor to the relocated <li> */
+  setTimeout(function() {
+    var grip     = li.querySelector('[data-db-grip]');
+    var textNode = grip ? grip.nextSibling : li.firstChild;
+    if (textNode) {
+      var r = document.createRange();
+      if (textNode.nodeType === 3 /* TEXT_NODE */) {
+        r.setStart(textNode, textNode.length);
+        r.collapse(true);
+      } else {
+        r.selectNodeContents(textNode);
+        r.collapse(false);
+      }
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    noteEl.focus();
+  }, 0);
+
+  return true;
+}
+
 function _dbAttachNoteTools(noteEl) {
   if (!noteEl) return;
   /* Slash commands — full palette with headings / callouts / columns */
@@ -1390,8 +1464,11 @@ function _dbAttachNoteTools(noteEl) {
     document.execCommand('insertText', false, text);
   });
 
-  /* ── Ctrl+A inside a code block — select only that block’s content ────────── */
+  /* ── Ctrl+A inside a code block — select only that block's content ────────── */
   noteEl.addEventListener('keydown', function(e) {
+    /* Tab / Shift+Tab on list items — indent / outdent nested bullets */
+    if (_dbNoteTabIndent(e, noteEl)) return;
+
     /* Enter inside an active code block → insert literal \n.
        Without this guard, Chrome inserts a <br> (or <div> in rich-edit
        fallback) which textContent silently skips, so when _dbApplyHljs
