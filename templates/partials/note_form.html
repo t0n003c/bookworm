@@ -2999,6 +2999,7 @@
   let _insertBefore = null;
   let _startY       = 0;
   let _didDrag      = false;
+  let _gripEl       = null;   // grip span captured at mousedown (for click→menu path)
 
   /* ── helpers ── */
 
@@ -3033,6 +3034,7 @@
     if (!_dragging || !_container) return;
     _startY  = e.clientY;
     _didDrag = false;
+    _gripEl  = _dragging.querySelector(':scope > [data-preview-grip]');
     document.addEventListener('mousemove', _onMouseMove);
     document.addEventListener('mouseup',   _onMouseUp);
   }
@@ -3218,10 +3220,30 @@
       if (_preview) window._injectPreviewGrips(_preview);
     } else if (_dragging) {
       _dragging.style.opacity = '';
+      /* Pure click on grip — open the block context menu */
+      if (_gripEl && typeof window._bwBlockMenu === 'function') {
+        const clickedBlock = _dragging;
+        const clickedGrip  = _gripEl;
+        const previewSnap  = _preview;
+        window._bwBlockMenu(clickedGrip, clickedBlock, {
+          reInjectGrips: function() {
+            if (previewSnap) window._injectPreviewGrips(previewSnap);
+          },
+          syncToBackend: function() {
+            if (typeof window._bwSyncPreviewToMd === 'function') {
+              window._bwSyncPreviewToMd();
+              const ta = document.getElementById('note-content');
+              if (ta) ta.dispatchEvent(new Event('input'));
+            }
+          },
+          gripAttr: 'data-preview-grip',
+        });
+      }
     }
 
     _dragging = _container = _dropParent = null;
     _didDrag  = false;
+    _gripEl   = null;
   }
 
   /* Boot: initEditor's renderPreview() fired before this script loaded,

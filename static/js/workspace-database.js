@@ -12,6 +12,17 @@ var _dbDetailId          = null;   // card id currently open in detail panel
 var _dbDelTarget         = null;   // card id staged for deletion
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 
+/* ── block-grip DnD state (DB card note area) ────────────────────────────── */
+var _dbGripDragging     = null;   // the block element being dragged
+var _dbGripContainer    = null;   // _dbGripDragging.parentElement at dragstart
+var _dbGripNoteEl       = null;   // the [data-db-note] container
+var _dbGripStartY       = 0;
+var _dbGripDidDrag      = false;
+var _dbGripGhost        = null;   // label pill following cursor
+var _dbGripIndicator    = null;   // blue drop-line
+var _dbGripInsertBefore = null;
+var _dbGripDropParent   = null;
+
 /* ── selection toolbar state ─────────────────────────────────────────────── */
 var _dbSelBar       = null;  // floating toolbar DOM element
 var _dbSelBarTimer  = null;  // hide-debounce timer
@@ -1117,6 +1128,192 @@ function _dbNoteHtml(el) {
   return clone.innerHTML;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DB NOTE — BLOCK GRIP DnD + CLICK-FOR-MENU
+═══════════════════════════════════════════════════════════════════════════ */
+
+function _dbAddGrip(el) {
+  el.style.position = 'relative';
+  var grip = document.createElement('span');
+  grip.setAttribute('data-db-grip', '');
+  grip.setAttribute('data-db-transient', '');  /* stripped by _dbNoteHtml — never saved */
+  grip.setAttribute('contenteditable', 'false');
+  grip.setAttribute('aria-hidden', 'true');
+  grip.textContent = '⢿';
+  grip.style.cssText =
+    'position:absolute;left:-1.6rem;top:50%;transform:translateY(-50%);'
+    + 'width:1.4rem;text-align:center;cursor:grab;pointer-events:auto;'
+    + 'color:#d1d5db;font-size:.9rem;line-height:1;user-select:none;'
+    + 'opacity:0;transition:opacity .12s,color .12s;border-radius:3px;';
+  el.insertBefore(grip, el.firstChild);
+  if (!el._dbGripListened) {
+    el._dbGripListened = true;
+    el.addEventListener('mouseenter',  _dbGripEnter);
+    el.addEventListener('mouseleave',  _dbGripLeave);
+    el.addEventListener('mousedown',   _dbGripDown, { capture: true });
+  }
+}
+
+function _dbInjectGrips(noteEl) {
+  noteEl.querySelectorAll('[data-db-grip]').forEach(function(g) { g.remove(); });
+  Array.prototype.forEach.call(noteEl.children, function(el) { _dbAddGrip(el); });
+  /* Also grip individual list items so they can be reordered within their list */
+  noteEl.querySelectorAll('li').forEach(function(li) { _dbAddGrip(li); });
+}
+
+function _dbGripEnter(e) {
+  var grip = e.currentTarget.querySelector('[data-db-grip]');
+  if (grip) { grip.style.opacity = '1'; grip.style.color = '#9ca3af'; }
+}
+function _dbGripLeave(e) {
+  if (_dbGripDragging) return;   /* don't fade while dragging */
+  var grip = e.currentTarget.querySelector('[data-db-grip]');
+  if (grip) { grip.style.opacity = '0'; grip.style.color = '#d1d5db'; }
+}
+
+function _dbGripDown(e) {
+  if (e.button !== 0) return;
+  if (!e.target.hasAttribute('data-db-grip')) return;  /* only the grip span itself */
+  e.stopPropagation();
+  var noteEl = e.currentTarget.closest('[data-db-note]');
+  _dbGripNoteEl    = noteEl;
+  _dbGripDragging  = e.currentTarget;   /* the parent block element */
+  _dbGripContainer = e.currentTarget.parentElement;
+  _dbGripStartY    = e.clientY;
+  _dbGripDidDrag   = false;
+  document.addEventListener('mousemove', _dbGripMove);
+  document.addEventListener('mouseup',   _dbGripUp);
+}
+
+function _dbGripMove(e) {
+  if (!_dbGripDragging) return;
+
+  if (!_dbGripDidDrag && Math.abs(e.clientY - _dbGripStartY) > 4) {
+    _dbGripDidDrag = true;
+    document.body.style.userSelect = 'none';
+
+    /* Ghost label */
+    _dbGripGhost = document.createElement('div');
+    _dbGripGhost.textContent = (_dbGripDragging.textContent || '').trim().slice(0, 80) || '(empty)';
+    _dbGripGhost.style.cssText =
+      'position:fixed;z-index:9999;pointer-events:none;opacity:.9;'
+      + 'background:#eff6ff;border:1px solid #0053e2;border-radius:4px;'
+      + 'padding:3px 10px;font-size:.8rem;white-space:nowrap;overflow:hidden;'
+      + 'text-overflow:ellipsis;max-width:360px;'
+      + 'box-shadow:0 4px 12px rgba(0,83,226,.2);';
+    document.body.appendChild(_dbGripGhost);
+    _dbGripDragging.style.opacity = '0.3';
+
+    /* Drop indicator line */
+    _dbGripIndicator = document.createElement('div');
+    _dbGripIndicator.style.cssText =
+      'position:fixed;height:2px;background:#0053e2;'
+      + 'pointer-events:none;display:none;z-index:9998;';
+    document.body.appendChild(_dbGripIndicator);
+  }
+
+  if (!_dbGripDidDrag) return;
+
+  _dbGripGhost.style.left = (e.clientX + 14) + 'px';
+  _dbGripGhost.style.top  = (e.clientY - 14) + 'px';
+
+  /* Find insert target by scanning all candidates in the note area */
+  var cands = [];
+  if (_dbGripNoteEl) {
+    Array.prototype.forEach.call(_dbGripNoteEl.querySelectorAll(
+      ':scope > *:not([data-db-grip])'
+    ), function(el) {
+      if (el !== _dbGripDragging) cands.push(el);
+    });
+    _dbGripNoteEl.querySelectorAll('li').forEach(function(li) {
+      if (li !== _dbGripDragging) cands.push(li);
+    });
+  }
+
+  _dbGripInsertBefore = null;
+  _dbGripDropParent   = null;
+  for (var i = 0; i < cands.length; i++) {
+    var r = cands[i].getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { _dbGripInsertBefore = cands[i]; break; }
+  }
+  if (_dbGripInsertBefore) {
+    _dbGripDropParent = _dbGripInsertBefore.parentElement;
+  } else if (cands.length) {
+    _dbGripDropParent = cands[cands.length - 1].parentElement;
+  } else {
+    _dbGripDropParent = _dbGripContainer;
+  }
+
+  /* Position indicator */
+  if (_dbGripIndicator && _dbGripDropParent) {
+    var ref = _dbGripInsertBefore || (cands.length ? cands[cands.length - 1] : null);
+    if (ref) {
+      var rr = ref.getBoundingClientRect();
+      var pr = _dbGripDropParent.getBoundingClientRect();
+      var y  = _dbGripInsertBefore ? rr.top - 1 : rr.bottom - 1;
+      _dbGripIndicator.style.left    = pr.left + 'px';
+      _dbGripIndicator.style.width   = pr.width + 'px';
+      _dbGripIndicator.style.top     = y + 'px';
+      _dbGripIndicator.style.display = 'block';
+    }
+  }
+}
+
+function _dbGripUp() {
+  document.removeEventListener('mousemove', _dbGripMove);
+  document.removeEventListener('mouseup',   _dbGripUp);
+  document.body.style.userSelect = '';
+  if (_dbGripGhost)     { _dbGripGhost.remove();     _dbGripGhost = null; }
+  if (_dbGripIndicator) { _dbGripIndicator.remove(); _dbGripIndicator = null; }
+
+  var dragging  = _dbGripDragging;
+  var noteEl    = _dbGripNoteEl;
+  var didDrag   = _dbGripDidDrag;
+  var container = _dbGripContainer;
+
+  _dbGripDragging = _dbGripContainer = _dbGripNoteEl = null;
+  _dbGripInsertBefore = _dbGripDropParent = null;
+  _dbGripDidDrag = false;
+
+  if (!dragging) return;
+  dragging.style.opacity = '';
+
+  if (didDrag) {
+    /* Commit reorder */
+    var parent = _dbGripDropParent || container;
+    if (_dbGripInsertBefore && _dbGripInsertBefore.parentElement === parent) {
+      parent.insertBefore(dragging, _dbGripInsertBefore);
+    } else {
+      parent.appendChild(dragging);
+    }
+    /* Clean up empty lists */
+    if (noteEl) {
+      noteEl.querySelectorAll('ul,ol').forEach(function(l) {
+        if (l.children.length === 0) l.remove();
+      });
+    }
+    /* Persist + re-inject */
+    if (noteEl) {
+      var cardId = parseInt((noteEl.id || '').replace('db-detail-note-', ''), 10);
+      if (cardId) {
+        _dbSaveNote(cardId, _dbNoteHtml(noteEl));
+        _dbInjectGrips(noteEl);
+      }
+    }
+  } else {
+    /* Pure click on grip — open block context menu */
+    var gripSpan = dragging.querySelector('[data-db-grip]');
+    if (gripSpan && noteEl && typeof window._bwBlockMenu === 'function') {
+      var cId = parseInt((noteEl.id || '').replace('db-detail-note-', ''), 10);
+      window._bwBlockMenu(gripSpan, dragging, {
+        reInjectGrips: function() { if (noteEl) _dbInjectGrips(noteEl); },
+        syncToBackend: function() { if (noteEl && cId) _dbSaveNote(cId, _dbNoteHtml(noteEl)); },
+        gripAttr: 'data-db-grip',
+      });
+    }
+  }
+}
+
 function _dbAttachNoteTools(noteEl) {
   if (!noteEl) return;
   /* Slash commands — full palette with headings / callouts / columns */
@@ -1125,6 +1322,8 @@ function _dbAttachNoteTools(noteEl) {
   if (window.bwPasteAs && typeof window.bwPasteAs.initForCE === 'function') {
     window.bwPasteAs.initForCE(noteEl);
   }
+  /* Block grip DnD handles — always re-inject on every panel open */
+  _dbInjectGrips(noteEl);
 
   if (noteEl._dbToolsWired) return;   /* idempotent — only wire DOM handlers once */
   noteEl._dbToolsWired = true;
@@ -1480,6 +1679,7 @@ function _dbRenderDetailPanel(card) {
     // Notes area
     + '<div id="db-detail-note-' + card.id + '" contenteditable="true" data-db-note="1"'
     + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
+    + ' style="padding-left:1.6rem;margin-left:-1.6rem;overflow:visible;"'
     + ' oninput="_dbDetailNoteInput(' + card.id + ',this)"'
     + ' onblur="_dbDetailNoteBlur(' + card.id + ',this)"'
     + ' aria-label="Card notes">'
