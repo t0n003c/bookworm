@@ -431,23 +431,40 @@ function _uplGotoNoteInWorkspace(wsId, noteId) {
 // Switch to wsId and then open the DB card detail panel.
 function _uplGotoDbCard(wsId, cardId) {
   _uplCloseDetail();
-  // If the DB workspace is already active, just open the card directly.
-  if (typeof _dbWsId !== 'undefined' && _dbWsId === wsId
+
+  // "Already active" shortcut: only valid when the DB grid is actually rendered
+  // and the home canvas is NOT showing.  _dbWsId is never reset when the user
+  // navigates back to the home page, so we must check the DOM, not just the var.
+  var dbRoot      = document.getElementById('db-view-root');
+  var homeContent = document.getElementById('home-content');
+  var homeVisible = homeContent && !homeContent.classList.contains('hidden');
+  if (!homeVisible && dbRoot
+      && typeof _dbWsId !== 'undefined' && _dbWsId === wsId
       && typeof _dbOpenDetail === 'function') {
     _dbOpenDetail(cardId);
     return;
   }
-  // Otherwise navigate there first, then open the card once the content settles.
-  var nl = document.getElementById('note-list');
-  if (nl) {
-    nl.addEventListener('htmx:afterSettle', function _once() {
-      nl.removeEventListener('htmx:afterSettle', _once);
-      // Small delay so initDatabaseView() has run its inline script
-      setTimeout(function() {
-        if (typeof _dbOpenDetail === 'function') _dbOpenDetail(cardId);
-      }, 80);
-    });
+
+  // Navigate to the DB workspace, then open the card once it settles.
+  // Listen on *document* (not #note-list) so our handler fires AFTER the
+  // global initDatabaseView() handler has already run and set _dbWsId — no
+  // arbitrary delay needed.
+  var _handled = false;
+  function _onSettle() {
+    var root = document.getElementById('db-view-root');
+    // Ignore afterSettle events that aren't for our target DB (e.g. OOB sidebar swap)
+    if (!root || parseInt(root.dataset.wsId, 10) !== wsId) return;
+    _handled = true;
+    document.removeEventListener('htmx:afterSettle', _onSettle);
+    if (typeof _dbOpenDetail === 'function') _dbOpenDetail(cardId);
   }
+  document.addEventListener('htmx:afterSettle', _onSettle);
+  // Safety cleanup — remove the listener after 6 s to prevent leaks if
+  // navigation fails or the workspace turns out not to be a database.
+  setTimeout(function() {
+    if (!_handled) document.removeEventListener('htmx:afterSettle', _onSettle);
+  }, 6000);
+
   wsSingleClick(wsId);
 }
 
