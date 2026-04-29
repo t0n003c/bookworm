@@ -175,12 +175,18 @@
            data-dnd-drop-ws-id="{{ node.id }}"
            style="padding-left: {{ indent }}px">
 
-        {# ── drag handle ── #}
+        {# ── drag handle — click → options menu; hold+drag → reorder/nest ── #}
         <span
           data-dnd-ws-id="{{ node.id }}"
           data-dnd-label="{{ node.emoji }} {{ node.name }}"
-          title="Drag to nest or move to trash"
-          aria-hidden="true"
+          data-dnd-ws-name="{{ node.name | e }}"
+          data-dnd-ws-emoji="{{ node.emoji }}"
+          data-dnd-ws-parent="{{ node.parent_id or '' }}"
+          data-dnd-ws-type="{{ node.ws_type }}"
+          title="Click for options &#183; Hold &amp; drag to move"
+          role="button"
+          aria-label="Options for {{ node.name | e }}"
+          aria-haspopup="menu"
           class="dnd-handle flex-shrink-0 mr-0.5 select-none
                  opacity-0 group-hover/row:opacity-100 transition-opacity"
         >⠿</span>
