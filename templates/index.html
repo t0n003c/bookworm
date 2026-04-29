@@ -2195,11 +2195,35 @@
       panel.style.width  = w;
       dp.style.minWidth  = w;
     }
+
+    // Center mode: #panel is a full-viewport flex container (z:39) that sits
+    // above the blur backdrop (z:38), so clicks on the blurry area land on the
+    // panel itself, not the backdrop.  Wire a click handler that closes when
+    // the click target IS the panel (i.e. outside the card content).
+    // Side-panel mode: no backdrop, but same pattern gives click-outside-close
+    // for free (the panel has no width when open — wait, it does — actually
+    // side panel has w-0 default but grows; clicking outside the panel means
+    // clicking outside the <aside> entirely, so this handler won't fire there.
+    // For center mode this is the primary close mechanism.
+    if (panel._bwClickClose) panel.removeEventListener('click', panel._bwClickClose);
+    panel._bwClickClose = function(e) {
+      // Only close when clicking the transparent panel wrapper, not its children
+      if (e.target !== panel) return;
+      // Don't close if the user just finished drag-selecting text
+      if (window.getSelection && window.getSelection().toString().trim()) return;
+      closePanel();
+    };
+    panel.addEventListener('click', panel._bwClickClose);
   }
 
   function closePanel() {
     const panel = document.getElementById('panel');
     const dp    = document.getElementById('detail-panel');
+    // Remove the click-outside handler attached by openPanel (all modes)
+    if (panel && panel._bwClickClose) {
+      panel.removeEventListener('click', panel._bwClickClose);
+      panel._bwClickClose = null;
+    }
     _removeBackdrop();
     _clearPanelStyles(panel, dp);
     panel.classList.add('overflow-hidden');
