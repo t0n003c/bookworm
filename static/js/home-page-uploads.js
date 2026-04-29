@@ -451,7 +451,7 @@ function _uplGotoDbCard(wsId, cardId) {
   wsSingleClick(wsId);
 }
 
-
+function _uplRenderDetail(f) {
   const el = document.getElementById('uploads-detail-content');
   if (!el) return;
 
