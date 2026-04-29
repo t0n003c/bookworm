@@ -79,23 +79,48 @@ window.bwTimeline = (function () {
     };
   }
 
-  // ── Collect notes from DOM data-attrs ────────────────────────
+  // ── Collect workspace notes from DOM data-attrs ─────────────
   function _collectNotes() {
-    const nl = document.getElementById('note-list');
-    if (!nl) return [];
+    const nl  = document.getElementById('note-list');
     const out = [];
-    nl.querySelectorAll('article[data-note-id]').forEach(el => {
-      const id       = el.getAttribute('data-note-id');
-      const title    = el.getAttribute('data-title')        || 'Untitled';
-      const icon     = el.getAttribute('data-icon')         || '';
-      const dateStr  = el.getAttribute('data-meeting-date') ||
-                       el.getAttribute('data-created-at')   || '';
-      const catColor = el.getAttribute('data-cat-color')    || '';
-      const date     = _parseDate(dateStr);
-      if (!id || !date) return;
-      out.push({ id, title, icon, dateStr, date, catColor });
+    if (nl) {
+      nl.querySelectorAll('article[data-note-id]').forEach(el => {
+        const id       = el.getAttribute('data-note-id');
+        const title    = el.getAttribute('data-title')        || 'Untitled';
+        const icon     = el.getAttribute('data-icon')         || '';
+        const dateStr  = el.getAttribute('data-meeting-date') ||
+                         el.getAttribute('data-created-at')   || '';
+        const catColor = el.getAttribute('data-cat-color')    || '';
+        const date     = _parseDate(dateStr);
+        if (!id || !date) return;
+        out.push({ id, title, icon, dateStr, date, catColor });
+      });
+    }
+    // Merge database cards when a DB workspace is active.
+    // _dbCards lives in workspace-database.js; use updated_at → created_at for date.
+    return out.concat(_collectDbCards()).sort((a, b) => a.date - b.date);
+  }
+
+  // ── Collect DB workspace cards (window._dbCards, if present) ──
+  function _collectDbCards() {
+    if (!window._dbCards || !window._dbCards.length) return [];
+    const out = [];
+    window._dbCards.forEach(c => {
+      const dateStr = c.updated_at || c.created_at || '';
+      const date    = _parseDate(dateStr);
+      if (!date) return;
+      out.push({
+        id:       c.id,
+        title:    c.title || 'Untitled',
+        icon:     '',                  // no note icon — badge shown in card instead
+        dateStr,
+        date,
+        catColor: '#7c3aed',          // purple — visually distinct from note pins
+        onClick:  '_dbOpenDetail(' + c.id + ')',
+        isDb:     true,
+      });
     });
-    return out.sort((a, b) => a.date - b.date);
+    return out;
   }
 
   // ── Tick marks + note pins → see timeline-render.js (_bwTLRender) ──

@@ -173,11 +173,17 @@ window._bwTLRender = (function () {
     const card = document.createElement('article');
     card.setAttribute('role',       'button');
     card.setAttribute('tabindex',   '0');
-    card.setAttribute('aria-label', `Open note: ${note.title}`);
-    card.setAttribute('hx-get',    `/notes/${note.id}`);
-    card.setAttribute('hx-target', '#detail-panel');
-    card.setAttribute('hx-swap',   'innerHTML');
+    card.setAttribute('aria-label', `${note.isDb ? 'Open card' : 'Open note'}: ${note.title}`);
     card.setAttribute('onkeydown', "if(event.key==='Enter'||event.key===' '){this.click()}");
+
+    // DB cards: call _dbOpenDetail directly. Notes: HTMX navigation.
+    if (note.onClick) {
+      card.setAttribute('onclick', note.onClick);
+    } else {
+      card.setAttribute('hx-get',    `/notes/${note.id}`);
+      card.setAttribute('hx-target', '#detail-panel');
+      card.setAttribute('hx-swap',   'innerHTML');
+    }
 
     const vert = above
       ? { bottom: `calc(${(1 - SPINE_Y) * 100}% + ${stemH + GAP}px)` }
@@ -197,7 +203,14 @@ window._bwTLRender = (function () {
                   -webkit-box-orient:vertical;overflow:hidden;">
         ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
       </h3>
-      <time style="font-size:.7rem;color:${t.subClr};display:block;">&#128197; ${fmtDate(note.dateStr)}</time>`;
+      <time style="font-size:.7rem;color:${t.subClr};display:block;">
+        ${note.isDb ? '&#128197; Updated ' : '&#128197; '}${fmtDate(note.dateStr)}
+      </time>
+      ${note.isDb
+        ? `<span style="display:inline-block;margin-top:5px;font-size:.6rem;font-weight:700;
+                        letter-spacing:.06em;padding:1px 5px;border-radius:4px;
+                        background:#7c3aed18;color:#7c3aed;">&#x1F5C3;&#xFE0F; DB CARD</span>`
+        : ''}`;
 
     // Stop pointerdown bubbling so outer's drag handler never calls
     // setPointerCapture on a card tap — otherwise the browser routes
@@ -213,7 +226,8 @@ window._bwTLRender = (function () {
       card.style.borderColor = t.cardBord;
     });
     rail.appendChild(card);
-    if (window.htmx) htmx.process(card);
+    // Only HTMX-process note cards — DB cards use onclick directly.
+    if (!note.isDb && window.htmx) htmx.process(card);
   }
 
   return { buildTicks, buildPin };
