@@ -1942,9 +1942,11 @@
     if (_dbRoot && typeof initDatabaseView === 'function') {
       initDatabaseView(parseInt(_dbRoot.dataset.wsId, 10));
     } else {
-      // Navigated away from a DB — restore the New Note button
+      // Navigated away from a DB — restore the New Note button and breadcrumb
       var _btnNN = document.getElementById('btn-new-note');
       if (_btnNN) _btnNN.classList.remove('hidden');
+      var _crumb = document.getElementById('ws-breadcrumb');
+      if (_crumb) _crumb.classList.remove('hidden');
     }
   });
 

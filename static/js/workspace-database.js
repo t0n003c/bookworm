@@ -37,6 +37,10 @@ function initDatabaseView(wsId) {
   // Databases have their own Add Card flow — New Note doesn't apply here.
   var btnNN = document.getElementById('btn-new-note');
   if (btnNN) btnNN.classList.add('hidden');
+  // DB view has its own title header — hide the breadcrumb to avoid the
+  // double-name gap (breadcrumb shows "Parent › DB Name", header also shows "DB Name").
+  var crumb = document.getElementById('ws-breadcrumb');
+  if (crumb) crumb.classList.add('hidden');
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
   // Restore saved size preference (stored per-workspace so each DB is independent)
