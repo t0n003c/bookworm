@@ -1743,7 +1743,7 @@ function _dbRenderDetailPanel(card) {
     // Title + close row
     + '<div class="flex items-start gap-2 mb-1">'
     + '<div contenteditable="true"'
-    + ' class="flex-1 text-xl font-bold text-gray-900 dark:text-zinc-100 outline-none leading-snug"'
+    + ' class="flex-1 text-3xl font-bold text-gray-900 dark:text-zinc-100 outline-none leading-snug"'
     + ' onblur="_dbDetailTitleBlur(' + card.id + ',this)"'
     + ' aria-label="Card title">' + _esc(card.title) + '</div>'
     + '<button type="button" onclick="_dbCloseDetail()"'

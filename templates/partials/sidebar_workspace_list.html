@@ -237,7 +237,7 @@
           <span class="text-base leading-none flex-shrink-0" aria-hidden="true">{{ node.emoji }}</span>
           {% endif %}
           {# ── name ── #}
-          <span class="flex-1 truncate {% if node.ws_type == 'database' %}text-purple-600 dark:text-purple-400{% endif %}">{{ node.name }}</span>
+          <span class="flex-1 truncate">{{ node.name }}</span>
           {# ── DB badge ── #}
           {% if node.ws_type == 'database' %}
           <span class="text-[9px] font-bold uppercase tracking-wider px-1 rounded flex-shrink-0
