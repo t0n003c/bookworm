@@ -95,13 +95,26 @@ function _dbCardHtml(card) {
   );
 }
 
+// Returns true if a cover URL points to a video file (by extension).
+function _dbCoverIsVideo(url) {
+  if (!url) return false;
+  var ext = url.split('?')[0].split('.').pop().toLowerCase();
+  return ['mp4', 'mov', 'webm', 'ogg', 'ogv'].indexOf(ext) !== -1;
+}
+
 function _dbCoverHtml(card) {
   if (card.cover_url) {
+    var isVid = _dbCoverIsVideo(card.cover_url);
+    var media = isVid
+      ? '<video src="' + _esc(card.cover_url) + '" muted playsinline preload="metadata" loop'
+        + ' class="w-full h-full object-cover"'
+        + ' onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
+      : '<img src="' + _esc(card.cover_url) + '" alt="Cover" loading="lazy"'
+        + ' class="w-full h-full object-cover" />';
     return (
       '<div class="relative h-36 w-full flex-shrink-0 bg-gray-100 dark:bg-zinc-800 cursor-pointer"'
       + ' onclick="_dbOpenDetail(' + card.id + ')">'
-      + '<img src="' + _esc(card.cover_url) + '" alt="Cover" loading="lazy"'
-      + ' class="w-full h-full object-cover" />'
+      + media
       + '</div>'
     );
   }
@@ -1402,10 +1415,15 @@ function _dbRenderDetailPanel(card) {
   // Cover: bleed edge-to-edge past the p-6 padding of #detail-panel
   var coverHtml;
   if (card.cover_url) {
+    var isVid = _dbCoverIsVideo(card.cover_url);
+    var coverMedia = isVid
+      ? '<video src="' + _esc(card.cover_url) + '" controls preload="metadata"'
+        + ' style="width:100%;height:10rem;object-fit:cover;display:block;"></video>'
+      : '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
+        + ' style="width:100%;height:10rem;object-fit:cover;display:block;"/>';
     coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
       + ' class="relative overflow-hidden bg-gray-100 dark:bg-zinc-800">'
-      + '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
-      + ' style="width:100%;height:10rem;object-fit:cover;display:block;"/>'
+      + coverMedia
       + '<button type="button" onclick="_dbShowCoverModal(' + card.id + ')"'
       + ' style="position:absolute;top:0.75rem;right:0.75rem;background:rgba(0,0,0,0.45);"'
       + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition">📷 Change cover</button></div>';
@@ -1564,9 +1582,9 @@ function _dbShowCoverModal(cardId) {
     + '<label style="display:block;border:2px dashed ' + bdr + ';border-radius:0.75rem;'
     + 'padding:2rem;text-align:center;cursor:pointer;">'
     + '<span style="display:block;font-size:1.5rem;margin-bottom:0.5rem;">🖼️</span>'
-    + '<span style="font-size:0.875rem;">Click to choose an image</span><br>'
-    + '<span style="font-size:0.75rem;color:#9ca3af;">JPG, PNG, GIF, WebP • max 20 MB</span>'
-    + '<input id="db-cover-file-input" type="file" accept="image/*"'
+    + '<span style="font-size:0.875rem;">Click to choose an image or video</span><br>'
+    + '<span style="font-size:0.75rem;color:#9ca3af;">JPG PNG GIF WebP · MP4 MOV WebM · max 100 MB</span>'
+    + '<input id="db-cover-file-input" type="file" accept="image/*,video/mp4,video/quicktime,video/webm,video/ogg"'
     + ' style="display:none;" onchange="_dbUploadCover(' + cardId + ',this)"/>'
     + '</label>'
     + '<div id="db-cover-upload-status" style="margin-top:0.75rem;font-size:0.8rem;'

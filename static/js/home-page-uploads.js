@@ -313,11 +313,15 @@ function _uplCard(f) {
                 title="Click to see which grid page this belongs to"
                 aria-haspopup="true">&#128248; Grid &#9660;</button>`
     : f.db_card_id
-    ? `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
-                    bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
-                    truncate max-w-full"
-             title="Cover image for DB card: ${_uplEsc(f.db_card_title || 'Card')} in ${_uplEsc(f.db_card_ws_name || '')}"
-        >&#128247; ${_uplEsc((f.db_card_title || 'Card').substring(0,18))}</span>`
+    ? `<button onclick="event.stopPropagation();_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded
+                       font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/40
+                       dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60
+                       transition-colors cursor-pointer"
+                title="Cover for DB card: ${_uplEsc(f.db_card_title || 'Card')} in ${_uplEsc(f.db_card_ws_name || '')}"
+                aria-label="Open card">
+        &#128247; ${_uplEsc((f.db_card_title || 'Card').substring(0,18))} &#9656;
+      </button>`
     : `<span class="inline-block px-1.5 py-0.5 text-[8px] rounded font-semibold
                     bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">Standalone</span>`;
 
@@ -424,7 +428,30 @@ function _uplGotoNoteInWorkspace(wsId, noteId) {
   wsSingleClick(wsId);
 }
 
-function _uplRenderDetail(f) {
+// Switch to wsId and then open the DB card detail panel.
+function _uplGotoDbCard(wsId, cardId) {
+  _uplCloseDetail();
+  // If the DB workspace is already active, just open the card directly.
+  if (typeof _dbWsId !== 'undefined' && _dbWsId === wsId
+      && typeof _dbOpenDetail === 'function') {
+    _dbOpenDetail(cardId);
+    return;
+  }
+  // Otherwise navigate there first, then open the card once the content settles.
+  var nl = document.getElementById('note-list');
+  if (nl) {
+    nl.addEventListener('htmx:afterSettle', function _once() {
+      nl.removeEventListener('htmx:afterSettle', _once);
+      // Small delay so initDatabaseView() has run its inline script
+      setTimeout(function() {
+        if (typeof _dbOpenDetail === 'function') _dbOpenDetail(cardId);
+      }, 80);
+    });
+  }
+  wsSingleClick(wsId);
+}
+
+
   const el = document.getElementById('uploads-detail-content');
   if (!el) return;
 
@@ -486,13 +513,18 @@ function _uplRenderDetail(f) {
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
     : f.db_card_id
     ? `<div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 mb-3">
-         <p class="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1 font-bold">&#128247; DB Card Cover Image</p>
+         <p class="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1 font-bold">&#128247; DB Card Cover</p>
          <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate"
             title="${_uplEsc(f.db_card_title||'Card')}">${_uplEsc(f.db_card_title||'Untitled card')}</p>
          <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.db_card_ws_name||'')}</p>
          <p class="text-[10px] text-amber-600/70 dark:text-amber-400/60 mt-1 italic">
            Deleting this file will clear the cover on that card.
          </p>
+         <button type="button" onclick="_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
+                 class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs
+                        rounded-lg font-medium bg-amber-500 hover:bg-amber-600 text-white transition">
+           &#128247; Open card
+         </button>
          <button onclick="_uplConfirmDelete(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`

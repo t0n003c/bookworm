@@ -30,7 +30,7 @@ from routers.workspace_db_cards import (
 )
 from routers.workspaces_db import get_workspace_by_id
 
-_MAX_COVER_BYTES = 20 * 1024 * 1024  # 20 MB
+_MAX_COVER_BYTES = 100 * 1024 * 1024  # 100 MB (covers images + videos)
 
 
 async def _first_uploads_page_id(user_id: int) -> Optional[int]:
@@ -272,12 +272,16 @@ async def upload_card_cover(
 
     data = await file.read()
     if len(data) > _MAX_COVER_BYTES:
-        raise HTTPException(status_code=413, detail="Cover image too large (max 20 MB)")
+        raise HTTPException(status_code=413, detail="Cover too large (max 100 MB)")
 
     original_name = file.filename or "cover"
     suffix = Path(original_name).suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"}:
-        raise HTTPException(status_code=415, detail="Unsupported image format")
+    _ALLOWED_COVER_EXT = {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg",  # images
+        ".mp4", ".mov", ".webm", ".ogg", ".ogv",                     # videos
+    }
+    if suffix not in _ALLOWED_COVER_EXT:
+        raise HTTPException(status_code=415, detail="Unsupported format — use an image or video")
 
     stored_name = f"{uuid.uuid4().hex}{suffix}"
     mime = file.content_type or mimetypes.guess_type(original_name)[0] or "image/jpeg"
