@@ -580,6 +580,7 @@ async def bulk_delete_files(request: Request, page_id: int, body: BulkDeleteBody
     for ref in body.ids:
         try:
             if ref.src == "page":
+                await remove_upload_from_card_attr(ref.id, uid)
                 fname = await delete_page_upload(ref.id, uid)
                 if fname:
                     (UPLOAD_DIR / fname).unlink(missing_ok=True)
