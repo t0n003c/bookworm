@@ -258,7 +258,7 @@ function _dbCardHtml(card) {
     + '<div class="p-3 flex flex-col flex-1 gap-2">'
     + '<div class="flex items-start gap-2">'
     + '<div contenteditable="true" class="flex-1 font-bold text-gray-900 dark:text-zinc-100'
-    + ' text-base leading-snug outline-none empty:before:content-[\'Untitled\']'
+    + ' text-2xl leading-snug outline-none empty:before:content-[\'Untitled\']'
     + ' empty:before:text-gray-300 dark:empty:before:text-zinc-600"'
     + ' onblur="_dbTitleBlur(' + card.id + ',this)"'
     + ' aria-label="Card title">' + _esc(card.title) + '</div>'
