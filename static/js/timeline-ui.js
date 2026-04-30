@@ -296,7 +296,7 @@ window._bwTLUi = (function () {
     const WORM_W   = 48;    // approx. pixel width at 42px font
     const PEEK     = 8;     // min gap from viewport edges
     const SPEED_W  = 0.55;  // px per frame while wandering (slow crawl)
-    const SPEED_H  = 1.5;   // px per frame while homing to today
+    const SPEED_H  = 3.5;   // px per frame while homing to today
     const PAUSE_LO = 1200;  // ms — minimum pause between wander targets
     const PAUSE_HI = 2800;  // ms — maximum pause between wander targets
 
@@ -382,7 +382,7 @@ window._bwTLUi = (function () {
       if (mode !== 'wander') return;
 
       // Trigger 1 — zoom-out: cumulative zoom from wander baseline drops >30%.
-      const zoomScared = wanderBasePx > 0 && _px / wanderBasePx < 0.70;
+      const zoomScared = wanderBasePx > 0 && _px / wanderBasePx < 0.50;
 
       // Trigger 2 — Today drifted off-screen (drag or zoom).
       const today = new Date(); today.setHours(0, 0, 0, 0);
