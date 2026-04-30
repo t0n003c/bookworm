@@ -395,7 +395,9 @@ function _dbAttrPills(attrs) {
       var nOpts = _dbParseNumOpts(a.attr_options || '');
       var nVis  = _dbNumVisHtml(v, nOpts, true);
       if (nVis) {
-        plainParts.push('<div style="max-width:100px;">' + nVis + '</div>');
+        // Fixed width + flex-shrink:0 so the inner bar/ring gets the full
+        // 88px — without an explicit width the flex item collapses to 0.
+        plainParts.push('<div style="width:88px;flex-shrink:0;">' + nVis + '</div>');
       } else {
         plainParts.push(
           '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
