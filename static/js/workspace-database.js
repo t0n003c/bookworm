@@ -1890,6 +1890,35 @@ function _dbNumFmtPreview(inp, spanId) {
   sp.textContent = _dbFormatNumber(inp.value, numOpts);
 }
 
+/** On focus: swap formatted display → raw number so the user can type. */
+function _dbNumFocus(inp) {
+  inp.value = inp.getAttribute('data-rawval') || '';
+}
+
+/** On blur: save raw value to server, re-display formatted. */
+function _dbNumBlurSave(inp, cardId, attrId, key) {
+  var raw  = inp.value.trim();
+  inp.setAttribute('data-rawval', raw);
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var atype = meta ? (meta.attr_type    || 'number') : 'number';
+  var aopts = meta ? (meta.attr_options || '')        : '';
+  // immediately show formatted (optimistic)
+  var numOpts = _dbParseNumOpts(aopts);
+  inp.value = raw ? _dbFormatNumber(raw, numOpts) : '';
+  // persist
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: raw,
+                           attr_type: atype, attr_options: aopts }),
+  }).then(function(r) {
+    if (!r.ok) throw new Error('save failed');
+    if (meta) meta.attr_value = raw;
+    _dbRenderGrid();
+  }).catch(function(e) { console.warn('Number attr save failed', e); });
+}
+
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);
   var v   = a.attr_value || '';
@@ -1910,20 +1939,18 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
   }
   if (t === 'number') {
-    var numOpts  = _dbParseNumOpts(a.attr_options || '');
-    var preview  = _dbFormatNumber(v, numOpts);
-    var spanId   = '_numfmt_' + cardId + '_' + a.id;
-    var inpStyle = 'border:none;background:transparent;font-size:0.875rem;'
-      + 'color:inherit;outline:none;width:100%;margin-top:2px;';
-    return '<div>'
-      + '<span id="' + spanId + '" style="font-size:0.875rem;font-weight:500;">' + _esc(preview) + '</span>'
-      + '<input type="number" value="' + _esc(v) + '"'
-      + ' style="' + inpStyle + '"'
+    var numOpts = _dbParseNumOpts(a.attr_options || '');
+    var raw     = v;
+    var shown   = raw !== '' ? _dbFormatNumber(raw, numOpts) : '';
+    return '<input type="text" value="' + _esc(shown) + '"'
+      + ' data-rawval="' + _esc(raw) + '"'
       + ' data-numfmt="' + _esc(numOpts.format) + '"'
       + ' data-numdec="' + numOpts.decimals + '"'
-      + ' oninput="_dbNumFmtPreview(this,\'' + spanId + '\')"'
-      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">'
-      + '</div>';
+      + ' placeholder="Enter a number\u2026"'
+      + ' style="border:none;background:transparent;font-size:0.875rem;'
+      + 'color:inherit;outline:none;width:100%;cursor:text;"'
+      + ' onfocus="_dbNumFocus(this)"'
+      + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',\'' + k + '\')">';
   }
   if (t === 'url') {
     var safeUrl = _esc(v);
@@ -2018,6 +2045,9 @@ function _dbRenderDetailPanel(card) {
       + '<div class="flex-1 min-w-0">'
       + _dbAttrValueHtml(card.id, a)
       + '</div>'
+      + '<button type="button" onclick="_dbEditAttrRow(' + card.id + ',' + a.id + ')"'
+      + ' class="text-gray-300 hover:text-blue-400 p-1 rounded transition flex-shrink-0" title="Edit attribute settings">'
+      + '&#9998;</button>'
       + '<button type="button" onclick="_dbDeleteAttr(' + card.id + ',' + a.id + ')"'
       + ' class="text-gray-300 hover:text-red-400 p-1 rounded transition flex-shrink-0" title="Remove attribute">'
       + '&times;</button></div>';
@@ -2583,6 +2613,227 @@ function _dbAddAttrRow(cardId) {
     if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); _submit(); }
   });
   keyInp.focus();
+}
+
+/* ── Edit existing attribute (name / type / format) ─────────────────────── */
+function _dbEditAttrRow(cardId, attrId) {
+  var card    = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr    = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+
+  var origKey  = attr.attr_key     || '';
+  var origType = attr.attr_type    || 'text';
+  var origOpts = attr.attr_options || '';
+  var origVal  = attr.attr_value   || '';
+
+  // ── dark-mode tokens (same pattern as _dbAddAttrRow) ────────────────
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#18181b' : '#ffffff';
+  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#a1a1aa' : '#6b7280';
+  var inpBg  = isDark ? '#27272a' : '#ffffff';
+  var selBg  = isDark ? '#1e3a5f' : '#eff6ff';
+  var btnTxt = isDark ? '#d4d4d8' : '#374151';
+
+  var inputCss = 'width:100%;box-sizing:border-box;padding:0.5rem 0.75rem;'
+    + 'border:1px solid ' + bdr + ';border-radius:0.5rem;font-size:0.875rem;'
+    + 'background:' + inpBg + ';color:' + txt + ';outline:none;';
+  var labelCss = 'font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;color:' + sub + ';';
+
+  var selectedType = origType;
+
+  // ── type grid (pre-selected) ────────────────────────────────────
+  var typeGrid = _DB_ATTR_TYPES.map(function(t) {
+    var isSel = t.id === origType;
+    return '<button type="button" data-type="' + t.id + '"'
+      + ' style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;'
+      + 'padding:0.5rem 0.25rem;border-radius:0.5rem;cursor:pointer;transition:all 0.12s;'
+      + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+      + 'background:' + (isSel ? selBg : 'transparent') + ';">'
+      + '<span style="font-size:1.1rem;line-height:1;">' + t.icon + '</span>'
+      + '<span style="font-size:0.6rem;font-weight:600;color:' + btnTxt + ';">' + t.label + '</span>'
+      + '</button>';
+  }).join('');
+
+  // ── overlay + dialog ───────────────────────────────────────────
+  var ov = document.createElement('div');
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Edit attribute');
+  ov.className = 'fixed inset-0 flex items-center justify-center p-4';
+  ov.style.zIndex = '9999';
+
+  var bd = document.createElement('div');
+  bd.className = 'absolute inset-0 bg-black/40 backdrop-blur-sm';
+  ov.appendChild(bd);
+
+  var dlg = document.createElement('div');
+  dlg.style.cssText = 'position:relative;background:' + bg + ';'
+    + 'border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.4);'
+    + 'width:min(28rem,95vw);max-height:90vh;overflow-y:auto;padding:1.5rem;';
+
+  dlg.innerHTML =
+    '<h2 style="font-weight:700;font-size:1rem;margin:0 0 0.25rem;color:' + txt + ';">'
+    + '\u270F\uFE0F Edit Attribute</h2>'
+    + '<p style="font-size:0.75rem;margin:0 0 1rem;color:' + sub + ';">'
+    + 'Changing the type keeps the stored value — re-format as needed.</p>'
+    // type
+    + '<p style="' + labelCss + 'margin-bottom:0.4rem;">Type</p>'
+    + '<div id="_dbe-type-grid" style="display:grid;grid-template-columns:repeat(4,1fr);'
+    + 'gap:0.35rem;margin-bottom:1rem;">'
+    + typeGrid + '</div>'
+    // name
+    + '<div style="margin-bottom:0.75rem;">'
+    + '<label style="' + labelCss + '">Name</label>'
+    + '<input id="_dbe-key" type="text" value="' + _esc(origKey) + '"'
+    + ' style="' + inputCss + '" /></div>'
+    // dynamic extras (number format / options)
+    + '<div id="_dbe-extras"></div>'
+    // buttons
+    + '<div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:0.5rem;">'
+    + '<button id="_dbe-cancel" type="button"'
+    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:1px solid ' + bdr + ';'
+    + 'font-size:0.875rem;cursor:pointer;background:transparent;color:' + txt + ';">Cancel</button>'
+    + '<button id="_dbe-save" type="button"'
+    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:none;background:#0053e2;'
+    + 'color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;">Save changes</button>'
+    + '</div>';
+
+  ov.appendChild(dlg);
+  document.body.appendChild(ov);
+
+  var keyInp    = document.getElementById('_dbe-key');
+  var extrasDiv = document.getElementById('_dbe-extras');
+  var cancelBtn = document.getElementById('_dbe-cancel');
+  var saveBtn   = document.getElementById('_dbe-save');
+
+  function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+
+  // ── build extras section for current type ───────────────────────────
+  function _buildExtras(t) {
+    extrasDiv.innerHTML = '';
+    if (t === 'number') {
+      var parsed = _dbParseNumOpts(selectedType === origType ? origOpts : '{}');
+
+      var row = document.createElement('div');
+      row.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:0.5rem;margin-bottom:0.75rem;';
+
+      var fmtDiv = document.createElement('div');
+      var fmtLbl = document.createElement('label');
+      fmtLbl.style.cssText = labelCss;
+      fmtLbl.textContent = 'Number format';
+      var fmtSel = document.createElement('select');
+      fmtSel.id = '_dbe-num-fmt';
+      fmtSel.style.cssText = inputCss + 'cursor:pointer;';
+      _DB_NUM_FORMATS.forEach(function(f) {
+        var opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.label;
+        if (f.id === parsed.format) opt.selected = true;
+        fmtSel.appendChild(opt);
+      });
+      fmtDiv.appendChild(fmtLbl);
+      fmtDiv.appendChild(fmtSel);
+
+      var decDiv = document.createElement('div');
+      var decLbl = document.createElement('label');
+      decLbl.style.cssText = labelCss;
+      decLbl.textContent = 'Decimals';
+      var decInp = document.createElement('input');
+      decInp.type  = 'number';
+      decInp.id    = '_dbe-num-dec';
+      decInp.min   = '0';
+      decInp.max   = '5';
+      decInp.value = String(parsed.decimals);
+      decInp.style.cssText = inputCss + 'width:4.5rem;';
+      decDiv.appendChild(decLbl);
+      decDiv.appendChild(decInp);
+
+      row.appendChild(fmtDiv);
+      row.appendChild(decDiv);
+      extrasDiv.appendChild(row);
+    } else if (t === 'select' || t === 'multi_select' || t === 'status') {
+      var optsDiv = document.createElement('div');
+      optsDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var optsLbl = document.createElement('label');
+      optsLbl.style.cssText = labelCss;
+      optsLbl.innerHTML = 'Options <span style="font-weight:400;text-transform:none;">(comma-separated)</span>';
+      var optsInp = document.createElement('input');
+      optsInp.type = 'text';
+      optsInp.id   = '_dbe-opts';
+      optsInp.value = (selectedType === origType ? origOpts : '');
+      optsInp.placeholder = 'e.g. To Do, In Progress, Done';
+      optsInp.style.cssText = inputCss;
+      optsDiv.appendChild(optsLbl);
+      optsDiv.appendChild(optsInp);
+      extrasDiv.appendChild(optsDiv);
+    }
+  }
+
+  // ── read options from extras ─────────────────────────────────────
+  function _readExtras() {
+    if (selectedType === 'number') {
+      var fEl = document.getElementById('_dbe-num-fmt');
+      var dEl = document.getElementById('_dbe-num-dec');
+      return JSON.stringify({
+        format:   fEl ? fEl.value : 'number',
+        decimals: dEl ? (parseInt(dEl.value, 10) || 0) : 0,
+      });
+    }
+    var oEl = document.getElementById('_dbe-opts');
+    return oEl ? oEl.value.trim() : '';
+  }
+
+  // type picker
+  document.getElementById('_dbe-type-grid').addEventListener('click', function(e) {
+    var btn = e.target.closest('button[data-type]');
+    if (!btn) return;
+    selectedType = btn.getAttribute('data-type');
+    this.querySelectorAll('button[data-type]').forEach(function(b) {
+      var sel = b.getAttribute('data-type') === selectedType;
+      b.style.border     = '1px solid ' + (sel ? '#0053e2' : bdr);
+      b.style.background = sel ? selBg : 'transparent';
+    });
+    _buildExtras(selectedType);
+  });
+
+  // ── save ────────────────────────────────────────────────────
+  function _submit() {
+    var newKey  = keyInp.value.trim();
+    if (!newKey) { keyInp.focus(); return; }
+    var newType = selectedType;
+    var newOpts = _readExtras();
+
+    function _doPost() {
+      _dbSaveAttrByKey(cardId, newKey, origVal, newType, newOpts);
+      _close();
+    }
+
+    if (newKey !== origKey) {
+      // key changed — delete old row first, then upsert new
+      fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
+        method: 'DELETE',
+      }).then(function() { _doPost(); })
+        .catch(function() { _doPost(); }); // try upsert even if delete failed
+    } else {
+      _doPost();
+    }
+  }
+
+  // init extras for current type
+  _buildExtras(origType);
+
+  bd.addEventListener('click', _close);
+  cancelBtn.addEventListener('click', _close);
+  saveBtn.addEventListener('click', _submit);
+  ov.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { _close(); return; }
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); _submit(); }
+  });
+  keyInp.focus();
+  keyInp.select();
 }
 
 function _dbSaveAttrByKey(cardId, key, value, attrType, attrOptions) {
