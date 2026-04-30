@@ -34,6 +34,7 @@ from routers.workspace_db_cards import (
 from routers.workspaces_db import get_workspace_by_id
 
 _MAX_COVER_BYTES = 100 * 1024 * 1024  # 100 MB (covers images + videos)
+_MAX_ATTR_FILE_BYTES = 50 * 1024 * 1024  # 50 MB — card attribute file attachments
 
 
 async def _first_uploads_page_id(user_id: int) -> Optional[int]:
@@ -418,3 +419,35 @@ async def upload_card_cover(
         clear_cover_upload=new_upload_id is None,  # no uploads page → clear stale link
     )
     return JSONResponse({"ok": True, "cover_url": cover_url})
+
+
+@router.post("/{ws_id}/db/cards/{card_id}/attrs/{attr_id}/upload-file")
+async def upload_card_attr_file(
+    ws_id: int,
+    card_id: int,
+    attr_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Upload a file for a card attribute of type 'files'.
+
+    Saves to UPLOAD_DIR/db-attr-files/ and returns {ok, url, name}.
+    The JS caller appends this entry to the JSON list stored in attr_value.
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+
+    data = await file.read()
+    if len(data) > _MAX_ATTR_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+
+    original_name = file.filename or "file"
+    suffix = Path(original_name).suffix.lower()
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+
+    attr_dir = UPLOAD_DIR / "db-attr-files"
+    attr_dir.mkdir(parents=True, exist_ok=True)
+    (attr_dir / stored_name).write_bytes(data)
+
+    url = f"/uploads/db-attr-files/{stored_name}"
+    return JSONResponse({"ok": True, "url": url, "name": original_name})
