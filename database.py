@@ -1082,6 +1082,23 @@ async def init_db() -> None:
             END
         """)
 
+        # ── page_uploads: db_card_id + db_card_attr_id link (migration) ───────────
+        # Tags attr-file uploads so the Uploads page can show a badge linking back
+        # to the card, and so deletes propagate in both directions.
+        # Additive + idempotent — safe to run on a live DB.
+        cur = await db.execute("PRAGMA table_info(page_uploads)")
+        _pu2_cols = {row[1] for row in await cur.fetchall()}
+        if "db_card_id" not in _pu2_cols:
+            await db.execute(
+                "ALTER TABLE page_uploads ADD COLUMN "
+                "db_card_id INTEGER REFERENCES db_cards(id) ON DELETE SET NULL"
+            )
+        if "db_card_attr_id" not in _pu2_cols:
+            await db.execute(
+                "ALTER TABLE page_uploads ADD COLUMN "
+                "db_card_attr_id INTEGER REFERENCES db_card_attrs(id) ON DELETE SET NULL"
+            )
+
         await db.commit()
 
 @asynccontextmanager

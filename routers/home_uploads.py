@@ -27,6 +27,7 @@ from routers.uploads_db import (
     get_note_attachment_owned,
     get_page_upload_owned,
     get_page_uploads_by_ids,
+    remove_upload_from_card_attr,
     get_tags_for_file,
     get_uploads_page,
     remove_tag_from_file,
@@ -433,6 +434,7 @@ async def delete_file(request: Request, page_id: int, upload_id: int):
         raise HTTPException(status_code=401)
     await _require_uploads_page(page_id, uid)
 
+    await remove_upload_from_card_attr(upload_id, uid)
     filename = await delete_page_upload(upload_id, uid)
     if not filename:
         raise HTTPException(status_code=404, detail="File not found")

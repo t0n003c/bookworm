@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from database import get_db
 from routers.attachments_db import UPLOAD_DIR
-from routers.uploads_db import create_page_upload, delete_page_upload
+from routers.uploads_db import create_page_upload, delete_page_upload, remove_upload_from_card_attr
 from routers.workspace_db_cards import (
     create_db_card,
     delete_attr_from_workspace,
@@ -449,5 +449,55 @@ async def upload_card_attr_file(
     attr_dir.mkdir(parents=True, exist_ok=True)
     (attr_dir / stored_name).write_bytes(data)
 
+    mime = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
     url = f"/uploads/db-attr-files/{stored_name}"
-    return JSONResponse({"ok": True, "url": url, "name": original_name})
+
+    # Register in the uploads gallery (best-effort — skip if user has no uploads page)
+    upload_id: Optional[int] = None
+    uploads_page_id = await _first_uploads_page_id(user_id)
+    if uploads_page_id:
+        upload_id = await create_page_upload(
+            page_id=uploads_page_id,
+            user_id=user_id,
+            filename=f"db-attr-files/{stored_name}",  # relative to UPLOAD_DIR
+            original_name=original_name,
+            mime_type=mime,
+            size=len(data),
+            db_card_id=card_id,
+            db_card_attr_id=attr_id,
+        )
+
+    return JSONResponse({"ok": True, "url": url, "name": original_name, "upload_id": upload_id})
+
+
+@router.delete("/{ws_id}/db/cards/{card_id}/attrs/{attr_id}/files/{upload_id}")
+async def delete_card_attr_file(
+    ws_id: int,
+    card_id: int,
+    attr_id: int,
+    upload_id: int,
+    request: Request,
+) -> JSONResponse:
+    """Delete a page_uploads row + disk file for a card attribute file entry.
+
+    Ownership is verified: the row must belong to this user AND be linked to
+    the given card_id + attr_id.  The JS caller already spliced the entry from
+    the in-memory list and calls _dbFilesSave in .then().
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT filename FROM page_uploads "
+            "WHERE id = ? AND user_id = ? AND db_card_id = ? AND db_card_attr_id = ?",
+            (upload_id, user_id, card_id, attr_id),
+        )
+        row = await cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    await delete_page_upload(upload_id, user_id)
+    (UPLOAD_DIR / row["filename"]).unlink(missing_ok=True)
+    return JSONResponse({"ok": True})

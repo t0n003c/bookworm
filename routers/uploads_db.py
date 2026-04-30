@@ -13,6 +13,7 @@ Keep them in sync if MIME grouping rules ever change.
 All functions use get_db() — never raw aiosqlite.connect().
 """
 from typing import Optional
+import json
 from database import get_db
 
 _PAGE_SIZE = 50  # files per page
@@ -125,6 +126,7 @@ async def get_uploads_page(
                     NULL                AS db_card_title,
                     NULL                AS db_card_ws_name,
                     NULL                AS db_card_ws_id,
+                    NULL                AS db_card_attr_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM note_attachments na
                 JOIN notes      n ON n.id  = na.note_id
@@ -151,14 +153,18 @@ async def get_uploads_page(
                     NULL                AS workspace_name,
                     pu.page_id          AS page_id,
                     pu.folder_id        AS folder_id,
-                    dc.id               AS db_card_id,
-                    dc.title            AS db_card_title,
-                    dbws.name           AS db_card_ws_name,
-                    dbws.id             AS db_card_ws_id,
+                    COALESCE(dc_cover.id,     dc_attr.id)     AS db_card_id,
+                    COALESCE(dc_cover.title,  dc_attr.title)  AS db_card_title,
+                    COALESCE(dbws_cover.name, dbws_attr.name) AS db_card_ws_name,
+                    COALESCE(dbws_cover.id,   dbws_attr.id)   AS db_card_ws_id,
+                    pu.db_card_attr_id                        AS db_card_attr_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM page_uploads pu
-                LEFT JOIN db_cards dc ON dc.cover_upload_id = pu.id
-                LEFT JOIN workspaces dbws ON dbws.id = dc.db_id
+                LEFT JOIN db_cards dc_cover ON dc_cover.cover_upload_id = pu.id
+                LEFT JOIN db_cards dc_attr  ON dc_attr.id = pu.db_card_id
+                                           AND pu.db_card_attr_id IS NOT NULL
+                LEFT JOIN workspaces dbws_cover ON dbws_cover.id = dc_cover.db_id
+                LEFT JOIN workspaces dbws_attr  ON dbws_attr.id  = dc_attr.db_id
                 LEFT JOIN page_upload_tags t
                        ON t.upload_src = 'page' AND t.upload_id = pu.id
                       AND t.user_id = ?
@@ -187,15 +193,19 @@ async def get_uploads_page(
                     NULL                AS workspace_name,
                     pu.page_id          AS page_id,
                     pu.folder_id        AS folder_id,
-                    dc.id               AS db_card_id,
-                    dc.title            AS db_card_title,
-                    dbws.name           AS db_card_ws_name,
-                    dbws.id             AS db_card_ws_id,
+                    COALESCE(dc_cover.id,     dc_attr.id)     AS db_card_id,
+                    COALESCE(dc_cover.title,  dc_attr.title)  AS db_card_title,
+                    COALESCE(dbws_cover.name, dbws_attr.name) AS db_card_ws_name,
+                    COALESCE(dbws_cover.id,   dbws_attr.id)   AS db_card_ws_id,
+                    pu.db_card_attr_id                        AS db_card_attr_id,
                     GROUP_CONCAT(t.tag) AS tags
                 FROM page_uploads pu
                 """ + catalog_join + """
-                LEFT JOIN db_cards dc ON dc.cover_upload_id = pu.id
-                LEFT JOIN workspaces dbws ON dbws.id = dc.db_id
+                LEFT JOIN db_cards dc_cover ON dc_cover.cover_upload_id = pu.id
+                LEFT JOIN db_cards dc_attr  ON dc_attr.id = pu.db_card_id
+                                           AND pu.db_card_attr_id IS NOT NULL
+                LEFT JOIN workspaces dbws_cover ON dbws_cover.id = dc_cover.db_id
+                LEFT JOIN workspaces dbws_attr  ON dbws_attr.id  = dc_attr.db_id
                 LEFT JOIN page_upload_tags t
                        ON t.upload_src = 'page' AND t.upload_id = pu.id
                       AND t.user_id = ?
@@ -271,16 +281,20 @@ async def create_page_upload(
     original_name: str,
     mime_type: str,
     size: int,
+    db_card_id: Optional[int] = None,
+    db_card_attr_id: Optional[int] = None,
 ) -> int:
     """Insert a standalone upload record; return its new id."""
     async with get_db() as db:
         cur = await db.execute(
             """
             INSERT INTO page_uploads
-                (page_id, user_id, filename, original_name, mime_type, size)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (page_id, user_id, filename, original_name, mime_type, size,
+                 db_card_id, db_card_attr_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (page_id, user_id, filename, original_name, mime_type, size),
+            (page_id, user_id, filename, original_name, mime_type, size,
+             db_card_id, db_card_attr_id),
         )
         await db.commit()
         return cur.lastrowid
@@ -415,3 +429,41 @@ async def get_all_user_tags(user_id: int) -> list:
             (user_id,),
         )
         return [r["tag"] for r in await cur.fetchall()]
+
+
+async def remove_upload_from_card_attr(upload_id: int, user_id: int) -> None:
+    """When a page_uploads row that is linked to a card attr is deleted,
+    patch the attr_value JSON to remove the matching entry.
+
+    No-ops silently if the upload is not attr-linked or the attr is gone.
+    Called by the Uploads-page delete endpoint BEFORE delete_page_upload.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT db_card_id, db_card_attr_id FROM page_uploads "
+            "WHERE id = ? AND user_id = ?",
+            (upload_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row or row["db_card_id"] is None or row["db_card_attr_id"] is None:
+            return
+        attr_id = row["db_card_attr_id"]
+        cur2 = await db.execute(
+            "SELECT attr_value FROM db_card_attrs WHERE id = ?",
+            (attr_id,),
+        )
+        attr_row = await cur2.fetchone()
+        if not attr_row:
+            return
+        try:
+            entries = json.loads(attr_row["attr_value"] or "[]")
+        except (ValueError, TypeError):
+            return
+        if not isinstance(entries, list):
+            return
+        updated = [e for e in entries if e.get("upload_id") != upload_id]
+        await db.execute(
+            "UPDATE db_card_attrs SET attr_value = ? WHERE id = ?",
+            (json.dumps(updated), attr_id),
+        )
+        await db.commit()

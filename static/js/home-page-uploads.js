@@ -312,6 +312,16 @@ function _uplCard(f) {
                        transition-colors cursor-pointer"
                 title="Click to see which grid page this belongs to"
                 aria-haspopup="true">&#128248; Grid &#9660;</button>`
+    : f.db_card_id && f.db_card_attr_id
+    ? `<button onclick="event.stopPropagation();_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded
+                       font-semibold bg-purple-50 text-purple-700 dark:bg-purple-900/40
+                       dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60
+                       transition-colors cursor-pointer"
+                title="File attribute on DB card: ${_uplEsc(f.db_card_title || 'Card')} in ${_uplEsc(f.db_card_ws_name || '')}"
+                aria-label="Open card">
+        &#128206;&nbsp;${_uplEsc((f.db_card_title || 'Card').substring(0,18))} &#9656;
+      </button>`
     : f.db_card_id
     ? `<button onclick="event.stopPropagation();_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
                 class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] rounded
@@ -528,6 +538,23 @@ function _uplRenderDetail(f) {
          <button onclick="_uplDeleteNoteAttachment(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
                  border border-red-200 dark:border-red-800 text-red-500
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Remove attachment</button></div>`
+    : f.db_card_id && f.db_card_attr_id
+    ? `<div class="p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 mb-3">
+         <p class="text-[10px] uppercase tracking-wide text-purple-600 dark:text-purple-400 mb-1 font-bold">&#128206; DB Card File Attribute</p>
+         <p class="text-xs text-gray-700 dark:text-zinc-200 font-medium truncate"
+            title="${_uplEsc(f.db_card_title||'Card')}">${_uplEsc(f.db_card_title||'Untitled card')}</p>
+         <p class="text-[10px] text-gray-500 dark:text-zinc-400 truncate">${_uplEsc(f.db_card_ws_name||'')}</p>
+         <p class="text-[10px] text-purple-600/70 dark:text-purple-400/60 mt-1 italic">
+           Deleting this file will also remove it from the card&#39;s files list.
+         </p>
+         <button type="button" onclick="_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
+                 class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs
+                        rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition">
+           &#128206; Open card
+         </button>
+         <button onclick="_uplConfirmDelete(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
+                 border border-red-200 dark:border-red-800 text-red-500
+                 hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`
     : f.db_card_id
     ? `<div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 mb-3">
          <p class="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1 font-bold">&#128247; DB Card Cover</p>

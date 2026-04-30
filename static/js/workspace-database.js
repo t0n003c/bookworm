@@ -265,7 +265,7 @@ function _dbFilesUpload(cardId, attrId, key, inp) {
     var card = _dbCards.find(function(c) { return c.id === cardId; });
     var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
     var files = _dbParseFiles(meta ? (meta.attr_value || '') : '');
-    files.push({ name: data.name, url: data.url });
+    files.push({ name: data.name, url: data.url, upload_id: data.upload_id || null });
     _dbFilesSave(cardId, attrId, key, files);
   })
   .catch(function(e) {
@@ -299,12 +299,26 @@ function _dbFilesConfirmLink(cardId, attrId, key) {
 }
 
 // Remove a file entry by index and save.
+// If the entry has an upload_id, DELETE the server record first (synced with Uploads page).
 function _dbFilesRemove(cardId, attrId, key, idx) {
-  var card = _dbCards.find(function(c) { return c.id === cardId; });
-  var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var card  = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta  = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   var files = _dbParseFiles(meta ? (meta.attr_value || '') : '');
+  var entry = files[idx];
   files.splice(idx, 1);
-  _dbFilesSave(cardId, attrId, key, files);
+
+  if (entry && entry.upload_id) {
+    fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId
+          + '/attrs/' + attrId + '/files/' + entry.upload_id,
+      { method: 'DELETE' })
+    .then(function() { _dbFilesSave(cardId, attrId, key, files); })
+    .catch(function(e) {
+      console.warn('Attr file delete failed', e);
+      _dbFilesSave(cardId, attrId, key, files); // still remove from UI
+    });
+  } else {
+    _dbFilesSave(cardId, attrId, key, files);
+  }
 }
 
 function _dbParseOptions(optsStr) {
@@ -364,6 +378,11 @@ function initDatabaseView(wsId) {
   _dbBindModals();
   _dbInitStyles();
   _dbSelToolbarInit();
+  // Deep-link: ?open_card=N opens the card detail panel on page load.
+  var _ocParam = new URLSearchParams(window.location.search).get('open_card');
+  if (_ocParam) {
+    setTimeout(function() { _dbOpenDetail(parseInt(_ocParam, 10)); }, 80);
+  }
 }
 
 /* ── card size slider ─────────────────────────────────────────────────────────────── */
