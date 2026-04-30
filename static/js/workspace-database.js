@@ -2067,7 +2067,8 @@ function _dbAddAttrRow(cardId) {
   ov.setAttribute('role', 'dialog');
   ov.setAttribute('aria-modal', 'true');
   ov.setAttribute('aria-label', 'Add attribute');
-  ov.className = 'fixed inset-0 z-[300] flex items-center justify-center p-4';
+  ov.className = 'fixed inset-0 flex items-center justify-center p-4';
+  ov.style.zIndex = '9999';   // inline — Tailwind CDN won't scan arbitrary z-[n] in JS strings
 
   var bd = document.createElement('div');
   bd.className = 'absolute inset-0 bg-black/40 backdrop-blur-sm';
