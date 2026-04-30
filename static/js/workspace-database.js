@@ -2933,19 +2933,112 @@ function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
 }
 
 function _dbDeleteAttr(cardId, attrId) {
-  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
-    method: 'DELETE',
-  })
-  .then(function(r) {
-    if (!r.ok) throw new Error('Delete attr failed');
-    var card = _dbCards.find(function(c) { return c.id === cardId; });
-    if (card && card.attrs) {
-      card.attrs = card.attrs.filter(function(a) { return a.id !== attrId; });
-    }
-    _dbRenderGrid();
-    if (_dbDetailId === cardId) _dbOpenDetail(cardId);
-  })
-  .catch(function(e) { _dbToast('Could not delete attribute: ' + e.message, true); });
+  // Find attr name for the warning label
+  var card     = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr     = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var attrName = attr ? attr.attr_key : 'this attribute';
+
+  // ── dark-mode tokens (same pattern as every other modal in this file) ───
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#18181b' : '#ffffff';
+  var bdr    = isDark ? '#3f3f46' : '#d1d5db';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#a1a1aa' : '#6b7280';
+
+  // ── overlay ─────────────────────────────────────────────────
+  var ov = document.createElement('div');
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Remove attribute');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;'
+    + 'display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+  var bd = document.createElement('div');
+  bd.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);';
+  ov.appendChild(bd);
+
+  // ── dialog (matches card-delete modal proportions exactly) ──────────
+  var dlg = document.createElement('div');
+  dlg.style.cssText = 'position:relative;background:' + bg + ';'
+    + 'border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.35);'
+    + 'width:100%;max-width:20rem;padding:1.5rem;';
+
+  // title
+  var h2 = document.createElement('h2');
+  h2.style.cssText = 'font-size:1rem;font-weight:700;color:' + txt + ';margin:0 0 0.5rem;';
+  h2.textContent = 'Remove attribute?';
+  dlg.appendChild(h2);
+
+  // attribute name
+  var p = document.createElement('p');
+  p.style.cssText = 'font-size:0.875rem;color:' + sub + ';margin:0 0 1.25rem;'
+    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  p.textContent = '\u201c' + attrName + '\u201d and its value will be permanently removed.';
+  dlg.appendChild(p);
+
+  // button row
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:0.5rem;justify-content:flex-end;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'padding:0.5rem 1rem;font-size:0.875rem;border-radius:0.5rem;'
+    + 'border:1px solid ' + bdr + ';color:' + txt + ';background:transparent;'
+    + 'cursor:pointer;transition:background 0.15s;';
+
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = 'Remove';
+  delBtn.style.cssText = 'padding:0.5rem 1rem;font-size:0.875rem;font-weight:600;'
+    + 'border-radius:0.5rem;border:none;background:#ea1100;color:#fff;'
+    + 'cursor:pointer;transition:background 0.15s;';
+
+  row.appendChild(cancelBtn);
+  row.appendChild(delBtn);
+  dlg.appendChild(row);
+  ov.appendChild(dlg);
+  document.body.appendChild(ov);
+
+  function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+
+  // hover effects
+  cancelBtn.addEventListener('mouseenter', function() {
+    cancelBtn.style.background = isDark ? '#27272a' : '#f9fafb';
+  });
+  cancelBtn.addEventListener('mouseleave', function() {
+    cancelBtn.style.background = 'transparent';
+  });
+  delBtn.addEventListener('mouseenter', function() {
+    delBtn.style.background = '#c70e00';
+  });
+  delBtn.addEventListener('mouseleave', function() {
+    delBtn.style.background = '#ea1100';
+  });
+
+  // dismiss
+  bd.addEventListener('click', _close);
+  cancelBtn.addEventListener('click', _close);
+  ov.addEventListener('keydown', function(e) { if (e.key === 'Escape') _close(); });
+
+  // confirm → do the actual delete
+  delBtn.addEventListener('click', function() {
+    _close();
+    fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
+      method: 'DELETE',
+    })
+    .then(function(r) {
+      if (!r.ok) throw new Error('Delete attr failed');
+      if (card && card.attrs) {
+        card.attrs = card.attrs.filter(function(a) { return a.id !== attrId; });
+      }
+      _dbRenderGrid();
+      if (_dbDetailId === cardId) _dbOpenDetail(cardId);
+    })
+    .catch(function(e) { _dbToast('Could not delete attribute: ' + e.message, true); });
+  });
+
+  delBtn.focus();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
