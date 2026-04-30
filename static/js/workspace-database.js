@@ -2715,12 +2715,8 @@ function _dbAddAttrRow(cardId) {
     + '<input id="_db-attr-val" type="text" placeholder="Leave blank to fill later…"'
     + ' style="' + inputCss + '" /></div>'
 
-    // ─ options (select / multi_select / status only)
-    + '<div id="_db-attr-opts-wrap" style="display:none;margin-bottom:0.75rem;">'
-    + '<label style="' + labelCss + '">Options '
-    + '<span style="font-weight:400;text-transform:none;">(comma-separated)</span></label>'
-    + '<input id="_db-attr-opts" type="text" placeholder="e.g. To Do, In Progress, Done"'
-    + ' style="' + inputCss + '" /></div>'
+    // ─ options (select / multi_select / status only — filled dynamically by _dbBuildOptEditor)
+    + '<div id="_db-attr-opts-wrap" style="display:none;margin-bottom:0.75rem;"></div>'
 
     // ─ buttons
     + '<div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:0.5rem;">'
@@ -2922,7 +2918,12 @@ function _dbAddAttrRow(cardId) {
       valWrap.appendChild(inp);
     }
     var needsOpts = (t === 'select' || t === 'multi_select' || t === 'status');
-    optsWrap.style.display = needsOpts ? '' : 'none';
+    if (needsOpts) {
+      optsWrap.style.display = '';
+      _dbBuildOptEditor(optsWrap, []);
+    } else {
+      optsWrap.style.display = 'none';
+    }
   }
 
   function _getValField() { return document.getElementById('_db-attr-val'); }
@@ -2943,8 +2944,7 @@ function _dbAddAttrRow(cardId) {
         decimals: decEl ? (parseInt(decEl.value, 10) || 0) : 0,
       });
     }
-    var el = document.getElementById('_db-attr-opts');
-    return el ? el.value.trim() : '';
+    return _dbReadOptEditor(optsWrap);
   }
 
   // type button click — re-style uses same dark-aware tokens
@@ -2983,81 +2983,113 @@ function _dbAddAttrRow(cardId) {
 // initOpts  : [{label, color}] from _dbParseOptions()
 function _dbBuildOptEditor(container, initOpts) {
   container.innerHTML = '';
+  var dk = document.documentElement.classList.contains('dark');
 
-  var lbl = document.createElement('label');
-  lbl.style.cssText = 'display:block;font-size:0.7rem;font-weight:600;text-transform:uppercase;'
-    + 'letter-spacing:0.05em;color:#6b7280;margin-bottom:0.5rem;';
+  // Section label
+  var lbl = document.createElement('div');
+  lbl.style.cssText = 'font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;color:' + (dk ? '#71717a' : '#9ca3af') + ';margin-bottom:0.4rem;';
   lbl.textContent = 'Options';
   container.appendChild(lbl);
 
   var listEl = document.createElement('div');
   listEl.className = '_dbe-opt-list';
-  listEl.style.cssText = 'display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.5rem;';
+  listEl.style.cssText = 'display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.4rem;';
   container.appendChild(listEl);
 
   function _makeRow(label, color) {
     var rowEl = document.createElement('div');
     rowEl.className = '_dbe-opt-row';
     rowEl.setAttribute('data-color', color || 'gray');
-    rowEl.style.cssText = 'display:flex;flex-direction:column;';
 
-    var mainLine = document.createElement('div');
-    mainLine.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
-
-    // Colour swatch button
     var def = _dbOptColorDef(color || 'gray');
+    var accentBdr = (color && color !== 'gray') ? def.dot + '55' : (dk ? '#3f3f46' : '#e5e7eb');
+
+    rowEl.style.cssText = 'display:flex;flex-direction:column;border-radius:0.5rem;'
+      + 'border:1px solid ' + accentBdr + ';overflow:hidden;transition:border-color 0.15s;';
+
+    // Main row line
+    var mainLine = document.createElement('div');
+    mainLine.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.5rem;'
+      + 'background:' + (dk ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.015)') + ';';
+
+    // Color dot — acts as picker trigger
     var colorBtn = document.createElement('button');
     colorBtn.type = 'button';
     colorBtn.title = 'Change colour';
-    colorBtn.style.cssText = 'flex-shrink:0;width:0.9rem;height:0.9rem;border-radius:9999px;'
-      + 'border:none;cursor:pointer;background:' + def.dot + ';transition:transform 0.1s;';
-    colorBtn.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.3)'; });
+    colorBtn.style.cssText = 'flex-shrink:0;width:1rem;height:1rem;border-radius:9999px;border:none;'
+      + 'cursor:pointer;background:' + def.dot + ';'
+      + 'box-shadow:0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3px ' + def.dot + '88;'
+      + 'transition:transform 0.15s,box-shadow 0.15s;';
+    colorBtn.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.2)'; });
     colorBtn.addEventListener('mouseleave', function() { this.style.transform = ''; });
 
-    // Label input
+    // Label — borderless input, styled like a chip preview
     var labelInp = document.createElement('input');
     labelInp.type = 'text';
     labelInp.className = '_dbe-opt-label';
     labelInp.value = label || '';
-    labelInp.placeholder = 'Option label…';
-    labelInp.style.cssText = 'flex:1;padding:0.25rem 0.5rem;font-size:0.8rem;'
-      + 'border:1px solid #d1d5db;border-radius:0.375rem;background:transparent;'
-      + 'outline:none;color:inherit;min-width:0;';
+    labelInp.placeholder = 'Label…';
+    labelInp.style.cssText = 'flex:1;border:none;background:transparent;outline:none;'
+      + 'font-size:0.82rem;font-weight:500;color:' + (dk ? '#f4f4f5' : '#111827') + ';'
+      + 'min-width:0;padding:0;';
 
-    // Delete button
+    // Delete — SVG × icon, appears on hover
     var delBtn = document.createElement('button');
     delBtn.type = 'button';
-    delBtn.textContent = '\u00d7';
     delBtn.title = 'Remove';
-    delBtn.style.cssText = 'flex-shrink:0;width:1.25rem;height:1.25rem;border:none;background:transparent;'
-      + 'cursor:pointer;font-size:1rem;color:#9ca3af;line-height:1;transition:color 0.1s;';
-    delBtn.addEventListener('mouseenter', function() { this.style.color = '#ef4444'; });
-    delBtn.addEventListener('mouseleave', function() { this.style.color = '#9ca3af'; });
+    delBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+      + ' stroke-width="2.5" stroke-linecap="round">'
+      + '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    delBtn.style.cssText = 'flex-shrink:0;width:1.2rem;height:1.2rem;border:none;background:transparent;'
+      + 'cursor:pointer;color:#d1d5db;display:flex;align-items:center;justify-content:center;'
+      + 'border-radius:0.25rem;padding:0;transition:color 0.1s,background 0.1s;';
+    delBtn.addEventListener('mouseenter', function() {
+      this.style.color = '#ef4444';
+      this.style.background = dk ? '#450a0a55' : '#fef2f2';
+    });
+    delBtn.addEventListener('mouseleave', function() {
+      this.style.color = '#d1d5db';
+      this.style.background = 'transparent';
+    });
     delBtn.addEventListener('click', function() { listEl.removeChild(rowEl); });
 
-    // Palette panel (hidden until swatch clicked)
+    // Palette panel — revealed below the row
     var palEl = document.createElement('div');
     palEl.className = '_dbe-palette';
-    palEl.style.cssText = 'display:none;padding:0.3rem 0 0.2rem 1.3rem;';
+    palEl.style.cssText = 'display:none;padding:0.45rem 0.6rem;'
+      + 'border-top:1px solid ' + (dk ? '#3f3f46' : '#f3f4f6') + ';'
+      + 'background:' + (dk ? '#1c1c1f' : '#f9fafb') + ';';
+
+    var palLbl = document.createElement('div');
+    palLbl.style.cssText = 'font-size:0.62rem;font-weight:600;text-transform:uppercase;'
+      + 'letter-spacing:0.06em;color:' + (dk ? '#52525b' : '#d1d5db') + ';margin-bottom:0.4rem;';
+    palLbl.textContent = 'Pick a colour';
+    palEl.appendChild(palLbl);
+
     var swatchRow = document.createElement('div');
-    swatchRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;';
+    swatchRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;';
     _DB_OPT_COLORS.forEach(function(c) {
       var sw = document.createElement('button');
       sw.type = 'button';
-      sw.title = c.id;
+      sw.title = c.id.charAt(0).toUpperCase() + c.id.slice(1);
       var isActive = c.id === (rowEl.getAttribute('data-color') || 'gray');
-      sw.style.cssText = 'width:0.9rem;height:0.9rem;border-radius:9999px;cursor:pointer;'
-        + 'background:' + c.dot + ';transition:transform 0.1s,box-shadow 0.1s;'
-        + (isActive ? 'box-shadow:0 0 0 2px #fff,0 0 0 3.5px ' + c.dot + ';' : '');
-      sw.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.3)'; });
+      sw.style.cssText = 'width:1.1rem;height:1.1rem;border-radius:9999px;border:none;cursor:pointer;'
+        + 'background:' + c.dot + ';transition:transform 0.12s,box-shadow 0.12s;'
+        + (isActive ? 'box-shadow:0 0 0 2px ' + (dk ? '#1c1c1f' : '#f9fafb') + ',0 0 0 3.5px ' + c.dot + ';' : '');
+      sw.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.25)'; });
       sw.addEventListener('mouseleave', function() { this.style.transform = ''; });
       sw.addEventListener('click', function() {
+        var newDef = _dbOptColorDef(c.id);
         rowEl.setAttribute('data-color', c.id);
-        colorBtn.style.background = c.dot;
-        swatchRow.querySelectorAll('button').forEach(function(b) {
-          b.style.boxShadow = '';
-        });
-        sw.style.boxShadow = '0 0 0 2px #fff,0 0 0 3.5px ' + c.dot;
+        // update the trigger dot
+        colorBtn.style.background  = newDef.dot;
+        colorBtn.style.boxShadow   = '0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3px ' + newDef.dot + '88';
+        // update row border accent
+        rowEl.style.borderColor = c.id === 'gray' ? (dk ? '#3f3f46' : '#e5e7eb') : newDef.dot + '55';
+        // update swatch ring
+        swatchRow.querySelectorAll('button').forEach(function(b) { b.style.boxShadow = ''; });
+        sw.style.boxShadow = '0 0 0 2px ' + (dk ? '#1c1c1f' : '#f9fafb') + ',0 0 0 3.5px ' + c.dot;
         palEl.style.display = 'none';
       });
       swatchRow.appendChild(sw);
@@ -3066,7 +3098,6 @@ function _dbBuildOptEditor(container, initOpts) {
 
     colorBtn.addEventListener('click', function() {
       var isOpen = palEl.style.display !== 'none';
-      // close every other open palette first
       listEl.querySelectorAll('._dbe-palette').forEach(function(p) { p.style.display = 'none'; });
       palEl.style.display = isOpen ? 'none' : 'block';
     });
@@ -3082,13 +3113,28 @@ function _dbBuildOptEditor(container, initOpts) {
 
   initOpts.forEach(function(o) { _makeRow(o.label, o.color); });
 
+  // Full-width dashed “Add option” button
   var addBtn = document.createElement('button');
   addBtn.type = 'button';
-  addBtn.textContent = '+ Add option';
-  addBtn.style.cssText = 'font-size:0.75rem;color:#0053e2;background:transparent;border:none;'
-    + 'cursor:pointer;padding:0;text-align:left;';
-  addBtn.addEventListener('mouseenter', function() { this.style.textDecoration = 'underline'; });
-  addBtn.addEventListener('mouseleave', function() { this.style.textDecoration = ''; });
+  addBtn.innerHTML =
+    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.5" stroke-linecap="round" style="flex-shrink:0;">'
+    + '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
+    + '<span>Add option</span>';
+  addBtn.style.cssText = 'width:100%;display:flex;align-items:center;justify-content:center;gap:0.35rem;'
+    + 'padding:0.35rem;border-radius:0.5rem;font-size:0.8rem;font-weight:500;'
+    + 'border:1.5px dashed ' + (dk ? '#3f3f46' : '#e5e7eb') + ';background:transparent;'
+    + 'color:' + (dk ? '#71717a' : '#9ca3af') + ';cursor:pointer;transition:all 0.15s;';
+  addBtn.addEventListener('mouseenter', function() {
+    this.style.borderColor = '#0053e2';
+    this.style.color = '#0053e2';
+    this.style.background = dk ? 'rgba(0,83,226,0.08)' : 'rgba(0,83,226,0.04)';
+  });
+  addBtn.addEventListener('mouseleave', function() {
+    this.style.borderColor = dk ? '#3f3f46' : '#e5e7eb';
+    this.style.color = dk ? '#71717a' : '#9ca3af';
+    this.style.background = 'transparent';
+  });
   addBtn.addEventListener('click', function() {
     var row = _makeRow('', 'gray');
     var inp = row.querySelector('._dbe-opt-label');
