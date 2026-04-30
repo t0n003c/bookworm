@@ -24,7 +24,75 @@ var _dbGripIndicator    = null;   // blue drop-line
 var _dbGripInsertBefore = null;
 var _dbGripDropParent   = null;
 
-/* ── attribute type registry ─────────────────────────────────────────────── */
+/* ── number format registry ────────────────────────────────────────── */
+// Each entry: { id, label, currency }  — currency=null means non-currency
+var _DB_NUM_FORMATS = [
+  // ─ plain formats
+  { id:'number',     label:'Number',                          currency:null },
+  { id:'number_sep', label:'Number with separators',          currency:null },
+  { id:'percent',    label:'% Percent',                       currency:null },
+  // ─ user-specified currencies
+  { id:'gbp', label:'\u00a3 Pound (GBP)',                      currency:'GBP' },
+  { id:'usd', label:'$ US Dollar (USD)',                       currency:'USD' },
+  { id:'aud', label:'A$ Australian Dollar (AUD)',               currency:'AUD' },
+  { id:'cad', label:'C$ Canadian Dollar (CAD)',                 currency:'CAD' },
+  { id:'sgd', label:'S$ Singapore Dollar (SGD)',                currency:'SGD' },
+  { id:'eur', label:'\u20ac Euro (EUR)',                        currency:'EUR' },
+  { id:'rub', label:'\u20bd Ruble (RUB)',                       currency:'RUB' },
+  { id:'inr', label:'\u20b9 Rupee (INR)',                       currency:'INR' },
+  { id:'krw', label:'\u20a9 Won (KRW)',                         currency:'KRW' },
+  { id:'cny', label:'\u00a5 Yuan (CNY)',                        currency:'CNY' },
+  { id:'brl', label:'R$ Real (BRL)',                            currency:'BRL' },
+  { id:'try', label:'\u20ba Lira (TRY)',                        currency:'TRY' },
+  { id:'idr', label:'Rp Rupiah (IDR)',                          currency:'IDR' },
+  { id:'chf', label:'Fr Franc (CHF)',                           currency:'CHF' },
+  { id:'hkd', label:'HK$ Hong Kong Dollar (HKD)',               currency:'HKD' },
+  { id:'nzd', label:'NZ$ New Zealand Dollar (NZD)',             currency:'NZD' },
+  { id:'sek', label:'kr Swedish Krona (SEK)',                   currency:'SEK' },
+  // ─ additional world currencies
+  { id:'jpy', label:'\u00a5 Yen (JPY)',                         currency:'JPY' },
+  { id:'mxn', label:'$ Mexican Peso (MXN)',                     currency:'MXN' },
+  { id:'nok', label:'kr Norwegian Krone (NOK)',                  currency:'NOK' },
+  { id:'dkk', label:'kr Danish Krone (DKK)',                    currency:'DKK' },
+  { id:'pln', label:'z\u0142 Polish Zloty (PLN)',               currency:'PLN' },
+  { id:'czk', label:'K\u010d Czech Koruna (CZK)',               currency:'CZK' },
+  { id:'huf', label:'Ft Hungarian Forint (HUF)',                 currency:'HUF' },
+  { id:'ron', label:'lei Romanian Leu (RON)',                    currency:'RON' },
+  { id:'uah', label:'\u20b4 Ukrainian Hryvnia (UAH)',            currency:'UAH' },
+  { id:'isk', label:'kr Icelandic Kr\u00f3na (ISK)',            currency:'ISK' },
+  { id:'bgn', label:'\u043b\u0432 Bulgarian Lev (BGN)',         currency:'BGN' },
+  { id:'sar', label:'\ufdfc Saudi Riyal (SAR)',                  currency:'SAR' },
+  { id:'aed', label:'\u062f.\u0625 UAE Dirham (AED)',           currency:'AED' },
+  { id:'ils', label:'\u20aa Israeli Shekel (ILS)',               currency:'ILS' },
+  { id:'qar', label:'\ufdfc Qatari Riyal (QAR)',                 currency:'QAR' },
+  { id:'kwd', label:'KD Kuwaiti Dinar (KWD)',                    currency:'KWD' },
+  { id:'bhd', label:'BD Bahraini Dinar (BHD)',                   currency:'BHD' },
+  { id:'omr', label:'\ufdfc Omani Rial (OMR)',                   currency:'OMR' },
+  { id:'egp', label:'\u00a3 Egyptian Pound (EGP)',               currency:'EGP' },
+  { id:'zar', label:'R South African Rand (ZAR)',                currency:'ZAR' },
+  { id:'ngn', label:'\u20a6 Nigerian Naira (NGN)',               currency:'NGN' },
+  { id:'mad', label:'MAD Moroccan Dirham (MAD)',                  currency:'MAD' },
+  { id:'kes', label:'KSh Kenyan Shilling (KES)',                  currency:'KES' },
+  { id:'ghs', label:'GH\u20b5 Ghanaian Cedi (GHS)',             currency:'GHS' },
+  { id:'thb', label:'\u0e3f Thai Baht (THB)',                    currency:'THB' },
+  { id:'vnd', label:'\u20ab Vietnamese Dong (VND)',              currency:'VND' },
+  { id:'myr', label:'RM Malaysian Ringgit (MYR)',                 currency:'MYR' },
+  { id:'php', label:'\u20b1 Philippine Peso (PHP)',              currency:'PHP' },
+  { id:'twd', label:'NT$ Taiwan Dollar (TWD)',                    currency:'TWD' },
+  { id:'pkr', label:'\u20a8 Pakistani Rupee (PKR)',              currency:'PKR' },
+  { id:'bdt', label:'\u09f3 Bangladeshi Taka (BDT)',             currency:'BDT' },
+  { id:'lkr', label:'\u20a8 Sri Lankan Rupee (LKR)',             currency:'LKR' },
+  { id:'kzt', label:'\u20b8 Kazakhstani Tenge (KZT)',            currency:'KZT' },
+  { id:'ars', label:'$ Argentine Peso (ARS)',                     currency:'ARS' },
+  { id:'clp', label:'$ Chilean Peso (CLP)',                       currency:'CLP' },
+  { id:'cop', label:'$ Colombian Peso (COP)',                     currency:'COP' },
+  { id:'pen', label:'S/ Peruvian Sol (PEN)',                      currency:'PEN' },
+  { id:'uyu', label:'$ Uruguayan Peso (UYU)',                     currency:'UYU' },
+  // ─ crypto — last
+  { id:'btc', label:'\u20bf Bitcoin (BTC)',                      currency:null  },
+];
+
+/* ── attribute type registry ────────────────────────────────────────── */
 var _DB_ATTR_TYPES = [
   { id: 'text',         label: 'Text',         icon: '\uD83D\uDCDD' },
   { id: 'number',       label: 'Number',       icon: '\uD83D\uDD22' },
@@ -1772,6 +1840,56 @@ function _dbStatusColor(val) {
 /** Render the value cell for one attribute row in the detail panel.
  *  Returns an HTML string. Inline styles used for colors — CDN Tailwind
  *  won't generate runtime arbitrary values. */
+
+/* ── number formatting helpers ──────────────────────────────────────── */
+function _dbParseNumOpts(optsStr) {
+  try {
+    var o = JSON.parse(optsStr || '{}');
+    return {
+      format:   o.format   || 'number',
+      decimals: (o.decimals !== undefined) ? parseInt(o.decimals, 10) : 0,
+    };
+  } catch(e) { return { format: 'number', decimals: 0 }; }
+}
+
+function _dbFormatNumber(raw, numOpts) {
+  var n = parseFloat(raw);
+  if (isNaN(n)) return raw || '';
+  var fmt = numOpts.format || 'number';
+  var dec = parseInt(numOpts.decimals, 10);
+  if (isNaN(dec) || dec < 0) dec = 0;
+  if (dec > 5) dec = 5;
+
+  if (fmt === 'btc')        return '\u20bf' + n.toFixed(dec);
+  if (fmt === 'percent')    return n.toFixed(dec) + '%';
+  if (fmt === 'number')     return n.toFixed(dec);
+  if (fmt === 'number_sep') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'decimal', useGrouping: true,
+      minimumFractionDigits: dec, maximumFractionDigits: dec,
+    }).format(n);
+  }
+  var def = _DB_NUM_FORMATS.find(function(f) { return f.id === fmt; });
+  if (!def || !def.currency) return n.toFixed(dec);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency', currency: def.currency,
+      minimumFractionDigits: dec, maximumFractionDigits: dec,
+    }).format(n);
+  } catch(e) { return n.toFixed(dec); }
+}
+
+/** Called from inline oninput on number inputs inside the detail panel. */
+function _dbNumFmtPreview(inp, spanId) {
+  var sp = document.getElementById(spanId);
+  if (!sp) return;
+  var numOpts = {
+    format:   inp.getAttribute('data-numfmt') || 'number',
+    decimals: parseInt(inp.getAttribute('data-numdec'), 10) || 0,
+  };
+  sp.textContent = _dbFormatNumber(inp.value, numOpts);
+}
+
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);
   var v   = a.attr_value || '';
@@ -1792,10 +1910,20 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
   }
   if (t === 'number') {
-    return '<input type="number" value="' + _esc(v) + '"'
-      + ' style="border:none;background:transparent;font-size:0.875rem;'
-      + 'color:inherit;outline:none;width:100%;"'
-      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+    var numOpts  = _dbParseNumOpts(a.attr_options || '');
+    var preview  = _dbFormatNumber(v, numOpts);
+    var spanId   = '_numfmt_' + cardId + '_' + a.id;
+    var inpStyle = 'border:none;background:transparent;font-size:0.875rem;'
+      + 'color:inherit;outline:none;width:100%;margin-top:2px;';
+    return '<div>'
+      + '<span id="' + spanId + '" style="font-size:0.875rem;font-weight:500;">' + _esc(preview) + '</span>'
+      + '<input type="number" value="' + _esc(v) + '"'
+      + ' style="' + inpStyle + '"'
+      + ' data-numfmt="' + _esc(numOpts.format) + '"'
+      + ' data-numdec="' + numOpts.decimals + '"'
+      + ' oninput="_dbNumFmtPreview(this,\'' + spanId + '\')"'
+      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">'
+      + '</div>';
   }
   if (t === 'url') {
     var safeUrl = _esc(v);
@@ -2298,6 +2426,79 @@ function _dbAddAttrRow(cardId) {
       phone:        { tag:'input', inputType:'tel',   ph:'e.g. +1 555 000 0000' },
       place:        { tag:'input', inputType:'text',  ph:'e.g. 702 SW 8th St, Bentonville' },
     };
+
+    // ── number: default value + format select + decimal input ────────────
+    if (t === 'number') {
+      valWrap.innerHTML = '';
+      var numLbl = document.createElement('label');
+      numLbl.style.cssText = labelCss;
+      numLbl.innerHTML = 'Default value <span style="font-weight:400;text-transform:none;">(optional)</span>';
+      valWrap.appendChild(numLbl);
+
+      var prevSp = document.createElement('span');
+      prevSp.style.cssText = 'display:block;font-size:0.95rem;font-weight:600;'
+        + 'color:' + txt + ';min-height:1.4rem;margin-bottom:0.3rem;';
+      prevSp.textContent = '0';
+      valWrap.appendChild(prevSp);
+
+      var rawInp = document.createElement('input');
+      rawInp.type = 'number';
+      rawInp.id   = '_db-attr-val';
+      rawInp.placeholder = 'e.g. 1234';
+      rawInp.style.cssText = inputCss;
+      valWrap.appendChild(rawInp);
+
+      // format + decimal grid
+      var numRow = document.createElement('div');
+      numRow.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:0.5rem;margin-top:0.6rem;';
+
+      var fmtDiv = document.createElement('div');
+      var fmtLbl = document.createElement('label');
+      fmtLbl.style.cssText = labelCss;
+      fmtLbl.textContent = 'Number format';
+      var fmtSel = document.createElement('select');
+      fmtSel.id = '_db-num-format';
+      fmtSel.style.cssText = inputCss + 'cursor:pointer;';
+      _DB_NUM_FORMATS.forEach(function(f) {
+        var opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.label;
+        fmtSel.appendChild(opt);
+      });
+      fmtDiv.appendChild(fmtLbl);
+      fmtDiv.appendChild(fmtSel);
+
+      var decDiv = document.createElement('div');
+      var decLbl = document.createElement('label');
+      decLbl.style.cssText = labelCss;
+      decLbl.textContent = 'Decimals';
+      var decInp = document.createElement('input');
+      decInp.type  = 'number';
+      decInp.id    = '_db-num-dec';
+      decInp.min   = '0';
+      decInp.max   = '5';
+      decInp.value = '0';
+      decInp.style.cssText = inputCss + 'width:4.5rem;';
+      decDiv.appendChild(decLbl);
+      decDiv.appendChild(decInp);
+
+      numRow.appendChild(fmtDiv);
+      numRow.appendChild(decDiv);
+      valWrap.appendChild(numRow);
+
+      function _updNumPrev() {
+        prevSp.textContent = _dbFormatNumber(rawInp.value || '0', {
+          format:   fmtSel.value,
+          decimals: parseInt(decInp.value, 10) || 0,
+        });
+      }
+      rawInp.addEventListener('input',  _updNumPrev);
+      fmtSel.addEventListener('change', _updNumPrev);
+      decInp.addEventListener('input',  _updNumPrev);
+      optsWrap.style.display = 'none';
+      return;
+    }
+
     valWrap.innerHTML = '<label style="' + labelCss + '">Default value '
       + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>';
     var meta = TYPE_META[t] || TYPE_META.text;
@@ -2336,6 +2537,14 @@ function _dbAddAttrRow(cardId) {
   }
 
   function _readOptions() {
+    if (selectedType === 'number') {
+      var fmtEl = document.getElementById('_db-num-format');
+      var decEl = document.getElementById('_db-num-dec');
+      return JSON.stringify({
+        format:   fmtEl ? fmtEl.value : 'number',
+        decimals: decEl ? (parseInt(decEl.value, 10) || 0) : 0,
+      });
+    }
     var el = document.getElementById('_db-attr-opts');
     return el ? el.value.trim() : '';
   }
