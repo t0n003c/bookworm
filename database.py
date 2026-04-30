@@ -1028,17 +1028,31 @@ async def init_db() -> None:
         )
         await db.execute("""
             CREATE TABLE IF NOT EXISTS db_card_attrs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                card_id    INTEGER NOT NULL REFERENCES db_cards(id) ON DELETE CASCADE,
-                attr_key   TEXT    NOT NULL,
-                attr_value TEXT    NOT NULL DEFAULT '',
-                sort_order INTEGER NOT NULL DEFAULT 0
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id      INTEGER NOT NULL REFERENCES db_cards(id) ON DELETE CASCADE,
+                attr_key     TEXT    NOT NULL,
+                attr_value   TEXT    NOT NULL DEFAULT '',
+                attr_type    TEXT    NOT NULL DEFAULT 'text',
+                attr_options TEXT    NOT NULL DEFAULT '',
+                sort_order   INTEGER NOT NULL DEFAULT 0
             )
         """)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_db_card_attrs_card "
             "ON db_card_attrs(card_id, sort_order)"
         )
+        # ── additive migrations for attr_type / attr_options ──────────────────
+        _dca_cols = {r[1] for r in await (await db.execute(
+            "PRAGMA table_info(db_card_attrs)"
+        )).fetchall()}
+        if "attr_type" not in _dca_cols:
+            await db.execute(
+                "ALTER TABLE db_card_attrs ADD COLUMN attr_type TEXT NOT NULL DEFAULT 'text'"
+            )
+        if "attr_options" not in _dca_cols:
+            await db.execute(
+                "ALTER TABLE db_card_attrs ADD COLUMN attr_options TEXT NOT NULL DEFAULT ''"
+            )
         await db.execute("""
             CREATE TRIGGER IF NOT EXISTS db_cards_updated_at
             AFTER UPDATE ON db_cards

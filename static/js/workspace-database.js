@@ -24,6 +24,23 @@ var _dbGripIndicator    = null;   // blue drop-line
 var _dbGripInsertBefore = null;
 var _dbGripDropParent   = null;
 
+/* ── attribute type registry ─────────────────────────────────────────────── */
+var _DB_ATTR_TYPES = [
+  { id: 'text',         label: 'Text',         icon: '\uD83D\uDCDD' },
+  { id: 'number',       label: 'Number',       icon: '\uD83D\uDD22' },
+  { id: 'select',       label: 'Select',       icon: '\u25BE' },
+  { id: 'multi_select', label: 'Multi-select', icon: '\u2611' },
+  { id: 'status',       label: 'Status',       icon: '\u25CF' },
+  { id: 'date',         label: 'Date',         icon: '\uD83D\uDCC5' },
+  { id: 'person',       label: 'Person',       icon: '\uD83D\uDC64' },
+  { id: 'files',        label: 'Files',        icon: '\uD83D\uDCCE' },
+  { id: 'checkbox',     label: 'Checkbox',     icon: '\u2705' },
+  { id: 'url',          label: 'URL',          icon: '\uD83D\uDD17' },
+  { id: 'email',        label: 'Email',        icon: '\u2709' },
+  { id: 'phone',        label: 'Phone',        icon: '\uD83D\uDCDE' },
+  { id: 'place',        label: 'Place',        icon: '\uD83D\uDCCD' },
+];
+
 /* ── selection toolbar state ─────────────────────────────────────────────── */
 var _dbSelBar       = null;  // floating toolbar DOM element
 var _dbSelBarTimer  = null;  // hide-debounce timer
@@ -1735,6 +1752,102 @@ function _dbCloseDetail() {
   if (dp) dp.innerHTML = '';
 }
 
+/* ── attribute helpers ───────────────────────────────────────────────── */
+
+function _dbAttrTypeIcon(t) {
+  var def = _DB_ATTR_TYPES.find(function(x) { return x.id === t; });
+  return def ? def.icon : '\uD83D\uDCDD';
+}
+
+function _dbStatusColor(val) {
+  var v = (val || '').toLowerCase();
+  if (/done|complete|finished|closed|resolved/.test(v))  return '#2a8703'; // green
+  if (/progress|doing|active|open|started/.test(v))      return '#0053e2'; // blue
+  if (/block|stuck|problem|error|fail/.test(v))          return '#ea1100'; // red
+  if (/review|pending|wait|hold/.test(v))                return '#995213'; // amber
+  if (/cancel|skip|void|archive/.test(v))                return '#6b7280'; // gray
+  return '#7c3aed'; // purple fallback
+}
+
+/** Render the value cell for one attribute row in the detail panel.
+ *  Returns an HTML string. Inline styles used for colors — CDN Tailwind
+ *  won't generate runtime arbitrary values. */
+function _dbAttrValueHtml(cardId, a) {
+  var k   = _esc(a.attr_key);
+  var v   = a.attr_value || '';
+  var t   = a.attr_type  || 'text';
+  var cb  = '_dbSaveAttr(' + cardId + ',' + a.id + ',\'' + k + '\',this)';
+
+  if (t === 'checkbox') {
+    var chk = (v === 'true' || v === '1' || v === 'yes') ? 'checked' : '';
+    return '<input type="checkbox" ' + chk
+      + ' style="width:1rem;height:1rem;cursor:pointer;accent-color:#0053e2;"'
+      + ' onchange="_dbSaveAttrCheckbox(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+  }
+  if (t === 'date') {
+    var dv = v.slice(0, 10); // keep YYYY-MM-DD only
+    return '<input type="date" value="' + _esc(dv) + '"'
+      + ' style="border:none;background:transparent;font-size:0.875rem;'
+      + 'color:inherit;cursor:pointer;outline:none;width:100%;"'
+      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+  }
+  if (t === 'number') {
+    return '<input type="number" value="' + _esc(v) + '"'
+      + ' style="border:none;background:transparent;font-size:0.875rem;'
+      + 'color:inherit;outline:none;width:100%;"'
+      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+  }
+  if (t === 'url') {
+    var safeUrl = _esc(v);
+    var link = v ? '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
+      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;'
+      + 'word-break:break-all;cursor:pointer;">' + safeUrl + '</a> ' : '';
+    return link
+      + '<span contenteditable="true"'
+      + ' style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
+      + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add URL…') + '</span>';
+  }
+  if (t === 'email') {
+    var safeEmail = _esc(v);
+    var ml = v ? '<a href="mailto:' + safeEmail + '"'
+      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;">'
+      + safeEmail + '</a> ' : '';
+    return ml
+      + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
+      + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add email…') + '</span>';
+  }
+  if (t === 'phone') {
+    var safePhone = _esc(v);
+    var tl = v ? '<a href="tel:' + safePhone + '"'
+      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;">'
+      + safePhone + '</a> ' : '';
+    return tl
+      + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
+      + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add phone…') + '</span>';
+  }
+  if (t === 'status') {
+    var sc = _dbStatusColor(v);
+    return '<span contenteditable="true"'
+      + ' style="display:inline-block;padding:0.1rem 0.6rem;border-radius:9999px;'
+      + 'background:' + sc + '22;color:' + sc + ';font-size:0.75rem;font-weight:600;'
+      + 'border:1px solid ' + sc + '44;outline:none;cursor:text;"'
+      + ' onblur="' + cb + '">' + _esc(v) + '</span>';
+  }
+  if (t === 'place') {
+    var safePlace = encodeURIComponent(v);
+    var mapsLink  = v
+      ? '<a href="https://maps.google.com/?q=' + safePlace + '" target="_blank" rel="noopener"'
+        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">\uD83D\uDDFA️ Map</a>'
+        : '';
+    return mapsLink
+      + '<span contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
+      + ' onblur="' + cb + '">' + _esc(v) + '</span>';
+  }
+  // text / number-as-text / person / files / select / multi_select — contenteditable
+  return '<div contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
+    + ' onblur="' + cb + '">' + _esc(v) + '</div>';
+}
+
 function _dbRenderDetailPanel(card) {
   // Inject into the app’s shared #detail-panel (inside #panel aside).
   // openPanel() is called by the caller after this returns.
@@ -1769,14 +1882,16 @@ function _dbRenderDetailPanel(card) {
   var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : 'Unknown';
 
   var attrsHtml = (card.attrs || []).map(function(a) {
+    var icon = _dbAttrTypeIcon(a.attr_type || 'text');
     return '<div class="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-zinc-800">'
-      + '<span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 w-24 flex-shrink-0 truncate">'
-      + _esc(a.attr_key) + '</span>'
-      + '<div contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
-      + ' onblur="_dbSaveAttr(' + card.id + ',' + a.id + ',\'' + _esc(a.attr_key) + '\',this)">'
-      + _esc(a.attr_value) + '</div>'
+      + '<span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 w-28 flex-shrink-0 truncate"'
+      + ' title="' + _esc(a.attr_key) + ' (' + _esc(a.attr_type || 'text') + ')">'
+      + icon + ' ' + _esc(a.attr_key) + '</span>'
+      + '<div class="flex-1 min-w-0">'
+      + _dbAttrValueHtml(card.id, a)
+      + '</div>'
       + '<button type="button" onclick="_dbDeleteAttr(' + card.id + ',' + a.id + ')"'
-      + ' class="text-gray-300 hover:text-red-400 p-1 rounded transition" title="Remove attribute">'
+      + ' class="text-gray-300 hover:text-red-400 p-1 rounded transition flex-shrink-0" title="Remove attribute">'
       + '&times;</button></div>';
   }).join('');
 
@@ -2062,7 +2177,6 @@ function _dbUploadCoverFile(cardId, file) {
 }
 
 function _dbAddAttrRow(cardId) {
-  // ── Styled modal — matches the app's rounded-2xl / backdrop-blur pattern ──
   var ov = document.createElement('div');
   ov.setAttribute('role', 'dialog');
   ov.setAttribute('aria-modal', 'true');
@@ -2074,48 +2188,182 @@ function _dbAddAttrRow(cardId) {
   bd.className = 'absolute inset-0 bg-black/40 backdrop-blur-sm';
   ov.appendChild(bd);
 
+  // ── build type picker grid ──────────────────────────────────────────
+  var selectedType = 'text';
+
+  var typeGrid = _DB_ATTR_TYPES.map(function(t) {
+    var isSel = t.id === 'text';
+    return '<button type="button" data-type="' + t.id + '"'
+      + ' style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;'
+      + 'padding:0.5rem 0.25rem;border-radius:0.5rem;border:1px solid '
+      + (isSel ? '#0053e2' : '#e5e7eb') + ';cursor:pointer;'
+      + 'background:' + (isSel ? '#eff6ff' : 'transparent') + ';'
+      + 'font-size:0;transition:all 0.12s;">'
+      + '<span style="font-size:1.1rem;">' + t.icon + '</span>'
+      + '<span style="font-size:0.6rem;font-weight:600;color:#374151;">' + t.label + '</span>'
+      + '</button>';
+  }).join('');
+
+  // ── value field rendered per type ────────────────────────────────────
+  var inputCss = 'width:100%;box-sizing:border-box;padding:0.5rem 0.75rem;'
+    + 'border:1px solid #d1d5db;border-radius:0.5rem;font-size:0.875rem;'
+    + 'background:transparent;outline:none;';
+
   var dlg = document.createElement('div');
-  dlg.className = 'relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm p-6';
+  dlg.style.cssText = 'position:relative;background:var(--tw-bg,white);'
+    + 'border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.25);'
+    + 'width:min(28rem,95vw);max-height:90vh;overflow-y:auto;padding:1.5rem;';
+  dlg.className = 'bg-white dark:bg-zinc-900';
+
   dlg.innerHTML =
-    '<h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">+ Add Attribute</h2>' +
-    '<div class="space-y-3">' +
-      '<div>' +
-        '<label class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1 block">Name</label>' +
-        '<input id="_db-attr-key" type="text" placeholder="e.g. Status, Owner, Priority…"' +
-        ' class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2' +
-        ' focus:outline-none focus:ring-2 focus:ring-[#0053e2] bg-white dark:bg-zinc-800' +
-        ' text-gray-800 dark:text-zinc-100 placeholder-gray-400" />' +
-      '</div>' +
-      '<div>' +
-        '<label class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1 block">Value</label>' +
-        '<input id="_db-attr-val" type="text" placeholder="e.g. In Progress, Alice, High…"' +
-        ' class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2' +
-        ' focus:outline-none focus:ring-2 focus:ring-[#0053e2] bg-white dark:bg-zinc-800' +
-        ' text-gray-800 dark:text-zinc-100 placeholder-gray-400" />' +
-      '</div>' +
-    '</div>' +
-    '<div class="flex gap-3 justify-end mt-5">' +
-      '<button id="_db-attr-cancel" type="button"' +
-      ' class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600' +
-      ' text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800' +
-      ' transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>' +
-      '<button id="_db-attr-save" type="button"' +
-      ' class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold' +
-      ' hover:bg-[#0041b8] transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">Save</button>' +
-    '</div>';
+    '<h2 style="font-weight:700;font-size:1rem;margin:0 0 1rem;"'
+    + ' class="text-gray-900 dark:text-zinc-100">+ Add Attribute</h2>'
+
+    // ─ type picker
+    + '<p style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;margin-bottom:0.4rem;" class="text-gray-500 dark:text-zinc-400">Type</p>'
+    + '<div id="_db-type-grid" style="display:grid;grid-template-columns:repeat(4,1fr);'
+    + 'gap:0.35rem;margin-bottom:1rem;">'
+    + typeGrid
+    + '</div>'
+
+    // ─ name
+    + '<div style="margin-bottom:0.75rem;">'
+    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
+    + ' class="text-gray-500 dark:text-zinc-400">Name</label>'
+    + '<input id="_db-attr-key" type="text" placeholder="e.g. Status, Owner, Priority…"'
+    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+
+    // ─ default value (swapped by type)
+    + '<div id="_db-attr-val-wrap" style="margin-bottom:0.75rem;">'
+    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
+    + ' class="text-gray-500 dark:text-zinc-400">Default value <span style="font-weight:400;'
+    + 'text-transform:none;">(optional)</span></label>'
+    + '<input id="_db-attr-val" type="text" placeholder="Leave blank to fill later…"'
+    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+
+    // ─ options (select / multi_select / status only)
+    + '<div id="_db-attr-opts-wrap" style="display:none;margin-bottom:0.75rem;">'
+    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
+    + ' class="text-gray-500 dark:text-zinc-400">Options <span style="font-weight:400;'
+    + 'text-transform:none;">(comma-separated)</span></label>'
+    + '<input id="_db-attr-opts" type="text" placeholder="e.g. To Do, In Progress, Done"'
+    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+
+    // ─ buttons
+    + '<div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:0.5rem;">'
+    + '<button id="_db-attr-cancel" type="button"'
+    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:1px solid #d1d5db;'
+    + 'font-size:0.875rem;cursor:pointer;background:transparent;"'
+    + ' class="text-gray-700 dark:text-zinc-300 dark:border-zinc-600'
+    + ' hover:bg-gray-50 dark:hover:bg-zinc-800">Cancel</button>'
+    + '<button id="_db-attr-save" type="button"'
+    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:none;background:#0053e2;'
+    + 'color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;"'
+    + ' class="hover:bg-[#0041b8] transition">Add Attribute</button>'
+    + '</div>';
+
   ov.appendChild(dlg);
   document.body.appendChild(ov);
 
   var keyInp    = document.getElementById('_db-attr-key');
-  var valInp    = document.getElementById('_db-attr-val');
+  var valWrap   = document.getElementById('_db-attr-val-wrap');
+  var optsWrap  = document.getElementById('_db-attr-opts-wrap');
   var cancelBtn = document.getElementById('_db-attr-cancel');
   var saveBtn   = document.getElementById('_db-attr-save');
 
   function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+
+  // ── swap value field based on selected type ─────────────────────────────
+  function _buildValField(t) {
+    var TYPE_META = {
+      text:         { tag:'input', inputType:'text',     ph:'e.g. Hello world' },
+      number:       { tag:'input', inputType:'number',   ph:'e.g. 42' },
+      select:       { tag:'input', inputType:'text',     ph:'Choose from options…' },
+      multi_select: { tag:'input', inputType:'text',     ph:'Choose multiple…' },
+      status:       { tag:'input', inputType:'text',     ph:'e.g. In Progress' },
+      date:         { tag:'input', inputType:'date',     ph:'' },
+      person:       { tag:'input', inputType:'text',     ph:'e.g. Alice' },
+      files:        { tag:'input', inputType:'text',     ph:'Filename or URL' },
+      checkbox:     { tag:'checkbox' },
+      url:          { tag:'input', inputType:'url',      ph:'https://…' },
+      email:        { tag:'input', inputType:'email',    ph:'e.g. name@example.com' },
+      phone:        { tag:'input', inputType:'tel',      ph:'e.g. +1 555 000 0000' },
+      place:        { tag:'input', inputType:'text',     ph:'e.g. 702 SW 8th St, Bentonville' },
+    };
+    valWrap.innerHTML = '<label style="font-size:0.7rem;font-weight:600;'
+      + 'text-transform:uppercase;letter-spacing:0.05em;'
+      + 'display:block;margin-bottom:0.25rem;"'
+      + ' class="text-gray-500 dark:text-zinc-400">Default value <span style="font-weight:400;'
+      + 'text-transform:none;">(optional)</span></label>';
+    var meta = TYPE_META[t] || TYPE_META.text;
+    if (meta.tag === 'checkbox') {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;cursor:pointer;';
+      label.className = 'text-gray-700 dark:text-zinc-200';
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.id   = '_db-attr-val';
+      chk.style.cssText = 'width:1rem;height:1rem;accent-color:#0053e2;cursor:pointer;';
+      label.appendChild(chk);
+      label.appendChild(document.createTextNode('Checked'));
+      valWrap.appendChild(label);
+    } else {
+      var inp = document.createElement('input');
+      inp.type        = meta.inputType;
+      inp.id          = '_db-attr-val';
+      inp.placeholder = meta.ph || '';
+      inp.style.cssText = inputCss;
+      inp.className   = 'text-gray-800 dark:text-zinc-100 dark:border-zinc-700';
+      valWrap.appendChild(inp);
+    }
+    // show/hide options row
+    var needsOpts = (t === 'select' || t === 'multi_select' || t === 'status');
+    optsWrap.style.display = needsOpts ? '' : 'none';
+  }
+
+  function _getValField() { return document.getElementById('_db-attr-val'); }
+
+  function _readValue() {
+    var el = _getValField();
+    if (!el) return '';
+    if (el.type === 'checkbox') return el.checked ? 'true' : 'false';
+    return el.value || '';
+  }
+
+  function _readOptions() {
+    var el = document.getElementById('_db-attr-opts');
+    return el ? el.value.trim() : '';
+  }
+
+  // type button click handler
+  document.getElementById('_db-type-grid').addEventListener('click', function(e) {
+    var btn = e.target.closest('button[data-type]');
+    if (!btn) return;
+    selectedType = btn.getAttribute('data-type');
+    // re-style all buttons
+    this.querySelectorAll('button[data-type]').forEach(function(b) {
+      var sel = b.getAttribute('data-type') === selectedType;
+      b.style.border      = '1px solid ' + (sel ? '#0053e2' : '#e5e7eb');
+      b.style.background  = sel ? '#eff6ff' : 'transparent';
+    });
+    // auto-fill name if still empty
+    if (!keyInp.value.trim()) {
+      var def = _DB_ATTR_TYPES.find(function(x) { return x.id === selectedType; });
+      if (def) keyInp.value = def.label;
+    }
+    _buildValField(selectedType);
+    var vf = _getValField();
+    if (vf && vf.type !== 'checkbox') vf.focus();
+  });
+
   function _submit() {
     var key = keyInp.value.trim();
     if (!key) { keyInp.focus(); return; }
-    _dbSaveAttrByKey(cardId, key, valInp.value.trim());
+    _dbSaveAttrByKey(cardId, key, _readValue(), selectedType, _readOptions());
     _close();
   }
 
@@ -2123,17 +2371,21 @@ function _dbAddAttrRow(cardId) {
   cancelBtn.addEventListener('click', _close);
   saveBtn.addEventListener('click', _submit);
   ov.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') _close();
-    if (e.key === 'Enter')  _submit();
+    if (e.key === 'Escape') { _close(); return; }
+    // Enter submits unless cursor is in a textarea
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); _submit(); }
   });
   keyInp.focus();
 }
 
-function _dbSaveAttrByKey(cardId, key, value) {
+function _dbSaveAttrByKey(cardId, key, value, attrType, attrOptions) {
+  var atype = attrType  || 'text';
+  var aopts = attrOptions || '';
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attr_key: key, attr_value: value }),
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: atype, attr_options: aopts }),
   })
   .then(function(r) {
     if (!r.ok) throw new Error('Attr save failed');
@@ -2155,22 +2407,71 @@ function _dbSaveAttrByKey(cardId, key, value) {
 
 function _dbSaveAttr(cardId, attrId, key, el) {
   var value = el.textContent.trim();
+  var card  = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta  = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var atype = meta ? (meta.attr_type    || 'text') : 'text';
+  var aopts = meta ? (meta.attr_options || '')      : '';
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attr_key: key, attr_value: value }),
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: atype, attr_options: aopts }),
   })
   .then(function(r) {
     if (!r.ok) throw new Error('Attr save failed');
-    // Update local state
-    var card = _dbCards.find(function(c) { return c.id === cardId; });
     if (card && card.attrs) {
       var attr = card.attrs.find(function(a) { return a.id === attrId; });
-      if (attr) attr.attr_value = value;
+      if (attr) { attr.attr_value = value; }
     }
     _dbRenderGrid();
   })
   .catch(function(e) { console.warn('Attr save failed', e); });
+}
+
+function _dbSaveAttrInput(cardId, attrId, key, el) {
+  // Generic handler for <input type="date|number"> elements
+  var value = el.value || '';
+  var card  = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta  = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var atype = meta ? (meta.attr_type    || 'text') : 'text';
+  var aopts = meta ? (meta.attr_options || '')      : '';
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: atype, attr_options: aopts }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Attr save failed');
+    if (card && card.attrs) {
+      var attr = card.attrs.find(function(a) { return a.id === attrId; });
+      if (attr) { attr.attr_value = value; }
+    }
+    _dbRenderGrid();
+  })
+  .catch(function(e) { console.warn('Attr input save failed', e); });
+}
+
+function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
+  var value = el.checked ? 'true' : 'false';
+  var card  = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta  = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var aopts = meta ? (meta.attr_options || '') : '';
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: 'checkbox', attr_options: aopts }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Checkbox save failed');
+    if (card && card.attrs) {
+      var attr = card.attrs.find(function(a) { return a.id === attrId; });
+      if (attr) { attr.attr_value = value; }
+    }
+    _dbRenderGrid();
+  })
+  .catch(function(e) { console.warn('Checkbox save failed', e); });
 }
 
 function _dbDeleteAttr(cardId, attrId) {

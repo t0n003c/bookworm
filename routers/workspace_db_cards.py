@@ -36,10 +36,12 @@ def _collapse_card_rows(rows: list) -> list[dict]:
             }
         if r["attr_id"] is not None:
             cards[cid]["attrs"].append({
-                "id":        r["attr_id"],
-                "attr_key":  r["attr_key"],
-                "attr_value": r["attr_value"],
-                "sort_order": r["attr_sort"],
+                "id":           r["attr_id"],
+                "attr_key":     r["attr_key"],
+                "attr_value":   r["attr_value"],
+                "attr_type":    r["attr_type"],
+                "attr_options": r["attr_options"],
+                "sort_order":   r["attr_sort"],
             })
     return [cards[cid] for cid in order]
 
@@ -52,7 +54,8 @@ async def get_db_cards(db_id: int, user_id: int) -> list[dict]:
         cursor = await db.execute(
             "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
             "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
-            "       a.id AS attr_id, a.attr_key, a.attr_value, a.sort_order AS attr_sort "
+            "       a.id AS attr_id, a.attr_key, a.attr_value, "
+            "       a.attr_type, a.attr_options, a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
             " WHERE c.db_id = ? AND c.user_id = ? "
@@ -96,7 +99,8 @@ async def get_db_card(card_id: int, db_id: int, user_id: int) -> Optional[dict]:
         cursor = await db.execute(
             "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
             "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
-            "       a.id AS attr_id, a.attr_key, a.attr_value, a.sort_order AS attr_sort "
+            "       a.id AS attr_id, a.attr_key, a.attr_value, "
+            "       a.attr_type, a.attr_options, a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
             " WHERE c.id = ? AND c.db_id = ? AND c.user_id = ? "
@@ -180,9 +184,14 @@ async def update_card_note_height(
 
 
 async def upsert_card_attr(
-    card_id: int, user_id: int, attr_key: str, attr_value: str
+    card_id: int,
+    user_id: int,
+    attr_key: str,
+    attr_value: str,
+    attr_type: str = "text",
+    attr_options: str = "",
 ) -> Optional[dict]:
-    """Insert or update a custom attribute. Returns {id, attr_key, attr_value} or None."""
+    """Insert or update a custom attribute. Returns the full attr dict or None."""
     async with get_db() as db:
         # Verify card ownership before touching attrs
         check = await db.execute(
@@ -190,10 +199,12 @@ async def upsert_card_attr(
         )
         if not await check.fetchone():
             return None
-        # Try update first
+        # Try update first (keep sort_order; update type + options too)
         cur = await db.execute(
-            "UPDATE db_card_attrs SET attr_value=? WHERE card_id=? AND attr_key=?",
-            (attr_value, card_id, attr_key),
+            "UPDATE db_card_attrs "
+            "SET attr_value=?, attr_type=?, attr_options=? "
+            "WHERE card_id=? AND attr_key=?",
+            (attr_value, attr_type, attr_options, card_id, attr_key),
         )
         if cur.rowcount == 0:
             sort_cur = await db.execute(
@@ -202,15 +213,16 @@ async def upsert_card_attr(
             )
             sort_row = await sort_cur.fetchone()
             new_sort = (sort_row[0] if sort_row else -10) + 10
-            cur = await db.execute(
-                "INSERT INTO db_card_attrs (card_id, attr_key, attr_value, sort_order) "
-                "VALUES(?,?,?,?)",
-                (card_id, attr_key, attr_value, new_sort),
+            await db.execute(
+                "INSERT INTO db_card_attrs "
+                "(card_id, attr_key, attr_value, attr_type, attr_options, sort_order) "
+                "VALUES(?,?,?,?,?,?)",
+                (card_id, attr_key, attr_value, attr_type, attr_options, new_sort),
             )
         await db.commit()
         fetch = await db.execute(
-            "SELECT id, attr_key, attr_value FROM db_card_attrs "
-            "WHERE card_id=? AND attr_key=?",
+            "SELECT id, attr_key, attr_value, attr_type, attr_options "
+            "FROM db_card_attrs WHERE card_id=? AND attr_key=?",
             (card_id, attr_key),
         )
         row = await fetch.fetchone()

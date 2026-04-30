@@ -83,9 +83,17 @@ class NoteHeightBody(BaseModel):
     height: int
 
 
+_VALID_ATTR_TYPES = {
+    "text", "number", "select", "multi_select", "status",
+    "date", "person", "files", "checkbox", "url", "email", "phone", "place",
+}
+
+
 class AttrBody(BaseModel):
-    attr_key: str
-    attr_value: str = ""
+    attr_key:     str
+    attr_value:   str = ""
+    attr_type:    str = "text"
+    attr_options: str = ""
 
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
@@ -207,11 +215,14 @@ async def add_or_update_attr(
     await _get_database_ws(ws_id, user_id)
     if not body.attr_key.strip():
         raise HTTPException(status_code=422, detail="attr_key cannot be empty")
+    attr_type = body.attr_type if body.attr_type in _VALID_ATTR_TYPES else "text"
     attr = await upsert_card_attr(
         card_id=card_id,
         user_id=user_id,
         attr_key=body.attr_key.strip(),
         attr_value=body.attr_value,
+        attr_type=attr_type,
+        attr_options=body.attr_options,
     )
     if not attr:
         raise HTTPException(status_code=404, detail="Card not found")

@@ -491,14 +491,16 @@ async def duplicate_workspace(workspace_id: int, user_id: int) -> int:
                     )
                     new_card_id = nc.lastrowid
                     a_cur = await db.execute(
-                        "SELECT attr_key, attr_value, sort_order FROM db_card_attrs "
-                        "WHERE card_id = ?", (card_row["id"],)
+                        "SELECT attr_key, attr_value, attr_type, attr_options, sort_order "
+                        "FROM db_card_attrs WHERE card_id = ?", (card_row["id"],)
                     )
                     for a in await a_cur.fetchall():
                         await db.execute(
-                            "INSERT INTO db_card_attrs (card_id, attr_key, attr_value, sort_order) "
-                            "VALUES(?,?,?,?)",
-                            (new_card_id, a["attr_key"], a["attr_value"], a["sort_order"]),
+                            "INSERT INTO db_card_attrs "
+                            "(card_id, attr_key, attr_value, attr_type, attr_options, sort_order) "
+                            "VALUES(?,?,?,?,?,?)",
+                            (new_card_id, a["attr_key"], a["attr_value"],
+                             a["attr_type"], a["attr_options"], a["sort_order"]),
                         )
 
             # enqueue children
