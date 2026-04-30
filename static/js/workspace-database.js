@@ -257,8 +257,8 @@ function _dbCardHtml(card) {
     + cover
     + '<div class="p-3 flex flex-col flex-1 gap-2">'
     + '<div class="flex items-start gap-2">'
-    + '<div contenteditable="true" class="flex-1 font-semibold text-gray-900 dark:text-zinc-100'
-    + ' text-sm leading-snug outline-none empty:before:content-[\'Untitled\']'
+    + '<div contenteditable="true" class="flex-1 font-bold text-gray-900 dark:text-zinc-100'
+    + ' text-base leading-snug outline-none empty:before:content-[\'Untitled\']'
     + ' empty:before:text-gray-300 dark:empty:before:text-zinc-600"'
     + ' onblur="_dbTitleBlur(' + card.id + ',this)"'
     + ' aria-label="Card title">' + _esc(card.title) + '</div>'
@@ -371,43 +371,42 @@ function _dbAttrPills(attrs) {
       });
     } else if (t === 'checkbox') {
       if (v === 'true' || v === '1' || v === 'yes') plainParts.push(
-        '<span class="text-[10px] text-green-600 dark:text-green-400 font-medium">'
+        '<span class="text-xs text-green-600 dark:text-green-400 font-medium">'
         + '\u2713\u00a0' + _esc(a.attr_key) + '</span>'
       );
     } else if (t === 'status' && v) {
       var sc = _dbStatusColor(v);
       plainParts.push(
-        '<span style="color:' + sc + ';" class="text-[10px] font-semibold max-w-[120px] truncate inline-block">'
+        '<span style="color:' + sc + ';" class="text-xs font-semibold max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
     } else if (t === 'date' && v) {
       var fmtId = a.attr_options || 'mdy';
       plainParts.push(
-        '<span class="text-[10px] text-gray-500 dark:text-zinc-400">'
+        '<span class="text-xs text-gray-500 dark:text-zinc-400">'
         + '\uD83D\uDCC5\u00a0' + _esc(_dbFormatDate(v.slice(0, 10), fmtId)) + '</span>'
       );
     } else if ((t === 'url' || t === 'email' || t === 'phone') && v) {
       plainParts.push(
-        '<span class="text-[10px] text-blue-500 dark:text-blue-400 max-w-[140px] truncate inline-block">'
+        '<span class="text-xs text-blue-500 dark:text-blue-400 max-w-[160px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
     } else if (t === 'number' && v) {
       var nOpts = _dbParseNumOpts(a.attr_options || '');
       var nVis  = _dbNumVisHtml(v, nOpts, true);
       if (nVis) {
-        // Fixed width + flex-shrink:0 so the inner bar/ring gets the full
-        // 88px — without an explicit width the flex item collapses to 0.
-        plainParts.push('<div style="width:88px;flex-shrink:0;">' + nVis + '</div>');
+        // Fixed width + flex-shrink:0 so bar/ring always gets its space.
+        plainParts.push('<div style="width:104px;flex-shrink:0;">' + nVis + '</div>');
       } else {
         plainParts.push(
-          '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
+          '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
           + _esc(_dbFormatNumber(v, nOpts)) + '</span>'
         );
       }
     } else if (v) {
       // text / person / place / files
       plainParts.push(
-        '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
+        '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
     }
@@ -2058,8 +2057,8 @@ function _dbNumVisHtml(raw, numOpts, compact) {
   var pctW     = (frac * 100).toFixed(1) + '%';
 
   if (display === 'bar') {
-    var h  = compact ? '4px'  : '7px';
-    var fs = compact ? '0.6rem' : '0.72rem';
+    var h  = compact ? '5px'  : '7px';
+    var fs = compact ? '0.7rem' : '0.72rem';
     var cl = compact ? '#a1a1aa' : (dk ? '#a1a1aa' : '#6b7280');
     var html = '<div style="display:flex;align-items:center;gap:' + (compact ? '0.25rem' : '0.35rem') + ';width:100%;">'
       + '<div style="flex:1;height:' + h + ';background:' + trackClr + ';border-radius:9999px;overflow:hidden;">'
@@ -2073,13 +2072,13 @@ function _dbNumVisHtml(raw, numOpts, compact) {
   }
 
   if (display === 'ring') {
-    var r   = compact ? 9  : 15;
-    var sw  = compact ? 2  : 3;
-    var sz  = compact ? 22 : 38;
+    var r   = compact ? 11 : 15;
+    var sw  = compact ? 2.5: 3;
+    var sz  = compact ? 26 : 38;
     var cx  = sz / 2;
     var circ = +(2 * Math.PI * r).toFixed(2);
     var off  = +(circ * (1 - frac)).toFixed(2);
-    var fs2  = compact ? '0.6rem' : '0.72rem';
+    var fs2  = compact ? '0.7rem' : '0.72rem';
     var cl2  = compact ? '#a1a1aa' : (dk ? '#a1a1aa' : '#6b7280');
     var html = '<div style="display:flex;align-items:center;gap:' + (compact ? '0.2rem' : '0.35rem') + ';">'
       + '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 ' + sz + ' ' + sz + '" style="flex-shrink:0;">'
