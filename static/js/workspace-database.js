@@ -10,6 +10,7 @@ var _dbCards             = [];     // array of card objects from server
 var _dbSaveTimers        = {};     // {cardId: timeoutId} — per-card note debounce
 var _dbDetailId          = null;   // card id currently open in detail panel
 var _dbDelTarget         = null;   // card id staged for deletion
+var _dbDirtyNote         = null;   // {cardId, html} — latest unsaved note HTML captured on every input
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
 
@@ -1953,11 +1954,25 @@ function _dbOpenDetail(cardId) {
  * Safe to call at any time — no-ops if no DB card is open.
  */
 function _dbFlushNote() {
+  // Prefer the in-memory dirty snapshot captured on every input event —
+  // zero DOM dependency, works even after the element is removed.
+  if (_dbDirtyNote) {
+    var dirty = _dbDirtyNote;
+    _dbDirtyNote = null;
+    var timerKey = 'detail_' + dirty.cardId;
+    if (_dbSaveTimers[timerKey]) {
+      clearTimeout(_dbSaveTimers[timerKey]);
+      delete _dbSaveTimers[timerKey];
+    }
+    _dbSaveNote(dirty.cardId, dirty.html);
+    return;
+  }
+  // Fallback: DOM is still live (e.g. blur already cleared dirty flag).
   if (!_dbDetailId) return;
-  var timerKey = 'detail_' + _dbDetailId;
-  if (_dbSaveTimers[timerKey]) {
-    clearTimeout(_dbSaveTimers[timerKey]);
-    delete _dbSaveTimers[timerKey];
+  var timerKey2 = 'detail_' + _dbDetailId;
+  if (_dbSaveTimers[timerKey2]) {
+    clearTimeout(_dbSaveTimers[timerKey2]);
+    delete _dbSaveTimers[timerKey2];
   }
   var noteEl = document.getElementById('db-detail-note-' + _dbDetailId);
   if (noteEl) _dbSaveNote(_dbDetailId, _dbNoteHtml(noteEl));
@@ -2576,9 +2591,13 @@ function _dbDetailTitleBlur(cardId, el) {
 }
 
 function _dbDetailNoteInput(cardId, el) {
+  // Snapshot the current HTML on every keystroke — no DOM dependency later.
+  var html = _dbNoteHtml(el);
+  _dbDirtyNote = { cardId: cardId, html: html };
   if (_dbSaveTimers['detail_' + cardId]) clearTimeout(_dbSaveTimers['detail_' + cardId]);
   _dbSaveTimers['detail_' + cardId] = setTimeout(function() {
-    _dbSaveNote(cardId, _dbNoteHtml(el));
+    _dbSaveNote(cardId, html);
+    _dbDirtyNote = null;   // debounce timer fired — note is being saved
   }, 800);
 }
 
@@ -2588,6 +2607,7 @@ function _dbDetailNoteBlur(cardId, el) {
     delete _dbSaveTimers['detail_' + cardId];
   }
   _dbSaveNote(cardId, _dbNoteHtml(el));
+  _dbDirtyNote = null;   // saved — clear dirty state
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

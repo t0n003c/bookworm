@@ -2222,11 +2222,28 @@
     panel.addEventListener('click', panel._bwClickClose);
   }
 
+  // Auto-save an existing note when the panel closes.
+  // Fires a silent fetch POST identical to what the Save button submits.
+  // Only runs for edit forms (hx-post='/notes/<id>'). New notes are skipped.
+  // Must be called BEFORE dp.innerHTML is wiped.
+  function _noteFlush() {
+    var form = document.getElementById('note-form');
+    if (!form) return;
+    var action = form.getAttribute('hx-post') || '';
+    if (!/^\/notes\/\d+$/.test(action)) return;
+    if (typeof window._bwSyncPreviewToMd === 'function') {
+      try { window._bwSyncPreviewToMd(); } catch (e) {}
+    }
+    var fd = new FormData(form);
+    fetch(action, { method: 'POST', body: fd }).catch(function() {});
+  }
+
   function closePanel() {
-    const panel = document.getElementById('panel');
-    const dp    = document.getElementById('detail-panel');
-    // Flush any unsaved DB note BEFORE wiping the DOM — the note element
-    // must still be live for _dbNoteHtml() to read its content.
+    var panel = document.getElementById('panel');
+    var dp    = document.getElementById('detail-panel');
+    // Flush unsaved regular note before the DOM is wiped.
+    _noteFlush();
+    // Flush unsaved DB card note before the DOM is wiped.
     if (typeof _dbFlushNote === 'function') _dbFlushNote();
     // Remove the click-outside handler attached by openPanel (all modes)
     if (panel && panel._bwClickClose) {
