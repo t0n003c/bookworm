@@ -307,6 +307,7 @@ function _dbFilesRemove(cardId, attrId, key, idx) {
   _dbFilesSave(cardId, attrId, key, files);
 }
 
+function _dbParseOptions(optsStr) {
   if (!optsStr) return [];
   return optsStr.split(',').map(function(part) {
     part = part.trim();
