@@ -2177,51 +2177,63 @@ function _dbUploadCoverFile(cardId, file) {
 }
 
 function _dbAddAttrRow(cardId) {
+  // ── theme tokens — same pattern as _dbShowCoverModal ──────────────────────
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#18181b' : '#ffffff';
+  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#a1a1aa' : '#6b7280';
+  var inpBg  = isDark ? '#27272a' : '#ffffff';
+  var selBg  = isDark ? '#1e3a5f' : '#eff6ff';  // selected type btn bg
+  var btnTxt = isDark ? '#d4d4d8' : '#374151';  // type label text
+
   var ov = document.createElement('div');
   ov.setAttribute('role', 'dialog');
   ov.setAttribute('aria-modal', 'true');
   ov.setAttribute('aria-label', 'Add attribute');
   ov.className = 'fixed inset-0 flex items-center justify-center p-4';
-  ov.style.zIndex = '9999';   // inline — Tailwind CDN won't scan arbitrary z-[n] in JS strings
+  ov.style.zIndex = '9999';
 
   var bd = document.createElement('div');
   bd.className = 'absolute inset-0 bg-black/40 backdrop-blur-sm';
   ov.appendChild(bd);
 
-  // ── build type picker grid ──────────────────────────────────────────
+  // ── type picker grid ─────────────────────────────────────────────
   var selectedType = 'text';
 
   var typeGrid = _DB_ATTR_TYPES.map(function(t) {
     var isSel = t.id === 'text';
     return '<button type="button" data-type="' + t.id + '"'
       + ' style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;'
-      + 'padding:0.5rem 0.25rem;border-radius:0.5rem;border:1px solid '
-      + (isSel ? '#0053e2' : '#e5e7eb') + ';cursor:pointer;'
-      + 'background:' + (isSel ? '#eff6ff' : 'transparent') + ';'
-      + 'font-size:0;transition:all 0.12s;">'
-      + '<span style="font-size:1.1rem;">' + t.icon + '</span>'
-      + '<span style="font-size:0.6rem;font-weight:600;color:#374151;">' + t.label + '</span>'
+      + 'padding:0.5rem 0.25rem;border-radius:0.5rem;cursor:pointer;transition:all 0.12s;'
+      + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+      + 'background:' + (isSel ? selBg : 'transparent') + ';">'
+      + '<span style="font-size:1.1rem;line-height:1;">' + t.icon + '</span>'
+      + '<span style="font-size:0.6rem;font-weight:600;color:' + btnTxt + ';">' + t.label + '</span>'
       + '</button>';
   }).join('');
 
-  // ── value field rendered per type ────────────────────────────────────
+  // ── shared input style (dark-aware) ────────────────────────────────
   var inputCss = 'width:100%;box-sizing:border-box;padding:0.5rem 0.75rem;'
-    + 'border:1px solid #d1d5db;border-radius:0.5rem;font-size:0.875rem;'
-    + 'background:transparent;outline:none;';
+    + 'border:1px solid ' + bdr + ';border-radius:0.5rem;font-size:0.875rem;'
+    + 'background:' + inpBg + ';color:' + txt + ';outline:none;';
 
+  // ── label style helper ─────────────────────────────────────────────
+  var labelCss = 'font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;color:' + sub + ';';
+
+  // ── dialog panel ─────────────────────────────────────────────────
   var dlg = document.createElement('div');
-  dlg.style.cssText = 'position:relative;background:var(--tw-bg,white);'
-    + 'border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.25);'
+  dlg.style.cssText = 'position:relative;background:' + bg + ';'
+    + 'border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.4);'
     + 'width:min(28rem,95vw);max-height:90vh;overflow-y:auto;padding:1.5rem;';
-  dlg.className = 'bg-white dark:bg-zinc-900';
 
   dlg.innerHTML =
-    '<h2 style="font-weight:700;font-size:1rem;margin:0 0 1rem;"'
-    + ' class="text-gray-900 dark:text-zinc-100">+ Add Attribute</h2>'
+    '<h2 style="font-weight:700;font-size:1rem;margin:0 0 1rem;color:' + txt + ';">'
+    + '+ Add Attribute</h2>'
 
-    // ─ type picker
-    + '<p style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
-    + 'letter-spacing:0.05em;margin-bottom:0.4rem;" class="text-gray-500 dark:text-zinc-400">Type</p>'
+    // ─ type label
+    + '<p style="' + labelCss + 'margin-bottom:0.4rem;">Type</p>'
     + '<div id="_db-type-grid" style="display:grid;grid-template-columns:repeat(4,1fr);'
     + 'gap:0.35rem;margin-bottom:1rem;">'
     + typeGrid
@@ -2229,41 +2241,33 @@ function _dbAddAttrRow(cardId) {
 
     // ─ name
     + '<div style="margin-bottom:0.75rem;">'
-    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
-    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
-    + ' class="text-gray-500 dark:text-zinc-400">Name</label>'
+    + '<label style="' + labelCss + '">Name</label>'
     + '<input id="_db-attr-key" type="text" placeholder="e.g. Status, Owner, Priority…"'
-    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+    + ' style="' + inputCss + '" /></div>'
 
     // ─ default value (swapped by type)
     + '<div id="_db-attr-val-wrap" style="margin-bottom:0.75rem;">'
-    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
-    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
-    + ' class="text-gray-500 dark:text-zinc-400">Default value <span style="font-weight:400;'
-    + 'text-transform:none;">(optional)</span></label>'
+    + '<label style="' + labelCss + '">Default value '
+    + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>'
     + '<input id="_db-attr-val" type="text" placeholder="Leave blank to fill later…"'
-    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+    + ' style="' + inputCss + '" /></div>'
 
     // ─ options (select / multi_select / status only)
     + '<div id="_db-attr-opts-wrap" style="display:none;margin-bottom:0.75rem;">'
-    + '<label style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
-    + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;"'
-    + ' class="text-gray-500 dark:text-zinc-400">Options <span style="font-weight:400;'
-    + 'text-transform:none;">(comma-separated)</span></label>'
+    + '<label style="' + labelCss + '">Options '
+    + '<span style="font-weight:400;text-transform:none;">(comma-separated)</span></label>'
     + '<input id="_db-attr-opts" type="text" placeholder="e.g. To Do, In Progress, Done"'
-    + ' style="' + inputCss + '" class="text-gray-800 dark:text-zinc-100 dark:border-zinc-700" /></div>'
+    + ' style="' + inputCss + '" /></div>'
 
     // ─ buttons
     + '<div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:0.5rem;">'
     + '<button id="_db-attr-cancel" type="button"'
-    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:1px solid #d1d5db;'
-    + 'font-size:0.875rem;cursor:pointer;background:transparent;"'
-    + ' class="text-gray-700 dark:text-zinc-300 dark:border-zinc-600'
-    + ' hover:bg-gray-50 dark:hover:bg-zinc-800">Cancel</button>'
+    + ' style="padding:0.5rem 1rem;border-radius:0.5rem;'
+    + 'border:1px solid ' + bdr + ';font-size:0.875rem;cursor:pointer;'
+    + 'background:transparent;color:' + txt + ';">Cancel</button>'
     + '<button id="_db-attr-save" type="button"'
     + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:none;background:#0053e2;'
-    + 'color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;"'
-    + ' class="hover:bg-[#0041b8] transition">Add Attribute</button>'
+    + 'color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;">Add Attribute</button>'
     + '</div>';
 
   ov.appendChild(dlg);
@@ -2277,50 +2281,47 @@ function _dbAddAttrRow(cardId) {
 
   function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
 
-  // ── swap value field based on selected type ─────────────────────────────
+  // ── swap value field based on selected type ────────────────────────────
   function _buildValField(t) {
     var TYPE_META = {
-      text:         { tag:'input', inputType:'text',     ph:'e.g. Hello world' },
-      number:       { tag:'input', inputType:'number',   ph:'e.g. 42' },
-      select:       { tag:'input', inputType:'text',     ph:'Choose from options…' },
-      multi_select: { tag:'input', inputType:'text',     ph:'Choose multiple…' },
-      status:       { tag:'input', inputType:'text',     ph:'e.g. In Progress' },
-      date:         { tag:'input', inputType:'date',     ph:'' },
-      person:       { tag:'input', inputType:'text',     ph:'e.g. Alice' },
-      files:        { tag:'input', inputType:'text',     ph:'Filename or URL' },
+      text:         { tag:'input', inputType:'text',  ph:'e.g. Hello world' },
+      number:       { tag:'input', inputType:'number',ph:'e.g. 42' },
+      select:       { tag:'input', inputType:'text',  ph:'Choose from options…' },
+      multi_select: { tag:'input', inputType:'text',  ph:'Choose multiple…' },
+      status:       { tag:'input', inputType:'text',  ph:'e.g. In Progress' },
+      date:         { tag:'input', inputType:'date',  ph:'' },
+      person:       { tag:'input', inputType:'text',  ph:'e.g. Alice' },
+      files:        { tag:'input', inputType:'text',  ph:'Filename or URL' },
       checkbox:     { tag:'checkbox' },
-      url:          { tag:'input', inputType:'url',      ph:'https://…' },
-      email:        { tag:'input', inputType:'email',    ph:'e.g. name@example.com' },
-      phone:        { tag:'input', inputType:'tel',      ph:'e.g. +1 555 000 0000' },
-      place:        { tag:'input', inputType:'text',     ph:'e.g. 702 SW 8th St, Bentonville' },
+      url:          { tag:'input', inputType:'url',   ph:'https://…' },
+      email:        { tag:'input', inputType:'email', ph:'e.g. name@example.com' },
+      phone:        { tag:'input', inputType:'tel',   ph:'e.g. +1 555 000 0000' },
+      place:        { tag:'input', inputType:'text',  ph:'e.g. 702 SW 8th St, Bentonville' },
     };
-    valWrap.innerHTML = '<label style="font-size:0.7rem;font-weight:600;'
-      + 'text-transform:uppercase;letter-spacing:0.05em;'
-      + 'display:block;margin-bottom:0.25rem;"'
-      + ' class="text-gray-500 dark:text-zinc-400">Default value <span style="font-weight:400;'
-      + 'text-transform:none;">(optional)</span></label>';
+    valWrap.innerHTML = '<label style="' + labelCss + '">Default value '
+      + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>';
     var meta = TYPE_META[t] || TYPE_META.text;
     if (meta.tag === 'checkbox') {
-      var label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;cursor:pointer;';
-      label.className = 'text-gray-700 dark:text-zinc-200';
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;'
+        + 'cursor:pointer;color:' + txt + ';';
       var chk = document.createElement('input');
       chk.type = 'checkbox';
       chk.id   = '_db-attr-val';
       chk.style.cssText = 'width:1rem;height:1rem;accent-color:#0053e2;cursor:pointer;';
-      label.appendChild(chk);
-      label.appendChild(document.createTextNode('Checked'));
-      valWrap.appendChild(label);
+      lbl.appendChild(chk);
+      lbl.appendChild(document.createTextNode('Checked'));
+      valWrap.appendChild(lbl);
     } else {
       var inp = document.createElement('input');
       inp.type        = meta.inputType;
       inp.id          = '_db-attr-val';
       inp.placeholder = meta.ph || '';
       inp.style.cssText = inputCss;
-      inp.className   = 'text-gray-800 dark:text-zinc-100 dark:border-zinc-700';
+      // date inputs need color override for dark mode
+      if (meta.inputType === 'date' && isDark) inp.style.colorScheme = 'dark';
       valWrap.appendChild(inp);
     }
-    // show/hide options row
     var needsOpts = (t === 'select' || t === 'multi_select' || t === 'status');
     optsWrap.style.display = needsOpts ? '' : 'none';
   }
@@ -2339,18 +2340,16 @@ function _dbAddAttrRow(cardId) {
     return el ? el.value.trim() : '';
   }
 
-  // type button click handler
+  // type button click — re-style uses same dark-aware tokens
   document.getElementById('_db-type-grid').addEventListener('click', function(e) {
     var btn = e.target.closest('button[data-type]');
     if (!btn) return;
     selectedType = btn.getAttribute('data-type');
-    // re-style all buttons
     this.querySelectorAll('button[data-type]').forEach(function(b) {
       var sel = b.getAttribute('data-type') === selectedType;
-      b.style.border      = '1px solid ' + (sel ? '#0053e2' : '#e5e7eb');
-      b.style.background  = sel ? '#eff6ff' : 'transparent';
+      b.style.border     = '1px solid ' + (sel ? '#0053e2' : bdr);
+      b.style.background = sel ? selBg : 'transparent';
     });
-    // auto-fill name if still empty
     if (!keyInp.value.trim()) {
       var def = _DB_ATTR_TYPES.find(function(x) { return x.id === selectedType; });
       if (def) keyInp.value = def.label;
@@ -2372,7 +2371,6 @@ function _dbAddAttrRow(cardId) {
   saveBtn.addEventListener('click', _submit);
   ov.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') { _close(); return; }
-    // Enter submits unless cursor is in a textarea
     if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); _submit(); }
   });
   keyInp.focus();
