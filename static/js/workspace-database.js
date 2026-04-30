@@ -1947,6 +1947,18 @@ function _dbOpenDetail(cardId) {
 }
 
 function _dbCloseDetail() {
+  // Flush any unsaved note content before the panel disappears.
+  // Covers the case where the user clicks the backdrop while still editing —
+  // the note's blur event never fires because the element is removed first.
+  if (_dbDetailId) {
+    var timerKey = 'detail_' + _dbDetailId;
+    if (_dbSaveTimers[timerKey]) {
+      clearTimeout(_dbSaveTimers[timerKey]);
+      delete _dbSaveTimers[timerKey];
+    }
+    var noteEl = document.getElementById('db-detail-note-' + _dbDetailId);
+    if (noteEl) _dbSaveNote(_dbDetailId, _dbNoteHtml(noteEl));
+  }
   _dbDetailId = null;
   // Remove the click-outside listener
   var panelEl = document.getElementById('panel');
@@ -1954,7 +1966,7 @@ function _dbCloseDetail() {
     panelEl.removeEventListener('click', _dbPanelClickHandler);
     _dbPanelClickHandler = null;
   }
-  // Reuse the app’s panel close so all three view modes get cleaned up correctly
+  // Reuse the app's panel close so all three view modes get cleaned up correctly
   if (typeof closePanel === 'function') { closePanel(); return; }
   // Fallback (should never happen)
   var dp = document.getElementById('detail-panel');
