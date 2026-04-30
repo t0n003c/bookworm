@@ -2219,16 +2219,6 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
     _dbRenderGrid();
   }).catch(function(e) { console.warn('Number attr save failed', e); });
 }
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attr_key: key, attr_value: raw,
-                           attr_type: atype, attr_options: aopts }),
-  }).then(function(r) {
-    if (!r.ok) throw new Error('save failed');
-    if (meta) meta.attr_value = raw;
-    _dbRenderGrid();
-  }).catch(function(e) { console.warn('Number attr save failed', e); });
-}
 
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);   // HTML-safe, used in display contexts
