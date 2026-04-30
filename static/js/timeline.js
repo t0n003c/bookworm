@@ -526,7 +526,17 @@ window.bwTimeline = (function () {
     dateBtn.addEventListener('click', e => {
       e.stopPropagation();
       _tlDateMode = _tlDateMode === 'created' ? 'updated' : 'created';
-      remount();   // re-collect with new mode and repaint
+      // Soft redraw — preserve zoom (_pxPerDay) and current scroll position.
+      // Reassigning `notes` (a parameter = closed-over binding) means the
+      // wheel-zoom handler automatically picks up the refreshed dates too.
+      notes = _collectNotes();
+      const savedLeft = parseFloat(getRail().style.left) || 0;
+      const newRail   = _buildRail(notes, t);
+      newRail.style.left = _clamp(outer, () => newRail, savedLeft) + 'px';
+      getRail().replaceWith(newRail);
+      setRail(newRail);
+      _syncDateBtn();
+      onAllMove();
     });
     bar.appendChild(dateBtn);
 
