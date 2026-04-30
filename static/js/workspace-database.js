@@ -1993,23 +1993,40 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
 }
 
 function _dbAttrValueHtml(cardId, a) {
-  var k   = _esc(a.attr_key);
+  var k   = _esc(a.attr_key);   // HTML-safe, used in display contexts
+  // kJ: key safe for use inside an HTML attribute that contains JS args.
+  // JSON.stringify wraps in double-quotes; _esc turns those into &quot; so
+  // the enclosing HTML attribute isn't truncated, then the browser decodes
+  // &quot;→" before running the JS — giving a syntactically valid string.
+  var kJ  = _esc(JSON.stringify(a.attr_key));
   var v   = a.attr_value || '';
   var t   = a.attr_type  || 'text';
-  var cb  = '_dbSaveAttr(' + cardId + ',' + a.id + ',\'' + k + '\',this)';
+  var cb  = '_dbSaveAttr(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+
+  // Dark-mode tokens resolved at render time (avoids Tailwind JIT misses)
+  var isDark = document.documentElement.classList.contains('dark');
+  var inputBg  = isDark ? '#27272a' : '#ffffff';
+  var inputTxt = isDark ? '#f4f4f5' : '#111827';
+  var inputBdr = isDark ? '#52525b' : '#d1d5db';
+  var inputCs  = isDark ? 'dark'    : 'light';   // color-scheme for native widgets
+  var sharedInputStyle =
+    'background:' + inputBg + ';color:' + inputTxt + ';'
+    + 'border:1px solid ' + inputBdr + ';border-radius:0.375rem;'
+    + 'font-size:0.875rem;padding:0.25rem 0.5rem;'
+    + 'outline:none;width:100%;box-sizing:border-box;'
+    + 'color-scheme:' + inputCs + ';';
 
   if (t === 'checkbox') {
     var chk = (v === 'true' || v === '1' || v === 'yes') ? 'checked' : '';
     return '<input type="checkbox" ' + chk
       + ' style="width:1rem;height:1rem;cursor:pointer;accent-color:#0053e2;"'
-      + ' onchange="_dbSaveAttrCheckbox(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+      + ' onchange="_dbSaveAttrCheckbox(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
   }
   if (t === 'date') {
-    var dv = v.slice(0, 10); // keep YYYY-MM-DD only
+    var dv = v.slice(0, 10);
     return '<input type="date" value="' + _esc(dv) + '"'
-      + ' style="border:none;background:transparent;font-size:0.875rem;'
-      + 'color:inherit;cursor:pointer;outline:none;width:100%;"'
-      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',\'' + k + '\',this)">';
+      + ' style="' + sharedInputStyle + 'cursor:pointer;"'
+      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
   }
   if (t === 'number') {
     var numOpts = _dbParseNumOpts(a.attr_options || '');
@@ -2019,11 +2036,11 @@ function _dbAttrValueHtml(cardId, a) {
       + ' data-rawval="' + _esc(raw) + '"'
       + ' data-numfmt="' + _esc(numOpts.format) + '"'
       + ' data-numdec="' + numOpts.decimals + '"'
-      + ' placeholder="Enter a number\u2026"'
+      + ' placeholder="Enter a number…"'
       + ' style="border:none;background:transparent;font-size:0.875rem;'
       + 'color:inherit;outline:none;width:100%;cursor:text;"'
       + ' onfocus="_dbNumFocus(this)"'
-      + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',\'' + k + '\')">';
+      + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',' + kJ + ')">';
   }
   if (t === 'url') {
     var safeUrl = _esc(v);
@@ -2065,12 +2082,13 @@ function _dbAttrValueHtml(cardId, a) {
     var safePlace = encodeURIComponent(v);
     var mapsLink  = v
       ? '<a href="https://maps.google.com/?q=' + safePlace + '" target="_blank" rel="noopener"'
-        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">\uD83D\uDDFA️ Map</a>'
+        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">🗺️ Map</a>'
         : '';
     return mapsLink
       + '<span contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
       + ' onblur="' + cb + '">' + _esc(v) + '</span>';
   }
+
   // select — native dropdown constrained to defined options
   if (t === 'select') {
     var sopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
@@ -2080,10 +2098,10 @@ function _dbAttrValueHtml(cardId, a) {
         var sel = (o === v) ? ' selected' : '';
         optHtml += '<option value="' + _esc(o) + '"' + sel + '>' + _esc(o) + '</option>';
       });
-      return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ','
-        + JSON.stringify(a.attr_key) + ',this)"'
-        + ' style="border:none;background:transparent;font-size:0.875rem;color:inherit;'
-        + 'cursor:pointer;outline:none;width:100%;">' + optHtml + '</select>';
+      // kJ is already HTML-escaped JSON — safe to embed inside onchange="..."
+      return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ',' + kJ + ',this)"'
+        + ' style="' + sharedInputStyle + 'cursor:pointer;">'
+        + optHtml + '</select>';
     }
     // No options defined — fall through to plain contenteditable
   }
@@ -2093,16 +2111,20 @@ function _dbAttrValueHtml(cardId, a) {
     var mopts2 = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
     if (mopts2.length > 0) {
       var mSelected = (v || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      var chipHtml  = '<div class="flex flex-wrap gap-1 py-0.5">';
+      // Chip border/text colours adapt to dark mode
+      var chipBdrOff = isDark ? '#52525b' : '#d1d5db';
+      var chipTxtOff = isDark ? '#a1a1aa' : '#9ca3af';
+      var chipHtml   = '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;padding:0.125rem 0;">';
       mopts2.forEach(function(o) {
         var isSel = mSelected.indexOf(o) !== -1;
+        // oJ: option value HTML-escaped JSON, safe in onclick attribute
+        var oJ = _esc(JSON.stringify(o));
         chipHtml += '<button type="button"'
-          + ' onclick="_dbToggleMultiSelect(' + cardId + ',' + a.id + ','
-          + JSON.stringify(a.attr_key) + ',' + JSON.stringify(o) + ')"'
+          + ' onclick="_dbToggleMultiSelect(' + cardId + ',' + a.id + ',' + kJ + ',' + oJ + ')"'
           + ' style="font-size:0.7rem;padding:0.15rem 0.6rem;border-radius:9999px;cursor:pointer;'
-          + 'border:1px solid ' + (isSel ? '#7c3aed44' : '#d1d5db') + ';'
+          + 'border:1px solid ' + (isSel ? '#7c3aed44' : chipBdrOff) + ';'
           + 'background:' + (isSel ? '#7c3aed22' : 'transparent') + ';'
-          + 'color:' + (isSel ? '#7c3aed' : '#9ca3af') + ';'
+          + 'color:' + (isSel ? '#7c3aed' : chipTxtOff) + ';'
           + 'font-weight:' + (isSel ? '600' : '400') + ';transition:all 0.1s;">'
           + _esc(o) + '</button>';
       });
