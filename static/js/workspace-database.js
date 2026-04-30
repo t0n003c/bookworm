@@ -118,6 +118,51 @@ var _DB_ATTR_TYPES = [
   { id: 'place',        label: 'Place',        icon: '\uD83D\uDCCD' },
 ];
 
+/* ── option colour palette ─────────────────────────────────────────────── */
+var _DB_OPT_COLORS = [
+  { id: 'gray',   dot: '#9ca3af', bg: '#f3f4f6', text: '#374151', darkBg: '#3f3f46', darkText: '#d4d4d8' },
+  { id: 'red',    dot: '#ef4444', bg: '#fef2f2', text: '#dc2626', darkBg: '#450a0a', darkText: '#f87171' },
+  { id: 'orange', dot: '#f97316', bg: '#fff7ed', text: '#ea580c', darkBg: '#431407', darkText: '#fb923c' },
+  { id: 'yellow', dot: '#eab308', bg: '#fefce8', text: '#b45309', darkBg: '#422006', darkText: '#fbbf24' },
+  { id: 'green',  dot: '#22c55e', bg: '#f0fdf4', text: '#16a34a', darkBg: '#052e16', darkText: '#4ade80' },
+  { id: 'teal',   dot: '#14b8a6', bg: '#f0fdfa', text: '#0f766e', darkBg: '#042f2e', darkText: '#5eead4' },
+  { id: 'blue',   dot: '#3b82f6', bg: '#eff6ff', text: '#2563eb', darkBg: '#172554', darkText: '#60a5fa' },
+  { id: 'purple', dot: '#a855f7', bg: '#faf5ff', text: '#9333ea', darkBg: '#3b0764', darkText: '#c084fc' },
+  { id: 'pink',   dot: '#ec4899', bg: '#fdf2f8', text: '#db2777', darkBg: '#500724', darkText: '#f472b6' },
+];
+
+// Parse "Label|colorId,Label2|colorId2" (or legacy "Label,Label2") → [{label,color}]
+function _dbParseOptions(optsStr) {
+  if (!optsStr) return [];
+  return optsStr.split(',').map(function(part) {
+    part = part.trim();
+    if (!part) return null;
+    var pipe = part.indexOf('|');
+    if (pipe === -1) return { label: part, color: 'gray' };
+    return { label: part.slice(0, pipe).trim(), color: part.slice(pipe + 1).trim() || 'gray' };
+  }).filter(Boolean);
+}
+
+// Serialize [{label,color}] → "Label|colorId,…"
+function _dbSerializeOptions(opts) {
+  return opts.map(function(o) {
+    var lbl = (o.label || '').trim();
+    return lbl ? lbl + '|' + (o.color || 'gray') : '';
+  }).filter(Boolean).join(',');
+}
+
+// Look up a palette entry by id (falls back to gray)
+function _dbOptColorDef(colorId) {
+  return _DB_OPT_COLORS.find(function(c) { return c.id === colorId; }) || _DB_OPT_COLORS[0];
+}
+
+// Resolve bg + text for current light/dark mode
+function _dbOptColorStyle(colorId) {
+  var dk  = document.documentElement.classList.contains('dark');
+  var def = _dbOptColorDef(colorId);
+  return { bg: dk ? def.darkBg : def.bg, text: dk ? def.darkText : def.text };
+}
+
 /* ── selection toolbar state ─────────────────────────────────────────────── */
 var _dbSelBar       = null;  // floating toolbar DOM element
 var _dbSelBarTimer  = null;  // hide-debounce timer
@@ -300,19 +345,26 @@ function _dbAttrPills(attrs) {
     var v = a.attr_value || '';
 
     if (t === 'select') {
-      if (v) chipParts.push(
-        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
-        + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
-        + _esc(v) + '</span>'
-      );
-    } else if (t === 'multi_select') {
-      var mopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
-      v.split(',').map(function(s) { return s.trim(); }).filter(function(s) {
-        return s && (mopts.length === 0 || mopts.indexOf(s) !== -1);
-      }).forEach(function(s) {
+      if (v) {
+        var sParsed = _dbParseOptions(a.attr_options || '');
+        var sMatch  = sParsed.find(function(o) { return o.label === v; });
+        var sDef    = _dbOptColorDef(sMatch ? sMatch.color : 'gray');
         chipParts.push(
-          '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
-          + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
+          '<span style="background:' + sDef.bg + ';color:' + sDef.text + ';border:1px solid ' + sDef.dot + '33;"'
+          + ' class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded max-w-[120px] truncate font-medium">'
+          + _esc(v) + '</span>'
+        );
+      }
+    } else if (t === 'multi_select') {
+      var mParsed = _dbParseOptions(a.attr_options || '');
+      v.split(',').map(function(s) { return s.trim(); }).filter(function(s) {
+        return s && (mParsed.length === 0 || mParsed.some(function(o) { return o.label === s; }));
+      }).forEach(function(s) {
+        var mMatch = mParsed.find(function(o) { return o.label === s; });
+        var mDef   = _dbOptColorDef(mMatch ? mMatch.color : 'gray');
+        chipParts.push(
+          '<span style="background:' + mDef.bg + ';color:' + mDef.text + ';border:1px solid ' + mDef.dot + '33;"'
+          + ' class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded max-w-[120px] truncate font-medium">'
           + _esc(s) + '</span>'
         );
       });
@@ -2205,14 +2257,13 @@ function _dbAttrValueHtml(cardId, a) {
 
   // select — native dropdown constrained to defined options
   if (t === 'select') {
-    var sopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
+    var sopts = _dbParseOptions(a.attr_options || '');
     if (sopts.length > 0) {
       var optHtml = '<option value="">(none)</option>';
       sopts.forEach(function(o) {
-        var sel = (o === v) ? ' selected' : '';
-        optHtml += '<option value="' + _esc(o) + '"' + sel + '>' + _esc(o) + '</option>';
+        var sel = (o.label === v) ? ' selected' : '';
+        optHtml += '<option value="' + _esc(o.label) + '"' + sel + '>' + _esc(o.label) + '</option>';
       });
-      // kJ is already HTML-escaped JSON — safe to embed inside onchange="..."
       return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ',' + kJ + ',this)"'
         + ' onfocus="_dbNativeWidgetFocus(this)"'
         + ' onblur="_dbNativeWidgetBlur(this)"'
@@ -2224,31 +2275,33 @@ function _dbAttrValueHtml(cardId, a) {
 
   // multi_select — toggleable chip grid constrained to defined options
   if (t === 'multi_select') {
-    var mopts2 = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
+    var mopts2 = _dbParseOptions(a.attr_options || '');
     if (mopts2.length > 0) {
       var mSelected = (v || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      // Chip border/text colours adapt to dark mode
       var chipBdrOff = isDark ? '#52525b' : '#d1d5db';
       var chipTxtOff = isDark ? '#a1a1aa' : '#9ca3af';
       var chipHtml   = '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;padding:0.125rem 0;">';
       mopts2.forEach(function(o) {
-        var isSel = mSelected.indexOf(o) !== -1;
-        // oJ: option value HTML-escaped JSON, safe in onclick attribute
-        var oJ = _esc(JSON.stringify(o));
+        var isSel = mSelected.indexOf(o.label) !== -1;
+        var oJ    = _esc(JSON.stringify(o.label));
+        var cDef  = _dbOptColorDef(o.color || 'gray');
+        var selBg  = isDark ? cDef.darkBg  : cDef.bg;
+        var selTxt = isDark ? cDef.darkText : cDef.text;
         chipHtml += '<button type="button"'
           + ' onclick="_dbToggleMultiSelect(' + cardId + ',' + a.id + ',' + kJ + ',' + oJ + ')"'
           + ' style="font-size:0.7rem;padding:0.15rem 0.6rem;border-radius:9999px;cursor:pointer;'
-          + 'border:1px solid ' + (isSel ? '#7c3aed44' : chipBdrOff) + ';'
-          + 'background:' + (isSel ? '#7c3aed22' : 'transparent') + ';'
-          + 'color:' + (isSel ? '#7c3aed' : chipTxtOff) + ';'
+          + 'border:1px solid ' + (isSel ? cDef.dot + '55' : chipBdrOff) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';'
+          + 'color:' + (isSel ? selTxt : chipTxtOff) + ';'
           + 'font-weight:' + (isSel ? '600' : '400') + ';transition:all 0.1s;">'
-          + _esc(o) + '</button>';
+          + _esc(o.label) + '</button>';
       });
       chipHtml += '</div>';
       return chipHtml;
     }
     // No options defined — fall through to plain contenteditable
   }
+
 
   // text / person / files / select (no opts) / multi_select (no opts) — contenteditable
   return '<div contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
@@ -2923,7 +2976,139 @@ function _dbAddAttrRow(cardId) {
   keyInp.focus();
 }
 
-/* ── Edit existing attribute (name / type / format) ─────────────────────── */
+/* ── Option colour editor (shared by Add + Edit modals) ──────────────── */
+
+// Build an interactive option list with per-option color pickers.
+// container : DOM element to build into
+// initOpts  : [{label, color}] from _dbParseOptions()
+function _dbBuildOptEditor(container, initOpts) {
+  container.innerHTML = '';
+
+  var lbl = document.createElement('label');
+  lbl.style.cssText = 'display:block;font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+    + 'letter-spacing:0.05em;color:#6b7280;margin-bottom:0.5rem;';
+  lbl.textContent = 'Options';
+  container.appendChild(lbl);
+
+  var listEl = document.createElement('div');
+  listEl.className = '_dbe-opt-list';
+  listEl.style.cssText = 'display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.5rem;';
+  container.appendChild(listEl);
+
+  function _makeRow(label, color) {
+    var rowEl = document.createElement('div');
+    rowEl.className = '_dbe-opt-row';
+    rowEl.setAttribute('data-color', color || 'gray');
+    rowEl.style.cssText = 'display:flex;flex-direction:column;';
+
+    var mainLine = document.createElement('div');
+    mainLine.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+
+    // Colour swatch button
+    var def = _dbOptColorDef(color || 'gray');
+    var colorBtn = document.createElement('button');
+    colorBtn.type = 'button';
+    colorBtn.title = 'Change colour';
+    colorBtn.style.cssText = 'flex-shrink:0;width:0.9rem;height:0.9rem;border-radius:9999px;'
+      + 'border:none;cursor:pointer;background:' + def.dot + ';transition:transform 0.1s;';
+    colorBtn.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.3)'; });
+    colorBtn.addEventListener('mouseleave', function() { this.style.transform = ''; });
+
+    // Label input
+    var labelInp = document.createElement('input');
+    labelInp.type = 'text';
+    labelInp.className = '_dbe-opt-label';
+    labelInp.value = label || '';
+    labelInp.placeholder = 'Option label…';
+    labelInp.style.cssText = 'flex:1;padding:0.25rem 0.5rem;font-size:0.8rem;'
+      + 'border:1px solid #d1d5db;border-radius:0.375rem;background:transparent;'
+      + 'outline:none;color:inherit;min-width:0;';
+
+    // Delete button
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = '\u00d7';
+    delBtn.title = 'Remove';
+    delBtn.style.cssText = 'flex-shrink:0;width:1.25rem;height:1.25rem;border:none;background:transparent;'
+      + 'cursor:pointer;font-size:1rem;color:#9ca3af;line-height:1;transition:color 0.1s;';
+    delBtn.addEventListener('mouseenter', function() { this.style.color = '#ef4444'; });
+    delBtn.addEventListener('mouseleave', function() { this.style.color = '#9ca3af'; });
+    delBtn.addEventListener('click', function() { listEl.removeChild(rowEl); });
+
+    // Palette panel (hidden until swatch clicked)
+    var palEl = document.createElement('div');
+    palEl.className = '_dbe-palette';
+    palEl.style.cssText = 'display:none;padding:0.3rem 0 0.2rem 1.3rem;';
+    var swatchRow = document.createElement('div');
+    swatchRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;';
+    _DB_OPT_COLORS.forEach(function(c) {
+      var sw = document.createElement('button');
+      sw.type = 'button';
+      sw.title = c.id;
+      var isActive = c.id === (rowEl.getAttribute('data-color') || 'gray');
+      sw.style.cssText = 'width:0.9rem;height:0.9rem;border-radius:9999px;cursor:pointer;'
+        + 'background:' + c.dot + ';transition:transform 0.1s,box-shadow 0.1s;'
+        + (isActive ? 'box-shadow:0 0 0 2px #fff,0 0 0 3.5px ' + c.dot + ';' : '');
+      sw.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.3)'; });
+      sw.addEventListener('mouseleave', function() { this.style.transform = ''; });
+      sw.addEventListener('click', function() {
+        rowEl.setAttribute('data-color', c.id);
+        colorBtn.style.background = c.dot;
+        swatchRow.querySelectorAll('button').forEach(function(b) {
+          b.style.boxShadow = '';
+        });
+        sw.style.boxShadow = '0 0 0 2px #fff,0 0 0 3.5px ' + c.dot;
+        palEl.style.display = 'none';
+      });
+      swatchRow.appendChild(sw);
+    });
+    palEl.appendChild(swatchRow);
+
+    colorBtn.addEventListener('click', function() {
+      var isOpen = palEl.style.display !== 'none';
+      // close every other open palette first
+      listEl.querySelectorAll('._dbe-palette').forEach(function(p) { p.style.display = 'none'; });
+      palEl.style.display = isOpen ? 'none' : 'block';
+    });
+
+    mainLine.appendChild(colorBtn);
+    mainLine.appendChild(labelInp);
+    mainLine.appendChild(delBtn);
+    rowEl.appendChild(mainLine);
+    rowEl.appendChild(palEl);
+    listEl.appendChild(rowEl);
+    return rowEl;
+  }
+
+  initOpts.forEach(function(o) { _makeRow(o.label, o.color); });
+
+  var addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.textContent = '+ Add option';
+  addBtn.style.cssText = 'font-size:0.75rem;color:#0053e2;background:transparent;border:none;'
+    + 'cursor:pointer;padding:0;text-align:left;';
+  addBtn.addEventListener('mouseenter', function() { this.style.textDecoration = 'underline'; });
+  addBtn.addEventListener('mouseleave', function() { this.style.textDecoration = ''; });
+  addBtn.addEventListener('click', function() {
+    var row = _makeRow('', 'gray');
+    var inp = row.querySelector('._dbe-opt-label');
+    if (inp) setTimeout(function() { inp.focus(); }, 30);
+  });
+  container.appendChild(addBtn);
+}
+
+// Read serialized options from a container built by _dbBuildOptEditor
+function _dbReadOptEditor(container) {
+  var opts = [];
+  container.querySelectorAll('._dbe-opt-row').forEach(function(row) {
+    var inp = row.querySelector('._dbe-opt-label');
+    var lbl = inp ? inp.value.trim() : '';
+    if (lbl) opts.push({ label: lbl, color: row.getAttribute('data-color') || 'gray' });
+  });
+  return _dbSerializeOptions(opts);
+}
+
+/* ── Edit existing attribute (name / type / format) ──────────────────── */
 function _dbEditAttrRow(cardId, attrId) {
   var card    = _dbCards.find(function(c) { return c.id === cardId; });
   var attr    = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
@@ -3064,20 +3249,9 @@ function _dbEditAttrRow(cardId, attrId) {
       row.appendChild(decDiv);
       extrasDiv.appendChild(row);
     } else if (t === 'select' || t === 'multi_select' || t === 'status') {
-      var optsDiv = document.createElement('div');
-      optsDiv.style.cssText = 'margin-bottom:0.75rem;';
-      var optsLbl = document.createElement('label');
-      optsLbl.style.cssText = labelCss;
-      optsLbl.innerHTML = 'Options <span style="font-weight:400;text-transform:none;">(comma-separated)</span>';
-      var optsInp = document.createElement('input');
-      optsInp.type = 'text';
-      optsInp.id   = '_dbe-opts';
-      optsInp.value = (selectedType === origType ? origOpts : '');
-      optsInp.placeholder = 'e.g. To Do, In Progress, Done';
-      optsInp.style.cssText = inputCss;
-      optsDiv.appendChild(optsLbl);
-      optsDiv.appendChild(optsInp);
-      extrasDiv.appendChild(optsDiv);
+      var initStr  = selectedType === origType ? origOpts : '';
+      var initOpts = _dbParseOptions(initStr);
+      _dbBuildOptEditor(extrasDiv, initOpts);
     } else if (t === 'date') {
       var dateFmtDiv = document.createElement('div');
       dateFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
@@ -3128,8 +3302,7 @@ function _dbEditAttrRow(cardId, attrId) {
     if (selectedType === 'date') {
       return selectedDateFmt || 'mdy';
     }
-    var oEl = document.getElementById('_dbe-opts');
-    return oEl ? oEl.value.trim() : '';
+    return _dbReadOptEditor(extrasDiv);
   }
 
   // type picker
