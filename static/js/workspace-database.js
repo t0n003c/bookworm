@@ -92,6 +92,15 @@ var _DB_NUM_FORMATS = [
   { id:'btc', label:'\u20bf Bitcoin (BTC)',                      currency:null  },
 ];
 
+/* ── date format registry ──────────────────────────────────────────── */
+var _DB_DATE_FORMATS = [
+  { id: 'mdy',   label: 'MM/DD/YYYY',      example: '04/22/2025' },
+  { id: 'dmy',   label: 'DD/MM/YYYY',      example: '22/04/2025' },
+  { id: 'ymd',   label: 'YYYY-MM-DD',      example: '2025-04-22' },
+  { id: 'short', label: 'Apr 22, 2025',    example: 'Apr 22, 2025' },
+  { id: 'long',  label: 'April 22, 2025',  example: 'April 22, 2025' },
+];
+
 /* ── attribute type registry ────────────────────────────────────────── */
 var _DB_ATTR_TYPES = [
   { id: 'text',         label: 'Text',         icon: '\uD83D\uDCDD' },
@@ -1964,6 +1973,64 @@ function _dbNumFmtPreview(inp, spanId) {
 }
 
 /** On focus: swap formatted display → raw number so the user can type. */
+function _dbFormatDate(isoStr, fmtId) {
+  // Render an ISO date (YYYY-MM-DD) for display using the chosen format.
+  if (!isoStr) return '';
+  var p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoStr);
+  if (!p) return isoStr;
+  var y = p[1], m = p[2], d = p[3], mi = parseInt(m, 10);
+  var MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var ML = ['January','February','March','April','May','June',
+            'July','August','September','October','November','December'];
+  switch (fmtId) {
+    case 'mdy':   return m + '/' + d + '/' + y;
+    case 'dmy':   return d + '/' + m + '/' + y;
+    case 'ymd':   return isoStr;
+    case 'short': return MS[mi - 1] + ' ' + parseInt(d, 10) + ', ' + y;
+    case 'long':  return ML[mi - 1] + ' '  + parseInt(d, 10) + ', ' + y;
+    default:      return m + '/' + d + '/' + y;
+  }
+}
+
+function _dbParseUserDate(str) {
+  // Parse a user-typed date into YYYY-MM-DD; returns '' if unparseable.
+  str = (str || '').trim();
+  if (!str) return '';
+  var MMAP = {
+    jan:1,feb:2,mar:3,apr:4,may:5,jun:6,
+    jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+    january:1,february:2,march:3,april:4,june:6,
+    july:7,august:8,september:9,october:10,november:11,december:12
+  };
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function norm(y, m, d) {
+    y = parseInt(y,10); m = parseInt(m,10); d = parseInt(d,10);
+    if (y < 100) y += 2000;
+    if (m < 1 || m > 12 || d < 1 || d > 31) return '';
+    return y + '-' + pad2(m) + '-' + pad2(d);
+  }
+  var x;
+  // YYYY-MM-DD or YYYY/MM/DD
+  x = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/.exec(str);
+  if (x) return norm(x[1], x[2], x[3]);
+  // M/D/YYYY, M-D-YYYY — if first part > 12 treat as day-first
+  x = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/.exec(str);
+  if (x) {
+    var p1 = parseInt(x[1], 10), p2 = parseInt(x[2], 10);
+    return p1 > 12 ? norm(x[3], p2, p1) : norm(x[3], p1, p2);
+  }
+  // "April 22, 2025" or "Apr 22 2025"
+  x = /^([a-zA-Z]+)\s+(\d{1,2})[,\s]+(\d{2,4})$/.exec(str);
+  if (x) { var mo = MMAP[x[1].toLowerCase()]; if (mo) return norm(x[3], mo, x[2]); }
+  // "22 April 2025" or "22 Apr 2025"
+  x = /^(\d{1,2})\s+([a-zA-Z]+)[,\s]+(\d{2,4})$/.exec(str);
+  if (x) { var mo2 = MMAP[x[2].toLowerCase()]; if (mo2) return norm(x[3], mo2, x[1]); }
+  // Last resort: native Date.parse
+  var nd = new Date(str);
+  if (!isNaN(nd.getTime())) return nd.toISOString().slice(0, 10);
+  return '';
+}
+
 function _dbNativeWidgetFocus(el) {
   // Show a visible box when the user interacts with a select/date field.
   var isDark = document.documentElement.classList.contains('dark');
@@ -2040,10 +2107,34 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onchange="_dbSaveAttrCheckbox(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
   }
   if (t === 'date') {
-    var dv = v.slice(0, 10);
-    return '<input type="date" value="' + _esc(dv) + '"'
-      + ' style="' + restInputStyle + '"'
-      + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
+    // attr_options stores the display format ID (e.g. 'mdy', 'long')
+    var fmtId  = a.attr_options || 'mdy';
+    var dv     = v.slice(0, 10);  // stored as YYYY-MM-DD
+    var dShown = dv ? _dbFormatDate(dv, fmtId) : '';
+    var pId    = 'dbt-p-' + a.id;
+    var fmtJ   = _esc(JSON.stringify(fmtId));
+    return (
+      '<span style="display:inline-flex;align-items:center;gap:0.3rem;width:100%;">'
+      // Typeable text input — accepts many formats, normalises on blur
+      + '<input type="text" value="' + _esc(dShown) + '"'
+      + ' placeholder="e.g. Apr 22 2025"'
+      + ' style="border:none;background:transparent;font-size:0.875rem;color:inherit;'
+      + 'outline:none;flex:1;min-width:0;cursor:text;"'
+      + ' onblur="_dbDateTextBlur(' + cardId + ',' + a.id + ',' + kJ + ',this,' + fmtJ + ')">'
+      // Hidden native date picker (zero-size, opened by button)
+      + '<input type="date" id="' + _esc(pId) + '" value="' + _esc(dv) + '"'
+      + ' style="position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;"'
+      + ' onchange="_dbDatePickerChange(' + cardId + ',' + a.id + ',' + kJ + ',this,' + fmtJ + ')">'
+      // Calendar icon button
+      + '<button type="button"'
+      + ' onclick="var p=document.getElementById(\'' + _esc(pId) + '\');'
+      + 'p.showPicker?p.showPicker():p.click()"'
+      + ' title="Pick a date"'
+      + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
+      + 'padding:0.1rem 0.2rem;color:#9ca3af;font-size:0.875rem;line-height:1;'
+      + 'border-radius:0.25rem;">&#128197;</button>'
+      + '</span>'
+    );
   }
   if (t === 'number') {
     var numOpts = _dbParseNumOpts(a.attr_options || '');
@@ -2853,7 +2944,8 @@ function _dbEditAttrRow(cardId, attrId) {
   var labelCss = 'font-size:0.7rem;font-weight:600;text-transform:uppercase;'
     + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;color:' + sub + ';';
 
-  var selectedType = origType;
+  var selectedType    = origType;
+  var selectedDateFmt = (origType === 'date' && origOpts) ? origOpts : 'mdy';
 
   // ── type grid (pre-selected) ────────────────────────────────────
   var typeGrid = _DB_ATTR_TYPES.map(function(t) {
@@ -2980,6 +3072,40 @@ function _dbEditAttrRow(cardId, attrId) {
       optsDiv.appendChild(optsLbl);
       optsDiv.appendChild(optsInp);
       extrasDiv.appendChild(optsDiv);
+    } else if (t === 'date') {
+      var dateFmtDiv = document.createElement('div');
+      dateFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var dateFmtLbl = document.createElement('label');
+      dateFmtLbl.style.cssText = labelCss;
+      dateFmtLbl.textContent = 'Display format';
+      dateFmtDiv.appendChild(dateFmtLbl);
+      var fmtGrid = document.createElement('div');
+      fmtGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;';
+      // Reset selectedDateFmt when switching type; keep it when staying on date.
+      if (selectedType !== origType) selectedDateFmt = 'mdy';
+      _DB_DATE_FORMATS.forEach(function(f) {
+        var isSel = f.id === selectedDateFmt;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-datefmt', f.id);
+        btn.style.cssText =
+          'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;';
+        btn.innerHTML =
+          '<div style="font-weight:600;color:' + txt + ';">' + _esc(f.label) + '</div>'
+          + '<div style="color:' + sub + ';font-size:0.7rem;">' + _esc(f.example) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedDateFmt = f.id;
+          fmtGrid.querySelectorAll('button[data-datefmt]').forEach(function(b) {
+            var s = b.getAttribute('data-datefmt') === selectedDateFmt;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        fmtGrid.appendChild(btn); });
+      dateFmtDiv.appendChild(fmtGrid);
+      extrasDiv.appendChild(dateFmtDiv);
     }
   }
 
@@ -2992,6 +3118,9 @@ function _dbEditAttrRow(cardId, attrId) {
         format:   fEl ? fEl.value : 'number',
         decimals: dEl ? (parseInt(dEl.value, 10) || 0) : 0,
       });
+    }
+    if (selectedType === 'date') {
+      return selectedDateFmt || 'mdy';
     }
     var oEl = document.getElementById('_dbe-opts');
     return oEl ? oEl.value.trim() : '';
@@ -3177,6 +3306,48 @@ function _dbSaveAttrInput(cardId, attrId, key, el) {
   .catch(function(e) { console.warn('Attr input save failed', e); });
 }
 
+// Shared atomic save used by date helpers (and open for reuse elsewhere).
+function _dbSaveAttrVal(cardId, attrId, key, value) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var atype = meta ? (meta.attr_type    || 'text') : 'text';
+  var aopts = meta ? (meta.attr_options || '')      : '';
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: atype, attr_options: aopts }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Save failed');
+    if (meta) meta.attr_value = value;
+    _dbRenderGrid();
+  })
+  .catch(function(e) { console.warn('Attr save failed', e); });
+}
+
+function _dbDateTextBlur(cardId, attrId, key, el, fmtId) {
+  var raw = el.value.trim();
+  if (!raw) { _dbSaveAttrVal(cardId, attrId, key, ''); return; }
+  var iso = _dbParseUserDate(raw);
+  if (iso) {
+    el.value = _dbFormatDate(iso, fmtId); // normalise to canonical display
+    var picker = document.getElementById('dbt-p-' + attrId);
+    if (picker) picker.value = iso;
+    _dbSaveAttrVal(cardId, attrId, key, iso);
+  } else {
+    el.style.color = '#ea1100'; // flash red — couldn't parse
+    setTimeout(function() { el.style.color = ''; }, 1500);
+  }
+}
+
+function _dbDatePickerChange(cardId, attrId, key, pickerEl, fmtId) {
+  var iso   = pickerEl.value; // native picker always gives YYYY-MM-DD
+  var wrap  = pickerEl.parentNode;
+  var textEl = wrap ? wrap.querySelector('input[type=text]') : null;
+  if (textEl) textEl.value = iso ? _dbFormatDate(iso, fmtId) : '';
+  _dbSaveAttrVal(cardId, attrId, key, iso);
+}
 function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
   var value = el.checked ? 'true' : 'false';
   var card  = _dbCards.find(function(c) { return c.id === cardId; });
