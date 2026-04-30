@@ -20,10 +20,13 @@ from routers.attachments_db import UPLOAD_DIR
 from routers.uploads_db import create_page_upload, delete_page_upload
 from routers.workspace_db_cards import (
     create_db_card,
+    delete_attr_from_workspace,
     delete_card_attr,
     delete_db_card,
     get_db_card,
     get_db_cards,
+    rename_attr_in_workspace,
+    sync_attr_to_workspace,
     update_card_note_height,
     update_db_card,
     upsert_card_attr,
@@ -95,6 +98,24 @@ class AttrBody(BaseModel):
     attr_type:    str = "text"
     attr_options: str = ""
 
+
+class SyncAttrBody(BaseModel):
+    attr_key:          str
+    attr_type:         str = "text"
+    attr_options:      str = ""
+    source_card_id:    Optional[int] = None
+    source_attr_value: str = ""
+
+
+class DeleteAttrByKeyBody(BaseModel):
+    attr_key: str
+
+
+class RenameAttrBody(BaseModel):
+    old_key:      str
+    new_key:      str
+    attr_type:    str = "text"
+    attr_options: str = ""
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
 
@@ -240,6 +261,72 @@ async def remove_attr(
     if not deleted:
         raise HTTPException(status_code=404, detail="Attribute not found")
     return JSONResponse({"ok": True})
+
+
+@router.post("/{ws_id}/db/attrs/sync")
+async def broadcast_attr(
+    ws_id: int, request: Request, body: SyncAttrBody
+) -> JSONResponse:
+    """Sync an attribute definition to every card in the workspace.
+
+    - Source card gets its value set; all other cards are updated in-place
+      (type/options updated, value kept) or inserted with an empty value.
+    Returns the updated full card list so the client can replace _dbCards.
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    if not body.attr_key.strip():
+        raise HTTPException(status_code=422, detail="attr_key cannot be empty")
+    attr_type = body.attr_type if body.attr_type in _VALID_ATTR_TYPES else "text"
+    await sync_attr_to_workspace(
+        ws_id=ws_id,
+        user_id=user_id,
+        attr_key=body.attr_key.strip(),
+        attr_type=attr_type,
+        attr_options=body.attr_options,
+        source_card_id=body.source_card_id,
+        source_attr_value=body.source_attr_value,
+    )
+    cards = await get_db_cards(db_id=ws_id, user_id=user_id)
+    return JSONResponse({"cards": cards})
+
+
+@router.post("/{ws_id}/db/attrs/delete")
+async def delete_attr_by_key(
+    ws_id: int, request: Request, body: DeleteAttrByKeyBody
+) -> JSONResponse:
+    """Delete an attribute by key from every card in the workspace."""
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    if not body.attr_key.strip():
+        raise HTTPException(status_code=422, detail="attr_key cannot be empty")
+    await delete_attr_from_workspace(
+        ws_id=ws_id, user_id=user_id, attr_key=body.attr_key.strip()
+    )
+    cards = await get_db_cards(db_id=ws_id, user_id=user_id)
+    return JSONResponse({"cards": cards})
+
+
+@router.post("/{ws_id}/db/attrs/rename")
+async def rename_attr(
+    ws_id: int, request: Request, body: RenameAttrBody
+) -> JSONResponse:
+    """Rename an attribute key across every card, updating type/options. Values preserved."""
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    if not body.old_key.strip() or not body.new_key.strip():
+        raise HTTPException(status_code=422, detail="old_key and new_key cannot be empty")
+    attr_type = body.attr_type if body.attr_type in _VALID_ATTR_TYPES else "text"
+    await rename_attr_in_workspace(
+        ws_id=ws_id,
+        user_id=user_id,
+        old_key=body.old_key.strip(),
+        new_key=body.new_key.strip(),
+        attr_type=attr_type,
+        attr_options=body.attr_options,
+    )
+    cards = await get_db_cards(db_id=ws_id, user_id=user_id)
+    return JSONResponse({"cards": cards})
 
 
 # ── Cover image: inline serve ─────────────────────────────────────────────────

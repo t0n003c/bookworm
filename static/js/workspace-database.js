@@ -1871,12 +1871,22 @@ function _dbFormatNumber(raw, numOpts) {
   }
   var def = _DB_NUM_FORMATS.find(function(f) { return f.id === fmt; });
   if (!def || !def.currency) return n.toFixed(dec);
+  // narrowSymbol avoids disambiguation prefixes like "CN¥" or "CA$" — use
+  // 'symbol' as fallback for older browsers that don't support narrowSymbol.
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency', currency: def.currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: dec, maximumFractionDigits: dec,
     }).format(n);
-  } catch(e) { return n.toFixed(dec); }
+  } catch(e1) {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: def.currency,
+        minimumFractionDigits: dec, maximumFractionDigits: dec,
+      }).format(n);
+    } catch(e2) { return n.toFixed(dec); }
+  }
 }
 
 /** Called from inline oninput on number inputs inside the detail panel. */
@@ -2806,20 +2816,30 @@ function _dbEditAttrRow(cardId, attrId) {
     var newType = selectedType;
     var newOpts = _readExtras();
 
-    function _doPost() {
-      _dbSaveAttrByKey(cardId, newKey, origVal, newType, newOpts);
-      _close();
-    }
-
     if (newKey !== origKey) {
-      // key changed — delete old row first, then upsert new
-      fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
-        method: 'DELETE',
-      }).then(function() { _doPost(); })
-        .catch(function() { _doPost(); }); // try upsert even if delete failed
+      // Rename across all cards — values are preserved
+      fetch('/workspaces/' + _dbWsId + '/db/attrs/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          old_key:      origKey,
+          new_key:      newKey,
+          attr_type:    newType,
+          attr_options: newOpts,
+        }),
+      })
+      .then(function(r) { if (!r.ok) throw new Error('Rename failed'); return r.json(); })
+      .then(function(data) {
+        _dbCards = data.cards;
+        _dbRenderGrid();
+        _dbOpenDetail(cardId);
+      })
+      .catch(function(e) { _dbToast('Could not rename attribute: ' + e.message, true); });
     } else {
-      _doPost();
+      // Key unchanged — sync type/options to all cards, preserve source value
+      _dbSaveAttrByKey(cardId, newKey, origVal, newType, newOpts);
     }
+    _close();
   }
 
   // init extras for current type
@@ -2839,26 +2859,27 @@ function _dbEditAttrRow(cardId, attrId) {
 function _dbSaveAttrByKey(cardId, key, value, attrType, attrOptions) {
   var atype = attrType  || 'text';
   var aopts = attrOptions || '';
-  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+  // Broadcast to all cards in this workspace: source card gets the value;
+  // every other card has the attr inserted (empty) or type/options updated.
+  fetch('/workspaces/' + _dbWsId + '/db/attrs/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attr_key: key, attr_value: value,
-                           attr_type: atype, attr_options: aopts }),
+    body: JSON.stringify({
+      attr_key:          key,
+      attr_type:         atype,
+      attr_options:      aopts,
+      source_card_id:    cardId,
+      source_attr_value: value,
+    }),
   })
   .then(function(r) {
-    if (!r.ok) throw new Error('Attr save failed');
+    if (!r.ok) throw new Error('Attr sync failed');
     return r.json();
   })
-  .then(function() {
-    // Refresh the card from server to get updated attrs
+  .then(function(data) {
+    _dbCards = data.cards;
+    _dbRenderGrid();
     _dbOpenDetail(cardId);
-    fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId)
-    .then(function(r2) { return r2.json(); })
-    .then(function(card) {
-      var idx = _dbCards.findIndex(function(c) { return c.id === cardId; });
-      if (idx >= 0) _dbCards[idx] = card;
-      _dbRenderGrid();
-    });
   })
   .catch(function(e) { _dbToast('Could not save attribute: ' + e.message, true); });
 }
@@ -2971,8 +2992,7 @@ function _dbDeleteAttr(cardId, attrId) {
 
   // attribute name
   var p = document.createElement('p');
-  p.style.cssText = 'font-size:0.875rem;color:' + sub + ';margin:0 0 1.25rem;'
-    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  p.style.cssText = 'font-size:0.875rem;color:' + sub + ';margin:0 0 1.25rem;line-height:1.5;';
   p.textContent = '\u201c' + attrName + '\u201d and its value will be permanently removed.';
   dlg.appendChild(p);
 
@@ -3021,17 +3041,20 @@ function _dbDeleteAttr(cardId, attrId) {
   cancelBtn.addEventListener('click', _close);
   ov.addEventListener('keydown', function(e) { if (e.key === 'Escape') _close(); });
 
-  // confirm → do the actual delete
+  // confirm → remove this attr key from ALL cards in the workspace
   delBtn.addEventListener('click', function() {
     _close();
-    fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
-      method: 'DELETE',
+    fetch('/workspaces/' + _dbWsId + '/db/attrs/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attr_key: attrName }),
     })
     .then(function(r) {
       if (!r.ok) throw new Error('Delete attr failed');
-      if (card && card.attrs) {
-        card.attrs = card.attrs.filter(function(a) { return a.id !== attrId; });
-      }
+      return r.json();
+    })
+    .then(function(data) {
+      _dbCards = data.cards;
       _dbRenderGrid();
       if (_dbDetailId === cardId) _dbOpenDetail(cardId);
     })

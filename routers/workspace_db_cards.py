@@ -237,3 +237,102 @@ async def delete_card_attr(attr_id: int, card_id: int) -> bool:
         )
         await db.commit()
         return cur.rowcount > 0
+
+
+async def sync_attr_to_workspace(
+    ws_id: int,
+    user_id: int,
+    attr_key: str,
+    attr_type: str = "text",
+    attr_options: str = "",
+    source_card_id: Optional[int] = None,
+    source_attr_value: str = "",
+) -> None:
+    """Broadcast an attribute definition to every card in a workspace.
+
+    - Source card: full UPSERT (value + type + options).
+    - All other cards: UPDATE type/options (keep existing value);
+      INSERT with empty value for cards that don’t have this attr yet.
+    """
+    async with get_db() as db:
+        # Get all card IDs owned by this user in this workspace
+        cur = await db.execute(
+            "SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?",
+            (ws_id, user_id),
+        )
+        rows = await cur.fetchall()
+        card_ids = [r["id"] for r in rows]
+
+        for cid in card_ids:
+            is_source = cid == source_card_id
+            val = source_attr_value if is_source else ""
+
+            # Attempt UPDATE (type + options always; value only for source)
+            if is_source:
+                upd = await db.execute(
+                    "UPDATE db_card_attrs "
+                    "SET attr_value=?, attr_type=?, attr_options=? "
+                    "WHERE card_id=? AND attr_key=?",
+                    (val, attr_type, attr_options, cid, attr_key),
+                )
+            else:
+                upd = await db.execute(
+                    "UPDATE db_card_attrs "
+                    "SET attr_type=?, attr_options=? "
+                    "WHERE card_id=? AND attr_key=?",
+                    (attr_type, attr_options, cid, attr_key),
+                )
+
+            if upd.rowcount == 0:
+                # Card doesn’t have this attr yet — insert with appropriate value
+                sort_cur = await db.execute(
+                    "SELECT COALESCE(MAX(sort_order), -10) FROM db_card_attrs WHERE card_id=?",
+                    (cid,),
+                )
+                sort_row = await sort_cur.fetchone()
+                new_sort = (sort_row[0] or 0) + 10
+                await db.execute(
+                    "INSERT INTO db_card_attrs "
+                    "(card_id, attr_key, attr_value, attr_type, attr_options, sort_order) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (cid, attr_key, val, attr_type, attr_options, new_sort),
+                )
+
+        await db.commit()
+
+
+async def delete_attr_from_workspace(ws_id: int, user_id: int, attr_key: str) -> None:
+    """Remove an attribute (by key) from every card in a workspace."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM db_card_attrs "
+            "WHERE card_id IN "
+            "  (SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?) "
+            "AND attr_key=?",
+            (ws_id, user_id, attr_key),
+        )
+        await db.commit()
+
+
+async def rename_attr_in_workspace(
+    ws_id: int,
+    user_id: int,
+    old_key: str,
+    new_key: str,
+    attr_type: str = "text",
+    attr_options: str = "",
+) -> None:
+    """Rename an attribute key across all cards in a workspace, updating type/options too.
+
+    Values are preserved. Cards that don’t have old_key are unaffected.
+    """
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE db_card_attrs "
+            "SET attr_key=?, attr_type=?, attr_options=? "
+            "WHERE card_id IN "
+            "  (SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?) "
+            "AND attr_key=?",
+            (new_key, attr_type, attr_options, ws_id, user_id, old_key),
+        )
+        await db.commit()
