@@ -352,6 +352,13 @@ function _dbAttrPills(attrs) {
   var MAX_PLAIN = 3, MAX_CHIPS = 4;
   var html = '';
 
+  if (chipParts.length > 0) {
+    var extraC   = chipParts.length - MAX_CHIPS;
+    var chipHtml = chipParts.slice(0, MAX_CHIPS).join('');
+    if (extraC > 0) chipHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extraC + ' more</span>';
+    html += '<div class="flex flex-wrap gap-1">' + chipHtml + '</div>';
+  }
+
   if (plainParts.length > 0) {
     var extraP   = plainParts.length - MAX_PLAIN;
     var plainHtml = plainParts.slice(0, MAX_PLAIN).join(
@@ -359,13 +366,6 @@ function _dbAttrPills(attrs) {
     );
     if (extraP > 0) plainHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500">\u00a0+' + extraP + '</span>';
     html += '<div class="flex flex-wrap items-center gap-1">' + plainHtml + '</div>';
-  }
-
-  if (chipParts.length > 0) {
-    var extraC   = chipParts.length - MAX_CHIPS;
-    var chipHtml = chipParts.slice(0, MAX_CHIPS).join('');
-    if (extraC > 0) chipHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extraC + ' more</span>';
-    html += '<div class="flex flex-wrap gap-1">' + chipHtml + '</div>';
   }
 
   return html;
