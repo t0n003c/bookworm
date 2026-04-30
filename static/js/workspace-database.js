@@ -3469,13 +3469,13 @@ function _dbEditAttrRow(cardId, attrId) {
             var isAct = c.id === selectedBarClr;
             sw.style.cssText = 'width:1.1rem;height:1.1rem;border-radius:9999px;border:none;cursor:pointer;'
               + 'background:' + c.dot + ';transition:transform 0.1s,box-shadow 0.1s;'
-              + (isAct ? 'box-shadow:0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot + ';' : '');
+              + (isAct ? 'box-shadow:0 0 0 2px ' + (isDark ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot + ';' : '');
             sw.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.25)'; });
             sw.addEventListener('mouseleave', function() { this.style.transform = ''; });
             sw.addEventListener('click', function() {
               selectedBarClr = c.id;
               swRow.querySelectorAll('button').forEach(function(b) { b.style.boxShadow = ''; });
-              sw.style.boxShadow = '0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot;
+              sw.style.boxShadow = '0 0 0 2px ' + (isDark ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot;
             });
             swRow.appendChild(sw);
           });
