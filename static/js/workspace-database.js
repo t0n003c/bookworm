@@ -2195,7 +2195,7 @@ function _dbNumFocus(inp) {
   inp.value = inp.getAttribute('data-rawval') || '';
 }
 
-/** On blur: save raw value to server, re-display formatted. */
+/** On blur: save raw value to server, re-display formatted, update bar/ring in-place. */
 function _dbNumBlurSave(inp, cardId, attrId, key) {
   var raw  = inp.value.trim();
   inp.setAttribute('data-rawval', raw);
@@ -2205,10 +2205,26 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
   var aopts = meta ? (meta.attr_options || '')        : '';
   var numOpts = _dbParseNumOpts(aopts);
   inp.value = raw ? _dbFormatNumber(raw, numOpts) : '';
-  // refresh bar/ring visual if present
-  var visEl = document.getElementById('_dbn-vis-' + attrId);
-  if (visEl) visEl.innerHTML = _dbNumVisHtml(raw, numOpts, false);
+  // surgical bar/ring update — no full rebuild
+  var frac = _dbNumFraction(raw, numOpts);
+  var fillEl = document.getElementById('_dbn-fill-' + attrId);
+  if (fillEl) fillEl.style.width = (frac * 100).toFixed(1) + '%';
+  var ringEl = document.getElementById('_dbn-ring-' + attrId);
+  if (ringEl) {
+    var r = 15, circ = +(2 * Math.PI * r).toFixed(2);
+    ringEl.setAttribute('stroke-dashoffset', +(circ * (1 - frac)).toFixed(2));
+  }
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: raw,
+                           attr_type: atype, attr_options: aopts }),
+  }).then(function(r) {
+    if (!r.ok) throw new Error('save failed');
+    if (meta) meta.attr_value = raw;
+    _dbRenderGrid();
+  }).catch(function(e) { console.warn('Number attr save failed', e); });
+}
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ attr_key: key, attr_value: raw,
@@ -2282,20 +2298,68 @@ function _dbAttrValueHtml(cardId, a) {
     var numOpts = _dbParseNumOpts(a.attr_options || '');
     var raw     = v;
     var shown   = raw !== '' ? _dbFormatNumber(raw, numOpts) : '';
-    var visHtml = _dbNumVisHtml(raw, numOpts, false);
-    var inpHtml = '<input type="text" value="' + _esc(shown) + '"'
-      + ' data-rawval="' + _esc(raw) + '"'
+    var display = numOpts.display || 'number';
+
+    // Shared edit input — used as the clickable number label for bar/ring
+    var _numInpStyle = 'border:none;background:transparent;outline:none;cursor:text;';
+    var _numBlur = ' onfocus="_dbNumFocus(this)"'
+      + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',' + kJ + ')"';
+    var _numData = ' data-rawval="' + _esc(raw) + '"'
       + ' data-numfmt="' + _esc(numOpts.format) + '"'
-      + ' data-numdec="' + numOpts.decimals + '"'
-      + ' placeholder="Enter a number…"'
-      + ' style="border:none;background:transparent;font-size:0.875rem;'
-      + 'color:inherit;outline:none;width:100%;cursor:text;"'
-      + ' onfocus="_dbNumFocus(this)"'
-      + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',' + kJ + ')">';
-    if (!visHtml) return inpHtml;
-    return '<div style="display:flex;flex-direction:column;gap:0.4rem;width:100%;">'
-      + '<div id="_dbn-vis-' + a.id + '">' + visHtml + '</div>'
-      + inpHtml + '</div>';
+      + ' data-numdec="' + numOpts.decimals + '"';
+
+    if (display === 'number') {
+      return '<input type="text" value="' + _esc(shown) + '"' + _numData
+        + ' placeholder="Enter a number…"'
+        + ' style="' + _numInpStyle + 'font-size:0.875rem;color:inherit;width:100%;"'
+        + _numBlur + '>';
+    }
+
+    // Bar / Ring — build visual with editable number label embedded
+    var isDkN   = document.documentElement.classList.contains('dark');
+    var cDef    = _dbOptColorDef(numOpts.barColor || 'blue');
+    var fillClr = cDef.dot;
+    var trkClr  = isDkN ? '#3f3f46' : '#e5e7eb';
+    var lblClr  = isDkN ? '#a1a1aa' : '#6b7280';
+    var frac    = _dbNumFraction(raw, numOpts);
+    var pctW    = (frac * 100).toFixed(1) + '%';
+    // The editable number label — always visible in the detail panel
+    var editLbl = '<input type="text" id="_dbn-inp-' + a.id + '"'
+      + ' value="' + _esc(shown || '') + '"' + _numData
+      + ' placeholder="0" title="Click to edit"'
+      + ' style="' + _numInpStyle + 'width:4.5rem;font-size:0.72rem;'
+      + 'color:' + lblClr + ';text-align:right;flex-shrink:0;"'
+      + _numBlur + '>';
+
+    if (display === 'bar') {
+      return '<div style="display:flex;align-items:center;gap:0.4rem;width:100%;">'
+        + '<div style="flex:1;height:7px;background:' + trkClr + ';border-radius:9999px;overflow:hidden;">'
+        + '<div id="_dbn-fill-' + a.id + '" style="width:' + pctW + ';height:100%;'
+        + 'background:' + fillClr + ';border-radius:9999px;transition:width 0.25s;"></div>'
+        + '</div>'
+        + editLbl + '</div>';
+    }
+
+    if (display === 'ring') {
+      var r = 15, sw = 3, sz = 38, cx = 19;
+      var circ = +(2 * Math.PI * r).toFixed(2);
+      var off  = +(circ * (1 - frac)).toFixed(2);
+      return '<div style="display:flex;align-items:center;gap:0.35rem;">'
+        + '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 ' + sz + ' ' + sz + '" style="flex-shrink:0;">'
+        + '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '"'
+        + ' fill="none" stroke="' + trkClr + '" stroke-width="' + sw + '"/>'
+        + '<circle id="_dbn-ring-' + a.id + '" cx="' + cx + '" cy="' + cx + '" r="' + r + '"'
+        + ' fill="none" stroke="' + fillClr + '" stroke-width="' + sw + '"'
+        + ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + off + '"'
+        + ' stroke-linecap="round" transform="rotate(-90 ' + cx + ' ' + cx + ')"/>'
+        + '</svg>'
+        + editLbl + '</div>';
+    }
+
+    // fallback (shouldn't reach here)
+    return '<input type="text" value="' + _esc(shown) + '"' + _numData
+      + ' style="' + _numInpStyle + 'font-size:0.875rem;color:inherit;width:100%;"'
+      + _numBlur + '>';
   }
   if (t === 'url') {
     var safeUrl = _esc(v);
