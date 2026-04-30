@@ -2043,8 +2043,6 @@ function _dbAttrValueHtml(cardId, a) {
     var dv = v.slice(0, 10);
     return '<input type="date" value="' + _esc(dv) + '"'
       + ' style="' + restInputStyle + '"'
-      + ' onfocus="_dbNativeWidgetFocus(this)"'
-      + ' onblur="_dbNativeWidgetBlur(this)"'
       + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
   }
   if (t === 'number') {
