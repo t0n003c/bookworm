@@ -234,7 +234,7 @@ function _dbCardHtml(card) {
     + ' d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
     + '</button>'
     + '</div></div>'
-    + (pills ? '<div class="flex flex-wrap gap-1">' + pills + '</div>' : '')
+    + (pills ? pills : '')
     + '<div class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">'
     + (updated ? 'Updated ' + updated : '') + '</div>'
     + '</div></div>'
@@ -285,86 +285,92 @@ function _dbCoverHtml(card) {
 }
 
 function _dbAttrPills(attrs) {
+  // Splits attrs into two groups:
+  //   plainParts  — all types except select/multi_select (no bubble)
+  //   chipParts   — select + multi_select (purple pill bubbles)
+  // The two groups render on separate lines when both are present.
   if (!attrs || attrs.length === 0) return '';
 
-  var chips = [];
+  var plainParts = [];
+  var chipParts  = [];
+
   for (var i = 0; i < attrs.length; i++) {
     var a = attrs[i];
     var t = a.attr_type  || 'text';
     var v = a.attr_value || '';
 
-    if (t === 'checkbox') {
-      // Only surface checkboxes that are ticked
-      if (v === 'true' || v === '1' || v === 'yes') {
-        chips.push(
-          '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded'
-          + ' bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300">'
-          + '\u2713 ' + _esc(a.attr_key) + '</span>'
-        );
-      }
-      continue;
-    }
-
-    if (!v) continue; // skip blanks for every other type
-
-    if (t === 'status') {
-      var sc = _dbStatusColor(v);
-      chips.push(
-        '<span style="background:' + sc + '22;color:' + sc + ';border:1px solid ' + sc + '44;"'
-        + ' class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold max-w-[120px] truncate">'
-        + _esc(v) + '</span>'
-      );
-    } else if (t === 'select') {
-      // purple pill — keep existing look, value only
-      chips.push(
+    if (t === 'select') {
+      if (v) chipParts.push(
         '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
         + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
         + _esc(v) + '</span>'
       );
     } else if (t === 'multi_select') {
-      // One purple pill per chosen option — filtered to valid opts if defined
       var mopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
-      var mvals = v.split(',').map(function(s) { return s.trim(); }).filter(function(s) {
+      v.split(',').map(function(s) { return s.trim(); }).filter(function(s) {
         return s && (mopts.length === 0 || mopts.indexOf(s) !== -1);
-      });
-      mvals.forEach(function(s) {
-        chips.push(
+      }).forEach(function(s) {
+        chipParts.push(
           '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
           + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
           + _esc(s) + '</span>'
         );
       });
-    } else if (t === 'date') {
-      chips.push(
-        '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded'
-        + ' bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300">'
-        + '\uD83D\uDCC5 ' + _esc(v.slice(0, 10)) + '</span>'
+    } else if (t === 'checkbox') {
+      if (v === 'true' || v === '1' || v === 'yes') plainParts.push(
+        '<span class="text-[10px] text-green-600 dark:text-green-400 font-medium">'
+        + '\u2713\u00a0' + _esc(a.attr_key) + '</span>'
       );
-    } else if (t === 'url' || t === 'email' || t === 'phone') {
-      chips.push(
-        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
-        + ' bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 max-w-[140px] truncate">'
+    } else if (t === 'status' && v) {
+      var sc = _dbStatusColor(v);
+      plainParts.push(
+        '<span style="color:' + sc + ';" class="text-[10px] font-semibold max-w-[120px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
-    } else {
+    } else if (t === 'date' && v) {
+      var fmtId = a.attr_options || 'mdy';
+      plainParts.push(
+        '<span class="text-[10px] text-gray-500 dark:text-zinc-400">'
+        + '\uD83D\uDCC5\u00a0' + _esc(_dbFormatDate(v.slice(0, 10), fmtId)) + '</span>'
+      );
+    } else if ((t === 'url' || t === 'email' || t === 'phone') && v) {
+      plainParts.push(
+        '<span class="text-[10px] text-blue-500 dark:text-blue-400 max-w-[140px] truncate inline-block">'
+        + _esc(v) + '</span>'
+      );
+    } else if (v) {
       // text / number / person / place / files
-      chips.push(
-        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
-        + ' bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 max-w-[120px] truncate">'
+      plainParts.push(
+        '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
     }
   }
 
-  if (chips.length === 0) return '';
-  var MAX   = 4;
-  var extra = chips.length - MAX;
-  var html  = chips.slice(0, MAX).join('');
-  if (extra > 0) {
-    html += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extra + ' more</span>';
+  if (plainParts.length === 0 && chipParts.length === 0) return '';
+
+  var MAX_PLAIN = 3, MAX_CHIPS = 4;
+  var html = '';
+
+  if (plainParts.length > 0) {
+    var extraP   = plainParts.length - MAX_PLAIN;
+    var plainHtml = plainParts.slice(0, MAX_PLAIN).join(
+      '<span class="text-[10px] text-gray-300 dark:text-zinc-600 mx-0.5">\u00b7</span>'
+    );
+    if (extraP > 0) plainHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500">\u00a0+' + extraP + '</span>';
+    html += '<div class="flex flex-wrap items-center gap-1">' + plainHtml + '</div>';
   }
+
+  if (chipParts.length > 0) {
+    var extraC   = chipParts.length - MAX_CHIPS;
+    var chipHtml = chipParts.slice(0, MAX_CHIPS).join('');
+    if (extraC > 0) chipHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extraC + ' more</span>';
+    html += '<div class="flex flex-wrap gap-1">' + chipHtml + '</div>';
+  }
+
   return html;
 }
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CARD CRUD
