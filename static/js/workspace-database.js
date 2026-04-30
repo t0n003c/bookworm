@@ -2062,10 +2062,70 @@ function _dbUploadCoverFile(cardId, file) {
 }
 
 function _dbAddAttrRow(cardId) {
-  var key = prompt('Attribute name:');
-  if (!key || !key.trim()) return;
-  var val = prompt('Value for "' + key.trim() + '":') || '';
-  _dbSaveAttrByKey(cardId, key.trim(), val);
+  // ── Styled modal — matches the app's rounded-2xl / backdrop-blur pattern ──
+  var ov = document.createElement('div');
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Add attribute');
+  ov.className = 'fixed inset-0 z-[300] flex items-center justify-center p-4';
+
+  var bd = document.createElement('div');
+  bd.className = 'absolute inset-0 bg-black/40 backdrop-blur-sm';
+  ov.appendChild(bd);
+
+  var dlg = document.createElement('div');
+  dlg.className = 'relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm p-6';
+  dlg.innerHTML =
+    '<h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">+ Add Attribute</h2>' +
+    '<div class="space-y-3">' +
+      '<div>' +
+        '<label class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1 block">Name</label>' +
+        '<input id="_db-attr-key" type="text" placeholder="e.g. Status, Owner, Priority…"' +
+        ' class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2' +
+        ' focus:outline-none focus:ring-2 focus:ring-[#0053e2] bg-white dark:bg-zinc-800' +
+        ' text-gray-800 dark:text-zinc-100 placeholder-gray-400" />' +
+      '</div>' +
+      '<div>' +
+        '<label class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1 block">Value</label>' +
+        '<input id="_db-attr-val" type="text" placeholder="e.g. In Progress, Alice, High…"' +
+        ' class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2' +
+        ' focus:outline-none focus:ring-2 focus:ring-[#0053e2] bg-white dark:bg-zinc-800' +
+        ' text-gray-800 dark:text-zinc-100 placeholder-gray-400" />' +
+      '</div>' +
+    '</div>' +
+    '<div class="flex gap-3 justify-end mt-5">' +
+      '<button id="_db-attr-cancel" type="button"' +
+      ' class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600' +
+      ' text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800' +
+      ' transition focus:outline-none focus:ring-2 focus:ring-gray-300">Cancel</button>' +
+      '<button id="_db-attr-save" type="button"' +
+      ' class="px-4 py-2 text-sm rounded-lg bg-[#0053e2] text-white font-semibold' +
+      ' hover:bg-[#0041b8] transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">Save</button>' +
+    '</div>';
+  ov.appendChild(dlg);
+  document.body.appendChild(ov);
+
+  var keyInp    = document.getElementById('_db-attr-key');
+  var valInp    = document.getElementById('_db-attr-val');
+  var cancelBtn = document.getElementById('_db-attr-cancel');
+  var saveBtn   = document.getElementById('_db-attr-save');
+
+  function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
+  function _submit() {
+    var key = keyInp.value.trim();
+    if (!key) { keyInp.focus(); return; }
+    _dbSaveAttrByKey(cardId, key, valInp.value.trim());
+    _close();
+  }
+
+  bd.addEventListener('click', _close);
+  cancelBtn.addEventListener('click', _close);
+  saveBtn.addEventListener('click', _submit);
+  ov.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') _close();
+    if (e.key === 'Enter')  _submit();
+  });
+  keyInp.focus();
 }
 
 function _dbSaveAttrByKey(cardId, key, value) {
