@@ -2432,7 +2432,7 @@ function _dbAddAttrRow(cardId) {
     + '<button id="_db-attr-cancel" type="button"'
     + ' style="padding:0.5rem 1rem;border-radius:0.5rem;'
     + 'border:1px solid ' + bdr + ';font-size:0.875rem;cursor:pointer;'
-    + 'background:transparent;color:' + txt + ';">Cancel</button>'
+    + 'background:transparent;color:' + txt + ';">Done</button>'
     + '<button id="_db-attr-save" type="button"'
     + ' style="padding:0.5rem 1rem;border-radius:0.5rem;border:none;background:#0053e2;'
     + 'color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;">Add Attribute</button>'
@@ -2446,6 +2446,69 @@ function _dbAddAttrRow(cardId) {
   var optsWrap  = document.getElementById('_db-attr-opts-wrap');
   var cancelBtn = document.getElementById('_db-attr-cancel');
   var saveBtn   = document.getElementById('_db-attr-save');
+
+  function _submit() {
+    var key = keyInp.value.trim();
+    if (!key) { keyInp.focus(); return; }
+    var atype = selectedType || 'text';
+    var aopts = _readOptions();
+    var aval  = _readValue();
+
+    // Disable button while saving
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    fetch('/workspaces/' + _dbWsId + '/db/attrs/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        attr_key:          key,
+        attr_type:         atype,
+        attr_options:      aopts,
+        source_card_id:    cardId,
+        source_attr_value: aval,
+      }),
+    })
+    .then(function(r) {
+      if (!r.ok) throw new Error('Save failed (' + r.status + ')');
+      return r.json();
+    })
+    .then(function(data) {
+      // Update global card state + grid from the sync response
+      _dbCards = data.cards;
+      _dbRenderGrid();
+      // Refresh the detail panel directly from the already-loaded card
+      var fresh = _dbCards.find(function(c) { return c.id === cardId; });
+      if (fresh) _dbRenderDetailPanel(fresh);
+
+      // Flash ✓ then reset the form so the user can add another
+      saveBtn.textContent = '\u2713 Saved!';
+      saveBtn.style.background = '#2a8703';
+      setTimeout(function() {
+        saveBtn.disabled   = false;
+        saveBtn.textContent = 'Add Attribute';
+        saveBtn.style.background = '#0053e2';
+      }, 1200);
+
+      // Reset form fields for next attr
+      keyInp.value = '';
+      selectedType = 'text';
+      document.getElementById('_db-type-grid')
+        .querySelectorAll('button[data-type]')
+        .forEach(function(b) {
+          var isTxt = b.getAttribute('data-type') === 'text';
+          b.style.border     = '1px solid ' + (isTxt ? '#0053e2' : bdr);
+          b.style.background = isTxt ? selBg : 'transparent';
+        });
+      _buildValField('text');
+      keyInp.focus();
+    })
+    .catch(function(e) {
+      saveBtn.disabled   = false;
+      saveBtn.textContent = 'Add Attribute';
+      _dbToast('Could not save attribute: ' + e.message, true);
+    });
+  }
 
   function _close() { if (ov.parentNode) ov.parentNode.removeChild(ov); }
 
@@ -2607,13 +2670,6 @@ function _dbAddAttrRow(cardId) {
     var vf = _getValField();
     if (vf && vf.type !== 'checkbox') vf.focus();
   });
-
-  function _submit() {
-    var key = keyInp.value.trim();
-    if (!key) { keyInp.focus(); return; }
-    _dbSaveAttrByKey(cardId, key, _readValue(), selectedType, _readOptions());
-    _close();
-  }
 
   bd.addEventListener('click', _close);
   cancelBtn.addEventListener('click', _close);

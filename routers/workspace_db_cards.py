@@ -257,7 +257,7 @@ async def sync_attr_to_workspace(
     async with get_db() as db:
         # Get all card IDs owned by this user in this workspace
         cur = await db.execute(
-            "SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?",
+            "SELECT id FROM db_cards WHERE db_id=? AND user_id=?",
             (ws_id, user_id),
         )
         rows = await cur.fetchall()
@@ -307,7 +307,7 @@ async def delete_attr_from_workspace(ws_id: int, user_id: int, attr_key: str) ->
         await db.execute(
             "DELETE FROM db_card_attrs "
             "WHERE card_id IN "
-            "  (SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?) "
+            "  (SELECT id FROM db_cards WHERE db_id=? AND user_id=?) "
             "AND attr_key=?",
             (ws_id, user_id, attr_key),
         )
@@ -331,7 +331,7 @@ async def rename_attr_in_workspace(
             "UPDATE db_card_attrs "
             "SET attr_key=?, attr_type=?, attr_options=? "
             "WHERE card_id IN "
-            "  (SELECT id FROM db_cards WHERE workspace_id=? AND user_id=?) "
+            "  (SELECT id FROM db_cards WHERE db_id=? AND user_id=?) "
             "AND attr_key=?",
             (new_key, attr_type, attr_options, ws_id, user_id, old_key),
         )
