@@ -2225,6 +2225,9 @@
   function closePanel() {
     const panel = document.getElementById('panel');
     const dp    = document.getElementById('detail-panel');
+    // Flush any unsaved DB note BEFORE wiping the DOM — the note element
+    // must still be live for _dbNoteHtml() to read its content.
+    if (typeof _dbFlushNote === 'function') _dbFlushNote();
     // Remove the click-outside handler attached by openPanel (all modes)
     if (panel && panel._bwClickClose) {
       panel.removeEventListener('click', panel._bwClickClose);

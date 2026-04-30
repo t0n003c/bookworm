@@ -1946,19 +1946,25 @@ function _dbOpenDetail(cardId) {
   .catch(function(e) { _dbToast('Could not open card: ' + e.message, true); });
 }
 
-function _dbCloseDetail() {
-  // Flush any unsaved note content before the panel disappears.
-  // Covers the case where the user clicks the backdrop while still editing —
-  // the note's blur event never fires because the element is removed first.
-  if (_dbDetailId) {
-    var timerKey = 'detail_' + _dbDetailId;
-    if (_dbSaveTimers[timerKey]) {
-      clearTimeout(_dbSaveTimers[timerKey]);
-      delete _dbSaveTimers[timerKey];
-    }
-    var noteEl = document.getElementById('db-detail-note-' + _dbDetailId);
-    if (noteEl) _dbSaveNote(_dbDetailId, _dbNoteHtml(noteEl));
+/**
+ * Flush any pending unsaved note to the server.
+ * Called by closePanel() in index.html BEFORE the DOM is wiped,
+ * so the note element is still live when we read its innerHTML.
+ * Safe to call at any time — no-ops if no DB card is open.
+ */
+function _dbFlushNote() {
+  if (!_dbDetailId) return;
+  var timerKey = 'detail_' + _dbDetailId;
+  if (_dbSaveTimers[timerKey]) {
+    clearTimeout(_dbSaveTimers[timerKey]);
+    delete _dbSaveTimers[timerKey];
   }
+  var noteEl = document.getElementById('db-detail-note-' + _dbDetailId);
+  if (noteEl) _dbSaveNote(_dbDetailId, _dbNoteHtml(noteEl));
+}
+
+function _dbCloseDetail() {
+  _dbFlushNote();
   _dbDetailId = null;
   // Remove the click-outside listener
   var panelEl = document.getElementById('panel');
