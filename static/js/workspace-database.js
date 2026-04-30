@@ -390,8 +390,19 @@ function _dbAttrPills(attrs) {
         '<span class="text-[10px] text-blue-500 dark:text-blue-400 max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
+    } else if (t === 'number' && v) {
+      var nOpts = _dbParseNumOpts(a.attr_options || '');
+      var nVis  = _dbNumVisHtml(v, nOpts, true);
+      if (nVis) {
+        plainParts.push('<div style="max-width:100px;">' + nVis + '</div>');
+      } else {
+        plainParts.push(
+          '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
+          + _esc(_dbFormatNumber(v, nOpts)) + '</span>'
+        );
+      }
     } else if (v) {
-      // text / number / person / place / files
+      // text / person / place / files
       plainParts.push(
         '<span class="text-[10px] text-gray-500 dark:text-zinc-400 max-w-[120px] truncate inline-block">'
         + _esc(v) + '</span>'
@@ -1976,10 +1987,82 @@ function _dbParseNumOpts(optsStr) {
   try {
     var o = JSON.parse(optsStr || '{}');
     return {
-      format:   o.format   || 'number',
-      decimals: (o.decimals !== undefined) ? parseInt(o.decimals, 10) : 0,
+      format:    o.format    || 'number',
+      decimals:  (o.decimals  !== undefined) ? parseInt(o.decimals, 10) : 0,
+      display:   o.display   || 'number',   // 'number' | 'bar' | 'ring'
+      barColor:  o.barColor  || 'blue',
+      divideBy:  (o.divideBy !== undefined && o.divideBy !== '') ? parseFloat(o.divideBy) : 100,
+      showValue: (o.showValue !== undefined) ? !!o.showValue : true,
     };
-  } catch(e) { return { format: 'number', decimals: 0 }; }
+  } catch(e) {
+    return { format:'number', decimals:0, display:'number', barColor:'blue', divideBy:100, showValue:true };
+  }
+}
+
+// Normalise raw value to a 0–1 fraction given number opts.
+function _dbNumFraction(raw, numOpts) {
+  var n = parseFloat(raw);
+  if (isNaN(n)) return 0;
+  var divBy = numOpts.format === 'percent' ? 100 : (numOpts.divideBy || 100);
+  if (!divBy) return 0;
+  return Math.min(1, Math.max(0, n / divBy));
+}
+
+// Return bar/ring HTML, or '' for plain 'number' display.
+// compact=true → small card-preview size; false → full detail-panel size.
+function _dbNumVisHtml(raw, numOpts, compact) {
+  var display = numOpts.display || 'number';
+  if (display === 'number') return '';
+
+  var frac     = _dbNumFraction(raw, numOpts);
+  var cDef     = _dbOptColorDef(numOpts.barColor || 'blue');
+  var dk       = document.documentElement.classList.contains('dark');
+  var fillClr  = cDef.dot;
+  var trackClr = dk ? '#3f3f46' : '#e5e7eb';
+  var shown    = (raw !== '') ? _dbFormatNumber(raw, numOpts) : '';
+  var pctW     = (frac * 100).toFixed(1) + '%';
+
+  if (display === 'bar') {
+    var h  = compact ? '4px'  : '7px';
+    var fs = compact ? '0.6rem' : '0.72rem';
+    var cl = compact ? '#a1a1aa' : (dk ? '#a1a1aa' : '#6b7280');
+    var html = '<div style="display:flex;align-items:center;gap:' + (compact ? '0.25rem' : '0.35rem') + ';width:100%;">'
+      + '<div style="flex:1;height:' + h + ';background:' + trackClr + ';border-radius:9999px;overflow:hidden;">'
+      + '<div style="width:' + pctW + ';height:100%;background:' + fillClr + ';border-radius:9999px;'
+      + (compact ? '' : 'transition:width 0.25s;') + '"></div></div>';
+    if (numOpts.showValue && shown) {
+      html += '<span style="font-size:' + fs + ';color:' + cl + ';flex-shrink:0;white-space:nowrap;">'
+        + _esc(shown) + '</span>';
+    }
+    return html + '</div>';
+  }
+
+  if (display === 'ring') {
+    var r   = compact ? 9  : 15;
+    var sw  = compact ? 2  : 3;
+    var sz  = compact ? 22 : 38;
+    var cx  = sz / 2;
+    var circ = +(2 * Math.PI * r).toFixed(2);
+    var off  = +(circ * (1 - frac)).toFixed(2);
+    var fs2  = compact ? '0.6rem' : '0.72rem';
+    var cl2  = compact ? '#a1a1aa' : (dk ? '#a1a1aa' : '#6b7280');
+    var html = '<div style="display:flex;align-items:center;gap:' + (compact ? '0.2rem' : '0.35rem') + ';">'
+      + '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 ' + sz + ' ' + sz + '" style="flex-shrink:0;">'
+      + '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '"'
+      + ' fill="none" stroke="' + trackClr + '" stroke-width="' + sw + '"/>'
+      + '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '"'
+      + ' fill="none" stroke="' + fillClr + '" stroke-width="' + sw + '"'
+      + ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + off + '"'
+      + ' stroke-linecap="round" transform="rotate(-90 ' + cx + ' ' + cx + ')"/>'
+      + '</svg>';
+    if (numOpts.showValue && shown) {
+      html += '<span style="font-size:' + fs2 + ';color:' + cl2 + ';white-space:nowrap;">'
+        + _esc(shown) + '</span>';
+    }
+    return html + '</div>';
+  }
+
+  return '';
 }
 
 function _dbFormatNumber(raw, numOpts) {
@@ -2120,11 +2203,22 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
   var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   var atype = meta ? (meta.attr_type    || 'number') : 'number';
   var aopts = meta ? (meta.attr_options || '')        : '';
-  // immediately show formatted (optimistic)
   var numOpts = _dbParseNumOpts(aopts);
   inp.value = raw ? _dbFormatNumber(raw, numOpts) : '';
-  // persist
+  // refresh bar/ring visual if present
+  var visEl = document.getElementById('_dbn-vis-' + attrId);
+  if (visEl) visEl.innerHTML = _dbNumVisHtml(raw, numOpts, false);
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: raw,
+                           attr_type: atype, attr_options: aopts }),
+  }).then(function(r) {
+    if (!r.ok) throw new Error('save failed');
+    if (meta) meta.attr_value = raw;
+    _dbRenderGrid();
+  }).catch(function(e) { console.warn('Number attr save failed', e); });
+}
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ attr_key: key, attr_value: raw,
@@ -2198,7 +2292,8 @@ function _dbAttrValueHtml(cardId, a) {
     var numOpts = _dbParseNumOpts(a.attr_options || '');
     var raw     = v;
     var shown   = raw !== '' ? _dbFormatNumber(raw, numOpts) : '';
-    return '<input type="text" value="' + _esc(shown) + '"'
+    var visHtml = _dbNumVisHtml(raw, numOpts, false);
+    var inpHtml = '<input type="text" value="' + _esc(shown) + '"'
       + ' data-rawval="' + _esc(raw) + '"'
       + ' data-numfmt="' + _esc(numOpts.format) + '"'
       + ' data-numdec="' + numOpts.decimals + '"'
@@ -2207,6 +2302,10 @@ function _dbAttrValueHtml(cardId, a) {
       + 'color:inherit;outline:none;width:100%;cursor:text;"'
       + ' onfocus="_dbNumFocus(this)"'
       + ' onblur="_dbNumBlurSave(this,' + cardId + ',' + a.id + ',' + kJ + ')">';
+    if (!visHtml) return inpHtml;
+    return '<div style="display:flex;flex-direction:column;gap:0.4rem;width:100%;">'
+      + '<div id="_dbn-vis-' + a.id + '">' + visHtml + '</div>'
+      + inpHtml + '</div>';
   }
   if (t === 'url') {
     var safeUrl = _esc(v);
@@ -3183,6 +3282,9 @@ function _dbEditAttrRow(cardId, attrId) {
 
   var selectedType    = origType;
   var selectedDateFmt = (origType === 'date' && origOpts) ? origOpts : 'mdy';
+  var _parsedNum      = (origType === 'number') ? _dbParseNumOpts(origOpts) : null;
+  var selectedDisplay = _parsedNum ? (_parsedNum.display  || 'number') : 'number';
+  var selectedBarClr  = _parsedNum ? (_parsedNum.barColor || 'blue')   : 'blue';
 
   // ── type grid (pre-selected) ────────────────────────────────────
   var typeGrid = _DB_ATTR_TYPES.map(function(t) {
@@ -3256,7 +3358,12 @@ function _dbEditAttrRow(cardId, attrId) {
     extrasDiv.innerHTML = '';
     if (t === 'number') {
       var parsed = _dbParseNumOpts(selectedType === origType ? origOpts : '{}');
+      if (selectedType === origType) {
+        selectedDisplay = parsed.display  || 'number';
+        selectedBarClr  = parsed.barColor || 'blue';
+      }
 
+      // ── Format + Decimals row ───────────────────────────────────
       var row = document.createElement('div');
       row.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:0.5rem;margin-bottom:0.75rem;';
 
@@ -3290,10 +3397,145 @@ function _dbEditAttrRow(cardId, attrId) {
       decInp.style.cssText = inputCss + 'width:4.5rem;';
       decDiv.appendChild(decLbl);
       decDiv.appendChild(decInp);
-
       row.appendChild(fmtDiv);
       row.appendChild(decDiv);
       extrasDiv.appendChild(row);
+
+      // ── Show As — only for plain / sep / percent formats ──────────
+      var showAsFormats = ['number', 'number_sep', 'percent'];
+      var curFmt = parsed.format;
+      var showAsDiv = document.createElement('div');
+      showAsDiv.id  = '_dbe-show-as-wrap';
+      showAsDiv.style.cssText = 'margin-bottom:0.75rem;';
+
+      function _rebuildShowAs(fmt) {
+        showAsDiv.innerHTML = '';
+        if (showAsFormats.indexOf(fmt) === -1) return;
+
+        var saLbl = document.createElement('label');
+        saLbl.style.cssText = labelCss;
+        saLbl.textContent = 'Show as';
+        showAsDiv.appendChild(saLbl);
+
+        // Segmented 3-button control
+        var seg = document.createElement('div');
+        seg.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;'
+          + 'border:1px solid ' + bdr + ';border-radius:0.5rem;overflow:hidden;margin-bottom:0.6rem;';
+
+        var DISPLAY_OPTS = [
+          { id:'number', label:'Number' },
+          { id:'bar',    label:'Bar' },
+          { id:'ring',   label:'Ring' },
+        ];
+
+        var barExtraDiv = document.createElement('div');
+        barExtraDiv.id = '_dbe-bar-extras';
+
+        function _applySegSel() {
+          seg.querySelectorAll('button[data-disp]').forEach(function(b) {
+            var sel = b.getAttribute('data-disp') === selectedDisplay;
+            b.style.background = sel ? '#0053e2' : 'transparent';
+            b.style.color      = sel ? '#fff'    : txt;
+            b.style.fontWeight = sel ? '600' : '400';
+          });
+          _rebuildBarExtras(selectedDisplay, fmt);
+        }
+
+        DISPLAY_OPTS.forEach(function(d, i) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.setAttribute('data-disp', d.id);
+          btn.textContent = d.label;
+          var isSel = d.id === selectedDisplay;
+          btn.style.cssText = 'padding:0.4rem 0;font-size:0.8rem;border:none;cursor:pointer;'
+            + 'background:' + (isSel ? '#0053e2' : 'transparent') + ';'
+            + 'color:' + (isSel ? '#fff' : txt) + ';'
+            + 'font-weight:' + (isSel ? '600' : '400') + ';'
+            + (i < 2 ? 'border-right:1px solid ' + bdr + ';' : '') + 'transition:all 0.12s;';
+          btn.addEventListener('click', function() {
+            selectedDisplay = d.id;
+            _applySegSel();
+          });
+          seg.appendChild(btn);
+        });
+        showAsDiv.appendChild(seg);
+
+        function _rebuildBarExtras(disp, fmt2) {
+          barExtraDiv.innerHTML = '';
+          if (disp === 'number') return;
+
+          // Color
+          var clrLbl = document.createElement('label');
+          clrLbl.style.cssText = labelCss;
+          clrLbl.textContent = 'Color';
+          barExtraDiv.appendChild(clrLbl);
+
+          var swRow = document.createElement('div');
+          swRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem;';
+          _DB_OPT_COLORS.forEach(function(c) {
+            var sw = document.createElement('button');
+            sw.type = 'button';
+            sw.title = c.id.charAt(0).toUpperCase() + c.id.slice(1);
+            var isAct = c.id === selectedBarClr;
+            sw.style.cssText = 'width:1.1rem;height:1.1rem;border-radius:9999px;border:none;cursor:pointer;'
+              + 'background:' + c.dot + ';transition:transform 0.1s,box-shadow 0.1s;'
+              + (isAct ? 'box-shadow:0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot + ';' : '');
+            sw.addEventListener('mouseenter', function() { this.style.transform = 'scale(1.25)'; });
+            sw.addEventListener('mouseleave', function() { this.style.transform = ''; });
+            sw.addEventListener('click', function() {
+              selectedBarClr = c.id;
+              swRow.querySelectorAll('button').forEach(function(b) { b.style.boxShadow = ''; });
+              sw.style.boxShadow = '0 0 0 2px ' + (dk ? '#27272a' : '#fff') + ',0 0 0 3.5px ' + c.dot;
+            });
+            swRow.appendChild(sw);
+          });
+          barExtraDiv.appendChild(swRow);
+
+          // Divide By (hidden for percent)
+          if (fmt2 !== 'percent') {
+            var divRow = document.createElement('div');
+            divRow.style.cssText = 'margin-bottom:0.6rem;';
+            var divLbl = document.createElement('label');
+            divLbl.style.cssText = labelCss;
+            divLbl.textContent = 'Divide by';
+            var divInp = document.createElement('input');
+            divInp.type        = 'number';
+            divInp.id          = '_dbe-num-divby';
+            divInp.min         = '0.001';
+            divInp.step        = 'any';
+            divInp.placeholder = 'e.g. 100';
+            divInp.value       = (selectedType === origType && parsed.divideBy) ? String(parsed.divideBy) : '100';
+            divInp.style.cssText = inputCss;
+            divRow.appendChild(divLbl);
+            divRow.appendChild(divInp);
+            barExtraDiv.appendChild(divRow);
+          }
+
+          // Show value toggle
+          var svRow = document.createElement('label');
+          svRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;cursor:pointer;'
+            + 'font-size:0.82rem;color:' + txt + ';margin-bottom:0.5rem;';
+          var svChk = document.createElement('input');
+          svChk.type    = 'checkbox';
+          svChk.id      = '_dbe-num-showval';
+          svChk.checked = (selectedType === origType) ? parsed.showValue : true;
+          svChk.style.cssText = 'width:1rem;height:1rem;accent-color:#0053e2;cursor:pointer;';
+          svRow.appendChild(svChk);
+          svRow.appendChild(document.createTextNode('Show number value'));
+          barExtraDiv.appendChild(svRow);
+        }
+
+        showAsDiv.appendChild(barExtraDiv);
+        _rebuildBarExtras(selectedDisplay, fmt);
+      }
+
+      // Rebuild Show As when format changes
+      fmtSel.addEventListener('change', function() {
+        _rebuildShowAs(this.value);
+      });
+
+      _rebuildShowAs(curFmt);
+      extrasDiv.appendChild(showAsDiv);
     } else if (t === 'select' || t === 'multi_select' || t === 'status') {
       var initStr  = selectedType === origType ? origOpts : '';
       var initOpts = _dbParseOptions(initStr);
@@ -3338,12 +3580,22 @@ function _dbEditAttrRow(cardId, attrId) {
   // ── read options from extras ─────────────────────────────────────
   function _readExtras() {
     if (selectedType === 'number') {
-      var fEl = document.getElementById('_dbe-num-fmt');
-      var dEl = document.getElementById('_dbe-num-dec');
-      return JSON.stringify({
-        format:   fEl ? fEl.value : 'number',
+      var fEl  = document.getElementById('_dbe-num-fmt');
+      var dEl  = document.getElementById('_dbe-num-dec');
+      var dbEl = document.getElementById('_dbe-num-divby');
+      var svEl = document.getElementById('_dbe-num-showval');
+      var fmt  = fEl ? fEl.value : 'number';
+      var obj  = {
+        format:   fmt,
         decimals: dEl ? (parseInt(dEl.value, 10) || 0) : 0,
-      });
+        display:  selectedDisplay || 'number',
+        barColor: selectedBarClr  || 'blue',
+        showValue: svEl ? svEl.checked : true,
+      };
+      if (selectedDisplay !== 'number' && fmt !== 'percent') {
+        obj.divideBy = dbEl ? (parseFloat(dbEl.value) || 100) : 100;
+      }
+      return JSON.stringify(obj);
     }
     if (selectedType === 'date') {
       return selectedDateFmt || 'mdy';
