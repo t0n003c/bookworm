@@ -1964,6 +1964,25 @@ function _dbNumFmtPreview(inp, spanId) {
 }
 
 /** On focus: swap formatted display → raw number so the user can type. */
+function _dbNativeWidgetFocus(el) {
+  // Show a visible box when the user interacts with a select/date field.
+  var isDark = document.documentElement.classList.contains('dark');
+  el.style.background   = isDark ? '#27272a' : '#ffffff';
+  el.style.color        = isDark ? '#f4f4f5' : '#111827';
+  el.style.border       = '1px solid ' + (isDark ? '#52525b' : '#d1d5db');
+  el.style.borderRadius = '0.375rem';
+  el.style.padding      = '0.25rem 0.5rem';
+}
+
+function _dbNativeWidgetBlur(el) {
+  // Revert to invisible resting state.
+  el.style.background   = 'transparent';
+  el.style.color        = 'inherit';
+  el.style.border       = 'none';
+  el.style.borderRadius = '';
+  el.style.padding      = '';
+}
+
 function _dbNumFocus(inp) {
   inp.value = inp.getAttribute('data-rawval') || '';
 }
@@ -2003,17 +2022,15 @@ function _dbAttrValueHtml(cardId, a) {
   var t   = a.attr_type  || 'text';
   var cb  = '_dbSaveAttr(' + cardId + ',' + a.id + ',' + kJ + ',this)';
 
-  // Dark-mode tokens resolved at render time (avoids Tailwind JIT misses)
+  // color-scheme hint resolved at render time so the OS date-picker
+  // and select popup open in the right theme even in resting state.
   var isDark = document.documentElement.classList.contains('dark');
-  var inputBg  = isDark ? '#27272a' : '#ffffff';
-  var inputTxt = isDark ? '#f4f4f5' : '#111827';
-  var inputBdr = isDark ? '#52525b' : '#d1d5db';
-  var inputCs  = isDark ? 'dark'    : 'light';   // color-scheme for native widgets
-  var sharedInputStyle =
-    'background:' + inputBg + ';color:' + inputTxt + ';'
-    + 'border:1px solid ' + inputBdr + ';border-radius:0.375rem;'
-    + 'font-size:0.875rem;padding:0.25rem 0.5rem;'
-    + 'outline:none;width:100%;box-sizing:border-box;'
+  var inputCs = isDark ? 'dark' : 'light';
+  // Resting style: invisible — no border, no bg, just readable text.
+  // _dbNativeWidgetFocus / _dbNativeWidgetBlur toggle the box on interaction.
+  var restInputStyle =
+    'border:none;background:transparent;font-size:0.875rem;color:inherit;'
+    + 'outline:none;width:100%;box-sizing:border-box;cursor:pointer;'
     + 'color-scheme:' + inputCs + ';';
 
   if (t === 'checkbox') {
@@ -2025,7 +2042,9 @@ function _dbAttrValueHtml(cardId, a) {
   if (t === 'date') {
     var dv = v.slice(0, 10);
     return '<input type="date" value="' + _esc(dv) + '"'
-      + ' style="' + sharedInputStyle + 'cursor:pointer;"'
+      + ' style="' + restInputStyle + '"'
+      + ' onfocus="_dbNativeWidgetFocus(this)"'
+      + ' onblur="_dbNativeWidgetBlur(this)"'
       + ' onchange="_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)">';
   }
   if (t === 'number') {
@@ -2100,7 +2119,9 @@ function _dbAttrValueHtml(cardId, a) {
       });
       // kJ is already HTML-escaped JSON — safe to embed inside onchange="..."
       return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ',' + kJ + ',this)"'
-        + ' style="' + sharedInputStyle + 'cursor:pointer;">'
+        + ' onfocus="_dbNativeWidgetFocus(this)"'
+        + ' onblur="_dbNativeWidgetBlur(this)"'
+        + ' style="' + restInputStyle + '">'
         + optHtml + '</select>';
     }
     // No options defined — fall through to plain contenteditable
