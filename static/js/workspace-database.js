@@ -277,17 +277,80 @@ function _dbCoverHtml(card) {
 
 function _dbAttrPills(attrs) {
   if (!attrs || attrs.length === 0) return '';
-  var visible = attrs.slice(0, 3);
-  var extra   = attrs.length - 3;
-  var html = visible.map(function(a) {
-    return (
-      '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded'
-      + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px]">'
-      + '<span class="font-semibold truncate">' + _esc(a.attr_key) + ':</span>'
-      + '<span class="truncate">' + _esc(a.attr_value) + '</span>'
-      + '</span>'
-    );
-  }).join('');
+
+  var chips = [];
+  for (var i = 0; i < attrs.length; i++) {
+    var a = attrs[i];
+    var t = a.attr_type  || 'text';
+    var v = a.attr_value || '';
+
+    if (t === 'checkbox') {
+      // Only surface checkboxes that are ticked
+      if (v === 'true' || v === '1' || v === 'yes') {
+        chips.push(
+          '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded'
+          + ' bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300">'
+          + '\u2713 ' + _esc(a.attr_key) + '</span>'
+        );
+      }
+      continue;
+    }
+
+    if (!v) continue; // skip blanks for every other type
+
+    if (t === 'status') {
+      var sc = _dbStatusColor(v);
+      chips.push(
+        '<span style="background:' + sc + '22;color:' + sc + ';border:1px solid ' + sc + '44;"'
+        + ' class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold max-w-[120px] truncate">'
+        + _esc(v) + '</span>'
+      );
+    } else if (t === 'select') {
+      // purple pill — keep existing look, value only
+      chips.push(
+        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
+        + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
+        + _esc(v) + '</span>'
+      );
+    } else if (t === 'multi_select') {
+      // One purple pill per chosen option — filtered to valid opts if defined
+      var mopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
+      var mvals = v.split(',').map(function(s) { return s.trim(); }).filter(function(s) {
+        return s && (mopts.length === 0 || mopts.indexOf(s) !== -1);
+      });
+      mvals.forEach(function(s) {
+        chips.push(
+          '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
+          + ' bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 max-w-[120px] truncate">'
+          + _esc(s) + '</span>'
+        );
+      });
+    } else if (t === 'date') {
+      chips.push(
+        '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded'
+        + ' bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300">'
+        + '\uD83D\uDCC5 ' + _esc(v.slice(0, 10)) + '</span>'
+      );
+    } else if (t === 'url' || t === 'email' || t === 'phone') {
+      chips.push(
+        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
+        + ' bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 max-w-[140px] truncate">'
+        + _esc(v) + '</span>'
+      );
+    } else {
+      // text / number / person / place / files
+      chips.push(
+        '<span class="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded'
+        + ' bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 max-w-[120px] truncate">'
+        + _esc(v) + '</span>'
+      );
+    }
+  }
+
+  if (chips.length === 0) return '';
+  var MAX   = 4;
+  var extra = chips.length - MAX;
+  var html  = chips.slice(0, MAX).join('');
   if (extra > 0) {
     html += '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">+' + extra + ' more</span>';
   }
@@ -2008,7 +2071,48 @@ function _dbAttrValueHtml(cardId, a) {
       + '<span contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
       + ' onblur="' + cb + '">' + _esc(v) + '</span>';
   }
-  // text / number-as-text / person / files / select / multi_select — contenteditable
+  // select — native dropdown constrained to defined options
+  if (t === 'select') {
+    var sopts = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
+    if (sopts.length > 0) {
+      var optHtml = '<option value="">(none)</option>';
+      sopts.forEach(function(o) {
+        var sel = (o === v) ? ' selected' : '';
+        optHtml += '<option value="' + _esc(o) + '"' + sel + '>' + _esc(o) + '</option>';
+      });
+      return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ','
+        + JSON.stringify(a.attr_key) + ',this)"'
+        + ' style="border:none;background:transparent;font-size:0.875rem;color:inherit;'
+        + 'cursor:pointer;outline:none;width:100%;">' + optHtml + '</select>';
+    }
+    // No options defined — fall through to plain contenteditable
+  }
+
+  // multi_select — toggleable chip grid constrained to defined options
+  if (t === 'multi_select') {
+    var mopts2 = (a.attr_options || '').split(',').map(function(o) { return o.trim(); }).filter(Boolean);
+    if (mopts2.length > 0) {
+      var mSelected = (v || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      var chipHtml  = '<div class="flex flex-wrap gap-1 py-0.5">';
+      mopts2.forEach(function(o) {
+        var isSel = mSelected.indexOf(o) !== -1;
+        chipHtml += '<button type="button"'
+          + ' onclick="_dbToggleMultiSelect(' + cardId + ',' + a.id + ','
+          + JSON.stringify(a.attr_key) + ',' + JSON.stringify(o) + ')"'
+          + ' style="font-size:0.7rem;padding:0.15rem 0.6rem;border-radius:9999px;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#7c3aed44' : '#d1d5db') + ';'
+          + 'background:' + (isSel ? '#7c3aed22' : 'transparent') + ';'
+          + 'color:' + (isSel ? '#7c3aed' : '#9ca3af') + ';'
+          + 'font-weight:' + (isSel ? '600' : '400') + ';transition:all 0.1s;">'
+          + _esc(o) + '</button>';
+      });
+      chipHtml += '</div>';
+      return chipHtml;
+    }
+    // No options defined — fall through to plain contenteditable
+  }
+
+  // text / person / files / select (no opts) / multi_select (no opts) — contenteditable
   return '<div contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
     + ' onblur="' + cb + '">' + _esc(v) + '</div>';
 }
@@ -2961,6 +3065,51 @@ function _dbSaveAttr(cardId, attrId, key, el) {
     _dbRenderGrid();
   })
   .catch(function(e) { console.warn('Attr save failed', e); });
+}
+
+function _dbSaveAttrSelect(cardId, attrId, key, el) {
+  var value = el.value || '';
+  var card  = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta  = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var aopts = meta ? (meta.attr_options || '') : '';
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: value,
+                           attr_type: 'select', attr_options: aopts }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Select save failed');
+    if (meta) meta.attr_value = value;
+    _dbRenderGrid();
+  })
+  .catch(function(e) { console.warn('Select attr save failed', e); });
+}
+
+function _dbToggleMultiSelect(cardId, attrId, key, option) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!meta) return;
+  var aopts = meta.attr_options || '';
+  var current = (meta.attr_value || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  var idx = current.indexOf(option);
+  if (idx === -1) { current.push(option); } else { current.splice(idx, 1); }
+  var newVal = current.join(',');
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_key: key, attr_value: newVal,
+                           attr_type: 'multi_select', attr_options: aopts }),
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Multi-select save failed');
+    meta.attr_value = newVal;
+    _dbRenderGrid();
+    // Re-render detail panel in-place so chip states update instantly
+    var fresh = _dbCards.find(function(c) { return c.id === cardId; });
+    if (fresh) _dbRenderDetailPanel(fresh);
+  })
+  .catch(function(e) { console.warn('Multi-select attr save failed', e); });
 }
 
 function _dbSaveAttrInput(cardId, attrId, key, el) {
