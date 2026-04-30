@@ -209,6 +209,22 @@ window.bwTimeline = (function () {
     return Math.max(centeredL - margin, Math.min(centeredL + margin, v));
   }
 
+  // ── Center on Today: keeps current zoom, puts Today at 50% width ──
+  // Called on first mount so the user always opens with Today visible
+  // and centred.  _doAutofit (the ↔ button) is a separate action.
+  function _centerToday(outer, notes, t, getRail, setRail) {
+    const cw = outer.offsetWidth;
+    if (!cw) return;
+    const rail      = _buildRail(notes, t);
+    const today     = new Date(); today.setHours(0, 0, 0, 0);
+    const d         = Math.max(0, Math.round((today - rail._earliest) / 86_400_000));
+    const todayAbsX = PAD_ENDS + d * _pxPerDay;
+    rail.style.left = Math.round(cw / 2 - todayAbsX) + 'px';
+    getRail().replaceWith(rail);
+    setRail(rail);
+    outer.style.opacity = '1';
+  }
+
   // ── Auto-fit: scale so all notes fill the visible width ─────────
   function _doAutofit(outer, notes, t, getRail, setRail) {
     const cw  = outer.offsetWidth;
@@ -559,9 +575,9 @@ window.bwTimeline = (function () {
     hint.textContent = '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today  \u00b7  \uD83D\uDCC5 / \uD83D\uDD04 = date mode';
     outer.appendChild(hint);
 
-    // ── Auto-fit on first render (after layout is available) ─
+    // ── Center on Today on first render (after layout is available) ──
     outer._onMount = () => {
-      _doAutofit(outer, notes, t, getRail, setRail);
+      _centerToday(outer, notes, t, getRail, setRail);
       onAllMove();
     };
 
