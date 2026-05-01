@@ -571,22 +571,22 @@ function _dbKeyLabel(key) {
   return key;
 }
 
-// Collect all unique option labels for a select/multi_select/status attr key.
+// Collect all unique option objects {label,color} for a select/multi_select/status attr key.
 function _dbGetAttrOptions(key) {
   var seen   = {};
-  var labels = [];
+  var opts   = [];
   _dbCards.forEach(function(c) {
     (c.attrs || []).forEach(function(a) {
       if (a.attr_key !== key) return;
       _dbParseOptions(a.attr_options || '').forEach(function(o) {
         if (o.label && !seen[o.label]) {
           seen[o.label] = true;
-          labels.push(o.label);
+          opts.push({ label: o.label, color: o.color || 'gray' });
         }
       });
     });
   });
-  return labels;
+  return opts;
 }
 
 // Persist filter groups + sort levels to localStorage (keyed by workspace).
@@ -878,7 +878,7 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
       dummy.style.display = 'none';
       return dummy;
     }
-    // Multi-pick operators on select / multi_select / status: checkbox list
+    // Multi-pick operators on select / multi_select / status — pill toggles
     var multiPickOps = ['is_any_of','is_none_of','has_any_of','has_all_of','has_none_of'];
     if (multiPickOps.indexOf(op) !== -1 &&
         (type === 'select' || type === 'multi_select' || type === 'status')) {
@@ -886,69 +886,126 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
       var picked = [];
       try { picked = JSON.parse(currentVal || '[]'); } catch(e) { picked = []; }
 
+      // Outer container — scrollable if many options
       var wrap = document.createElement('div');
-      wrap.style.cssText = 'border:1px solid ' + bdr + ';border-radius:0.375rem;'
-        + 'max-height:120px;overflow-y:auto;padding:0.25rem 0.4rem;'
-        + 'background:' + bg + ';display:flex;flex-direction:column;gap:0.2rem;';
+      wrap.style.cssText =
+        'display:flex;flex-wrap:wrap;gap:0.3rem;'
+        + 'padding:0.3rem 0;max-height:112px;overflow-y:auto;';
 
       if (opts.length === 0) {
-        var empty = document.createElement('span');
-        empty.style.cssText = 'font-size:0.7rem;color:' + sub + ';';
-        empty.textContent = 'No options defined';
-        wrap.appendChild(empty);
+        var noOpts = document.createElement('span');
+        noOpts.style.cssText = 'font-size:0.7rem;color:' + sub + ';font-style:italic;';
+        noOpts.textContent = 'No options defined yet';
+        wrap.appendChild(noOpts);
       } else {
-        opts.forEach(function(lbl) {
-          var row = document.createElement('label');
-          row.style.cssText = 'display:flex;align-items:center;gap:0.35rem;'
-            + 'font-size:0.72rem;cursor:pointer;color:' + txt + ';white-space:nowrap;';
-          var cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.value = lbl;
-          cb.checked = picked.indexOf(lbl) !== -1;
-          cb.style.cssText = 'accent-color:#7c3aed;cursor:pointer;flex-shrink:0;';
-          cb.addEventListener('change', function() {
-            // Rebuild picked from all checkboxes in this wrap
+        opts.forEach(function(opt) {
+          var isOn = picked.indexOf(opt.label) !== -1;
+          var cs   = _dbOptColorStyle(opt.color);
+          // Ghost border bg (unselected) vs filled (selected)
+          var pillBg   = isOn ? cs.bg   : 'transparent';
+          var pillTxt  = isOn ? cs.text : (isDark ? '#a1a1aa' : '#6b7280');
+          var pillBdr  = cs.bg;  // always use the option color for the border
+
+          var pill = document.createElement('button');
+          pill.type = 'button';
+          pill.setAttribute('data-opt', opt.label);
+          pill.setAttribute('data-on', isOn ? '1' : '0');
+          pill.style.cssText =
+            'display:inline-flex;align-items:center;gap:0.25rem;'
+            + 'padding:0.18rem 0.55rem;border-radius:9999px;'
+            + 'font-size:0.7rem;font-weight:500;cursor:pointer;'
+            + 'border:1.5px solid ' + pillBdr + ';'
+            + 'background:' + pillBg + ';color:' + pillTxt + ';'
+            + 'transition:background 0.12s,color 0.12s;white-space:nowrap;';
+
+          // Checkmark (visible when selected)
+          var ck = document.createElement('span');
+          ck.textContent = '\u2713';
+          ck.style.cssText = 'font-size:0.65rem;font-weight:700;'
+            + 'opacity:' + (isOn ? '1' : '0') + ';'
+            + 'transition:opacity 0.1s;flex-shrink:0;';
+          pill.appendChild(ck);
+
+          var pillLbl = document.createElement('span');
+          pillLbl.textContent = opt.label;
+          pill.appendChild(pillLbl);
+
+          pill.addEventListener('click', function() {
+            var nowOn = pill.getAttribute('data-on') === '1';
+            nowOn = !nowOn;
+            pill.setAttribute('data-on', nowOn ? '1' : '0');
+            // Animate fill
+            pill.style.background = nowOn ? cs.bg   : 'transparent';
+            pill.style.color      = nowOn ? cs.text : (isDark ? '#a1a1aa' : '#6b7280');
+            ck.style.opacity      = nowOn ? '1' : '0';
+            // Rebuild picked from all pills in wrap
             var newPicked = [];
-            wrap.querySelectorAll('input[type=checkbox]').forEach(function(x) {
-              if (x.checked) newPicked.push(x.value);
+            wrap.querySelectorAll('button[data-opt]').forEach(function(p) {
+              if (p.getAttribute('data-on') === '1') newPicked.push(p.getAttribute('data-opt'));
             });
             _dbFilterGroups[groupIdx][condIdx].val = JSON.stringify(newPicked);
             _dbSaveFilterSort();
             _dbRenderGrid();
           });
-          var lblTxt = document.createElement('span');
-          lblTxt.textContent = lbl;
-          row.appendChild(cb);
-          row.appendChild(lblTxt);
-          wrap.appendChild(row);
+
+          wrap.appendChild(pill);
         });
       }
       return wrap;
     }
-    // Single-option dropdown for select/status when no multi-pick op selected
+    // Single-option pill selector for select/status with non-multi-pick operators
     if (type === 'select' || type === 'multi_select' || type === 'status') {
       var opts2 = _dbGetAttrOptions(key);
       if (opts2.length > 0) {
-        var sel = document.createElement('select');
-        sel.style.cssText = inpSty;
-        var blank = document.createElement('option');
-        blank.value = '';
-        blank.textContent = '\u2014 pick one \u2014';
-        if (!currentVal) blank.selected = true;
-        sel.appendChild(blank);
-        opts2.forEach(function(lbl) {
-          var o = document.createElement('option');
-          o.value = lbl;
-          o.textContent = lbl;
-          if (lbl === currentVal) o.selected = true;
-          sel.appendChild(o);
+        // Pill group — only one can be active at a time (radio behaviour)
+        var wrap2 = document.createElement('div');
+        wrap2.style.cssText =
+          'display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.3rem 0;max-height:112px;overflow-y:auto;';
+        opts2.forEach(function(opt) {
+          var isOn = opt.label === currentVal;
+          var cs   = _dbOptColorStyle(opt.color);
+          var pill2 = document.createElement('button');
+          pill2.type = 'button';
+          pill2.setAttribute('data-opt', opt.label);
+          pill2.setAttribute('data-on', isOn ? '1' : '0');
+          pill2.style.cssText =
+            'display:inline-flex;align-items:center;gap:0.25rem;'
+            + 'padding:0.18rem 0.55rem;border-radius:9999px;'
+            + 'font-size:0.7rem;font-weight:500;cursor:pointer;'
+            + 'border:1.5px solid ' + cs.bg + ';'
+            + 'background:' + (isOn ? cs.bg : 'transparent') + ';'
+            + 'color:' + (isOn ? cs.text : (isDark ? '#a1a1aa' : '#6b7280')) + ';'
+            + 'transition:background 0.12s,color 0.12s;white-space:nowrap;';
+          var ck2 = document.createElement('span');
+          ck2.textContent = '\u2713';
+          ck2.style.cssText = 'font-size:0.65rem;font-weight:700;'
+            + 'opacity:' + (isOn ? '1' : '0') + ';transition:opacity 0.1s;flex-shrink:0;';
+          pill2.appendChild(ck2);
+          var p2Lbl = document.createElement('span');
+          p2Lbl.textContent = opt.label;
+          pill2.appendChild(p2Lbl);
+          pill2.addEventListener('click', function() {
+            var alreadyOn = pill2.getAttribute('data-on') === '1';
+            // Toggle off if clicking the already-selected option
+            var newVal = alreadyOn ? '' : opt.label;
+            wrap2.querySelectorAll('button[data-opt]').forEach(function(p) {
+              var on = p.getAttribute('data-opt') === newVal;
+              p.setAttribute('data-on', on ? '1' : '0');
+              p.style.background = on ? cs.bg : 'transparent';
+              // each pill needs its own color — resolve per pill
+              var pOpt = opts2.find(function(o) { return o.label === p.getAttribute('data-opt'); });
+              var pCs  = pOpt ? _dbOptColorStyle(pOpt.color) : cs;
+              p.style.background = on ? pCs.bg   : 'transparent';
+              p.style.color      = on ? pCs.text : (isDark ? '#a1a1aa' : '#6b7280');
+              p.querySelector('span').style.opacity = on ? '1' : '0';
+            });
+            _dbFilterGroups[groupIdx][condIdx].val = newVal;
+            _dbSaveFilterSort();
+            _dbRenderGrid();
+          });
+          wrap2.appendChild(pill2);
         });
-        sel.addEventListener('change', function() {
-          _dbFilterGroups[groupIdx][condIdx].val = sel.value;
-          _dbSaveFilterSort();
-          _dbRenderGrid();
-        });
-        return sel;
+        return wrap2;
       }
     }
     // Date / number / text fallback
