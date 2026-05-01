@@ -13,7 +13,7 @@ var _dbDelTarget         = null;   // card id staged for deletion
 var _dbDirtyNote         = null;   // {cardId, html} — latest unsaved note HTML captured on every input
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
-var _dbFilters           = [];     // [{key, op, val}] — active filter conditions
+var _dbFilterGroups      = []; // [[{key,op,val},…],…] — OR between groups, AND within each group
 var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = highest priority)
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
@@ -468,8 +468,9 @@ function initDatabaseView(wsId) {
   if (crumbNav) { crumbNav._bwOldMb = crumbNav.className; crumbNav.classList.remove('mb-5'); crumbNav.classList.add('mb-1'); }
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
-  _dbFilters    = [];
-  _dbSortLevels = [];
+  _dbFilterGroups = [];
+  _dbSortLevels    = [];
+  _dbLoadFilterSort(_dbWsId);
   // Close any stale filter panel from a previous workspace
   var _stalePanel = document.getElementById('db-filter-panel');
   if (_stalePanel) _stalePanel.remove();
@@ -532,7 +533,7 @@ function _dbRenderGrid() {
   var total     = _dbCards.length;
   var display   = _dbGetDisplayCards();
   var shown     = display.length;
-  var hasFilter = _dbFilters.length > 0 || _dbSortLevels.length > 0;
+  var hasFilter = _dbFilterGroups.some(function(g) { return g.length > 0; }) || _dbSortLevels.length > 0;
 
   if (count) {
     count.textContent = (hasFilter && shown !== total)
@@ -567,6 +568,46 @@ function _dbKeyLabel(key) {
   if (key === '__created') return 'Created';
   if (key === '__updated') return 'Last Updated';
   return key;
+}
+
+// Collect all unique option labels for a select/multi_select/status attr key.
+function _dbGetAttrOptions(key) {
+  var seen   = {};
+  var labels = [];
+  _dbCards.forEach(function(c) {
+    (c.attrs || []).forEach(function(a) {
+      if (a.attr_key !== key) return;
+      _dbParseOptions(a.attr_options || '').forEach(function(o) {
+        if (o.label && !seen[o.label]) {
+          seen[o.label] = true;
+          labels.push(o.label);
+        }
+      });
+    });
+  });
+  return labels;
+}
+
+// Persist filter groups + sort levels to localStorage (keyed by workspace).
+function _dbSaveFilterSort() {
+  if (!_dbWsId) return;
+  try {
+    localStorage.setItem(
+      '_dbFS_' + _dbWsId,
+      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels })
+    );
+  } catch(e) {}
+}
+
+// Load persisted filter groups + sort levels from localStorage.
+function _dbLoadFilterSort(wsId) {
+  try {
+    var raw = localStorage.getItem('_dbFS_' + wsId);
+    if (!raw) return;
+    var data = JSON.parse(raw);
+    if (Array.isArray(data.groups)) _dbFilterGroups = data.groups;
+    if (Array.isArray(data.sort))   _dbSortLevels   = data.sort;
+  } catch(e) {}
 }
 
 // Returns all unique attr keys across all cards.
@@ -678,10 +719,13 @@ function _dbFilterMatch(card, f) {
 function _dbGetDisplayCards() {
   var cards = _dbCards.slice(); // shallow copy — do not mutate _dbCards
 
-  // ── filter (AND logic across all conditions) ──
-  if (_dbFilters.length > 0) {
+  // ── filter (OR between groups, AND within each group) ──
+  var activeGroups = _dbFilterGroups.filter(function(g) { return g.length > 0; });
+  if (activeGroups.length > 0) {
     cards = cards.filter(function(c) {
-      return _dbFilters.every(function(f) { return _dbFilterMatch(c, f); });
+      return activeGroups.some(function(group) {
+        return group.every(function(f) { return _dbFilterMatch(c, f); });
+      });
     });
   }
 
@@ -710,7 +754,7 @@ function _dbUpdateFilterBadge() {
   var btn   = document.getElementById('db-filter-btn');
   if (!btn) return;
   var old   = btn.querySelector('.db-filter-badge');
-  var total = _dbFilters.length + _dbSortLevels.length;
+  var total = _dbFilterGroups.reduce(function(s, g) { return s + g.length; }, 0) + _dbSortLevels.length;
   if (total === 0) {
     if (old) old.remove();
     btn.classList.remove('text-purple-600', 'dark:text-purple-400');
@@ -735,8 +779,9 @@ function _dbUpdateFilterBadge() {
 
 // Clear all filters + sort state, close panel, refresh grid.
 function _dbClearFilters() {
-  _dbFilters   = [];
-  _dbSortLevels = [];
+  _dbFilterGroups = [];
+  _dbSortLevels    = [];
+  _dbSaveFilterSort();
   var panel = document.getElementById('db-filter-panel');
   if (panel) panel.remove();
   _dbUpdateFilterBadge();
@@ -744,8 +789,13 @@ function _dbClearFilters() {
 }
 
 // Build a single filter row element inside the panel.
-function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
-  var f      = _dbFilters[filterIdx];
+// Build one filter condition row.
+// groupIdx  — index into _dbFilterGroups
+// condIdx   — index within _dbFilterGroups[groupIdx]
+// attrKeys  — from _dbGetAttrKeys()
+// listEl    — the DOM container holding all condition rows for this group
+function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
+  var f      = _dbFilterGroups[groupIdx][condIdx];
   var isDark = document.documentElement.classList.contains('dark');
   var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
   var bg     = isDark ? '#27272a' : '#fff';
@@ -769,7 +819,7 @@ function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
     keySel.appendChild(opt);
   });
 
-  // ── operator select (regenerated when key changes)
+  // ── operator select (rebuilt when key changes)
   var opSel = document.createElement('select');
   opSel.style.cssText = inpSty + 'flex:1.6;min-width:100px;';
 
@@ -783,44 +833,87 @@ function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
       opSel.appendChild(opt);
     });
   }
-  var currentType = (attrKeys.find(function(ak){ return ak.key === f.key; }) || {}).type || 'text';
+  var currentType = (attrKeys.find(function(ak) { return ak.key === f.key; }) || {}).type || 'text';
   rebuildOps(currentType);
 
-  // ── value input (hidden for checkbox / empty ops)
-  var valInp = document.createElement('input');
-  valInp.type = 'text';
-  valInp.placeholder = 'Value…';
-  valInp.value = f.val || '';
-  valInp.style.cssText = inpSty + 'flex:1.5;min-width:70px;';
+  // ── value control container — swapped when key/op changes
+  var valWrap = document.createElement('div');
+  valWrap.style.cssText = 'flex:1.5;min-width:70px;';
 
-  function syncValVisibility() {
-    var op  = opSel.value;
-    var typ = (attrKeys.find(function(ak){ return ak.key === keySel.value; }) || {}).type || 'text';
-    var hideVal = op === 'empty' || op === 'not_empty' || op === 'checked' || op === 'not_checked';
-    valInp.style.display = hideVal ? 'none' : '';
-    if (typ === 'date') { valInp.type = 'date'; } else if (typ === 'number') { valInp.type = 'number'; } else { valInp.type = 'text'; }
+  // Build the appropriate value control for the current key type.
+  // RetM element AND wires its change handler.
+  function buildValControl(key, type, currentVal) {
+    var op = opSel.value;
+    // No value needed for these operators
+    if (op === 'empty' || op === 'not_empty' || op === 'checked' || op === 'not_checked') {
+      var dummy = document.createElement('span');
+      dummy.style.display = 'none';
+      return dummy;
+    }
+    // Select-type: dropdown of defined option labels
+    if (type === 'select' || type === 'multi_select' || type === 'status') {
+      var opts = _dbGetAttrOptions(key);
+      if (opts.length > 0) {
+        var sel = document.createElement('select');
+        sel.style.cssText = inpSty;
+        // blank placeholder
+        var blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = '— pick one —';
+        if (!currentVal) blank.selected = true;
+        sel.appendChild(blank);
+        opts.forEach(function(lbl) {
+          var o = document.createElement('option');
+          o.value = lbl;
+          o.textContent = lbl;
+          if (lbl === currentVal) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', function() {
+          _dbFilterGroups[groupIdx][condIdx].val = sel.value;
+          _dbSaveFilterSort();
+          _dbRenderGrid();
+        });
+        return sel;
+      }
+    }
+    // Date / number / text fallback
+    var inp = document.createElement('input');
+    inp.type = (type === 'date') ? 'date' : (type === 'number') ? 'number' : 'text';
+    inp.placeholder = 'Value…';
+    inp.value = currentVal || '';
+    inp.style.cssText = inpSty;
+    inp.addEventListener('input', function() {
+      _dbFilterGroups[groupIdx][condIdx].val = inp.value;
+      _dbSaveFilterSort();
+      _dbRenderGrid();
+    });
+    return inp;
   }
-  syncValVisibility();
+
+  function refreshValWrap() {
+    var key  = keySel.value;
+    var type = (attrKeys.find(function(ak) { return ak.key === key; }) || {}).type || 'text';
+    valWrap.innerHTML = '';
+    valWrap.appendChild(buildValControl(key, type, _dbFilterGroups[groupIdx][condIdx].val));
+  }
+  refreshValWrap();
 
   keySel.addEventListener('change', function() {
-    _dbFilters[filterIdx].key = keySel.value;
-    var newType = (attrKeys.find(function(ak){ return ak.key === keySel.value; }) || {}).type || 'text';
+    _dbFilterGroups[groupIdx][condIdx].key = keySel.value;
+    var newType = (attrKeys.find(function(ak) { return ak.key === keySel.value; }) || {}).type || 'text';
     rebuildOps(newType);
-    _dbFilters[filterIdx].op  = opSel.value;
-    _dbFilters[filterIdx].val = '';
-    valInp.value = '';
-    syncValVisibility();
+    _dbFilterGroups[groupIdx][condIdx].op  = opSel.value;
+    _dbFilterGroups[groupIdx][condIdx].val = '';
+    refreshValWrap();
+    _dbSaveFilterSort();
     _dbUpdateFilterBadge();
     _dbRenderGrid();
   });
   opSel.addEventListener('change', function() {
-    _dbFilters[filterIdx].op = opSel.value;
-    syncValVisibility();
-    _dbUpdateFilterBadge();
-    _dbRenderGrid();
-  });
-  valInp.addEventListener('input', function() {
-    _dbFilters[filterIdx].val = valInp.value;
+    _dbFilterGroups[groupIdx][condIdx].op = opSel.value;
+    refreshValWrap();
+    _dbSaveFilterSort();
     _dbRenderGrid();
   });
 
@@ -828,26 +921,26 @@ function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
   var rmBtn = document.createElement('button');
   rmBtn.type = 'button';
   rmBtn.textContent = '\u00d7';
-  rmBtn.title = 'Remove filter';
+  rmBtn.title = 'Remove condition';
   rmBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:1rem;'
     + 'color:' + sub + ';padding:0 0.2rem;line-height:1;flex-shrink:0;';
   rmBtn.addEventListener('click', function() {
-    _dbFilters.splice(filterIdx, 1);
+    _dbFilterGroups[groupIdx].splice(condIdx, 1);
+    _dbSaveFilterSort();
     _dbUpdateFilterBadge();
     _dbRenderGrid();
-    // Rebuild filter list inside panel
-    var list = document.getElementById('db-filter-list');
-    if (list) {
-      list.innerHTML = '';
-      _dbFilters.forEach(function(_, idx2) {
-        list.appendChild(_dbBuildFilterRow(panel, idx2, attrKeys));
+    // Rebuild just this group\'s condition list
+    if (listEl) {
+      listEl.innerHTML = '';
+      _dbFilterGroups[groupIdx].forEach(function(_, ci) {
+        listEl.appendChild(_dbBuildFilterRow(groupIdx, ci, attrKeys, listEl));
       });
     }
   });
 
   row.appendChild(keySel);
   row.appendChild(opSel);
-  row.appendChild(valInp);
+  row.appendChild(valWrap);
   row.appendChild(rmBtn);
   return row;
 }
@@ -923,6 +1016,7 @@ function _dbToggleFilterPanel() {
     });
     kSel.addEventListener('change', function() {
       _dbSortLevels[lvlIdx].key = kSel.value;
+      _dbSaveFilterSort();
       _dbUpdateFilterBadge();
       _dbRenderGrid();
     });
@@ -944,6 +1038,7 @@ function _dbToggleFilterPanel() {
       rStyle();
       b.addEventListener('click', function() {
         _dbSortLevels[lvlIdx].dir = d;
+        _dbSaveFilterSort();
         rStyle();
         // refresh sibling buttons in same row
         row.querySelectorAll('button[data-dir]').forEach(function(x) {
@@ -969,6 +1064,7 @@ function _dbToggleFilterPanel() {
       + 'color:' + sub + ';padding:0 0.1rem;line-height:1;flex-shrink:0;';
     rmBtn.addEventListener('click', function() {
       _dbSortLevels.splice(lvlIdx, 1);
+      _dbSaveFilterSort();
       _dbUpdateFilterBadge();
       _dbRenderGrid();
       // Rebuild sort list
@@ -993,45 +1089,140 @@ function _dbToggleFilterPanel() {
     var firstKey = attrKeys[0] || { key: '__title' };
     _dbSortLevels.push({ key: firstKey.key, dir: 'asc' });
     sortList.appendChild(buildSortRow(_dbSortLevels.length - 1));
+    _dbSaveFilterSort();
     _dbUpdateFilterBadge();
     _dbRenderGrid();
   });
   sortSec.appendChild(addSortBtn);
   panel.appendChild(sortSec);
 
-  // ─────────── FILTER section ──────────────────────────
+  // ─────────── FILTER section (OR groups, AND conditions within each group) ──────
   var filterSec = document.createElement('div');
   var filterLbl = document.createElement('div');
   filterLbl.style.cssText = secHdr;
   filterLbl.textContent   = 'Filter';
   filterSec.appendChild(filterLbl);
 
-  // Existing filter rows
-  var filterList = document.createElement('div');
-  filterList.id = 'db-filter-list';
-  filterList.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;';
-  _dbFilters.forEach(function(_, idx) {
-    filterList.appendChild(_dbBuildFilterRow(panel, idx, attrKeys));
-  });
-  filterSec.appendChild(filterList);
+  // Container for all groups
+  var allGroupsEl = document.createElement('div');
+  allGroupsEl.id = 'db-filter-groups';
+  allGroupsEl.style.cssText = 'display:flex;flex-direction:column;gap:0.6rem;';
 
-  // + Add filter button
-  var addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.textContent = '+ Add filter';
-  addBtn.style.cssText = 'margin-top:0.4rem;font-size:0.73rem;padding:0.22rem 0.6rem;'
+  // Build one group container (groupIdx into _dbFilterGroups)
+  function buildGroupEl(groupIdx) {
+    var grpWrap = document.createElement('div');
+    grpWrap.style.cssText = 'border:1px solid ' + bdr + ';border-radius:0.5rem;'
+      + 'padding:0.5rem;display:flex;flex-direction:column;gap:0.35rem;';
+
+    // Condition list for this group
+    var condList = document.createElement('div');
+    condList.style.cssText = 'display:flex;flex-direction:column;gap:0.35rem;';
+    _dbFilterGroups[groupIdx].forEach(function(_, ci) {
+      condList.appendChild(_dbBuildFilterRow(groupIdx, ci, attrKeys, condList));
+    });
+    grpWrap.appendChild(condList);
+
+    // Footer row: AND label + '+ And' button + '× group' button
+    var grpFooter = document.createElement('div');
+    grpFooter.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-top:0.15rem;';
+
+    var andLbl = document.createElement('span');
+    andLbl.textContent = 'AND';
+    andLbl.style.cssText = 'font-size:0.62rem;font-weight:700;color:' + sub + ';flex-shrink:0;';
+    grpFooter.appendChild(andLbl);
+
+    var addCondBtn = document.createElement('button');
+    addCondBtn.type = 'button';
+    addCondBtn.textContent = '+ condition';
+    addCondBtn.style.cssText = 'font-size:0.7rem;padding:0.15rem 0.45rem;border-radius:0.3rem;'
+      + 'cursor:pointer;border:1px solid ' + bdr + ';background:transparent;'
+      + 'color:#7c3aed;font-weight:600;';
+    addCondBtn.addEventListener('click', function() {
+      var firstKey = attrKeys[0] || { key: '__title', type: 'text' };
+      var firstOps = _dbOpsForType(firstKey.type);
+      _dbFilterGroups[groupIdx].push({ key: firstKey.key, op: firstOps[0].op, val: '' });
+      var ci = _dbFilterGroups[groupIdx].length - 1;
+      condList.appendChild(_dbBuildFilterRow(groupIdx, ci, attrKeys, condList));
+      _dbSaveFilterSort();
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+    });
+    grpFooter.appendChild(addCondBtn);
+
+    // Spacer
+    var sp = document.createElement('span');
+    sp.style.flex = '1';
+    grpFooter.appendChild(sp);
+
+    // Remove group button
+    var rmGrpBtn = document.createElement('button');
+    rmGrpBtn.type = 'button';
+    rmGrpBtn.textContent = '\u00d7 group';
+    rmGrpBtn.title = 'Remove this OR group';
+    rmGrpBtn.style.cssText = 'font-size:0.68rem;padding:0.15rem 0.4rem;border-radius:0.3rem;'
+      + 'cursor:pointer;border:1px solid ' + bdr + ';background:transparent;color:' + sub + ';';
+    rmGrpBtn.addEventListener('click', function() {
+      _dbFilterGroups.splice(groupIdx, 1);
+      _dbSaveFilterSort();
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+      // Rebuild all groups
+      allGroupsEl.innerHTML = '';
+      _dbFilterGroups.forEach(function(_, gi) {
+        if (gi > 0) allGroupsEl.appendChild(makeOrSep());
+        allGroupsEl.appendChild(buildGroupEl(gi));
+      });
+    });
+    grpFooter.appendChild(rmGrpBtn);
+
+    grpWrap.appendChild(grpFooter);
+    return grpWrap;
+  }
+
+  // OR separator pill
+  function makeOrSep() {
+    var sep = document.createElement('div');
+    sep.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+    var line1 = document.createElement('div');
+    line1.style.cssText = 'flex:1;height:1px;background:' + bdr + ';';
+    var pill = document.createElement('span');
+    pill.textContent = 'OR';
+    pill.style.cssText = 'font-size:0.62rem;font-weight:700;padding:0.1rem 0.45rem;'
+      + 'border-radius:9999px;background:#7c3aed;color:#fff;flex-shrink:0;';
+    var line2 = document.createElement('div');
+    line2.style.cssText = 'flex:1;height:1px;background:' + bdr + ';';
+    sep.appendChild(line1);
+    sep.appendChild(pill);
+    sep.appendChild(line2);
+    return sep;
+  }
+
+  // Render existing groups
+  _dbFilterGroups.forEach(function(_, gi) {
+    if (gi > 0) allGroupsEl.appendChild(makeOrSep());
+    allGroupsEl.appendChild(buildGroupEl(gi));
+  });
+  filterSec.appendChild(allGroupsEl);
+
+  // + Or group button
+  var addGrpBtn = document.createElement('button');
+  addGrpBtn.type = 'button';
+  addGrpBtn.textContent = '+ Or group';
+  addGrpBtn.style.cssText = 'margin-top:0.5rem;font-size:0.73rem;padding:0.22rem 0.6rem;'
     + 'border-radius:0.375rem;cursor:pointer;border:1px solid ' + bdr + ';'
-    + 'background:transparent;color:#7c3aed;font-weight:600;'
-    + 'text-align:left;';
-  addBtn.addEventListener('click', function() {
+    + 'background:transparent;color:#7c3aed;font-weight:600;text-align:left;';
+  addGrpBtn.addEventListener('click', function() {
     var firstKey = attrKeys[0] || { key: '__title', type: 'text' };
     var firstOps = _dbOpsForType(firstKey.type);
-    _dbFilters.push({ key: firstKey.key, op: firstOps[0].op, val: '' });
-    filterList.appendChild(_dbBuildFilterRow(panel, _dbFilters.length - 1, attrKeys));
+    var gi = _dbFilterGroups.length;
+    _dbFilterGroups.push([{ key: firstKey.key, op: firstOps[0].op, val: '' }]);
+    if (gi > 0) allGroupsEl.appendChild(makeOrSep());
+    allGroupsEl.appendChild(buildGroupEl(gi));
+    _dbSaveFilterSort();
     _dbUpdateFilterBadge();
     _dbRenderGrid();
   });
-  filterSec.appendChild(addBtn);
+  filterSec.appendChild(addGrpBtn);
   panel.appendChild(filterSec);
 
   // ─────────── Footer: Clear all ───────────────────────
