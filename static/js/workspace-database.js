@@ -2586,7 +2586,7 @@ function _dbAttrValueHtml(cardId, a) {
   // Resting style: invisible — no border, no bg, just readable text.
   // _dbNativeWidgetFocus / _dbNativeWidgetBlur toggle the box on interaction.
   var restInputStyle =
-    'border:none;background:transparent;font-size:0.875rem;color:inherit;'
+    'border:none;background:transparent;font-size:0.72rem;color:inherit;'
     + 'outline:none;width:100%;box-sizing:border-box;cursor:pointer;'
     + 'color-scheme:' + inputCs + ';';
 
@@ -2608,7 +2608,7 @@ function _dbAttrValueHtml(cardId, a) {
       // Typeable text input — accepts many formats, normalises on blur
       + '<input type="text" value="' + _esc(dShown) + '"'
       + ' placeholder="e.g. Apr 22 2025"'
-      + ' style="border:none;background:transparent;font-size:0.875rem;color:inherit;'
+      + ' style="border:none;background:transparent;font-size:0.72rem;color:inherit;'
       + 'outline:none;flex:1;min-width:0;cursor:text;"'
       + ' onblur="_dbDateTextBlur(' + cardId + ',' + a.id + ',' + kJ + ',this,' + fmtJ + ')">'
       // Hidden native date picker (zero-size, opened by button)
@@ -2621,7 +2621,7 @@ function _dbAttrValueHtml(cardId, a) {
       + 'p.showPicker?p.showPicker():p.click()"'
       + ' title="Pick a date"'
       + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
-      + 'padding:0.1rem 0.2rem;color:#9ca3af;font-size:0.875rem;line-height:1;'
+      + 'padding:0.1rem 0.2rem;color:#9ca3af;font-size:0.72rem;line-height:1;'
       + 'border-radius:0.25rem;">&#128197;</button>'
       + '</span>'
     );
@@ -2643,8 +2643,8 @@ function _dbAttrValueHtml(cardId, a) {
     if (display === 'number') {
       return '<input type="text" value="' + _esc(shown) + '"' + _numData
         + ' placeholder="Enter a number…"'
-        + ' style="' + _numInpStyle + 'font-size:0.875rem;color:inherit;width:100%;"'
-        + _numBlur + '>';
+        + ' style="' + _numInpStyle + 'font-size:0.72rem;color:inherit;width:100%;"'
+        + _numBlur + '>'; 
     }
 
     // Bar / Ring — build visual with editable number label embedded
@@ -2690,7 +2690,7 @@ function _dbAttrValueHtml(cardId, a) {
 
     // fallback (shouldn't reach here)
     return '<input type="text" value="' + _esc(shown) + '"' + _numData
-      + ' style="' + _numInpStyle + 'font-size:0.875rem;color:inherit;width:100%;"'
+      + ' style="' + _numInpStyle + 'font-size:0.72rem;color:inherit;width:100%;"'
       + _numBlur + '>';
   }
   if (t === 'url') {
@@ -2709,12 +2709,12 @@ function _dbAttrValueHtml(cardId, a) {
         // Domain-only label
         var shortLabel = v.replace(/^https?:\/\//, '').split('/')[0];
         urlLink = '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
-          + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;cursor:pointer;">'
+          + ' style="color:#0053e2;text-decoration:underline;font-size:0.72rem;cursor:pointer;">'
           + _esc(shortLabel) + '</a> ';
       } else {
         // Default: full URL as link text
         urlLink = '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
-          + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;'
+          + ' style="color:#0053e2;text-decoration:underline;font-size:0.72rem;'
           + 'word-break:break-all;cursor:pointer;">' + safeUrl + '</a> ';
       }
     }
@@ -2726,7 +2726,7 @@ function _dbAttrValueHtml(cardId, a) {
   if (t === 'email') {
     var safeEmail = _esc(v);
     var ml = v ? '<a href="mailto:' + safeEmail + '"'
-      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;">'
+      + ' style="color:#0053e2;text-decoration:underline;font-size:0.72rem;">'
       + safeEmail + '</a> ' : '';
     return ml
       + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
@@ -2735,7 +2735,7 @@ function _dbAttrValueHtml(cardId, a) {
   if (t === 'phone') {
     var safePhone = _esc(v);
     var tl = v ? '<a href="tel:' + safePhone + '"'
-      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;">'
+      + ' style="color:#0053e2;text-decoration:underline;font-size:0.72rem;">'
       + safePhone + '</a> ' : '';
     return tl
       + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
@@ -2891,9 +2891,9 @@ function _dbRenderDetailPanel(card) {
       + 'user-select:none;font-size:0.8rem;line-height:1;transition:opacity 0.1s;">'  // subtle fade-in
       + '&#10247;&#10247;</span>'
       // Clickable label → context menu
-      + '<button type="button" class="db-attr-label text-left text-xs font-semibold'
+      + '<button type="button" class="db-attr-label text-left font-semibold'
       + ' text-gray-500 dark:text-zinc-400 flex-shrink-0 truncate"'
-      + ' style="width:7rem;background:none;border:none;cursor:pointer;padding:0 2px;'
+      + ' style="width:7rem;font-size:0.82rem;background:none;border:none;cursor:pointer;padding:0 2px;'
       + 'border-radius:0.25rem;"'
       + ' title="' + _esc(a.attr_key) + ' \u2014 click for options"'
       + ' onclick="_dbAttrMenu(' + card.id + ',' + a.id + ',this)">'
