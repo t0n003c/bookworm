@@ -1226,7 +1226,14 @@ function _dbToggleFilterPanel() {
   grpByNone.textContent = '\u2014 None \u2014';
   if (!_dbGroupBy) grpByNone.selected = true;
   grpBySel.appendChild(grpByNone);
-  attrKeys.forEach(function(ak) {
+  // Select/multi_select/status attrs bubble to the top; everything else after
+  var pillTypes = ['select', 'multi_select', 'status'];
+  var grpByKeys = attrKeys.slice().sort(function(a, b) {
+    var aP = pillTypes.indexOf(a.type) !== -1 ? 0 : 1;
+    var bP = pillTypes.indexOf(b.type) !== -1 ? 0 : 1;
+    return aP - bP;  // stable within each tier because .sort() preserves relative order in V8
+  });
+  grpByKeys.forEach(function(ak) {
     var o = document.createElement('option');
     o.value = ak.key;
     o.textContent = _dbKeyLabel(ak.key);
@@ -1263,7 +1270,7 @@ function _dbToggleFilterPanel() {
   grpByRow.appendChild(grpByClearBtn);
 
   grpBySec.appendChild(grpByRow);
-  panel.appendChild(grpBySec);
+  // grpBySec appended to panel AFTER filterSec — see below
 
   // ─────────── SORT section (multi-level) ──────────────────────────
   var sortSec = document.createElement('div');
@@ -1520,6 +1527,7 @@ function _dbToggleFilterPanel() {
   });
   filterSec.appendChild(addGrpBtn);
   panel.appendChild(filterSec);
+  panel.appendChild(grpBySec);   // Group by sits after Filter
 
   // ─────────── Footer: Clear all ───────────────────────
   var footer = document.createElement('div');
