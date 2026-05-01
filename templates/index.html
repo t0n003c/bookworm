@@ -840,6 +840,60 @@
       #note-list[data-view="gallery"] .flex.flex-wrap.gap-1\.5 {
         margin-top: 0.5rem;
       }
+      /* Recent section — only visible in gallery mode */
+      #gallery-recent-section {
+        display: none;
+      }
+      #note-list[data-view="gallery"] #gallery-recent-section:not(:empty) {
+        display: block;
+        margin-bottom: 1.5rem;
+      }
+      /* Recent section header */
+      #gallery-recent-section .gallery-recent-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #6b7280;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #e5e7eb;
+        margin-bottom: 0.75rem;
+      }
+      .dark #gallery-recent-section .gallery-recent-header {
+        color: #71717a;
+        border-bottom-color: #3f3f46;
+      }
+      /* "Older" divider shown before main grid when recent section has content */
+      #note-main-grid.has-recent::before {
+        content: 'Older';
+        display: block;
+        grid-column: 1 / -1;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #9ca3af;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid #e5e7eb;
+        margin-bottom: 0.25rem;
+      }
+      .dark #note-main-grid.has-recent::before {
+        color: #52525b;
+        border-bottom-color: #3f3f46;
+      }
+      /* Recent cards sub-grid — same columns as main gallery grid */
+      #gallery-recent-section .gallery-recent-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+      }
+      /* Articles hidden in main grid because they appear in Recent section */
+      #note-list[data-view="gallery"] article.gallery-recent-hidden {
+        display: none;
+      }
     </style>
 
     <div id="note-list">
@@ -2685,6 +2739,80 @@
     var nl = document.getElementById('note-list');
     return (nl && nl.dataset.view === 'gallery') ? 'gallery' : 'list';
   }
+  /* ---- Gallery view: Recent section ---- */
+  // Clones notes updated within the last 7 days into a dedicated "Recent" section.
+  // Originals stay in the main grid but are hidden so there's no duplication.
+  function _buildGalleryRecent() {
+    var section = document.getElementById('gallery-recent-section');
+    var mainGrid = document.getElementById('note-main-grid');
+    if (!section || !mainGrid) return;
+
+    // Always reset first (handles HTMX re-swaps)
+    _teardownGalleryRecent();
+
+    var nl = document.getElementById('note-list');
+    if (!nl || nl.dataset.view !== 'gallery') return;
+
+    // Cutoff = start of today 7 days ago
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 6);
+    cutoff.setHours(0, 0, 0, 0);
+
+    var recentArticles = [];
+    mainGrid.querySelectorAll('article[data-note-id]').forEach(function(art) {
+      var updatedRaw = art.getAttribute('data-updated-at') || '';
+      var createdRaw = art.getAttribute('data-created-at') || '';
+      // Use the later of created / updated
+      var d = new Date(Math.max(
+        updatedRaw ? new Date(updatedRaw).getTime() : 0,
+        createdRaw ? new Date(createdRaw).getTime() : 0
+      ));
+      if (!isNaN(d.getTime()) && d >= cutoff) {
+        recentArticles.push(art);
+      }
+    });
+
+    if (recentArticles.length === 0) return;
+
+    // Build section header
+    var hdr = document.createElement('div');
+    hdr.className = 'gallery-recent-header';
+    hdr.innerHTML = '<span>\uD83D\uDD52</span><span>Recent &mdash; last 7 days</span>'
+      + '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.68rem;">('
+      + recentArticles.length + ' note' + (recentArticles.length !== 1 ? 's' : '') + ')</span>';
+    section.appendChild(hdr);
+
+    // Clone recent articles into sub-grid; hide originals in main grid
+    var grid = document.createElement('div');
+    grid.className = 'gallery-recent-grid';
+    recentArticles.forEach(function(art) {
+      art.classList.add('gallery-recent-hidden');
+      var clone = art.cloneNode(true);
+      clone.classList.remove('gallery-recent-hidden');
+      clone.setAttribute('data-gallery-clone', '1');
+      grid.appendChild(clone);
+    });
+    section.appendChild(grid);
+
+    // Let HTMX process the new elements so hx-get etc. fire correctly
+    if (typeof htmx !== 'undefined') htmx.process(grid);
+
+    // Mark main grid so the CSS ::before "Older" label appears
+    mainGrid.classList.add('has-recent');
+  }
+
+  function _teardownGalleryRecent() {
+    var section = document.getElementById('gallery-recent-section');
+    var mainGrid = document.getElementById('note-main-grid');
+    if (section) section.innerHTML = '';
+    if (mainGrid) {
+      mainGrid.classList.remove('has-recent');
+      mainGrid.querySelectorAll('article.gallery-recent-hidden').forEach(function(a) {
+        a.classList.remove('gallery-recent-hidden');
+      });
+    }
+  }
+
   function setNoteView(requested) {
     var current = getNoteView();
     // Clicking the active view returns to list
@@ -2701,6 +2829,8 @@
     // Apply gallery data-attr (CSS does the rest; persists across HTMX swaps)
     var nl = document.getElementById('note-list');
     if (nl) nl.dataset.view = next === 'gallery' ? 'gallery' : 'list';
+    if (next === 'gallery') _buildGalleryRecent();
+    else _teardownGalleryRecent();
 
     localStorage.setItem('bw-list-view', next);
     syncNoteViewButtons();
@@ -2738,6 +2868,7 @@
     if (saved === 'gallery') {
       var nl = document.getElementById('note-list');
       if (nl) nl.dataset.view = 'gallery';
+      _buildGalleryRecent();
     } else {
       localStorage.setItem('bw-list-view', 'list');
     }
