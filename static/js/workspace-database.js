@@ -15,6 +15,7 @@ var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
 var _dbFilterGroups      = []; // [[{key,op,val},…],…] — OR between groups, AND within each group
 var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = highest priority)
+var _dbGroupBy           = null; // null | {key} — attribute key to group cards by
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -470,6 +471,8 @@ function initDatabaseView(wsId) {
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
   _dbFilterGroups = [];
   _dbSortLevels    = [];
+  _dbGroupBy       = null;
+  _dbGroupBy       = null;
   _dbLoadFilterSort(_dbWsId);
   _dbUpdateFilterBadge();   // restore badge count after page refresh
   // Close any stale filter panel from a previous workspace
@@ -504,11 +507,16 @@ function _dbApplySize(step) {
   var cfg  = _dbSizeCfg[(step - 1)] || _dbSizeCfg[2];
   var root = document.getElementById('db-view-root');
   var grid = document.getElementById('db-card-grid');
+  var cols = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
   if (root) {
     root.style.setProperty('--db-cover-h', cfg.coverH);
   }
   if (grid) {
-    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
+    grid.style.gridTemplateColumns = cols;
+    // Also update any sub-grids rendered in group-by mode
+    grid.querySelectorAll('.db-sub-grid').forEach(function(sg) {
+      sg.style.gridTemplateColumns = cols;
+    });
   }
   var slider = document.getElementById('db-size-slider');
   if (slider && slider.value != step) slider.value = step;
@@ -534,7 +542,8 @@ function _dbRenderGrid() {
   var total     = _dbCards.length;
   var display   = _dbGetDisplayCards();
   var shown     = display.length;
-  var hasFilter = _dbFilterGroups.some(function(g) { return g.length > 0; }) || _dbSortLevels.length > 0;
+  var hasFilter = _dbFilterGroups.some(function(g) { return g.length > 0; })
+                  || _dbSortLevels.length > 0 || !!_dbGroupBy;
 
   if (count) {
     count.textContent = (hasFilter && shown !== total)
@@ -544,6 +553,7 @@ function _dbRenderGrid() {
 
   if (total === 0) {
     grid.innerHTML = '';
+    grid.style.gridTemplateColumns = '';
     if (empty)   empty.classList.remove('hidden');
     if (noMatch) noMatch.classList.add('hidden');
     return;
@@ -552,11 +562,96 @@ function _dbRenderGrid() {
 
   if (shown === 0) {
     grid.innerHTML = '';
+    grid.style.gridTemplateColumns = '';
     if (noMatch) noMatch.classList.remove('hidden');
     return;
   }
   if (noMatch) noMatch.classList.add('hidden');
+
+  // ── grouped mode ──
+  if (_dbGroupBy && _dbGroupBy.key) {
+    _dbRenderGrouped(grid, display);
+    return;
+  }
+
+  // ── flat mode ──
+  var cfg  = _dbSizeCfg[(_dbSizeStep - 1)] || _dbSizeCfg[2];
+  grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
   grid.innerHTML = display.map(function(c) { return _dbCardHtml(c); }).join('');
+}
+
+function _dbRenderGrouped(grid, display) {
+  var key     = _dbGroupBy.key;
+  var cfg     = _dbSizeCfg[(_dbSizeStep - 1)] || _dbSizeCfg[2];
+  var isDark  = document.documentElement.classList.contains('dark');
+  var sub     = isDark ? '#71717a' : '#6b7280';
+  var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
+  var hdrTxt  = isDark ? '#f4f4f5' : '#111827';
+  var cols    = 'repeat(auto-fill, minmax(' + cfg.minW + ', 1fr))';
+
+  // Detect attr type for group key (for colored pill rendering)
+  var attrKeys = _dbGetAttrKeys();
+  var keyMeta  = attrKeys.find(function(ak) { return ak.key === key; }) || { type: 'text' };
+  var isPillType = keyMeta.type === 'select' || keyMeta.type === 'status' || keyMeta.type === 'multi_select';
+
+  // Bucket cards: ordered map preserving first-seen order. Empty value goes last.
+  var order   = [];
+  var buckets = {};
+  display.forEach(function(c) {
+    var val = _dbCardAttrVal(c, key).trim();
+    var bucket = val || '__empty__';
+    if (!buckets[bucket]) {
+      buckets[bucket] = [];
+      if (val) order.push(val); else if (order.indexOf('__empty__') === -1) order.push('__empty__');
+    }
+    buckets[bucket].push(c);
+  });
+  // empty-value group always last
+  if (buckets['__empty__'] && order[order.length - 1] !== '__empty__') {
+    order = order.filter(function(v) { return v !== '__empty__'; });
+    order.push('__empty__');
+  }
+
+  // Build HTML
+  grid.style.gridTemplateColumns = '';
+  var html = '';
+  order.forEach(function(val) {
+    var cards  = buckets[val] || [];
+    var isEmpty = val === '__empty__';
+    var label  = isEmpty ? ('No ' + _dbKeyLabel(key)) : val;
+
+    // Group header
+    html += '<div class="db-group-section" style="margin-bottom:1.5rem">';
+
+    // Header row: colored pill (if select/status) or plain label
+    html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem;'
+          + 'padding-bottom:0.4rem;border-bottom:1px solid ' + bdr + ';">';
+
+    if (!isEmpty && isPillType) {
+      // Find color from options
+      var opts    = _dbGetAttrOptions(key);
+      var optMeta = opts.find(function(o) { return o.label === val; });
+      var cs      = _dbOptColorStyle(optMeta ? optMeta.color : 'gray');
+      html += '<span style="display:inline-flex;align-items:center;padding:0.18rem 0.65rem;'
+            + 'border-radius:9999px;font-size:0.72rem;font-weight:600;'
+            + 'background:' + cs.bg + ';color:' + cs.text + ';">' + _esc(label) + '</span>';
+    } else {
+      html += '<span style="font-size:0.8rem;font-weight:700;color:'
+            + (isEmpty ? sub : hdrTxt) + ';font-style:' + (isEmpty ? 'italic' : 'normal') + ';">' + _esc(label) + '</span>';
+    }
+    html += '<span style="font-size:0.7rem;color:' + sub + ';">' + cards.length + ' card' + (cards.length !== 1 ? 's' : '') + '</span>';
+    html += '</div>';
+
+    // Sub-grid
+    html += '<div class="db-sub-grid" style="display:grid;gap:1rem;'
+          + 'grid-template-columns:' + cols + ';">';
+    html += cards.map(function(c) { return _dbCardHtml(c); }).join('');
+    html += '</div>';
+
+    html += '</div>'; // .db-group-section
+  });
+
+  grid.innerHTML = html;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -595,7 +690,7 @@ function _dbSaveFilterSort() {
   try {
     localStorage.setItem(
       '_dbFS_' + _dbWsId,
-      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels })
+      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels, groupBy: _dbGroupBy })
     );
   } catch(e) {}
 }
@@ -608,6 +703,7 @@ function _dbLoadFilterSort(wsId) {
     var data = JSON.parse(raw);
     if (Array.isArray(data.groups)) _dbFilterGroups = data.groups;
     if (Array.isArray(data.sort))   _dbSortLevels   = data.sort;
+    if (data.groupBy !== undefined)  _dbGroupBy      = data.groupBy || null;
   } catch(e) {}
 }
 
@@ -782,7 +878,9 @@ function _dbUpdateFilterBadge() {
   var btn   = document.getElementById('db-filter-btn');
   if (!btn) return;
   var old   = btn.querySelector('.db-filter-badge');
-  var total = _dbFilterGroups.reduce(function(s, g) { return s + g.length; }, 0) + _dbSortLevels.length;
+  var total = _dbFilterGroups.reduce(function(s, g) { return s + g.length; }, 0)
+            + _dbSortLevels.length
+            + (_dbGroupBy ? 1 : 0);
   if (total === 0) {
     if (old) old.remove();
     btn.classList.remove('text-purple-600', 'dark:text-purple-400');
@@ -1110,6 +1208,62 @@ function _dbToggleFilterPanel() {
                + ';outline:none;cursor:pointer;box-sizing:border-box;';
   var secHdr   = 'font-size:0.65rem;font-weight:700;text-transform:uppercase;'
                + 'letter-spacing:0.06em;color:' + sub + ';margin-bottom:0.4rem;';
+
+  // ─────────── GROUP BY section ────────────────────────────
+  var grpBySec = document.createElement('div');
+  var grpByLbl = document.createElement('div');
+  grpByLbl.style.cssText = secHdr;
+  grpByLbl.textContent   = 'Group by';
+  grpBySec.appendChild(grpByLbl);
+
+  var grpByRow = document.createElement('div');
+  grpByRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+
+  var grpBySel = document.createElement('select');
+  grpBySel.style.cssText = inpSty + 'flex:1;';
+  var grpByNone = document.createElement('option');
+  grpByNone.value = '';
+  grpByNone.textContent = '\u2014 None \u2014';
+  if (!_dbGroupBy) grpByNone.selected = true;
+  grpBySel.appendChild(grpByNone);
+  attrKeys.forEach(function(ak) {
+    var o = document.createElement('option');
+    o.value = ak.key;
+    o.textContent = _dbKeyLabel(ak.key);
+    if (_dbGroupBy && _dbGroupBy.key === ak.key) o.selected = true;
+    grpBySel.appendChild(o);
+  });
+  grpBySel.addEventListener('change', function() {
+    _dbGroupBy = grpBySel.value ? { key: grpBySel.value } : null;
+    grpByClearBtn.style.display = _dbGroupBy ? '' : 'none';
+    _dbSaveFilterSort();
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  grpByRow.appendChild(grpBySel);
+
+  // Clear button — only shown when a group is active
+  var grpByClearBtn = document.createElement('button');
+  grpByClearBtn.type = 'button';
+  grpByClearBtn.title = 'Clear grouping';
+  grpByClearBtn.textContent = '\u00d7';
+  grpByClearBtn.style.cssText = 'display:' + (_dbGroupBy ? '' : 'none') + ';'
+    + 'font-size:0.9rem;padding:0 0.3rem;background:none;border:none;'
+    + 'cursor:pointer;color:' + sub + ';transition:color 0.12s;line-height:1;';
+  grpByClearBtn.addEventListener('mouseover', function() { grpByClearBtn.style.color = '#ef4444'; });
+  grpByClearBtn.addEventListener('mouseout',  function() { grpByClearBtn.style.color = sub; });
+  grpByClearBtn.addEventListener('click', function() {
+    _dbGroupBy = null;
+    grpBySel.value = '';
+    grpByClearBtn.style.display = 'none';
+    _dbSaveFilterSort();
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  grpByRow.appendChild(grpByClearBtn);
+
+  grpBySec.appendChild(grpByRow);
+  panel.appendChild(grpBySec);
 
   // ─────────── SORT section (multi-level) ──────────────────────────
   var sortSec = document.createElement('div');
