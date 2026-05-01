@@ -4307,6 +4307,14 @@ function _dbAttrValueHtml(cardId, a) {
       var r = 15, sw = 3, sz = 38, cx = 19;
       var circ = +(2 * Math.PI * r).toFixed(2);
       var off  = +(circ * (1 - frac)).toFixed(2);
+      // Ring uses left-aligned label so the number sits flush next to the ring,
+      // not floating at the far-right of a wide input box.
+      var ringLbl = '<input type="text" id="_dbn-inp-' + a.id + '"'
+        + ' value="' + _esc(shown || '') + '"' + _numData
+        + ' placeholder="0" title="Click to edit"'
+        + ' style="' + _numInpStyle + 'width:3rem;font-size:0.72rem;'
+        + 'color:' + lblClr + ';text-align:left;flex-shrink:0;"'
+        + _numBlur + '>';
       return '<div style="display:flex;align-items:center;gap:0.35rem;">'
         + '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 ' + sz + ' ' + sz + '" style="flex-shrink:0;">'
         + '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '"'
@@ -4316,7 +4324,7 @@ function _dbAttrValueHtml(cardId, a) {
         + ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + off + '"'
         + ' stroke-linecap="round" transform="rotate(-90 ' + cx + ' ' + cx + ')"/>'
         + '</svg>'
-        + editLbl + '</div>';
+        + ringLbl + '</div>';
     }
 
     // fallback (shouldn't reach here)
@@ -4418,8 +4426,8 @@ function _dbAttrValueHtml(cardId, a) {
     return '<div class="db-ph-wrap"'
       + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '" data-key=' + kJ + ''
       + ' style="display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem;'
-      + 'padding:0.25rem 0.4rem;border-radius:0.375rem;border:1px solid ' + inpBdr + ';'
-      + 'background:' + inpBg + ';min-height:2rem;cursor:text;transition:border-color 0.15s;"'
+      + 'padding:0.15rem 0;background:transparent;'
+      + 'min-height:2rem;cursor:text;"'
       + ' onclick="var i=this.querySelector(\'.db-ph-inp\');if(i&&document.activeElement!==i)i.focus();">'
       + chipsHtml
       + '<input class="db-ph-inp" type="text"'
