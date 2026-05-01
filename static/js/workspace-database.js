@@ -3056,7 +3056,7 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onblur="' + cb + '">' + _esc(v) + '</span>';
   }
   if (t === 'place') {
-    var mapProv   = a.attr_options || 'google';  // 'google' | 'apple' | 'osm'
+    var mapProv   = a.attr_options || 'google';
     var safePlace = encodeURIComponent(v);
     var mapUrl;
     if (mapProv === 'apple') {
@@ -3068,11 +3068,25 @@ function _dbAttrValueHtml(cardId, a) {
     }
     var mapsLink = v
       ? '<a href="' + mapUrl + '" target="_blank" rel="noopener"'
-        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">\uD83D\uDDFA\uFE0F Map</a>'
-        : '';
-    return mapsLink
-      + '<span contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
-      + ' onblur="' + cb + '">' + _esc(v) + '</span>';
+        + ' style="flex-shrink:0;font-size:0.72rem;color:inherit;'
+        + 'text-decoration:none;opacity:0.7;white-space:nowrap;"'
+        + ' title="Open in ' + _esc(mapProv.charAt(0).toUpperCase() + mapProv.slice(1)) + ' Maps">'
+        + '\uD83D\uDDFA\uFE0F</a>'
+      : '';
+    var cbInp = '_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    var isDkPl  = document.documentElement.classList.contains('dark');
+    var plInpBdr = isDkPl ? '#3f3f46' : '#e5e7eb';
+    return '<div style="display:flex;align-items:center;gap:0.35rem;width:100%;">'
+      + '<input type="text"'
+      + ' value="' + _esc(v) + '"'
+      + ' placeholder="Add place or address\u2026"'
+      + ' style="flex:1;min-width:0;font-size:0.72rem;color:inherit;'
+      + 'background:transparent;border:none;border-bottom:1px solid transparent;'
+      + 'outline:none;padding:0.1rem 0;transition:border-color 0.15s;"'
+      + ' onfocus="this.style.borderBottomColor=\'#0053e2\'"'
+      + ' onblur="this.style.borderBottomColor=\'transparent\';' + cbInp + '">'
+      + mapsLink
+      + '</div>';
   }
 
   // select — native dropdown constrained to defined options
