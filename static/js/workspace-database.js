@@ -4487,22 +4487,50 @@ function _dbAttrValueHtml(cardId, a) {
       + '</div>';
   }
 
-  // select — native dropdown constrained to defined options
+  // select — pill chip display + invisible native <select> overlay for picking
   if (t === 'select') {
     var sopts = _dbParseOptions(a.attr_options || '');
     if (sopts.length > 0) {
+      // Find the option object for the current value so we can colour the pill
+      var selOpt = sopts.find(function(o) { return o.label === v; });
+
+      // Build the visible pill (or muted placeholder when nothing is selected)
+      var pillDisplay;
+      if (selOpt) {
+        var cDefS  = _dbOptColorDef(selOpt.color || 'gray');
+        var sBg    = isDark ? cDefS.darkBg   : cDefS.bg;
+        var sTxt   = isDark ? cDefS.darkText : cDefS.text;
+        pillDisplay = '<span style="display:inline-flex;align-items:center;'
+          + 'padding:0.18rem 0.7rem;border-radius:9999px;'
+          + 'font-size:0.72rem;font-weight:600;pointer-events:none;'
+          + 'background:' + sBg + ';color:' + sTxt + ';white-space:nowrap;">'
+          + _esc(selOpt.label) + '</span>';
+      } else {
+        pillDisplay = '<span style="font-size:0.72rem;pointer-events:none;'
+          + 'color:' + (isDark ? '#52525b' : '#d1d5db') + ';font-style:italic;">'
+          + 'Pick…</span>';
+      }
+
+      // Build option list for the invisible native select
       var optHtml = '<option value="">(none)</option>';
       sopts.forEach(function(o) {
         var sel = (o.label === v) ? ' selected' : '';
         optHtml += '<option value="' + _esc(o.label) + '"' + sel + '>' + _esc(o.label) + '</option>';
       });
-      return '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ',' + kJ + ',this)"'
-        + ' onfocus="_dbNativeWidgetFocus(this)"'
-        + ' onblur="_dbNativeWidgetBlur(this)"'
-        + ' style="' + restInputStyle + '">'
-        + optHtml + '</select>';
+
+      // Container: pill on top; invisible <select> laid over it captures the click
+      return '<div style="position:relative;display:inline-flex;'
+        + 'align-items:center;cursor:pointer;">'
+        + pillDisplay
+        + '<select onchange="_dbSaveAttrSelect(' + cardId + ',' + a.id + ',' + kJ + ',this)"'
+        + ' style="position:absolute;inset:0;width:100%;height:100%;'
+        + 'opacity:0;cursor:pointer;border:none;padding:0;'
+        + 'color-scheme:' + inputCs + ';">'
+        + optHtml + '</select>'
+        + '</div>';
     }
     // No options defined — fall through to plain contenteditable
+  }
   }
 
   // multi_select — toggleable chip grid constrained to defined options
@@ -6068,6 +6096,9 @@ function _dbSaveAttrSelect(cardId, attrId, key, el) {
     if (!r.ok) throw new Error('Select save failed');
     if (meta) meta.attr_value = value;
     _dbRenderGrid();
+    // Refresh the detail panel so the pill chip updates immediately
+    var fresh = _dbCards.find(function(c) { return c.id === cardId; });
+    if (fresh) _dbRenderDetailPanel(fresh);
   })
   .catch(function(e) { console.warn('Select attr save failed', e); });
 }
