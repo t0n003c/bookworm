@@ -2860,7 +2860,7 @@ function _dbRenderDetailPanel(card) {
   var created = card.created_at ? card.created_at.replace('T', ' ').slice(0, 16) : 'Unknown';
   var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : 'Unknown';
 
-  _dbAttrHiddenShown = false; // reset toggle every time panel opens
+  _dbAttrHiddenShown = true; // reset: always_hide attrs start grayed-out but visible
 
   var hiddenCount = (card.attrs || []).filter(function(a) {
     return (a.visibility || 'always') === 'always_hide';
@@ -2870,15 +2870,15 @@ function _dbRenderDetailPanel(card) {
     var icon     = _dbAttrTypeIcon(a.attr_type || 'text');
     var vis      = a.visibility || 'always';
     var isHidden = vis === 'always_hide';
-    // Dim hide_empty rows only when the value is blank
-    var rowOpacity = (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
+    // always_hide → 40% gray; hide_empty+blank → 60%; everything else → full
+    var rowOpacity = isHidden ? '0.4'
+      : (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
     return '<div class="db-attr-row flex items-center gap-1 py-1.5 border-b'
       + ' border-gray-100 dark:border-zinc-800"'
       + ' draggable="false"'
       + ' data-attr-id="' + a.id + '" data-card-id="' + card.id + '"'
       + (isHidden ? ' data-attr-hidden="1"' : '')
-      + ' style="opacity:' + rowOpacity + ';transition:opacity 0.15s;'
-      + (isHidden ? 'display:none;' : '') + '"'
+      + ' style="opacity:' + rowOpacity + ';transition:opacity 0.15s;"'
       // Reveal grip on hover, hide when mouse leaves
       + ' onmouseenter="var g=this.querySelector(\'.db-attr-grip\');if(g)g.style.opacity=\'1\';"'
       + ' onmouseleave="var g=this.querySelector(\'.db-attr-grip\');if(g)g.style.opacity=\'0\';"'
@@ -2907,6 +2907,12 @@ function _dbRenderDetailPanel(card) {
   }).join('');
 
   // Toggle line that appears below "+ Add attribute" when hidden attrs exist
+  // eye-off icon = attrs currently visible, clicking will hide them
+  var eyeOffPath = 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
+    + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878'
+    + 'l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0'
+    + 'A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
+    + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21';
   var n = hiddenCount;
   var toggleHtml = n > 0
     ? '<button type="button" id="db-attr-hidden-toggle-' + card.id + '"'
@@ -2917,13 +2923,8 @@ function _dbRenderDetailPanel(card) {
       + ' class="hover:text-gray-500 dark:hover:text-zinc-400 transition-colors">'
       + '<svg style="width:0.75rem;height:0.75rem;flex-shrink:0;" fill="none" viewBox="0 0 24 24"'
       + ' stroke="currentColor" stroke-width="2">'
-      + '<path stroke-linecap="round" stroke-linejoin="round"'
-      + ' d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
-      + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878'
-      + 'l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0'
-      + 'A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
-      + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>'
-      + 'Show (' + n + ') Hidden Attribute' + (n === 1 ? '' : 's')
+      + '<path stroke-linecap="round" stroke-linejoin="round" d="' + eyeOffPath + '"/></svg>'
+      + 'Hide (' + n + ') Hidden Attribute' + (n === 1 ? '' : 's')
       + '</button>'
     : '';
 
@@ -4839,7 +4840,7 @@ function _dbAttrSaveOrder(cardId, attrIds) {
 
 function _dbToggleHiddenAttrs(cardId, n) {
   _dbAttrHiddenShown = !_dbAttrHiddenShown;
-  var show = _dbAttrHiddenShown;
+  var show = _dbAttrHiddenShown; // true = attrs are now visible (grayed)
 
   // Flip every always_hide row for this card
   var rows = document.querySelectorAll(
@@ -4849,24 +4850,25 @@ function _dbToggleHiddenAttrs(cardId, n) {
     r.style.display = show ? 'flex' : 'none';
   });
 
-  // Swap button label + icon
+  // Swap button label + icon.
+  // show=true  (now visible)  → label "Hide",  icon = eye-off (next click hides)
+  // show=false (now hidden)   → label "Show",  icon = eye     (next click shows)
   var btn = document.getElementById('db-attr-hidden-toggle-' + cardId);
   if (!btn) return;
 
   var label = (show ? 'Hide' : 'Show') + ' (' + n + ') Hidden Attribute' + (n === 1 ? '' : 's');
 
-  // eye-off icon when showing, eye-off-strike when hiding
   var iconPath = show
-    // simple eye icon (visible state)
-    ? 'M15 12a3 3 0 11-6 0 3 3 0 016 0zm-9.446.568C6.638 9.768 9.178 8 12 8'
-      + 'c2.822 0 5.362 1.768 6.446 4.568a.5.5 0 010 .864C17.362 16.232 14.822 18'
-      + ' 12 18c-2.822 0-5.362-1.768-6.446-4.568a.5.5 0 010-.864z'
-    // eye-off (hidden state)
-    : 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
+    // eye-off: attrs are visible, clicking will hide them
+    ? 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
       + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878'
       + 'l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0'
       + 'A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
-      + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21';
+      + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21'
+    // eye: attrs are hidden, clicking will show them
+    : 'M15 12a3 3 0 11-6 0 3 3 0 016 0zm-9.446.568C6.638 9.768 9.178 8 12 8'
+      + 'c2.822 0 5.362 1.768 6.446 4.568a.5.5 0 010 .864C17.362 16.232 14.822 18'
+      + ' 12 18c-2.822 0-5.362-1.768-6.446-4.568a.5.5 0 010-.864z';
 
   btn.innerHTML =
     '<svg style="width:0.75rem;height:0.75rem;flex-shrink:0;" fill="none" viewBox="0 0 24 24"'
