@@ -549,7 +549,10 @@ function _uplRenderDetail(f) {
          </p>
          <button type="button" onclick="_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
                  class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs
-                        rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition">
+                        rounded-lg font-medium
+                        bg-purple-600 hover:bg-purple-700
+                        dark:bg-purple-500 dark:hover:bg-purple-400
+                        text-white transition">
            &#128206; Open card
          </button>
          <button onclick="_uplConfirmDelete(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
@@ -566,7 +569,10 @@ function _uplRenderDetail(f) {
          </p>
          <button type="button" onclick="_uplGotoDbCard(${f.db_card_ws_id},${f.db_card_id})"
                  class="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs
-                        rounded-lg font-medium bg-amber-500 hover:bg-amber-600 text-white transition">
+                        rounded-lg font-medium
+                        bg-amber-500 hover:bg-amber-600
+                        dark:bg-amber-400 dark:hover:bg-amber-300 dark:text-amber-900
+                        text-white transition">
            &#128247; Open card
          </button>
          <button onclick="_uplConfirmDelete(${f.id})" class="mt-2 w-full py-1.5 text-xs rounded-lg
