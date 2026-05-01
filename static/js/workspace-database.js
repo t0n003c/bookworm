@@ -4549,9 +4549,9 @@ function _dbRenderDetailPanel(card) {
     var isVid = _dbCoverIsVideo(card.cover_url);
     var coverMedia = isVid
       ? '<video src="' + _esc(card.cover_url) + '" controls preload="metadata"'
-        + ' style="width:100%;height:10rem;object-fit:cover;display:block;"></video>'
+        + ' style="width:100%;height:20rem;object-fit:cover;display:block;"></video>'
       : '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
-        + ' style="width:100%;height:10rem;object-fit:cover;display:block;"/>';
+        + ' style="width:100%;height:20rem;object-fit:cover;display:block;"/>';
     coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
       + ' class="relative overflow-hidden bg-gray-100 dark:bg-zinc-800">'
       + coverMedia
@@ -4560,8 +4560,9 @@ function _dbRenderDetailPanel(card) {
       + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition">📷 Change cover</button></div>';
   } else {
     coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
-      + ' class="flex items-center justify-end px-4 py-5'
-      + ' bg-gradient-to-r from-purple-500 to-purple-700">'
+      + ' class="flex items-center justify-end px-4'
+      + ' bg-gradient-to-r from-purple-500 to-purple-700"'
+      + ' style="min-height:10rem;">'
       + '<button type="button" onclick="_dbShowCoverModal(' + card.id + ')"'
       + ' class="px-2 py-1 rounded text-xs text-white hover:opacity-90 transition"'
       + ' style="background:rgba(255,255,255,0.2);">📷 Add cover</button></div>';
