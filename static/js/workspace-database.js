@@ -640,9 +640,11 @@ function _dbAttrPills(attrs) {
         );
       });
     } else if (t === 'checkbox') {
-      if (v === 'true' || v === '1' || v === 'yes') plainParts.push(
-        '<span class="text-xs text-green-600 dark:text-green-400 font-medium">'
-        + '\u2713\u00a0' + _esc(a.attr_key) + '</span>'
+      var cbChecked = (v === 'true' || v === '1' || v === 'yes');
+      plainParts.push(
+        '<span class="text-xs font-medium '
+        + (cbChecked ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-zinc-500') + '">'
+        + (cbChecked ? '\u2611' : '\u2610') + '\u00a0' + _esc(a.attr_key) + '</span>'
       );
     } else if (t === 'status' && v) {
       var sc = _dbStatusColor(v);
@@ -656,7 +658,16 @@ function _dbAttrPills(attrs) {
         '<span class="text-xs text-gray-500 dark:text-zinc-400">'
         + '\uD83D\uDCC5\u00a0' + _esc(_dbFormatDate(v.slice(0, 10), fmtId)) + '</span>'
       );
-    } else if ((t === 'url' || t === 'email' || t === 'phone') && v) {
+    } else if (t === 'phone' && v) {
+      var phNums  = v.split(',').map(function(n) { return n.trim(); }).filter(Boolean);
+      var phFmtd  = phNums.slice(0, 2).map(function(n) { return _dbFmtPhone(n); });
+      var phLabel = phFmtd.join(', ');
+      if (phNums.length > 2) phLabel += ' +' + (phNums.length - 2);
+      plainParts.push(
+        '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[160px] truncate inline-block">'
+        + '\uD83D\uDCDE\u00a0' + _esc(phLabel) + '</span>'
+      );
+    } else if ((t === 'url' || t === 'email') && v) {
       plainParts.push(
         '<span class="text-xs text-blue-500 dark:text-blue-400 max-w-[160px] truncate inline-block">'
         + _esc(v) + '</span>'
@@ -703,8 +714,26 @@ function _dbAttrPills(attrs) {
         if (extra > 0) fHtml += '<span style="font-size:0.65rem;color:#9ca3af;">\u00a0+' + extra + '</span>';
         fileParts.push(fHtml);
       }
+    } else if (t === 'place' && v) {
+      var plProv  = a.attr_options || 'google';
+      var plEnc   = encodeURIComponent(v);
+      var plUrl   = plProv === 'apple' ? 'https://maps.apple.com/?q=' + plEnc
+                  : plProv === 'osm'   ? 'https://www.openstreetmap.org/search?query=' + plEnc
+                  : 'https://maps.google.com/?q=' + plEnc;
+      // Short label: first 2 comma-parts of the address (city, state)
+      var plParts = v.split(',');
+      var plShort = plParts.slice(0, 2).join(',').trim();
+      if (plShort.length > 26) plShort = plShort.slice(0, 24) + '\u2026';
+      plainParts.push(
+        '<a href="' + _esc(plUrl) + '" target="_blank" rel="noopener"'
+        + ' onclick="event.stopPropagation()"'
+        + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
+        + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+        + 'max-width:160px;display:inline-block;vertical-align:middle;">'
+        + '\uD83D\uDDFA\uFE0F\u00a0' + _esc(plShort) + '</a>'
+      );
     } else if (v) {
-      // text / person / place
+      // text / person
       plainParts.push(
         '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
