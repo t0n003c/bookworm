@@ -144,25 +144,38 @@ function _dbParseFiles(v) {
 }
 
 // Build the inner HTML for the files widget (list + action buttons).
-function _dbFilesInnerHtml(cardId, attrId, key, files) {
-  var kJ  = _esc(JSON.stringify(key));
-  var isDark = document.documentElement.classList.contains('dark');
-  var subTxt = isDark ? '#a1a1aa' : '#6b7280';
-  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
-  var html   = '<div style="display:flex;flex-direction:column;gap:0.3rem;">';
+// fmt: 'name' (default) | 'short' | 'full'  — controls how each link label is rendered.
+function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
+  var kJ      = _esc(JSON.stringify(key));
+  var isDark  = document.documentElement.classList.contains('dark');
+  var subTxt  = isDark ? '#a1a1aa' : '#6b7280';
+  var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
+  var dispFmt = fmt || 'name';  // 'name' | 'short' | 'full'
+  var html    = '<div style="display:flex;flex-direction:column;gap:0.3rem;">';
 
   if (files.length === 0) {
     html += '<span style="font-size:0.75rem;color:' + subTxt + ';">No files yet</span>';
   } else {
     for (var i = 0; i < files.length; i++) {
-      var f   = files[i];
-      var isExt = /^https?:\/\//i.test(f.url);
-      var icon  = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE'; // 🔗 or 📎
+      var f      = files[i];
+      var isExt  = /^https?:\/\//i.test(f.url);
+      var icon   = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE'; // 🔗 or 📎
+      // Label shown inside the <a> tag depends on display format
+      var linkLabel;
+      if (dispFmt === 'full') {
+        linkLabel = icon + '\u00a0' + _esc(f.url);
+      } else if (dispFmt === 'short') {
+        var sUrl = f.url.replace(/^https?:\/\//, '');
+        if (sUrl.length > 34) sUrl = '\u2026' + sUrl.slice(-32);
+        linkLabel = icon + '\u00a0' + _esc(sUrl);
+      } else {
+        linkLabel = icon + '\u00a0' + _esc(f.name);  // 'name' default
+      }
       html += '<div style="display:flex;align-items:center;gap:0.4rem;">';
       html += '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
         + ' style="flex:1;min-width:0;font-size:0.75rem;color:#0053e2;'
         + 'text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">';
-      html += icon + '\u00a0' + _esc(f.name) + '</a>';
+      html += linkLabel + '</a>';
       html += '<button type="button" title="Remove"'
         + ' onclick="_dbFilesRemove(' + cardId + ',' + attrId + ',' + kJ + ',' + i + ')"'
         + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
@@ -206,8 +219,9 @@ function _dbFilesInnerHtml(cardId, attrId, key, files) {
 // Public entry point for the detail panel (returns a container div with stable id).
 function _dbFilesHtml(cardId, a) {
   var files = _dbParseFiles(a.attr_value || '');
+  var fmt   = a.attr_options || 'name';
   return '<div id="_dbf-wrap-' + a.id + '">'
-    + _dbFilesInnerHtml(cardId, a.id, a.attr_key, files)
+    + _dbFilesInnerHtml(cardId, a.id, a.attr_key, files, fmt)
     + '</div>';
 }
 
@@ -218,7 +232,8 @@ function _dbFilesRerender(cardId, attrId, key) {
   var card = _dbCards.find(function(c) { return c.id === cardId; });
   var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   var files = _dbParseFiles(meta ? (meta.attr_value || '') : '');
-  wrap.innerHTML = _dbFilesInnerHtml(cardId, attrId, key, files);
+  var fmt   = meta ? (meta.attr_options || 'name') : 'name';
+  wrap.innerHTML = _dbFilesInnerHtml(cardId, attrId, key, files, fmt);
 }
 
 // Save a new JSON-encoded file list, update in-memory data, then re-render.
@@ -599,8 +614,32 @@ function _dbAttrPills(attrs) {
     } else if (t === 'files') {
       var fList = _dbParseFiles(v);
       if (fList.length > 0) {
-        var fLabel = fList.length === 1 ? '1 file' : fList.length + ' files';
-        plainParts.push('<span class="text-xs text-gray-500 dark:text-zinc-400">\uD83D\uDCCE\u00a0' + fLabel + '</span>');
+        var fileFmt   = a.attr_options || 'name';
+        var MAX_PREV  = 2;
+        var fileLinks = fList.slice(0, MAX_PREV).map(function(f) {
+          var isExt = /^https?:\/\//i.test(f.url);
+          var icon  = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE';
+          var label;
+          if (fileFmt === 'full') {
+            var fl = f.url; if (fl.length > 28) fl = '\u2026' + fl.slice(-26);
+            label = icon + '\u00a0' + _esc(fl);
+          } else if (fileFmt === 'short') {
+            var sl = f.url.replace(/^https?:\/\//, ''); if (sl.length > 28) sl = '\u2026' + sl.slice(-26);
+            label = icon + '\u00a0' + _esc(sl);
+          } else {
+            var nl = f.name; if (nl.length > 22) nl = nl.slice(0, 20) + '\u2026';
+            label = icon + '\u00a0' + _esc(nl);
+          }
+          return '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
+            + ' onclick="event.stopPropagation()"'
+            + ' class="text-xs text-blue-500 dark:text-blue-400 max-w-[150px] truncate inline-block'
+            + ' hover:underline" style="vertical-align:middle;">'
+            + label + '</a>';
+        });
+        var extra = fList.length - MAX_PREV;
+        var fHtml = fileLinks.join('<span class="text-[10px] text-gray-300 dark:text-zinc-600 mx-0.5">\u00b7</span>');
+        if (extra > 0) fHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500">\u00a0+' + extra + '</span>';
+        plainParts.push('<span class="inline-flex items-center gap-0.5 flex-wrap">' + fHtml + '</span>');
       }
     } else if (v) {
       // text / person / place
@@ -3569,6 +3608,7 @@ function _dbEditAttrRow(cardId, attrId) {
 
   var selectedType    = origType;
   var selectedDateFmt = (origType === 'date' && origOpts) ? origOpts : 'mdy';
+  var selectedFileFmt = (origType === 'files' && origOpts) ? origOpts : 'name';
   var _parsedNum      = (origType === 'number') ? _dbParseNumOpts(origOpts) : null;
   var selectedDisplay = _parsedNum ? (_parsedNum.display  || 'number') : 'number';
   var selectedBarClr  = _parsedNum ? (_parsedNum.barColor || 'blue')   : 'blue';
@@ -3861,8 +3901,55 @@ function _dbEditAttrRow(cardId, attrId) {
         fmtGrid.appendChild(btn); });
       dateFmtDiv.appendChild(fmtGrid);
       extrasDiv.appendChild(dateFmtDiv);
+    } else if (t === 'files') {
+      // Reset to default when switching TO files from a different type
+      if (selectedType !== origType) selectedFileFmt = 'name';
+      var FILE_FMTS = [
+        { id: 'name',  icon: '\uD83D\uDCCE', label: 'Name link',
+          desc: 'Show file name as a hyperlink' },
+        { id: 'short', icon: '\uD83D\uDD17', label: 'Short URL',
+          desc: 'Show trimmed URL as a hyperlink' },
+        { id: 'full',  icon: '\uD83D\uDD17', label: 'Full URL',
+          desc: 'Show the full URL string' },
+      ];
+      var fileFmtDiv = document.createElement('div');
+      fileFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var fileFmtLbl = document.createElement('label');
+      fileFmtLbl.style.cssText = labelCss;
+      fileFmtLbl.textContent = 'Link display';
+      fileFmtDiv.appendChild(fileFmtLbl);
+      var fileFmtGrid = document.createElement('div');
+      fileFmtGrid.id = '_dbe-file-fmt-grid';
+      fileFmtGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.35rem;';
+      FILE_FMTS.forEach(function(ff) {
+        var isSel = ff.id === selectedFileFmt;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-filefmt', ff.id);
+        btn.style.cssText =
+          'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;'
+          + 'transition:border-color 0.12s,background 0.12s;';
+        btn.innerHTML =
+          '<div style="font-size:1rem;margin-bottom:0.15rem;">' + ff.icon + '</div>'
+          + '<div style="font-weight:600;color:' + txt + ';font-size:0.78rem;">' + _esc(ff.label) + '</div>'
+          + '<div style="color:' + sub + ';font-size:0.68rem;line-height:1.3;margin-top:0.1rem;">'
+          + _esc(ff.desc) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedFileFmt = ff.id;
+          fileFmtGrid.querySelectorAll('button[data-filefmt]').forEach(function(b) {
+            var s = b.getAttribute('data-filefmt') === selectedFileFmt;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        fileFmtGrid.appendChild(btn);
+      });
+      fileFmtDiv.appendChild(fileFmtGrid);
+      extrasDiv.appendChild(fileFmtDiv);
     }
-  }
+  }  // end _buildExtras
 
   // ── read options from extras ─────────────────────────────────────
   function _readExtras() {
@@ -3886,6 +3973,9 @@ function _dbEditAttrRow(cardId, attrId) {
     }
     if (selectedType === 'date') {
       return selectedDateFmt || 'mdy';
+    }
+    if (selectedType === 'files') {
+      return selectedFileFmt || 'name';
     }
     return _dbReadOptEditor(extrasDiv);
   }
