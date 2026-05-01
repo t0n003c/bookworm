@@ -4641,6 +4641,8 @@ function _dbRenderDetailPanel(card) {
 
   dp.innerHTML = (
     coverHtml
+    // Content wrapper — extra horizontal breathing room below the cover
+    + '<div style="padding:0 1.25rem">'
     // Title + close row
     + '<div class="flex items-start gap-2 mb-1">'
     + '<div contenteditable="true"'
@@ -4676,6 +4678,8 @@ function _dbRenderDetailPanel(card) {
     + ' aria-label="Card notes">'
     + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing… (type / for commands)</p>')
     + '</div>'
+    + '</div>'
+    // ↑ end content wrapper
   );
 
   /* Attach slash palette + paste-as to the note CE after HTML is in the DOM */
