@@ -633,6 +633,8 @@ function _dbAttrPills(attrs, cardId) {
   //
   // Merged plain row = priorityParts ++ normalParts, capped at MAX_PLAIN.
   if (!attrs || attrs.length === 0) return '';
+  var isDark      = document.documentElement.classList.contains('dark');
+  var pillLinkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 dark / Walmart blue light
 
   var priorityParts = [];
   var normalParts   = [];
@@ -720,14 +722,16 @@ function _dbAttrPills(attrs, cardId) {
       priorityParts.push(
         '<a href="' + _esc(plUrl) + '" target="_blank" rel="noopener"'
         + ' onclick="event.stopPropagation()"'
-        + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
+        + ' style="font-size:0.7rem;color:' + pillLinkClr + ';text-decoration:underline;'
         + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
         + 'max-width:160px;display:inline-block;vertical-align:middle;">'
         + '\uD83D\uDDFA\uFE0F\u00a0' + _esc(plShort) + '</a>'
       );
     } else if ((t === 'url' || t === 'email') && v) {
       priorityParts.push(
-        '<span class="text-xs text-blue-500 dark:text-blue-400 max-w-[160px] truncate inline-block">'
+        '<span style="font-size:0.75rem;color:' + pillLinkClr + ';'
+        + 'max-width:160px;overflow:hidden;text-overflow:ellipsis;'
+        + 'white-space:nowrap;display:inline-block;">'
         + _esc(v) + '</span>'
       );
 
@@ -770,7 +774,7 @@ function _dbAttrPills(attrs, cardId) {
           }
           return '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
             + ' onclick="event.stopPropagation()"'
-            + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
+            + ' style="font-size:0.7rem;color:' + pillLinkClr + ';text-decoration:underline;'
             + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;vertical-align:middle;">'
             + label + '</a>';
         });
