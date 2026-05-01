@@ -2568,6 +2568,140 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
   }).catch(function(e) { console.warn('Number attr save failed', e); });
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   PLACE AUTOCOMPLETE  (Nominatim / OpenStreetMap — no API key needed)
+───────────────────────────────────────────────────────────────────────── */
+
+var _dbPlaceTimer = null; // debounce handle
+var _dbPlaceDrop  = null; // active dropdown element reference
+
+function _dbPlaceDropClose() {
+  if (_dbPlaceDrop) { _dbPlaceDrop.remove(); _dbPlaceDrop = null; }
+  clearTimeout(_dbPlaceTimer);
+}
+
+function _dbPlaceSearch(e, cardId, attrId, key) {
+  var inp = e.target;
+  clearTimeout(_dbPlaceTimer);
+  _dbPlaceDropClose();
+  var q = inp.value.trim();
+  if (q.length < 3) return;
+
+  _dbPlaceTimer = setTimeout(function() {
+    var url = 'https://nominatim.openstreetmap.org/search'
+      + '?format=json&addressdetails=1&limit=7&q=' + encodeURIComponent(q);
+
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function(r) { return r.json(); })
+      .then(function(results) {
+        _dbPlaceDropClose();
+        if (!results || !results.length) return;
+        if (document.activeElement !== inp) return; // user already left
+
+        var isDark  = document.documentElement.classList.contains('dark');
+        var dropBg  = isDark ? '#27272a' : '#ffffff';
+        var dropBdr = isDark ? '#3f3f46' : '#d1d5db';
+        var dropTxt = isDark ? '#f4f4f5' : '#111827';
+        var dropHov = isDark ? '#3f3f46' : '#f3f4f6';
+        var dropSub = isDark ? '#a1a1aa' : '#6b7280';
+
+        var drop = document.createElement('div');
+        drop.id = 'db-place-drop';
+        drop.setAttribute('role', 'listbox');
+
+        var rect = inp.getBoundingClientRect();
+        drop.style.cssText =
+          'position:fixed;z-index:10600;'
+          + 'background:' + dropBg + ';border:1px solid ' + dropBdr + ';'
+          + 'border-radius:0.5rem;box-shadow:0 8px 28px rgba(0,0,0,0.18);'
+          + 'max-height:16rem;overflow-y:auto;'
+          + 'top:' + (rect.bottom + 5) + 'px;'
+          + 'left:' + rect.left + 'px;'
+          + 'width:' + Math.max(rect.width, 300) + 'px;'
+          + 'font-size:0.75rem;';
+
+        results.forEach(function(res, idx) {
+          var displayName = res.display_name || '';
+          var parts = displayName.split(',');
+          // Short label: first 2-3 meaningful parts
+          var shortLabel = parts.slice(0, 3).join(',').trim();
+          var subLabel   = parts.slice(3).join(',').trim();
+
+          var item = document.createElement('div');
+          item.setAttribute('role', 'option');
+          item.style.cssText =
+            'padding:0.45rem 0.75rem;cursor:pointer;'
+            + (idx < results.length - 1 ? 'border-bottom:1px solid ' + dropBdr + ';' : '');
+
+          var mainDiv = document.createElement('div');
+          mainDiv.style.cssText = 'font-weight:500;color:' + dropTxt + ';';
+          mainDiv.textContent = shortLabel;
+
+          var subDiv = document.createElement('div');
+          subDiv.style.cssText =
+            'font-size:0.67rem;color:' + dropSub + ';margin-top:0.1rem;'
+            + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+          subDiv.textContent = subLabel;
+
+          item.appendChild(mainDiv);
+          if (subLabel) item.appendChild(subDiv);
+
+          item.addEventListener('mouseenter', function() {
+            item.style.background = dropHov;
+          });
+          item.addEventListener('mouseleave', function() {
+            item.style.background = '';
+          });
+
+          // mousedown + preventDefault keeps focus on inp so blur doesn't fire
+          item.addEventListener('mousedown', function(ev) {
+            ev.preventDefault();
+            _dbPlaceDropClose();
+            inp.value = displayName;
+            // Update local card state immediately
+            var card = _dbCards.find(function(c) { return c.id === cardId; });
+            if (card && card.attrs) {
+              var attr = card.attrs.find(function(a) { return a.id === attrId; });
+              if (attr) attr.attr_value = displayName;
+            }
+            // Persist + re-render (map link updates after save)
+            _dbSaveAttrVal(cardId, attrId, key, displayName);
+            if (card) _dbRenderDetailPanel(card);
+          });
+
+          drop.appendChild(item);
+        });
+
+        // OSM attribution note (required by Nominatim usage policy)
+        var attr = document.createElement('div');
+        attr.style.cssText =
+          'padding:0.3rem 0.75rem;font-size:0.6rem;color:' + dropSub
+          + ';border-top:1px solid ' + dropBdr + ';text-align:right;';
+        attr.textContent = '\u00a9 OpenStreetMap contributors';
+        drop.appendChild(attr);
+
+        document.body.appendChild(drop);
+        _dbPlaceDrop = drop;
+
+        // Dismiss on outside click or scroll
+        function onOutside(ev) {
+          if (!drop.contains(ev.target) && ev.target !== inp) {
+            _dbPlaceDropClose();
+            document.removeEventListener('mousedown', onOutside);
+            document.removeEventListener('scroll', onOutside, true);
+          }
+        }
+        // Tiny delay so the current mousedown that opened the input
+        // doesn’t immediately re-trigger the listener.
+        setTimeout(function() {
+          document.addEventListener('mousedown', onOutside);
+          document.addEventListener('scroll', onOutside, true);
+        }, 0);
+      })
+      .catch(function() { /* network error or rate limit — silent fail */ });
+  }, 500);
+}
+
 /* Strip non-digits, return US-formatted string.
    11-digit (1-prefixed) → +1(NXX)NXX-XXXX
    10-digit              → (NXX)NXX-XXXX
@@ -3073,18 +3207,23 @@ function _dbAttrValueHtml(cardId, a) {
         + ' title="Open in ' + _esc(mapProv.charAt(0).toUpperCase() + mapProv.slice(1)) + ' Maps">'
         + '\uD83D\uDDFA\uFE0F</a>'
       : '';
-    var cbInp = '_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)';
-    var isDkPl  = document.documentElement.classList.contains('dark');
-    var plInpBdr = isDkPl ? '#3f3f46' : '#e5e7eb';
+    var cbInp    = '_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    var cbSearch = '_dbPlaceSearch(event,' + cardId + ',' + a.id + ',' + kJ + ')';
+    var cbBlur   = 'this.style.borderBottomColor=\'transparent\';'
+                 + '_dbPlaceDropClose();' + cbInp;
+    var cbKey    = 'if(event.key===\'Escape\'){_dbPlaceDropClose();}';
     return '<div style="display:flex;align-items:center;gap:0.35rem;width:100%;">'
       + '<input type="text"'
       + ' value="' + _esc(v) + '"'
       + ' placeholder="Add place or address\u2026"'
+      + ' autocomplete="off" spellcheck="false"'
       + ' style="flex:1;min-width:0;font-size:0.72rem;color:inherit;'
       + 'background:transparent;border:none;border-bottom:1px solid transparent;'
       + 'outline:none;padding:0.1rem 0;transition:border-color 0.15s;"'
       + ' onfocus="this.style.borderBottomColor=\'#0053e2\'"'
-      + ' onblur="this.style.borderBottomColor=\'transparent\';' + cbInp + '">'
+      + ' oninput="' + cbSearch + '"'
+      + ' onkeydown="' + cbKey + '"'
+      + ' onblur="' + cbBlur + '">'
       + mapsLink
       + '</div>';
   }
