@@ -14,7 +14,7 @@ var _dbDirtyNote         = null;   // {cardId, html} — latest unsaved note HTM
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
 var _dbFilters           = [];     // [{key, op, val}] — active filter conditions
-var _dbSortState         = { key: null, dir: 'asc' }; // active sort (key=null = unsorted)
+var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = highest priority)
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -468,8 +468,8 @@ function initDatabaseView(wsId) {
   if (crumbNav) { crumbNav._bwOldMb = crumbNav.className; crumbNav.classList.remove('mb-5'); crumbNav.classList.add('mb-1'); }
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
-  _dbFilters   = [];
-  _dbSortState = { key: null, dir: 'asc' };
+  _dbFilters    = [];
+  _dbSortLevels = [];
   // Close any stale filter panel from a previous workspace
   var _stalePanel = document.getElementById('db-filter-panel');
   if (_stalePanel) _stalePanel.remove();
@@ -532,7 +532,7 @@ function _dbRenderGrid() {
   var total     = _dbCards.length;
   var display   = _dbGetDisplayCards();
   var shown     = display.length;
-  var hasFilter = _dbFilters.length > 0 || !!_dbSortState.key;
+  var hasFilter = _dbFilters.length > 0 || _dbSortLevels.length > 0;
 
   if (count) {
     count.textContent = (hasFilter && shown !== total)
@@ -561,6 +561,14 @@ function _dbRenderGrid() {
    FILTER · SORT ENGINE
 ═══════════════════════════════════════════════════════════════════════════ */
 
+// Human-readable label for a built-in or custom attr key.
+function _dbKeyLabel(key) {
+  if (key === '__title')   return 'Title';
+  if (key === '__created') return 'Created';
+  if (key === '__updated') return 'Last Updated';
+  return key;
+}
+
 // Returns all unique attr keys across all cards.
 // Each entry: { key, type } where type is the most-common attr_type for that key.
 // Prepends two built-ins: __title and __updated.
@@ -580,7 +588,11 @@ function _dbGetAttrKeys() {
     var best   = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; })[0];
     return { key: k, type: best || 'text' };
   });
-  return [{ key: '__title', type: 'text' }, { key: '__updated', type: 'date' }].concat(keys);
+  return [
+    { key: '__title',   type: 'text' },
+    { key: '__created', type: 'date' },
+    { key: '__updated', type: 'date' },
+  ].concat(keys);
 }
 
 // Returns the operators valid for a given attr type.
@@ -618,7 +630,8 @@ function _dbOpsForType(type) {
 // Special keys __title and __updated map to card.title / card.updated_at.
 function _dbCardAttrVal(card, key) {
   if (key === '__title')   return card.title   || '';
-  if (key === '__updated') return card.updated_at ? card.updated_at.slice(0, 10) : '';
+  if (key === '__created') return card.created_at  ? card.created_at.slice(0, 10)  : '';
+  if (key === '__updated') return card.updated_at  ? card.updated_at.slice(0, 10)  : '';
   var a = (card.attrs || []).find(function(x) { return x.attr_key === key; });
   return a ? (a.attr_value || '') : '';
 }
@@ -672,17 +685,20 @@ function _dbGetDisplayCards() {
     });
   }
 
-  // ── sort ──
-  if (_dbSortState.key) {
-    var sk  = _dbSortState.key;
-    var dir = _dbSortState.dir === 'desc' ? -1 : 1;
+  // ── sort (multi-level: first level is highest priority) ──
+  if (_dbSortLevels.length > 0) {
     cards.sort(function(a, b) {
-      var av = (_dbCardAttrVal(a, sk) || '').trim();
-      var bv = (_dbCardAttrVal(b, sk) || '').trim();
-      var an = parseFloat(av), bn = parseFloat(bv);
-      if (!isNaN(an) && !isNaN(bn)) return (an - bn) * dir;
-      if (av < bv) return -dir;
-      if (av > bv) return  dir;
+      for (var si = 0; si < _dbSortLevels.length; si++) {
+        var sl  = _dbSortLevels[si];
+        var dir = sl.dir === 'desc' ? -1 : 1;
+        var av  = (_dbCardAttrVal(a, sl.key) || '').trim();
+        var bv  = (_dbCardAttrVal(b, sl.key) || '').trim();
+        var an  = parseFloat(av), bn = parseFloat(bv);
+        var cmp = (!isNaN(an) && !isNaN(bn))
+                  ? (an - bn) * dir
+                  : (av < bv ? -dir : av > bv ? dir : 0);
+        if (cmp !== 0) return cmp;
+      }
       return 0;
     });
   }
@@ -694,7 +710,7 @@ function _dbUpdateFilterBadge() {
   var btn   = document.getElementById('db-filter-btn');
   if (!btn) return;
   var old   = btn.querySelector('.db-filter-badge');
-  var total = _dbFilters.length + (_dbSortState.key ? 1 : 0);
+  var total = _dbFilters.length + _dbSortLevels.length;
   if (total === 0) {
     if (old) old.remove();
     btn.classList.remove('text-purple-600', 'dark:text-purple-400');
@@ -720,7 +736,7 @@ function _dbUpdateFilterBadge() {
 // Clear all filters + sort state, close panel, refresh grid.
 function _dbClearFilters() {
   _dbFilters   = [];
-  _dbSortState = { key: null, dir: 'asc' };
+  _dbSortLevels = [];
   var panel = document.getElementById('db-filter-panel');
   if (panel) panel.remove();
   _dbUpdateFilterBadge();
@@ -748,7 +764,7 @@ function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
   attrKeys.forEach(function(ak) {
     var opt = document.createElement('option');
     opt.value = ak.key;
-    opt.textContent = ak.key === '__title' ? 'Title' : ak.key === '__updated' ? 'Last Updated' : ak.key;
+    opt.textContent = _dbKeyLabel(ak.key);
     if (ak.key === f.key) opt.selected = true;
     keySel.appendChild(opt);
   });
@@ -871,81 +887,116 @@ function _dbToggleFilterPanel() {
   var secHdr   = 'font-size:0.65rem;font-weight:700;text-transform:uppercase;'
                + 'letter-spacing:0.06em;color:' + sub + ';margin-bottom:0.4rem;';
 
-  // ─────────── SORT section ────────────────────────────
+  // ─────────── SORT section (multi-level) ──────────────────────────
   var sortSec = document.createElement('div');
   var sortLbl = document.createElement('div');
   sortLbl.style.cssText = secHdr;
-  sortLbl.textContent   = 'Sort by';
+  sortLbl.textContent   = 'Sort';
   sortSec.appendChild(sortLbl);
 
-  var sortRow = document.createElement('div');
-  sortRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+  var sortList = document.createElement('div');
+  sortList.id = 'db-sort-list';
+  sortList.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;';
 
-  // Sort key dropdown
-  var sortKeySel = document.createElement('select');
-  sortKeySel.style.cssText = inpSty + 'flex:1;';
-  var noneOpt = document.createElement('option');
-  noneOpt.value = '';
-  noneOpt.textContent = '— None —';
-  if (!_dbSortState.key) noneOpt.selected = true;
-  sortKeySel.appendChild(noneOpt);
-  attrKeys.forEach(function(ak) {
-    var opt = document.createElement('option');
-    opt.value = ak.key;
-    opt.textContent = ak.key === '__title' ? 'Title' : ak.key === '__updated' ? 'Last Updated' : ak.key;
-    if (ak.key === _dbSortState.key) opt.selected = true;
-    sortKeySel.appendChild(opt);
-  });
+  // Build one sort-level row (DOM)
+  function buildSortRow(lvlIdx) {
+    var sl   = _dbSortLevels[lvlIdx];
+    var row  = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.35rem;';
 
-  // Asc / Desc toggle buttons
-  function makeDirBtn(label, dir) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.title = dir === 'asc' ? 'Ascending' : 'Descending';
-    function refreshStyle() {
-      var sel = _dbSortState.dir === dir && !!_dbSortState.key;
-      b.style.cssText = 'font-size:0.72rem;padding:0.22rem 0.55rem;border-radius:0.375rem;'
-        + 'cursor:pointer;border:1px solid ' + bdr + ';white-space:nowrap;'
-        + 'background:' + (sel ? '#7c3aed' : 'transparent') + ';'
-        + 'color:' + (sel ? '#fff' : txt) + ';transition:background 0.12s;';
-    }
-    refreshStyle();
-    b.addEventListener('click', function() {
-      _dbSortState.key = sortKeySel.value || null;
-      _dbSortState.dir = dir;
-      refreshStyle();
-      // refresh sibling
-      [ascBtn, dscBtn].forEach(function(x) {
-        if (x !== b) {
-          var peer = x.title === 'Ascending' ? 'asc' : 'desc';
-          x.style.background = (_dbSortState.dir === peer && !!_dbSortState.key) ? '#7c3aed' : 'transparent';
-          x.style.color      = (_dbSortState.dir === peer && !!_dbSortState.key) ? '#fff' : txt;
-        }
-      });
+    // Priority badge (1st, 2nd, …)
+    var badge = document.createElement('span');
+    badge.style.cssText = 'font-size:0.62rem;font-weight:700;min-width:1.2rem;'
+      + 'text-align:center;color:' + sub + ';flex-shrink:0;';
+    badge.textContent = (lvlIdx + 1) + '.';
+    row.appendChild(badge);
+
+    // Key dropdown
+    var kSel = document.createElement('select');
+    kSel.style.cssText = inpSty + 'flex:1;';
+    attrKeys.forEach(function(ak) {
+      var o = document.createElement('option');
+      o.value = ak.key;
+      o.textContent = _dbKeyLabel(ak.key);
+      if (ak.key === sl.key) o.selected = true;
+      kSel.appendChild(o);
+    });
+    kSel.addEventListener('change', function() {
+      _dbSortLevels[lvlIdx].key = kSel.value;
       _dbUpdateFilterBadge();
       _dbRenderGrid();
     });
-    return b;
-  }
-  var ascBtn = makeDirBtn('A \u2192 Z', 'asc');
-  var dscBtn = makeDirBtn('Z \u2192 A', 'desc');
+    row.appendChild(kSel);
 
-  sortKeySel.addEventListener('change', function() {
-    _dbSortState.key = sortKeySel.value || null;
-    [ascBtn, dscBtn].forEach(function(b) {
-      var d = b.title === 'Ascending' ? 'asc' : 'desc';
-      b.style.background = (_dbSortState.dir === d && !!_dbSortState.key) ? '#7c3aed' : 'transparent';
-      b.style.color      = (_dbSortState.dir === d && !!_dbSortState.key) ? '#fff' : txt;
+    // Asc / Desc buttons
+    function makeSortDirBtn(label, d) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.title = d === 'asc' ? 'Ascending' : 'Descending';
+      function rStyle() {
+        var on = _dbSortLevels[lvlIdx] && _dbSortLevels[lvlIdx].dir === d;
+        b.style.cssText = 'font-size:0.7rem;padding:0.2rem 0.45rem;border-radius:0.35rem;'
+          + 'cursor:pointer;border:1px solid ' + bdr + ';white-space:nowrap;flex-shrink:0;'
+          + 'background:' + (on ? '#7c3aed' : 'transparent') + ';'
+          + 'color:' + (on ? '#fff' : txt) + ';transition:background 0.12s;';
+      }
+      rStyle();
+      b.addEventListener('click', function() {
+        _dbSortLevels[lvlIdx].dir = d;
+        rStyle();
+        // refresh sibling buttons in same row
+        row.querySelectorAll('button[data-dir]').forEach(function(x) {
+          var xd = x.getAttribute('data-dir');
+          var on2 = _dbSortLevels[lvlIdx] && _dbSortLevels[lvlIdx].dir === xd;
+          x.style.background = on2 ? '#7c3aed' : 'transparent';
+          x.style.color      = on2 ? '#fff' : txt;
+        });
+        _dbRenderGrid();
+      });
+      b.setAttribute('data-dir', d);
+      return b;
+    }
+    row.appendChild(makeSortDirBtn('A\u2192Z', 'asc'));
+    row.appendChild(makeSortDirBtn('Z\u2192A', 'desc'));
+
+    // × remove
+    var rmBtn = document.createElement('button');
+    rmBtn.type = 'button';
+    rmBtn.textContent = '\u00d7';
+    rmBtn.title = 'Remove sort level';
+    rmBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:1rem;'
+      + 'color:' + sub + ';padding:0 0.1rem;line-height:1;flex-shrink:0;';
+    rmBtn.addEventListener('click', function() {
+      _dbSortLevels.splice(lvlIdx, 1);
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+      // Rebuild sort list
+      sortList.innerHTML = '';
+      _dbSortLevels.forEach(function(_, i) { sortList.appendChild(buildSortRow(i)); });
     });
+    row.appendChild(rmBtn);
+    return row;
+  }
+
+  _dbSortLevels.forEach(function(_, i) { sortList.appendChild(buildSortRow(i)); });
+  sortSec.appendChild(sortList);
+
+  // + Add sort level
+  var addSortBtn = document.createElement('button');
+  addSortBtn.type = 'button';
+  addSortBtn.textContent = '+ Add sort level';
+  addSortBtn.style.cssText = 'margin-top:0.4rem;font-size:0.73rem;padding:0.22rem 0.6rem;'
+    + 'border-radius:0.375rem;cursor:pointer;border:1px solid ' + bdr + ';'
+    + 'background:transparent;color:#7c3aed;font-weight:600;text-align:left;';
+  addSortBtn.addEventListener('click', function() {
+    var firstKey = attrKeys[0] || { key: '__title' };
+    _dbSortLevels.push({ key: firstKey.key, dir: 'asc' });
+    sortList.appendChild(buildSortRow(_dbSortLevels.length - 1));
     _dbUpdateFilterBadge();
     _dbRenderGrid();
   });
-
-  sortRow.appendChild(sortKeySel);
-  sortRow.appendChild(ascBtn);
-  sortRow.appendChild(dscBtn);
-  sortSec.appendChild(sortRow);
+  sortSec.appendChild(addSortBtn);
   panel.appendChild(sortSec);
 
   // ─────────── FILTER section ──────────────────────────
