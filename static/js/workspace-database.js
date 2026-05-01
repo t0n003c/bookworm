@@ -13,6 +13,8 @@ var _dbDelTarget         = null;   // card id staged for deletion
 var _dbDirtyNote         = null;   // {cardId, html} — latest unsaved note HTML captured on every input
 var _dbPanelClickHandler = null;   // click-outside handler attached to #panel
 var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large)
+var _dbFilters           = [];     // [{key, op, val}] — active filter conditions
+var _dbSortState         = { key: null, dir: 'asc' }; // active sort (key=null = unsorted)
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -466,6 +468,11 @@ function initDatabaseView(wsId) {
   if (crumbNav) { crumbNav._bwOldMb = crumbNav.className; crumbNav.classList.remove('mb-5'); crumbNav.classList.add('mb-1'); }
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
+  _dbFilters   = [];
+  _dbSortState = { key: null, dir: 'asc' };
+  // Close any stale filter panel from a previous workspace
+  var _stalePanel = document.getElementById('db-filter-panel');
+  if (_stalePanel) _stalePanel.remove();
   // Restore saved size preference (stored per-workspace so each DB is independent)
   var saved = parseInt(localStorage.getItem('_dbSize_' + wsId), 10);
   _dbSizeStep = (saved >= 1 && saved <= 5) ? saved : 3;
@@ -516,23 +523,495 @@ window._dbSetSize = function(step) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 function _dbRenderGrid() {
-  var grid  = document.getElementById('db-card-grid');
-  var empty = document.getElementById('db-empty-state');
-  var count = document.getElementById('db-card-count');
+  var grid    = document.getElementById('db-card-grid');
+  var empty   = document.getElementById('db-empty-state');
+  var noMatch = document.getElementById('db-no-matches');
+  var count   = document.getElementById('db-card-count');
   if (!grid) return;
 
+  var total     = _dbCards.length;
+  var display   = _dbGetDisplayCards();
+  var shown     = display.length;
+  var hasFilter = _dbFilters.length > 0 || !!_dbSortState.key;
+
   if (count) {
-    count.textContent = _dbCards.length + ' card' + (_dbCards.length !== 1 ? 's' : '');
+    count.textContent = (hasFilter && shown !== total)
+      ? shown + '\u202f/\u202f' + total + ' card' + (total !== 1 ? 's' : '')
+      : total + ' card' + (total !== 1 ? 's' : '');
   }
 
-  if (_dbCards.length === 0) {
+  if (total === 0) {
     grid.innerHTML = '';
-    if (empty) empty.classList.remove('hidden');
+    if (empty)   empty.classList.remove('hidden');
+    if (noMatch) noMatch.classList.add('hidden');
     return;
   }
   if (empty) empty.classList.add('hidden');
 
-  grid.innerHTML = _dbCards.map(function(c) { return _dbCardHtml(c); }).join('');
+  if (shown === 0) {
+    grid.innerHTML = '';
+    if (noMatch) noMatch.classList.remove('hidden');
+    return;
+  }
+  if (noMatch) noMatch.classList.add('hidden');
+  grid.innerHTML = display.map(function(c) { return _dbCardHtml(c); }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FILTER · SORT ENGINE
+═══════════════════════════════════════════════════════════════════════════ */
+
+// Returns all unique attr keys across all cards.
+// Each entry: { key, type } where type is the most-common attr_type for that key.
+// Prepends two built-ins: __title and __updated.
+function _dbGetAttrKeys() {
+  var map = {};  // key -> {type -> count}
+  _dbCards.forEach(function(c) {
+    (c.attrs || []).forEach(function(a) {
+      var k = a.attr_key;
+      if (!k) return;
+      if (!map[k]) map[k] = {};
+      var t = a.attr_type || 'text';
+      map[k][t] = (map[k][t] || 0) + 1;
+    });
+  });
+  var keys = Object.keys(map).map(function(k) {
+    var counts = map[k];
+    var best   = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; })[0];
+    return { key: k, type: best || 'text' };
+  });
+  return [{ key: '__title', type: 'text' }, { key: '__updated', type: 'date' }].concat(keys);
+}
+
+// Returns the operators valid for a given attr type.
+function _dbOpsForType(type) {
+  var text = [
+    { op: 'contains',     label: 'contains'         },
+    { op: 'not_contains', label: 'does not contain'  },
+    { op: 'is',           label: 'is exactly'        },
+    { op: 'is_not',       label: 'is not'            },
+    { op: 'empty',        label: 'is empty'          },
+    { op: 'not_empty',    label: 'is not empty'      },
+  ];
+  var num = [
+    { op: 'eq',        label: '='       },
+    { op: 'neq',       label: '≠'       },
+    { op: 'gt',        label: '>'       },
+    { op: 'gte',       label: '≥'       },
+    { op: 'lt',        label: '<'       },
+    { op: 'lte',       label: '≤'       },
+    { op: 'empty',     label: 'is empty'      },
+    { op: 'not_empty', label: 'is not empty'  },
+  ];
+  var check = [
+    { op: 'checked',     label: 'is checked'    },
+    { op: 'not_checked', label: 'is not checked' },
+  ];
+  if (type === 'checkbox')                   return check;
+  if (type === 'number')                     return num;
+  if (type === 'date')                       return num.slice(2).concat(num.slice(6));
+  if (type === 'select' || type === 'multi_select' || type === 'status') return text;
+  return text;   // text, person, phone, place, url, email, files
+}
+
+// Returns the raw string value of a card attribute by key.
+// Special keys __title and __updated map to card.title / card.updated_at.
+function _dbCardAttrVal(card, key) {
+  if (key === '__title')   return card.title   || '';
+  if (key === '__updated') return card.updated_at ? card.updated_at.slice(0, 10) : '';
+  var a = (card.attrs || []).find(function(x) { return x.attr_key === key; });
+  return a ? (a.attr_value || '') : '';
+}
+
+// Tests one card against one filter. Returns true if the card passes.
+function _dbFilterMatch(card, f) {
+  var raw  = _dbCardAttrVal(card, f.key);
+  var val  = (raw  || '').toLowerCase().trim();
+  var cmp  = (f.val || '').toLowerCase().trim();
+  var op   = f.op;
+
+  if (op === 'empty')       return val === '';
+  if (op === 'not_empty')   return val !== '';
+  if (op === 'checked')     return val === 'true' || val === '1' || val === 'yes';
+  if (op === 'not_checked') return !(val === 'true' || val === '1' || val === 'yes');
+  if (op === 'contains')    return val.indexOf(cmp) !== -1;
+  if (op === 'not_contains') return val.indexOf(cmp) === -1;
+  if (op === 'is')          return val === cmp;
+  if (op === 'is_not')      return val !== cmp;
+
+  // Numeric / date comparisons
+  var n  = parseFloat(raw);
+  var nc = parseFloat(f.val);
+  if (isNaN(n) || isNaN(nc)) {
+    // fall back to string compare for dates (ISO strings sort correctly)
+    if (op === 'eq')  return raw === f.val;
+    if (op === 'neq') return raw !== f.val;
+    if (op === 'gt')  return raw >  f.val;
+    if (op === 'gte') return raw >= f.val;
+    if (op === 'lt')  return raw <  f.val;
+    if (op === 'lte') return raw <= f.val;
+  } else {
+    if (op === 'eq')  return n === nc;
+    if (op === 'neq') return n !== nc;
+    if (op === 'gt')  return n >  nc;
+    if (op === 'gte') return n >= nc;
+    if (op === 'lt')  return n <  nc;
+    if (op === 'lte') return n <= nc;
+  }
+  return true;
+}
+
+// Returns the filtered + sorted subset of _dbCards for display.
+function _dbGetDisplayCards() {
+  var cards = _dbCards.slice(); // shallow copy — do not mutate _dbCards
+
+  // ── filter (AND logic across all conditions) ──
+  if (_dbFilters.length > 0) {
+    cards = cards.filter(function(c) {
+      return _dbFilters.every(function(f) { return _dbFilterMatch(c, f); });
+    });
+  }
+
+  // ── sort ──
+  if (_dbSortState.key) {
+    var sk  = _dbSortState.key;
+    var dir = _dbSortState.dir === 'desc' ? -1 : 1;
+    cards.sort(function(a, b) {
+      var av = (_dbCardAttrVal(a, sk) || '').trim();
+      var bv = (_dbCardAttrVal(b, sk) || '').trim();
+      var an = parseFloat(av), bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return (an - bn) * dir;
+      if (av < bv) return -dir;
+      if (av > bv) return  dir;
+      return 0;
+    });
+  }
+  return cards;
+}
+
+// Update the small badge (active-filter count) on the filter icon button.
+function _dbUpdateFilterBadge() {
+  var btn   = document.getElementById('db-filter-btn');
+  if (!btn) return;
+  var old   = btn.querySelector('.db-filter-badge');
+  var total = _dbFilters.length + (_dbSortState.key ? 1 : 0);
+  if (total === 0) {
+    if (old) old.remove();
+    btn.classList.remove('text-purple-600', 'dark:text-purple-400');
+    btn.classList.add('text-gray-400');
+    return;
+  }
+  btn.classList.remove('text-gray-400');
+  btn.classList.add('text-purple-600', 'dark:text-purple-400');
+  if (!old) {
+    var badge = document.createElement('span');
+    badge.className = 'db-filter-badge';
+    badge.style.cssText =
+      'position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;'
+      + 'border-radius:9999px;font-size:9px;font-weight:700;line-height:14px;'
+      + 'text-align:center;padding:0 3px;'
+      + 'background:#7c3aed;color:#fff;pointer-events:none;';
+    btn.appendChild(badge);
+    old = badge;
+  }
+  old.textContent = total;
+}
+
+// Clear all filters + sort state, close panel, refresh grid.
+function _dbClearFilters() {
+  _dbFilters   = [];
+  _dbSortState = { key: null, dir: 'asc' };
+  var panel = document.getElementById('db-filter-panel');
+  if (panel) panel.remove();
+  _dbUpdateFilterBadge();
+  _dbRenderGrid();
+}
+
+// Build a single filter row element inside the panel.
+function _dbBuildFilterRow(panel, filterIdx, attrKeys) {
+  var f      = _dbFilters[filterIdx];
+  var isDark = document.documentElement.classList.contains('dark');
+  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
+  var bg     = isDark ? '#27272a' : '#fff';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#71717a' : '#6b7280';
+  var inpSty = 'font-size:0.75rem;border:1px solid ' + bdr + ';border-radius:0.375rem;'
+             + 'padding:0.25rem 0.5rem;background:' + bg + ';color:' + txt
+             + ';outline:none;cursor:pointer;width:100%;box-sizing:border-box;';
+
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;';
+
+  // ── key select
+  var keySel = document.createElement('select');
+  keySel.style.cssText = inpSty + 'flex:1.4;min-width:80px;';
+  attrKeys.forEach(function(ak) {
+    var opt = document.createElement('option');
+    opt.value = ak.key;
+    opt.textContent = ak.key === '__title' ? 'Title' : ak.key === '__updated' ? 'Last Updated' : ak.key;
+    if (ak.key === f.key) opt.selected = true;
+    keySel.appendChild(opt);
+  });
+
+  // ── operator select (regenerated when key changes)
+  var opSel = document.createElement('select');
+  opSel.style.cssText = inpSty + 'flex:1.6;min-width:100px;';
+
+  function rebuildOps(type) {
+    opSel.innerHTML = '';
+    _dbOpsForType(type).forEach(function(o) {
+      var opt = document.createElement('option');
+      opt.value = o.op;
+      opt.textContent = o.label;
+      if (o.op === f.op) opt.selected = true;
+      opSel.appendChild(opt);
+    });
+  }
+  var currentType = (attrKeys.find(function(ak){ return ak.key === f.key; }) || {}).type || 'text';
+  rebuildOps(currentType);
+
+  // ── value input (hidden for checkbox / empty ops)
+  var valInp = document.createElement('input');
+  valInp.type = 'text';
+  valInp.placeholder = 'Value…';
+  valInp.value = f.val || '';
+  valInp.style.cssText = inpSty + 'flex:1.5;min-width:70px;';
+
+  function syncValVisibility() {
+    var op  = opSel.value;
+    var typ = (attrKeys.find(function(ak){ return ak.key === keySel.value; }) || {}).type || 'text';
+    var hideVal = op === 'empty' || op === 'not_empty' || op === 'checked' || op === 'not_checked';
+    valInp.style.display = hideVal ? 'none' : '';
+    if (typ === 'date') { valInp.type = 'date'; } else if (typ === 'number') { valInp.type = 'number'; } else { valInp.type = 'text'; }
+  }
+  syncValVisibility();
+
+  keySel.addEventListener('change', function() {
+    _dbFilters[filterIdx].key = keySel.value;
+    var newType = (attrKeys.find(function(ak){ return ak.key === keySel.value; }) || {}).type || 'text';
+    rebuildOps(newType);
+    _dbFilters[filterIdx].op  = opSel.value;
+    _dbFilters[filterIdx].val = '';
+    valInp.value = '';
+    syncValVisibility();
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  opSel.addEventListener('change', function() {
+    _dbFilters[filterIdx].op = opSel.value;
+    syncValVisibility();
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  valInp.addEventListener('input', function() {
+    _dbFilters[filterIdx].val = valInp.value;
+    _dbRenderGrid();
+  });
+
+  // ── remove button
+  var rmBtn = document.createElement('button');
+  rmBtn.type = 'button';
+  rmBtn.textContent = '\u00d7';
+  rmBtn.title = 'Remove filter';
+  rmBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:1rem;'
+    + 'color:' + sub + ';padding:0 0.2rem;line-height:1;flex-shrink:0;';
+  rmBtn.addEventListener('click', function() {
+    _dbFilters.splice(filterIdx, 1);
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+    // Rebuild filter list inside panel
+    var list = document.getElementById('db-filter-list');
+    if (list) {
+      list.innerHTML = '';
+      _dbFilters.forEach(function(_, idx2) {
+        list.appendChild(_dbBuildFilterRow(panel, idx2, attrKeys));
+      });
+    }
+  });
+
+  row.appendChild(keySel);
+  row.appendChild(opSel);
+  row.appendChild(valInp);
+  row.appendChild(rmBtn);
+  return row;
+}
+
+// Build and show (or remove) the filter/sort panel.
+function _dbToggleFilterPanel() {
+  var existing = document.getElementById('db-filter-panel');
+  if (existing) { existing.remove(); return; }
+
+  var btn     = document.getElementById('db-filter-btn');
+  var isDark  = document.documentElement.classList.contains('dark');
+  var panelBg = isDark ? '#1c1c1f' : '#ffffff';
+  var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt     = isDark ? '#f4f4f5' : '#111827';
+  var sub     = isDark ? '#71717a' : '#6b7280';
+  var bg      = isDark ? '#27272a' : '#fff';
+  var secBg   = isDark ? '#27272a' : '#f9fafb';
+
+  // Position below the filter button
+  var rect = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+
+  var panel = document.createElement('div');
+  panel.id  = 'db-filter-panel';
+  panel.style.cssText =
+    'position:fixed;top:' + (rect.bottom + 6) + 'px;'
+    + 'right:' + (window.innerWidth - rect.right) + 'px;'
+    + 'z-index:9500;width:360px;max-width:calc(100vw - 1.5rem);'
+    + 'background:' + panelBg + ';border:1px solid ' + bdr + ';'
+    + 'border-radius:0.75rem;padding:1rem;'
+    + 'box-shadow:0 8px 32px rgba(0,0,0,0.18);'
+    + 'display:flex;flex-direction:column;gap:0.85rem;';
+
+  var attrKeys = _dbGetAttrKeys();
+  var inpSty   = 'font-size:0.75rem;border:1px solid ' + bdr + ';border-radius:0.375rem;'
+               + 'padding:0.25rem 0.5rem;background:' + bg + ';color:' + txt
+               + ';outline:none;cursor:pointer;box-sizing:border-box;';
+  var secHdr   = 'font-size:0.65rem;font-weight:700;text-transform:uppercase;'
+               + 'letter-spacing:0.06em;color:' + sub + ';margin-bottom:0.4rem;';
+
+  // ─────────── SORT section ────────────────────────────
+  var sortSec = document.createElement('div');
+  var sortLbl = document.createElement('div');
+  sortLbl.style.cssText = secHdr;
+  sortLbl.textContent   = 'Sort by';
+  sortSec.appendChild(sortLbl);
+
+  var sortRow = document.createElement('div');
+  sortRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+
+  // Sort key dropdown
+  var sortKeySel = document.createElement('select');
+  sortKeySel.style.cssText = inpSty + 'flex:1;';
+  var noneOpt = document.createElement('option');
+  noneOpt.value = '';
+  noneOpt.textContent = '— None —';
+  if (!_dbSortState.key) noneOpt.selected = true;
+  sortKeySel.appendChild(noneOpt);
+  attrKeys.forEach(function(ak) {
+    var opt = document.createElement('option');
+    opt.value = ak.key;
+    opt.textContent = ak.key === '__title' ? 'Title' : ak.key === '__updated' ? 'Last Updated' : ak.key;
+    if (ak.key === _dbSortState.key) opt.selected = true;
+    sortKeySel.appendChild(opt);
+  });
+
+  // Asc / Desc toggle buttons
+  function makeDirBtn(label, dir) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = dir === 'asc' ? 'Ascending' : 'Descending';
+    function refreshStyle() {
+      var sel = _dbSortState.dir === dir && !!_dbSortState.key;
+      b.style.cssText = 'font-size:0.72rem;padding:0.22rem 0.55rem;border-radius:0.375rem;'
+        + 'cursor:pointer;border:1px solid ' + bdr + ';white-space:nowrap;'
+        + 'background:' + (sel ? '#7c3aed' : 'transparent') + ';'
+        + 'color:' + (sel ? '#fff' : txt) + ';transition:background 0.12s;';
+    }
+    refreshStyle();
+    b.addEventListener('click', function() {
+      _dbSortState.key = sortKeySel.value || null;
+      _dbSortState.dir = dir;
+      refreshStyle();
+      // refresh sibling
+      [ascBtn, dscBtn].forEach(function(x) {
+        if (x !== b) {
+          var peer = x.title === 'Ascending' ? 'asc' : 'desc';
+          x.style.background = (_dbSortState.dir === peer && !!_dbSortState.key) ? '#7c3aed' : 'transparent';
+          x.style.color      = (_dbSortState.dir === peer && !!_dbSortState.key) ? '#fff' : txt;
+        }
+      });
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+    });
+    return b;
+  }
+  var ascBtn = makeDirBtn('A \u2192 Z', 'asc');
+  var dscBtn = makeDirBtn('Z \u2192 A', 'desc');
+
+  sortKeySel.addEventListener('change', function() {
+    _dbSortState.key = sortKeySel.value || null;
+    [ascBtn, dscBtn].forEach(function(b) {
+      var d = b.title === 'Ascending' ? 'asc' : 'desc';
+      b.style.background = (_dbSortState.dir === d && !!_dbSortState.key) ? '#7c3aed' : 'transparent';
+      b.style.color      = (_dbSortState.dir === d && !!_dbSortState.key) ? '#fff' : txt;
+    });
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+
+  sortRow.appendChild(sortKeySel);
+  sortRow.appendChild(ascBtn);
+  sortRow.appendChild(dscBtn);
+  sortSec.appendChild(sortRow);
+  panel.appendChild(sortSec);
+
+  // ─────────── FILTER section ──────────────────────────
+  var filterSec = document.createElement('div');
+  var filterLbl = document.createElement('div');
+  filterLbl.style.cssText = secHdr;
+  filterLbl.textContent   = 'Filter';
+  filterSec.appendChild(filterLbl);
+
+  // Existing filter rows
+  var filterList = document.createElement('div');
+  filterList.id = 'db-filter-list';
+  filterList.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;';
+  _dbFilters.forEach(function(_, idx) {
+    filterList.appendChild(_dbBuildFilterRow(panel, idx, attrKeys));
+  });
+  filterSec.appendChild(filterList);
+
+  // + Add filter button
+  var addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.textContent = '+ Add filter';
+  addBtn.style.cssText = 'margin-top:0.4rem;font-size:0.73rem;padding:0.22rem 0.6rem;'
+    + 'border-radius:0.375rem;cursor:pointer;border:1px solid ' + bdr + ';'
+    + 'background:transparent;color:#7c3aed;font-weight:600;'
+    + 'text-align:left;';
+  addBtn.addEventListener('click', function() {
+    var firstKey = attrKeys[0] || { key: '__title', type: 'text' };
+    var firstOps = _dbOpsForType(firstKey.type);
+    _dbFilters.push({ key: firstKey.key, op: firstOps[0].op, val: '' });
+    filterList.appendChild(_dbBuildFilterRow(panel, _dbFilters.length - 1, attrKeys));
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  filterSec.appendChild(addBtn);
+  panel.appendChild(filterSec);
+
+  // ─────────── Footer: Clear all ───────────────────────
+  var footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;justify-content:flex-end;border-top:1px solid ' + bdr + ';padding-top:0.6rem;';
+  var clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.textContent = 'Clear all';
+  clearBtn.style.cssText = 'font-size:0.73rem;padding:0.22rem 0.7rem;border-radius:0.375rem;'
+    + 'cursor:pointer;border:1px solid ' + bdr + ';background:transparent;color:' + sub + ';';
+  clearBtn.addEventListener('click', _dbClearFilters);
+  footer.appendChild(clearBtn);
+  panel.appendChild(footer);
+
+  document.body.appendChild(panel);
+
+  // Close on outside click (delayed so this click doesn\'t immediately close)
+  setTimeout(function() {
+    function onOutside(e) {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.remove();
+        document.removeEventListener('mousedown', onOutside, true);
+      }
+    }
+    document.addEventListener('mousedown', onOutside, true);
+    // Close on Escape
+    function onKey(e) {
+      if (e.key === 'Escape') { panel.remove(); document.removeEventListener('keydown', onKey, true); }
+    }
+    document.addEventListener('keydown', onKey, true);
+  }, 50);
 }
 
 function _dbCardHtml(card) {
