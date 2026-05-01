@@ -676,9 +676,17 @@ function _dbAttrPills(attrs, cardId) {
       var phFmtd  = phNums.slice(0, 2).map(function(n) { return _dbFmtPhone(n); });
       var phLabel = phFmtd.join(', ');
       if (phNums.length > 2) phLabel += ' +' + (phNums.length - 2);
+      var phRawJ  = _esc(JSON.stringify(v)); // HTML-safe JSON string for inline JS
       priorityParts.push(
-        '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[160px] truncate inline-block">'
-        + '\uD83D\uDCDE\u00a0' + _esc(phLabel) + '</span>'
+        '<button type="button"'
+        + ' onclick="_dbPillPhoneClick(' + phRawJ + ');event.stopPropagation();"'
+        + ' title="View phone number(s)"'
+        + ' style="background:none;border:none;padding:0;cursor:pointer;'
+        + 'font-family:inherit;font-size:0.75rem;'
+        + 'color:inherit;display:inline-flex;align-items:center;gap:0.2rem;'
+        + 'max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        + '\uD83D\uDCDE\u00a0' + _esc(phLabel)
+        + '</button>'
       );
     } else if (t === 'place' && v) {
       var plProv  = a.attr_options || 'google';
@@ -2892,7 +2900,149 @@ function _dbPhonePopup(formatted, telHref) {
   document.addEventListener('keydown', onKey, true);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
+// Card-preview pill click handler for phone attributes.
+// Single number  → reuses the existing _dbPhonePopup (large number + copy/call).
+// Multiple numbers → shows a list popup with one row per number.
+function _dbPillPhoneClick(rawValue) {
+  // Close any open phone popup first (toggle behaviour)
+  var existing = document.getElementById('db-phone-popup');
+  if (existing) { existing.remove(); return; }
+
+  var nums = (rawValue || '').split(',').map(function(n) { return n.trim(); }).filter(Boolean);
+  if (!nums.length) return;
+
+  // Single number: delegate to the existing detail-panel popup
+  if (nums.length === 1) {
+    var fmt    = _dbFmtPhone(nums[0]);
+    var digits  = nums[0].replace(/\D/g, '');
+    var href    = digits.length === 10 ? '+1' + digits
+                : digits.length >= 11  ? '+' + digits
+                : digits || nums[0];
+    _dbPhonePopup(fmt, href);
+    return;
+  }
+
+  // Multiple numbers: build a list popup
+  var isDark  = document.documentElement.classList.contains('dark');
+  var bg      = isDark ? '#27272a' : '#ffffff';
+  var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt     = isDark ? '#f4f4f5' : '#111827';
+  var sub     = isDark ? '#71717a' : '#9ca3af';
+  var rowHov  = isDark ? '#3f3f46' : '#f9fafb';
+  var btnBg   = isDark ? '#3f3f46' : '#f3f4f6';
+  var btnBdr  = isDark ? '#52525b' : '#d1d5db';
+  var btnTxt  = isDark ? '#d4d4d8' : '#374151';
+
+  var ov = document.createElement('div');
+  ov.id = 'db-phone-popup';
+  ov.style.cssText =
+    'position:fixed;inset:0;z-index:10500;display:flex;'
+    + 'align-items:center;justify-content:center;padding:1rem;';
+
+  var bd = document.createElement('div');
+  bd.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);';
+  bd.addEventListener('click', function() { ov.remove(); });
+  ov.appendChild(bd);
+
+  var card = document.createElement('div');
+  card.style.cssText =
+    'position:relative;background:' + bg + ';border:1px solid ' + bdr + ';'
+    + 'border-radius:1rem;padding:1.5rem 2rem 1.25rem;min-width:16rem;max-width:22rem;'
+    + 'box-shadow:0 20px 60px rgba(0,0,0,0.28);';
+
+  // × close
+  var closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.style.cssText =
+    'position:absolute;top:0.6rem;right:0.75rem;background:none;border:none;'
+    + 'cursor:pointer;font-size:1.3rem;line-height:1;color:' + sub + ';padding:0.15rem 0.3rem;';
+  closeBtn.addEventListener('click', function() { ov.remove(); });
+  card.appendChild(closeBtn);
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'font-size:0.7rem;color:' + sub + ';margin-bottom:0.75rem;text-transform:uppercase;letter-spacing:0.05em;';
+  hdr.textContent = nums.length + ' phone numbers';
+  card.appendChild(hdr);
+
+  // One row per number
+  nums.forEach(function(raw, idx) {
+    var formatted = _dbFmtPhone(raw);
+    var digits    = raw.replace(/\D/g, '');
+    var telHref   = digits.length === 10 ? '+1' + digits
+                  : digits.length >= 11  ? '+' + digits
+                  : digits || raw;
+
+    var row = document.createElement('div');
+    row.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;gap:0.75rem;'
+      + 'padding:0.5rem 0.5rem;border-radius:0.5rem;'
+      + (idx < nums.length - 1 ? 'border-bottom:1px solid ' + bdr + ';' : '');
+
+    row.addEventListener('mouseenter', function() { row.style.background = rowHov; });
+    row.addEventListener('mouseleave', function() { row.style.background = ''; });
+
+    // Number text — user-select:all for easy keyboard copy
+    var numSpan = document.createElement('span');
+    numSpan.textContent = formatted;
+    numSpan.title = 'Click to select';
+    numSpan.style.cssText =
+      'font-size:1.1rem;font-weight:600;color:' + txt + ';'
+      + 'font-variant-numeric:tabular-nums;user-select:all;cursor:text;flex:1;';
+    row.appendChild(numSpan);
+
+    // Action buttons
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:0.4rem;flex-shrink:0;';
+
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.innerHTML = '&#128203;';
+    copyBtn.title = 'Copy';
+    copyBtn.style.cssText =
+      'padding:0.3rem 0.5rem;border-radius:0.375rem;font-size:0.8rem;cursor:pointer;'
+      + 'background:' + btnBg + ';border:1px solid ' + btnBdr + ';color:' + btnTxt + ';';
+    copyBtn.addEventListener('click', function() {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(formatted).then(function() {
+          copyBtn.innerHTML = '&#10003;';
+          setTimeout(function() { copyBtn.innerHTML = '&#128203;'; }, 1500);
+        });
+      } else {
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(numSpan);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+    btns.appendChild(copyBtn);
+
+    var callLink = document.createElement('a');
+    callLink.href = 'tel:' + telHref;
+    callLink.innerHTML = '&#128222;';
+    callLink.title = 'Call';
+    callLink.style.cssText =
+      'padding:0.3rem 0.5rem;border-radius:0.375rem;font-size:0.8rem;cursor:pointer;'
+      + 'background:#0053e2;color:#fff;text-decoration:none;display:inline-flex;align-items:center;';
+    btns.appendChild(callLink);
+
+    row.appendChild(btns);
+    card.appendChild(row);
+  });
+
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+
+  function onKey(e) {
+    if (e.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', onKey, true); }
+  }
+  document.addEventListener('keydown', onKey, true);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    PHONE CHIP INPUT HELPERS
 ───────────────────────────────────────────────────────────────────────── */
 
