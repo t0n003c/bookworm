@@ -2694,11 +2694,31 @@ function _dbAttrValueHtml(cardId, a) {
       + _numBlur + '>';
   }
   if (t === 'url') {
-    var safeUrl = _esc(v);
-    var link = v ? '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
-      + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;'
-      + 'word-break:break-all;cursor:pointer;">' + safeUrl + '</a> ' : '';
-    return link
+    var urlDispFmt = a.attr_options || 'text';  // 'text' | 'short' | 'button'
+    var safeUrl    = _esc(v);
+    var urlLink    = '';
+    if (v) {
+      if (urlDispFmt === 'button') {
+        // Styled link button (blue, rounded)
+        urlLink = '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
+          + ' style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.25rem 0.65rem;'
+          + 'border-radius:0.375rem;background:#eff6ff;color:#0053e2;font-size:0.75rem;'
+          + 'font-weight:600;text-decoration:none;border:1px solid #bfdbfe;white-space:nowrap;">';
+        urlLink += '\uD83D\uDD17 Open</a> ';
+      } else if (urlDispFmt === 'short') {
+        // Domain-only label
+        var shortLabel = v.replace(/^https?:\/\//, '').split('/')[0];
+        urlLink = '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
+          + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;cursor:pointer;">'
+          + _esc(shortLabel) + '</a> ';
+      } else {
+        // Default: full URL as link text
+        urlLink = '<a href="' + safeUrl + '" target="_blank" rel="noopener"'
+          + ' style="color:#0053e2;text-decoration:underline;font-size:0.875rem;'
+          + 'word-break:break-all;cursor:pointer;">' + safeUrl + '</a> ';
+      }
+    }
+    return urlLink
       + '<span contenteditable="true"'
       + ' style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
       + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add URL…') + '</span>';
@@ -2730,10 +2750,19 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onblur="' + cb + '">' + _esc(v) + '</span>';
   }
   if (t === 'place') {
+    var mapProv   = a.attr_options || 'google';  // 'google' | 'apple' | 'osm'
     var safePlace = encodeURIComponent(v);
-    var mapsLink  = v
-      ? '<a href="https://maps.google.com/?q=' + safePlace + '" target="_blank" rel="noopener"'
-        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">🗺️ Map</a>'
+    var mapUrl;
+    if (mapProv === 'apple') {
+      mapUrl = 'https://maps.apple.com/?q=' + safePlace;
+    } else if (mapProv === 'osm') {
+      mapUrl = 'https://www.openstreetmap.org/search?query=' + safePlace;
+    } else {
+      mapUrl = 'https://maps.google.com/?q=' + safePlace;
+    }
+    var mapsLink = v
+      ? '<a href="' + mapUrl + '" target="_blank" rel="noopener"'
+        + ' style="font-size:0.75rem;color:#0053e2;text-decoration:underline;margin-right:0.25rem;">\uD83D\uDDFA\uFE0F Map</a>'
         : '';
     return mapsLink
       + '<span contenteditable="true" class="flex-1 text-sm text-gray-800 dark:text-zinc-100 outline-none"'
@@ -3677,8 +3706,10 @@ function _dbEditAttrRow(cardId, attrId) {
     + 'letter-spacing:0.05em;display:block;margin-bottom:0.25rem;color:' + sub + ';';
 
   var selectedType    = origType;
-  var selectedDateFmt = (origType === 'date' && origOpts) ? origOpts : 'mdy';
+  var selectedDateFmt = (origType === 'date'  && origOpts) ? origOpts : 'mdy';
   var selectedFileFmt = (origType === 'files' && origOpts) ? origOpts : 'name';
+  var selectedUrlFmt  = (origType === 'url'   && origOpts) ? origOpts : 'text';
+  var selectedMapProv = (origType === 'place' && origOpts) ? origOpts : 'google';
   var _parsedNum      = (origType === 'number') ? _dbParseNumOpts(origOpts) : null;
   var selectedDisplay = _parsedNum ? (_parsedNum.display  || 'number') : 'number';
   var selectedBarClr  = _parsedNum ? (_parsedNum.barColor || 'blue')   : 'blue';
@@ -4018,6 +4049,91 @@ function _dbEditAttrRow(cardId, attrId) {
       });
       fileFmtDiv.appendChild(fileFmtGrid);
       extrasDiv.appendChild(fileFmtDiv);
+
+    } else if (t === 'url') {
+      // Reset when switching TO url from a different type
+      if (selectedType !== origType) selectedUrlFmt = 'text';
+      var urlFmtDiv = document.createElement('div');
+      urlFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var urlFmtLbl = document.createElement('label');
+      urlFmtLbl.style.cssText = labelCss;
+      urlFmtLbl.textContent = 'Link display';
+      urlFmtDiv.appendChild(urlFmtLbl);
+      var urlFmtGrid = document.createElement('div');
+      urlFmtGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.35rem;';
+      [
+        { id: 'text',   icon: '\uD83D\uDD17', label: 'Link text', desc: 'Full URL as label' },
+        { id: 'short',  icon: '\u2702\uFE0F', label: 'Short URL',  desc: 'Domain only' },
+        { id: 'button', icon: '\uD83D\uDD18', label: 'Button',     desc: 'Styled link button' },
+      ].forEach(function(f) {
+        var isSel = f.id === selectedUrlFmt;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-urlfmt', f.id);
+        btn.style.cssText = 'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;';
+        btn.innerHTML = '<div style="font-weight:600;color:' + txt + ';">' + f.icon + ' ' + _esc(f.label) + '</div>'
+          + '<div style="color:' + sub + ';font-size:0.7rem;">' + _esc(f.desc) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedUrlFmt = f.id;
+          urlFmtGrid.querySelectorAll('button[data-urlfmt]').forEach(function(b) {
+            var s = b.getAttribute('data-urlfmt') === selectedUrlFmt;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        urlFmtGrid.appendChild(btn);
+      });
+      urlFmtDiv.appendChild(urlFmtGrid);
+      extrasDiv.appendChild(urlFmtDiv);
+
+    } else if (t === 'place') {
+      // Reset when switching TO place from a different type
+      if (selectedType !== origType) selectedMapProv = 'google';
+      var placeFmtDiv = document.createElement('div');
+      placeFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var placeFmtLbl = document.createElement('label');
+      placeFmtLbl.style.cssText = labelCss;
+      placeFmtLbl.textContent = 'Map provider';
+      placeFmtDiv.appendChild(placeFmtLbl);
+      var placeFmtGrid = document.createElement('div');
+      placeFmtGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.35rem;';
+      [
+        { id: 'google', icon: '\uD83D\uDDFA\uFE0F', label: 'Google',        desc: 'maps.google.com' },
+        { id: 'apple',  icon: '\uD83C\uDF4E', label: 'Apple Maps',   desc: 'maps.apple.com' },
+        { id: 'osm',    icon: '\uD83C\uDF0D', label: 'OpenStreetMap', desc: 'openstreetmap.org' },
+      ].forEach(function(f) {
+        var isSel = f.id === selectedMapProv;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-mapprov', f.id);
+        btn.style.cssText = 'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;';
+        btn.innerHTML = '<div style="font-weight:600;color:' + txt + ';">' + f.icon + ' ' + _esc(f.label) + '</div>'
+          + '<div style="color:' + sub + ';font-size:0.7rem;">' + _esc(f.desc) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedMapProv = f.id;
+          placeFmtGrid.querySelectorAll('button[data-mapprov]').forEach(function(b) {
+            var s = b.getAttribute('data-mapprov') === selectedMapProv;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        placeFmtGrid.appendChild(btn);
+      });
+      placeFmtDiv.appendChild(placeFmtGrid);
+      extrasDiv.appendChild(placeFmtDiv);
+
+    } else if (t === 'phone' || t === 'email' || t === 'checkbox'
+              || t === 'person' || t === 'text') {
+      // No configurable settings for these types — show a small hint so
+      // the user knows the section is working, just intentionally empty.
+      var noSetDiv = document.createElement('div');
+      noSetDiv.style.cssText = 'font-size:0.72rem;padding:0.2rem 0 0.35rem;color:' + sub + ';';
+      noSetDiv.textContent = 'No additional settings for this type.';
+      extrasDiv.appendChild(noSetDiv);
     }
   }  // end _buildExtras
 
@@ -4041,12 +4157,10 @@ function _dbEditAttrRow(cardId, attrId) {
       }
       return JSON.stringify(obj);
     }
-    if (selectedType === 'date') {
-      return selectedDateFmt || 'mdy';
-    }
-    if (selectedType === 'files') {
-      return selectedFileFmt || 'name';
-    }
+    if (selectedType === 'date')  return selectedDateFmt  || 'mdy';
+    if (selectedType === 'files') return selectedFileFmt || 'name';
+    if (selectedType === 'url')   return selectedUrlFmt   || 'text';
+    if (selectedType === 'place') return selectedMapProv  || 'google';
     return _dbReadOptEditor(extrasDiv);
   }
 
