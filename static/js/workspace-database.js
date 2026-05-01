@@ -2860,23 +2860,35 @@ function _dbRenderDetailPanel(card) {
   var created = card.created_at ? card.created_at.replace('T', ' ').slice(0, 16) : 'Unknown';
   var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : 'Unknown';
 
+  _dbAttrHiddenShown = false; // reset toggle every time panel opens
+
+  var hiddenCount = (card.attrs || []).filter(function(a) {
+    return (a.visibility || 'always') === 'always_hide';
+  }).length;
+
   var attrsHtml = (card.attrs || []).map(function(a) {
-    var icon = _dbAttrTypeIcon(a.attr_type || 'text');
-    var vis  = a.visibility || 'always';
-    // Opacity hint: always_hide=45%, hide_empty+no value=60%, otherwise 100%
-    var rowOpacity = vis === 'always_hide' ? '0.45'
-      : (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
+    var icon     = _dbAttrTypeIcon(a.attr_type || 'text');
+    var vis      = a.visibility || 'always';
+    var isHidden = vis === 'always_hide';
+    // Dim hide_empty rows only when the value is blank
+    var rowOpacity = (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
     return '<div class="db-attr-row flex items-center gap-1 py-1.5 border-b'
       + ' border-gray-100 dark:border-zinc-800"'
       + ' draggable="false"'
       + ' data-attr-id="' + a.id + '" data-card-id="' + card.id + '"'
-      + ' style="opacity:' + rowOpacity + ';transition:opacity 0.15s;">'
-      // ⠿ grip — mousedown arms the row for HTML5 drag
+      + (isHidden ? ' data-attr-hidden="1"' : '')
+      + ' style="opacity:' + rowOpacity + ';transition:opacity 0.15s;'
+      + (isHidden ? 'display:none;' : '') + '"'
+      // Reveal grip on hover, hide when mouse leaves
+      + ' onmouseenter="var g=this.querySelector(\'.db-attr-grip\');if(g)g.style.opacity=\'1\';"'
+      + ' onmouseleave="var g=this.querySelector(\'.db-attr-grip\');if(g)g.style.opacity=\'0\';"'
+      + '>'
+      // ⠿ grip — invisible until row is hovered
       + '<span class="db-attr-grip"'
       + ' title="Drag to reorder"'
       + ' onmousedown="_dbAttrGripDown(event,this.closest(\'.db-attr-row\'))"'
-      + ' style="cursor:grab;color:#d1d5db;flex-shrink:0;padding:0 3px;'
-      + 'user-select:none;font-size:0.8rem;line-height:1;">'    // ⠿⠿ two braille 6-dot blocks
+      + ' style="opacity:0;cursor:grab;color:#9ca3af;flex-shrink:0;padding:0 3px;'
+      + 'user-select:none;font-size:0.8rem;line-height:1;transition:opacity 0.1s;">'  // subtle fade-in
       + '&#10247;&#10247;</span>'
       // Clickable label → context menu
       + '<button type="button" class="db-attr-label text-left text-xs font-semibold'
@@ -2893,6 +2905,27 @@ function _dbRenderDetailPanel(card) {
       + '</div>'
       + '</div>';
   }).join('');
+
+  // Toggle line that appears below "+ Add attribute" when hidden attrs exist
+  var n = hiddenCount;
+  var toggleHtml = n > 0
+    ? '<button type="button" id="db-attr-hidden-toggle-' + card.id + '"'
+      + ' onclick="_dbToggleHiddenAttrs(' + card.id + ',' + n + ')"'
+      + ' style="display:flex;align-items:center;gap:0.3rem;margin-top:0.4rem;'
+      + 'font-size:0.72rem;color:#9ca3af;background:none;border:none;cursor:pointer;'
+      + 'padding:0;line-height:1.4;"'
+      + ' class="hover:text-gray-500 dark:hover:text-zinc-400 transition-colors">'
+      + '<svg style="width:0.75rem;height:0.75rem;flex-shrink:0;" fill="none" viewBox="0 0 24 24"'
+      + ' stroke="currentColor" stroke-width="2">'
+      + '<path stroke-linecap="round" stroke-linejoin="round"'
+      + ' d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
+      + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878'
+      + 'l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0'
+      + 'A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
+      + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>'
+      + 'Show (' + n + ') Hidden Attribute' + (n === 1 ? '' : 's')
+      + '</button>'
+    : '';
 
   dp.innerHTML = (
     coverHtml
@@ -2919,7 +2952,9 @@ function _dbRenderDetailPanel(card) {
     + ' class="mt-1.5 text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1">'
     + '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
     + '<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>'
-    + 'Add attribute</button></div>'
+    + 'Add attribute</button>'
+    + toggleHtml
+    + '</div>'
     // Notes area
     + '<div id="db-detail-note-' + card.id + '" contenteditable="true" data-db-note="1"'
     + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
@@ -4686,6 +4721,8 @@ function _dbAttrDuplicate(cardId, attrId) {
    ATTRIBUTE DRAG-AND-DROP REORDER
 ═══════════════════════════════════════════════════════════════════════════ */
 
+var _dbAttrHiddenShown = false; // tracks whether always_hide rows are revealed
+
 var _dbDragAttrRow     = null;  // row element being dragged
 var _dbDragAttrCardId  = null;  // card it belongs to
 var _dbDragOverRow     = null;  // row currently dragged over
@@ -4799,6 +4836,45 @@ function _dbAttrSaveOrder(cardId, attrIds) {
     body: JSON.stringify({ attr_ids: attrIds }),
   })
   .catch(function(e) { console.warn('Attr reorder failed', e); });
+}
+
+
+function _dbToggleHiddenAttrs(cardId, n) {
+  _dbAttrHiddenShown = !_dbAttrHiddenShown;
+  var show = _dbAttrHiddenShown;
+
+  // Flip every always_hide row for this card
+  var rows = document.querySelectorAll(
+    '.db-attr-row[data-card-id="' + cardId + '"][data-attr-hidden="1"]'
+  );
+  rows.forEach(function(r) {
+    r.style.display = show ? 'flex' : 'none';
+  });
+
+  // Swap button label + icon
+  var btn = document.getElementById('db-attr-hidden-toggle-' + cardId);
+  if (!btn) return;
+
+  var label = (show ? 'Hide' : 'Show') + ' (' + n + ') Hidden Attribute' + (n === 1 ? '' : 's');
+
+  // eye-off icon when showing, eye-off-strike when hiding
+  var iconPath = show
+    // simple eye icon (visible state)
+    ? 'M15 12a3 3 0 11-6 0 3 3 0 016 0zm-9.446.568C6.638 9.768 9.178 8 12 8'
+      + 'c2.822 0 5.362 1.768 6.446 4.568a.5.5 0 010 .864C17.362 16.232 14.822 18'
+      + ' 12 18c-2.822 0-5.362-1.768-6.446-4.568a.5.5 0 010-.864z'
+    // eye-off (hidden state)
+    : 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
+      + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878'
+      + 'l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0'
+      + 'A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
+      + 'a10.025 10.025 0 01-4.132 5.411m0 0L21 21';
+
+  btn.innerHTML =
+    '<svg style="width:0.75rem;height:0.75rem;flex-shrink:0;" fill="none" viewBox="0 0 24 24"'
+    + ' stroke="currentColor" stroke-width="2">'
+    + '<path stroke-linecap="round" stroke-linejoin="round" d="' + iconPath + '"/></svg>'
+    + label;
 }
 
 
