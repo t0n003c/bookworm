@@ -2706,6 +2706,114 @@ function _dbPhonePopup(formatted, telHref) {
   document.addEventListener('keydown', onKey, true);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   PHONE CHIP INPUT HELPERS
+───────────────────────────────────────────────────────────────────────── */
+
+// Collect chip data-raw values, join, persist.
+function _dbPhoneChipSave(wrap, cardId, attrId, key) {
+  var chips = wrap.querySelectorAll('.db-ph-chip');
+  var raws  = [];
+  chips.forEach(function(c) { raws.push(c.getAttribute('data-raw')); });
+  _dbSaveAttrVal(cardId, attrId, key, raws.join(', '));
+}
+
+// Build and insert one chip before `beforeEl` in `wrap`.
+function _dbPhoneChipInsert(wrap, beforeEl, raw) {
+  var formatted = _dbFmtPhone(raw);
+  var digits    = raw.replace(/\D/g, '');
+  var telHref   = digits.length === 10 ? '+1' + digits
+                : digits.length >= 11  ? '+' + digits
+                : digits || raw;
+
+  var isDark  = document.documentElement.classList.contains('dark');
+  var pillBg  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';
+  var pillClr = isDark ? '#d4d4d8' : '#374151';
+  var pillBdr = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
+
+  var chip = document.createElement('span');
+  chip.className = 'db-ph-chip';
+  chip.setAttribute('data-raw', raw);
+  chip.style.cssText =
+    'display:inline-flex;align-items:center;background:' + pillBg + ';'
+    + 'border:1px solid ' + pillBdr + ';color:' + pillClr + ';'
+    + 'border-radius:0.375rem;font-size:0.72rem;'
+    + 'font-variant-numeric:tabular-nums;white-space:nowrap;';
+
+  // Number button → popup
+  var numBtn = document.createElement('button');
+  numBtn.type = 'button';
+  numBtn.textContent = '\uD83D\uDCDE ' + formatted;
+  numBtn.style.cssText =
+    'background:none;border:none;cursor:pointer;color:inherit;'
+    + 'font-size:0.72rem;font-variant-numeric:tabular-nums;'
+    + 'padding:0.15rem 0.4rem;font-family:inherit;line-height:1.5;';
+  numBtn.addEventListener('click', function() { _dbPhonePopup(formatted, telHref); });
+  chip.appendChild(numBtn);
+
+  // × remove button
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = '\u00d7';
+  delBtn.title = 'Remove';
+  delBtn.style.cssText =
+    'background:none;border:none;cursor:pointer;color:inherit;'
+    + 'font-size:1rem;line-height:1;padding:0 0.35rem 0 0;'
+    + 'opacity:0.45;font-family:inherit;';
+  delBtn.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; });
+  delBtn.addEventListener('mouseleave', function() { delBtn.style.opacity = '0.45'; });
+  delBtn.addEventListener('click', function() {
+    chip.remove();
+    _dbPhoneChipSave(wrap, parseInt(wrap.dataset.cardId, 10),
+                          parseInt(wrap.dataset.attrId,  10),
+                          wrap.dataset.key);
+  });
+  chip.appendChild(delBtn);
+
+  wrap.insertBefore(chip, beforeEl);
+}
+
+// Convert whatever is in `inp` to a chip, clear the input.
+function _dbPhoneChipCommit(wrap, inp, cardId, attrId, key) {
+  var raw = inp.value.replace(/,\s*$/, '').trim(); // strip trailing comma
+  if (!raw) return;
+  inp.value = '';
+  // Update placeholder after first chip is added
+  inp.placeholder = '';
+  _dbPhoneChipInsert(wrap, inp, raw);
+  _dbPhoneChipSave(wrap, cardId, attrId, key);
+}
+
+// keydown handler wired via inline onkeydown on the input element.
+function _dbPhoneChipKey(e, cardId, attrId, key) {
+  var inp  = e.target;
+  var wrap = inp.closest('.db-ph-wrap');
+  if (e.key === ',' || e.key === 'Enter') {
+    e.preventDefault();
+    _dbPhoneChipCommit(wrap, inp, cardId, attrId, key);
+  } else if (e.key === 'Backspace' && inp.value === '') {
+    var chips = wrap.querySelectorAll('.db-ph-chip');
+    if (chips.length) {
+      chips[chips.length - 1].remove();
+      _dbPhoneChipSave(wrap, cardId, attrId, key);
+    }
+  }
+}
+
+// blur handler: commit any trailing text, then reset border.
+function _dbPhoneChipBlur(cardId, attrId, key, inp) {
+  var wrap = inp.closest('.db-ph-wrap');
+  if (inp.value.trim()) {
+    _dbPhoneChipCommit(wrap, inp, cardId, attrId, key);
+  } else if (wrap.querySelectorAll('.db-ph-chip').length === 0) {
+    // Restore placeholder when no chips and nothing typed
+    inp.placeholder = 'Add phone\u2026 type comma to add more';
+    _dbPhoneChipSave(wrap, cardId, attrId, key); // save empty
+  }
+  var isDark = document.documentElement.classList.contains('dark');
+  wrap.style.borderColor = isDark ? '#3f3f46' : '#e5e7eb';
+}
+
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);   // HTML-safe, used in display contexts
   // kJ: key safe for use inside an HTML attribute that contains JS args.
@@ -2872,56 +2980,71 @@ function _dbAttrValueHtml(cardId, a) {
   }
   if (t === 'phone') {
     var isDkPh  = document.documentElement.classList.contains('dark');
+    var inpBg   = isDkPh ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+    var inpBdr  = isDkPh ? '#3f3f46' : '#e5e7eb';
     var pillBg  = isDkPh ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';
     var pillClr = isDkPh ? '#d4d4d8' : '#374151';
     var pillBdr = isDkPh ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
-    var inpBg   = isDkPh ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-    var inpBdr  = isDkPh ? '#3f3f46' : '#e5e7eb';
-    var inpClr  = isDkPh ? '#f4f4f5' : '#111827';
-    var phId    = 'db-ph-inp-' + a.id;
+    var phClr   = isDkPh ? '#f4f4f5' : '#111827';
 
-    var phones = v
+    var phones  = v
       ? v.split(',').map(function(p) { return p.trim(); }).filter(Boolean)
       : [];
 
-    var pillsHtml = phones.map(function(p) {
-      var formatted = _dbFmtPhone(p);
-      var digits    = p.replace(/\D/g, '');
+    var chipsHtml = phones.map(function(raw) {
+      var formatted = _dbFmtPhone(raw);
+      var digits    = raw.replace(/\D/g, '');
       var telHref   = digits.length === 10 ? '+1' + digits
                     : digits.length >= 11  ? '+' + digits
-                    : digits || p.trim();
+                    : digits || raw;
       var fmtJ  = _esc(JSON.stringify(formatted));
       var hrefJ = _esc(JSON.stringify(telHref));
-      return '<button type="button"'
-        + ' onclick="_dbPhonePopup(' + fmtJ + ',' + hrefJ + ')"'
-        + ' style="display:inline-flex;align-items:center;gap:0.25rem;'
-        + 'padding:0.2rem 0.55rem;border-radius:0.375rem;'
+      return '<span class="db-ph-chip" data-raw="' + _esc(raw) + '"'
+        + ' style="display:inline-flex;align-items:center;'
         + 'background:' + pillBg + ';border:1px solid ' + pillBdr + ';'
-        + 'color:' + pillClr + ';font-size:0.72rem;font-variant-numeric:tabular-nums;'
-        + 'cursor:pointer;white-space:nowrap;line-height:1.5;font-family:inherit;"'
-        + ' title="Click for copy / call options">'
+        + 'color:' + pillClr + ';border-radius:0.375rem;font-size:0.72rem;'
+        + 'font-variant-numeric:tabular-nums;white-space:nowrap;">'
+        // clickable number → popup
+        + '<button type="button"'
+        + ' onclick="_dbPhonePopup(' + fmtJ + ',' + hrefJ + ')"'
+        + ' style="background:none;border:none;cursor:pointer;color:inherit;'
+        + 'font-size:0.72rem;font-variant-numeric:tabular-nums;'
+        + 'padding:0.15rem 0.4rem;font-family:inherit;line-height:1.5;">'
         + '&#128222; ' + _esc(formatted)
-        + '</button>';
+        + '</button>'
+        // × remove chip
+        + '<button type="button" title="Remove"'
+        + ' onclick="var c=this.parentNode,w=c.closest(\'.db-ph-wrap\');'
+        + 'c.remove();_dbPhoneChipSave(w,' + cardId + ',' + a.id + ',' + kJ + ')"'
+        + ' style="background:none;border:none;cursor:pointer;color:inherit;'
+        + 'font-size:1rem;line-height:1;padding:0 0.35rem 0 0;opacity:0.45;'
+        + 'font-family:inherit;"'
+        + ' onmouseenter="this.style.opacity=\'1\'"'
+        + ' onmouseleave="this.style.opacity=\'0.45\'">'
+        + '&times;</button>'
+        + '</span>';
     }).join('');
 
-    // Always-visible text input — `el.value` read by _dbSaveAttrInput
-    var cbInp = '_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)';
-    return '<div style="display:flex;flex-direction:column;gap:0.3rem;width:100%;">'
-      + (pillsHtml
-          ? '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;">'
-            + pillsHtml + '</div>'
-          : '')
-      + '<input type="text"'
-      + ' id="' + _esc(phId) + '"'
-      + ' value="' + _esc(v) + '"'
-      + ' placeholder="e.g. 4793815886, 4793815887"'
-      + ' style="font-size:0.72rem;color:' + inpClr + ';background:' + inpBg + ';'
-      + 'border:1px solid ' + inpBdr + ';border-radius:0.375rem;'
-      + 'padding:0.25rem 0.5rem;width:100%;box-sizing:border-box;outline:none;'
-      + 'font-variant-numeric:tabular-nums;transition:border-color 0.15s;"'
-      + ' onfocus="this.style.borderColor=\'#0053e2\'"'
-      + ' onblur="this.style.borderColor=\'' + inpBdr + '\';' + cbInp + '"'
-      + '>'
+    var cbKey  = '_dbPhoneChipKey(event,' + cardId + ',' + a.id + ',' + kJ + ')';
+    var cbBlur = '_dbPhoneChipBlur(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    var cbFocus = 'this.closest(\'.db-ph-wrap\').style.borderColor=\'#0053e2\'';
+    var pholder = phones.length ? '' : 'Add phone… type comma to add more';
+
+    return '<div class="db-ph-wrap"'
+      + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '" data-key=' + kJ + ''
+      + ' style="display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem;'
+      + 'padding:0.25rem 0.4rem;border-radius:0.375rem;border:1px solid ' + inpBdr + ';'
+      + 'background:' + inpBg + ';min-height:2rem;cursor:text;transition:border-color 0.15s;"'
+      + ' onclick="var i=this.querySelector(\'.db-ph-inp\');if(i&&document.activeElement!==i)i.focus();">'
+      + chipsHtml
+      + '<input class="db-ph-inp" type="text"'
+      + ' placeholder="' + _esc(pholder) + '"'
+      + ' style="flex:1;min-width:5rem;border:none;background:transparent;'
+      + 'outline:none;font-size:0.72rem;color:' + phClr + ';'
+      + 'font-variant-numeric:tabular-nums;font-family:inherit;padding:0.1rem 0;"'
+      + ' onfocus="' + cbFocus + '"'
+      + ' onkeydown="' + cbKey + '"'
+      + ' onblur="' + cbBlur + '">'
       + '</div>';
   }
   if (t === 'status') {
