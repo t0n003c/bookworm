@@ -2568,6 +2568,25 @@ function _dbNumBlurSave(inp, cardId, attrId, key) {
   }).catch(function(e) { console.warn('Number attr save failed', e); });
 }
 
+/* Strip non-digits, return US-formatted string.
+   11-digit (1-prefixed) → +1(NXX)NXX-XXXX
+   10-digit              → (NXX)NXX-XXXX
+   7-digit               → NXX-XXXX
+   anything else         → trimmed as-is */
+function _dbFmtPhone(raw) {
+  var d = raw.replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') {
+    return '+1(' + d.slice(1, 4) + ')' + d.slice(4, 7) + '-' + d.slice(7, 11);
+  }
+  if (d.length === 10) {
+    return '(' + d.slice(0, 3) + ')' + d.slice(3, 6) + '-' + d.slice(6, 10);
+  }
+  if (d.length === 7) {
+    return d.slice(0, 3) + '-' + d.slice(3, 7);
+  }
+  return raw.trim();
+}
+
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);   // HTML-safe, used in display contexts
   // kJ: key safe for use inside an HTML attribute that contains JS args.
@@ -2733,13 +2752,42 @@ function _dbAttrValueHtml(cardId, a) {
       + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add email…') + '</span>';
   }
   if (t === 'phone') {
-    var safePhone = _esc(v);
-    var tl = v ? '<a href="tel:' + safePhone + '"'
-      + ' style="color:#0053e2;text-decoration:underline;font-size:0.72rem;">'
-      + safePhone + '</a> ' : '';
-    return tl
-      + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
-      + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add phone…') + '</span>';
+    var isDkPh   = document.documentElement.classList.contains('dark');
+    var pillBg   = isDkPh ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+    var pillClr  = isDkPh ? '#d4d4d8' : '#374151';   // zinc-300 / gray-700
+    var pillBdr  = isDkPh ? 'rgba(255,255,255,0.1)'  : 'rgba(0,0,0,0.1)';
+    var editClr  = isDkPh ? '#71717a' : '#9ca3af';    // zinc-500 / gray-400
+
+    var phones = v
+      ? v.split(',').map(function(p) { return p.trim(); }).filter(Boolean)
+      : [];
+
+    var pillsHtml = phones.map(function(p) {
+      var formatted = _dbFmtPhone(p);
+      var digits    = p.replace(/\D/g, '');
+      // Build a canonical tel: URI with country code when possible
+      var telHref   = 'tel:' + (digits.length === 10 ? '+1' + digits
+                              : digits.length >= 11   ? '+' + digits
+                              : digits || p.trim());
+      return '<a href="' + _esc(telHref) + '"'
+        + ' style="display:inline-flex;align-items:center;gap:0.25rem;'
+        + 'padding:0.15rem 0.5rem;border-radius:0.375rem;'
+        + 'background:' + pillBg + ';border:1px solid ' + pillBdr + ';'
+        + 'color:' + pillClr + ';font-size:0.72rem;font-variant-numeric:tabular-nums;'
+        + 'text-decoration:none;white-space:nowrap;line-height:1.5;"'
+        + ' title="Call ' + _esc(formatted) + '">'
+        + '&#128222; ' + _esc(formatted)
+        + '</a>';
+    }).join('\n');
+
+    return '<div style="display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;">'
+      + pillsHtml
+      + '<span contenteditable="true"'
+      + ' style="font-size:0.72rem;color:' + editClr + ';cursor:text;outline:none;'
+      + 'min-width:1rem;padding:0.15rem 0.2rem;"'
+      + ' title="Type numbers separated by commas"'
+      + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add phone…') + '</span>'
+      + '</div>';
   }
   if (t === 'status') {
     var sc = _dbStatusColor(v);
