@@ -4584,7 +4584,7 @@ function _dbRenderDetailPanel(card) {
     // always_hide → 40% gray; hide_empty+blank → 60%; everything else → full
     var rowOpacity = isHidden ? '0.4'
       : (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
-    return '<div class="db-attr-row flex items-center gap-1 py-1.5 border-b'
+    return '<div class="db-attr-row flex items-center gap-4 py-2.5 border-b'
       + ' border-gray-100 dark:border-zinc-800"'
       + ' draggable="false"'
       + ' data-attr-id="' + a.id + '" data-card-id="' + card.id + '"'
@@ -4604,7 +4604,7 @@ function _dbRenderDetailPanel(card) {
       // Clickable label → context menu
       + '<button type="button" class="db-attr-label text-left font-semibold'
       + ' text-gray-500 dark:text-zinc-400 flex-shrink-0 truncate"'
-      + ' style="width:7rem;font-size:0.82rem;background:none;border:none;cursor:pointer;padding:0 2px;'
+      + ' style="width:9rem;font-size:0.82rem;background:none;border:none;cursor:pointer;padding:0 4px;'
       + 'border-radius:0.25rem;"'
       + ' title="' + _esc(a.attr_key) + ' \u2014 click for options"'
       + ' onclick="_dbAttrMenu(' + card.id + ',' + a.id + ',this)">'
