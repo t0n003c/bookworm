@@ -600,15 +600,23 @@ function _dbCoverHtml(card) {
 }
 
 function _dbAttrPills(attrs) {
-  // Splits attrs into three groups:
-  //   chipParts  — select + multi_select (purple pill bubbles)
-  //   plainParts — all other scalar types (capped at MAX_PLAIN)
-  //   fileParts  — files type (rendered separately below, no cap)
+  // Renders a compact preview row for the card grid.
+  //
+  // Three output buckets:
+  //   chipParts     — select + multi_select (coloured pill chips)
+  //   priorityParts — checkbox, phone, place, status, url, email
+  //                   These always surface first so user-entered info
+  //                   is never hidden behind date/number attrs.
+  //   normalParts   — date, number, text, person (fill remaining slots)
+  //   fileParts     — files (own row, no MAX cap)
+  //
+  // Merged plain row = priorityParts ++ normalParts, capped at MAX_PLAIN.
   if (!attrs || attrs.length === 0) return '';
 
-  var plainParts = [];
-  var chipParts  = [];
-  var fileParts  = [];  // rendered outside MAX_PLAIN
+  var priorityParts = [];
+  var normalParts   = [];
+  var chipParts     = [];
+  var fileParts     = [];
 
   for (var i = 0; i < attrs.length; i++) {
     var a = attrs[i];
@@ -639,47 +647,67 @@ function _dbAttrPills(attrs) {
           + _esc(s) + '</span>'
         );
       });
+
+    // ── PRIORITY attrs (always surface first) ────────────────────────────
     } else if (t === 'checkbox') {
       var cbChecked = (v === 'true' || v === '1' || v === 'yes');
-      plainParts.push(
+      priorityParts.push(
         '<span class="text-xs font-medium '
         + (cbChecked ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-zinc-500') + '">'
         + (cbChecked ? '\u2611' : '\u2610') + '\u00a0' + _esc(a.attr_key) + '</span>'
       );
     } else if (t === 'status' && v) {
       var sc = _dbStatusColor(v);
-      plainParts.push(
+      priorityParts.push(
         '<span style="color:' + sc + ';" class="text-xs font-semibold max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
-      );
-    } else if (t === 'date' && v) {
-      var fmtId = a.attr_options || 'mdy';
-      plainParts.push(
-        '<span class="text-xs text-gray-500 dark:text-zinc-400">'
-        + '\uD83D\uDCC5\u00a0' + _esc(_dbFormatDate(v.slice(0, 10), fmtId)) + '</span>'
       );
     } else if (t === 'phone' && v) {
       var phNums  = v.split(',').map(function(n) { return n.trim(); }).filter(Boolean);
       var phFmtd  = phNums.slice(0, 2).map(function(n) { return _dbFmtPhone(n); });
       var phLabel = phFmtd.join(', ');
       if (phNums.length > 2) phLabel += ' +' + (phNums.length - 2);
-      plainParts.push(
+      priorityParts.push(
         '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[160px] truncate inline-block">'
         + '\uD83D\uDCDE\u00a0' + _esc(phLabel) + '</span>'
       );
+    } else if (t === 'place' && v) {
+      var plProv  = a.attr_options || 'google';
+      var plEnc   = encodeURIComponent(v);
+      var plUrl   = plProv === 'apple' ? 'https://maps.apple.com/?q=' + plEnc
+                  : plProv === 'osm'   ? 'https://www.openstreetmap.org/search?query=' + plEnc
+                  : 'https://maps.google.com/?q=' + plEnc;
+      var plParts = v.split(',');
+      var plShort = plParts.slice(0, 2).join(',').trim();
+      if (plShort.length > 26) plShort = plShort.slice(0, 24) + '\u2026';
+      priorityParts.push(
+        '<a href="' + _esc(plUrl) + '" target="_blank" rel="noopener"'
+        + ' onclick="event.stopPropagation()"'
+        + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
+        + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+        + 'max-width:160px;display:inline-block;vertical-align:middle;">'
+        + '\uD83D\uDDFA\uFE0F\u00a0' + _esc(plShort) + '</a>'
+      );
     } else if ((t === 'url' || t === 'email') && v) {
-      plainParts.push(
+      priorityParts.push(
         '<span class="text-xs text-blue-500 dark:text-blue-400 max-w-[160px] truncate inline-block">'
         + _esc(v) + '</span>'
+      );
+
+    // ── NORMAL attrs (fill remaining slots) ──────────────────────────────
+    } else if (t === 'date' && v) {
+      var fmtId = a.attr_options || 'mdy';
+      normalParts.push(
+        '<span class="text-xs text-gray-500 dark:text-zinc-400">'
+        + '\uD83D\uDCC5\u00a0' + _esc(_dbFormatDate(v.slice(0, 10), fmtId)) + '</span>'
       );
     } else if (t === 'number' && v) {
       var nOpts = _dbParseNumOpts(a.attr_options || '');
       var nVis  = _dbNumVisHtml(v, nOpts, true);
       if (nVis) {
-        // Fixed width + flex-shrink:0 so bar/ring always gets its space.
-        plainParts.push('<div style="width:104px;flex-shrink:0;">' + nVis + '</div>');
+        normalParts.push('<div style="width:104px;flex-shrink:0;">' + nVis + '</div>');
       } else {
-        plainParts.push(
+        normalParts.push(
           '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
           + _esc(_dbFormatNumber(v, nOpts)) + '</span>'
         );
@@ -714,36 +742,22 @@ function _dbAttrPills(attrs) {
         if (extra > 0) fHtml += '<span style="font-size:0.65rem;color:#9ca3af;">\u00a0+' + extra + '</span>';
         fileParts.push(fHtml);
       }
-    } else if (t === 'place' && v) {
-      var plProv  = a.attr_options || 'google';
-      var plEnc   = encodeURIComponent(v);
-      var plUrl   = plProv === 'apple' ? 'https://maps.apple.com/?q=' + plEnc
-                  : plProv === 'osm'   ? 'https://www.openstreetmap.org/search?query=' + plEnc
-                  : 'https://maps.google.com/?q=' + plEnc;
-      // Short label: first 2 comma-parts of the address (city, state)
-      var plParts = v.split(',');
-      var plShort = plParts.slice(0, 2).join(',').trim();
-      if (plShort.length > 26) plShort = plShort.slice(0, 24) + '\u2026';
-      plainParts.push(
-        '<a href="' + _esc(plUrl) + '" target="_blank" rel="noopener"'
-        + ' onclick="event.stopPropagation()"'
-        + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
-        + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-        + 'max-width:160px;display:inline-block;vertical-align:middle;">'
-        + '\uD83D\uDDFA\uFE0F\u00a0' + _esc(plShort) + '</a>'
-      );
     } else if (v) {
       // text / person
-      plainParts.push(
+      normalParts.push(
         '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
     }
   }
 
-  if (plainParts.length === 0 && chipParts.length === 0 && fileParts.length === 0) return '';
+  if (priorityParts.length === 0 && normalParts.length === 0 &&
+      chipParts.length === 0 && fileParts.length === 0) return '';
 
-  var MAX_PLAIN = 3, MAX_CHIPS = 4;
+  // Merge: priority attrs first, fill remainder with normal attrs, cap at 6.
+  var MAX_CHIPS = 4;
+  var MAX_PLAIN = 6;
+  var plainParts = priorityParts.concat(normalParts);
   var html = '';
 
   if (chipParts.length > 0) {
@@ -754,7 +768,7 @@ function _dbAttrPills(attrs) {
   }
 
   if (plainParts.length > 0) {
-    var extraP   = plainParts.length - MAX_PLAIN;
+    var extraP    = plainParts.length - MAX_PLAIN;
     var plainHtml = plainParts.slice(0, MAX_PLAIN).join(
       '<span class="text-[10px] text-gray-300 dark:text-zinc-600 mx-0.5">\u00b7</span>'
     );
