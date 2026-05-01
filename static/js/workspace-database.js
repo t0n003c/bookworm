@@ -150,95 +150,112 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
   var isDark  = document.documentElement.classList.contains('dark');
   var subTxt  = isDark ? '#a1a1aa' : '#6b7280';
   var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
-  var dispFmt = fmt || 'name';  // 'name' | 'short' | 'full'
-  var html    = '<div style="display:flex;flex-direction:column;gap:0.3rem;">';
+  var pillBg  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';
+  var pillClr = isDark ? '#d4d4d8' : '#374151';
+  var pillBdr = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
+  var dispFmt = fmt || 'name';
 
-  if (files.length === 0) {
-    html += '<span style="font-size:0.75rem;color:' + subTxt + ';">No files yet</span>';
-  } else {
-    for (var i = 0; i < files.length; i++) {
-      var f      = files[i];
-      var isExt  = /^https?:\/\//i.test(f.url);
-      var icon   = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE'; // 🔗 or 📎
-      // Label shown inside the <a> tag depends on display format
-      var linkLabel;
-      if (dispFmt === 'full') {
-        linkLabel = icon + '\u00a0' + _esc(f.url);
-      } else if (dispFmt === 'short') {
-        var sUrl = f.url.replace(/^https?:\/\//, '');
-        if (sUrl.length > 34) sUrl = '\u2026' + sUrl.slice(-32);
-        linkLabel = icon + '\u00a0' + _esc(sUrl);
-      } else {
-        linkLabel = icon + '\u00a0' + _esc(f.name || f.url);  // 'name' default
-      }
-      var rowId    = '_dbf-row-' + attrId + '-' + i;
-      var renId    = '_dbf-ren-' + attrId + '-' + i;
-      var renInpId = '_dbf-ren-inp-' + attrId + '-' + i;
-      var kJ2      = _esc(JSON.stringify(key));
-      // ── main row (link + rename + remove buttons) ─────────
-      html += '<div id="' + rowId + '" style="display:flex;align-items:center;gap:0.4rem;">';
-      html += '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
-        + ' style="flex:1;min-width:0;font-size:0.75rem;color:#0053e2;'
-        + 'text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">';
-      html += linkLabel + '</a>';
-      // rename button — only in name mode
-      if (dispFmt === 'name') {
-        html += '<button type="button" title="Rename"'
-          + ' onclick="_dbFilesStartRename(' + attrId + ',' + i + ')"'
-          + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
-          + 'font-size:0.68rem;color:' + subTxt + ';padding:0;line-height:1;opacity:0.55;"'
-          + '>\u270F\uFE0F</button>';
-      }
-      html += '<button type="button" title="Remove"'
-        + ' onclick="_dbFilesRemove(' + cardId + ',' + attrId + ',' + kJ + ',' + i + ')"'
-        + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
-        + 'font-size:0.75rem;color:' + subTxt + ';padding:0;line-height:1;">\u00d7</button>';
-      html += '</div>';
-      // ── inline rename row (hidden until ✏️ clicked, name mode only) ──
-      if (dispFmt === 'name') {
-        html += '<div id="' + renId + '" style="display:none;align-items:center;gap:0.3rem;">';
-        html += '<input id="' + renInpId + '" type="text" value="' + _esc(f.name || '') + '"'
-          + ' placeholder="Display name…"'
-          + ' style="flex:1;font-size:0.73rem;padding:0.18rem 0.4rem;border-radius:0.35rem;'
-          + 'border:1px solid ' + bdr + ';box-sizing:border-box;background:transparent;color:inherit;outline:none;"'
-          + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();_dbFilesRename('
-            + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value);}'
-          + 'if(event.key===\'Escape\'){_dbFilesCancelRename(' + attrId + ',' + i + ');}"'
-          + ' onblur="_dbFilesRename(' + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value)">';
-        html += '</div>';
-      }
+  // Outer column — chips row on top, link-input row below (hidden by default)
+  var html = '<div style="display:flex;flex-direction:column;gap:0.25rem;">';
+
+  // ── Chips + action buttons — all inline in one flex-wrap row ─────────────
+  html += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.3rem;">';
+
+  for (var i = 0; i < files.length; i++) {
+    var f        = files[i];
+    var isExt    = /^https?:\/\//i.test(f.url);
+    var icon     = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE';
+    var rowId    = '_dbf-row-' + attrId + '-' + i;
+    var renId    = '_dbf-ren-' + attrId + '-' + i;
+    var renInpId = '_dbf-ren-inp-' + attrId + '-' + i;
+    var kJ2      = _esc(JSON.stringify(key));
+
+    var label;
+    if (dispFmt === 'full') {
+      label = f.url;
+    } else if (dispFmt === 'short') {
+      label = f.url.replace(/^https?:\/\//, '');
+      if (label.length > 28) label = '\u2026' + label.slice(-26);
+    } else {
+      label = f.name || f.url;
+    }
+    if (label.length > 22) label = label.slice(0, 20) + '\u2026';
+
+    // ── display chip ──────────────────────────────────────────────────────
+    html += '<span id="' + rowId + '"'
+      + ' style="display:inline-flex;align-items:center;'
+      + 'background:' + pillBg + ';border:1px solid ' + pillBdr + ';color:' + pillClr + ';'
+      + 'border-radius:0.375rem;font-size:0.72rem;white-space:nowrap;">';
+    // clickable link
+    html += '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
+      + ' onclick="event.stopPropagation()"'
+      + ' style="padding:0.15rem 0.35rem 0.15rem 0.4rem;color:#0053e2;'
+      + 'text-decoration:none;overflow:hidden;text-overflow:ellipsis;'
+      + 'max-width:140px;white-space:nowrap;font-size:0.72rem;">'
+      + icon + '\u00a0' + _esc(label) + '</a>';
+    // ✏️ rename (name mode only)
+    if (dispFmt === 'name') {
+      html += '<button type="button" title="Rename"'
+        + ' onclick="event.stopPropagation();_dbFilesStartRename(' + attrId + ',' + i + ')"'
+        + ' style="background:none;border:none;cursor:pointer;color:inherit;'
+        + 'font-size:0.68rem;line-height:1;padding:0 0.2rem;'
+        + 'opacity:0.45;font-family:inherit;"'
+        + ' onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.45\'">'
+        + '\u270F\uFE0F</button>';
+    }
+    // × remove
+    html += '<button type="button" title="Remove"'
+      + ' onclick="event.stopPropagation();_dbFilesRemove(' + cardId + ',' + attrId + ',' + kJ + ',' + i + ')"'
+      + ' style="background:none;border:none;cursor:pointer;color:inherit;'
+      + 'font-size:1rem;line-height:1;padding:0 0.3rem 0 0;'
+      + 'opacity:0.45;font-family:inherit;"'
+      + ' onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.45\'">'
+      + '\u00d7</button>';
+    html += '</span>';
+
+    // ── rename chip (inline-flex, hidden until ✏️ clicked) ───────────────
+    if (dispFmt === 'name') {
+      html += '<span id="' + renId + '"'
+        + ' style="display:none;align-items:center;gap:0.2rem;'
+        + 'background:' + pillBg + ';border:1px solid #0053e2;'
+        + 'border-radius:0.375rem;padding:0.05rem 0.3rem;white-space:nowrap;">'
+        + '<input id="' + renInpId + '" type="text" value="' + _esc(f.name || '') + '"'
+        + ' placeholder="Display name\u2026"'
+        + ' style="font-size:0.72rem;padding:0.05rem 0.2rem;border-radius:0.25rem;'
+        + 'border:none;background:transparent;color:inherit;outline:none;width:9rem;"'
+        + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();'
+        + '_dbFilesRename(' + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value);}'
+        + 'if(event.key===\'Escape\'){_dbFilesCancelRename(' + attrId + ',' + i + ');}"'
+        + ' onblur="_dbFilesRename(' + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value)">'
+        + '</span>';
     }
   }
 
-  // Action row
-  html += '<div style="display:flex;gap:0.5rem;margin-top:0.35rem;flex-wrap:wrap;justify-content:flex-end;">';
-  // Hidden file input
+  // ── Upload + Paste link — inline after chips ──────────────────────────────
   html += '<input id="_dbf-inp-' + attrId + '" type="file" style="display:none;"'
     + ' onchange="_dbFilesUpload(' + cardId + ',' + attrId + ',' + kJ + ',this)">';
-  // Upload button
   html += '<button type="button"'
     + ' onclick="document.getElementById(\'_dbf-inp-' + attrId + '\').click()"'
-    + ' style="font-size:0.7rem;padding:0.2rem 0.55rem;border-radius:0.375rem;cursor:pointer;'
-    + 'border:1px solid ' + bdr + ';background:transparent;color:' + subTxt + ';">';
-  html += '\uD83D\uDCCE Upload</button>';
-  // Add link button
+    + ' style="font-size:0.7rem;padding:0.18rem 0.5rem;border-radius:0.375rem;cursor:pointer;'
+    + 'border:1px solid ' + bdr + ';background:transparent;color:' + subTxt + ';white-space:nowrap;">'
+    + '\uD83D\uDCCE Upload</button>';
   html += '<button type="button"'
     + ' onclick="_dbFilesAddLink(' + cardId + ',' + attrId + ',' + kJ + ')"'
-    + ' style="font-size:0.7rem;padding:0.2rem 0.55rem;border-radius:0.375rem;cursor:pointer;'
-    + 'border:1px solid ' + bdr + ';background:transparent;color:' + subTxt + ';">';
-  html += '\uD83D\uDD17 Paste link</button>';
-  html += '</div>';
+    + ' style="font-size:0.7rem;padding:0.18rem 0.5rem;border-radius:0.375rem;cursor:pointer;'
+    + 'border:1px solid ' + bdr + ';background:transparent;color:' + subTxt + ';white-space:nowrap;">'
+    + '\uD83D\uDD17 Paste link</button>';
+  html += '</div>'; // end chips row
 
-  // Link input row (hidden until _dbFilesAddLink shows it)
-  html += '<div id="_dbf-link-' + attrId + '" style="display:none;margin-top:0.25rem;">';
-  html += '<input id="_dbf-link-inp-' + attrId + '" type="url" placeholder="https://…"'
+  // ── Link input row (hidden until Paste link clicked) ─────────────────────
+  html += '<div id="_dbf-link-' + attrId + '" style="display:none;">';
+  html += '<input id="_dbf-link-inp-' + attrId + '" type="url" placeholder="https://\u2026"'
     + ' style="font-size:0.75rem;width:100%;padding:0.25rem 0.4rem;border-radius:0.375rem;'
     + 'border:1px solid ' + bdr + ';box-sizing:border-box;background:transparent;color:inherit;outline:none;"'
     + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();_dbFilesConfirmLink(' + cardId + ',' + attrId + ',' + kJ + ');}'
     + 'if(event.key===\'Escape\'){document.getElementById(\'_dbf-link-' + attrId + '\').style.display=\'none\';}">';
   html += '</div>';
 
-  html += '</div>'; // wrapper
+  html += '</div>'; // outer column
   return html;
 }
 
@@ -369,7 +386,7 @@ function _dbFilesStartRename(attrId, idx) {
   var inp = document.getElementById('_dbf-ren-inp-' + attrId + '-' + idx);
   if (!row || !ren || !inp) return;
   row.style.display = 'none';
-  ren.style.display = 'flex';
+  ren.style.display = 'inline-flex'; // pill stays inline in the chip row
   inp.focus();
   inp.select();
 }
@@ -380,7 +397,7 @@ function _dbFilesCancelRename(attrId, idx) {
   var ren = document.getElementById('_dbf-ren-' + attrId + '-' + idx);
   if (!row || !ren) return;
   ren.style.display = 'none';
-  row.style.display = 'flex';
+  row.style.display = 'inline-flex'; // restore pill display
 }
 
 // Save a new display name for a file entry at index idx.
