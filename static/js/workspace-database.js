@@ -4681,14 +4681,11 @@ function _dbAttrSetVisibility(cardId, attrId, visibility) {
   var attr = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   if (!attr) return;
 
+  var prevVisibility = attr.visibility || 'always';
   attr.visibility = visibility; // optimistic local update
 
-  // Update row opacity immediately (no full re-render needed)
-  var row = document.querySelector('.db-attr-row[data-attr-id="' + attrId + '"]');
-  if (row) {
-    row.style.opacity = visibility === 'always_hide' ? '0.45'
-      : (visibility === 'hide_empty' && !attr.attr_value) ? '0.6' : '1';
-  }
+  // Full re-render so toggle button + data-attr-hidden reflect new state
+  _dbRenderDetailPanel(card);
 
   fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
     method: 'PATCH',
@@ -4697,8 +4694,9 @@ function _dbAttrSetVisibility(cardId, attrId, visibility) {
   })
   .then(function(r) { if (!r.ok) throw new Error('Patch failed'); })
   .catch(function(e) {
-    // Revert on failure
-    attr.visibility = attr.visibility === visibility ? 'always' : attr.visibility;
+    // Revert local state and re-render again on failure
+    attr.visibility = prevVisibility;
+    _dbRenderDetailPanel(card);
     _dbToast('Could not update visibility', true);
   });
 }
