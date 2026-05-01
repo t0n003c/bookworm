@@ -1243,9 +1243,46 @@ function _dbToggleFilterPanel() {
   function buildGroupEl(groupIdx) {
     var grpWrap = document.createElement('div');
     grpWrap.style.cssText = 'border:1px solid ' + bdr + ';border-radius:0.5rem;'
-      + 'padding:0.5rem;display:flex;flex-direction:column;gap:0.35rem;';
+      + 'padding:0.5rem;display:flex;flex-direction:column;gap:0.35rem;position:relative;';
 
-    // Condition list for this group
+    // ── group header: × delete icon top-right
+    var grpHeader = document.createElement('div');
+    grpHeader.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;margin-bottom:0.1rem;';
+
+    var rmGrpBtn = document.createElement('button');
+    rmGrpBtn.type = 'button';
+    rmGrpBtn.title = 'Remove this group';
+    rmGrpBtn.setAttribute('aria-label', 'Remove filter group');
+    rmGrpBtn.style.cssText =
+      'display:flex;align-items:center;justify-content:center;'
+      + 'width:1.25rem;height:1.25rem;border-radius:0.25rem;'
+      + 'border:none;background:transparent;cursor:pointer;'
+      + 'color:' + sub + ';font-size:0.85rem;line-height:1;padding:0;'
+      + 'transition:color 0.12s,background 0.12s;';
+    rmGrpBtn.textContent = '\u00d7';
+    rmGrpBtn.addEventListener('mouseover', function() {
+      rmGrpBtn.style.color      = '#ef4444';
+      rmGrpBtn.style.background = isDark ? '#3f1515' : '#fee2e2';
+    });
+    rmGrpBtn.addEventListener('mouseout', function() {
+      rmGrpBtn.style.color      = sub;
+      rmGrpBtn.style.background = 'transparent';
+    });
+    rmGrpBtn.addEventListener('click', function() {
+      _dbFilterGroups.splice(groupIdx, 1);
+      _dbSaveFilterSort();
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+      allGroupsEl.innerHTML = '';
+      _dbFilterGroups.forEach(function(_, gi) {
+        if (gi > 0) allGroupsEl.appendChild(makeOrSep());
+        allGroupsEl.appendChild(buildGroupEl(gi));
+      });
+    });
+    grpHeader.appendChild(rmGrpBtn);
+    grpWrap.appendChild(grpHeader);
+
+    // ── condition list
     var condList = document.createElement('div');
     condList.style.cssText = 'display:flex;flex-direction:column;gap:0.35rem;';
     _dbFilterGroups[groupIdx].forEach(function(_, ci) {
@@ -1253,7 +1290,7 @@ function _dbToggleFilterPanel() {
     });
     grpWrap.appendChild(condList);
 
-    // Footer row: AND label + '+ And' button + '× group' button
+    // ── footer: AND badge + add-condition button
     var grpFooter = document.createElement('div');
     grpFooter.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-top:0.15rem;';
 
@@ -1279,32 +1316,6 @@ function _dbToggleFilterPanel() {
       _dbRenderGrid();
     });
     grpFooter.appendChild(addCondBtn);
-
-    // Spacer
-    var sp = document.createElement('span');
-    sp.style.flex = '1';
-    grpFooter.appendChild(sp);
-
-    // Remove group button
-    var rmGrpBtn = document.createElement('button');
-    rmGrpBtn.type = 'button';
-    rmGrpBtn.textContent = '\u00d7 group';
-    rmGrpBtn.title = 'Remove this OR group';
-    rmGrpBtn.style.cssText = 'font-size:0.68rem;padding:0.15rem 0.4rem;border-radius:0.3rem;'
-      + 'cursor:pointer;border:1px solid ' + bdr + ';background:transparent;color:' + sub + ';';
-    rmGrpBtn.addEventListener('click', function() {
-      _dbFilterGroups.splice(groupIdx, 1);
-      _dbSaveFilterSort();
-      _dbUpdateFilterBadge();
-      _dbRenderGrid();
-      // Rebuild all groups
-      allGroupsEl.innerHTML = '';
-      _dbFilterGroups.forEach(function(_, gi) {
-        if (gi > 0) allGroupsEl.appendChild(makeOrSep());
-        allGroupsEl.appendChild(buildGroupEl(gi));
-      });
-    });
-    grpFooter.appendChild(rmGrpBtn);
 
     grpWrap.appendChild(grpFooter);
     return grpWrap;
