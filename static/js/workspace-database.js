@@ -471,6 +471,7 @@ function initDatabaseView(wsId) {
   _dbFilterGroups = [];
   _dbSortLevels    = [];
   _dbLoadFilterSort(_dbWsId);
+  _dbUpdateFilterBadge();   // restore badge count after page refresh
   // Close any stale filter panel from a previous workspace
   var _stalePanel = document.getElementById('db-filter-panel');
   if (_stalePanel) _stalePanel.remove();
@@ -660,10 +661,24 @@ function _dbOpsForType(type) {
     { op: 'checked',     label: 'is checked'    },
     { op: 'not_checked', label: 'is not checked' },
   ];
-  if (type === 'checkbox')                   return check;
-  if (type === 'number')                     return num;
-  if (type === 'date')                       return num.slice(2).concat(num.slice(6));
-  if (type === 'select' || type === 'multi_select' || type === 'status') return text;
+  var anyOf = [
+    { op: 'is_any_of',  label: 'is any of'  },
+    { op: 'is_none_of', label: 'is none of' },
+    { op: 'empty',      label: 'is empty'   },
+    { op: 'not_empty',  label: 'is not empty' },
+  ];
+  var hasOf = [
+    { op: 'has_any_of', label: 'has any of' },
+    { op: 'has_all_of', label: 'has all of' },
+    { op: 'has_none_of',label: 'has none of'},
+    { op: 'empty',      label: 'is empty'   },
+    { op: 'not_empty',  label: 'is not empty' },
+  ];
+  if (type === 'checkbox')    return check;
+  if (type === 'number')      return num;
+  if (type === 'date')        return num.slice(2).concat(num.slice(6));
+  if (type === 'multi_select') return hasOf;
+  if (type === 'select' || type === 'status') return anyOf;
   return text;   // text, person, phone, place, url, email, files
 }
 
@@ -692,6 +707,19 @@ function _dbFilterMatch(card, f) {
   if (op === 'not_contains') return val.indexOf(cmp) === -1;
   if (op === 'is')          return val === cmp;
   if (op === 'is_not')      return val !== cmp;
+
+  // Multi-pick operators — f.val is a JSON array string ["A","B",...]
+  var picked = [];
+  try { picked = JSON.parse(f.val || '[]'); } catch(e) { picked = []; }
+  var pickedLow = picked.map(function(s) { return (s || '').toLowerCase().trim(); });
+  // Card value for multi_select is comma-split; for select/status it's a single token
+  var cardVals = val.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+
+  if (op === 'is_any_of')  return pickedLow.length === 0 || pickedLow.indexOf(val.trim()) !== -1;
+  if (op === 'is_none_of') return pickedLow.length === 0 || pickedLow.indexOf(val.trim()) === -1;
+  if (op === 'has_any_of') return pickedLow.length === 0 || cardVals.some(function(cv) { return pickedLow.indexOf(cv) !== -1; });
+  if (op === 'has_all_of') return pickedLow.length === 0 || pickedLow.every(function(p)  { return cardVals.indexOf(p) !== -1; });
+  if (op === 'has_none_of')return pickedLow.length === 0 || !cardVals.some(function(cv) { return pickedLow.indexOf(cv) !== -1; });
 
   // Numeric / date comparisons
   var n  = parseFloat(raw);
@@ -841,7 +869,7 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
   valWrap.style.cssText = 'flex:1.5;min-width:70px;';
 
   // Build the appropriate value control for the current key type.
-  // RetM element AND wires its change handler.
+  // Returns element AND wires its change handler.
   function buildValControl(key, type, currentVal) {
     var op = opSel.value;
     // No value needed for these operators
@@ -850,19 +878,65 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
       dummy.style.display = 'none';
       return dummy;
     }
-    // Select-type: dropdown of defined option labels
-    if (type === 'select' || type === 'multi_select' || type === 'status') {
+    // Multi-pick operators on select / multi_select / status: checkbox list
+    var multiPickOps = ['is_any_of','is_none_of','has_any_of','has_all_of','has_none_of'];
+    if (multiPickOps.indexOf(op) !== -1 &&
+        (type === 'select' || type === 'multi_select' || type === 'status')) {
       var opts = _dbGetAttrOptions(key);
-      if (opts.length > 0) {
+      var picked = [];
+      try { picked = JSON.parse(currentVal || '[]'); } catch(e) { picked = []; }
+
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'border:1px solid ' + bdr + ';border-radius:0.375rem;'
+        + 'max-height:120px;overflow-y:auto;padding:0.25rem 0.4rem;'
+        + 'background:' + bg + ';display:flex;flex-direction:column;gap:0.2rem;';
+
+      if (opts.length === 0) {
+        var empty = document.createElement('span');
+        empty.style.cssText = 'font-size:0.7rem;color:' + sub + ';';
+        empty.textContent = 'No options defined';
+        wrap.appendChild(empty);
+      } else {
+        opts.forEach(function(lbl) {
+          var row = document.createElement('label');
+          row.style.cssText = 'display:flex;align-items:center;gap:0.35rem;'
+            + 'font-size:0.72rem;cursor:pointer;color:' + txt + ';white-space:nowrap;';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = lbl;
+          cb.checked = picked.indexOf(lbl) !== -1;
+          cb.style.cssText = 'accent-color:#7c3aed;cursor:pointer;flex-shrink:0;';
+          cb.addEventListener('change', function() {
+            // Rebuild picked from all checkboxes in this wrap
+            var newPicked = [];
+            wrap.querySelectorAll('input[type=checkbox]').forEach(function(x) {
+              if (x.checked) newPicked.push(x.value);
+            });
+            _dbFilterGroups[groupIdx][condIdx].val = JSON.stringify(newPicked);
+            _dbSaveFilterSort();
+            _dbRenderGrid();
+          });
+          var lblTxt = document.createElement('span');
+          lblTxt.textContent = lbl;
+          row.appendChild(cb);
+          row.appendChild(lblTxt);
+          wrap.appendChild(row);
+        });
+      }
+      return wrap;
+    }
+    // Single-option dropdown for select/status when no multi-pick op selected
+    if (type === 'select' || type === 'multi_select' || type === 'status') {
+      var opts2 = _dbGetAttrOptions(key);
+      if (opts2.length > 0) {
         var sel = document.createElement('select');
         sel.style.cssText = inpSty;
-        // blank placeholder
         var blank = document.createElement('option');
         blank.value = '';
-        blank.textContent = '— pick one —';
+        blank.textContent = '\u2014 pick one \u2014';
         if (!currentVal) blank.selected = true;
         sel.appendChild(blank);
-        opts.forEach(function(lbl) {
+        opts2.forEach(function(lbl) {
           var o = document.createElement('option');
           o.value = lbl;
           o.textContent = lbl;
@@ -880,7 +954,7 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
     // Date / number / text fallback
     var inp = document.createElement('input');
     inp.type = (type === 'date') ? 'date' : (type === 'number') ? 'number' : 'text';
-    inp.placeholder = 'Value…';
+    inp.placeholder = 'Value\u2026';
     inp.value = currentVal || '';
     inp.style.cssText = inpSty;
     inp.addEventListener('input', function() {
