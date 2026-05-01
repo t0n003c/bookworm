@@ -211,7 +211,7 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
   }
 
   // Action row
-  html += '<div style="display:flex;gap:0.5rem;margin-top:0.35rem;flex-wrap:wrap;">';
+  html += '<div style="display:flex;gap:0.5rem;margin-top:0.35rem;flex-wrap:wrap;justify-content:flex-end;">';
   // Hidden file input
   html += '<input id="_dbf-inp-' + attrId + '" type="file" style="display:none;"'
     + ' onchange="_dbFilesUpload(' + cardId + ',' + attrId + ',' + kJ + ',this)">';
