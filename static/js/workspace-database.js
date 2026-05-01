@@ -153,6 +153,7 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
   var pillBg  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';
   var pillClr = isDark ? '#d4d4d8' : '#374151';
   var pillBdr = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
+  var linkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 in dark, Walmart blue in light
   var dispFmt = fmt || 'name';
 
   // Outer column — chips row on top, link-input row below (hidden by default)
@@ -189,7 +190,7 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
     // clickable link
     html += '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
       + ' onclick="event.stopPropagation()"'
-      + ' style="padding:0.15rem 0.35rem 0.15rem 0.4rem;color:#0053e2;'
+      + ' style="padding:0.15rem 0.35rem 0.15rem 0.4rem;color:' + linkClr + ';'
       + 'text-decoration:none;overflow:hidden;text-overflow:ellipsis;'
       + 'max-width:140px;white-space:nowrap;font-size:0.72rem;">'
       + icon + '\u00a0' + _esc(label) + '</a>';
@@ -231,7 +232,8 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
     }
   }
 
-  // ── Upload + Paste link — inline after chips ──────────────────────────────
+  // ── Upload + Paste link — pushed to far right with margin-left:auto ────────
+  html += '<div style="margin-left:auto;display:flex;gap:0.3rem;flex-shrink:0;">';
   html += '<input id="_dbf-inp-' + attrId + '" type="file" style="display:none;"'
     + ' onchange="_dbFilesUpload(' + cardId + ',' + attrId + ',' + kJ + ',this)">';
   html += '<button type="button"'
@@ -244,6 +246,7 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
     + ' style="font-size:0.7rem;padding:0.18rem 0.5rem;border-radius:0.375rem;cursor:pointer;'
     + 'border:1px solid ' + bdr + ';background:transparent;color:' + subTxt + ';white-space:nowrap;">'
     + '\uD83D\uDD17 Paste link</button>';
+  html += '</div>'; // end button wrapper
   html += '</div>'; // end chips row
 
   // ── Link input row (hidden until Paste link clicked) ─────────────────────
