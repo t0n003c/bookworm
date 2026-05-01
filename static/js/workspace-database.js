@@ -16,6 +16,7 @@ var _dbSizeStep          = 3;      // card size slider step (1=small … 5=large
 var _dbFilterGroups      = []; // [[{key,op,val},…],…] — OR between groups, AND within each group
 var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = highest priority)
 var _dbGroupBy           = null; // null | {key} — attribute key to group cards by
+var _dbColorRules        = []; // [{key,op,val,color}] — first match wins; color = _DB_OPT_COLORS id
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -690,7 +691,7 @@ function _dbSaveFilterSort() {
   try {
     localStorage.setItem(
       '_dbFS_' + _dbWsId,
-      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels, groupBy: _dbGroupBy })
+      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels, groupBy: _dbGroupBy, colorRules: _dbColorRules })
     );
   } catch(e) {}
 }
@@ -701,9 +702,10 @@ function _dbLoadFilterSort(wsId) {
     var raw = localStorage.getItem('_dbFS_' + wsId);
     if (!raw) return;
     var data = JSON.parse(raw);
-    if (Array.isArray(data.groups)) _dbFilterGroups = data.groups;
-    if (Array.isArray(data.sort))   _dbSortLevels   = data.sort;
-    if (data.groupBy !== undefined)  _dbGroupBy      = data.groupBy || null;
+    if (Array.isArray(data.groups))     _dbFilterGroups = data.groups;
+    if (Array.isArray(data.sort))       _dbSortLevels   = data.sort;
+    if (data.groupBy !== undefined)     _dbGroupBy      = data.groupBy || null;
+    if (Array.isArray(data.colorRules)) _dbColorRules   = data.colorRules;
   } catch(e) {}
 }
 
@@ -880,7 +882,8 @@ function _dbUpdateFilterBadge() {
   var old   = btn.querySelector('.db-filter-badge');
   var total = _dbFilterGroups.reduce(function(s, g) { return s + g.length; }, 0)
             + _dbSortLevels.length
-            + (_dbGroupBy ? 1 : 0);
+            + (_dbGroupBy ? 1 : 0)
+            + _dbColorRules.length;
   if (total === 0) {
     if (old) old.remove();
     btn.classList.remove('text-purple-600', 'dark:text-purple-400');
@@ -907,11 +910,29 @@ function _dbUpdateFilterBadge() {
 function _dbClearFilters() {
   _dbFilterGroups = [];
   _dbSortLevels    = [];
+  _dbColorRules    = [];
   _dbSaveFilterSort();
   var panel = document.getElementById('db-filter-panel');
   if (panel) panel.remove();
   _dbUpdateFilterBadge();
   _dbRenderGrid();
+}
+
+// Returns the card background/border override for the first matching color rule,
+// or null if no rule matches. Reuses _dbFilterMatch so operator logic stays DRY.
+function _dbColorRuleMatch(card) {
+  var isDk = document.documentElement.classList.contains('dark');
+  for (var i = 0; i < _dbColorRules.length; i++) {
+    var rule = _dbColorRules[i];
+    if (_dbFilterMatch(card, rule)) {
+      var clr = _DB_OPT_COLORS.find(function(c) { return c.id === rule.color; }) || _DB_OPT_COLORS[0];
+      return {
+        bg:     isDk ? clr.darkBg  : clr.bg,
+        border: isDk ? clr.dot + '66' : clr.dot + '55'
+      };
+    }
+  }
+  return null;
 }
 
 // Build a single filter row element inside the panel.
@@ -1529,7 +1550,193 @@ function _dbToggleFilterPanel() {
   panel.appendChild(filterSec);
   panel.appendChild(grpBySec);   // Group by sits after Filter
 
-  // ─────────── Footer: Clear all ───────────────────────
+  // ─────────── COLOR RULES section ────────────────────
+  // Each rule: { key, op, val, color } — first match wins. Reuses _dbFilterMatch
+  // so all filter operators work identically for color conditions.
+  var colorSec = document.createElement('div');
+  var colorLbl = document.createElement('div');
+  colorLbl.style.cssText = secHdr;
+  colorLbl.textContent   = '\uD83C\uDFA8  Color rules';
+  colorSec.appendChild(colorLbl);
+
+  var colorHint = document.createElement('p');
+  colorHint.textContent = 'Cards matching the first rule get its color.';
+  colorHint.style.cssText = 'font-size:0.67rem;color:' + sub + ';margin:0 0 0.45rem;';
+  colorSec.appendChild(colorHint);
+
+  var colorRuleList = document.createElement('div');
+  colorRuleList.id  = 'db-color-rule-list';
+  colorRuleList.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;';
+
+  function buildColorRuleRow(ruleIdx) {
+    var rule  = _dbColorRules[ruleIdx];
+    var rowEl = document.createElement('div');
+    rowEl.style.cssText = 'display:flex;align-items:center;gap:0.3rem;';
+
+    // — field select
+    var keySel = document.createElement('select');
+    keySel.style.cssText = inpSty + 'flex:1;min-width:0;';
+    attrKeys.forEach(function(ak) {
+      var o = document.createElement('option');
+      o.value = ak.key;
+      o.textContent = ak.key === '__title' ? 'Title'
+        : ak.key === '__created' ? 'Created'
+        : ak.key === '__updated' ? 'Updated' : ak.key;
+      if (ak.key === rule.key) o.selected = true;
+      keySel.appendChild(o);
+    });
+
+    // — operator select (rebuilt when key changes)
+    var opSel = document.createElement('select');
+    opSel.style.cssText = inpSty + 'flex:1;min-width:0;';
+    function rebuildOps(typeHint) {
+      var ops = _dbOpsForType(typeHint || 'text');
+      opSel.innerHTML = '';
+      ops.forEach(function(op) {
+        var o = document.createElement('option');
+        o.value = op.op; o.textContent = op.label;
+        if (op.op === rule.op) o.selected = true;
+        opSel.appendChild(o);
+      });
+    }
+    var initType = (attrKeys.find(function(ak) { return ak.key === rule.key; }) || { type: 'text' }).type;
+    rebuildOps(initType);
+
+    // — value input (hidden for operators that need no value)
+    var noValOps = ['empty','not_empty','checked','not_checked'];
+    var valInp = document.createElement('input');
+    valInp.type = 'text';
+    valInp.value = rule.val || '';
+    valInp.placeholder = 'value…';
+    valInp.style.cssText = inpSty + 'flex:1;min-width:0;';
+    valInp.style.display = noValOps.indexOf(rule.op) !== -1 ? 'none' : '';
+    valInp.addEventListener('input', function() {
+      _dbColorRules[ruleIdx].val = valInp.value;
+      _dbSaveFilterSort();
+      _dbRenderGrid();
+    });
+
+    // — color swatch button + popover palette
+    var swatchWrap = document.createElement('div');
+    swatchWrap.style.cssText = 'position:relative;flex-shrink:0;';
+    var curClr = _DB_OPT_COLORS.find(function(c) { return c.id === rule.color; }) || _DB_OPT_COLORS[0];
+    var swatchBtn = document.createElement('button');
+    swatchBtn.type  = 'button';
+    swatchBtn.title = 'Pick card color';
+    swatchBtn.style.cssText =
+      'width:1.4rem;height:1.4rem;border-radius:9999px;cursor:pointer;flex-shrink:0;'
+      + 'background:' + curClr.dot + ';border:2px solid rgba(0,0,0,0.18);';
+    swatchBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var existPal = swatchWrap.querySelector('.db-clr-palette');
+      if (existPal) { existPal.remove(); return; }
+      var pal = document.createElement('div');
+      pal.className = 'db-clr-palette';
+      pal.style.cssText =
+        'position:absolute;top:calc(100% + 5px);right:0;z-index:9600;'
+        + 'background:' + panelBg + ';border:1px solid ' + bdr + ';'
+        + 'border-radius:0.5rem;padding:0.35rem;'
+        + 'display:grid;grid-template-columns:repeat(3,1.5rem);gap:0.3rem;'
+        + 'box-shadow:0 4px 16px rgba(0,0,0,0.18);';
+      _DB_OPT_COLORS.forEach(function(clr) {
+        var dot = document.createElement('button');
+        dot.type = 'button'; dot.title = clr.id;
+        var isActive = clr.id === _dbColorRules[ruleIdx].color;
+        dot.style.cssText =
+          'width:1.5rem;height:1.5rem;border-radius:9999px;cursor:pointer;'
+          + 'background:' + clr.dot + ';'
+          + 'border:2px solid ' + (isActive ? '#fff' : 'transparent') + ';'
+          + 'outline:' + (isActive ? '2px solid ' + clr.dot : 'none') + ';';
+        dot.addEventListener('click', function(e2) {
+          e2.stopPropagation();
+          _dbColorRules[ruleIdx].color = clr.id;
+          swatchBtn.style.background = clr.dot;
+          _dbSaveFilterSort();
+          _dbRenderGrid();
+          pal.remove();
+        });
+        pal.appendChild(dot);
+      });
+      swatchWrap.appendChild(pal);
+      setTimeout(function() {
+        function closePal(ev) {
+          if (!pal.contains(ev.target) && ev.target !== swatchBtn) {
+            pal.remove();
+            document.removeEventListener('mousedown', closePal, true);
+          }
+        }
+        document.addEventListener('mousedown', closePal, true);
+      }, 0);
+    });
+    swatchWrap.appendChild(swatchBtn);
+
+    // — delete rule button
+    var rmBtn = document.createElement('button');
+    rmBtn.type = 'button'; rmBtn.textContent = '\u00d7';
+    rmBtn.style.cssText =
+      'border:none;background:none;cursor:pointer;color:' + sub
+      + ';font-size:1rem;padding:0 0.1rem;flex-shrink:0;line-height:1;';
+    rmBtn.addEventListener('mouseover', function() { rmBtn.style.color = '#ef4444'; });
+    rmBtn.addEventListener('mouseout',  function() { rmBtn.style.color = sub; });
+    rmBtn.addEventListener('click', function() {
+      _dbColorRules.splice(ruleIdx, 1);
+      _dbSaveFilterSort();
+      _dbUpdateFilterBadge();
+      _dbRenderGrid();
+      colorRuleList.innerHTML = '';
+      _dbColorRules.forEach(function(_, i) { colorRuleList.appendChild(buildColorRuleRow(i)); });
+    });
+
+    // — wire up interdependencies
+    keySel.addEventListener('change', function() {
+      _dbColorRules[ruleIdx].key = keySel.value;
+      var newType = (attrKeys.find(function(ak) { return ak.key === keySel.value; }) || { type: 'text' }).type;
+      rebuildOps(newType);
+      _dbColorRules[ruleIdx].op  = opSel.value;
+      _dbColorRules[ruleIdx].val = '';
+      valInp.value = '';
+      valInp.style.display = noValOps.indexOf(opSel.value) !== -1 ? 'none' : '';
+      _dbSaveFilterSort();
+      _dbRenderGrid();
+    });
+    opSel.addEventListener('change', function() {
+      _dbColorRules[ruleIdx].op = opSel.value;
+      valInp.style.display = noValOps.indexOf(opSel.value) !== -1 ? 'none' : '';
+      _dbSaveFilterSort();
+      _dbRenderGrid();
+    });
+
+    rowEl.appendChild(keySel);
+    rowEl.appendChild(opSel);
+    rowEl.appendChild(valInp);
+    rowEl.appendChild(swatchWrap);
+    rowEl.appendChild(rmBtn);
+    return rowEl;
+  }
+
+  _dbColorRules.forEach(function(_, i) { colorRuleList.appendChild(buildColorRuleRow(i)); });
+  colorSec.appendChild(colorRuleList);
+
+  var addColorRuleBtn = document.createElement('button');
+  addColorRuleBtn.type = 'button';
+  addColorRuleBtn.textContent = '+ Color rule';
+  addColorRuleBtn.style.cssText =
+    'margin-top:0.45rem;font-size:0.73rem;padding:0.22rem 0.6rem;'
+    + 'border-radius:0.375rem;cursor:pointer;border:1px solid ' + bdr + ';'
+    + 'background:transparent;color:#0053e2;font-weight:600;text-align:left;';
+  addColorRuleBtn.addEventListener('click', function() {
+    var firstKey = attrKeys[0] || { key: '__title', type: 'text' };
+    var firstOps = _dbOpsForType(firstKey.type);
+    _dbColorRules.push({ key: firstKey.key, op: firstOps[0].op, val: '', color: 'blue' });
+    colorRuleList.appendChild(buildColorRuleRow(_dbColorRules.length - 1));
+    _dbSaveFilterSort();
+    _dbUpdateFilterBadge();
+    _dbRenderGrid();
+  });
+  colorSec.appendChild(addColorRuleBtn);
+  panel.appendChild(colorSec);
+
+  // ─────────── Footer: Clear all ───────────────────
   var footer = document.createElement('div');
   footer.style.cssText = 'display:flex;justify-content:flex-end;border-top:1px solid ' + bdr + ';padding-top:0.6rem;';
   var clearBtn = document.createElement('button');
@@ -1564,13 +1771,17 @@ function _dbCardHtml(card) {
   var cover   = _dbCoverHtml(card);
   var pills   = _dbAttrPills(card.attrs || [], card.id);
   var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : '';
+  var colorHit = _dbColorRuleMatch(card);
+  var cardStyle = colorHit
+    ? 'background:' + colorHit.bg + ';border-color:' + colorHit.border + ';'
+    : '';
 
   return (
     '<div class="db-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700'
-    + ' shadow-sm overflow-hidden flex flex-col group/card" data-card-id="' + card.id + '">'
+    + ' shadow-sm overflow-hidden flex flex-col group/card" data-card-id="' + card.id + '"'
+    + (cardStyle ? ' style="' + cardStyle + '"' : '') + '>'
     + cover
-    + '<div class="p-3 flex flex-col flex-1 gap-2">'
-    + '<div class="flex items-start gap-2">'
+    + '<div class="p-3 flex flex-col flex-1 gap-2">'    + '<div class="flex items-start gap-2">'
     + '<div contenteditable="true" class="flex-1 font-bold text-gray-900 dark:text-zinc-100'
     + ' text-2xl leading-snug outline-none empty:before:content-[\'Untitled\']'
     + ' empty:before:text-gray-300 dark:empty:before:text-zinc-600"'
