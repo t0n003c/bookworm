@@ -169,18 +169,44 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
         if (sUrl.length > 34) sUrl = '\u2026' + sUrl.slice(-32);
         linkLabel = icon + '\u00a0' + _esc(sUrl);
       } else {
-        linkLabel = icon + '\u00a0' + _esc(f.name);  // 'name' default
+        linkLabel = icon + '\u00a0' + _esc(f.name || f.url);  // 'name' default
       }
-      html += '<div style="display:flex;align-items:center;gap:0.4rem;">';
+      var rowId    = '_dbf-row-' + attrId + '-' + i;
+      var renId    = '_dbf-ren-' + attrId + '-' + i;
+      var renInpId = '_dbf-ren-inp-' + attrId + '-' + i;
+      var kJ2      = _esc(JSON.stringify(key));
+      // ── main row (link + rename + remove buttons) ─────────
+      html += '<div id="' + rowId + '" style="display:flex;align-items:center;gap:0.4rem;">';
       html += '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
         + ' style="flex:1;min-width:0;font-size:0.75rem;color:#0053e2;'
         + 'text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">';
       html += linkLabel + '</a>';
+      // rename button — only in name mode
+      if (dispFmt === 'name') {
+        html += '<button type="button" title="Rename"'
+          + ' onclick="_dbFilesStartRename(' + attrId + ',' + i + ')"'
+          + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
+          + 'font-size:0.68rem;color:' + subTxt + ';padding:0;line-height:1;opacity:0.55;"'
+          + '>\u270F\uFE0F</button>';
+      }
       html += '<button type="button" title="Remove"'
         + ' onclick="_dbFilesRemove(' + cardId + ',' + attrId + ',' + kJ + ',' + i + ')"'
         + ' style="flex-shrink:0;background:none;border:none;cursor:pointer;'
         + 'font-size:0.75rem;color:' + subTxt + ';padding:0;line-height:1;">\u00d7</button>';
       html += '</div>';
+      // ── inline rename row (hidden until ✏️ clicked, name mode only) ──
+      if (dispFmt === 'name') {
+        html += '<div id="' + renId + '" style="display:none;align-items:center;gap:0.3rem;">';
+        html += '<input id="' + renInpId + '" type="text" value="' + _esc(f.name || '') + '"'
+          + ' placeholder="Display name…"'
+          + ' style="flex:1;font-size:0.73rem;padding:0.18rem 0.4rem;border-radius:0.35rem;'
+          + 'border:1px solid ' + bdr + ';box-sizing:border-box;background:transparent;color:inherit;outline:none;"'
+          + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();_dbFilesRename('
+            + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value);}'
+          + 'if(event.key===\'Escape\'){_dbFilesCancelRename(' + attrId + ',' + i + ');}"'
+          + ' onblur="_dbFilesRename(' + cardId + ',' + attrId + ',' + kJ2 + ',' + i + ',this.value)">';
+        html += '</div>';
+      }
     }
   }
 
@@ -334,6 +360,41 @@ function _dbFilesRemove(cardId, attrId, key, idx) {
   } else {
     _dbFilesSave(cardId, attrId, key, files);
   }
+}
+
+// Show the inline rename input for a file entry (name mode only).
+function _dbFilesStartRename(attrId, idx) {
+  var row = document.getElementById('_dbf-row-' + attrId + '-' + idx);
+  var ren = document.getElementById('_dbf-ren-' + attrId + '-' + idx);
+  var inp = document.getElementById('_dbf-ren-inp-' + attrId + '-' + idx);
+  if (!row || !ren || !inp) return;
+  row.style.display = 'none';
+  ren.style.display = 'flex';
+  inp.focus();
+  inp.select();
+}
+
+// Cancel rename — restore the main row without saving.
+function _dbFilesCancelRename(attrId, idx) {
+  var row = document.getElementById('_dbf-row-' + attrId + '-' + idx);
+  var ren = document.getElementById('_dbf-ren-' + attrId + '-' + idx);
+  if (!row || !ren) return;
+  ren.style.display = 'none';
+  row.style.display = 'flex';
+}
+
+// Save a new display name for a file entry at index idx.
+function _dbFilesRename(cardId, attrId, key, idx, newName) {
+  var trimmed = (newName || '').trim();
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var meta = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  var files = _dbParseFiles(meta ? (meta.attr_value || '') : '');
+  if (!files[idx]) return;
+  // Cancel rename UI first to avoid double-fire from blur + Enter.
+  _dbFilesCancelRename(attrId, idx);
+  if (!trimmed || trimmed === files[idx].name) return;  // nothing changed
+  files[idx] = { name: trimmed, url: files[idx].url, upload_id: files[idx].upload_id || null };
+  _dbFilesSave(cardId, attrId, key, files);
 }
 
 function _dbParseOptions(optsStr) {
@@ -539,14 +600,15 @@ function _dbCoverHtml(card) {
 }
 
 function _dbAttrPills(attrs) {
-  // Splits attrs into two groups:
-  //   plainParts  — all types except select/multi_select (no bubble)
-  //   chipParts   — select + multi_select (purple pill bubbles)
-  // The two groups render on separate lines when both are present.
+  // Splits attrs into three groups:
+  //   chipParts  — select + multi_select (purple pill bubbles)
+  //   plainParts — all other scalar types (capped at MAX_PLAIN)
+  //   fileParts  — files type (rendered separately below, no cap)
   if (!attrs || attrs.length === 0) return '';
 
   var plainParts = [];
   var chipParts  = [];
+  var fileParts  = [];  // rendered outside MAX_PLAIN
 
   for (var i = 0; i < attrs.length; i++) {
     var a = attrs[i];
@@ -615,7 +677,7 @@ function _dbAttrPills(attrs) {
       var fList = _dbParseFiles(v);
       if (fList.length > 0) {
         var fileFmt   = a.attr_options || 'name';
-        var MAX_PREV  = 2;
+        var MAX_PREV  = 3;
         var fileLinks = fList.slice(0, MAX_PREV).map(function(f) {
           var isExt = /^https?:\/\//i.test(f.url);
           var icon  = isExt ? '\uD83D\uDD17' : '\uD83D\uDCCE';
@@ -627,19 +689,19 @@ function _dbAttrPills(attrs) {
             var sl = f.url.replace(/^https?:\/\//, ''); if (sl.length > 28) sl = '\u2026' + sl.slice(-26);
             label = icon + '\u00a0' + _esc(sl);
           } else {
-            var nl = f.name; if (nl.length > 22) nl = nl.slice(0, 20) + '\u2026';
+            var nl = f.name || f.url; if (nl.length > 22) nl = nl.slice(0, 20) + '\u2026';
             label = icon + '\u00a0' + _esc(nl);
           }
           return '<a href="' + _esc(f.url) + '" target="_blank" rel="noopener"'
             + ' onclick="event.stopPropagation()"'
-            + ' class="text-xs text-blue-500 dark:text-blue-400 max-w-[150px] truncate inline-block'
-            + ' hover:underline" style="vertical-align:middle;">'
+            + ' style="font-size:0.7rem;color:#0053e2;text-decoration:underline;'
+            + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;display:inline-block;vertical-align:middle;">'
             + label + '</a>';
         });
         var extra = fList.length - MAX_PREV;
-        var fHtml = fileLinks.join('<span class="text-[10px] text-gray-300 dark:text-zinc-600 mx-0.5">\u00b7</span>');
-        if (extra > 0) fHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500">\u00a0+' + extra + '</span>';
-        plainParts.push('<span class="inline-flex items-center gap-0.5 flex-wrap">' + fHtml + '</span>');
+        var fHtml = fileLinks.join('<span style="font-size:0.6rem;color:#d1d5db;margin:0 0.2rem;">\u00b7</span>');
+        if (extra > 0) fHtml += '<span style="font-size:0.65rem;color:#9ca3af;">\u00a0+' + extra + '</span>';
+        fileParts.push(fHtml);
       }
     } else if (v) {
       // text / person / place
@@ -650,7 +712,7 @@ function _dbAttrPills(attrs) {
     }
   }
 
-  if (plainParts.length === 0 && chipParts.length === 0) return '';
+  if (plainParts.length === 0 && chipParts.length === 0 && fileParts.length === 0) return '';
 
   var MAX_PLAIN = 3, MAX_CHIPS = 4;
   var html = '';
@@ -669,6 +731,14 @@ function _dbAttrPills(attrs) {
     );
     if (extraP > 0) plainHtml += '<span class="text-[10px] text-gray-400 dark:text-zinc-500">\u00a0+' + extraP + '</span>';
     html += '<div class="flex flex-wrap items-center gap-1">' + plainHtml + '</div>';
+  }
+
+  if (fileParts.length > 0) {
+    html += '<div style="display:flex;flex-direction:column;gap:0.15rem;margin-top:0.1rem;">';
+    for (var fi = 0; fi < fileParts.length; fi++) {
+      html += '<div style="display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;">' + fileParts[fi] + '</div>';
+    }
+    html += '</div>';
   }
 
   return html;
