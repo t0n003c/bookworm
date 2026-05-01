@@ -4531,7 +4531,6 @@ function _dbAttrValueHtml(cardId, a) {
     }
     // No options defined — fall through to plain contenteditable
   }
-  }
 
   // multi_select — toggleable chip grid constrained to defined options
   if (t === 'multi_select') {
