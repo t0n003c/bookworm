@@ -4802,6 +4802,8 @@ function _dbAttrSaveOrder(cardId, attrIds) {
 }
 
 
+function _dbDeleteAttr(cardId, attrId) {
+  // Find attr name for the warning label
   var card     = _dbCards.find(function(c) { return c.id === cardId; });
   var attr     = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   var attrName = attr ? attr.attr_key : 'this attribute';
