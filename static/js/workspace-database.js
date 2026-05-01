@@ -517,7 +517,7 @@ function _dbRenderGrid() {
 
 function _dbCardHtml(card) {
   var cover   = _dbCoverHtml(card);
-  var pills   = _dbAttrPills(card.attrs || []);
+  var pills   = _dbAttrPills(card.attrs || [], card.id);
   var updated = card.updated_at ? card.updated_at.replace('T', ' ').slice(0, 16) : '';
 
   return (
@@ -599,8 +599,9 @@ function _dbCoverHtml(card) {
   );
 }
 
-function _dbAttrPills(attrs) {
+function _dbAttrPills(attrs, cardId) {
   // Renders a compact preview row for the card grid.
+  // cardId is required so checkbox pills can toggle in-place.
   //
   // Three output buckets:
   //   chipParts     — select + multi_select (coloured pill chips)
@@ -651,10 +652,18 @@ function _dbAttrPills(attrs) {
     // ── PRIORITY attrs (always surface first) ────────────────────────────
     } else if (t === 'checkbox') {
       var cbChecked = (v === 'true' || v === '1' || v === 'yes');
+      var cbKJ = _esc(JSON.stringify(a.attr_key)); // HTML-safe JSON string for inline JS
       priorityParts.push(
-        '<span class="text-xs font-medium '
-        + (cbChecked ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-zinc-500') + '">'
-        + (cbChecked ? '\u2611' : '\u2610') + '\u00a0' + _esc(a.attr_key) + '</span>'
+        '<button type="button"'
+        + ' onclick="_dbToggleCheckbox(' + cardId + ',' + a.id + ',' + cbKJ + ');event.stopPropagation();"'
+        + ' title="' + (cbChecked ? 'Uncheck' : 'Check') + ' ' + _esc(a.attr_key) + '"'
+        + ' style="background:none;border:none;padding:0;cursor:pointer;'
+        + 'font-family:inherit;font-size:0.75rem;font-weight:500;'
+        + 'color:' + (cbChecked ? '#16a34a' : '#9ca3af') + ';'
+        + 'display:inline-flex;align-items:center;gap:0.2rem;"'
+        + '>'
+        + (cbChecked ? '\u2611' : '\u2610') + '\u00a0' + _esc(a.attr_key)
+        + '</button>'
       );
     } else if (t === 'status' && v) {
       var sc = _dbStatusColor(v);
@@ -4920,6 +4929,22 @@ function _dbSaveAttrVal(cardId, attrId, key, value) {
   })
   .catch(function(e) { console.warn('Attr save failed', e); });
 }
+
+// Toggle a checkbox attr from the card preview pill.
+// Optimistically flips local state + re-renders grid immediately,
+// then persists. A second re-render happens on save success.
+function _dbToggleCheckbox(cardId, attrId, key) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  if (!card) return;
+  var attr = card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+  var wasChecked = (attr.attr_value === 'true' || attr.attr_value === '1' || attr.attr_value === 'yes');
+  var newVal = wasChecked ? 'false' : 'true';
+  attr.attr_value = newVal;   // optimistic local flip
+  _dbRenderGrid();             // instant visual feedback
+  _dbSaveAttrVal(cardId, attrId, key, newVal);
+}
+
 
 function _dbDateTextBlur(cardId, attrId, key, el, fmtId) {
   var raw = el.value.trim();
