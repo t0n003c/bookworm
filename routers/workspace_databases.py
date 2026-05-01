@@ -25,7 +25,9 @@ from routers.workspace_db_cards import (
     delete_db_card,
     get_db_card,
     get_db_cards,
+    patch_attr_visibility,
     rename_attr_in_workspace,
+    reorder_card_attrs,
     sync_attr_to_workspace,
     update_card_note_height,
     update_db_card,
@@ -117,6 +119,14 @@ class RenameAttrBody(BaseModel):
     new_key:      str
     attr_type:    str = "text"
     attr_options: str = ""
+
+
+class AttrVisibilityBody(BaseModel):
+    visibility: str  # 'always' | 'hide_empty' | 'always_hide'
+
+
+class AttrReorderBody(BaseModel):
+    attr_ids: list[int]  # desired order, element = attr ID
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
 
@@ -261,6 +271,35 @@ async def remove_attr(
     deleted = await delete_card_attr(attr_id=attr_id, card_id=card_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Attribute not found")
+    return JSONResponse({"ok": True})
+
+
+@router.patch("/{ws_id}/db/cards/{card_id}/attrs/{attr_id}")
+async def patch_attr(
+    ws_id: int, card_id: int, attr_id: int, request: Request,
+    body: AttrVisibilityBody,
+) -> JSONResponse:
+    """Patch a single attribute's metadata (currently: visibility only)."""
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    ok = await patch_attr_visibility(
+        attr_id=attr_id, card_id=card_id, visibility=body.visibility
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Attribute not found")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/{ws_id}/db/cards/{card_id}/attrs/reorder")
+async def reorder_attrs(
+    ws_id: int, card_id: int, request: Request, body: AttrReorderBody
+) -> JSONResponse:
+    """Reorder attrs for a card by providing a list of attr IDs in desired order."""
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+    await reorder_card_attrs(
+        card_id=card_id, user_id=user_id, attr_ids=body.attr_ids
+    )
     return JSONResponse({"ok": True})
 
 

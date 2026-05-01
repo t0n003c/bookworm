@@ -2862,19 +2862,36 @@ function _dbRenderDetailPanel(card) {
 
   var attrsHtml = (card.attrs || []).map(function(a) {
     var icon = _dbAttrTypeIcon(a.attr_type || 'text');
-    return '<div class="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-zinc-800">'
-      + '<span class="text-xs font-semibold text-gray-500 dark:text-zinc-400 w-28 flex-shrink-0 truncate"'
-      + ' title="' + _esc(a.attr_key) + ' (' + _esc(a.attr_type || 'text') + ')">'
-      + icon + ' ' + _esc(a.attr_key) + '</span>'
+    var vis  = a.visibility || 'always';
+    // Opacity hint: always_hide=45%, hide_empty+no value=60%, otherwise 100%
+    var rowOpacity = vis === 'always_hide' ? '0.45'
+      : (vis === 'hide_empty' && !a.attr_value) ? '0.6' : '1';
+    return '<div class="db-attr-row flex items-center gap-1 py-1.5 border-b'
+      + ' border-gray-100 dark:border-zinc-800"'
+      + ' draggable="false"'
+      + ' data-attr-id="' + a.id + '" data-card-id="' + card.id + '"'
+      + ' style="opacity:' + rowOpacity + ';transition:opacity 0.15s;">'
+      // ⠿ grip — mousedown arms the row for HTML5 drag
+      + '<span class="db-attr-grip"'
+      + ' title="Drag to reorder"'
+      + ' onmousedown="_dbAttrGripDown(event,this.closest(\'.db-attr-row\'))"'
+      + ' style="cursor:grab;color:#d1d5db;flex-shrink:0;padding:0 3px;'
+      + 'user-select:none;font-size:0.8rem;line-height:1;">'    // ⠿⠿ two braille 6-dot blocks
+      + '&#10247;&#10247;</span>'
+      // Clickable label → context menu
+      + '<button type="button" class="db-attr-label text-left text-xs font-semibold'
+      + ' text-gray-500 dark:text-zinc-400 flex-shrink-0 truncate"'
+      + ' style="width:7rem;background:none;border:none;cursor:pointer;padding:0 2px;'
+      + 'border-radius:0.25rem;"'
+      + ' title="' + _esc(a.attr_key) + ' \u2014 click for options"'
+      + ' onclick="_dbAttrMenu(' + card.id + ',' + a.id + ',this)">'
+      + icon + ' ' + _esc(a.attr_key)
+      + '</button>'
+      // Value area
       + '<div class="flex-1 min-w-0">'
       + _dbAttrValueHtml(card.id, a)
       + '</div>'
-      + '<button type="button" onclick="_dbEditAttrRow(' + card.id + ',' + a.id + ')"'
-      + ' class="text-gray-300 hover:text-blue-400 p-1 rounded transition flex-shrink-0" title="Edit attribute settings">'
-      + '&#9998;</button>'
-      + '<button type="button" onclick="_dbDeleteAttr(' + card.id + ',' + a.id + ')"'
-      + ' class="text-gray-300 hover:text-red-400 p-1 rounded transition flex-shrink-0" title="Remove attribute">'
-      + '&times;</button></div>';
+      + '</div>';
   }).join('');
 
   dp.innerHTML = (
@@ -2917,6 +2934,8 @@ function _dbRenderDetailPanel(card) {
   /* Attach slash palette + paste-as to the note CE after HTML is in the DOM */
   var noteEl = dp.querySelector('#db-detail-note-' + card.id);
   _dbAttachNoteTools(noteEl);
+  /* Attach drag-and-drop for attr row reordering */
+  _dbAttachAttrDrag(card.id);
 }
 
 function _dbDetailTitleBlur(cardId, el) {
@@ -4408,8 +4427,381 @@ function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
   .catch(function(e) { console.warn('Checkbox save failed', e); });
 }
 
-function _dbDeleteAttr(cardId, attrId) {
-  // Find attr name for the warning label
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATTRIBUTE LABEL CONTEXT MENU
+═══════════════════════════════════════════════════════════════════════════ */
+
+var _dbAttrMenuEl = null;   // currently open menu DOM node
+var _dbAttrMenuOff = null;  // listener to remove on close
+var _dbAttrMenuKey = null;
+
+function _dbAttrMenuClose() {
+  if (_dbAttrMenuEl) {
+    _dbAttrMenuEl.remove();
+    _dbAttrMenuEl = null;
+  }
+  if (_dbAttrMenuOff) {
+    document.removeEventListener('mousedown', _dbAttrMenuOff, true);
+    document.removeEventListener('keydown',   _dbAttrMenuKey,  true);
+    _dbAttrMenuOff = null;
+    _dbAttrMenuKey = null;
+  }
+}
+
+function _dbAttrMenu(cardId, attrId, triggerEl) {
+  _dbAttrMenuClose(); // close any existing menu
+
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#27272a' : '#ffffff';
+  var bdr    = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#a1a1aa' : '#6b7280';
+  var hov    = isDark ? '#3f3f46' : '#f3f4f6';
+  var vis    = attr.visibility || 'always';
+
+  var menu = document.createElement('div');
+  menu.id  = 'db-attr-ctx-menu';
+  menu.setAttribute('role', 'menu');
+  menu.style.cssText =
+    'position:fixed;z-index:10000;min-width:14rem;padding:0.4rem 0;'
+    + 'background:' + bg + ';border:1px solid ' + bdr + ';'
+    + 'border-radius:0.625rem;box-shadow:0 8px 32px rgba(0,0,0,0.18);';
+
+  // ── helpers ────────────────────────────────────────────────────────────
+  function makeItem(icon, label, action, danger) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.style.cssText =
+      'display:flex;align-items:center;gap:0.6rem;width:100%;padding:0.45rem 0.9rem;'
+      + 'background:none;border:none;cursor:pointer;font-size:0.8rem;text-align:left;'
+      + 'color:' + (danger ? '#ef4444' : txt) + ';';
+    btn.innerHTML = '<span style="width:1rem;text-align:center;flex-shrink:0;">' + icon + '</span>'
+      + '<span>' + label + '</span>';
+    btn.addEventListener('mouseenter', function() { btn.style.background = hov; });
+    btn.addEventListener('mouseleave', function() { btn.style.background = 'none'; });
+    btn.addEventListener('click', function() { _dbAttrMenuClose(); action(); });
+    return btn;
+  }
+
+  function makeDivider() {
+    var hr = document.createElement('div');
+    hr.style.cssText = 'border-top:1px solid ' + bdr + ';margin:0.35rem 0;';
+    return hr;
+  }
+
+  function makeVisRadio(label, icon, value) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.setAttribute('role', 'menuitemradio');
+    row.setAttribute('aria-checked', vis === value ? 'true' : 'false');
+    var checked = vis === value;
+    row.style.cssText =
+      'display:flex;align-items:center;gap:0.6rem;width:100%;padding:0.4rem 0.9rem 0.4rem 2.2rem;'
+      + 'background:none;border:none;cursor:pointer;font-size:0.78rem;text-align:left;'
+      + 'color:' + (checked ? '#0053e2' : sub) + ';';
+    row.innerHTML =
+      '<span style="width:0.9rem;text-align:center;flex-shrink:0;font-size:0.75rem;">'
+      + (checked ? '\u25CF' : '\u25CB') + '</span>'
+      + '<span>' + icon + ' ' + label + '</span>';
+    row.addEventListener('mouseenter', function() { row.style.background = hov; });
+    row.addEventListener('mouseleave', function() { row.style.background = 'none'; });
+    row.addEventListener('click', function() {
+      _dbAttrMenuClose();
+      _dbAttrSetVisibility(cardId, attrId, value);
+    });
+    return row;
+  }
+
+  // ── menu items ─────────────────────────────────────────────────────────
+  menu.appendChild(makeItem('\u270F\uFE0F', 'Rename', function() {
+    var labelEl = document.querySelector(
+      '.db-attr-row[data-attr-id="' + attrId + '"] .db-attr-label'
+    );
+    if (labelEl) _dbAttrInlineRename(cardId, attrId, labelEl);
+  }, false));
+
+  menu.appendChild(makeItem('\u2699\uFE0F', 'Edit attribute', function() {
+    _dbEditAttrRow(cardId, attrId);
+  }, false));
+
+  // Visibility section header
+  var visHdr = document.createElement('div');
+  visHdr.style.cssText =
+    'padding:0.35rem 0.9rem 0.1rem;font-size:0.7rem;font-weight:600;'
+    + 'text-transform:uppercase;letter-spacing:0.06em;color:' + sub + ';';
+  visHdr.textContent = 'Visibility';
+  menu.appendChild(visHdr);
+  menu.appendChild(makeVisRadio('Always show',    '\uD83D\uDC41\uFE0F', 'always'));
+  menu.appendChild(makeVisRadio('Hide when empty','\uD83D\uDEAB', 'hide_empty'));
+  menu.appendChild(makeVisRadio('Always hide',    '\uD83D\uDE48', 'always_hide'));
+
+  menu.appendChild(makeDivider());
+
+  menu.appendChild(makeItem('\u29C9', 'Duplicate attribute', function() {
+    _dbAttrDuplicate(cardId, attrId);
+  }, false));
+
+  menu.appendChild(makeDivider());
+
+  menu.appendChild(makeItem('\uD83D\uDDD1\uFE0F', 'Delete attribute', function() {
+    _dbDeleteAttr(cardId, attrId);
+  }, true));
+
+  // ── position near trigger ──────────────────────────────────────────────
+  document.body.appendChild(menu);
+  _dbAttrMenuEl = menu;
+
+  var rect = triggerEl.getBoundingClientRect();
+  var mh   = menu.offsetHeight || 280;
+  var top  = rect.bottom + 4;
+  if (top + mh > window.innerHeight - 8) top = rect.top - mh - 4;
+  menu.style.top  = Math.max(4, top) + 'px';
+  menu.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 230)) + 'px';
+
+  // ── close on outside click or Escape ──────────────────────────────────
+  _dbAttrMenuOff = function(e) {
+    if (!menu.contains(e.target)) _dbAttrMenuClose();
+  };
+  _dbAttrMenuKey = function(e) {
+    if (e.key === 'Escape') _dbAttrMenuClose();
+  };
+  setTimeout(function() {
+    document.addEventListener('mousedown', _dbAttrMenuOff, true);
+    document.addEventListener('keydown',   _dbAttrMenuKey,  true);
+  }, 0);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ATTRIBUTE INLINE RENAME
+───────────────────────────────────────────────────────────────────────── */
+
+function _dbAttrInlineRename(cardId, attrId, labelEl) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+
+  var origKey  = attr.attr_key;
+  var origText = labelEl.textContent.trim();
+
+  // Swap label button → editable input, same visual footprint
+  var inp = document.createElement('input');
+  inp.type  = 'text';
+  inp.value = origKey;
+  inp.style.cssText =
+    'font-size:0.75rem;font-weight:600;color:inherit;background:transparent;'
+    + 'border:none;border-bottom:1px solid #0053e2;outline:none;width:7rem;'
+    + 'padding:0;margin:0;';
+  labelEl.style.display = 'none';
+  labelEl.parentNode.insertBefore(inp, labelEl);
+  inp.focus();
+  inp.select();
+
+  function commit() {
+    var newKey = inp.value.trim();
+    inp.remove();
+    labelEl.style.display = '';
+    if (!newKey || newKey === origKey) return;
+    // Rename across all cards — values preserved
+    fetch('/workspaces/' + _dbWsId + '/db/attrs/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        old_key:      origKey,
+        new_key:      newKey,
+        attr_type:    attr.attr_type    || 'text',
+        attr_options: attr.attr_options || '',
+      }),
+    })
+    .then(function(r) { if (!r.ok) throw new Error('Rename failed'); return r.json(); })
+    .then(function(data) {
+      _dbCards = data.cards;
+      _dbRenderGrid();
+      _dbOpenDetail(cardId);
+    })
+    .catch(function(e) { _dbToast('Rename failed: ' + e.message, true); });
+  }
+
+  inp.addEventListener('blur',    commit);
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter')  { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') {
+      inp.removeEventListener('blur', commit);
+      inp.remove();
+      labelEl.style.display = '';
+    }
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ATTRIBUTE VISIBILITY PATCH
+───────────────────────────────────────────────────────────────────────── */
+
+function _dbAttrSetVisibility(cardId, attrId, visibility) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+
+  attr.visibility = visibility; // optimistic local update
+
+  // Update row opacity immediately (no full re-render needed)
+  var row = document.querySelector('.db-attr-row[data-attr-id="' + attrId + '"]');
+  if (row) {
+    row.style.opacity = visibility === 'always_hide' ? '0.45'
+      : (visibility === 'hide_empty' && !attr.attr_value) ? '0.6' : '1';
+  }
+
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/' + attrId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visibility: visibility }),
+  })
+  .then(function(r) { if (!r.ok) throw new Error('Patch failed'); })
+  .catch(function(e) {
+    // Revert on failure
+    attr.visibility = attr.visibility === visibility ? 'always' : attr.visibility;
+    _dbToast('Could not update visibility', true);
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ATTRIBUTE DUPLICATE
+───────────────────────────────────────────────────────────────────────── */
+
+function _dbAttrDuplicate(cardId, attrId) {
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  var attr = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
+  if (!attr) return;
+
+  var newKey = attr.attr_key + ' (copy)';
+  _dbSaveAttrByKey(cardId, newKey, attr.attr_value || '',
+                   attr.attr_type || 'text', attr.attr_options || '');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ATTRIBUTE DRAG-AND-DROP REORDER
+═══════════════════════════════════════════════════════════════════════════ */
+
+var _dbDragAttrRow     = null;  // row element being dragged
+var _dbDragAttrCardId  = null;  // card it belongs to
+var _dbDragOverRow     = null;  // row currently dragged over
+var _dbDragOverPos     = null;  // 'before' | 'after'
+
+function _dbAttrGripDown(e, rowEl) {
+  // Arm this row for drag only while the mouse is held down.
+  // On mouseup (or dragend) we disarm it again.
+  rowEl.setAttribute('draggable', 'true');
+  function disarm() {
+    rowEl.setAttribute('draggable', 'false');
+    document.removeEventListener('mouseup', disarm);
+  }
+  document.addEventListener('mouseup', disarm);
+}
+
+function _dbAttachAttrDrag(cardId) {
+  var rows = document.querySelectorAll('.db-attr-row[data-card-id="' + cardId + '"]');
+  if (!rows.length) return;
+
+  rows.forEach(function(row) {
+    row.addEventListener('dragstart', function(e) {
+      _dbDragAttrRow    = row;
+      _dbDragAttrCardId = cardId;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.getAttribute('data-attr-id'));
+      row.style.opacity = '0.4';
+    });
+
+    row.addEventListener('dragend', function() {
+      row.style.opacity = '';
+      _dbAttrClearDropIndicator();
+      // Persist the new order
+      if (_dbDragAttrCardId) {
+        var finalRows = document.querySelectorAll(
+          '.db-attr-row[data-card-id="' + _dbDragAttrCardId + '"]'
+        );
+        var ids = [];
+        finalRows.forEach(function(r) { ids.push(parseInt(r.getAttribute('data-attr-id'), 10)); });
+        _dbAttrSaveOrder(_dbDragAttrCardId, ids);
+      }
+      _dbDragAttrRow    = null;
+      _dbDragAttrCardId = null;
+    });
+
+    row.addEventListener('dragover', function(e) {
+      if (!_dbDragAttrRow || _dbDragAttrRow === row) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var rect = row.getBoundingClientRect();
+      var mid  = rect.top + rect.height / 2;
+      var pos  = e.clientY < mid ? 'before' : 'after';
+      if (_dbDragOverRow !== row || _dbDragOverPos !== pos) {
+        _dbDragOverRow = row;
+        _dbDragOverPos = pos;
+        _dbAttrClearDropIndicator();
+        row.style.borderTop    = pos === 'before' ? '2px solid #0053e2' : '';
+        row.style.borderBottom = pos === 'after'  ? '2px solid #0053e2' : '';
+      }
+    });
+
+    row.addEventListener('dragleave', function() {
+      if (_dbDragOverRow === row) {
+        _dbAttrClearDropIndicator();
+        _dbDragOverRow = null;
+        _dbDragOverPos = null;
+      }
+    });
+
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!_dbDragAttrRow || _dbDragAttrRow === row) return;
+      _dbAttrClearDropIndicator();
+      var parent = row.parentNode;
+      if (_dbDragOverPos === 'before') {
+        parent.insertBefore(_dbDragAttrRow, row);
+      } else {
+        parent.insertBefore(_dbDragAttrRow, row.nextSibling);
+      }
+      _dbDragOverRow = null;
+      _dbDragOverPos = null;
+    });
+  });
+}
+
+function _dbAttrClearDropIndicator() {
+  document.querySelectorAll('.db-attr-row').forEach(function(r) {
+    r.style.borderTop    = '';
+    r.style.borderBottom = '';
+  });
+}
+
+function _dbAttrSaveOrder(cardId, attrIds) {
+  // Update local _dbCards so subsequent detail-panel opens reflect the new order
+  var card = _dbCards.find(function(c) { return c.id === cardId; });
+  if (card && card.attrs) {
+    var reordered = [];
+    attrIds.forEach(function(id) {
+      var a = card.attrs.find(function(x) { return x.id === id; });
+      if (a) reordered.push(a);
+    });
+    // Preserve any attrs not in the list (shouldn't happen, but safety net)
+    card.attrs.forEach(function(a) {
+      if (attrIds.indexOf(a.id) === -1) reordered.push(a);
+    });
+    card.attrs = reordered;
+  }
+  fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/attrs/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attr_ids: attrIds }),
+  })
+  .catch(function(e) { console.warn('Attr reorder failed', e); });
+}
+
+
   var card     = _dbCards.find(function(c) { return c.id === cardId; });
   var attr     = card && card.attrs ? card.attrs.find(function(a) { return a.id === attrId; }) : null;
   var attrName = attr ? attr.attr_key : 'this attribute';

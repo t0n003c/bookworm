@@ -1053,6 +1053,10 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE db_card_attrs ADD COLUMN attr_options TEXT NOT NULL DEFAULT ''"
             )
+        if "visibility" not in _dca_cols:
+            await db.execute(
+                "ALTER TABLE db_card_attrs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'always'"
+            )
         await db.execute("""
             CREATE TRIGGER IF NOT EXISTS db_cards_updated_at
             AFTER UPDATE ON db_cards

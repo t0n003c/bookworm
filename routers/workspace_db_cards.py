@@ -42,6 +42,7 @@ def _collapse_card_rows(rows: list) -> list[dict]:
                 "attr_type":    r["attr_type"],
                 "attr_options": r["attr_options"],
                 "sort_order":   r["attr_sort"],
+                "visibility":   r.get("attr_visibility", "always") or "always",
             })
     return [cards[cid] for cid in order]
 
@@ -55,7 +56,8 @@ async def get_db_cards(db_id: int, user_id: int) -> list[dict]:
             "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
             "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
             "       a.id AS attr_id, a.attr_key, a.attr_value, "
-            "       a.attr_type, a.attr_options, a.sort_order AS attr_sort "
+            "       a.attr_type, a.attr_options, a.visibility AS attr_visibility, "
+            "       a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
             " WHERE c.db_id = ? AND c.user_id = ? "
@@ -100,7 +102,8 @@ async def get_db_card(card_id: int, db_id: int, user_id: int) -> Optional[dict]:
             "SELECT c.id, c.db_id, c.user_id, c.title, c.cover_url, c.cover_upload_id,"
             "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
             "       a.id AS attr_id, a.attr_key, a.attr_value, "
-            "       a.attr_type, a.attr_options, a.sort_order AS attr_sort "
+            "       a.attr_type, a.attr_options, a.visibility AS attr_visibility, "
+            "       a.sort_order AS attr_sort "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
             " WHERE c.id = ? AND c.db_id = ? AND c.user_id = ? "
@@ -336,3 +339,45 @@ async def rename_attr_in_workspace(
             (new_key, attr_type, attr_options, ws_id, user_id, old_key),
         )
         await db.commit()
+
+
+_VALID_VISIBILITY = {"always", "hide_empty", "always_hide"}
+
+
+async def patch_attr_visibility(
+    attr_id: int, card_id: int, visibility: str
+) -> bool:
+    """Update visibility for a single attr row. Returns True if found."""
+    vis = visibility if visibility in _VALID_VISIBILITY else "always"
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE db_card_attrs SET visibility=? WHERE id=? AND card_id=?",
+            (vis, attr_id, card_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def reorder_card_attrs(
+    card_id: int, user_id: int, attr_ids: list[int]
+) -> bool:
+    """Reassign sort_order for a card's attrs to match the given ID sequence.
+
+    Verifies card ownership. Unknown IDs are silently skipped.
+    Returns True if any rows were updated.
+    """
+    async with get_db() as db:
+        check = await db.execute(
+            "SELECT id FROM db_cards WHERE id=? AND user_id=?", (card_id, user_id)
+        )
+        if not await check.fetchone():
+            return False
+        updated = 0
+        for position, aid in enumerate(attr_ids):
+            cur = await db.execute(
+                "UPDATE db_card_attrs SET sort_order=? WHERE id=? AND card_id=?",
+                (position * 10, aid, card_id),
+            )
+            updated += cur.rowcount
+        await db.commit()
+        return updated > 0
