@@ -1571,7 +1571,7 @@ function _dbToggleFilterPanel() {
   function buildColorRuleRow(ruleIdx) {
     var rule  = _dbColorRules[ruleIdx];
     var rowEl = document.createElement('div');
-    rowEl.style.cssText = 'display:flex;align-items:center;gap:0.3rem;';
+    rowEl.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:0.3rem;';
 
     // — field select
     var keySel = document.createElement('select');
@@ -1579,9 +1579,7 @@ function _dbToggleFilterPanel() {
     attrKeys.forEach(function(ak) {
       var o = document.createElement('option');
       o.value = ak.key;
-      o.textContent = ak.key === '__title' ? 'Title'
-        : ak.key === '__created' ? 'Created'
-        : ak.key === '__updated' ? 'Updated' : ak.key;
+      o.textContent = _dbKeyLabel(ak.key);
       if (ak.key === rule.key) o.selected = true;
       keySel.appendChild(o);
     });
@@ -1602,19 +1600,119 @@ function _dbToggleFilterPanel() {
     var initType = (attrKeys.find(function(ak) { return ak.key === rule.key; }) || { type: 'text' }).type;
     rebuildOps(initType);
 
-    // — value input (hidden for operators that need no value)
-    var noValOps = ['empty','not_empty','checked','not_checked'];
-    var valInp = document.createElement('input');
-    valInp.type = 'text';
-    valInp.value = rule.val || '';
-    valInp.placeholder = 'value…';
-    valInp.style.cssText = inpSty + 'flex:1;min-width:0;';
-    valInp.style.display = noValOps.indexOf(rule.op) !== -1 ? 'none' : '';
-    valInp.addEventListener('input', function() {
-      _dbColorRules[ruleIdx].val = valInp.value;
-      _dbSaveFilterSort();
-      _dbRenderGrid();
-    });
+    // — value control container; flex:0 0 100% pushes it onto its own row so
+    //   pill options have the full panel width to wrap into.
+    var valWrap = document.createElement('div');
+    valWrap.style.cssText = 'flex:0 0 100%;min-width:0;';
+
+    var noValOps     = ['empty','not_empty','checked','not_checked'];
+    var pillTypes    = ['select','multi_select','status'];
+    var multiPickOps = ['is_any_of','is_none_of','has_any_of','has_all_of','has_none_of'];
+
+    // Build the right value control for the given key+type+op combination.
+    // Mirrors buildValControl() in _dbBuildFilterRow but writes to _dbColorRules.
+    function buildColorValControl(ri, key, type, op, currentVal) {
+      // No value needed for these operators — nothing to show
+      if (noValOps.indexOf(op) !== -1) {
+        var dummy = document.createElement('span');
+        dummy.style.display = 'none';
+        return dummy;
+      }
+
+      // Pill-based control for select / multi_select / status
+      if (pillTypes.indexOf(type) !== -1) {
+        var opts = _dbGetAttrOptions(key);
+        if (opts.length > 0) {
+          var isMulti = multiPickOps.indexOf(op) !== -1;
+          var picked = [];
+          if (isMulti) { try { picked = JSON.parse(currentVal || '[]'); } catch(e) {} }
+
+          var pillWrap = document.createElement('div');
+          pillWrap.style.cssText =
+            'display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.3rem 0;max-height:112px;overflow-y:auto;';
+
+          opts.forEach(function(opt) {
+            var isOn = isMulti
+              ? picked.indexOf(opt.label) !== -1
+              : opt.label === currentVal;
+            var cs = _dbOptColorStyle(opt.color);
+
+            var pill = document.createElement('button');
+            pill.type = 'button';
+            pill.setAttribute('data-opt', opt.label);
+            pill.setAttribute('data-on', isOn ? '1' : '0');
+            pill.style.cssText =
+              'display:inline-flex;align-items:center;gap:0.25rem;'
+              + 'padding:0.18rem 0.55rem;border-radius:9999px;font-size:0.7rem;'
+              + 'font-weight:500;cursor:pointer;white-space:nowrap;'
+              + 'border:1.5px solid ' + cs.bg + ';'
+              + 'background:' + (isOn ? cs.bg : 'transparent') + ';'
+              + 'color:' + (isOn ? cs.text : (isDark ? '#a1a1aa' : '#6b7280')) + ';'
+              + 'transition:background 0.12s,color 0.12s;';
+
+            var ck = document.createElement('span');
+            ck.textContent = '\u2713';
+            ck.style.cssText = 'font-size:0.65rem;font-weight:700;flex-shrink:0;'
+              + 'opacity:' + (isOn ? '1' : '0') + ';transition:opacity 0.1s;';
+            pill.appendChild(ck);
+            pill.appendChild(document.createTextNode(opt.label));
+
+            pill.addEventListener('click', function() {
+              if (isMulti) {
+                var nowOn = pill.getAttribute('data-on') !== '1';
+                pill.setAttribute('data-on', nowOn ? '1' : '0');
+                pill.style.background = nowOn ? cs.bg : 'transparent';
+                pill.style.color      = nowOn ? cs.text : (isDark ? '#a1a1aa' : '#6b7280');
+                ck.style.opacity      = nowOn ? '1' : '0';
+                var newPicked = [];
+                pillWrap.querySelectorAll('button[data-opt]').forEach(function(p) {
+                  if (p.getAttribute('data-on') === '1') newPicked.push(p.getAttribute('data-opt'));
+                });
+                _dbColorRules[ri].val = JSON.stringify(newPicked);
+              } else {
+                // Radio: deselect all, select this one (or toggle off if already on)
+                var alreadyOn = pill.getAttribute('data-on') === '1';
+                var newVal    = alreadyOn ? '' : opt.label;
+                pillWrap.querySelectorAll('button[data-opt]').forEach(function(p) {
+                  var on   = p.getAttribute('data-opt') === newVal;
+                  var pOpt = opts.find(function(o) { return o.label === p.getAttribute('data-opt'); });
+                  var pcs  = _dbOptColorStyle((pOpt || {}).color);
+                  p.setAttribute('data-on', on ? '1' : '0');
+                  p.style.background = on ? pcs.bg : 'transparent';
+                  p.style.color      = on ? pcs.text : (isDark ? '#a1a1aa' : '#6b7280');
+                  p.querySelector('span').style.opacity = on ? '1' : '0';
+                });
+                _dbColorRules[ri].val = newVal;
+              }
+              _dbSaveFilterSort();
+              _dbRenderGrid();
+            });
+            pillWrap.appendChild(pill);
+          });
+          return pillWrap;
+        }
+        // No options defined yet — show a hint instead of a useless text box
+        var noOptsHint = document.createElement('span');
+        noOptsHint.textContent = 'No options defined for this attribute yet';
+        noOptsHint.style.cssText = 'font-size:0.68rem;color:' + sub + ';font-style:italic;padding:0.25rem 0;display:block;';
+        return noOptsHint;
+      }
+
+      // Plain text input for all other types
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = currentVal || '';
+      inp.placeholder = 'value…';
+      inp.style.cssText = inpSty + 'width:100%;box-sizing:border-box;';
+      inp.addEventListener('input', function() {
+        _dbColorRules[ri].val = inp.value;
+        _dbSaveFilterSort();
+        _dbRenderGrid();
+      });
+      return inp;
+    }
+
+    valWrap.appendChild(buildColorValControl(ruleIdx, rule.key, initType, rule.op, rule.val));
 
     // — color swatch button + popover palette
     var swatchWrap = document.createElement('div');
@@ -1694,23 +1792,26 @@ function _dbToggleFilterPanel() {
       rebuildOps(newType);
       _dbColorRules[ruleIdx].op  = opSel.value;
       _dbColorRules[ruleIdx].val = '';
-      valInp.value = '';
-      valInp.style.display = noValOps.indexOf(opSel.value) !== -1 ? 'none' : '';
+      valWrap.innerHTML = '';
+      valWrap.appendChild(buildColorValControl(ruleIdx, keySel.value, newType, opSel.value, ''));
       _dbSaveFilterSort();
       _dbRenderGrid();
     });
     opSel.addEventListener('change', function() {
-      _dbColorRules[ruleIdx].op = opSel.value;
-      valInp.style.display = noValOps.indexOf(opSel.value) !== -1 ? 'none' : '';
+      _dbColorRules[ruleIdx].op  = opSel.value;
+      _dbColorRules[ruleIdx].val = '';
+      var curType = (attrKeys.find(function(ak) { return ak.key === keySel.value; }) || { type: 'text' }).type;
+      valWrap.innerHTML = '';
+      valWrap.appendChild(buildColorValControl(ruleIdx, keySel.value, curType, opSel.value, ''));
       _dbSaveFilterSort();
       _dbRenderGrid();
     });
 
     rowEl.appendChild(keySel);
     rowEl.appendChild(opSel);
-    rowEl.appendChild(valInp);
     rowEl.appendChild(swatchWrap);
     rowEl.appendChild(rmBtn);
+    rowEl.appendChild(valWrap);  // full-width second row via flex:0 0 100%
     return rowEl;
   }
 
