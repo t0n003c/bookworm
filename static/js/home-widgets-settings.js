@@ -439,6 +439,37 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         + ' value=\'' + hiddenVal.replace(/'/g, "&#39;") + '\'>';
       body.appendChild(wrap);
       return;  // do not fall through to generic body.appendChild at end of loop
+    } else if (f.type === 'select-notes') {
+      // Note picker for note_link widget — reads from the all-notes-data JSON
+      // script tag (always present on home pages via home_add_widget_modal.html).
+      // On change saves note_id + note_title + note_snippet together and reloads
+      // the widget card so the new title is visible immediately.
+      const selId      = f.id;
+      const savedId    = String(curVal);          // current note_id
+
+      wrap.innerHTML = lbl + `<select id="${selId}"
+        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-2 focus:ring-wblue"
+        onchange="_saveNoteLinkSettings(${widgetId}, this)">
+        <option value="">Loading…</option>
+      </select>`;
+      body.appendChild(wrap);
+
+      // Populate from the cached DOM element (no extra round-trip needed)
+      const cached = document.getElementById('all-notes-data');
+      const notes  = cached ? JSON.parse(cached.textContent || '[]') : [];
+      const sel    = document.getElementById(selId);
+      if (sel) {
+        sel.innerHTML = '<option value="">— pick a note —</option>'
+          + notes.map(n => {
+              const t = _escAttr(n.title || 'Untitled');
+              const s = _escAttr((n.content || '').replace(/<[^>]*>/g, '').slice(0, 120));
+              const selected = String(n.id) === savedId ? ' selected' : '';
+              return `<option value="${n.id}" data-title="${t}" data-snippet="${s}"${selected}>${t}</option>`;
+            }).join('');
+      }
+      return; // early-out — already appended
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
@@ -696,6 +727,28 @@ async function saveAndReloadWidget(widgetId) {
 }
 
 /** Generic save for all non-clock widget settings (reads data-cfg-key inputs). */
+/**
+ * Save note_id + note_title + note_snippet together for a note_link widget,
+ * then reload the card so the new title / snippet shows immediately.
+ * Called from the select-notes dropdown's onchange handler.
+ */
+async function _saveNoteLinkSettings(widgetId, selectEl) {
+  const opt = selectEl.options[selectEl.selectedIndex];
+  if (!opt || !opt.value) return;
+  const config = { ..._getCardConfig(widgetId) };
+  config.note_id      = +opt.value;
+  config.note_title   = opt.dataset.title   || opt.text;
+  config.note_snippet = opt.dataset.snippet || '';
+  // Preserve open_mode if it is currently visible in the settings body
+  const openModeEl = document.getElementById('ws-settings-body')
+    ?.querySelector('[data-cfg-key="open_mode"]');
+  if (openModeEl) config.open_mode = openModeEl.value;
+  await _saveWidgetFullConfig(widgetId, config);
+  // Reload just this card via changeWidgetStyle so server re-renders it
+  const wstyle = _cardEl(widgetId)?.dataset.widgetStyle || 'default';
+  changeWidgetStyle(widgetId, wstyle);
+}
+
 async function saveWidgetSettings(widgetId) {
   const body = document.getElementById('ws-settings-body');
   const config = { ..._getCardConfig(widgetId) };
