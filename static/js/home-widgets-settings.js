@@ -462,66 +462,89 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
       wrap.innerHTML = lbl
         + '<input type="hidden" id="' + f.id + '"'
         +   ' data-cfg-key="' + f.name + '" data-json="1" value="[]">'
-        + '<div id="nl-editor-list" class="space-y-1 mb-3 max-h-40 overflow-y-auto"></div>'
-        // Notes section
+        // ── Section header: "Links" + live count badge
+        + '<div class="flex items-center gap-2 mb-2">'
+        +   '<p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Links</p>'
+        +   '<span id="nl-count-badge"'
+        +         ' class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full'
+        +               ' bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-zinc-400">0 / 10</span>'
+        + '</div>'
+        // ── Item list
+        + '<div id="nl-editor-list" class="space-y-1.5 mb-3'
+        +                                ' min-h-[3.5rem] max-h-44 overflow-y-auto'
+        +                                ' -mx-1 px-1"></div>'
+        // ── Divider
+        + '<div class="border-t border-gray-100 dark:border-zinc-800 mb-3"></div>'
+        // ── Notes picker toggle
         + '<div class="mb-2">'
         +   '<button type="button" onclick="_nlToggleNotePicker()"'
-        +     ' class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
-        +             ' border border-gray-200 dark:border-zinc-700'
-        +             ' bg-white dark:bg-zinc-800'
-        +             ' hover:bg-gray-50 dark:hover:bg-zinc-700/60 transition text-left">'
-        +     '<span class="text-[10px] font-semibold uppercase tracking-wider'
-        +                 ' text-gray-400 dark:text-zinc-500 flex-1">📄 Add a note…</span>'
-        +     '<svg id="nl-note-chev" class="w-3 h-3 flex-shrink-0'
-        +               ' text-gray-300 dark:text-zinc-600 transition-transform duration-150"'
+        +     ' class="w-full flex items-center gap-2 px-3 py-2 rounded-xl'
+        +             ' bg-blue-50 dark:bg-blue-900/20'
+        +             ' border border-blue-100 dark:border-blue-800/40'
+        +             ' hover:bg-blue-100 dark:hover:bg-blue-900/40'
+        +             ' transition text-left">'
+        +     '<svg class="w-3.5 h-3.5 flex-shrink-0 text-wblue dark:text-blue-400"'
+        +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">'
+        +       '<path stroke-linecap="round" stroke-linejoin="round"'
+        +             ' d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2'
+        +             ' h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
+        +     '</svg>'
+        +     '<span class="flex-1 text-xs font-semibold text-wblue dark:text-blue-400">Add a note</span>'
+        +     '<svg id="nl-note-chev"'
+        +         ' class="w-3 h-3 flex-shrink-0 text-wblue/50 dark:text-blue-400/50 transition-transform duration-150"'
         +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
         +       '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>'
         +     '</svg>'
         +   '</button>'
-        +   '<div id="nl-note-panel" class="hidden space-y-1 mt-1">'
-        +     '<input type="text" id="nl-note-search" placeholder="Filter notes…"'
+        +   '<div id="nl-note-panel" class="hidden space-y-1 mt-1.5">'
+        +     '<input type="text" id="nl-note-search" placeholder="Search notes…"'
         +       ' oninput="_nlFilterNotes(this)"'
-        +       ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
-        +               ' rounded-lg px-2 py-1'
+        +       ' class="w-full text-xs border border-gray-200 dark:border-zinc-600'
+        +               ' rounded-lg px-3 py-1.5'
         +               ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
         +               ' focus:outline-none focus:ring-2 focus:ring-wblue'
         +               ' placeholder-gray-400 dark:placeholder-zinc-600">'
         +     '<div id="nl-note-list"'
-        +         ' class="w-full max-h-40 overflow-y-auto'
-        +                 ' border border-gray-200 dark:border-zinc-700 rounded-lg'
-        +                 ' bg-white dark:bg-zinc-800">'
-        +       '<p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>'
+        +         ' class="w-full max-h-44 overflow-y-auto'
+        +                 ' border border-gray-200 dark:border-zinc-600 rounded-xl'
+        +                 ' bg-white dark:bg-zinc-800 shadow-sm">'
+        +       '<p class="px-3 py-3 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>'
         +     '</div>'
         +   '</div>'
         + '</div>'
-        // Workspaces section
+        // ── Workspace picker toggle
         + '<div>'
         +   '<button type="button" onclick="_nlToggleWsPicker()"'
-        +     ' class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
-        +             ' border border-gray-200 dark:border-zinc-700'
-        +             ' bg-white dark:bg-zinc-800'
-        +             ' hover:bg-gray-50 dark:hover:bg-zinc-700/60 transition text-left">'
-        +     '<span class="text-[10px] font-semibold uppercase tracking-wider'
-        +                 ' text-gray-400 dark:text-zinc-500 flex-1">🗂️ Add a workspace…</span>'
-        +     '<svg id="nl-ws-chev" class="w-3 h-3 flex-shrink-0'
-        +               ' text-gray-300 dark:text-zinc-600 transition-transform duration-150"'
+        +     ' class="w-full flex items-center gap-2 px-3 py-2 rounded-xl'
+        +             ' bg-teal-50 dark:bg-teal-900/20'
+        +             ' border border-teal-100 dark:border-teal-800/40'
+        +             ' hover:bg-teal-100 dark:hover:bg-teal-900/40'
+        +             ' transition text-left">'
+        +     '<svg class="w-3.5 h-3.5 flex-shrink-0 text-teal-600 dark:text-teal-400"'
+        +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">'
+        +       '<path stroke-linecap="round" stroke-linejoin="round"'
+        +             ' d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>'
+        +     '</svg>'
+        +     '<span class="flex-1 text-xs font-semibold text-teal-700 dark:text-teal-400">Add a workspace</span>'
+        +     '<svg id="nl-ws-chev"'
+        +         ' class="w-3 h-3 flex-shrink-0 text-teal-500/50 dark:text-teal-400/50 transition-transform duration-150"'
         +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
         +       '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>'
         +     '</svg>'
         +   '</button>'
-        +   '<div id="nl-ws-panel" class="hidden space-y-1 mt-1">'
-        +     '<input type="text" id="nl-ws-search" placeholder="Filter workspaces…"'
+        +   '<div id="nl-ws-panel" class="hidden space-y-1 mt-1.5">'
+        +     '<input type="text" id="nl-ws-search" placeholder="Search workspaces…"'
         +       ' oninput="_nlFilterWorkspaces(this)"'
-        +       ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
-        +               ' rounded-lg px-2 py-1'
+        +       ' class="w-full text-xs border border-gray-200 dark:border-zinc-600'
+        +               ' rounded-lg px-3 py-1.5'
         +               ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
         +               ' focus:outline-none focus:ring-2 focus:ring-wblue'
         +               ' placeholder-gray-400 dark:placeholder-zinc-600">'
         +     '<div id="nl-ws-list"'
-        +         ' class="w-full max-h-40 overflow-y-auto'
-        +                 ' border border-gray-200 dark:border-zinc-700 rounded-lg'
-        +                 ' bg-white dark:bg-zinc-800">'
-        +       '<p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>'
+        +         ' class="w-full max-h-44 overflow-y-auto'
+        +                 ' border border-gray-200 dark:border-zinc-600 rounded-xl'
+        +                 ' bg-white dark:bg-zinc-800 shadow-sm">'
+        +       '<p class="px-3 py-3 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>'
         +     '</div>'
         +   '</div>'
         + '</div>';
@@ -795,24 +818,74 @@ function _nlRefreshEditor(widgetId) {
   var inp  = document.getElementById('cf-links');
   if (!list || !inp) return;
   inp.value = JSON.stringify(_nlItems);
+
+  // ── count badge ──
+  var badge = document.getElementById('nl-count-badge');
+  if (badge) {
+    badge.textContent = _nlItems.length + ' / 10';
+    badge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-full '
+      + (_nlItems.length >= 10
+          ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+          : 'bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-zinc-400');
+  }
+
+  // ── empty state ──
   if (!_nlItems.length) {
-    list.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-1">No links yet. Use the pickers below to add notes or workspaces.</p>';
+    list.innerHTML =
+      '<div class="flex flex-col items-center gap-1.5 py-5 text-gray-300 dark:text-zinc-600">'
+      + '<svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" aria-hidden="true">'
+      +   '<path stroke-linecap="round" stroke-linejoin="round"'
+      +         ' d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364'
+      +         ' l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364'
+      +         ' l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>'
+      + '</svg>'
+      + '<p class="text-xs font-medium">No links yet</p>'
+      + '<p class="text-[10px]">Use the pickers below</p>'
+      + '</div>';
     return;
   }
+
+  // ── item rows ──
   list.innerHTML = _nlItems.map(function(item, idx) {
-    var icon  = item.type === 'workspace' ? (item.emoji || '🗂️') : '📄';
-    var label = item.type === 'workspace'
-      ? (item.name  || 'Workspace') + (item.ws_type === 'database' ? ' — DB' : '')
-      : (item.title || 'Note');
-    return '<div class="flex items-center gap-1.5 py-1 px-1.5 rounded'
-      + ' bg-gray-50 dark:bg-zinc-800/60'
-      + ' text-xs text-gray-700 dark:text-zinc-300">'
-      + '<span class="flex-shrink-0" aria-hidden="true">' + _esc(icon) + '</span>'
-      + '<span class="flex-1 min-w-0 truncate">' + _esc(label) + '</span>'
+    var isWs  = item.type === 'workspace';
+    var isDb  = isWs && item.ws_type === 'database';
+    var label = isWs ? (item.name || 'Workspace') : (item.title || 'Untitled');
+    // Left-edge color bar: blue for notes, purple for DB, teal for workspace
+    var bar   = isDb  ? 'bg-purple-400 dark:bg-purple-500'
+              : isWs  ? 'bg-teal-400 dark:bg-teal-500'
+              :         'bg-wblue dark:bg-blue-400';
+    // Icon: SVG for notes, emoji for workspaces
+    var icon  = isWs
+      ? '<span class="text-sm leading-none flex-shrink-0" aria-hidden="true">' + _esc(item.emoji || '🗂️') + '</span>'
+      : '<svg class="w-3.5 h-3.5 flex-shrink-0 text-wblue dark:text-blue-400" fill="none" viewBox="0 0 24 24"'
+        + ' stroke="currentColor" stroke-width="1.75" aria-hidden="true">'
+        + '<path stroke-linecap="round" stroke-linejoin="round"'
+        + ' d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586'
+        + 'a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
+        + '</svg>';
+    var typeBadge = isDb
+      ? '<span class="flex-shrink-0 text-[9px] font-bold px-1 py-0.5 rounded'
+        + ' bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 leading-none">DB</span>'
+      : '';
+    return '<div class="group/nlrow flex items-center gap-2'
+      + ' px-2.5 py-2 rounded-xl'
+      + ' border border-gray-100 dark:border-zinc-700/60'
+      + ' bg-white dark:bg-zinc-800/70 shadow-sm">'
+      // left color bar
+      + '<span class="flex-shrink-0 w-1 h-5 rounded-full ' + bar + '" aria-hidden="true"></span>'
+      + icon
+      + '<span class="flex-1 min-w-0 text-xs font-medium'
+      +             ' text-gray-700 dark:text-zinc-200 truncate">' + _esc(label) + '</span>'
+      + typeBadge
       + '<button type="button" onclick="_nlRemoveItem(' + widgetId + ',' + idx + ')"'
-      +   ' class="flex-shrink-0 text-gray-300 dark:text-zinc-600'
-      +           ' hover:text-[#ea1100] transition leading-none px-0.5"'
-      +   ' aria-label="Remove">&times;</button>'
+      +   ' class="flex-shrink-0 ml-0.5 p-0.5 rounded text-gray-200 dark:text-zinc-600'
+      +           ' hover:text-[#ea1100] hover:bg-red-50 dark:hover:bg-red-900/20'
+      +           ' opacity-0 group-hover/nlrow:opacity-100 transition"'
+      +   ' aria-label="Remove ' + _escAttr(label) + '">'
+      +   '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">'
+      +     '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>'
+      +   '</svg>'
+      + '</button>'
       + '</div>';
   }).join('');
 }
