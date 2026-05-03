@@ -4540,6 +4540,23 @@ function _dbPersonCap(name) {
   }).join(' ');
 }
 
+// Collect every unique person name already entered for a given attr_key
+// across all cards in the current database.  Returns sorted array of strings.
+function _dbPersonKnownNames(attrKey) {
+  var seen = {};
+  _dbCards.forEach(function(card) {
+    (card.attrs || []).forEach(function(a) {
+      if (a.attr_type === 'person' && a.attr_key === attrKey && a.attr_value) {
+        a.attr_value.split(',').forEach(function(n) {
+          var name = n.trim();
+          if (name) seen[name.toLowerCase()] = name; // dedupe case-insensitively, keep original casing
+        });
+      }
+    });
+  });
+  return Object.values(seen).sort(function(a, b) { return a.localeCompare(b); });
+}
+
 // Collect chip data-raw values, join with ", ", persist.
 function _dbPersonChipSave(wrap, cardId, attrId, key) {
   var chips = wrap.querySelectorAll('.db-pe-chip');
@@ -4626,6 +4643,99 @@ function _dbPersonChipBlur(cardId, attrId, key, inp) {
     inp.placeholder = 'Type a name\u2026 Enter or comma to add more';
     _dbPersonChipSave(wrap, cardId, attrId, key);
   }
+}
+
+// Opens (or closes) the person picker dropdown anchored to `btn`.
+// Lists all known person names for this attr column; ✓ marks already-chipped ones.
+function _dbPersonPickerOpen(btn) {
+  // Toggle: if popover already open from this button, close it.
+  var existing = document.getElementById('db-pe-picker');
+  if (existing) { existing.remove(); return; }
+
+  var wrap    = btn.closest('.db-pe-wrap');
+  var cardId  = parseInt(wrap.dataset.cardId, 10);
+  var attrId  = parseInt(wrap.dataset.attrId,  10);
+  var key     = wrap.dataset.key;     // JSON-encoded key — passed straight to save helpers
+  var attrKey = wrap.dataset.attrKey; // plain string — used for data lookups
+
+  var names = _dbPersonKnownNames(attrKey);
+  if (!names.length) return; // nothing to show
+
+  // Chips currently in the wrap
+  var chipped = {};
+  wrap.querySelectorAll('.db-pe-chip').forEach(function(c) {
+    chipped[(c.getAttribute('data-raw') || '').toLowerCase()] = true;
+  });
+
+  var isDark  = document.documentElement.classList.contains('dark');
+  var popBg   = isDark ? '#27272a' : '#ffffff';
+  var popBdr  = isDark ? '#3f3f46' : '#e5e7eb';
+  var popSh   = isDark ? '0 4px 16px rgba(0,0,0,0.5)' : '0 4px 16px rgba(0,0,0,0.12)';
+  var rowHov  = isDark ? '#3f3f46' : '#f3f4f6';
+  var txtClr  = isDark ? '#f4f4f5' : '#111827';
+  var subClr  = isDark ? '#a1a1aa' : '#6b7280';
+  var chkClr  = '#4338ca'; // indigo — matches person chip accent
+
+  var pop = document.createElement('div');
+  pop.id = 'db-pe-picker';
+  pop.style.cssText =
+    'position:fixed;z-index:9999;min-width:160px;max-width:240px;'
+    + 'background:' + popBg + ';border:1px solid ' + popBdr + ';'
+    + 'border-radius:0.5rem;box-shadow:' + popSh + ';'
+    + 'padding:0.3rem 0;overflow-y:auto;max-height:220px;';
+
+  names.forEach(function(name) {
+    var isChipped = !!chipped[name.toLowerCase()];
+    var row = document.createElement('div');
+    row.style.cssText =
+      'display:flex;align-items:center;gap:0.5rem;'
+      + 'padding:0.32rem 0.75rem;cursor:pointer;font-size:0.78rem;'
+      + 'color:' + txtClr + ';user-select:none;';
+    row.innerHTML =
+      '<span style="font-size:0.78rem;color:' + (isChipped ? chkClr : 'transparent') + ';flex-shrink:0;">&#10003;</span>'
+      + '<span style="flex:1;">' + _esc(name) + '</span>';
+
+    // mousedown prevents the input from blurring before we handle the pick
+    row.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    row.addEventListener('click', function() {
+      if (isChipped) {
+        // Remove the matching chip
+        wrap.querySelectorAll('.db-pe-chip').forEach(function(c) {
+          if ((c.getAttribute('data-raw') || '').toLowerCase() === name.toLowerCase()) {
+            c.remove();
+          }
+        });
+      } else {
+        // Insert a new chip before the input
+        var inp = wrap.querySelector('.db-pe-inp');
+        _dbPersonChipInsert(wrap, inp, name);
+      }
+      _dbPersonChipSave(wrap, cardId, attrId, key);
+      pop.remove();
+    });
+    row.addEventListener('mouseenter', function() { row.style.background = rowHov; });
+    row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+    pop.appendChild(row);
+  });
+
+  document.body.appendChild(pop);
+
+  // Position: below the button (or above if near the bottom of the viewport)
+  var br = btn.getBoundingClientRect();
+  var popH = Math.min(220, names.length * 34 + 10);
+  var top  = br.bottom + 4;
+  if (top + popH > window.innerHeight - 8) top = Math.max(4, br.top - popH - 4);
+  pop.style.top  = top + 'px';
+  pop.style.left = Math.max(4, br.right - 240) + 'px';
+
+  // Close on outside click
+  var closer = function(e) {
+    if (!pop.contains(e.target) && e.target !== btn) {
+      pop.remove();
+      document.removeEventListener('mousedown', closer);
+    }
+  };
+  setTimeout(function() { document.addEventListener('mousedown', closer); }, 0);
 }
 
 function _dbAttrValueHtml(cardId, a) {
@@ -4838,19 +4948,39 @@ function _dbAttrValueHtml(cardId, a) {
     var cbBlurPe = '_dbPersonChipBlur(' + cardId + ',' + a.id + ',' + kJ + ',this)';
     var peholderPe = peNames.length ? '' : 'Type a name\u2026 Enter or comma to add more';
 
+    // Picker button: scan the database for known names on this same column.
+    var peKnown  = _dbPersonKnownNames(a.attr_key); // plain key — no encoding needed
+    var pePickerBtn = '';
+    if (peKnown.length) {
+      var peBtnClr = isDkPe ? '#71717a' : '#9ca3af';
+      pePickerBtn =
+        '<button type="button" title="Pick from existing names"'
+        + ' onclick="event.stopPropagation();_dbPersonPickerOpen(this)"'
+        + ' style="margin-left:auto;flex-shrink:0;background:none;border:none;'
+        + 'cursor:pointer;padding:0.1rem 0.2rem;line-height:1;'
+        + 'color:' + peBtnClr + ';font-size:0.8rem;'
+        + 'opacity:0.7;transition:opacity 0.1s;"'
+        + ' onmouseenter="this.style.opacity=\'1\'"'
+        + ' onmouseleave="this.style.opacity=\'0.7\'">'
+        + '&#9660;</button>'; // ▼ chevron
+    }
+
     return '<div class="db-pe-wrap"'
-      + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '" data-key=' + kJ
+      + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '"'
+      + ' data-key=' + kJ
+      + ' data-attr-key="' + _esc(a.attr_key) + '"'
       + ' style="display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem;'
       + 'padding:0.15rem 0;background:transparent;min-height:2rem;cursor:text;"'
       + ' onclick="var i=this.querySelector(\'.db-pe-inp\');if(i&&document.activeElement!==i)i.focus();">'
       + peChipsHtml
       + '<input class="db-pe-inp" type="text"'
       + ' placeholder="' + _esc(peholderPe) + '"'
-      + ' style="flex:1;min-width:5rem;border:none;background:transparent;'
+      + ' style="flex:1;min-width:4rem;border:none;background:transparent;'
       + 'outline:none;font-size:0.72rem;color:' + peClr + ';'
       + 'font-family:inherit;padding:0.1rem 0;"'
       + ' onkeydown="' + cbKeyPe + '"'
       + ' onblur="' + cbBlurPe + '">'
+      + pePickerBtn
       + '</div>';
   }
 
