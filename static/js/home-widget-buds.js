@@ -54,13 +54,27 @@ function _budsHealthColor(tier) {
 }
 
 function _budsWeekKey() {
+  // ISO 8601: week belongs to the year of its Thursday.
+  // Bug fixed: jan4.getDay() returns 0 for Sunday but ISO treats Sunday as 7,
+  // so years where Jan 4 is a Sunday (e.g. 2026) produced week numbers one too low.
   var d   = new Date();
-  var day = d.getDay() || 7;
-  var mon = new Date(d); mon.setDate(d.getDate() - day + 1); mon.setHours(0,0,0,0);
-  var y   = mon.getFullYear();
-  var jan4 = new Date(y, 0, 4);
-  var w   = Math.ceil(((mon - jan4) / 86400000 + jan4.getDay() + 1) / 7);
-  return y + '-W' + String(w).padStart(2,'0');
+  var day = d.getDay() || 7;             // 1=Mon … 7=Sun
+  var mon = new Date(d);
+  mon.setDate(d.getDate() - day + 1);   // Monday of current week
+  mon.setHours(0, 0, 0, 0);
+  // Thursday of this week → determines which ISO year the week belongs to
+  var thu = new Date(mon);
+  thu.setDate(mon.getDate() + 3);
+  var isoYear = thu.getFullYear();
+  // Find the Monday that starts ISO week 1 of isoYear:
+  // Jan 4 of isoYear is always in week 1; walk back to its Monday.
+  var jan4    = new Date(isoYear, 0, 4);
+  var jan4Day = jan4.getDay() || 7;     // 1=Mon … 7=Sun (Sunday→7, not 0)
+  var w1Mon   = new Date(jan4);
+  w1Mon.setDate(jan4.getDate() - jan4Day + 1);
+  w1Mon.setHours(0, 0, 0, 0);
+  var week = Math.round((mon - w1Mon) / (7 * 86400000)) + 1;
+  return isoYear + '-W' + String(week).padStart(2, '0');
 }
 
 function _budsApplyDecay(bud) {
