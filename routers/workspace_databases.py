@@ -92,6 +92,8 @@ class NoteHeightBody(BaseModel):
 _VALID_ATTR_TYPES = {
     "text", "number", "select", "multi_select", "status",
     "date", "person", "files", "checkbox", "url", "email", "phone", "place",
+    # rich types added 2025-05
+    "date_range", "progress", "rating",
 }
 
 

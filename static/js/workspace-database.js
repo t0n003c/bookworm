@@ -5978,6 +5978,88 @@ function _dbAddAttrRow(cardId) {
       return;
     }
 
+    // ── date_range: two date pickers side by side ─────────────────────────
+    if (t === 'date_range') {
+      valWrap.innerHTML = '<label style="' + labelCss + '">Default date range '
+        + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>';
+      var drRow = document.createElement('div');
+      drRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;';
+      var drS = document.createElement('input');
+      drS.type = 'date'; drS.id = '_db-attr-val-start';
+      drS.style.cssText = inputCss + (isDark ? 'color-scheme:dark;' : '');
+      var drArrow = document.createElement('span');
+      drArrow.textContent = '\u2192';
+      drArrow.style.cssText = 'color:#9ca3af;font-size:0.9rem;flex-shrink:0;';
+      var drE = document.createElement('input');
+      drE.type = 'date'; drE.id = '_db-attr-val-end';
+      drE.style.cssText = inputCss + (isDark ? 'color-scheme:dark;' : '');
+      drRow.appendChild(drS); drRow.appendChild(drArrow); drRow.appendChild(drE);
+      valWrap.appendChild(drRow);
+      optsWrap.style.display = 'none';
+      return;
+    }
+
+    // ── progress: range slider 0-100 with live label ───────────────────────
+    if (t === 'progress') {
+      valWrap.innerHTML = '<label style="' + labelCss + '">Default progress '
+        + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>';
+      var pgRow = document.createElement('div');
+      pgRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;';
+      var pgSlider = document.createElement('input');
+      pgSlider.type = 'range'; pgSlider.min = '0'; pgSlider.max = '100';
+      pgSlider.value = '0'; pgSlider.id = '_db-attr-val';
+      pgSlider.style.cssText = 'flex:1;accent-color:#0053e2;cursor:pointer;';
+      var pgLabel = document.createElement('span');
+      pgLabel.textContent = '0%';
+      pgLabel.style.cssText = 'font-size:0.85rem;font-variant-numeric:tabular-nums;'
+        + 'color:' + txt + ';min-width:2.5rem;text-align:right;';
+      pgSlider.addEventListener('input', function() {
+        pgLabel.textContent = pgSlider.value + '%';
+      });
+      pgRow.appendChild(pgSlider); pgRow.appendChild(pgLabel);
+      valWrap.appendChild(pgRow);
+      optsWrap.style.display = 'none';
+      return;
+    }
+
+    // ── rating: 5 star buttons with hidden value input ─────────────────────
+    if (t === 'rating') {
+      valWrap.innerHTML = '<label style="' + labelCss + '">Default rating '
+        + '<span style="font-weight:400;text-transform:none;">(optional — leave at 0 for no default)</span></label>';
+      var rtWrap = document.createElement('div');
+      rtWrap.style.cssText = 'display:flex;align-items:center;gap:0.15rem;';
+      var rtHidden = document.createElement('input');
+      rtHidden.type = 'hidden'; rtHidden.id = '_db-attr-val'; rtHidden.value = '';
+      rtWrap.appendChild(rtHidden);
+      for (var ri = 1; ri <= 5; ri++) {
+        (function(v) {
+          var btn = document.createElement('button');
+          btn.type = 'button'; btn.setAttribute('data-rv', String(v));
+          btn.textContent = '\u2606'; // empty star
+          btn.title = v + ' star' + (v > 1 ? 's' : '');
+          btn.style.cssText = 'background:none;border:none;cursor:pointer;'
+            + 'font-size:1.4rem;color:#d1d5db;line-height:1;padding:0 0.05rem;'
+            + 'transition:transform 0.1s,color 0.1s;';
+          btn.addEventListener('mouseenter', function() { btn.style.transform = 'scale(1.2)'; });
+          btn.addEventListener('mouseleave', function() { btn.style.transform = ''; });
+          btn.addEventListener('click', function() {
+            var cur = parseInt(rtHidden.value, 10) || 0;
+            var next = (v === cur) ? 0 : v; // click active star → deselect
+            rtHidden.value = next > 0 ? String(next) : '';
+            rtWrap.querySelectorAll('button[data-rv]').forEach(function(b) {
+              var bv = parseInt(b.getAttribute('data-rv'), 10);
+              b.textContent = bv <= next ? '\u2605' : '\u2606';
+              b.style.color = bv <= next ? '#f59e0b' : '#d1d5db';
+            });
+          });
+          rtWrap.appendChild(btn);
+        })(ri);
+      }
+      valWrap.appendChild(rtWrap);
+      optsWrap.style.display = 'none';
+      return;
+    }
+
     valWrap.innerHTML = '<label style="' + labelCss + '">Default value '
       + '<span style="font-weight:400;text-transform:none;">(optional)</span></label>';
     var meta = TYPE_META[t] || TYPE_META.text;
@@ -6014,6 +6096,12 @@ function _dbAddAttrRow(cardId) {
   function _getValField() { return document.getElementById('_db-attr-val'); }
 
   function _readValue() {
+    // date_range uses two separate date inputs instead of a single #_db-attr-val
+    if (selectedType === 'date_range') {
+      var sEl = document.getElementById('_db-attr-val-start');
+      var eEl = document.getElementById('_db-attr-val-end');
+      return (sEl ? sEl.value : '') + '|' + (eEl ? eEl.value : '');
+    }
     var el = _getValField();
     if (!el) return '';
     if (el.type === 'checkbox') return el.checked ? 'true' : 'false';
