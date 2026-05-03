@@ -4513,7 +4513,7 @@ function _dbPhoneChipKey(e, cardId, attrId, key) {
   }
 }
 
-// blur handler: commit any trailing text, then reset border.
+// blur handler: commit any trailing text.
 function _dbPhoneChipBlur(cardId, attrId, key, inp) {
   var wrap = inp.closest('.db-ph-wrap');
   if (inp.value.trim()) {
@@ -4626,8 +4626,6 @@ function _dbPersonChipBlur(cardId, attrId, key, inp) {
     inp.placeholder = 'Type a name\u2026 Enter or comma to add more';
     _dbPersonChipSave(wrap, cardId, attrId, key);
   }
-  var isDark = document.documentElement.classList.contains('dark');
-  wrap.style.borderColor = isDark ? '#3f3f46' : '#e5e7eb';
 }
 
 function _dbAttrValueHtml(cardId, a) {
@@ -4805,8 +4803,6 @@ function _dbAttrValueHtml(cardId, a) {
   // person — multi-name chip input (Enter or comma to commit; auto title-case)
   if (t === 'person') {
     var isDkPe  = document.documentElement.classList.contains('dark');
-    var inpBgPe = isDkPe ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-    var inpBdrPe = isDkPe ? '#3f3f46' : '#e5e7eb';
     var peClr   = isDkPe ? '#f4f4f5' : '#111827';
     var pillBgPe  = isDkPe ? 'rgba(99,102,241,0.15)' : '#eef2ff';
     var pillClrPe = isDkPe ? '#a5b4fc' : '#4338ca';
@@ -4840,14 +4836,12 @@ function _dbAttrValueHtml(cardId, a) {
 
     var cbKeyPe  = '_dbPersonChipKey(event,' + cardId + ',' + a.id + ',' + kJ + ')';
     var cbBlurPe = '_dbPersonChipBlur(' + cardId + ',' + a.id + ',' + kJ + ',this)';
-    var cbFocusPe = 'this.closest(\'.db-pe-wrap\').style.borderColor=\'#0053e2\'';
     var peholderPe = peNames.length ? '' : 'Type a name\u2026 Enter or comma to add more';
 
     return '<div class="db-pe-wrap"'
       + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '" data-key=' + kJ
       + ' style="display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem;'
-      + 'padding:0.15rem 0;background:' + inpBgPe + ';border:1px solid ' + inpBdrPe + ';'
-      + 'border-radius:0.375rem;min-height:2rem;cursor:text;padding:0.25rem 0.4rem;"'
+      + 'padding:0.15rem 0;background:transparent;min-height:2rem;cursor:text;"'
       + ' onclick="var i=this.querySelector(\'.db-pe-inp\');if(i&&document.activeElement!==i)i.focus();">'
       + peChipsHtml
       + '<input class="db-pe-inp" type="text"'
@@ -4855,7 +4849,6 @@ function _dbAttrValueHtml(cardId, a) {
       + ' style="flex:1;min-width:5rem;border:none;background:transparent;'
       + 'outline:none;font-size:0.72rem;color:' + peClr + ';'
       + 'font-family:inherit;padding:0.1rem 0;"'
-      + ' onfocus="' + cbFocusPe + '"'
       + ' onkeydown="' + cbKeyPe + '"'
       + ' onblur="' + cbBlurPe + '">'
       + '</div>';
