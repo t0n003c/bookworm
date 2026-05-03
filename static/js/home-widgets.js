@@ -1008,24 +1008,42 @@ function aw_refreshConfig(wtype, style) {
       return `<div>${lbl}
         <input type="hidden" id="${f.id}" data-name="${f.name}" data-json="1" value="[]">
         <div id="nl-editor-list"
-             class="space-y-1 mb-2 max-h-32 overflow-y-auto
+             class="space-y-1 mb-3 max-h-32 overflow-y-auto
                     text-xs text-gray-400 dark:text-zinc-500 italic py-1">
           No links yet.
         </div>
-        <div class="flex flex-col gap-1.5 mt-1">
+        <div class="space-y-1 mb-2">
+          <p class="text-[10px] font-semibold uppercase tracking-wider
+                    text-gray-400 dark:text-zinc-500">📄 Notes</p>
+          <input type="text" id="nl-note-search" placeholder="Filter notes…"
+            oninput="_nlFilterNotes(this)"
+            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
+                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-2 focus:ring-wblue
+                   placeholder-gray-400 dark:placeholder-zinc-600">
           <select id="nl-note-picker"
             class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue"
             onchange="_nlPickNote(null,this)">
-            <option value="">＋ Add note…</option>
+            <option value="">＋ Choose a note…</option>
           </select>
+        </div>
+        <div class="space-y-1">
+          <p class="text-[10px] font-semibold uppercase tracking-wider
+                    text-gray-400 dark:text-zinc-500">🗂️ Workspaces</p>
+          <input type="text" id="nl-ws-search" placeholder="Filter workspaces…"
+            oninput="_nlFilterWorkspaces(this)"
+            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
+                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-2 focus:ring-wblue
+                   placeholder-gray-400 dark:placeholder-zinc-600">
           <select id="nl-ws-picker"
             class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue"
             onchange="_nlPickWorkspace(null,this)">
-            <option value="">＋ Add workspace…</option>
+            <option value="">＋ Choose a workspace…</option>
           </select>
         </div></div>`;
     }

@@ -456,8 +456,18 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
       wrap.innerHTML = lbl
         + '<input type="hidden" id="' + f.id + '"'
         +   ' data-cfg-key="' + f.name + '" data-json="1" value="[]">'
-        + '<div id="nl-editor-list" class="space-y-1 mb-2 max-h-40 overflow-y-auto"></div>'
-        + '<div class="flex flex-col gap-1.5 mt-1">'
+        + '<div id="nl-editor-list" class="space-y-1 mb-3 max-h-40 overflow-y-auto"></div>'
+        // Notes section
+        + '<div class="space-y-1 mb-2">'
+        +   '<p class="text-[10px] font-semibold uppercase tracking-wider'
+        +         ' text-gray-400 dark:text-zinc-500">📄 Notes</p>'
+        +   '<input type="text" id="nl-note-search" placeholder="Filter notes…"'
+        +     ' oninput="_nlFilterNotes(this)"'
+        +     ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
+        +             ' rounded-lg px-2 py-1'
+        +             ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        +             ' focus:outline-none focus:ring-2 focus:ring-wblue'
+        +             ' placeholder-gray-400 dark:placeholder-zinc-600">'
         +   '<select id="nl-note-picker"'
         +     ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
         +             ' rounded-lg px-2 py-1.5'
@@ -466,6 +476,18 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         +     ' onchange="_nlPickNote(' + widgetId + ',this)">'
         +     '<option value="">＋ Add note…</option>'
         +   '</select>'
+        + '</div>'
+        // Workspaces section
+        + '<div class="space-y-1">'
+        +   '<p class="text-[10px] font-semibold uppercase tracking-wider'
+        +         ' text-gray-400 dark:text-zinc-500">🗂️ Workspaces</p>'
+        +   '<input type="text" id="nl-ws-search" placeholder="Filter workspaces…"'
+        +     ' oninput="_nlFilterWorkspaces(this)"'
+        +     ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
+        +             ' rounded-lg px-2 py-1'
+        +             ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        +             ' focus:outline-none focus:ring-2 focus:ring-wblue'
+        +             ' placeholder-gray-400 dark:placeholder-zinc-600">'
         +   '<select id="nl-ws-picker"'
         +     ' class="w-full text-xs border border-gray-200 dark:border-zinc-700'
         +             ' rounded-lg px-2 py-1.5'
@@ -767,43 +789,138 @@ function _nlRefreshEditor(widgetId) {
   }).join('');
 }
 
-/** Populate the note picker from the all-notes-data DOM script tag (no fetch). */
-function _nlRefreshNotePicker() {
+/** Populate the note picker — grouped by workspace when cache is ready, filtered by search term.
+ *  Excludes notes already in _nlItems to prevent duplicates. */
+function _nlRefreshNotePicker(filterText) {
   var sel    = document.getElementById('nl-note-picker');
   if (!sel) return;
   var cached = document.getElementById('all-notes-data');
   var notes  = cached ? (function() { try { return JSON.parse(cached.textContent||'[]'); } catch(e){ return []; } }()) : [];
-  sel.innerHTML = '<option value="">＋ Add note…</option>'
-    + notes.map(function(n) {
+  var q      = (filterText || '').toLowerCase().trim();
+  // IDs already in the list
+  var addedIds = new Set(_nlItems.filter(function(i){ return i.type === 'note'; }).map(function(i){ return i.id; }));
+  // Filter by search text and exclude already-added
+  var filtered = notes.filter(function(n) {
+    if (addedIds.has(n.id)) return false;
+    if (!q) return true;
+    return (n.title || '').toLowerCase().indexOf(q) !== -1;
+  });
+  // Group by workspace if cache is available
+  var wsMap = {};
+  if (_nlWsCache) {
+    _nlWsCache.forEach(function(w) { wsMap[w.id] = (w.emoji ? w.emoji + ' ' : '') + w.name; });
+  }
+  var html = '<option value="">＋ Choose a note…</option>';
+  if (!filtered.length) {
+    html += '<option value="" disabled>' + (q ? 'No matches' : 'All notes already added') + '</option>';
+  } else if (_nlWsCache) {
+    // Group into <optgroup> by workspace
+    var groups = {};
+    var groupOrder = [];
+    filtered.forEach(function(n) {
+      var wsId  = n.workspace_id || 0;
+      var label = wsMap[wsId] || 'Other';
+      if (!groups[wsId]) { groups[wsId] = []; groupOrder.push(wsId); }
+      groups[wsId].push(n);
+    });
+    groupOrder.forEach(function(wsId) {
+      var label = wsMap[wsId] || 'Other';
+      html += '<optgroup label="' + _escAttr(label) + '">';
+      groups[wsId].forEach(function(n) {
         var t = _escAttr(n.title || 'Untitled');
         var s = _escAttr((n.content || '').replace(/<[^>]*>/g,'').slice(0, 120));
-        return '<option value="' + n.id + '" data-title="' + t + '" data-snippet="' + s + '">' + t + '</option>';
-      }).join('');
+        html += '<option value="' + n.id + '" data-title="' + t + '" data-snippet="' + s + '">' + t + '</option>';
+      });
+      html += '</optgroup>';
+    });
+  } else {
+    // Flat list — workspaces not loaded yet
+    filtered.forEach(function(n) {
+      var t = _escAttr(n.title || 'Untitled');
+      var s = _escAttr((n.content || '').replace(/<[^>]*>/g,'').slice(0, 120));
+      html += '<option value="' + n.id + '" data-title="' + t + '" data-snippet="' + s + '">' + t + '</option>';
+    });
+  }
+  sel.innerHTML = html;
 }
 
-/** Fetch workspaces from /home/workspaces-for-picker (cached per JS session). */
+/** Live-filter the note picker as user types in the search box. */
+function _nlFilterNotes(input) {
+  _nlRefreshNotePicker(input.value);
+}
+
+/** Fetch workspaces from /home/workspaces-for-picker (cached per JS session).
+ *  After loading, refreshes BOTH pickers (note picker benefits from workspace names for grouping). */
 function _nlLoadWorkspaces(widgetId) {
-  if (_nlWsCache !== null) { _nlRefreshWsPicker(); return; }
+  if (_nlWsCache !== null) { _nlRefreshWsPicker(); _nlRefreshNotePicker(_nlCurrentNoteFilter()); return; }
   fetch('/home/workspaces-for-picker', {credentials:'same-origin'})
     .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
-    .then(function(data) { _nlWsCache = data; _nlRefreshWsPicker(); })
+    .then(function(data) {
+      _nlWsCache = data;
+      _nlRefreshWsPicker();
+      _nlRefreshNotePicker(_nlCurrentNoteFilter());
+    })
     .catch(function(e) { console.warn('[bookworm] workspaces-for-picker failed:', e); });
 }
 
-/** Populate the workspace picker from the in-memory cache. */
-function _nlRefreshWsPicker() {
+/** Get the current note search value without crashing if element is absent. */
+function _nlCurrentNoteFilter() {
+  var el = document.getElementById('nl-note-search');
+  return el ? el.value : '';
+}
+
+/** Populate the workspace picker — grouped by type, hidden workspaces excluded,
+ *  already-added workspaces excluded, filtered by search text. */
+function _nlRefreshWsPicker(filterText) {
   var sel = document.getElementById('nl-ws-picker');
   if (!sel || !_nlWsCache) return;
-  sel.innerHTML = '<option value="">＋ Add workspace…</option>'
-    + _nlWsCache.map(function(w) {
-        var badge   = w.ws_type === 'database' ? ' (DB)' : '';
-        var display = _escAttr((w.emoji ? w.emoji + ' ' : '') + w.name + badge);
-        return '<option value="' + w.id + '"'
-          + ' data-name="'   + _escAttr(w.name)    + '"'
-          + ' data-emoji="'  + _escAttr(w.emoji || '') + '"'
-          + ' data-wstype="' + _escAttr(w.ws_type || 'workspace') + '">'
-          + display + '</option>';
-      }).join('');
+  // Hidden workspace IDs from localStorage (same key as sidebar)
+  var hiddenIds = (function() {
+    try { return new Set(JSON.parse(localStorage.getItem('bw_ws_hidden') || '[]').map(Number)); }
+    catch(_) { return new Set(); }
+  }());
+  var addedIds = new Set(_nlItems.filter(function(i){ return i.type === 'workspace'; }).map(function(i){ return i.id; }));
+  var q = (filterText || '').toLowerCase().trim();
+  var filtered = _nlWsCache.filter(function(w) {
+    if (hiddenIds.has(w.id)) return false;
+    if (addedIds.has(w.id))  return false;
+    if (q) return (w.name || '').toLowerCase().indexOf(q) !== -1;
+    return true;
+  });
+  var html = '<option value="">＋ Choose a workspace…</option>';
+  if (!filtered.length) {
+    html += '<option value="" disabled>' + (q ? 'No matches' : 'No workspaces available') + '</option>';
+  } else {
+    // Group: Databases first, then regular workspaces
+    var dbs  = filtered.filter(function(w){ return w.ws_type === 'database'; });
+    var rest = filtered.filter(function(w){ return w.ws_type !== 'database'; });
+    if (dbs.length) {
+      html += '<optgroup label="🗄️ Databases">';
+      dbs.forEach(function(w) { html += _nlWsOption(w); });
+      html += '</optgroup>';
+    }
+    if (rest.length) {
+      html += '<optgroup label="🗂️ Workspaces">';
+      rest.forEach(function(w) { html += _nlWsOption(w); });
+      html += '</optgroup>';
+    }
+  }
+  sel.innerHTML = html;
+}
+
+/** Build a single <option> for a workspace. */
+function _nlWsOption(w) {
+  var display = _escAttr((w.emoji ? w.emoji + ' ' : '') + w.name);
+  return '<option value="' + w.id + '"'
+    + ' data-name="'   + _escAttr(w.name)              + '"'
+    + ' data-emoji="'  + _escAttr(w.emoji || '')       + '"'
+    + ' data-wstype="' + _escAttr(w.ws_type || 'workspace') + '">'
+    + display + '</option>';
+}
+
+/** Live-filter the workspace picker as user types in the search box. */
+function _nlFilterWorkspaces(input) {
+  _nlRefreshWsPicker(input.value);
 }
 
 /** Add a note item; called from nl-note-picker onchange. */
@@ -819,6 +936,9 @@ function _nlPickNote(widgetId, sel) {
     title:opt.dataset.title||opt.text, snippet:opt.dataset.snippet||''});
   sel.selectedIndex = 0;
   _nlRefreshEditor(widgetId);
+  // Remove the added note from the picker so it can't be added twice
+  var noteSearch = document.getElementById('nl-note-search');
+  _nlRefreshNotePicker(noteSearch ? noteSearch.value : '');
 }
 
 /** Add a workspace item; called from nl-ws-picker onchange. */
@@ -836,12 +956,20 @@ function _nlPickWorkspace(widgetId, sel) {
     ws_type:opt.dataset.wstype||'workspace'});
   sel.selectedIndex = 0;
   _nlRefreshEditor(widgetId);
+  // Remove the added workspace from the picker so it can't be added twice
+  var wsSearch = document.getElementById('nl-ws-search');
+  _nlRefreshWsPicker(wsSearch ? wsSearch.value : '');
 }
 
-/** Remove an item by index and refresh the editor. */
+/** Remove an item by index and refresh the editor and both pickers. */
 function _nlRemoveItem(widgetId, idx) {
   _nlItems.splice(idx, 1);
   _nlRefreshEditor(widgetId);
+  // Re-add the removed item back to the pickers
+  var noteSearch = document.getElementById('nl-note-search');
+  var wsSearch   = document.getElementById('nl-ws-search');
+  _nlRefreshNotePicker(noteSearch ? noteSearch.value : '');
+  _nlRefreshWsPicker(wsSearch ? wsSearch.value : '');
 }
 
 async function saveWidgetSettings(widgetId) {
