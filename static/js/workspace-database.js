@@ -1962,10 +1962,10 @@ function _dbAttrPills(attrs, cardId) {
   //
   // Three output buckets:
   //   chipParts     — select + multi_select (coloured pill chips)
-  //   priorityParts — checkbox, phone, place, status, url, email
+  //   priorityParts — checkbox, phone, person, place, status, url, email
   //                   These always surface first so user-entered info
   //                   is never hidden behind date/number attrs.
-  //   normalParts   — date, number, text, person (fill remaining slots)
+  //   normalParts   — date, number, text (fill remaining slots)
   //   fileParts     — files (own row, no MAX cap)
   //
   // Merged plain row = priorityParts ++ normalParts, capped at MAX_PLAIN.
@@ -2030,6 +2030,22 @@ function _dbAttrPills(attrs, cardId) {
         '<span style="color:' + sc + ';" class="text-xs font-semibold max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
       );
+    } else if (t === 'person' && v) {
+      // Render each name as a small indigo pill in the priority bucket
+      var pePreviewBg  = isDark ? 'rgba(99,102,241,0.15)' : '#eef2ff';
+      var pePreviewClr = isDark ? '#a5b4fc' : '#4338ca';
+      var pePreviewBdr = isDark ? 'rgba(99,102,241,0.3)'  : '#c7d2fe';
+      v.split(',').map(function(n) { return n.trim(); }).filter(Boolean).forEach(function(name) {
+        priorityParts.push(
+          '<span style="background:' + pePreviewBg + ';color:' + pePreviewClr + ';'
+          + 'border:1px solid ' + pePreviewBdr + ';'
+          + 'border-radius:9999px;font-size:0.68rem;font-weight:500;'
+          + 'padding:0.08rem 0.45rem;white-space:nowrap;display:inline-flex;'
+          + 'align-items:center;gap:0.15rem;">'
+          + '\uD83D\uDC64\u00a0' + _esc(name)
+          + '</span>'
+        );
+      });
     } else if (t === 'phone' && v) {
       var phNums  = v.split(',').map(function(n) { return n.trim(); }).filter(Boolean);
       var phFmtd  = phNums.slice(0, 2).map(function(n) { return _dbFmtPhone(n); });
@@ -2121,7 +2137,7 @@ function _dbAttrPills(attrs, cardId) {
         fileParts.push(fHtml);
       }
     } else if (v) {
-      // text / person
+      // text (person is handled above in priorityParts)
       normalParts.push(
         '<span class="text-xs text-gray-500 dark:text-zinc-400 max-w-[140px] truncate inline-block">'
         + _esc(v) + '</span>'
@@ -4511,6 +4527,109 @@ function _dbPhoneChipBlur(cardId, attrId, key, inp) {
   wrap.style.borderColor = isDark ? '#3f3f46' : '#e5e7eb';
 }
 
+/* ───────────────────────────────────────────────────────────────────────────────
+   PERSON CHIP INPUT HELPERS  (mirrors phone chip helpers above)
+   Value storage: comma-separated names.  Display: indigo rounded-full pill.
+   Auto-capitalises the first letter of every word on commit.
+─────────────────────────────────────────────────────────────────────────────── */
+
+// Capitalise the first letter of every word in a name.
+function _dbPersonCap(name) {
+  return name.split(' ').map(function(w) {
+    return w ? w.charAt(0).toUpperCase() + w.slice(1) : '';
+  }).join(' ');
+}
+
+// Collect chip data-raw values, join with ", ", persist.
+function _dbPersonChipSave(wrap, cardId, attrId, key) {
+  var chips = wrap.querySelectorAll('.db-pe-chip');
+  var raws  = [];
+  chips.forEach(function(c) { raws.push(c.getAttribute('data-raw')); });
+  _dbSaveAttrVal(cardId, attrId, key, raws.join(', '));
+}
+
+// Build and insert one person chip before `beforeEl` inside `wrap`.
+function _dbPersonChipInsert(wrap, beforeEl, raw) {
+  var name    = _dbPersonCap(raw.trim());
+  var isDark  = document.documentElement.classList.contains('dark');
+  var pillBg  = isDark ? 'rgba(99,102,241,0.15)' : '#eef2ff';
+  var pillClr = isDark ? '#a5b4fc'               : '#4338ca';
+  var pillBdr = isDark ? 'rgba(99,102,241,0.3)'  : '#c7d2fe';
+
+  var chip = document.createElement('span');
+  chip.className = 'db-pe-chip';
+  chip.setAttribute('data-raw', name);
+  chip.style.cssText =
+    'display:inline-flex;align-items:center;background:' + pillBg + ';'
+    + 'border:1px solid ' + pillBdr + ';color:' + pillClr + ';'
+    + 'border-radius:9999px;font-size:0.72rem;font-weight:500;'
+    + 'padding:0.1rem 0.45rem 0.1rem 0.5rem;white-space:nowrap;gap:0.15rem;';
+
+  var label = document.createElement('span');
+  label.textContent = '\uD83D\uDC64\u00a0' + name;
+  label.style.cssText = 'cursor:default;line-height:1.5;';
+  chip.appendChild(label);
+
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = '\u00d7';
+  delBtn.title = 'Remove';
+  delBtn.style.cssText =
+    'background:none;border:none;cursor:pointer;color:inherit;'
+    + 'font-size:1rem;line-height:1;padding:0 0.05rem 0 0.2rem;'
+    + 'opacity:0.5;font-family:inherit;';
+  delBtn.addEventListener('mouseenter', function() { delBtn.style.opacity = '1'; });
+  delBtn.addEventListener('mouseleave', function() { delBtn.style.opacity = '0.5'; });
+  delBtn.addEventListener('click', function() {
+    chip.remove();
+    _dbPersonChipSave(wrap, parseInt(wrap.dataset.cardId, 10),
+                           parseInt(wrap.dataset.attrId,  10),
+                           wrap.dataset.key);
+  });
+  chip.appendChild(delBtn);
+
+  wrap.insertBefore(chip, beforeEl);
+}
+
+// Convert whatever is in `inp` to a chip, clear the input.
+function _dbPersonChipCommit(wrap, inp, cardId, attrId, key) {
+  var raw = inp.value.replace(/,\s*$/, '').trim(); // strip trailing comma
+  if (!raw) return;
+  inp.value = '';
+  inp.placeholder = '';
+  _dbPersonChipInsert(wrap, inp, raw);
+  _dbPersonChipSave(wrap, cardId, attrId, key);
+}
+
+// keydown handler — Enter or comma commits the current name.
+function _dbPersonChipKey(e, cardId, attrId, key) {
+  var inp  = e.target;
+  var wrap = inp.closest('.db-pe-wrap');
+  if (e.key === ',' || e.key === 'Enter') {
+    e.preventDefault();
+    _dbPersonChipCommit(wrap, inp, cardId, attrId, key);
+  } else if (e.key === 'Backspace' && inp.value === '') {
+    var chips = wrap.querySelectorAll('.db-pe-chip');
+    if (chips.length) {
+      chips[chips.length - 1].remove();
+      _dbPersonChipSave(wrap, cardId, attrId, key);
+    }
+  }
+}
+
+// blur handler: commit any trailing text, then reset border.
+function _dbPersonChipBlur(cardId, attrId, key, inp) {
+  var wrap = inp.closest('.db-pe-wrap');
+  if (inp.value.trim()) {
+    _dbPersonChipCommit(wrap, inp, cardId, attrId, key);
+  } else if (wrap.querySelectorAll('.db-pe-chip').length === 0) {
+    inp.placeholder = 'Type a name\u2026 Enter or comma to add more';
+    _dbPersonChipSave(wrap, cardId, attrId, key);
+  }
+  var isDark = document.documentElement.classList.contains('dark');
+  wrap.style.borderColor = isDark ? '#3f3f46' : '#e5e7eb';
+}
+
 function _dbAttrValueHtml(cardId, a) {
   var k   = _esc(a.attr_key);   // HTML-safe, used in display contexts
   // kJ: key safe for use inside an HTML attribute that contains JS args.
@@ -4683,6 +4802,65 @@ function _dbAttrValueHtml(cardId, a) {
       + '<span contenteditable="true" style="font-size:0.75rem;color:#6b7280;cursor:text;outline:none;"'
       + ' onblur="' + cb + '">' + (v ? '(edit)' : 'Add email…') + '</span>';
   }
+  // person — multi-name chip input (Enter or comma to commit; auto title-case)
+  if (t === 'person') {
+    var isDkPe  = document.documentElement.classList.contains('dark');
+    var inpBgPe = isDkPe ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+    var inpBdrPe = isDkPe ? '#3f3f46' : '#e5e7eb';
+    var peClr   = isDkPe ? '#f4f4f5' : '#111827';
+    var pillBgPe  = isDkPe ? 'rgba(99,102,241,0.15)' : '#eef2ff';
+    var pillClrPe = isDkPe ? '#a5b4fc' : '#4338ca';
+    var pillBdrPe = isDkPe ? 'rgba(99,102,241,0.3)'  : '#c7d2fe';
+
+    var peNames = v
+      ? v.split(',').map(function(n) { return n.trim(); }).filter(Boolean)
+      : [];
+
+    var peChipsHtml = peNames.map(function(raw) {
+      var name  = _dbPersonCap(raw);
+      var nameJ = _esc(JSON.stringify(name));
+      return '<span class="db-pe-chip" data-raw="' + _esc(name) + '"'
+        + ' style="display:inline-flex;align-items:center;'
+        + 'background:' + pillBgPe + ';border:1px solid ' + pillBdrPe + ';'
+        + 'color:' + pillClrPe + ';border-radius:9999px;font-size:0.72rem;'
+        + 'font-weight:500;padding:0.1rem 0.45rem 0.1rem 0.5rem;'
+        + 'white-space:nowrap;gap:0.15rem;">'
+        + '<span style="cursor:default;line-height:1.5;">\uD83D\uDC64\u00a0' + _esc(name) + '</span>'
+        + '<button type="button" title="Remove"'
+        + ' onclick="var c=this.parentNode,w=c.closest(\'.db-pe-wrap\');'
+        + 'c.remove();_dbPersonChipSave(w,' + cardId + ',' + a.id + ',' + kJ + ')"'
+        + ' style="background:none;border:none;cursor:pointer;color:inherit;'
+        + 'font-size:1rem;line-height:1;padding:0 0.05rem 0 0.2rem;opacity:0.5;'
+        + 'font-family:inherit;"'
+        + ' onmouseenter="this.style.opacity=\'1\'"'
+        + ' onmouseleave="this.style.opacity=\'0.5\'">'
+        + '&times;</button>'
+        + '</span>';
+    }).join('');
+
+    var cbKeyPe  = '_dbPersonChipKey(event,' + cardId + ',' + a.id + ',' + kJ + ')';
+    var cbBlurPe = '_dbPersonChipBlur(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    var cbFocusPe = 'this.closest(\'.db-pe-wrap\').style.borderColor=\'#0053e2\'';
+    var peholderPe = peNames.length ? '' : 'Type a name\u2026 Enter or comma to add more';
+
+    return '<div class="db-pe-wrap"'
+      + ' data-card-id="' + cardId + '" data-attr-id="' + a.id + '" data-key=' + kJ
+      + ' style="display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem;'
+      + 'padding:0.15rem 0;background:' + inpBgPe + ';border:1px solid ' + inpBdrPe + ';'
+      + 'border-radius:0.375rem;min-height:2rem;cursor:text;padding:0.25rem 0.4rem;"'
+      + ' onclick="var i=this.querySelector(\'.db-pe-inp\');if(i&&document.activeElement!==i)i.focus();">'
+      + peChipsHtml
+      + '<input class="db-pe-inp" type="text"'
+      + ' placeholder="' + _esc(peholderPe) + '"'
+      + ' style="flex:1;min-width:5rem;border:none;background:transparent;'
+      + 'outline:none;font-size:0.72rem;color:' + peClr + ';'
+      + 'font-family:inherit;padding:0.1rem 0;"'
+      + ' onfocus="' + cbFocusPe + '"'
+      + ' onkeydown="' + cbKeyPe + '"'
+      + ' onblur="' + cbBlurPe + '">'
+      + '</div>';
+  }
+
   if (t === 'phone') {
     var isDkPh  = document.documentElement.classList.contains('dark');
     var inpBg   = isDkPh ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
