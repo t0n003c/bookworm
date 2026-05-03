@@ -121,6 +121,9 @@ var _DB_ATTR_TYPES = [
   { id: 'email',        label: 'Email',        icon: '\u2709' },
   { id: 'phone',        label: 'Phone',        icon: '\uD83D\uDCDE' },
   { id: 'place',        label: 'Place',        icon: '\uD83D\uDCCD' },
+  { id: 'date_range',   label: 'Date Range',   icon: '\uD83D\uDCC5' },
+  { id: 'progress',     label: 'Progress',     icon: '\uD83D\uDCCA' },
+  { id: 'rating',       label: 'Rating',       icon: '\u2B50' },
 ];
 
 /* ── option colour palette ─────────────────────────────────────────────── */
@@ -2136,6 +2139,41 @@ function _dbAttrPills(attrs, cardId) {
         if (extra > 0) fHtml += '<span style="font-size:0.65rem;color:#9ca3af;">\u00a0+' + extra + '</span>';
         fileParts.push(fHtml);
       }
+    } else if (t === 'date_range' && v) {
+      var drDisp = _dbFormatDateRange(v);
+      if (drDisp) {
+        normalParts.push(
+          '<span class="text-xs text-gray-500 dark:text-zinc-400 whitespace-nowrap">'
+          + '\uD83D\uDCC5\u00a0' + _esc(drDisp) + '</span>'
+        );
+      }
+    } else if (t === 'progress') {
+      var pgDisp = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
+      var pgFill = '#0053e2'; // Walmart blue — same in light + dark
+      var pgBg   = isDark ? '#3f3f46' : '#e5e7eb';
+      normalParts.push(
+        '<div style="display:inline-flex;align-items:center;gap:0.3rem;min-width:80px;">'
+        + '<div style="flex:1;min-width:48px;height:5px;border-radius:3px;'
+        + 'background:' + pgBg + ';overflow:hidden;">'
+        + '<div style="height:100%;width:' + pgDisp + '%;background:' + pgFill + ';'
+        + 'border-radius:3px;transition:width 0.2s;"></div>'
+        + '</div>'
+        + '<span style="font-size:0.65rem;color:' + (isDark ? '#a1a1aa' : '#6b7280') + ';'
+        + 'font-variant-numeric:tabular-nums;white-space:nowrap;">' + pgDisp + '%</span>'
+        + '</div>'
+      );
+    } else if (t === 'rating') {
+      var rtDisp = Math.min(5, Math.max(0, parseInt(v, 10) || 0));
+      if (rtDisp > 0) {
+        var rtPillClr = '#f59e0b'; // amber
+        var rtEmpClr  = isDark ? '#52525b' : '#d1d5db';
+        var rtStars   = '';
+        for (var ri = 1; ri <= 5; ri++) {
+          rtStars += '<span style="color:' + (ri <= rtDisp ? rtPillClr : rtEmpClr) + ';font-size:0.7rem;">'
+            + (ri <= rtDisp ? '\u2605' : '\u2606') + '</span>';
+        }
+        normalParts.push('<span style="display:inline-flex;align-items:center;gap:0.05rem;">' + rtStars + '</span>');
+      }
     } else if (v) {
       // text (person is handled above in priorityParts)
       normalParts.push(
@@ -3951,6 +3989,39 @@ function _dbParseUserDate(str) {
   return '';
 }
 
+// Format a stored date_range value ("YYYY-MM-DD|YYYY-MM-DD") for display.
+// Returns e.g. "Apr 15 \u2192 Apr 30" or "Apr 15, 2026 \u2192 Jan 3, 2027" when years differ.
+// Handles partial ranges: if one side is blank, shows just that side with an arrow.
+function _dbFormatDateRange(v) {
+  var MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtSide(iso) {
+    if (!iso) return '';
+    var p = iso.split('-');
+    if (p.length < 3) return iso;
+    return MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
+  }
+  var parts  = (v || '').split('|');
+  var start  = (parts[0] || '').trim();
+  var end    = (parts[1] || '').trim();
+  var startY = start ? start.slice(0, 4) : '';
+  var endY   = end   ? end.slice(0,   4) : '';
+  // Same year: omit year from start label for compactness
+  function fmtCompact(iso, showYear) {
+    if (!iso) return '';
+    var p = iso.split('-');
+    if (p.length < 3) return iso;
+    var label = MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10);
+    return showYear ? label + ', ' + p[0] : label;
+  }
+  var sameYear = (startY && endY && startY === endY);
+  var sl = start ? fmtCompact(start, !sameYear) : '';
+  var el = end   ? fmtCompact(end,   true)       : '';
+  if (sl && el) return sl + ' \u2192 ' + el;
+  if (sl)       return sl + ' \u2192';
+  if (el)       return '\u2192 ' + el;
+  return '';
+}
+
 function _dbNativeWidgetFocus(el) {
   // Show a visible box when the user interacts with a select/date field.
   var isDark = document.documentElement.classList.contains('dark');
@@ -5179,6 +5250,77 @@ function _dbAttrValueHtml(cardId, a) {
   // files — dedicated upload/link widget
   if (t === 'files') {
     return _dbFilesHtml(cardId, a);
+  }
+
+  // date_range — two date pickers side by side, saves as "start|end"
+  if (t === 'date_range') {
+    var isDkDr  = document.documentElement.classList.contains('dark');
+    var drParts = v.split('|');
+    var drStart = (drParts[0] || '').trim();
+    var drEnd   = (drParts[1] || '').trim();
+    var drInpSty =
+      'background:transparent;border:none;outline:none;font-size:0.8rem;'
+      + 'font-family:inherit;color:' + (isDkDr ? '#f4f4f5' : '#111827') + ';'
+      + 'cursor:pointer;padding:0.1rem 0.2rem;min-width:0;width:130px;'
+      + (isDkDr ? 'color-scheme:dark;' : '');
+    var drCb = '_dbDateRangeSave(' + cardId + ',' + a.id + ',' + kJ + ',this.closest(\'.db-dr-wrap\'))';
+    return '<div class="db-dr-wrap" style="display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;">'
+      + '<input type="date" class="db-dr-start"'
+      + ' value="' + _esc(drStart) + '"'
+      + ' style="' + drInpSty + '"'
+      + ' onchange="' + drCb + '"'
+      + ' onfocus="_dbNativeWidgetFocus(this)" onblur="_dbNativeWidgetBlur(this)">'
+      + '<span style="font-size:0.7rem;color:#9ca3af;flex-shrink:0;">&#8594;</span>'
+      + '<input type="date" class="db-dr-end"'
+      + ' value="' + _esc(drEnd) + '"'
+      + ' style="' + drInpSty + '"'
+      + ' onchange="' + drCb + '"'
+      + ' onfocus="_dbNativeWidgetFocus(this)" onblur="_dbNativeWidgetBlur(this)">'
+      + '</div>';
+  }
+
+  // progress — range slider 0–100 with live % label
+  if (t === 'progress') {
+    var isDkPg  = document.documentElement.classList.contains('dark');
+    var pgVal   = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
+    var pgTrack = 'linear-gradient(to right,#0053e2 ' + pgVal + '%,'  + (isDkPg ? '#3f3f46' : '#e5e7eb') + ' ' + pgVal + '%)';
+    var pgCb    = '_dbProgressChange(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    return '<div style="display:flex;align-items:center;gap:0.5rem;width:100%;padding:0.1rem 0;">'
+      + '<input type="range" min="0" max="100" value="' + pgVal + '"'
+      + ' style="flex:1;min-width:60px;height:6px;border-radius:3px;'
+      + '-webkit-appearance:none;appearance:none;outline:none;cursor:pointer;'
+      + 'background:' + pgTrack + ';"'
+      + ' oninput="' + pgCb + '"'
+      + ' title="' + pgVal + '%">'
+      + '<span class="db-pg-label" style="font-size:0.75rem;color:' + (isDkPg ? '#a1a1aa' : '#6b7280') + ';'
+      + 'min-width:2.5rem;text-align:right;font-variant-numeric:tabular-nums;">' + pgVal + '%</span>'
+      + '</div>';
+  }
+
+  // rating — 1–5 star buttons; clicking active star resets to 0
+  if (t === 'rating') {
+    var isDkRt  = document.documentElement.classList.contains('dark');
+    var rtVal   = Math.min(5, Math.max(0, parseInt(v, 10) || 0));
+    var rtClr   = '#f59e0b'; // amber
+    var rtEmpty = isDkRt ? '#52525b' : '#d1d5db';
+    var rtHtml  = '<div class="db-rating-wrap" data-rating="' + rtVal + '"'
+      + ' style="display:flex;align-items:center;gap:0.1rem;">';
+    for (var rs = 1; rs <= 5; rs++) {
+      var rtStar  = rs <= rtVal ? '\u2605' : '\u2606'; // \u2605=filled \u2606=empty
+      var rtColor = rs <= rtVal ? rtClr : rtEmpty;
+      var rtCb    = '_dbRatingSave(' + cardId + ',' + a.id + ',' + kJ + ',' + rs + ',this)';
+      rtHtml += '<button type="button" class="db-rating-btn" data-val="' + rs + '"'
+        + ' onclick="' + rtCb + '"'
+        + ' title="' + rs + ' star' + (rs > 1 ? 's' : '') + '"'
+        + ' style="background:none;border:none;cursor:pointer;padding:0 0.05rem;'
+        + 'font-size:1rem;color:' + rtColor + ';line-height:1;'
+        + 'transition:transform 0.1s,color 0.1s;"'
+        + ' onmouseenter="this.style.transform=\'scale(1.3)\'"'
+        + ' onmouseleave="this.style.transform=\'\'">'
+        + rtStar + '</button>';
+    }
+    rtHtml += '</div>';
+    return rtHtml;
   }
 
   // text / person / select (no opts) / multi_select (no opts) — contenteditable
@@ -6546,7 +6688,8 @@ function _dbEditAttrRow(cardId, attrId) {
       extrasDiv.appendChild(placeFmtDiv);
 
     } else if (t === 'phone' || t === 'email' || t === 'checkbox'
-              || t === 'person' || t === 'text') {
+              || t === 'person' || t === 'text'
+              || t === 'date_range' || t === 'progress' || t === 'rating') {
       // No configurable settings for these types — show a small hint so
       // the user knows the section is working, just intentionally empty.
       var noSetDiv = document.createElement('div');
@@ -6846,9 +6989,47 @@ function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
   .catch(function(e) { console.warn('Checkbox save failed', e); });
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   ATTRIBUTE LABEL CONTEXT MENU
-═══════════════════════════════════════════════════════════════════════════ */
+// date_range — called by onchange on either the start or end picker.
+// Reads both pickers from the parent .db-dr-wrap, saves as "start|end".
+function _dbDateRangeSave(cardId, attrId, key, wrapEl) {
+  var startEl = wrapEl.querySelector('.db-dr-start');
+  var endEl   = wrapEl.querySelector('.db-dr-end');
+  var start   = startEl ? startEl.value : '';
+  var end     = endEl   ? endEl.value   : '';
+  _dbSaveAttrVal(cardId, attrId, key, start + '|' + end);
+}
+
+// progress — called by oninput on the range slider.  Debounced 400 ms.
+// Updates the live label immediately; defers the server save.
+function _dbProgressChange(cardId, attrId, key, el) {
+  var pct    = parseInt(el.value, 10) || 0;
+  var labelEl = el.parentNode ? el.parentNode.querySelector('.db-pg-label') : null;
+  if (labelEl) labelEl.textContent = pct + '%';
+  // colour-fill the track
+  el.style.background = 'linear-gradient(to right,#0053e2 ' + pct + '%,#e5e7eb ' + pct + '%)';
+  var timerKey = 'prog-' + cardId + '-' + attrId;
+  clearTimeout(_dbSaveTimers[timerKey]);
+  _dbSaveTimers[timerKey] = setTimeout(function() {
+    _dbSaveAttrVal(cardId, attrId, key, String(pct));
+  }, 400);
+}
+
+// rating — called onclick on a star button.
+// Clicking the already-active star resets to 0 (no rating).
+function _dbRatingSave(cardId, attrId, key, val, btnEl) {
+  var wrap    = btnEl.closest('.db-rating-wrap');
+  var current = parseInt(wrap ? wrap.getAttribute('data-rating') : '0', 10) || 0;
+  var newVal  = (val === current) ? 0 : val;
+  if (wrap) wrap.setAttribute('data-rating', String(newVal));
+  // Optimistic star repaint
+  if (wrap) {
+    wrap.querySelectorAll('.db-rating-btn').forEach(function(b) {
+      var bv = parseInt(b.getAttribute('data-val'), 10);
+      b.textContent = bv <= newVal ? '\u2605' : '\u2606'; // filled / empty
+    });
+  }
+  _dbSaveAttrVal(cardId, attrId, key, newVal > 0 ? String(newVal) : '');
+}
 
 var _dbAttrMenuEl = null;   // currently open menu DOM node
 var _dbAttrMenuOff = null;  // listener to remove on close
