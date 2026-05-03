@@ -108,6 +108,7 @@ function _budsRender(wid) {
     var tier    = _budsHealthTier(h);
     var color   = _budsHealthColor(tier);
     var img     = _budsFlowerImg(b.flower_species, tier);
+    var swayDelay = ((b.id % 6) * 0.65).toFixed(2) + 's'; // stagger per-bud so they don't all swing in sync
     var watered = (b.last_watered_week === _budsWeekKey());
     var hasPlan = !!(b.pending_plan);
     var waterCls   = watered
@@ -129,7 +130,8 @@ function _budsRender(wid) {
       // ── Compact: dense list row — fits many buds in a small widget ──────────
       return '<div class="flex items-center gap-2 py-1 px-1 border-b border-gray-100'
         + ' dark:border-zinc-800 last:border-0">'
-        + '<img src="'+img+'" class="w-8 h-8 object-contain flex-shrink-0 cursor-pointer opacity-90"'
+        + '<img src="'+img+'" class="w-8 h-8 object-contain flex-shrink-0 cursor-pointer opacity-90 bud-sway"'
+        + '     style="animation-delay:'+swayDelay+'"'
         + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
         + '<div class="flex-1 min-w-0">'
         + '  <p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate leading-tight">'+_esc(b.name)+'</p>'
@@ -149,7 +151,8 @@ function _budsRender(wid) {
     var speciesName = _BUDS_NAMES[b.flower_species] || b.flower_species;
     return '<div class="flex items-center gap-3 rounded-xl border border-gray-100'
       + ' dark:border-zinc-700 bg-white dark:bg-zinc-800/60 p-3 shadow-sm">'
-      + '<img src="'+img+'" class="w-16 h-16 object-contain flex-shrink-0 cursor-pointer"'
+      + '<img src="'+img+'" class="w-16 h-16 object-contain flex-shrink-0 cursor-pointer bud-sway"'
+      + '     style="animation-delay:'+swayDelay+'"'
       + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
       + '<div class="flex-1 min-w-0">'
       + '  <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">'+_esc(b.name)+'</p>'

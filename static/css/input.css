@@ -1,3 +1,17 @@
+/* ── Buds widget — flower sway animation ─────────────────────────────────────
+   Rotates from the bottom-center so the flower rocks like it's on a stem.
+   Each flower gets a different animation-delay set inline (via JS) so they
+   don't all swing in perfect lockstep — looks like a real breeze.         */
+@keyframes bud-sway {
+  from { transform: rotate(-4deg); }
+  to   { transform: rotate( 4deg); }
+}
+.bud-sway {
+  transform-origin: bottom center;
+  animation: bud-sway 3.4s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
 /* BookWorm — Tailwind CSS entry point.
    This file is compiled by the Tailwind CLI into static/css/tailwind.css.
    Run rebuild_css.bat to regenerate after template / JS changes.
