@@ -4599,9 +4599,11 @@ function _dbPersonChipInsert(wrap, beforeEl, raw) {
   delBtn.addEventListener('mouseleave', function() { delBtn.style.opacity = '0.5'; });
   delBtn.addEventListener('click', function() {
     chip.remove();
+    // Use data-attr-key (plain string) — dataset.key is JSON-encoded with literal
+    // quote chars and would create a duplicate attribute if sent to the server.
     _dbPersonChipSave(wrap, parseInt(wrap.dataset.cardId, 10),
                            parseInt(wrap.dataset.attrId,  10),
-                           wrap.dataset.key);
+                           wrap.dataset.attrKey);
   });
   chip.appendChild(delBtn);
 
@@ -4655,8 +4657,7 @@ function _dbPersonPickerOpen(btn) {
   var wrap    = btn.closest('.db-pe-wrap');
   var cardId  = parseInt(wrap.dataset.cardId, 10);
   var attrId  = parseInt(wrap.dataset.attrId,  10);
-  var key     = wrap.dataset.key;     // JSON-encoded key — passed straight to save helpers
-  var attrKey = wrap.dataset.attrKey; // plain string — used for data lookups
+  var attrKey = wrap.dataset.attrKey; // plain attr_key string — safe to send to server
 
   var names = _dbPersonKnownNames(attrKey);
   if (!names.length) return; // nothing to show
@@ -4710,7 +4711,7 @@ function _dbPersonPickerOpen(btn) {
         var inp = wrap.querySelector('.db-pe-inp');
         _dbPersonChipInsert(wrap, inp, name);
       }
-      _dbPersonChipSave(wrap, cardId, attrId, key);
+      _dbPersonChipSave(wrap, cardId, attrId, attrKey); // attrKey = plain string, not JSON-encoded
       pop.remove();
     });
     row.addEventListener('mouseenter', function() { row.style.background = rowHov; });
