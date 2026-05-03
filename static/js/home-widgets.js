@@ -1012,16 +1012,16 @@ function aw_refreshConfig(wtype, style) {
                     text-xs text-gray-400 dark:text-zinc-500 italic py-1">
           No links yet.
         </div>
-        <div class="flex gap-2 mt-1">
+        <div class="flex flex-col gap-1.5 mt-1">
           <select id="nl-note-picker"
-            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue"
             onchange="_nlPickNote(null,this)">
             <option value="">＋ Add note…</option>
           </select>
           <select id="nl-ws-picker"
-            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue"
             onchange="_nlPickWorkspace(null,this)">
