@@ -997,9 +997,10 @@ function aw_refreshConfig(wtype, style) {
   cfDiv.innerHTML = fields.map(f => {
     const lbl = `<label class="block text-xs font-semibold text-gray-500 mb-1">${f.label}</label>`;
     if (f.type === 'link-list-editor') {
-      // Multi-item note + workspace picker for note_link widgets in the add modal.
-      // Reuses the same _nlItems state + helpers from home-widgets-settings.js.
-      if (typeof _nlItems !== 'undefined') _nlItems = [];
+      if (typeof _nlItems          !== 'undefined') _nlItems = [];
+      if (typeof _nlCurrentWidgetId !== 'undefined') _nlCurrentWidgetId = null;
+      if (typeof _nlNoteGroupCollapsed !== 'undefined') _nlNoteGroupCollapsed = new Set();
+      if (typeof _nlWsGroupCollapsed   !== 'undefined') _nlWsGroupCollapsed   = new Set();
       setTimeout(function() {
         if (typeof _nlRefreshEditor     === 'function') _nlRefreshEditor(null);
         if (typeof _nlRefreshNotePicker === 'function') _nlRefreshNotePicker();
@@ -1021,13 +1022,12 @@ function aw_refreshConfig(wtype, style) {
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue
                    placeholder-gray-400 dark:placeholder-zinc-600">
-          <select id="nl-note-picker"
-            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                   focus:outline-none focus:ring-2 focus:ring-wblue"
-            onchange="_nlPickNote(null,this)">
-            <option value="">＋ Choose a note…</option>
-          </select>
+          <div id="nl-note-list"
+               class="w-full max-h-40 overflow-y-auto
+                      border border-gray-200 dark:border-zinc-700 rounded-lg
+                      bg-white dark:bg-zinc-800">
+            <p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>
+          </div>
         </div>
         <div class="space-y-1">
           <p class="text-[10px] font-semibold uppercase tracking-wider
@@ -1038,13 +1038,12 @@ function aw_refreshConfig(wtype, style) {
                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                    focus:outline-none focus:ring-2 focus:ring-wblue
                    placeholder-gray-400 dark:placeholder-zinc-600">
-          <select id="nl-ws-picker"
-            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                   focus:outline-none focus:ring-2 focus:ring-wblue"
-            onchange="_nlPickWorkspace(null,this)">
-            <option value="">＋ Choose a workspace…</option>
-          </select>
+          <div id="nl-ws-list"
+               class="w-full max-h-40 overflow-y-auto
+                      border border-gray-200 dark:border-zinc-700 rounded-lg
+                      bg-white dark:bg-zinc-800">
+            <p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">Loading…</p>
+          </div>
         </div></div>`;
     }
     if (f.type === 'textarea') {

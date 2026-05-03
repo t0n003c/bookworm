@@ -718,7 +718,8 @@ async def workspaces_for_picker(request: Request):
     return JSONResponse([
         {"id": w["id"], "name": w["name"],
          "emoji": w.get("emoji") or "",
-         "ws_type": w.get("ws_type") or "workspace"}
+         "ws_type": w.get("ws_type") or "workspace",
+         "parent_id": w.get("parent_id")}
         for w in wss
     ])
 
