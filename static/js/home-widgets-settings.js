@@ -5,8 +5,8 @@
 var _nlWsCache           = null;    // fetched workspace list; null = not yet loaded
 var _nlItems             = [];      // working copy of the items array for the current editor
 var _nlCurrentWidgetId   = null;    // set when editor opens; used by inline onclick handlers
-var _nlNoteGroupCollapsed = new Set(); // workspace IDs whose note-group is collapsed
-var _nlWsGroupCollapsed   = new Set(); // parent workspace IDs whose children are collapsed
+var _nlNoteGroupExpanded = new Set(); // workspace IDs explicitly expanded in note picker
+var _nlWsGroupExpanded   = new Set(); // parent IDs explicitly expanded in workspace picker
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function _cardEl(widgetId) {
@@ -456,8 +456,8 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         : [];
       _nlItems = Array.isArray(rawCfg.items) ? rawCfg.items.slice() : legacyIt;
       _nlCurrentWidgetId = widgetId;  // captured for inline onclick handlers
-      _nlNoteGroupCollapsed = new Set();
-      _nlWsGroupCollapsed   = new Set();
+      _nlNoteGroupExpanded = new Set();
+      _nlWsGroupExpanded   = new Set();
 
       wrap.innerHTML = lbl
         + '<input type="hidden" id="' + f.id + '"'
@@ -921,7 +921,7 @@ function _nlRefreshNotePicker(filterText) {
     });
     groupOrder.forEach(function(wid) {
       var label = wsMap[wid] || 'Other';
-      var collapsed = !forceExpand && _nlNoteGroupCollapsed.has(wid);
+      var collapsed = !forceExpand && !_nlNoteGroupExpanded.has(wid);
       html += '<div>'
         + '<div class="flex items-center gap-1 px-2 py-1 cursor-pointer select-none'
         +           ' hover:bg-gray-50 dark:hover:bg-zinc-700/50"'
@@ -972,13 +972,13 @@ function _nlRefreshNotePicker(filterText) {
 
 /** Toggle a note workspace-group collapsed/expanded (DOM-only, no re-render). */
 function _nlToggleNoteGroup(wsId) {
-  if (_nlNoteGroupCollapsed.has(wsId)) { _nlNoteGroupCollapsed.delete(wsId); }
-  else { _nlNoteGroupCollapsed.add(wsId); }
+  if (_nlNoteGroupExpanded.has(wsId)) { _nlNoteGroupExpanded.delete(wsId); }
+  else { _nlNoteGroupExpanded.add(wsId); }
+  var expanded = _nlNoteGroupExpanded.has(wsId);
   var body = document.getElementById('nl-ng-' + wsId);
   var chev = document.getElementById('nl-ng-chev-' + wsId);
-  var now  = _nlNoteGroupCollapsed.has(wsId);
-  if (body) body.classList.toggle('hidden', now);
-  if (chev) chev.classList.toggle('rotate-90', !now);
+  if (body) body.classList.toggle('hidden', !expanded);
+  if (chev) chev.classList.toggle('rotate-90', expanded);
 }
 
 /** Add a note by ID from the custom list (onclick handler). */
@@ -1058,7 +1058,7 @@ function _nlRefreshWsPicker(filterText) {
   roots.forEach(function(w) {
     var kids = children[w.id] || [];
     if (kids.length) {
-      var collapsed = _nlWsGroupCollapsed.has(w.id);
+      var collapsed = !_nlWsGroupExpanded.has(w.id);
       html += '<div>'
         // row: [chevron] [clickable workspace name]
         + '<div class="flex items-center gap-0.5 group/wsrow">'
@@ -1091,13 +1091,13 @@ function _nlRefreshWsPicker(filterText) {
 
 /** Toggle a workspace parent-group collapsed/expanded (DOM-only, no re-render). */
 function _nlToggleWsGroup(parentId) {
-  if (_nlWsGroupCollapsed.has(parentId)) { _nlWsGroupCollapsed.delete(parentId); }
-  else { _nlWsGroupCollapsed.add(parentId); }
+  if (_nlWsGroupExpanded.has(parentId)) { _nlWsGroupExpanded.delete(parentId); }
+  else { _nlWsGroupExpanded.add(parentId); }
+  var expanded = _nlWsGroupExpanded.has(parentId);
   var body = document.getElementById('nl-wg-' + parentId);
   var chev = document.getElementById('nl-wg-chev-' + parentId);
-  var now  = _nlWsGroupCollapsed.has(parentId);
-  if (body) body.classList.toggle('hidden', now);
-  if (chev) chev.classList.toggle('rotate-90', !now);
+  if (body) body.classList.toggle('hidden', !expanded);
+  if (chev) chev.classList.toggle('rotate-90', expanded);
 }
 
 /** Build the clickable workspace row div (without the chevron). */

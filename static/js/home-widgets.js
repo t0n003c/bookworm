@@ -999,8 +999,8 @@ function aw_refreshConfig(wtype, style) {
     if (f.type === 'link-list-editor') {
       if (typeof _nlItems          !== 'undefined') _nlItems = [];
       if (typeof _nlCurrentWidgetId !== 'undefined') _nlCurrentWidgetId = null;
-      if (typeof _nlNoteGroupCollapsed !== 'undefined') _nlNoteGroupCollapsed = new Set();
-      if (typeof _nlWsGroupCollapsed   !== 'undefined') _nlWsGroupCollapsed   = new Set();
+            if (typeof _nlNoteGroupExpanded !== 'undefined') _nlNoteGroupExpanded = new Set();
+      if (typeof _nlWsGroupExpanded   !== 'undefined') _nlWsGroupExpanded   = new Set();
       setTimeout(function() {
         if (typeof _nlRefreshEditor     === 'function') _nlRefreshEditor(null);
         if (typeof _nlRefreshNotePicker === 'function') _nlRefreshNotePicker();
