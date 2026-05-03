@@ -705,6 +705,24 @@ async def list_pages_json(request: Request):
     ]})
 
 
+# ── Workspace picker for note-link widget (fixed path — before /{page_id}) ─────
+
+@router.get("/workspaces-for-picker")
+async def workspaces_for_picker(request: Request):
+    """Return the user's workspaces for the note-link widget's workspace picker.
+    Intentionally separate from /home/pages (which returns home pages, not workspaces).
+    Must be declared before /pages/{page_id} to avoid route shadowing.
+    """
+    uid = _uid(request)
+    wss = await get_all_workspaces(uid)
+    return JSONResponse([
+        {"id": w["id"], "name": w["name"],
+         "emoji": w.get("emoji") or "",
+         "ws_type": w.get("ws_type") or "workspace"}
+        for w in wss
+    ])
+
+
 # ── Page trash endpoints (fixed paths — MUST stay before /{page_id} routes) ───
 
 @router.get("/pages/trash")

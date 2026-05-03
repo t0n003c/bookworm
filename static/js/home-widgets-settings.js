@@ -1,7 +1,11 @@
 /* home-widgets-settings.js — Widget settings modal, size picker, page layout */
 'use strict';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── note-link multi-item editor state ─────────────────────────────────────────────────
+var _nlWsCache = null;   // fetched workspace list; null = not yet loaded
+var _nlItems   = [];     // working copy of the items array for the current editor
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function _cardEl(widgetId) {
   return document.getElementById(`hw-card-${widgetId}`);
 }
@@ -439,37 +443,43 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         + ' value=\'' + hiddenVal.replace(/'/g, "&#39;") + '\'>';
       body.appendChild(wrap);
       return;  // do not fall through to generic body.appendChild at end of loop
-    } else if (f.type === 'select-notes') {
-      // Note picker for note_link widget — reads from the all-notes-data JSON
-      // script tag (always present on home pages via home_add_widget_modal.html).
-      // On change saves note_id + note_title + note_snippet together and reloads
-      // the widget card so the new title is visible immediately.
-      const selId      = f.id;
-      const savedId    = String(curVal);          // current note_id
+    } else if (f.type === 'link-list-editor') {
+      // Multi-item editor for note_link widgets.
+      // Normalises legacy single-note config (note_id) into the new items[] shape.
+      var rawCfg   = _getCardConfig(widgetId);
+      var legacyIt = rawCfg.note_id
+        ? [{type:'note', id:rawCfg.note_id,
+            title:rawCfg.note_title||'Note', snippet:rawCfg.note_snippet||''}]
+        : [];
+      _nlItems = Array.isArray(rawCfg.items) ? rawCfg.items.slice() : legacyIt;
 
-      wrap.innerHTML = lbl + `<select id="${selId}"
-        class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
-               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-               focus:outline-none focus:ring-2 focus:ring-wblue"
-        onchange="_saveNoteLinkSettings(${widgetId}, this)">
-        <option value="">Loading…</option>
-      </select>`;
+      wrap.innerHTML = lbl
+        + '<input type="hidden" id="' + f.id + '"'
+        +   ' data-cfg-key="' + f.name + '" data-json="1" value="[]">'
+        + '<div id="nl-editor-list" class="space-y-1 mb-2 max-h-40 overflow-y-auto"></div>'
+        + '<div class="flex gap-2 mt-1">'
+        +   '<select id="nl-note-picker"'
+        +     ' class="flex-1 text-xs border border-gray-200 dark:border-zinc-700'
+        +             ' rounded-lg px-2 py-1.5'
+        +             ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        +             ' focus:outline-none focus:ring-2 focus:ring-wblue"'
+        +     ' onchange="_nlPickNote(' + widgetId + ',this)">'
+        +     '<option value="">＋ Add note…</option>'
+        +   '</select>'
+        +   '<select id="nl-ws-picker"'
+        +     ' class="flex-1 text-xs border border-gray-200 dark:border-zinc-700'
+        +             ' rounded-lg px-2 py-1.5'
+        +             ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        +             ' focus:outline-none focus:ring-2 focus:ring-wblue"'
+        +     ' onchange="_nlPickWorkspace(' + widgetId + ',this)">'
+        +     '<option value="">＋ Add workspace…</option>'
+        +   '</select>'
+        + '</div>';
       body.appendChild(wrap);
-
-      // Populate from the cached DOM element (no extra round-trip needed)
-      const cached = document.getElementById('all-notes-data');
-      const notes  = cached ? JSON.parse(cached.textContent || '[]') : [];
-      const sel    = document.getElementById(selId);
-      if (sel) {
-        sel.innerHTML = '<option value="">— pick a note —</option>'
-          + notes.map(n => {
-              const t = _escAttr(n.title || 'Untitled');
-              const s = _escAttr((n.content || '').replace(/<[^>]*>/g, '').slice(0, 120));
-              const selected = String(n.id) === savedId ? ' selected' : '';
-              return `<option value="${n.id}" data-title="${t}" data-snippet="${s}"${selected}>${t}</option>`;
-            }).join('');
-      }
-      return; // early-out — already appended
+      _nlRefreshEditor(widgetId);
+      _nlRefreshNotePicker();
+      _nlLoadWorkspaces(widgetId);
+      return; // early-out
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
@@ -727,26 +737,111 @@ async function saveAndReloadWidget(widgetId) {
 }
 
 /** Generic save for all non-clock widget settings (reads data-cfg-key inputs). */
-/**
- * Save note_id + note_title + note_snippet together for a note_link widget,
- * then reload the card so the new title / snippet shows immediately.
- * Called from the select-notes dropdown's onchange handler.
- */
-async function _saveNoteLinkSettings(widgetId, selectEl) {
-  const opt = selectEl.options[selectEl.selectedIndex];
+// ── note-link multi-item editor helpers ───────────────────────────────────────────────────────
+
+/** Re-render the visible item rows and sync the hidden JSON input. */
+function _nlRefreshEditor(widgetId) {
+  var list = document.getElementById('nl-editor-list');
+  var inp  = document.getElementById('cf-links');
+  if (!list || !inp) return;
+  inp.value = JSON.stringify(_nlItems);
+  if (!_nlItems.length) {
+    list.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-1">No links yet. Use the pickers below to add notes or workspaces.</p>';
+    return;
+  }
+  list.innerHTML = _nlItems.map(function(item, idx) {
+    var icon  = item.type === 'workspace' ? (item.emoji || '🗂️') : '📄';
+    var label = item.type === 'workspace'
+      ? (item.name  || 'Workspace') + (item.ws_type === 'database' ? ' — DB' : '')
+      : (item.title || 'Note');
+    return '<div class="flex items-center gap-1.5 py-1 px-1.5 rounded'
+      + ' bg-gray-50 dark:bg-zinc-800/60'
+      + ' text-xs text-gray-700 dark:text-zinc-300">'
+      + '<span class="flex-shrink-0" aria-hidden="true">' + _esc(icon) + '</span>'
+      + '<span class="flex-1 min-w-0 truncate">' + _esc(label) + '</span>'
+      + '<button type="button" onclick="_nlRemoveItem(' + widgetId + ',' + idx + ')"'
+      +   ' class="flex-shrink-0 text-gray-300 dark:text-zinc-600'
+      +           ' hover:text-[#ea1100] transition leading-none px-0.5"'
+      +   ' aria-label="Remove">&times;</button>'
+      + '</div>';
+  }).join('');
+}
+
+/** Populate the note picker from the all-notes-data DOM script tag (no fetch). */
+function _nlRefreshNotePicker() {
+  var sel    = document.getElementById('nl-note-picker');
+  if (!sel) return;
+  var cached = document.getElementById('all-notes-data');
+  var notes  = cached ? (function() { try { return JSON.parse(cached.textContent||'[]'); } catch(e){ return []; } }()) : [];
+  sel.innerHTML = '<option value="">＋ Add note…</option>'
+    + notes.map(function(n) {
+        var t = _escAttr(n.title || 'Untitled');
+        var s = _escAttr((n.content || '').replace(/<[^>]*>/g,'').slice(0, 120));
+        return '<option value="' + n.id + '" data-title="' + t + '" data-snippet="' + s + '">' + t + '</option>';
+      }).join('');
+}
+
+/** Fetch workspaces from /home/workspaces-for-picker (cached per JS session). */
+function _nlLoadWorkspaces(widgetId) {
+  if (_nlWsCache !== null) { _nlRefreshWsPicker(); return; }
+  fetch('/home/workspaces-for-picker', {credentials:'same-origin'})
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(data) { _nlWsCache = data; _nlRefreshWsPicker(); })
+    .catch(function(e) { console.warn('[bookworm] workspaces-for-picker failed:', e); });
+}
+
+/** Populate the workspace picker from the in-memory cache. */
+function _nlRefreshWsPicker() {
+  var sel = document.getElementById('nl-ws-picker');
+  if (!sel || !_nlWsCache) return;
+  sel.innerHTML = '<option value="">＋ Add workspace…</option>'
+    + _nlWsCache.map(function(w) {
+        var badge   = w.ws_type === 'database' ? ' (DB)' : '';
+        var display = _escAttr((w.emoji ? w.emoji + ' ' : '') + w.name + badge);
+        return '<option value="' + w.id + '"'
+          + ' data-name="'   + _escAttr(w.name)    + '"'
+          + ' data-emoji="'  + _escAttr(w.emoji || '') + '"'
+          + ' data-wstype="' + _escAttr(w.ws_type || 'workspace') + '">'
+          + display + '</option>';
+      }).join('');
+}
+
+/** Add a note item; called from nl-note-picker onchange. */
+function _nlPickNote(widgetId, sel) {
+  var opt = sel.options[sel.selectedIndex];
   if (!opt || !opt.value) return;
-  const config = { ..._getCardConfig(widgetId) };
-  config.note_id      = +opt.value;
-  config.note_title   = opt.dataset.title   || opt.text;
-  config.note_snippet = opt.dataset.snippet || '';
-  // Preserve open_mode if it is currently visible in the settings body
-  const openModeEl = document.getElementById('ws-settings-body')
-    ?.querySelector('[data-cfg-key="open_mode"]');
-  if (openModeEl) config.open_mode = openModeEl.value;
-  await _saveWidgetFullConfig(widgetId, config);
-  // Reload just this card via changeWidgetStyle so server re-renders it
-  const wstyle = _cardEl(widgetId)?.dataset.widgetStyle || 'default';
-  changeWidgetStyle(widgetId, wstyle);
+  if (_nlItems.length >= 10) {
+    alert('Max 10 links per widget.');
+    sel.selectedIndex = 0;
+    return;
+  }
+  _nlItems.push({type:'note', id:+opt.value,
+    title:opt.dataset.title||opt.text, snippet:opt.dataset.snippet||''});
+  sel.selectedIndex = 0;
+  _nlRefreshEditor(widgetId);
+}
+
+/** Add a workspace item; called from nl-ws-picker onchange. */
+function _nlPickWorkspace(widgetId, sel) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) return;
+  if (_nlItems.length >= 10) {
+    alert('Max 10 links per widget.');
+    sel.selectedIndex = 0;
+    return;
+  }
+  _nlItems.push({type:'workspace', id:+opt.value,
+    name:opt.dataset.name||opt.text,
+    emoji:opt.dataset.emoji||'',
+    ws_type:opt.dataset.wstype||'workspace'});
+  sel.selectedIndex = 0;
+  _nlRefreshEditor(widgetId);
+}
+
+/** Remove an item by index and refresh the editor. */
+function _nlRemoveItem(widgetId, idx) {
+  _nlItems.splice(idx, 1);
+  _nlRefreshEditor(widgetId);
 }
 
 async function saveWidgetSettings(widgetId) {

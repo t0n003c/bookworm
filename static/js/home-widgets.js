@@ -855,8 +855,8 @@ const WIDGET_CONFIG_FIELDS = {
   calendar: () => [],
   todo:     () => [],
   note_link: () => [
-    { id: 'cf-note',      label: 'Note',      type: 'select-notes', name: 'note_id' },
-    { id: 'cf-openmode', label: 'Open as',   type: 'select',       name: 'open_mode',
+    { id: 'cf-links',    label: 'Links',        type: 'link-list-editor', name: 'items' },
+    { id: 'cf-openmode', label: 'Open notes as', type: 'select',           name: 'open_mode',
       options: [['popup','💬 Popup modal'],['sidebar','📌 Slide-in sidebar'],['workspace','🗂️ Workspace']] },
   ],
   timer: (s) => s === 'pomodoro' ? [
@@ -996,18 +996,38 @@ function aw_refreshConfig(wtype, style) {
   const cfDiv    = document.getElementById('aw-config-fields');
   cfDiv.innerHTML = fields.map(f => {
     const lbl = `<label class="block text-xs font-semibold text-gray-500 mb-1">${f.label}</label>`;
-    if (f.type === 'select-notes') {
-      const opts = allNotes.map(n =>
-        `<option value="${n.id}" data-title="${_esc(n.title)}"
-                 data-snippet="${_esc((n.content||'').slice(0,100))}">${_esc(n.title)}</option>`
-      ).join('');
+    if (f.type === 'link-list-editor') {
+      // Multi-item note + workspace picker for note_link widgets in the add modal.
+      // Reuses the same _nlItems state + helpers from home-widgets-settings.js.
+      if (typeof _nlItems !== 'undefined') _nlItems = [];
+      setTimeout(function() {
+        if (typeof _nlRefreshEditor     === 'function') _nlRefreshEditor(null);
+        if (typeof _nlRefreshNotePicker === 'function') _nlRefreshNotePicker();
+        if (typeof _nlLoadWorkspaces    === 'function') _nlLoadWorkspaces(null);
+      }, 50);
       return `<div>${lbl}
-        <select id="${f.id}" data-name="${f.name}"
-          class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2
-                 bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                 focus:outline-none focus:ring-2 focus:ring-wblue">
-          <option value="">— pick a note —</option>${opts}
-        </select></div>`;
+        <input type="hidden" id="${f.id}" data-name="${f.name}" data-json="1" value="[]">
+        <div id="nl-editor-list"
+             class="space-y-1 mb-2 max-h-32 overflow-y-auto
+                    text-xs text-gray-400 dark:text-zinc-500 italic py-1">
+          No links yet.
+        </div>
+        <div class="flex gap-2 mt-1">
+          <select id="nl-note-picker"
+            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-2 focus:ring-wblue"
+            onchange="_nlPickNote(null,this)">
+            <option value="">＋ Add note…</option>
+          </select>
+          <select id="nl-ws-picker"
+            class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                   bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-2 focus:ring-wblue"
+            onchange="_nlPickWorkspace(null,this)">
+            <option value="">＋ Add workspace…</option>
+          </select>
+        </div></div>`;
     }
     if (f.type === 'textarea') {
       return `<div>${lbl}
@@ -1238,14 +1258,7 @@ async function aw_submit() {
 
   const config = {};
   document.querySelectorAll('#aw-config-fields [data-name]').forEach(el => {
-    if (el.tagName === 'SELECT' && el.id === 'cf-note') {
-      const opt = el.options[el.selectedIndex];
-      if (opt && opt.value) {
-        config.note_id      = +opt.value;
-        config.note_title   = opt.dataset.title   || opt.text;
-        config.note_snippet = opt.dataset.snippet || '';
-      }
-    } else if (el.dataset.json) {
+    if (el.dataset.json) {
       try { config[el.dataset.name] = JSON.parse(el.value || '[]'); }
       catch { config[el.dataset.name] = []; }
     } else {

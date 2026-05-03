@@ -418,47 +418,140 @@
    NOTE LINK
    ═══════════════════════════════════════════════════════════════════ #}
 {% macro render_note_link(w) %}
-{% set note_id = w.config.get('note_id') %}
-{% set note_title = w.config.get('note_title', 'Linked Note') %}
-{% set note_snippet = w.config.get('note_snippet', '') %}
-{% set open_mode = w.config.get('open_mode', 'popup') %}
-{% if w.style == 'minimal' %}
-{% call card(w) %}
-  {{ widget_header(w, 'Note', '📄') }}
-  <button onclick="openNotePreview({{ w.id }}, {{ note_id }}, '{{ open_mode }}')"
-          class="flex items-center gap-2.5 w-full text-left group/nlbtn
-                 -mx-1.5 px-2 py-2 rounded-lg
-                 hover:bg-gray-50 dark:hover:bg-zinc-800/70 transition">
-    <svg class="w-4 h-4 flex-shrink-0 text-gray-300 dark:text-zinc-600
-                group-hover/nlbtn:text-wblue dark:group-hover/nlbtn:text-blue-400 transition"
-         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
-               a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-    </svg>
-    <span class="flex-1 min-w-0 text-sm font-medium
+{#- Normalise: new shape has items[], legacy has note_id at top level -#}
+{%- set _raw = w.config.get('items', none) -%}
+{%- if _raw is none and w.config.get('note_id') -%}
+  {%- set _raw = [{'type': 'note', 'id': w.config.get('note_id'),
+                   'title': w.config.get('note_title', 'Linked Note'),
+                   'snippet': w.config.get('note_snippet', '')}] -%}
+{%- elif _raw is none -%}
+  {%- set _raw = [] -%}
+{%- endif -%}
+{%- set _items    = _raw -%}
+{%- set open_mode = w.config.get('open_mode', 'popup') -%}
+{#- Doc icon (notes) -#}
+{% set _doc_icon %}
+<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+           a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+</svg>
+{% endset %}
+{#- DB icon (workspaces) -#}
+{% set _db_icon %}
+<svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
+</svg>
+{% endset %}
+{#- Always-visible 'Add / manage links' button -#}
+{% set _manage_btn %}
+<button type="button"
+        onclick="openWidgetSettings({{ w.id }}, 'Note Links', '🔗')"
+        class="mt-1.5 flex items-center gap-1 text-[11px]
+               text-gray-400 dark:text-zinc-500
+               hover:text-wblue dark:hover:text-blue-400 transition">
+  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.5" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+  </svg>
+  Add / manage links
+</button>
+{% endset %}
+{#- Empty-state CTA -#}
+{% set _empty_cta %}
+<button type="button"
+        onclick="openWidgetSettings({{ w.id }}, 'Note Links', '🔗')"
+        class="flex-1 flex flex-col items-center justify-center gap-2 w-full
+               rounded-xl border-2 border-dashed
+               border-gray-200 dark:border-zinc-700
+               text-gray-400 dark:text-zinc-500
+               hover:border-wblue hover:text-wblue
+               dark:hover:border-blue-500 dark:hover:text-blue-400
+               transition py-4">
+  <svg class="w-7 h-7 opacity-50" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round"
+          d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364
+             l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364
+             l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>
+  </svg>
+  <span class="text-xs font-medium">Add links</span>
+  <span class="text-[10px] opacity-70">Pin notes &amp; workspace databases</span>
+</button>
+{% endset %}
+{#- Shared scrollable item list — used by both style branches -#}
+{% set _item_list %}
+<div class="flex-1 min-h-0 overflow-y-auto -mx-1.5 px-1.5 space-y-0.5">
+  {% for item in _items %}
+  {% if item.get('type') == 'workspace' %}
+  <button type="button" onclick="wsSingleClick({{ item.get('id') }})"
+          class="flex items-center gap-2 w-full text-left group/nli
+                 px-2 py-1.5 rounded-lg
+                 hover:bg-gray-50 dark:hover:bg-zinc-800/70 transition"
+          aria-label="Open workspace {{ item.get('name','Workspace') | e }}">
+    <span class="flex-shrink-0 text-gray-400 dark:text-zinc-500
+                 group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">
+      {% if item.get('emoji') %}
+      <span class="text-sm leading-none" aria-hidden="true">{{ item.get('emoji') }}</span>
+      {% else %}{{ _db_icon }}{% endif %}
+    </span>
+    <span class="flex-1 min-w-0 text-sm font-medium truncate
                  text-gray-700 dark:text-zinc-300
-                 group-hover/nlbtn:text-wblue dark:group-hover/nlbtn:text-blue-400
-                 transition truncate">{{ note_title }}</span>
+                 group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">
+      {{ item.get('name','Workspace') | e }}
+    </span>
+    {% if item.get('ws_type') == 'database' %}
+    <span class="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wide
+                 px-1 py-0.5 rounded
+                 bg-gray-100 dark:bg-zinc-800
+                 text-gray-400 dark:text-zinc-500">DB</span>
+    {% endif %}
+  </button>
+  {% else %}{# note item #}
+  <button type="button"
+          onclick="openNotePreview({{ w.id }}, {{ item.get('id') }}, '{{ open_mode }}')"
+          class="flex items-center gap-2 w-full text-left group/nli
+                 px-2 py-1.5 rounded-lg
+                 hover:bg-gray-50 dark:hover:bg-zinc-800/70 transition"
+          aria-label="Open note {{ item.get('title','Note') | e }}">
+    <span class="flex-shrink-0 text-gray-300 dark:text-zinc-600
+                 group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">
+      {{ _doc_icon }}
+    </span>
+    <span class="flex-1 min-w-0 text-sm font-medium truncate
+                 text-gray-700 dark:text-zinc-300
+                 group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">
+      {{ item.get('title','Note') | e }}
+    </span>
     <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-300 dark:text-zinc-600
-                group-hover/nlbtn:text-wblue dark:group-hover/nlbtn:text-blue-400
-                group-hover/nlbtn:translate-x-0.5 transition"
-         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400
+                group-hover/nli:translate-x-0.5 transition"
+         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+         aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
     </svg>
   </button>
-{% endcall %}
-{% else %}{# card style #}
+  {% endif %}
+  {% endfor %}
+</div>
+{% endset %}
+
+{# ── minimal style ─────────────────────────────────────────────────── #}
+{% if w.style == 'minimal' %}
 {% call card(w) %}
-  {{ widget_header(w, 'Note', '📄') }}
-  <button onclick="openNotePreview({{ w.id }}, {{ note_id }}, '{{ open_mode }}')"
-          class="block w-full text-left hover:bg-gray-50 dark:hover:bg-zinc-800
-                 rounded-lg p-2 -mx-2 transition">
-    <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">{{ note_title }}</p>
-    {% if note_snippet %}
-    <p class="text-xs text-gray-500 dark:text-zinc-400 mt-1 line-clamp-2">{{ note_snippet }}</p>
-    {% endif %}
-  </button>
+  {{ widget_header(w, 'Note Links', '🔗') }}
+  {% if _items %}{{ _item_list }}{{ _manage_btn }}
+  {% else %}{{ _empty_cta }}{% endif %}
+{% endcall %}
+{# ── card style ────────────────────────────────────────────────────── #}
+{% else %}
+{% call card(w) %}
+  {{ widget_header(w, 'Note Links', '🔗') }}
+  {% if _items %}{{ _item_list }}{{ _manage_btn }}
+  {% else %}{{ _empty_cta }}{% endif %}
 {% endcall %}
 {% endif %}
 {% endmacro %}

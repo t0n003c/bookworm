@@ -56,7 +56,7 @@
     <!-- ⋮ row menu (Rename / Layout / Duplicate / Delete) -->
     {% set _pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
     <button type="button"
-      onclick="event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, '{{ pg.name | e }}', '{{ pg.emoji | e }}', '{{ _pg_type }}')"
+      onclick="event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, {{ pg.name | tojson }}, {{ pg.emoji | tojson }}, '{{ _pg_type }}')"
       title="More actions"
       aria-label="More actions for {{ pg.name }}"
       aria-haspopup="menu"
