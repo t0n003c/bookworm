@@ -2478,15 +2478,24 @@
       if (parentList.children.length === 0) parentList.remove();
     }
 
-    /* Sync updated preview DOM → markdown textarea */
-    if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
-    /* Re-inject drag grips (moved <li> loses its grip span) */
+    /* Re-inject drag grips now so the moved <li> has a grip before cursor
+       restore (the restore logic looks for [data-preview-grip] to position
+       the caret correctly after the grip span).                          */
     if (typeof window._injectPreviewGrips === 'function') {
-      const _pv = document.getElementById('md-live-preview');
-      if (_pv) window._injectPreviewGrips(_pv);
+      const _pv2 = document.getElementById('md-live-preview');
+      if (_pv2) window._injectPreviewGrips(_pv2);
     }
 
-    /* Restore cursor to the relocated <li> */
+    /* Restore cursor to the relocated <li>, THEN sync markdown.
+
+       Critical ordering: appendChild/insertBefore clears the browser
+       selection.  syncPreviewToMd() prunes empty <li> elements by
+       checking if the cursor is inside them — but if it runs before the
+       cursor is restored, _cur is null and the guard fails, so the
+       empty bullet the user just indented gets silently deleted.
+
+       Solution: run the sync AFTER _sel.addRange(r) so the selection
+       is back inside the <li> before the pruning check runs.            */
     setTimeout(() => {
       const grip     = li.querySelector('[data-preview-grip]');
       const textNode = grip ? grip.nextSibling : li.firstChild;
@@ -2505,6 +2514,10 @@
       _sel.removeAllRanges();
       _sel.addRange(r);
       pv.focus();
+
+      /* Now it's safe to sync: cursor is inside the <li>, so the empty-
+         bullet pruning guard in syncPreviewToMd correctly skips it.     */
+      if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
     }, 0);
     return true;
   }
@@ -2549,13 +2562,17 @@
 
   document.addEventListener('keydown', function _bwEditorTabHandler(e) {
     if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
-    /* Already handled in capture phase (preview capture listener in
-       note_form.html calls _bwCeTab directly).  Skip to avoid double-indent. */
-    if (e.defaultPrevented) return;
 
     /* Check contenteditable preview pane first */
     const pv = document.getElementById('md-live-preview');
     if (pv && pv.contains(e.target)) {
+      /* Unconditionally prevent Tab's default browser action inside the
+         preview (contenteditable).  Chrome's default on an empty <li> is
+         to convert it to a plain block — we NEVER want that.  Code blocks
+         inside the preview are plaintext-only sub-editors; pressing Tab
+         inside one would normally insert a literal tab char, which we also
+         suppress here (Tab inside code blocks is a non-feature for now).  */
+      e.preventDefault();
       _bwCeTab(e, pv);
       return;
     }
@@ -2565,7 +2582,8 @@
     if (ta && e.target === ta) {
       _bwTaTab(e, ta);
     }
-  });
+  }, { capture: true }); /* capture phase: fires before any element handler
+                            and before the browser's built-in tab behaviour */
 
   /* ── Permanent auto-bullet handler ─────────────────────────────────────────────
      Typing `- ` (dash then space) on an otherwise-empty line converts it to

@@ -1736,19 +1736,11 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
 
       /* ── Tab / Shift+Tab inside the contenteditable preview ─────────
-         Handle in CAPTURE PHASE (this listener uses { capture: true })
-         so we fire BEFORE Chrome processes its default "empty <li> →
-         plain block" transformation.  Delegating to the document-level
-         bubbling listener (_bwEditorTabHandler) was too late — Chrome
-         already nuked the empty bullet before the bubbling event arrived.
-
-         _bwCeTab (defined in index.html) does the real work; it calls
-         e.preventDefault() as soon as it confirms the cursor is inside
-         a list item, so the browser default is always suppressed.       */
-      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (typeof window._bwCeTab === 'function') window._bwCeTab(e, preview);
-        return; /* e.defaultPrevented controls whether browser acts */
-      }
+         Handled by _bwEditorTabHandler in index.html, which is registered
+         as a document-level CAPTURE listener (highest priority).  It fires
+         before this element listener, so Tab is already processed and
+         e.defaultPrevented is true by the time we get here.              */
+      if (e.key === 'Tab') return; /* already handled — prevent double-indent */
 
       /* ── Enter inside a <pre> code block ──────────────────────────
          Two jobs:
