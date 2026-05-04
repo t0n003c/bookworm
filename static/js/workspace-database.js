@@ -3403,8 +3403,24 @@ function _dbNoteTabIndent(e, noteEl) {
   var sel = window.getSelection();
   if (!sel || !sel.rangeCount) return false;
 
+  var range = sel.getRangeAt(0);
+  var n     = range.startContainer;
+
+  /* ── Empty-bullet fix ────────────────────────────────────────────────────
+     When an <li> contains only the non-editable grip span, Chrome reports the
+     caret at the PARENT element level (e.g. the <ul>) with startOffset pointing
+     to the child <li> by index.  The while-loop below walks UP and never finds
+     the <li>, so e.preventDefault() is skipped and the browser nukes the bullet.
+     Fix: when cursor is at the element level (not inside a text node), peek at
+     the adjacent child node at startOffset / startOffset-1 before walking up. */
+  if (n.nodeType !== 3 /* TEXT_NODE */ && n.nodeName !== 'LI') {
+    var peek = n.childNodes[range.startOffset - 1] || n.childNodes[range.startOffset];
+    if (peek) n = peek;
+  }
+  if (n.nodeType === 3 /* TEXT_NODE */) n = n.parentElement;
+
   /* Walk up from cursor to find the <li> containing the caret */
-  var li = sel.getRangeAt(0).startContainer;
+  var li = n;
   while (li && li !== noteEl) {
     if (li.nodeName === 'LI') break;
     li = li.parentNode;
@@ -3450,18 +3466,20 @@ function _dbNoteTabIndent(e, noteEl) {
   setTimeout(function() {
     var grip     = li.querySelector('[data-db-grip]');
     var textNode = grip ? grip.nextSibling : li.firstChild;
-    if (textNode) {
-      var r = document.createRange();
-      if (textNode.nodeType === 3 /* TEXT_NODE */) {
-        r.setStart(textNode, textNode.length);
-        r.collapse(true);
-      } else {
-        r.selectNodeContents(textNode);
-        r.collapse(false);
-      }
-      sel.removeAllRanges();
-      sel.addRange(r);
+    var r = document.createRange();
+    if (textNode && textNode.nodeType === 3 /* TEXT_NODE */) {
+      r.setStart(textNode, textNode.length);
+      r.collapse(true);
+    } else if (textNode) {
+      r.selectNodeContents(textNode);
+      r.collapse(false);
+    } else {
+      /* Empty <li> — place cursor at element end so it stays in the bullet */
+      r.setStart(li, li.childNodes.length);
+      r.collapse(true);
     }
+    sel.removeAllRanges();
+    sel.addRange(r);
     noteEl.focus();
   }, 0);
 
