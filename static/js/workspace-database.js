@@ -123,8 +123,16 @@ var _DB_ATTR_TYPES = [
   { id: 'place',        label: 'Place',        icon: '\uD83D\uDCCD' },
   { id: 'date_range',   label: 'Date Range',   icon: '\uD83D\uDCC5' },
   { id: 'progress',     label: 'Progress',     icon: '\uD83D\uDCCA' },
-  { id: 'rating',       label: 'Rating',       icon: '\u2B50' },
+  { id: 'rating',       label: 'Rating',     icon: '\u2B50' },
 ];
+
+// Icon maps for rating display — on/off chars and active colour.
+var _DB_RT_ICON_MAP = {
+  star:  { on: '\u2605', off: '\u2606', clr: '#f59e0b' }, // ★/☆ amber
+  heart: { on: '\u2665', off: '\u2661', clr: '#ef4444' }, // ♥/♡ red
+  thumb: { on: '\uD83D\uDC4D', off: '\u25CB', clr: '#0053e2' }, // 👍/○ walmart blue
+  dot:   { on: '\u25CF', off: '\u25CB', clr: '#8b5cf6' }, // ●/○ purple
+};
 
 /* ── option colour palette ─────────────────────────────────────────────── */
 var _DB_OPT_COLORS = [
@@ -2140,7 +2148,8 @@ function _dbAttrPills(attrs, cardId) {
         fileParts.push(fHtml);
       }
     } else if (t === 'date_range' && v) {
-      var drDisp = _dbFormatDateRange(v);
+      var drFmtPill = a.attr_options || 'short';
+      var drDisp = _dbFormatDateRange(v, drFmtPill);
       if (drDisp) {
         normalParts.push(
           '<span class="text-xs text-gray-500 dark:text-zinc-400 whitespace-nowrap">'
@@ -2148,29 +2157,36 @@ function _dbAttrPills(attrs, cardId) {
         );
       }
     } else if (t === 'progress') {
-      var pgDisp = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
-      var pgFill = '#0053e2'; // Walmart blue — same in light + dark
+      var pgOptsPill = _dbParsePgOpts(a.attr_options);
+      var pgMaxPill  = pgOptsPill.max || 100;
+      var pgValPill  = Math.min(pgMaxPill, Math.max(0, parseInt(v, 10) || 0));
+      var pgFillPill = Math.min(100, Math.round((pgValPill / pgMaxPill) * 100));
       var pgBg   = isDark ? '#3f3f46' : '#e5e7eb';
+      var pgLblPill = pgMaxPill === 100 ? pgValPill + '%' : pgValPill + '\u202F/\u202F' + pgMaxPill;
       normalParts.push(
         '<div style="display:inline-flex;align-items:center;gap:0.3rem;min-width:80px;">'
         + '<div style="flex:1;min-width:48px;height:5px;border-radius:3px;'
         + 'background:' + pgBg + ';overflow:hidden;">'
-        + '<div style="height:100%;width:' + pgDisp + '%;background:' + pgFill + ';'
+        + '<div style="height:100%;width:' + pgFillPill + '%;background:#0053e2;'
         + 'border-radius:3px;transition:width 0.2s;"></div>'
         + '</div>'
         + '<span style="font-size:0.65rem;color:' + (isDark ? '#a1a1aa' : '#6b7280') + ';'
-        + 'font-variant-numeric:tabular-nums;white-space:nowrap;">' + pgDisp + '%</span>'
+        + 'font-variant-numeric:tabular-nums;white-space:nowrap;">' + pgLblPill + '</span>'
         + '</div>'
       );
     } else if (t === 'rating') {
-      var rtDisp = Math.min(5, Math.max(0, parseInt(v, 10) || 0));
-      if (rtDisp > 0) {
-        var rtPillClr = '#f59e0b'; // amber
+      var rtOptsPill = _dbParseRtOpts(a.attr_options);
+      var rtScalePill = rtOptsPill.scale || 5;
+      var rtIcIdPill  = rtOptsPill.icon  || 'star';
+      var rtIcPill    = _DB_RT_ICON_MAP[rtIcIdPill] || _DB_RT_ICON_MAP.star;
+      var rtValPill   = Math.min(rtScalePill, Math.max(0, parseInt(v, 10) || 0));
+      if (rtValPill > 0) {
         var rtEmpClr  = isDark ? '#52525b' : '#d1d5db';
         var rtStars   = '';
-        for (var ri = 1; ri <= 5; ri++) {
-          rtStars += '<span style="color:' + (ri <= rtDisp ? rtPillClr : rtEmpClr) + ';font-size:0.7rem;">'
-            + (ri <= rtDisp ? '\u2605' : '\u2606') + '</span>';
+        for (var ri = 1; ri <= rtScalePill; ri++) {
+          var riOn = ri <= rtValPill;
+          rtStars += '<span style="color:' + (riOn ? rtIcPill.clr : rtEmpClr) + ';'
+            + 'font-size:' + (rtScalePill > 5 ? '0.6rem' : '0.7rem') + ';">' + (riOn ? rtIcPill.on : rtIcPill.off) + '</span>';
         }
         normalParts.push('<span style="display:inline-flex;align-items:center;gap:0.05rem;">' + rtStars + '</span>');
       }
@@ -3816,6 +3832,32 @@ function _dbParseNumOpts(optsStr) {
   }
 }
 
+// Parse progress attr_options JSON — safe, always returns a full object.
+function _dbParsePgOpts(s) {
+  try {
+    var o = JSON.parse(s || '{}');
+    return {
+      max:     (o.max && parseInt(o.max, 10) > 0) ? parseInt(o.max, 10) : 100,
+      display: o.display || 'bar',   // 'bar' | 'number' | 'both'
+    };
+  } catch(e) {
+    return { max: 100, display: 'bar' };
+  }
+}
+
+// Parse rating attr_options JSON — safe, always returns a full object.
+function _dbParseRtOpts(s) {
+  try {
+    var o = JSON.parse(s || '{}');
+    return {
+      scale: (o.scale && parseInt(o.scale, 10) > 0) ? parseInt(o.scale, 10) : 5,
+      icon:  o.icon || 'star',   // 'star' | 'heart' | 'thumb' | 'dot'
+    };
+  } catch(e) {
+    return { scale: 5, icon: 'star' };
+  }
+}
+
 // Normalise raw value to a 0–1 fraction given number opts.
 function _dbNumFraction(raw, numOpts) {
   var n = parseFloat(raw);
@@ -3990,32 +4032,14 @@ function _dbParseUserDate(str) {
 }
 
 // Format a stored date_range value ("YYYY-MM-DD|YYYY-MM-DD") for display.
-// Returns e.g. "Apr 15 \u2192 Apr 30" or "Apr 15, 2026 \u2192 Jan 3, 2027" when years differ.
-// Handles partial ranges: if one side is blank, shows just that side with an arrow.
-function _dbFormatDateRange(v) {
-  var MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function fmtSide(iso) {
-    if (!iso) return '';
-    var p = iso.split('-');
-    if (p.length < 3) return iso;
-    return MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
-  }
+// fmtId matches _DB_DATE_FORMATS ids; defaults to 'short' (Apr 22, 2025).
+function _dbFormatDateRange(v, fmtId) {
+  var fmt    = fmtId || 'short';
   var parts  = (v || '').split('|');
-  var start  = (parts[0] || '').trim();
-  var end    = (parts[1] || '').trim();
-  var startY = start ? start.slice(0, 4) : '';
-  var endY   = end   ? end.slice(0,   4) : '';
-  // Same year: omit year from start label for compactness
-  function fmtCompact(iso, showYear) {
-    if (!iso) return '';
-    var p = iso.split('-');
-    if (p.length < 3) return iso;
-    var label = MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10);
-    return showYear ? label + ', ' + p[0] : label;
-  }
-  var sameYear = (startY && endY && startY === endY);
-  var sl = start ? fmtCompact(start, !sameYear) : '';
-  var el = end   ? fmtCompact(end,   true)       : '';
+  var start  = (parts[0] || '').trim().slice(0, 10);
+  var end    = (parts[1] || '').trim().slice(0, 10);
+  var sl     = start ? _dbFormatDate(start, fmt) : '';
+  var el     = end   ? _dbFormatDate(end,   fmt) : '';
   if (sl && el) return sl + ' \u2192 ' + el;
   if (sl)       return sl + ' \u2192';
   if (el)       return '\u2192 ' + el;
@@ -5252,72 +5276,129 @@ function _dbAttrValueHtml(cardId, a) {
     return _dbFilesHtml(cardId, a);
   }
 
-  // date_range — two date pickers side by side, saves as "start|end"
+  // date_range — two text fields (formatted) + hidden pickers + 📅 icons
   if (t === 'date_range') {
     var isDkDr  = document.documentElement.classList.contains('dark');
+    var drFmtId = a.attr_options || 'short';
     var drParts = v.split('|');
-    var drStart = (drParts[0] || '').trim();
-    var drEnd   = (drParts[1] || '').trim();
-    var drInpSty =
-      'background:transparent;border:none;outline:none;font-size:0.8rem;'
+    var drStart = (drParts[0] || '').trim().slice(0, 10);
+    var drEnd   = (drParts[1] || '').trim().slice(0, 10);
+    var drStartDisp = drStart ? _dbFormatDate(drStart, drFmtId) : '';
+    var drEndDisp   = drEnd   ? _dbFormatDate(drEnd,   drFmtId) : '';
+    var drTxtSty = 'border:none;background:transparent;font-size:0.8rem;'
       + 'font-family:inherit;color:' + (isDkDr ? '#f4f4f5' : '#111827') + ';'
-      + 'cursor:pointer;padding:0.1rem 0.2rem;min-width:0;width:130px;'
-      + (isDkDr ? 'color-scheme:dark;' : '');
-    var drCb = '_dbDateRangeSave(' + cardId + ',' + a.id + ',' + kJ + ',this.closest(\'.db-dr-wrap\'))';
-    return '<div class="db-dr-wrap" style="display:flex;align-items:center;gap:0.3rem;flex-wrap:wrap;">'
-      + '<input type="date" class="db-dr-start"'
-      + ' value="' + _esc(drStart) + '"'
-      + ' style="' + drInpSty + '"'
-      + ' onchange="' + drCb + '"'
-      + ' onfocus="_dbNativeWidgetFocus(this)" onblur="_dbNativeWidgetBlur(this)">'
-      + '<span style="font-size:0.7rem;color:#9ca3af;flex-shrink:0;">&#8594;</span>'
-      + '<input type="date" class="db-dr-end"'
-      + ' value="' + _esc(drEnd) + '"'
-      + ' style="' + drInpSty + '"'
-      + ' onchange="' + drCb + '"'
-      + ' onfocus="_dbNativeWidgetFocus(this)" onblur="_dbNativeWidgetBlur(this)">'
+      + 'outline:none;min-width:0;width:90px;cursor:text;padding:0.1rem 0;';
+    var drIcoSty = 'background:none;border:none;cursor:pointer;font-size:0.8rem;'
+      + 'padding:0 0.1rem;line-height:1;color:' + (isDkDr ? '#a1a1aa' : '#9ca3af') + ';'
+      + 'transition:color 0.1s;';
+    // Hidden date pickers
+    var drPickSty = 'position:absolute;opacity:0;pointer-events:none;width:0;height:0;';
+    var drSaveCb  = '_dbSaveAttrVal(' + cardId + ',' + a.id + ',' + kJ + ',';
+    // Start side
+    var drSBlurCb = '_dbDrTextBlur(' + cardId + ',' + a.id + ',' + kJ + ',this,\'' + drFmtId + '\',\'start\')';
+    var drSPkCb   = '_dbDrPickerChange(' + cardId + ',' + a.id + ',' + kJ + ',this,\'' + drFmtId + '\',\'start\')';
+    // End side
+    var drEBlurCb = '_dbDrTextBlur(' + cardId + ',' + a.id + ',' + kJ + ',this,\'' + drFmtId + '\',\'end\')';
+    var drEPkCb   = '_dbDrPickerChange(' + cardId + ',' + a.id + ',' + kJ + ',this,\'' + drFmtId + '\',\'end\')';
+    return '<div style="display:flex;align-items:center;gap:0.2rem;flex-wrap:wrap;position:relative;">'
+      // start text
+      + '<input type="text" id="dtr-txt-start-' + a.id + '" value="' + _esc(drStartDisp) + '"'
+      + ' placeholder="Start date" style="' + drTxtSty + '"'
+      + ' onblur="' + drSBlurCb + '"'
+      + ' onfocus="_dbNativeWidgetFocus(this)">'  
+      // start calendar icon
+      + '<button type="button" title="Pick start date" style="' + drIcoSty + '"'
+      + ' onclick="document.getElementById(\'dtr-start-' + a.id + '\').showPicker&&document.getElementById(\'dtr-start-' + a.id + '\').showPicker()">&#128197;</button>'
+      // start hidden picker
+      + '<input type="date" id="dtr-start-' + a.id + '" value="' + _esc(drStart) + '"'
+    + ' style="' + drPickSty + '" onchange="' + drSPkCb + '">'
+      // arrow
+      + '<span style="font-size:0.7rem;color:#9ca3af;flex-shrink:0;padding:0 0.1rem;">&#8594;</span>'
+      // end text
+      + '<input type="text" id="dtr-txt-end-' + a.id + '" value="' + _esc(drEndDisp) + '"'
+      + ' placeholder="End date" style="' + drTxtSty + '"'
+      + ' onblur="' + drEBlurCb + '"'
+      + ' onfocus="_dbNativeWidgetFocus(this)">'
+      // end calendar icon
+      + '<button type="button" title="Pick end date" style="' + drIcoSty + '"'
+      + ' onclick="document.getElementById(\'dtr-end-' + a.id + '\').showPicker&&document.getElementById(\'dtr-end-' + a.id + '\').showPicker()">&#128197;</button>'
+      // end hidden picker
+      + '<input type="date" id="dtr-end-' + a.id + '" value="' + _esc(drEnd) + '"'
+      + ' style="' + drPickSty + '" onchange="' + drEPkCb + '">'
       + '</div>';
   }
 
-  // progress — range slider 0–100 with live % label
+  // progress — bar / number / both, respecting configured max
   if (t === 'progress') {
     var isDkPg  = document.documentElement.classList.contains('dark');
-    var pgVal   = Math.min(100, Math.max(0, parseInt(v, 10) || 0));
-    var pgTrack = 'linear-gradient(to right,#0053e2 ' + pgVal + '%,'  + (isDkPg ? '#3f3f46' : '#e5e7eb') + ' ' + pgVal + '%)';
-    var pgCb    = '_dbProgressChange(' + cardId + ',' + a.id + ',' + kJ + ',this)';
-    return '<div style="display:flex;align-items:center;gap:0.5rem;width:100%;padding:0.1rem 0;">'
-      + '<input type="range" min="0" max="100" value="' + pgVal + '"'
-      + ' style="flex:1;min-width:60px;height:6px;border-radius:3px;'
-      + '-webkit-appearance:none;appearance:none;outline:none;cursor:pointer;'
-      + 'background:' + pgTrack + ';"'
-      + ' oninput="' + pgCb + '"'
-      + ' title="' + pgVal + '%">'
-      + '<span class="db-pg-label" style="font-size:0.75rem;color:' + (isDkPg ? '#a1a1aa' : '#6b7280') + ';'
-      + 'min-width:2.5rem;text-align:right;font-variant-numeric:tabular-nums;">' + pgVal + '%</span>'
-      + '</div>';
+    var pgOpts  = _dbParsePgOpts(a.attr_options);
+    var pgMax   = pgOpts.max     || 100;
+    var pgMode  = pgOpts.display || 'bar';
+    var pgVal   = Math.min(pgMax, Math.max(0, parseInt(v, 10) || 0));
+    var pgFill  = Math.min(100, Math.round((pgVal / pgMax) * 100));
+    var pgTrack = 'linear-gradient(to right,#0053e2 ' + pgFill + '%,'
+      + (isDkPg ? '#3f3f46' : '#e5e7eb') + ' ' + pgFill + '%)';
+    var pgLbl   = pgMax === 100 ? pgVal + '%' : pgVal + '\u202F/\u202F' + pgMax;
+    var pgLblSty = 'font-size:0.75rem;color:' + (isDkPg ? '#a1a1aa' : '#6b7280') + ';'
+      + 'min-width:2.8rem;text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0;';
+    var pgMaxJ  = pgMax; // number, safe to inline
+    var pgCb    = '_dbProgressChange(' + cardId + ',' + a.id + ',' + kJ + ',this,' + pgMaxJ + ')';
+    // Number input for 'number' and 'both' modes
+    var pgNumCb = '_dbSaveAttrInput(' + cardId + ',' + a.id + ',' + kJ + ',this)';
+    var pgNumSty = 'border:none;background:transparent;font-size:0.85rem;font-family:inherit;'
+      + 'color:' + (isDkPg ? '#f4f4f5' : '#111827') + ';outline:none;'
+      + 'width:5rem;text-align:right;cursor:text;padding:0.1rem 0;';
+    var pgHtml = '<div style="display:flex;align-items:center;gap:0.5rem;width:100%;padding:0.1rem 0;">';
+    if (pgMode === 'bar' || pgMode === 'both') {
+      pgHtml += '<input type="range" min="0" max="' + pgMax + '" value="' + pgVal + '"'
+        + ' style="flex:1;min-width:60px;height:6px;border-radius:3px;'
+        + '-webkit-appearance:none;appearance:none;outline:none;cursor:pointer;'
+        + 'background:' + pgTrack + ';"'
+        + ' oninput="' + pgCb + '"'
+        + ' title="' + pgLbl + '">';
+    }
+    if (pgMode === 'both') {
+      pgHtml += '<span class="db-pg-label" style="' + pgLblSty + '">' + pgLbl + '</span>';
+    } else if (pgMode === 'bar') {
+      pgHtml += '<span class="db-pg-label" style="' + pgLblSty + '">' + pgLbl + '</span>';
+    } else {
+      // number-only: editable number input
+      pgHtml += '<input type="number" id="_db-attr-val" min="0" max="' + pgMax + '" value="' + pgVal + '"'
+        + ' style="' + pgNumSty + '"'
+        + ' onblur="' + pgNumCb + '"'
+        + ' onfocus="_dbNativeWidgetFocus(this)">';
+      pgHtml += '<span style="' + pgLblSty + 'text-align:left;color:' + (isDkPg ? '#52525b' : '#9ca3af') + ';">/ ' + pgMax + '</span>';
+    }
+    pgHtml += '</div>';
+    return pgHtml;
   }
 
-  // rating — 1–5 star buttons; clicking active star resets to 0
+  // rating — 1–N icons; scale and icon style from attr_options
   if (t === 'rating') {
     var isDkRt  = document.documentElement.classList.contains('dark');
-    var rtVal   = Math.min(5, Math.max(0, parseInt(v, 10) || 0));
-    var rtClr   = '#f59e0b'; // amber
+    var rtOpts  = _dbParseRtOpts(a.attr_options);
+    var rtScale = rtOpts.scale || 5;
+    var rtIcId  = rtOpts.icon  || 'star';
+    var rtIcDef = _DB_RT_ICON_MAP[rtIcId] || _DB_RT_ICON_MAP.star;
+    var rtVal   = Math.min(rtScale, Math.max(0, parseInt(v, 10) || 0));
     var rtEmpty = isDkRt ? '#52525b' : '#d1d5db';
     var rtHtml  = '<div class="db-rating-wrap" data-rating="' + rtVal + '"'
-      + ' style="display:flex;align-items:center;gap:0.1rem;">';
-    for (var rs = 1; rs <= 5; rs++) {
-      var rtStar  = rs <= rtVal ? '\u2605' : '\u2606'; // \u2605=filled \u2606=empty
-      var rtColor = rs <= rtVal ? rtClr : rtEmpty;
+      + ' data-scale="' + rtScale + '" data-icon="' + rtIcId + '"'
+      + ' style="display:flex;align-items:center;gap:0.1rem;flex-wrap:wrap;">';
+    for (var rs = 1; rs <= rtScale; rs++) {
+      var rtOn    = rs <= rtVal;
+      var rtChar  = rtOn ? rtIcDef.on  : rtIcDef.off;
+      var rtColor = rtOn ? rtIcDef.clr : rtEmpty;
       var rtCb    = '_dbRatingSave(' + cardId + ',' + a.id + ',' + kJ + ',' + rs + ',this)';
       rtHtml += '<button type="button" class="db-rating-btn" data-val="' + rs + '"'
         + ' onclick="' + rtCb + '"'
-        + ' title="' + rs + ' star' + (rs > 1 ? 's' : '') + '"'
+        + ' title="' + rs + ' / ' + rtScale + '"'
         + ' style="background:none;border:none;cursor:pointer;padding:0 0.05rem;'
-        + 'font-size:1rem;color:' + rtColor + ';line-height:1;'
+        + 'font-size:' + (rtScale > 5 ? '0.8rem' : '1rem') + ';color:' + rtColor + ';line-height:1;'
         + 'transition:transform 0.1s,color 0.1s;"'
         + ' onmouseenter="this.style.transform=\'scale(1.3)\'"'
         + ' onmouseleave="this.style.transform=\'\'">'
-        + rtStar + '</button>';
+        + rtChar + '</button>';
     }
     rtHtml += '</div>';
     return rtHtml;
@@ -6356,12 +6437,19 @@ function _dbEditAttrRow(cardId, attrId) {
 
   var selectedType    = origType;
   var selectedDateFmt = (origType === 'date'  && origOpts) ? origOpts : 'mdy';
+  var selectedDrFmt   = (origType === 'date_range' && origOpts) ? origOpts : 'short';
   var selectedFileFmt = (origType === 'files' && origOpts) ? origOpts : 'name';
   var selectedUrlFmt  = (origType === 'url'   && origOpts) ? origOpts : 'text';
   var selectedMapProv = (origType === 'place' && origOpts) ? origOpts : 'google';
-  var _parsedNum      = (origType === 'number') ? _dbParseNumOpts(origOpts) : null;
+  var _parsedNum      = (origType === 'number')   ? _dbParseNumOpts(origOpts) : null;
+  var _parsedPg       = (origType === 'progress') ? _dbParsePgOpts(origOpts)  : null;
+  var _parsedRt       = (origType === 'rating')   ? _dbParseRtOpts(origOpts)  : null;
   var selectedDisplay = _parsedNum ? (_parsedNum.display  || 'number') : 'number';
   var selectedBarClr  = _parsedNum ? (_parsedNum.barColor || 'blue')   : 'blue';
+  var selectedPgMax   = _parsedPg  ? (_parsedPg.max       || 100)      : 100;
+  var selectedPgDisp  = _parsedPg  ? (_parsedPg.display   || 'bar')    : 'bar';
+  var selectedRtScale = _parsedRt  ? (_parsedRt.scale     || 5)        : 5;
+  var selectedRtIcon  = _parsedRt  ? (_parsedRt.icon      || 'star')   : 'star';
 
   // ── type grid (pre-selected) ────────────────────────────────────
   var typeGrid = _DB_ATTR_TYPES.map(function(t) {
@@ -6775,9 +6863,169 @@ function _dbEditAttrRow(cardId, attrId) {
       placeFmtDiv.appendChild(placeFmtGrid);
       extrasDiv.appendChild(placeFmtDiv);
 
+    } else if (t === 'date_range') {
+      // Same date-format grid as the regular Date type
+      if (selectedType !== origType) selectedDrFmt = 'short';
+      var drFmtDiv = document.createElement('div');
+      drFmtDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var drFmtLbl = document.createElement('label');
+      drFmtLbl.style.cssText = labelCss;
+      drFmtLbl.textContent = 'Display format';
+      drFmtDiv.appendChild(drFmtLbl);
+      var drFmtGrid = document.createElement('div');
+      drFmtGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;';
+      _DB_DATE_FORMATS.forEach(function(f) {
+        var isSel = f.id === selectedDrFmt;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-drfmt', f.id);
+        btn.style.cssText = 'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;';
+        btn.innerHTML = '<div style="font-weight:600;color:' + txt + ';">' + _esc(f.label) + '</div>'
+          + '<div style="color:' + sub + ';font-size:0.7rem;">' + _esc(f.example) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedDrFmt = f.id;
+          drFmtGrid.querySelectorAll('button[data-drfmt]').forEach(function(b) {
+            var s = b.getAttribute('data-drfmt') === selectedDrFmt;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        drFmtGrid.appendChild(btn);
+      });
+      drFmtDiv.appendChild(drFmtGrid);
+      extrasDiv.appendChild(drFmtDiv);
+
+    } else if (t === 'progress') {
+      if (selectedType !== origType) { selectedPgMax = 100; selectedPgDisp = 'bar'; }
+      // ─ Max value
+      var pgMaxDiv = document.createElement('div');
+      pgMaxDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var pgMaxLbl = document.createElement('label');
+      pgMaxLbl.style.cssText = labelCss;
+      pgMaxLbl.textContent = 'Maximum value';
+      pgMaxDiv.appendChild(pgMaxLbl);
+      var pgMaxInp = document.createElement('input');
+      pgMaxInp.type  = 'number'; pgMaxInp.min = '1'; pgMaxInp.id = '_dbe-pg-max';
+      pgMaxInp.value = String(selectedPgMax);
+      pgMaxInp.placeholder = '100';
+      pgMaxInp.style.cssText = inputCss;
+      pgMaxInp.addEventListener('input', function() {
+        selectedPgMax = parseInt(this.value, 10) || 100;
+      });
+      pgMaxDiv.appendChild(pgMaxInp);
+      extrasDiv.appendChild(pgMaxDiv);
+      // ─ Display style (3-button segmented)
+      var pgDispDiv = document.createElement('div');
+      pgDispDiv.style.cssText = 'margin-bottom:0.35rem;';
+      var pgDispLbl = document.createElement('label');
+      pgDispLbl.style.cssText = labelCss;
+      pgDispLbl.textContent = 'Display as';
+      pgDispDiv.appendChild(pgDispLbl);
+      var pgSeg = document.createElement('div');
+      pgSeg.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;'
+        + 'border:1px solid ' + bdr + ';border-radius:0.5rem;overflow:hidden;';
+      [{ id:'bar', lbl:'Bar' }, { id:'number', lbl:'Number' }, { id:'both', lbl:'Both' }]
+        .forEach(function(d, i) {
+          var btn = document.createElement('button');
+          btn.type = 'button'; btn.setAttribute('data-pgdisp', d.id);
+          btn.textContent = d.lbl;
+          var isSel = d.id === selectedPgDisp;
+          btn.style.cssText = 'padding:0.4rem 0;font-size:0.8rem;border:none;cursor:pointer;'
+            + 'background:' + (isSel ? '#0053e2' : 'transparent') + ';'
+            + 'color:' + (isSel ? '#fff' : txt) + ';'
+            + 'font-weight:' + (isSel ? '600' : '400') + ';'
+            + (i < 2 ? 'border-right:1px solid ' + bdr + ';' : '');
+          btn.addEventListener('click', function() {
+            selectedPgDisp = d.id;
+            pgSeg.querySelectorAll('button[data-pgdisp]').forEach(function(b) {
+              var s = b.getAttribute('data-pgdisp') === selectedPgDisp;
+              b.style.background = s ? '#0053e2' : 'transparent';
+              b.style.color      = s ? '#fff'    : txt;
+              b.style.fontWeight = s ? '600'     : '400';
+            });
+          });
+          pgSeg.appendChild(btn);
+        });
+      pgDispDiv.appendChild(pgSeg);
+      extrasDiv.appendChild(pgDispDiv);
+
+    } else if (t === 'rating') {
+      if (selectedType !== origType) { selectedRtScale = 5; selectedRtIcon = 'star'; }
+      // ─ Scale
+      var rtScaleDiv = document.createElement('div');
+      rtScaleDiv.style.cssText = 'margin-bottom:0.75rem;';
+      var rtScaleLbl = document.createElement('label');
+      rtScaleLbl.style.cssText = labelCss;
+      rtScaleLbl.textContent = 'Scale';
+      rtScaleDiv.appendChild(rtScaleLbl);
+      var rtScaleSeg = document.createElement('div');
+      rtScaleSeg.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;'
+        + 'border:1px solid ' + bdr + ';border-radius:0.5rem;overflow:hidden;';
+      [{ v:5, lbl:'1 – 5' }, { v:10, lbl:'1 – 10' }].forEach(function(s, i) {
+        var btn = document.createElement('button');
+        btn.type = 'button'; btn.setAttribute('data-rtscale', String(s.v));
+        btn.textContent = s.lbl;
+        var isSel = s.v === selectedRtScale;
+        btn.style.cssText = 'padding:0.4rem 0;font-size:0.8rem;border:none;cursor:pointer;'
+          + 'background:' + (isSel ? '#0053e2' : 'transparent') + ';'
+          + 'color:' + (isSel ? '#fff' : txt) + ';'
+          + 'font-weight:' + (isSel ? '600' : '400') + ';'
+          + (i === 0 ? 'border-right:1px solid ' + bdr + ';' : '');
+        btn.addEventListener('click', function() {
+          selectedRtScale = s.v;
+          rtScaleSeg.querySelectorAll('button[data-rtscale]').forEach(function(b) {
+            var sel = parseInt(b.getAttribute('data-rtscale'), 10) === selectedRtScale;
+            b.style.background = sel ? '#0053e2' : 'transparent';
+            b.style.color      = sel ? '#fff'    : txt;
+            b.style.fontWeight = sel ? '600'     : '400';
+          });
+        });
+        rtScaleSeg.appendChild(btn);
+      });
+      rtScaleDiv.appendChild(rtScaleSeg);
+      extrasDiv.appendChild(rtScaleDiv);
+      // ─ Icon style (4 cards in a 2x2 grid)
+      var rtIconDiv = document.createElement('div');
+      rtIconDiv.style.cssText = 'margin-bottom:0.35rem;';
+      var rtIconLbl = document.createElement('label');
+      rtIconLbl.style.cssText = labelCss;
+      rtIconLbl.textContent = 'Icon style';
+      rtIconDiv.appendChild(rtIconLbl);
+      var rtIconGrid = document.createElement('div');
+      rtIconGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;';
+      [
+        { id:'star',  label:'Stars',  preview:'\u2605\u2605\u2605\u2606\u2606' },
+        { id:'heart', label:'Hearts', preview:'\u2665\u2665\u2665\u2661\u2661' },
+        { id:'thumb', label:'Thumbs', preview:'\uD83D\uDC4D\uD83D\uDC4D\uD83D\uDC4D\u25CB\u25CB' },
+        { id:'dot',   label:'Dots',   preview:'\u25CF\u25CF\u25CF\u25CB\u25CB' },
+      ].forEach(function(ic) {
+        var isSel = ic.id === selectedRtIcon;
+        var btn = document.createElement('button');
+        btn.type = 'button'; btn.setAttribute('data-rticon', ic.id);
+        btn.style.cssText = 'text-align:left;padding:0.4rem 0.6rem;border-radius:0.5rem;cursor:pointer;'
+          + 'border:1px solid ' + (isSel ? '#0053e2' : bdr) + ';'
+          + 'background:' + (isSel ? selBg : 'transparent') + ';font-size:0.8rem;';
+        btn.innerHTML = '<div style="font-size:0.85rem;letter-spacing:0.05em;margin-bottom:0.1rem;">'
+          + ic.preview + '</div>'
+          + '<div style="font-weight:600;color:' + txt + ';font-size:0.75rem;">'
+          + _esc(ic.label) + '</div>';
+        btn.addEventListener('click', function() {
+          selectedRtIcon = ic.id;
+          rtIconGrid.querySelectorAll('button[data-rticon]').forEach(function(b) {
+            var s = b.getAttribute('data-rticon') === selectedRtIcon;
+            b.style.border     = '1px solid ' + (s ? '#0053e2' : bdr);
+            b.style.background = s ? selBg : 'transparent';
+          });
+        });
+        rtIconGrid.appendChild(btn);
+      });
+      rtIconDiv.appendChild(rtIconGrid);
+      extrasDiv.appendChild(rtIconDiv);
+
     } else if (t === 'phone' || t === 'email' || t === 'checkbox'
-              || t === 'person' || t === 'text'
-              || t === 'date_range' || t === 'progress' || t === 'rating') {
+              || t === 'person' || t === 'text') {
       // No configurable settings for these types — show a small hint so
       // the user knows the section is working, just intentionally empty.
       var noSetDiv = document.createElement('div');
@@ -6807,10 +7055,13 @@ function _dbEditAttrRow(cardId, attrId) {
       }
       return JSON.stringify(obj);
     }
-    if (selectedType === 'date')  return selectedDateFmt  || 'mdy';
-    if (selectedType === 'files') return selectedFileFmt || 'name';
-    if (selectedType === 'url')   return selectedUrlFmt   || 'text';
-    if (selectedType === 'place') return selectedMapProv  || 'google';
+    if (selectedType === 'date')       return selectedDateFmt || 'mdy';
+    if (selectedType === 'date_range')  return selectedDrFmt   || 'short';
+    if (selectedType === 'files')       return selectedFileFmt || 'name';
+    if (selectedType === 'url')         return selectedUrlFmt  || 'text';
+    if (selectedType === 'place')       return selectedMapProv || 'google';
+    if (selectedType === 'progress')    return JSON.stringify({ max: selectedPgMax || 100, display: selectedPgDisp || 'bar' });
+    if (selectedType === 'rating')      return JSON.stringify({ scale: selectedRtScale || 5, icon: selectedRtIcon || 'star' });
     return _dbReadOptEditor(extrasDiv);
   }
 
@@ -7055,6 +7306,42 @@ function _dbDatePickerChange(cardId, attrId, key, pickerEl, fmtId) {
   if (textEl) textEl.value = iso ? _dbFormatDate(iso, fmtId) : '';
   _dbSaveAttrVal(cardId, attrId, key, iso);
 }
+
+// date_range: blur on a typed text field — parse the user's text, sync
+// to the corresponding hidden date picker, then save both sides.
+function _dbDrTextBlur(cardId, attrId, key, textEl, fmtId, side) {
+  var raw = textEl.value.trim();
+  var iso = raw ? _dbParseUserDate(raw) : '';
+  if (raw && !iso) {
+    textEl.style.color = '#ea1100';
+    setTimeout(function() { textEl.style.color = ''; }, 1500);
+    return; // don't save garbage
+  }
+  textEl.value = iso ? _dbFormatDate(iso, fmtId) : '';
+  // sync hidden picker
+  var pickerId = 'dtr-' + side + '-' + attrId;
+  var picker = document.getElementById(pickerId);
+  if (picker) picker.value = iso;
+  // save both sides
+  var startPicker = document.getElementById('dtr-start-' + attrId);
+  var endPicker   = document.getElementById('dtr-end-'   + attrId);
+  var startVal = startPicker ? startPicker.value : '';
+  var endVal   = endPicker   ? endPicker.value   : '';
+  _dbSaveAttrVal(cardId, attrId, key, startVal + '|' + endVal);
+}
+
+// date_range: calendar picker changed — format text field, save both.
+function _dbDrPickerChange(cardId, attrId, key, pickerEl, fmtId, side) {
+  var iso = pickerEl.value;
+  var textId = 'dtr-txt-' + side + '-' + attrId;
+  var textEl = document.getElementById(textId);
+  if (textEl) textEl.value = iso ? _dbFormatDate(iso, fmtId) : '';
+  var startPicker = document.getElementById('dtr-start-' + attrId);
+  var endPicker   = document.getElementById('dtr-end-'   + attrId);
+  var startVal = startPicker ? startPicker.value : '';
+  var endVal   = endPicker   ? endPicker.value   : '';
+  _dbSaveAttrVal(cardId, attrId, key, startVal + '|' + endVal);
+}
 function _dbSaveAttrCheckbox(cardId, attrId, key, el) {
   var value = el.checked ? 'true' : 'false';
   var card  = _dbCards.find(function(c) { return c.id === cardId; });
@@ -7089,16 +7376,19 @@ function _dbDateRangeSave(cardId, attrId, key, wrapEl) {
 
 // progress — called by oninput on the range slider.  Debounced 400 ms.
 // Updates the live label immediately; defers the server save.
-function _dbProgressChange(cardId, attrId, key, el) {
-  var pct    = parseInt(el.value, 10) || 0;
+function _dbProgressChange(cardId, attrId, key, el, max) {
+  var val    = parseInt(el.value, 10) || 0;
+  var mx     = (max && max > 0) ? max : 100;
+  var fillPct = Math.min(100, Math.round((val / mx) * 100));
   var labelEl = el.parentNode ? el.parentNode.querySelector('.db-pg-label') : null;
-  if (labelEl) labelEl.textContent = pct + '%';
-  // colour-fill the track
-  el.style.background = 'linear-gradient(to right,#0053e2 ' + pct + '%,#e5e7eb ' + pct + '%)';
+  if (labelEl) labelEl.textContent = mx === 100 ? val + '%' : val + '\u202F/\u202F' + mx;
+  el.style.background = 'linear-gradient(to right,#0053e2 ' + fillPct + '%,'
+    + (document.documentElement.classList.contains('dark') ? '#3f3f46' : '#e5e7eb')
+    + ' ' + fillPct + '%)';
   var timerKey = 'prog-' + cardId + '-' + attrId;
   clearTimeout(_dbSaveTimers[timerKey]);
   _dbSaveTimers[timerKey] = setTimeout(function() {
-    _dbSaveAttrVal(cardId, attrId, key, String(pct));
+    _dbSaveAttrVal(cardId, attrId, key, String(val));
   }, 400);
 }
 
@@ -7109,11 +7399,17 @@ function _dbRatingSave(cardId, attrId, key, val, btnEl) {
   var current = parseInt(wrap ? wrap.getAttribute('data-rating') : '0', 10) || 0;
   var newVal  = (val === current) ? 0 : val;
   if (wrap) wrap.setAttribute('data-rating', String(newVal));
-  // Optimistic star repaint
+  // Optimistic repaint using stored icon/scale
   if (wrap) {
+    var icId  = wrap.getAttribute('data-icon') || 'star';
+    var icDef = _DB_RT_ICON_MAP[icId] || _DB_RT_ICON_MAP.star;
+    var isDkR = document.documentElement.classList.contains('dark');
+    var offClr = isDkR ? '#52525b' : '#d1d5db';
     wrap.querySelectorAll('.db-rating-btn').forEach(function(b) {
       var bv = parseInt(b.getAttribute('data-val'), 10);
-      b.textContent = bv <= newVal ? '\u2605' : '\u2606'; // filled / empty
+      var on = bv <= newVal;
+      b.textContent = on ? icDef.on : icDef.off;
+      b.style.color = on ? icDef.clr : offClr;
     });
   }
   _dbSaveAttrVal(cardId, attrId, key, newVal > 0 ? String(newVal) : '');
