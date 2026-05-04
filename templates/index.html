@@ -2425,19 +2425,40 @@
     const _sel = window.getSelection();
     if (!_sel || !_sel.rangeCount) return false;
 
+    const _range = _sel.getRangeAt(0);
+    let n = _range.startContainer;
+
+    /* ── Empty-bullet fix ────────────────────────────────────────────────────
+       When an <li> contains only the non-editable grip span, Chrome places the
+       caret at the PARENT element level (e.g. the <ul>) with startOffset as a
+       child index, NOT inside the <li> itself.  The while-loop below walks UP
+       and misses the <li>, so e.preventDefault() is never called and Chrome
+       converts the empty bullet to a plain block.
+       Fix: peek at childNodes[startOffset] (the node the cursor points toward
+       from its parent) before walking up.                                    */
+    if (n.nodeType !== 3 /* TEXT_NODE */ && n.nodeName !== 'LI') {
+      const peek = n.childNodes[_range.startOffset] || n.childNodes[_range.startOffset - 1];
+      if (peek) n = peek;
+    }
+    if (n.nodeType === 3 /* TEXT_NODE */) n = n.parentElement;
+
     /* Walk up from cursor to find the containing <li> */
-    let li = _sel.getRangeAt(0).startContainer;
+    let li = n;
     while (li && li !== pv) {
       if (li.nodeName === 'LI') break;
       li = li.parentNode;
     }
     if (!li || li === pv) return false; // cursor not inside a list item
 
+    /* Prevent default NOW — as soon as we know we're in a list item.
+       Without this, Chrome's Tab on an empty <li> converts it to a plain
+       block (removing the bullet) before our indent logic can run.       */
+    e.preventDefault();
+
     if (!e.shiftKey) {
       /* ── INDENT: nest under the previous sibling <li> ── */
       const prevLi = li.previousElementSibling;
-      if (!prevLi || prevLi.nodeName !== 'LI') return false;
-      e.preventDefault();
+      if (!prevLi || prevLi.nodeName !== 'LI') return true; // swallow Tab; nothing to indent under
       const parentList = li.parentElement;
       let nested = Array.from(prevLi.children).find(
         c => c.nodeName === 'UL' || c.nodeName === 'OL'
@@ -2451,8 +2472,7 @@
       /* ── OUTDENT: lift out to the grandparent list ── */
       const parentList = li.parentElement;
       const parentLi   = parentList?.parentElement;
-      if (!parentLi || parentLi.nodeName !== 'LI') return false; // already at root
-      e.preventDefault();
+      if (!parentLi || parentLi.nodeName !== 'LI') return true; // already at root; swallow
       const grandparent = parentLi.parentElement;
       grandparent.insertBefore(li, parentLi.nextSibling);
       if (parentList.children.length === 0) parentList.remove();
@@ -2470,18 +2490,20 @@
     setTimeout(() => {
       const grip     = li.querySelector('[data-preview-grip]');
       const textNode = grip ? grip.nextSibling : li.firstChild;
-      if (textNode) {
-        const r = document.createRange();
-        if (textNode.nodeType === 3 /* TEXT_NODE */) {
-          r.setStart(textNode, textNode.length);
-          r.collapse(true);
-        } else {
-          r.selectNodeContents(textNode);
-          r.collapse(false);
-        }
-        _sel.removeAllRanges();
-        _sel.addRange(r);
+      const r = document.createRange();
+      if (textNode && textNode.nodeType === 3 /* TEXT_NODE */) {
+        r.setStart(textNode, textNode.length);
+        r.collapse(true);
+      } else if (textNode) {
+        r.selectNodeContents(textNode);
+        r.collapse(false);
+      } else {
+        /* Empty <li> — keep caret inside the bullet so typing works */
+        r.setStart(li, li.childNodes.length);
+        r.collapse(true);
       }
+      _sel.removeAllRanges();
+      _sel.addRange(r);
       pv.focus();
     }, 0);
     return true;
