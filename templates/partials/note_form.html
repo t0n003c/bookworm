@@ -1736,14 +1736,19 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
 
       /* ── Tab / Shift+Tab inside the contenteditable preview ─────────
-         Direct DOM manipulation: skip the markdown round-trip entirely.
-         Markdown-level indentation only works for contiguous list blocks;
-         notes with headings or blank lines between list items would never
-         nest correctly via markdown alone.
+         Handle in CAPTURE PHASE (this listener uses { capture: true })
+         so we fire BEFORE Chrome processes its default "empty <li> →
+         plain block" transformation.  Delegating to the document-level
+         bubbling listener (_bwEditorTabHandler) was too late — Chrome
+         already nuked the empty bullet before the bubbling event arrived.
 
-         Tab / Shift+Tab on list items is handled by the permanent
-         document-level listener in index.html (_bwEditorTabHandler)
-         so it survives HTMX swaps of this partial.                         */
+         _bwCeTab (defined in index.html) does the real work; it calls
+         e.preventDefault() as soon as it confirms the cursor is inside
+         a list item, so the browser default is always suppressed.       */
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (typeof window._bwCeTab === 'function') window._bwCeTab(e, preview);
+        return; /* e.defaultPrevented controls whether browser acts */
+      }
 
       /* ── Enter inside a <pre> code block ──────────────────────────
          Two jobs:

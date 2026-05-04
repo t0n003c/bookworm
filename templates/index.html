@@ -2549,6 +2549,9 @@
 
   document.addEventListener('keydown', function _bwEditorTabHandler(e) {
     if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+    /* Already handled in capture phase (preview capture listener in
+       note_form.html calls _bwCeTab directly).  Skip to avoid double-indent. */
+    if (e.defaultPrevented) return;
 
     /* Check contenteditable preview pane first */
     const pv = document.getElementById('md-live-preview');
