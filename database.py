@@ -1103,6 +1103,24 @@ async def init_db() -> None:
                 "db_card_attr_id INTEGER REFERENCES db_card_attrs(id) ON DELETE SET NULL"
             )
 
+        # ── note_reminders — inline reminders set via /reminder slash command ──
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS note_reminders (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id       INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+                note_id       INTEGER          REFERENCES notes(id)  ON DELETE SET NULL,
+                label         TEXT    NOT NULL DEFAULT '',
+                reminder_date TEXT    NOT NULL,
+                reminder_time TEXT    NOT NULL DEFAULT '09:00',
+                fired         INTEGER NOT NULL DEFAULT 0,
+                created_at    DATETIME         DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_note_reminders_user_date
+                ON note_reminders(user_id, reminder_date)
+        """)
+
         await db.commit()
 
 @asynccontextmanager

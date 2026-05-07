@@ -80,6 +80,7 @@ from routers import home_uploads_catalogs as home_uploads_catalogs_router
 from routers import wopi as wopi_router
 from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
+from routers import note_reminders as note_reminders_router
 from routers.attachments_db import UPLOAD_DIR
 
 
@@ -160,6 +161,7 @@ app.include_router(home_uploads_folders_router.router)
 app.include_router(home_uploads_catalogs_router.router)
 app.include_router(wopi_router.router)
 app.include_router(demo_router.router)
+app.include_router(note_reminders_router.router)
 app.include_router(notes_router.router)
 app.include_router(attachments_router.router)
 app.include_router(categories_router.router)

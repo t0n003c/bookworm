@@ -226,6 +226,33 @@ const SLASH_COMMANDS = [
     snippet: '<div class="bw-callout bw-callout-danger">\n<div class="bw-callout-icon">🚨</div>\n<div class="bw-callout-body">Your note here\u2026</div>\n</div>\n',
     ceHtml: '<div class="bw-callout bw-callout-danger"><div class="bw-callout-icon">🚨</div><div class="bw-callout-body"><p>Your note here…</p></div></div><p><br></p>',
   },
+
+  // ── Formatting / Actions ───────────────────────────────────────────────
+  {
+    id: 'tab', label: 'Tab Block', desc: 'Insert a navigable multi-tab content block',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+             <rect x="2" y="4" width="20" height="16" rx="2"/>
+             <path stroke-linecap="round" d="M2 10h20"/>
+             <path stroke-linecap="round" d="M8 4v6"/>
+           </svg>`,
+    action: (ce, actRange) => {
+      if (!ce) return;  // CE mode only; TA mode: slash text already erased — no-op
+      _insertTabBlock(ce, actRange);
+    },
+  },
+  {
+    id: 'reminder', label: 'Set Reminder', desc: 'Insert a dated reminder at the cursor',
+    icon: `<span style="font-size:1.15rem;line-height:1">📅</span>`,
+    // action receives (ce, actRange) in CE mode; called with () in TA mode.
+    action: (ce, actRange) => {
+      if (ce) {
+        _reminderDialog(null, ce, actRange);
+      } else {
+        // TA mode: _sc.ta is still valid here (called synchronously before _close).
+        _reminderDialog(_sc.ta, null, null);
+      }
+    },
+  },
 ];
 
 
@@ -824,6 +851,296 @@ function _ceLinkDialog(ce, postDeleteRange) {
 
 
 /* ─────────────────────────────────────────
+   Reminder dialog
+   Opens a date+time picker and inserts a 📅 reminder chip at the cursor.
+   Works in both textarea (ta != null) and contenteditable (ce != null) modes.
+   actRange is the collapsed Range at the deletion site (CE mode only).
+   ───────────────────────────────────────── */
+function _reminderDialog(ta, ce, actRange) {
+  const prev = document.getElementById('bw-reminder-dialog');
+  if (prev) prev.remove();
+
+  const dark    = document.documentElement.classList.contains('dark');
+  const today   = new Date();
+  const defDate = today.toISOString().slice(0, 10);          // 'YYYY-MM-DD'
+  // Capture TA insertion point NOW — before the dialog steals focus.
+  const taInsertPos = ta ? ta.selectionStart : null;
+
+  /* ---- helpers (shared with link dialog) ---- */
+  const mkLabel = (txt) => {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = txt;
+    Object.assign(lbl.style, {
+      display: 'block', fontSize: '12px', fontWeight: '500',
+      marginBottom: '4px', color: dark ? '#a1a1aa' : '#6b7280',
+    });
+    return lbl;
+  };
+  const mkInput = (type, value) => {
+    const inp = document.createElement('input');
+    inp.type  = type;
+    inp.value = value;
+    Object.assign(inp.style, {
+      display: 'block', width: '100%', boxSizing: 'border-box',
+      padding: '8px 12px',
+      border:  dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+      borderRadius: '8px', fontSize: '14px',
+      background: dark ? '#27272a' : '#ffffff',
+      color:      dark ? '#f4f4f5'  : '#111827',
+      outline: 'none', marginBottom: '12px', fontFamily: 'inherit',
+    });
+    inp.addEventListener('focus', () => inp.style.borderColor = '#0053e2');
+    inp.addEventListener('blur',  () => inp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+    return inp;
+  };
+
+  /* ---- overlay ---- */
+  const overlay = document.createElement('div');
+  overlay.id = 'bw-reminder-dialog';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '10001',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)',
+  });
+
+  /* ---- card ---- */
+  const card = document.createElement('div');
+  Object.assign(card.style, {
+    background:   dark ? '#18181b' : '#ffffff',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '16px',
+    padding:      '24px',
+    width:        '100%',
+    maxWidth:     '340px',
+    boxShadow:    '0 20px 60px rgba(0,0,0,0.25)',
+    boxSizing:    'border-box',
+    fontFamily:   'inherit',
+  });
+  card.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  function close() { overlay.remove(); }
+
+  function insert() {
+    const d = dateInp.value;
+    const t = (hrSel.value || '09') + ':' + (minSel.value || '00');
+    if (!d) { dateInp.focus(); return; }
+
+    // Format: 📅 May 5, 2026 · 09:00
+    const [yr, mo, dy] = d.split('-').map(Number);
+    const label = new Date(yr, mo - 1, dy).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+    const chip = `\ud83d\udcc5 ${label} \u00b7 ${t}`;
+    close();
+
+    if (ta) {
+      /* ── Textarea mode ── */
+      const pos    = taInsertPos !== null ? taInsertPos : ta.value.length;
+      const before = ta.value.slice(0, pos);
+      const after  = ta.value.slice(pos);
+      ta.value = before + chip + after;
+      ta.setSelectionRange(pos + chip.length, pos + chip.length);
+      ta.focus();
+      ta.dispatchEvent(new Event('input'));
+    } else if (ce && actRange) {
+      /* ── Contenteditable mode ── */
+      try {
+        const r    = actRange.cloneRange();
+        const node = document.createTextNode(chip);
+        r.insertNode(node);
+        r.setStartAfter(node);
+        r.collapse(true);
+        ce.focus();
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch (err) {
+        console.warn('[bw-reminder] insertNode failed:', err);
+      }
+      ce.dispatchEvent(new Event('input'));
+    }
+
+    /* ── Persist reminder to DB + request notification permission ── */
+    _saveNoteReminder(d, t, chip);
+  }
+
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.addEventListener('keydown',   (e) => { if (e.key === 'Escape') close(); });
+
+  /* ---- header ---- */
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: '16px',
+  });
+  const titleEl = document.createElement('div');
+  Object.assign(titleEl.style, {
+    display: 'flex', alignItems: 'center', gap: '6px',
+    fontWeight: '600', fontSize: '15px',
+    color: dark ? '#f4f4f5' : '#111827',
+  });
+  titleEl.innerHTML = '<span>\ud83d\udcc5</span><span>Set Reminder</span>';
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  Object.assign(closeBtn.style, {
+    background: 'none', border: 'none', cursor: 'pointer',
+    fontSize: '20px', lineHeight: '1', padding: '0 2px',
+    color: dark ? '#71717a' : '#9ca3af',
+  });
+  closeBtn.addEventListener('mouseenter', () => closeBtn.style.color = dark ? '#d4d4d8' : '#374151');
+  closeBtn.addEventListener('mouseleave', () => closeBtn.style.color = dark ? '#71717a' : '#9ca3af');
+  closeBtn.onclick = close;
+  header.appendChild(titleEl);
+  header.appendChild(closeBtn);
+
+  /* ---- inputs ---- */
+  const dateLabel = mkLabel('Date');
+  const dateInp   = mkInput('date', defDate);
+
+  const timeLabel = mkLabel('Time <span style="opacity:0.6;font-weight:400">(optional)</span>');
+
+  /* Hours + Minutes: native selects — 24 hrs / 60 min, fully scrollable */
+  const hrSel = document.createElement('select');
+  Object.assign(hrSel.style, {
+    padding: '8px 10px', cursor: 'pointer', fontSize: '14px',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '8px',
+    background:   dark ? '#27272a' : '#ffffff',
+    color:        dark ? '#f4f4f5' : '#111827',
+    fontFamily:   'inherit', outline: 'none', flexShrink: '0',
+  });
+  for (let h = 0; h < 24; h++) {
+    const o = document.createElement('option');
+    o.value = String(h).padStart(2, '0');
+    o.textContent = String(h).padStart(2, '0');
+    if (h === 9) o.selected = true;
+    hrSel.appendChild(o);
+  }
+  hrSel.addEventListener('focus', () => hrSel.style.borderColor = '#0053e2');
+  hrSel.addEventListener('blur',  () => hrSel.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+
+  /* Minutes: native select — all 60 values, scroll to any minute */
+  const minSel = document.createElement('select');
+  for (let m = 0; m < 60; m++) {
+    const o = document.createElement('option');
+    o.value = String(m).padStart(2, '0');
+    o.textContent = String(m).padStart(2, '0');
+    minSel.appendChild(o);
+  }
+  Object.assign(minSel.style, {
+    padding: '8px 10px', cursor: 'pointer', fontSize: '14px',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '8px',
+    background:   dark ? '#27272a' : '#ffffff',
+    color:        dark ? '#f4f4f5' : '#111827',
+    fontFamily:   'inherit', outline: 'none', flexShrink: '0',
+  });
+  minSel.addEventListener('focus', () => minSel.style.borderColor = '#0053e2');
+  minSel.addEventListener('blur',  () => minSel.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+  minSel.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } });
+
+  const colon = document.createElement('span');
+  colon.textContent = ':';
+  Object.assign(colon.style, {
+    fontWeight: '700', fontSize: '16px', lineHeight: '1',
+    color: dark ? '#a1a1aa' : '#6b7280', alignSelf: 'center',
+  });
+
+  const timeRow = document.createElement('div');
+  Object.assign(timeRow.style, {
+    display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '20px',
+  });
+  timeRow.appendChild(hrSel);
+  timeRow.appendChild(colon);
+  timeRow.appendChild(minSel);
+
+  /* ---- buttons ---- */
+  const btnRow = document.createElement('div');
+  Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px' });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    padding: '8px 16px', cursor: 'pointer', fontSize: '14px',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '8px',
+    color:        dark ? '#e4e4e7' : '#374151',
+    background:   'transparent', fontFamily: 'inherit',
+  });
+  cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = dark ? '#27272a' : '#f9fafb');
+  cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
+  cancelBtn.onclick = close;
+
+  const insertBtn = document.createElement('button');
+  insertBtn.textContent = 'Insert \u23ce';
+  Object.assign(insertBtn.style, {
+    padding: '8px 16px', background: '#0053e2', color: 'white',
+    border: 'none', borderRadius: '8px', fontSize: '14px',
+    cursor: 'pointer', fontWeight: '500', fontFamily: 'inherit',
+  });
+  insertBtn.addEventListener('mouseenter', () => insertBtn.style.background = '#0046c0');
+  insertBtn.addEventListener('mouseleave', () => insertBtn.style.background = '#0053e2');
+  insertBtn.onclick = insert;
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(insertBtn);
+
+  /* ---- assemble ---- */
+  card.appendChild(header);
+  card.appendChild(dateLabel);
+  card.appendChild(dateInp);
+  card.appendChild(timeLabel);
+  card.appendChild(timeRow);
+  card.appendChild(btnRow);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  requestAnimationFrame(() => { dateInp.focus(); });
+}
+
+
+/* ─────────────────────────────────────────
+   Tab block insertion
+   Inserts a bw-tabs block at actRange then places caret in the first panel.
+   ───────────────────────────────────────── */
+function _insertTabBlock(ce, actRange) {
+  const html =
+    '<div class="bw-tabs" data-bw-tabs="">'
+    + '<div class="bw-tabs-bar" contenteditable="false">'
+    + '<span class="bw-tab-btn bw-tab-active" data-tab-idx="0" title="Dbl-click to rename">Tab 1</span>'
+    + '<span class="bw-tab-add" title="Add tab">＋</span>'
+    + '</div>'
+    + '<div class="bw-tab-panels">'
+    + '<div class="bw-tab-panel bw-tab-panel-active" data-tab-idx="0"><p><br></p></div>'
+    + '</div></div><p><br></p>';
+
+  const r   = actRange.cloneRange();
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+
+  // Capture references BEFORE moving nodes into the fragment
+  const firstPanel = tmp.querySelector('.bw-tab-panel');
+  const frag = document.createDocumentFragment();
+  while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+  r.insertNode(frag);
+
+  // Place caret inside the first panel
+  ce.focus();
+  if (firstPanel) {
+    const pr = document.createRange();
+    pr.selectNodeContents(firstPanel);
+    pr.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(pr);
+  }
+  ce.dispatchEvent(new Event('input'));
+}
+
+
+/* ─────────────────────────────────────────
    Apply — contenteditable path
    Captures query length + caret range NOW (before _close() wipes state),
    then defers all DOM work to requestAnimationFrame so focus has settled
@@ -1211,7 +1528,8 @@ function _scInit() {
         node.classList?.contains('bw-col')  ||
         node.classList?.contains('bw-callout') ||
         node.classList?.contains('bw-callout-icon') ||
-        node.classList?.contains('bw-callout-body')
+        node.classList?.contains('bw-callout-body') ||
+        node.classList?.contains('bw-tabs')
       ))
     );
     td._bwKeepConfigured = true;
@@ -1228,3 +1546,113 @@ function scIsOpen() { return !!_sc.open; }
 /** Public: attach slash-command support to a contenteditable element.
  *  Call this whenever a CE editor is dynamically activated (e.g. text widget). */
 window.bwSlashAttachCE = function (ce) { _attachCE(ce); };
+
+
+/* ─────────────────────────────────────────
+   Note reminder persistence + browser notifications
+   ───────────────────────────────────────── */
+
+/**
+ * Fire-and-forget: saves the reminder to the DB and requests notification
+ * permission on the first call. Called from _reminderDialog insert().
+ */
+function _saveNoteReminder(date, time, label) {
+  /* Request browser notification permission (only prompts once) */
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  const noteId = (typeof window._bwNoteId !== 'undefined') ? window._bwNoteId : null;
+  fetch('/home/note-reminders/add', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      note_id:       noteId,
+      label:         label,
+      reminder_date: date,
+      reminder_time: time,
+    }),
+  }).catch(() => { /* silently ignore — reminder chip is already in the note */ });
+}
+
+/**
+ * Lightweight in-app toast used when _showReminderToast (home page) is absent.
+ * Matches the same pill style so it looks consistent everywhere.
+ */
+function _bwReminderToast(text, durationMs = 8000) {
+  if (typeof _showReminderToast === 'function') {
+    _showReminderToast(text, durationMs);
+    return;
+  }
+  /* Minimal fallback: a fixed toast pill at the bottom-right */
+  const dark  = document.documentElement.classList.contains('dark');
+  const toast = document.createElement('div');
+  Object.assign(toast.style, {
+    position: 'fixed', bottom: '24px', right: '24px', zIndex: '9999',
+    padding: '12px 18px', borderRadius: '10px', maxWidth: '340px',
+    background: dark ? '#27272a' : '#ffffff',
+    color:      dark ? '#f4f4f5' : '#111827',
+    boxShadow:  '0 4px 20px rgba(0,0,0,.18)',
+    border:     dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    fontSize: '14px', lineHeight: '1.45',
+    transition: 'opacity .3s', opacity: '1',
+  });
+  toast.textContent = text;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 320);
+  }, durationMs);
+}
+
+/** Key: `${id}-${date}` — prevents the same reminder firing twice in one session. */
+const _bwFiredReminders = {};
+
+async function _checkNoteReminders() {
+  try {
+    const now   = new Date();
+    const ymd   = now.toISOString().slice(0, 10);
+    const hhmm  = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    const res = await fetch('/home/note-reminders/due?date=' + ymd,
+                            { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const items = await res.json();
+    if (!Array.isArray(items)) return;
+
+    for (const item of items) {
+      if (item.reminder_time !== hhmm) continue;
+      const key = item.id + '-' + ymd;
+      if (_bwFiredReminders[key]) continue;
+      _bwFiredReminders[key] = true;
+
+      const msg = '\ud83d\udd14 ' + (item.label || 'Reminder');
+
+      /* Browser notification (only if granted) */
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try { new Notification('\ud83d\udcd6 BookWorm Reminder', { body: item.label || 'You have a reminder' }); }
+        catch (_) {}
+      }
+
+      /* In-app toast */
+      _bwReminderToast(msg);
+
+      /* Dismiss on backend so it doesn’t re-fire on next poll */
+      fetch(`/home/note-reminders/${item.id}/dismiss`, {
+        method: 'POST', credentials: 'same-origin',
+      }).catch(() => {});
+    }
+  } catch (_) { /* never crash the poller */ }
+}
+
+/* Start polling once the page is ready. Restarted on HTMX swaps via the
+   _scInit path — but since we use a module-level _bwFiredReminders map
+   (not on the element) the interval guard is a simple boolean on window. */
+function _startNoteReminderPoller() {
+  if (window._bwReminderPollerActive) return;
+  window._bwReminderPollerActive = true;
+  _checkNoteReminders();                           // immediate first check
+  setInterval(_checkNoteReminders, 60_000);        // then every 60 s
+}
+
+document.addEventListener('DOMContentLoaded', _startNoteReminderPoller);

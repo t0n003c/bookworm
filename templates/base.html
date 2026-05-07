@@ -651,6 +651,58 @@
     .dark .bw-callout-danger {
       background: #2d0a0a; border-color: #f87171; color: #fecaca;
     }
+
+    /* ── Tab blocks ───────────────────────────────────────── */
+    .bw-tabs {
+      border: 1px solid #e5e7eb; border-radius: .5rem;
+      overflow: hidden; margin: .65rem 0;
+    }
+    .dark .bw-tabs { border-color: #3f3f46; }
+    .bw-tabs-bar {
+      display: flex; align-items: stretch; gap: 2px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb; padding: 4px 8px 0;
+    }
+    .dark .bw-tabs-bar { background: #27272a; border-color: #3f3f46; }
+    .bw-tab-btn {
+      display: inline-block; padding: 5px 14px;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer; font-size: .82rem; font-weight: 500;
+      color: #6b7280; border: 1px solid transparent;
+      border-bottom: none; line-height: 1.4;
+      transition: background .12s, color .12s;
+      user-select: none; white-space: nowrap;
+    }
+    .bw-tab-btn:hover { background: #f3f4f6; color: #374151; }
+    /* faint pencil hint on hover so rename (dbl-click) is discoverable */
+    .bw-tab-btn:hover::after {
+      content: ' \270e'; font-size: .7rem; opacity: .4; margin-left: 2px;
+    }
+    .bw-tab-btn.bw-tab-active {
+      background: white; color: #0053e2;
+      border-color: #e5e7eb; border-bottom-color: white;
+      margin-bottom: -1px;
+    }
+    .dark .bw-tab-btn { color: #71717a; }
+    .dark .bw-tab-btn:hover { background: #3f3f46; color: #d4d4d8; }
+    .dark .bw-tab-btn.bw-tab-active {
+      background: #18181b; color: #60a5fa;
+      border-color: #3f3f46; border-bottom-color: #18181b;
+    }
+    .bw-tab-add {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; cursor: pointer; font-size: 1.2rem; line-height: 1;
+      color: #9ca3af; align-self: center; user-select: none;
+      border-radius: 4px; transition: color .12s, background .12s;
+      margin-left: 2px;
+    }
+    .bw-tab-add:hover { color: #0053e2; background: #eff6ff; }
+    .dark .bw-tab-add:hover { color: #60a5fa; background: rgba(96,165,250,.1); }
+    .bw-tab-panels { min-height: 60px; }
+    .bw-tab-panel { display: none; padding: .75rem 1rem; }
+    .bw-tab-panel.bw-tab-panel-active { display: block; }
+    .bw-tab-panel > :first-child { margin-top: 0; }
+    .bw-tab-panel > :last-child  { margin-bottom: 0; }
   </style>
 </head>
 <body class="h-full bg-gray-50 dark:bg-zinc-950 text-gray-800 dark:text-zinc-200 transition-colors duration-200">

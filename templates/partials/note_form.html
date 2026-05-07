@@ -1377,7 +1377,8 @@
       ADD_TAGS:  ['input', 'iframe', 'figure'],
       ADD_ATTR:  ['type', 'checked', 'disabled', 'class', 'style', 'target', 'rel',
                   'src', 'frameborder', 'allowfullscreen', 'allow',
-                  'width', 'height', 'data-bw-bookmark', 'data-bw-embed', 'data-bw-mention'],
+                  'width', 'height', 'data-bw-bookmark', 'data-bw-embed', 'data-bw-mention',
+                  'contenteditable'],
       ALLOW_DATA_ATTR: true,   // preserve any data-bw-* without listing each one
     };
 
@@ -2014,6 +2015,9 @@
 
     // Attach spell-check suggestion handler (right-click on misspelled word).
     if (typeof window.bwSpellInit === 'function') window.bwSpellInit();
+
+    // Expose current note ID globally so slash_commands.js can save reminders.
+    window._bwNoteId = {{ note.id if (is_edit and note) else 'null' }};
 
     {% if is_edit and note %}
     /* ── Image picker + paste/drop upload ──────────────────────────────── */
@@ -3485,5 +3489,107 @@
     }
   }
   _tryInit();
+})();
+</script>
+
+<!-- ===== Tab block interactions ===== -->
+<script>
+(function initTabBlocks() {
+  const pv = document.getElementById('md-live-preview');
+  if (!pv || pv._bwTabsReady) return;
+  pv._bwTabsReady = true;
+
+  /* Switch active tab inside a .bw-tabs block */
+  function _tabSwitch(block, idx) {
+    block.querySelectorAll('.bw-tab-btn').forEach(b => {
+      b.classList.toggle('bw-tab-active', parseInt(b.dataset.tabIdx, 10) === idx);
+    });
+    block.querySelectorAll('.bw-tab-panel').forEach(p => {
+      const active = parseInt(p.dataset.tabIdx, 10) === idx;
+      p.classList.toggle('bw-tab-panel-active', active);
+      p.style.display = active ? '' : 'none';
+    });
+    // Move caret into panel when in CE mode
+    const panel = block.querySelector(`.bw-tab-panel[data-tab-idx="${idx}"]`);
+    if (panel && pv.isContentEditable) {
+      const r = document.createRange();
+      r.selectNodeContents(panel);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    pv.dispatchEvent(new Event('input'));
+  }
+
+  /* Add a new tab + panel to a .bw-tabs block */
+  function _tabAdd(block) {
+    const existing = block.querySelectorAll('.bw-tab-btn');
+    const idx  = existing.length;
+    const bar  = block.querySelector('.bw-tabs-bar');
+    const addB = bar.querySelector('.bw-tab-add');
+
+    const btn = document.createElement('span');
+    btn.className      = 'bw-tab-btn';
+    btn.dataset.tabIdx = String(idx);
+    btn.textContent    = `Tab ${idx + 1}`;
+    btn.title          = 'Dbl-click to rename';
+    bar.insertBefore(btn, addB);
+
+    const panel = document.createElement('div');
+    panel.className      = 'bw-tab-panel';
+    panel.dataset.tabIdx = String(idx);
+    panel.style.display  = 'none';
+    panel.innerHTML      = '<p><br></p>';
+    block.querySelector('.bw-tab-panels').appendChild(panel);
+
+    _tabSwitch(block, idx);
+  }
+
+  /* Inline rename on double-click */
+  function _tabRename(btn) {
+    const prev = btn.textContent.trim();
+    btn.setAttribute('contenteditable', 'true');
+    btn.focus();
+    const r = document.createRange();
+    r.selectNodeContents(btn);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    function done() {
+      btn.textContent = btn.textContent.trim() || prev;
+      btn.removeAttribute('contenteditable');
+      pv.dispatchEvent(new Event('input'));
+    }
+    btn.addEventListener('blur',    done, { once: true });
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); btn.blur(); }
+      if (e.key === 'Escape') { btn.textContent = prev; btn.blur(); }
+    }, { once: true });
+  }
+
+  /* Delegated mousedown — capture phase so we beat contenteditable */
+  pv.addEventListener('mousedown', (e) => {
+    const addB = e.target.closest('.bw-tab-add');
+    const btn  = e.target.closest('.bw-tab-btn');
+    if (addB) {
+      e.preventDefault(); e.stopPropagation();
+      const block = addB.closest('.bw-tabs');
+      if (block) _tabAdd(block);
+    } else if (btn && !btn.getAttribute('contenteditable')) {
+      e.preventDefault(); e.stopPropagation();
+      const block = btn.closest('.bw-tabs');
+      if (block) _tabSwitch(block, parseInt(btn.dataset.tabIdx, 10));
+    }
+  }, true);
+
+  /* Delegated dblclick — rename */
+  pv.addEventListener('dblclick', (e) => {
+    const btn = e.target.closest('.bw-tab-btn');
+    if (!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    _tabRename(btn);
+  }, true);
 })();
 </script>
