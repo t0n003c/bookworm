@@ -1112,6 +1112,7 @@ async def init_db() -> None:
                 label         TEXT    NOT NULL DEFAULT '',
                 reminder_date TEXT    NOT NULL,
                 reminder_time TEXT    NOT NULL DEFAULT '09:00',
+                message       TEXT    NOT NULL DEFAULT '',
                 fired         INTEGER NOT NULL DEFAULT 0,
                 created_at    DATETIME         DEFAULT CURRENT_TIMESTAMP
             )
@@ -1120,6 +1121,13 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_note_reminders_user_date
                 ON note_reminders(user_id, reminder_date)
         """)
+        # additive: message column (existing DBs created before this column)
+        cur = await db.execute("PRAGMA table_info(note_reminders)")
+        _nr_cols = {r[1] for r in await cur.fetchall()}
+        if "message" not in _nr_cols:
+            await db.execute(
+                "ALTER TABLE note_reminders ADD COLUMN message TEXT NOT NULL DEFAULT ''"
+            )
 
         await db.commit()
 

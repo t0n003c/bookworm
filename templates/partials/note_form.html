@@ -3499,6 +3499,15 @@
   if (!pv || pv._bwTabsReady) return;
   pv._bwTabsReady = true;
 
+  /* Upgrade any legacy tab buttons (saved before .bw-tab-label/.bw-tab-edit) */
+  pv.querySelectorAll('.bw-tab-btn').forEach(btn => {
+    if (btn.querySelector('.bw-tab-label')) return; // already new format
+    const label = btn.textContent.trim();
+    btn.innerHTML =
+      `<span class="bw-tab-label">${label}</span>`
+      + '<span class="bw-tab-edit" title="Rename tab">✎</span>';
+  });
+
   /* Switch active tab inside a .bw-tabs block */
   function _tabSwitch(block, idx) {
     block.querySelectorAll('.bw-tab-btn').forEach(b => {
@@ -3529,11 +3538,12 @@
     const bar  = block.querySelector('.bw-tabs-bar');
     const addB = bar.querySelector('.bw-tab-add');
 
-    const btn = document.createElement('span');
+    const btn   = document.createElement('span');
     btn.className      = 'bw-tab-btn';
     btn.dataset.tabIdx = String(idx);
-    btn.textContent    = `Tab ${idx + 1}`;
-    btn.title          = 'Dbl-click to rename';
+    btn.innerHTML      =
+      `<span class="bw-tab-label">Tab ${idx + 1}</span>`
+      + '<span class="bw-tab-edit" title="Rename tab">✎</span>';
     bar.insertBefore(btn, addB);
 
     const panel = document.createElement('div');
@@ -3546,47 +3556,85 @@
     _tabSwitch(block, idx);
   }
 
-  /* Inline rename on double-click */
+  /* Inline rename — replaces the .bw-tab-label span with a live input */
   function _tabRename(btn) {
-    const prev = btn.textContent.trim();
-    btn.setAttribute('contenteditable', 'true');
-    btn.focus();
-    const r = document.createRange();
-    r.selectNodeContents(btn);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(r);
+    if (btn._bwRenaming) return;   // guard double-entry
+    btn._bwRenaming = true;
 
-    function done() {
-      btn.textContent = btn.textContent.trim() || prev;
-      btn.removeAttribute('contenteditable');
+    const labelEl = btn.querySelector('.bw-tab-label');
+    const editEl  = btn.querySelector('.bw-tab-edit');
+    const prev    = labelEl ? labelEl.textContent.trim() : btn.textContent.trim();
+
+    /* Build an inline input that looks like the tab text */
+    const inp = document.createElement('input');
+    inp.type  = 'text';
+    inp.value = prev;
+    Object.assign(inp.style, {
+      border: 'none', outline: 'none', background: 'transparent',
+      font: 'inherit', color: 'inherit', width: Math.max(60, prev.length * 9) + 'px',
+      padding: '0', margin: '0',
+    });
+
+    /* Swap label for input */
+    if (labelEl) labelEl.replaceWith(inp);
+    else { btn.textContent = ''; btn.appendChild(inp); }
+    if (editEl) editEl.style.display = 'none';
+
+    inp.focus();
+    inp.select();
+
+    function done(cancel) {
+      btn._bwRenaming = false;
+      const newLabel = document.createElement('span');
+      newLabel.className   = 'bw-tab-label';
+      newLabel.textContent = (cancel ? prev : (inp.value.trim() || prev));
+      inp.replaceWith(newLabel);
+      /* Re-add edit icon if it was hidden */
+      if (editEl) {
+        editEl.style.display = '';
+        btn.appendChild(editEl);
+      } else {
+        const ei = document.createElement('span');
+        ei.className = 'bw-tab-edit'; ei.title = 'Rename tab'; ei.textContent = '✎';
+        btn.appendChild(ei);
+      }
       pv.dispatchEvent(new Event('input'));
     }
-    btn.addEventListener('blur',    done, { once: true });
-    btn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter')  { e.preventDefault(); btn.blur(); }
-      if (e.key === 'Escape') { btn.textContent = prev; btn.blur(); }
-    }, { once: true });
+
+    inp.addEventListener('blur',    () => done(false), { once: true });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); done(false); }
+      if (e.key === 'Escape') { e.preventDefault(); done(true);  }
+    });
+    inp.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
   /* Delegated mousedown — capture phase so we beat contenteditable */
   pv.addEventListener('mousedown', (e) => {
-    const addB = e.target.closest('.bw-tab-add');
-    const btn  = e.target.closest('.bw-tab-btn');
+    const addB  = e.target.closest('.bw-tab-add');
+    const edit  = e.target.closest('.bw-tab-edit');
+    const btn   = e.target.closest('.bw-tab-btn');
     if (addB) {
       e.preventDefault(); e.stopPropagation();
       const block = addB.closest('.bw-tabs');
       if (block) _tabAdd(block);
-    } else if (btn && !btn.getAttribute('contenteditable')) {
+    } else if (edit) {
+      /* Single click on ✎ = rename */
+      e.preventDefault(); e.stopPropagation();
+      const b = edit.closest('.bw-tab-btn');
+      if (b) _tabRename(b);
+    } else if (btn && !btn._bwRenaming) {
       e.preventDefault(); e.stopPropagation();
       const block = btn.closest('.bw-tabs');
       if (block) _tabSwitch(block, parseInt(btn.dataset.tabIdx, 10));
     }
   }, true);
 
-  /* Delegated dblclick — rename */
+  /* Delegated dblclick — rename (alternative to clicking ✎) */
   pv.addEventListener('dblclick', (e) => {
-    const btn = e.target.closest('.bw-tab-btn');
+    const edit = e.target.closest('.bw-tab-edit');
+    const btn  = e.target.closest('.bw-tab-btn');
+    if (edit) return; // already handled by mousedown
     if (!btn) return;
     e.preventDefault(); e.stopPropagation();
     _tabRename(btn);

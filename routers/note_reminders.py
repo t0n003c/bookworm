@@ -34,15 +34,16 @@ async def _add_note_reminder(
     label: str,
     reminder_date: str,
     reminder_time: str,
+    message: str = "",
 ) -> int:
     async with get_db() as db:
         cur = await db.execute(
             """
             INSERT INTO note_reminders
-                (user_id, note_id, label, reminder_date, reminder_time)
-            VALUES (?, ?, ?, ?, ?)
+                (user_id, note_id, label, reminder_date, reminder_time, message)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (user_id, note_id, label, reminder_date, reminder_time),
+            (user_id, note_id, label, reminder_date, reminder_time, message),
         )
         await db.commit()
         return cur.lastrowid
@@ -53,7 +54,7 @@ async def _get_due_note_reminders(user_id: int, date_str: str) -> list[dict]:
     async with get_db() as db:
         cur = await db.execute(
             """
-            SELECT id, note_id, label, reminder_date, reminder_time
+            SELECT id, note_id, label, reminder_date, reminder_time, message
             FROM   note_reminders
             WHERE  user_id = ?
               AND  reminder_date = ?
@@ -70,6 +71,7 @@ async def _get_due_note_reminders(user_id: int, date_str: str) -> list[dict]:
             "label":         r[2],
             "reminder_date": r[3],
             "reminder_time": r[4],
+            "message":       r[5] or "",
         }
         for r in rows
     ]
@@ -98,11 +100,12 @@ async def add_note_reminder(request: Request):
         label    = str(body.get("label", "")).strip() or date_str
         raw_nid  = body.get("note_id")
         note_id  = int(raw_nid) if raw_nid is not None else None
+        message  = str(body.get("message", "")).strip()
 
         if len(date_str) != 10:
             return _err("invalid reminder_date")
 
-        rid = await _add_note_reminder(uid, note_id, label, date_str, time_str)
+        rid = await _add_note_reminder(uid, note_id, label, date_str, time_str, message)
         return JSONResponse({"id": rid, "ok": True})
     except PermissionError:
         return _err("not logged in", 401)

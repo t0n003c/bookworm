@@ -801,6 +801,24 @@ function _ceLinkDialog(ce, postDeleteRange) {
   textInput.style.marginBottom = '20px';
   textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } });
 
+  /* ---- message field ---- */
+  const msgLabel = mkLabel('Message <span style="opacity:0.6;font-weight:400">(optional)</span>');
+  const msgInp   = document.createElement('textarea');
+  msgInp.placeholder = 'Add a note…';
+  msgInp.rows = 2;
+  Object.assign(msgInp.style, {
+    width: '100%', boxSizing: 'border-box', resize: 'vertical',
+    padding: '8px 10px', fontSize: '14px', fontFamily: 'inherit',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '8px',
+    background:   dark ? '#27272a' : '#ffffff',
+    color:        dark ? '#f4f4f5' : '#111827',
+    outline: 'none', lineHeight: '1.45', marginBottom: '20px',
+    transition: 'border-color .15s',
+  });
+  msgInp.addEventListener('focus', () => msgInp.style.borderColor = '#0053e2');
+  msgInp.addEventListener('blur',  () => msgInp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+
   /* ---- buttons ---- */
   const btnRow = document.createElement('div');
   Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px' });
@@ -963,7 +981,7 @@ function _reminderDialog(ta, ce, actRange) {
     }
 
     /* ── Persist reminder to DB + request notification permission ── */
-    _saveNoteReminder(d, t, chip);
+    _saveNoteReminder(d, t, chip, msgInp.value.trim());
   }
 
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
@@ -1093,6 +1111,8 @@ function _reminderDialog(ta, ce, actRange) {
   card.appendChild(dateInp);
   card.appendChild(timeLabel);
   card.appendChild(timeRow);
+  card.appendChild(msgLabel);
+  card.appendChild(msgInp);
   card.appendChild(btnRow);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -1109,7 +1129,10 @@ function _insertTabBlock(ce, actRange) {
   const html =
     '<div class="bw-tabs" data-bw-tabs="">'
     + '<div class="bw-tabs-bar" contenteditable="false">'
-    + '<span class="bw-tab-btn bw-tab-active" data-tab-idx="0" title="Dbl-click to rename">Tab 1</span>'
+    + '<span class="bw-tab-btn bw-tab-active" data-tab-idx="0">'
+      + '<span class="bw-tab-label">Tab 1</span>'
+      + '<span class="bw-tab-edit" title="Rename tab">✎</span>'
+    + '</span>'
     + '<span class="bw-tab-add" title="Add tab">＋</span>'
     + '</div>'
     + '<div class="bw-tab-panels">'
@@ -1556,7 +1579,7 @@ window.bwSlashAttachCE = function (ce) { _attachCE(ce); };
  * Fire-and-forget: saves the reminder to the DB and requests notification
  * permission on the first call. Called from _reminderDialog insert().
  */
-function _saveNoteReminder(date, time, label) {
+function _saveNoteReminder(date, time, label, message) {
   /* Request browser notification permission (only prompts once) */
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
@@ -1571,6 +1594,7 @@ function _saveNoteReminder(date, time, label) {
       label:         label,
       reminder_date: date,
       reminder_time: time,
+      message:       message || '',
     }),
   }).catch(() => { /* silently ignore — reminder chip is already in the note */ });
 }
@@ -1608,6 +1632,33 @@ function _bwReminderToast(text, durationMs = 8000) {
 /** Key: `${id}-${date}` — prevents the same reminder firing twice in one session. */
 const _bwFiredReminders = {};
 
+/**
+ * Write a fired reminder into the same localStorage queue that the home-page
+ * bell uses, then refresh the badge count. Works on every page because the
+ * bell is part of the main shell (index.html), not just the home widget.
+ */
+function _bwLogMissedReminder(text, time) {
+  /* Delegate to home-page function when available (already manages storage) */
+  if (typeof _remLogMissed === 'function') {
+    _remLogMissed(text, time);
+    return;
+  }
+  /* Fallback: write to localStorage directly with the same key format */
+  try {
+    const key   = 'bw-missed-' + new Date().toISOString().slice(0, 10);
+    const queue = JSON.parse(localStorage.getItem(key) || '[]');
+    queue.push({ text, time, ts: Date.now() });
+    localStorage.setItem(key, JSON.stringify(queue));
+    /* Update badge count if the bell is in the current DOM */
+    const badge = document.getElementById('rem-bell-badge');
+    if (badge) {
+      const n = queue.length;
+      badge.textContent = n > 9 ? '9+' : String(n);
+      badge.classList.remove('hidden');
+    }
+  } catch (_) {}
+}
+
 async function _checkNoteReminders() {
   try {
     const now   = new Date();
@@ -1626,18 +1677,26 @@ async function _checkNoteReminders() {
       if (_bwFiredReminders[key]) continue;
       _bwFiredReminders[key] = true;
 
-      const msg = '\ud83d\udd14 ' + (item.label || 'Reminder');
+      const titleText = item.label || 'Reminder';
+      const bodyText  = item.message || '';
+      const toastText = '\ud83d\udd14 ' + titleText + (bodyText ? '\n' + bodyText : '');
 
-      /* Browser notification (only if granted) */
+      /* ── Browser notification ── */
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        try { new Notification('\ud83d\udcd6 BookWorm Reminder', { body: item.label || 'You have a reminder' }); }
-        catch (_) {}
+        try {
+          new Notification('\ud83d\udcd6 BookWorm Reminder', {
+            body: bodyText ? titleText + '\n' + bodyText : titleText,
+          });
+        } catch (_) {}
       }
 
-      /* In-app toast */
-      _bwReminderToast(msg);
+      /* ── In-app toast ── */
+      _bwReminderToast(toastText);
 
-      /* Dismiss on backend so it doesn’t re-fire on next poll */
+      /* ── Log to Missed Reminders bell (localStorage + badge) ── */
+      _bwLogMissedReminder(toastText, hhmm);
+
+      /* ── Dismiss on backend so it won’t re-fire ── */
       fetch(`/home/note-reminders/${item.id}/dismiss`, {
         method: 'POST', credentials: 'same-origin',
       }).catch(() => {});

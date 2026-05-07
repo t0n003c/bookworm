@@ -665,7 +665,8 @@
     }
     .dark .bw-tabs-bar { background: #27272a; border-color: #3f3f46; }
     .bw-tab-btn {
-      display: inline-block; padding: 5px 14px;
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 5px 10px 5px 14px;
       border-radius: 6px 6px 0 0;
       cursor: pointer; font-size: .82rem; font-weight: 500;
       color: #6b7280; border: 1px solid transparent;
@@ -674,10 +675,15 @@
       user-select: none; white-space: nowrap;
     }
     .bw-tab-btn:hover { background: #f3f4f6; color: #374151; }
-    /* faint pencil hint on hover so rename (dbl-click) is discoverable */
-    .bw-tab-btn:hover::after {
-      content: ' \270e'; font-size: .7rem; opacity: .4; margin-left: 2px;
+    /* pencil edit button inside each tab — hidden until hover */
+    .bw-tab-edit {
+      font-size: .7rem; opacity: 0; cursor: pointer;
+      transition: opacity .15s; padding: 1px 2px;
+      border-radius: 3px; line-height: 1; flex-shrink: 0;
     }
+    .bw-tab-btn:hover .bw-tab-edit { opacity: .55; }
+    .bw-tab-edit:hover { opacity: 1 !important; background: rgba(0,83,226,.1); color: #0053e2; }
+    .dark .bw-tab-edit:hover { background: rgba(96,165,250,.15); color: #60a5fa; }
     .bw-tab-btn.bw-tab-active {
       background: white; color: #0053e2;
       border-color: #e5e7eb; border-bottom-color: white;
