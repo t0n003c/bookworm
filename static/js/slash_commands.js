@@ -1767,7 +1767,8 @@ function _bwReminderToast(text, durationMs = 8000) {
     color:      dark ? '#f4f4f5' : '#111827',
     boxShadow:  '0 4px 20px rgba(0,0,0,.18)',
     border:     dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
-    fontSize: '14px', lineHeight: '1.45',
+    borderLeft: '3px solid #0053e2',
+    fontSize: '14px', lineHeight: '1.45', whiteSpace: 'pre-line',
     transition: 'opacity .3s', opacity: '1',
   });
   toast.textContent = text;
@@ -1849,7 +1850,9 @@ async function _checkNoteReminders() {
 
       const titleText = item.label || 'Reminder';
       const bodyText  = item.message || '';
-      const toastText = '\ud83d\udd14 ' + titleText + (bodyText ? '\n' + bodyText : '');
+      /* Pass title + optional message as newline-separated text.
+         _showReminderToast renders \n as <br>, and supplies its own 🔔 icon. */
+      const toastText = bodyText ? `${titleText}\n${bodyText}` : titleText;
 
       /* ── Browser notification ── */
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {

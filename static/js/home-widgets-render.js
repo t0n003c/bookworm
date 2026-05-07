@@ -754,7 +754,7 @@ function _remBellRender() {
     return `<div class="flex items-start gap-2 py-2 border-b border-gray-100 dark:border-zinc-800 last:border-0 group">
       <span class="text-wblue mt-0.5 flex-shrink-0">🔔</span>
       <div class="flex-1 min-w-0">
-        <p class="text-xs text-gray-700 dark:text-zinc-200 leading-snug">${_esc(r.text)}</p>
+        <p class="text-xs text-gray-700 dark:text-zinc-200 leading-snug">${_esc(r.text).replace(/\n/g, '<br>')}</p>
         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">${_esc(label)}</p>
       </div>
       <button onclick="event.stopPropagation();remBellDismiss(${r.ts})" title="Dismiss"
@@ -800,7 +800,7 @@ function _showReminderToast(text, durationMs = 8000) {
       <span class="flex-shrink-0 mt-0.5 text-xl" aria-hidden="true">🔔</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-bold text-wblue uppercase tracking-wider mb-0.5">Reminder</p>
-        <p class="text-sm text-gray-800 dark:text-zinc-100 leading-snug">${_esc(text)}</p>
+        <p class="text-sm text-gray-800 dark:text-zinc-100 leading-snug">${_esc(text).replace(/\n/g, '<br>')}</p>
       </div>
       <button data-rem-close aria-label="Dismiss"
               class="flex-shrink-0 -mt-0.5 -mr-1 p-1 rounded
