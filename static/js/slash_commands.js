@@ -862,14 +862,15 @@ function _ceLinkDialog(ce, postDeleteRange) {
  * read them back. The chip is contenteditable="false" so it stays intact
  * inside the note's contenteditable preview.
  */
-function _buildReminderChip(date, time, label, msg, rid) {
+function _buildReminderChip(date, time, label, msg, rid, plain) {
   const chip = document.createElement('span');
-  chip.className = 'bw-reminder-chip';
+  chip.className = 'bw-reminder-chip' + (plain ? ' bw-rc-plain' : '');
   chip.setAttribute('contenteditable', 'false');
   chip.dataset.bwDate  = date;
   chip.dataset.bwTime  = time;
   chip.dataset.bwLabel = label;
   chip.dataset.bwMsg   = msg || '';
+  chip.dataset.bwStyle = plain ? 'plain' : '';
   if (rid) chip.dataset.bwRid = String(rid);
 
   const main = document.createElement('span');
@@ -960,9 +961,10 @@ function _reminderDialog(ta, ce, actRange, editChip) {
   function close() { overlay.remove(); }
 
   async function insert() {
-    const d   = dateInp.value;
-    const t   = (hrSel.value || '09') + ':' + (minSel.value || '00');
-    const msg = msgInp.value.trim();
+    const d     = dateInp.value;
+    const t     = (hrSel.value || '09') + ':' + (minSel.value || '00');
+    const msg   = msgInp.value.trim();
+    const plain = !bubbleChk.checked;   // true = no background bubble
     if (!d) { dateInp.focus(); return; }
 
     // Human-readable date label: 'May 5, 2026'
@@ -982,10 +984,12 @@ function _reminderDialog(ta, ce, actRange, editChip) {
       close();
 
       // Patch data attributes and visible text on the chip in the preview
-      editChip.dataset.bwDate = d;
-      editChip.dataset.bwTime = t;
-      editChip.dataset.bwMsg  = msg;
+      editChip.dataset.bwDate  = d;
+      editChip.dataset.bwTime  = t;
+      editChip.dataset.bwMsg   = msg;
       editChip.dataset.bwLabel = chipLabel;
+      editChip.dataset.bwStyle = plain ? 'plain' : '';
+      editChip.classList.toggle('bw-rc-plain', plain);
       const mainEl = editChip.querySelector('.bw-rc-main');
       if (mainEl) mainEl.textContent = chipLabel;
       let msgEl = editChip.querySelector('.bw-rc-msg');
@@ -1021,7 +1025,7 @@ function _reminderDialog(ta, ce, actRange, editChip) {
       const rid = await _saveNoteReminder(d, t, chipLabel, msg);
       close();
 
-      const chipEl = _buildReminderChip(d, t, chipLabel, msg, rid);
+      const chipEl = _buildReminderChip(d, t, chipLabel, msg, rid, plain);
 
       if (ta) {
         /* Textarea mode: insert raw outerHTML at cursor */
@@ -1167,6 +1171,21 @@ function _reminderDialog(ta, ce, actRange, editChip) {
   msgInp.addEventListener('blur',  () => msgInp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
   if (isEdit && editChip.dataset.bwMsg) msgInp.value = editChip.dataset.bwMsg;
 
+  /* ---- "show as bubble" toggle ---- */
+  const bubbleRow = document.createElement('label');
+  Object.assign(bubbleRow.style, {
+    display: 'flex', alignItems: 'center', gap: '8px',
+    cursor: 'pointer', userSelect: 'none',
+    fontSize: '.82rem', marginTop: '10px',
+    color: dark ? '#a1a1aa' : '#6b7280',
+  });
+  const bubbleChk = document.createElement('input');
+  bubbleChk.type    = 'checkbox';
+  bubbleChk.checked = isEdit ? editChip.dataset.bwStyle !== 'plain' : true;
+  Object.assign(bubbleChk.style, { width: '14px', height: '14px', cursor: 'pointer', accentColor: '#0053e2' });
+  bubbleRow.appendChild(bubbleChk);
+  bubbleRow.appendChild(document.createTextNode('Show as bubble'));
+
   /* ---- buttons ---- */
   const btnRow = document.createElement('div');
   Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px' });
@@ -1206,6 +1225,7 @@ function _reminderDialog(ta, ce, actRange, editChip) {
   card.appendChild(timeRow);
   card.appendChild(msgLabel);
   card.appendChild(msgInp);
+  card.appendChild(bubbleRow);
   card.appendChild(btnRow);
   overlay.appendChild(card);
   document.body.appendChild(overlay);

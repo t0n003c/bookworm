@@ -710,6 +710,25 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px;
     }
     .dark .bw-rc-msg { color: #9ca3af; }
+
+    /* plain (no-bubble) variant — inline text only, no tinted background */
+    .bw-reminder-chip.bw-rc-plain {
+      background: none; border: none; border-left: none;
+      padding: 0; border-radius: 0;
+      font-size: inherit; line-height: inherit;
+      text-decoration: underline dotted #0053e2;
+      text-underline-offset: 2px;
+    }
+    .dark .bw-reminder-chip.bw-rc-plain { text-decoration-color: #60a5fa; }
+    .bw-reminder-chip.bw-rc-plain:hover {
+      background: none; border: none;
+      text-decoration-style: solid;
+    }
+    /* hide the message preview line in plain mode (no room without the bubble) */
+    .bw-reminder-chip.bw-rc-plain .bw-rc-msg { display: none; }
+    .bw-reminder-chip.bw-rc-plain .bw-rc-main {
+      font-weight: inherit; color: inherit;
+    }
     .bw-tab-btn.bw-tab-active {
       background: white; color: #0053e2;
       border-color: #e5e7eb; border-bottom-color: white;
