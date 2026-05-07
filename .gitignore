@@ -38,6 +38,8 @@ openapi_*.json
 
 # Database (may contain PII)
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
