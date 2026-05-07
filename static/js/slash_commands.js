@@ -856,14 +856,45 @@ function _ceLinkDialog(ce, postDeleteRange) {
    Works in both textarea (ta != null) and contenteditable (ce != null) modes.
    actRange is the collapsed Range at the deletion site (CE mode only).
    ───────────────────────────────────────── */
-function _reminderDialog(ta, ce, actRange) {
+/**
+ * Build a reminder chip DOM element.
+ * Stores all reminder data as data-* attributes so the edit dialog can
+ * read them back. The chip is contenteditable="false" so it stays intact
+ * inside the note's contenteditable preview.
+ */
+function _buildReminderChip(date, time, label, msg, rid) {
+  const chip = document.createElement('span');
+  chip.className = 'bw-reminder-chip';
+  chip.setAttribute('contenteditable', 'false');
+  chip.dataset.bwDate  = date;
+  chip.dataset.bwTime  = time;
+  chip.dataset.bwLabel = label;
+  chip.dataset.bwMsg   = msg || '';
+  if (rid) chip.dataset.bwRid = String(rid);
+
+  const main = document.createElement('span');
+  main.className   = 'bw-rc-main';
+  main.textContent = label;
+  chip.appendChild(main);
+
+  if (msg) {
+    const msgEl = document.createElement('span');
+    msgEl.className   = 'bw-rc-msg';
+    msgEl.textContent = msg;
+    chip.appendChild(msgEl);
+  }
+  return chip;
+}
+
+
+function _reminderDialog(ta, ce, actRange, editChip) {
   const prev = document.getElementById('bw-reminder-dialog');
   if (prev) prev.remove();
 
   const dark    = document.documentElement.classList.contains('dark');
+  const isEdit  = !!editChip;
   const today   = new Date();
-  /* Use LOCAL calendar date, not UTC (toISOString gives UTC which is wrong
-     for US evening users where UTC is already the next day). */
+  /* Use LOCAL calendar date, not UTC */
   const defDate = [
     today.getFullYear(),
     String(today.getMonth() + 1).padStart(2, '0'),
@@ -928,48 +959,95 @@ function _reminderDialog(ta, ce, actRange) {
 
   function close() { overlay.remove(); }
 
-  function insert() {
-    const d = dateInp.value;
-    const t = (hrSel.value || '09') + ':' + (minSel.value || '00');
+  async function insert() {
+    const d   = dateInp.value;
+    const t   = (hrSel.value || '09') + ':' + (minSel.value || '00');
+    const msg = msgInp.value.trim();
     if (!d) { dateInp.focus(); return; }
 
-    // Format: 📅 May 5, 2026 · 09:00
+    // Human-readable date label: 'May 5, 2026'
     const [yr, mo, dy] = d.split('-').map(Number);
-    const label = new Date(yr, mo - 1, dy).toLocaleDateString('en-US', {
+    const dateLabel = new Date(yr, mo - 1, dy).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
     });
-    const chip = `\ud83d\udcc5 ${label} \u00b7 ${t}`;
-    close();
+    const chipLabel = `\ud83d\udcc5 ${dateLabel} \u00b7 ${t}`;
 
-    if (ta) {
-      /* ── Textarea mode ── */
-      const pos    = taInsertPos !== null ? taInsertPos : ta.value.length;
-      const before = ta.value.slice(0, pos);
-      const after  = ta.value.slice(pos);
-      ta.value = before + chip + after;
-      ta.setSelectionRange(pos + chip.length, pos + chip.length);
-      ta.focus();
-      ta.dispatchEvent(new Event('input'));
-    } else if (ce && actRange) {
-      /* ── Contenteditable mode ── */
-      try {
-        const r    = actRange.cloneRange();
-        const node = document.createTextNode(chip);
-        r.insertNode(node);
-        r.setStartAfter(node);
-        r.collapse(true);
-        ce.focus();
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(r);
-      } catch (err) {
-        console.warn('[bw-reminder] insertNode failed:', err);
+    // Disable the action button while we talk to the server
+    insertBtn.disabled = true;
+    insertBtn.textContent = isEdit ? 'Saving\u2026' : 'Saving\u2026';
+
+    if (isEdit) {
+      /* ── UPDATE existing chip ── */
+      const rid = editChip.dataset.bwRid;
+      close();
+
+      // Patch data attributes and visible text on the chip in the preview
+      editChip.dataset.bwDate = d;
+      editChip.dataset.bwTime = t;
+      editChip.dataset.bwMsg  = msg;
+      editChip.dataset.bwLabel = chipLabel;
+      const mainEl = editChip.querySelector('.bw-rc-main');
+      if (mainEl) mainEl.textContent = chipLabel;
+      let msgEl = editChip.querySelector('.bw-rc-msg');
+      if (msg) {
+        if (!msgEl) {
+          msgEl = document.createElement('span');
+          msgEl.className = 'bw-rc-msg';
+          editChip.appendChild(msgEl);
+        }
+        msgEl.textContent = msg;
+      } else if (msgEl) {
+        msgEl.remove();
       }
-      ce.dispatchEvent(new Event('input'));
-    }
 
-    /* ── Persist reminder to DB + request notification permission ── */
-    _saveNoteReminder(d, t, chip, msgInp.value.trim());
+      // Sync preview → textarea → triggers autosave
+      if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+      const liveTA = document.getElementById('note-content');
+      if (liveTA) liveTA.dispatchEvent(new Event('input'));
+
+      // PATCH the DB record; reset fired=0 so it fires at the new time
+      if (rid) {
+        fetch(`/home/note-reminders/${rid}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            reminder_date: d, reminder_time: t,
+            label: chipLabel, message: msg,
+          }),
+        }).catch(err => console.warn('[bw-reminder] PATCH failed:', err));
+      }
+    } else {
+      /* ── INSERT new chip ── */
+      const rid = await _saveNoteReminder(d, t, chipLabel, msg);
+      close();
+
+      const chipEl = _buildReminderChip(d, t, chipLabel, msg, rid);
+
+      if (ta) {
+        /* Textarea mode: insert raw outerHTML at cursor */
+        const pos    = taInsertPos !== null ? taInsertPos : ta.value.length;
+        const html   = chipEl.outerHTML;
+        ta.value = ta.value.slice(0, pos) + html + ta.value.slice(pos);
+        ta.setSelectionRange(pos + html.length, pos + html.length);
+        ta.focus();
+        ta.dispatchEvent(new Event('input'));
+      } else if (ce && actRange) {
+        /* Contenteditable mode: insert the DOM node directly */
+        try {
+          const r = actRange.cloneRange();
+          r.insertNode(chipEl);
+          r.setStartAfter(chipEl);
+          r.collapse(true);
+          ce.focus();
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+        } catch (err) {
+          console.warn('[bw-reminder] insertNode failed:', err);
+        }
+        ce.dispatchEvent(new Event('input'));
+      }
+    }
   }
 
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
@@ -987,7 +1065,7 @@ function _reminderDialog(ta, ce, actRange) {
     fontWeight: '600', fontSize: '15px',
     color: dark ? '#f4f4f5' : '#111827',
   });
-  titleEl.innerHTML = '<span>\ud83d\udcc5</span><span>Set Reminder</span>';
+  titleEl.innerHTML = `<span>\ud83d\udcc5</span><span>${isEdit ? 'Edit Reminder' : 'Set Reminder'}</span>`;
   const closeBtn = document.createElement('button');
   closeBtn.innerHTML = '&times;';
   Object.assign(closeBtn.style, {
@@ -1062,6 +1140,14 @@ function _reminderDialog(ta, ce, actRange) {
   timeRow.appendChild(colon);
   timeRow.appendChild(minSel);
 
+  /* Pre-fill all fields when editing an existing chip */
+  if (isEdit) {
+    if (editChip.dataset.bwDate) dateInp.value = editChip.dataset.bwDate;
+    const [eh = '09', em = '00'] = (editChip.dataset.bwTime || '09:00').split(':');
+    hrSel.value  = eh;
+    minSel.value = em;
+  }
+
   /* ---- message field ---- */
   const msgLabel = mkLabel('Message <span style="opacity:0.6;font-weight:400">(optional)</span>');
   const msgInp   = document.createElement('textarea');
@@ -1079,6 +1165,7 @@ function _reminderDialog(ta, ce, actRange) {
   });
   msgInp.addEventListener('focus', () => msgInp.style.borderColor = '#0053e2');
   msgInp.addEventListener('blur',  () => msgInp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
+  if (isEdit && editChip.dataset.bwMsg) msgInp.value = editChip.dataset.bwMsg;
 
   /* ---- buttons ---- */
   const btnRow = document.createElement('div');
@@ -1098,7 +1185,7 @@ function _reminderDialog(ta, ce, actRange) {
   cancelBtn.onclick = close;
 
   const insertBtn = document.createElement('button');
-  insertBtn.textContent = 'Insert \u23ce';
+  insertBtn.textContent = isEdit ? 'Update \u23ce' : 'Insert \u23ce';
   Object.assign(insertBtn.style, {
     padding: '8px 16px', background: '#0053e2', color: 'white',
     border: 'none', borderRadius: '8px', fontSize: '14px',
@@ -1549,6 +1636,16 @@ function _scInit() {
   setTimeout(() => {
     const td = window._bwTurndown;
     if (!td || td._bwKeepConfigured) return;
+
+    // Inline reminder chip — emit outerHTML verbatim so all data-* survive.
+    // Must use addRule (not keep()) because keep() uses content-wrapping,
+    // not outerHTML, so data attributes would be lost.
+    td.addRule('bwReminderChip', {
+      filter:      node => node.nodeName === 'SPAN' && node.classList?.contains('bw-reminder-chip'),
+      replacement: (_c, node) => node.outerHTML,
+    });
+
+    // Block-level custom elements — keep() is appropriate here.
     td.keep(node =>
       node.nodeName === 'DETAILS' ||
       node.nodeName === 'SUMMARY' ||
@@ -1563,6 +1660,20 @@ function _scInit() {
     );
     td._bwKeepConfigured = true;
   }, 50);
+
+  // Delegated click on reminder chips in the live preview — opens edit dialog.
+  // Uses capture phase so it fires before contenteditable focus handling.
+  // (ce is already declared at the top of _scInit)
+  if (ce && !ce._bwReminderClickBound) {
+    ce._bwReminderClickBound = true;
+    ce.addEventListener('mousedown', (e) => {
+      const chip = e.target.closest('.bw-reminder-chip');
+      if (!chip) return;
+      e.preventDefault();
+      e.stopPropagation();
+      _reminderDialog(null, ce, null, chip);
+    }, true);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', _scInit);
@@ -1585,32 +1696,36 @@ window.bwSlashAttachCE = function (ce) { _attachCE(ce); };
  * Fire-and-forget: saves the reminder to the DB and requests notification
  * permission on the first call. Called from _reminderDialog insert().
  */
-function _saveNoteReminder(date, time, label, message) {
+/** Save reminder to DB. Returns the reminder id, or null on failure. */
+async function _saveNoteReminder(date, time, label, message) {
   /* Request browser notification permission (only prompts once) */
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
-
   const noteId = (typeof window._bwNoteId !== 'undefined') ? window._bwNoteId : null;
-  fetch('/home/note-reminders/add', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      note_id:       noteId,
-      label:         label,
-      reminder_date: date,
-      reminder_time: time,
-      message:       message || '',
-    }),
-  })
-  .then(res => {
+  try {
+    const res = await fetch('/home/note-reminders/add', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        note_id:       noteId,
+        label:         label,
+        reminder_date: date,
+        reminder_time: time,
+        message:       message || '',
+      }),
+    });
     if (!res.ok) {
-      res.text().then(t =>
-        console.warn('[bw-reminder] save failed', res.status, t)
-      );
+      const txt = await res.text().catch(() => '');
+      console.warn('[bw-reminder] save failed', res.status, txt);
+      return null;
     }
-  })
-  .catch(err => console.warn('[bw-reminder] network error saving reminder:', err));
+    const data = await res.json();
+    return data.id ?? null;
+  } catch (err) {
+    console.warn('[bw-reminder] network error saving reminder:', err);
+    return null;
+  }
 }
 
 /**

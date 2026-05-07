@@ -144,3 +144,43 @@ async def dismiss_note_reminder(request: Request, reminder_id: int):
     except Exception:
         log.exception("dismiss_note_reminder reminder_id=%s", reminder_id)
         return _err("server error", 500)
+
+
+@router.patch("/note-reminders/{reminder_id}")
+async def update_note_reminder(request: Request, reminder_id: int):
+    """Update an existing reminder's date, time, label, and/or message.
+    Resets fired=0 so the updated reminder fires at the new time.
+    """
+    try:
+        uid  = _uid(request)
+        body = await request.json()
+        date_str = str(body.get("reminder_date", "")).strip()
+        time_str = str(body.get("reminder_time", "09:00")).strip()
+        label    = str(body.get("label", "")).strip()
+        message  = str(body.get("message", "")).strip()
+
+        if len(date_str) != 10:
+            return _err("invalid reminder_date")
+
+        async with get_db() as db:
+            cur = await db.execute(
+                """
+                UPDATE note_reminders
+                   SET reminder_date = ?,
+                       reminder_time = ?,
+                       label         = ?,
+                       message       = ?,
+                       fired         = 0
+                 WHERE id = ? AND user_id = ?
+                """,
+                (date_str, time_str, label, message, reminder_id, uid),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                return _err("reminder not found", 404)
+        return JSONResponse({"ok": True})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception:
+        log.exception("update_note_reminder reminder_id=%s", reminder_id)
+        return _err("server error", 500)
