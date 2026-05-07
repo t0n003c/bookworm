@@ -801,24 +801,6 @@ function _ceLinkDialog(ce, postDeleteRange) {
   textInput.style.marginBottom = '20px';
   textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } });
 
-  /* ---- message field ---- */
-  const msgLabel = mkLabel('Message <span style="opacity:0.6;font-weight:400">(optional)</span>');
-  const msgInp   = document.createElement('textarea');
-  msgInp.placeholder = 'Add a note…';
-  msgInp.rows = 2;
-  Object.assign(msgInp.style, {
-    width: '100%', boxSizing: 'border-box', resize: 'vertical',
-    padding: '8px 10px', fontSize: '14px', fontFamily: 'inherit',
-    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
-    borderRadius: '8px',
-    background:   dark ? '#27272a' : '#ffffff',
-    color:        dark ? '#f4f4f5' : '#111827',
-    outline: 'none', lineHeight: '1.45', marginBottom: '20px',
-    transition: 'border-color .15s',
-  });
-  msgInp.addEventListener('focus', () => msgInp.style.borderColor = '#0053e2');
-  msgInp.addEventListener('blur',  () => msgInp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
-
   /* ---- buttons ---- */
   const btnRow = document.createElement('div');
   Object.assign(btnRow.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px' });
@@ -1073,6 +1055,24 @@ function _reminderDialog(ta, ce, actRange) {
   timeRow.appendChild(hrSel);
   timeRow.appendChild(colon);
   timeRow.appendChild(minSel);
+
+  /* ---- message field ---- */
+  const msgLabel = mkLabel('Message <span style="opacity:0.6;font-weight:400">(optional)</span>');
+  const msgInp   = document.createElement('textarea');
+  msgInp.placeholder = 'Add a note…';
+  msgInp.rows = 2;
+  Object.assign(msgInp.style, {
+    width: '100%', boxSizing: 'border-box', resize: 'vertical',
+    padding: '8px 10px', fontSize: '14px', fontFamily: 'inherit',
+    border:       dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '8px',
+    background:   dark ? '#27272a' : '#ffffff',
+    color:        dark ? '#f4f4f5' : '#111827',
+    outline: 'none', lineHeight: '1.45', marginBottom: '20px',
+    transition: 'border-color .15s',
+  });
+  msgInp.addEventListener('focus', () => msgInp.style.borderColor = '#0053e2');
+  msgInp.addEventListener('blur',  () => msgInp.style.borderColor = dark ? '#3f3f46' : '#e5e7eb');
 
   /* ---- buttons ---- */
   const btnRow = document.createElement('div');

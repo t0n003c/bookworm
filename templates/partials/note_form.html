@@ -3583,16 +3583,22 @@
     inp.focus();
     inp.select();
 
+    /* _finished prevents done() running twice when Enter → blur both fire */
+    let _finished = false;
     function done(cancel) {
+      if (_finished) return;
+      _finished = true;
       btn._bwRenaming = false;
       const newLabel = document.createElement('span');
       newLabel.className   = 'bw-tab-label';
       newLabel.textContent = (cancel ? prev : (inp.value.trim() || prev));
-      inp.replaceWith(newLabel);
-      /* Re-add edit icon if it was hidden */
+      /* inp may already be detached if browser moved it; guard with isConnected */
+      if (inp.isConnected) inp.replaceWith(newLabel);
+      else btn.prepend(newLabel);
+      /* Re-add edit icon */
       if (editEl) {
         editEl.style.display = '';
-        btn.appendChild(editEl);
+        if (!btn.contains(editEl)) btn.appendChild(editEl);
       } else {
         const ei = document.createElement('span');
         ei.className = 'bw-tab-edit'; ei.title = 'Rename tab'; ei.textContent = '✎';
