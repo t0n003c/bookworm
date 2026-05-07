@@ -862,7 +862,13 @@ function _reminderDialog(ta, ce, actRange) {
 
   const dark    = document.documentElement.classList.contains('dark');
   const today   = new Date();
-  const defDate = today.toISOString().slice(0, 10);          // 'YYYY-MM-DD'
+  /* Use LOCAL calendar date, not UTC (toISOString gives UTC which is wrong
+     for US evening users where UTC is already the next day). */
+  const defDate = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
   // Capture TA insertion point NOW — before the dialog steals focus.
   const taInsertPos = ta ? ta.selectionStart : null;
 
@@ -1596,7 +1602,15 @@ function _saveNoteReminder(date, time, label, message) {
       reminder_time: time,
       message:       message || '',
     }),
-  }).catch(() => { /* silently ignore — reminder chip is already in the note */ });
+  })
+  .then(res => {
+    if (!res.ok) {
+      res.text().then(t =>
+        console.warn('[bw-reminder] save failed', res.status, t)
+      );
+    }
+  })
+  .catch(err => console.warn('[bw-reminder] network error saving reminder:', err));
 }
 
 /**
@@ -1659,20 +1673,41 @@ function _bwLogMissedReminder(text, time) {
   } catch (_) {}
 }
 
+/** Convert 'HH:MM' string to total minutes since midnight. */
+function _bwToMins(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
 async function _checkNoteReminders() {
   try {
-    const now   = new Date();
-    const ymd   = now.toISOString().slice(0, 10);
-    const hhmm  = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const now = new Date();
+    /* Always use LOCAL calendar date — toISOString() gives UTC which is wrong
+       for US users in the evening where UTC is already the next calendar day. */
+    const ymd  = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+    const hhmm    = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const nowMins = now.getHours() * 60 + now.getMinutes();
 
     const res = await fetch('/home/note-reminders/due?date=' + ymd,
                             { credentials: 'same-origin' });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn('[bw-reminder] /due returned', res.status);
+      return;
+    }
     const items = await res.json();
     if (!Array.isArray(items)) return;
 
     for (const item of items) {
-      if (item.reminder_time !== hhmm) continue;
+      const remMins = _bwToMins(item.reminder_time);
+      /* Fire if reminder is within the past 3 minutes (handles throttled tabs
+         and the up-to-60 s gap between polls). Skip anything older than that
+         so we don't blast stale reminders when the browser wakes up. */
+      if (remMins > nowMins || remMins < nowMins - 3) continue;
+
       const key = item.id + '-' + ymd;
       if (_bwFiredReminders[key]) continue;
       _bwFiredReminders[key] = true;
@@ -1701,7 +1736,9 @@ async function _checkNoteReminders() {
         method: 'POST', credentials: 'same-origin',
       }).catch(() => {});
     }
-  } catch (_) { /* never crash the poller */ }
+  } catch (err) {
+    console.warn('[bw-reminder] _checkNoteReminders error:', err);
+  }
 }
 
 /* Start polling once the page is ready. Restarted on HTMX swaps via the
