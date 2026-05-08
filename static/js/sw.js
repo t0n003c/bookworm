@@ -42,7 +42,10 @@ self.addEventListener('activate', event => {
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
-/** Broadcast a typed message to all controlled page clients. */
+/** Broadcast a typed message to all controlled page clients.
+ * Only used for navigation-level events (e.g. a full page was refreshed
+ * from the network while the app was open).  Never call for static assets
+ * or API partials — it would spam the UI. */
 function _broadcast(msg) {
   self.clients.matchAll({ includeUncontrolled: false, type: 'window' })
     .then(clients => clients.forEach(c => c.postMessage(msg)));
@@ -79,8 +82,11 @@ self.addEventListener('fetch', event => {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => {
             cache.put(request, clone);
-            /* Tell the page that fresh content is cached and ready */
-            _broadcast({ type: 'BW_CACHE_UPDATED', url: request.url });
+            /* Only broadcast for full-page navigations, not every static
+             * asset — otherwise the page gets flooded with messages. */
+            if (request.mode === 'navigate') {
+              _broadcast({ type: 'BW_CACHE_UPDATED', url: request.url });
+            }
           });
         }
         return response;

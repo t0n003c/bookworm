@@ -1237,14 +1237,13 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
           /* Hourly update check */
           setInterval(function () { reg.update(); }, 3600 * 1000);
 
-          /* Listen for messages from the SW (e.g. cache updated) */
+          /* Listen for messages from the SW */
           navigator.serviceWorker.addEventListener('message', function (evt) {
-            if (evt.data && evt.data.type === 'BW_CACHE_UPDATED') {
-              /* SW has cached fresh content — toast if user had been offline */
-              if (typeof _bwToast === 'function') {
-                _bwToast('Content updated in background.', 'info', 3000);
-              }
-            }
+            /* BW_CACHE_UPDATED fires when the SW has cached a fresh full-page
+             * navigation response.  No toast — this is silent background work
+             * the user doesn't need to know about.  Hook here if you ever
+             * need to act on a cache refresh (e.g. show a 'reload for update'
+             * banner for a true app-shell update). */
           });
         })
         .catch(function (err) {
