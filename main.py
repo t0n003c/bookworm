@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from auth_middleware import AuthMiddleware
 from security import load_secret_key
@@ -146,6 +147,17 @@ app.add_middleware(
 # Outermost — runs last on responses, so it stamps headers on everything.
 app.add_middleware(_SecurityHeadersMiddleware)
 
+# When BookWorm runs behind a reverse proxy (Cloudflare Tunnel, nginx, Traefik…)
+# the proxy terminates TLS and forwards requests over plain HTTP on localhost.
+# BW_TRUST_PROXY=true tells uvicorn's ProxyHeadersMiddleware to read the
+# X-Forwarded-Proto / X-Forwarded-For headers so:
+#   • request.url.scheme becomes 'https' (required for Secure cookies)
+#   • request.client.host is the real visitor IP, not 127.0.0.1
+# ⚠️ Only enable this when a trusted proxy is actually in front; never on a
+#     server exposed directly to the internet without a proxy.
+if os.getenv("BW_TRUST_PROXY", "false").lower() == "true":
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 app.mount("/static",  StaticFiles(directory="static"),          name="static")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)),   name="uploads")
 
@@ -200,14 +212,20 @@ async def service_worker():
 
 
 @app.get("/manifest.json", include_in_schema=False)
-async def pwa_manifest(request: Request):
-    """Dynamic web-app manifest so icons resolve relative to host."""
-    base = str(request.base_url).rstrip("/")
+async def pwa_manifest():
+    """Web-app manifest with root-relative icon paths.
+
+    Paths start with '/' so they resolve correctly regardless of what host,
+    port, or tunnel (Cloudflare, ngrok, etc.) is serving the app.  Baking
+    in an absolute base URL like the old version did is an anti-pattern —
+    it breaks the moment the address changes.
+    """
     manifest = {
         "name": "BookWorm",
         "short_name": "BookWorm",
         "description": "Team note-taking app — notes, reminders, CRM & more.",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
         "background_color": "#1b4332",
         "theme_color": "#1b4332",
@@ -215,19 +233,19 @@ async def pwa_manifest(request: Request):
         "categories": ["productivity", "utilities"],
         "icons": [
             {
-                "src": f"{base}/static/img/icons/icon-192.png",
+                "src": "/static/img/icons/icon-192.png",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{base}/static/img/icons/icon-512.png",
+                "src": "/static/img/icons/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{base}/static/img/icons/icon-maskable-512.png",
+                "src": "/static/img/icons/icon-maskable-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
