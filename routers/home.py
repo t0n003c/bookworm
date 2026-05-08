@@ -309,6 +309,15 @@ _RSS_UA = (
 
 _PROXY = 'http://sysproxy.wal-mart.com:8080'
 
+# Friendly messages for known curl exit codes (CURLE_* constants)
+_CURL_EXIT_MSGS: dict[int, str] = {
+    6:  'Could not resolve the feed domain — check the URL.',
+    7:  'Could not connect to the feed server.',
+    28: 'The feed server timed out — try again later.',
+    35: 'SSL/TLS handshake failed with the feed server.',
+    52: 'Feed server returned an empty response.',
+}
+
 
 def _curl_fetch(url: str, extra_headers: list | None = None,
                timeout: int = 15) -> tuple[bytes, str]:
@@ -336,7 +345,19 @@ def _curl_fetch(url: str, extra_headers: list | None = None,
         )
 
         if result.returncode not in (0, 23):   # 23 = write error (e.g. piped away)
-            raise urllib.error.URLError(result.stderr.strip() or f'curl exited {result.returncode}')
+            parts_err = result.stdout.strip().splitlines()
+            http_code = parts_err[1].strip() if len(parts_err) > 1 else ''
+            if result.returncode == 56 and http_code in ('000', ''):
+                # Proxy CONNECT tunnel was closed — almost always a corporate
+                # proxy block (HTTP 403 URLBlocked from sysproxy.wal-mart.com).
+                raise urllib.error.URLError(
+                    'This feed URL is blocked by the Walmart corporate proxy. '
+                    'Try a different URL, or ask IT to allow it.'
+                )
+            msg = _CURL_EXIT_MSGS.get(result.returncode) or (
+                result.stderr.strip() or f'Network error (curl code {result.returncode})'
+            )
+            raise urllib.error.URLError(msg)
 
         parts = result.stdout.strip().splitlines()
         ct    = parts[0] if parts else ''
