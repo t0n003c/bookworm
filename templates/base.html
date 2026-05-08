@@ -870,100 +870,271 @@
   })();
 </script>
 
-{# ══ PWA install banner ════════════════════════════════════════════════════ #}
-{# Hidden by default. JS below shows it when the install prompt is available   #}
-{# or when iOS Safari is detected. Shared across all pages via base.html.      #}
-<div id="bw-pwa-banner" aria-live="polite" aria-label="Install BookWorm app"
-     style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
-            padding:0 1rem 1rem;pointer-events:none;">
-  <div id="bw-pwa-card"
-       style="pointer-events:auto;max-width:480px;margin:0 auto;
-              background:#fff;border:1px solid #e5e7eb;
-              border-top:3px solid #0053e2;
-              border-radius:1rem 1rem 0.75rem 0.75rem;
-              box-shadow:0 -4px 32px rgba(0,0,0,.14);
-              padding:1rem 1.25rem;
-              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;">
+{# ══ PWA: offline bar + install banner ══════════════════════════════════════ #}
+{# Offline bar sits at very top and is shown/hidden by JS.                     #}
+{# Install banner slides up from bottom when browser fires beforeinstallprompt #}
+{# or iOS Safari is detected. Both respond to BookWorm's js-toggled dark class.#}
+{# ── Offline bar ─────────────────────────────────────────────────── #}
+<div id="bw-offline-bar" role="status" aria-live="polite"
+     class="bw-offline-bar" hidden>
+  <span class="bw-offline-bar__dot"></span>
+  <span id="bw-offline-msg">You&rsquo;re offline &mdash; showing cached data</span>
+</div>
 
-    {# ── Standard prompt (Chrome / Edge / Android) ── #}
+{# ── Install banner ─────────────────────────────────────────────── #}
+<div id="bw-pwa-banner" class="bw-pwa-banner" hidden
+     role="complementary" aria-label="Install BookWorm app">
+  <div class="bw-pwa-card">
+
+    {# Standard prompt (Chrome / Edge / Android / Desktop) #}
     <div id="bw-pwa-std">
-      <div style="display:flex;align-items:center;gap:.85rem;">
-        <img src="/static/img/icons/icon-192.png" width="44" height="44"
-             alt="" style="border-radius:.6rem;flex-shrink:0;">
-        <div style="flex:1;min-width:0;">
-          <p style="margin:0;font-weight:700;font-size:.95rem;color:#111827;">Install BookWorm</p>
-          <p style="margin:.15rem 0 0;font-size:.8rem;color:#6b7280;line-height:1.4;">
-            Add to your home screen for instant launch &amp; offline access.
-          </p>
+      <div class="bw-pwa-row">
+        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+             class="bw-pwa-appicon" alt="BookWorm app icon">
+        <div class="bw-pwa-text">
+          <p class="bw-pwa-title">Install BookWorm</p>
+          <p class="bw-pwa-desc">Add to your home screen for instant launch &amp; offline access.</p>
         </div>
-        <button id="bw-pwa-dismiss" aria-label="Dismiss install banner"
-                style="flex-shrink:0;background:none;border:none;cursor:pointer;
-                       color:#9ca3af;font-size:1.2rem;line-height:1;padding:.25rem;">&times;</button>
+        <button class="bw-pwa-x" id="bw-pwa-dismiss" aria-label="Dismiss">&times;</button>
       </div>
-      <div style="display:flex;gap:.6rem;margin-top:.85rem;justify-content:flex-end;">
-        <button id="bw-pwa-later"
-                style="padding:.45rem 1rem;border-radius:.5rem;border:1px solid #d1d5db;
-                       background:#fff;color:#374151;font-size:.85rem;font-weight:600;cursor:pointer;">
-          Not now
-        </button>
-        <button id="bw-pwa-install"
-                style="padding:.45rem 1.1rem;border-radius:.5rem;border:none;
-                       background:#0053e2;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">
-          Install app
-        </button>
+      <div class="bw-pwa-actions">
+        <button class="bw-pwa-btn bw-pwa-btn--sec" id="bw-pwa-later">Not now</button>
+        <button class="bw-pwa-btn bw-pwa-btn--pri" id="bw-pwa-install">Install app</button>
       </div>
     </div>
 
-    {# ── iOS Safari manual instructions ── #}
-    <div id="bw-pwa-ios" style="display:none;">
-      <div style="display:flex;align-items:center;gap:.85rem;">
-        <img src="/static/img/icons/icon-192.png" width="44" height="44"
-             alt="" style="border-radius:.6rem;flex-shrink:0;">
-        <div style="flex:1;min-width:0;">
-          <p style="margin:0;font-weight:700;font-size:.95rem;color:#111827;">Install BookWorm on iOS</p>
-          <p style="margin:.2rem 0 0;font-size:.82rem;color:#4b5563;line-height:1.45;">
+    {# iOS Safari manual instructions #}
+    <div id="bw-pwa-ios" hidden>
+      <div class="bw-pwa-row">
+        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+             class="bw-pwa-appicon" alt="BookWorm app icon">
+        <div class="bw-pwa-text">
+          <p class="bw-pwa-title">Install BookWorm on iOS</p>
+          <p class="bw-pwa-desc">
             Tap the
-            <svg style="display:inline;vertical-align:-.18em;" width="16" height="16" viewBox="0 0 24 24"
-                 fill="none" stroke="#0053e2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="bw-pwa-shareico" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-              <polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+              <polyline points="16 6 12 2 8 6"/>
+              <line x1="12" y1="2" x2="12" y2="15"/>
             </svg>
-            <strong>Share</strong> button, then choose
-            <strong>&#8220;Add to Home Screen&#8221;</strong>.
+            <strong>Share</strong> button, then
+            <strong>&ldquo;Add to Home Screen&rdquo;</strong>.
           </p>
         </div>
-        <button id="bw-pwa-ios-dismiss" aria-label="Dismiss"
-                style="flex-shrink:0;background:none;border:none;cursor:pointer;
-                       color:#9ca3af;font-size:1.2rem;line-height:1;padding:.25rem;">&times;</button>
+        <button class="bw-pwa-x" id="bw-pwa-ios-dismiss" aria-label="Dismiss">&times;</button>
       </div>
     </div>
+
   </div>
 </div>
 
-{# Dark-mode override for the banner card #}
 <style>
-  @media (prefers-color-scheme: dark) {
-    #bw-pwa-card {
-      background:#27272a!important;border-color:#3f3f46!important;
-    }
-    #bw-pwa-card p { color:#d4d4d8!important; }
-    #bw-pwa-card p:first-child { color:#f4f4f5!important; }
-    #bw-pwa-later { background:#3f3f46!important;border-color:#52525b!important;color:#e4e4e7!important; }
-  }
-  #bw-pwa-banner { transition: transform .35s cubic-bezier(.17,.67,.38,1.3); }
-  #bw-pwa-install:hover { background:#0047c2!important; }
-  #bw-pwa-later:hover   { background:#f3f4f6!important; }
+/* ─────────────────────────────────────────────────────────────────────
+   Offline bar
+──────────────────────────────────────────────────────────────────── */
+.bw-offline-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  padding: .45rem 1rem;
+  background: #995213;      /* spark.140 — warning text colour */
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: .82rem; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  transform: translateY(-100%);
+  transition: transform .3s ease;
+}
+.bw-offline-bar.bw-offline-bar--show { transform: translateY(0); }
+.bw-offline-bar__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ffc220;         /* Spark accent */
+  flex-shrink: 0;
+  animation: bw-pulse 1.6s ease-in-out infinite;
+}
+@keyframes bw-pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(.75); }
+}
+/* Dark mode — matches BookWorm's JS-toggled html.dark class */
+html.dark .bw-offline-bar { background: #7a3e0a; }
+
+/* ────────────────────────────────────────────────────────────────────
+   Install banner
+──────────────────────────────────────────────────────────────────── */
+.bw-pwa-banner {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 8500;
+  padding: 0 1rem 1rem;
+  pointer-events: none;
+  transform: translateY(110%);
+  transition: transform .4s cubic-bezier(.17,.67,.38,1.3);
+}
+.bw-pwa-banner.bw-pwa-banner--show {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Card */
+.bw-pwa-card {
+  max-width: 480px; margin: 0 auto;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-top: 3px solid #0053e2;
+  border-radius: 1rem 1rem .75rem .75rem;
+  box-shadow: 0 -4px 32px rgba(0,0,0,.12);
+  padding: 1rem 1.25rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  pointer-events: auto;
+}
+html.dark .bw-pwa-card {
+  background: #27272a;
+  border-color: #3f3f46;
+  box-shadow: 0 -4px 32px rgba(0,0,0,.45);
+}
+
+/* Row layout */
+.bw-pwa-row  { display: flex; align-items: center; gap: .85rem; }
+.bw-pwa-appicon { border-radius: .65rem; flex-shrink: 0; }
+.bw-pwa-text { flex: 1; min-width: 0; }
+
+/* Typography */
+.bw-pwa-title {
+  margin: 0;
+  font-weight: 700; font-size: .95rem;
+  color: #111827;
+}
+html.dark .bw-pwa-title { color: #f4f4f5; }
+.bw-pwa-desc {
+  margin: .2rem 0 0;
+  font-size: .8rem; line-height: 1.45;
+  color: #6b7280;
+}
+html.dark .bw-pwa-desc { color: #a1a1aa; }
+
+/* Dismiss × */
+.bw-pwa-x {
+  flex-shrink: 0;
+  background: none; border: none; cursor: pointer;
+  color: #9ca3af;
+  font-size: 1.25rem; line-height: 1; padding: .25rem;
+  border-radius: .35rem;
+  transition: color .15s;
+}
+.bw-pwa-x:hover { color: #374151; }
+html.dark .bw-pwa-x:hover { color: #e4e4e7; }
+
+/* Inline share icon (iOS instructions) */
+.bw-pwa-shareico {
+  display: inline; vertical-align: -.2em;
+  width: 15px; height: 15px;
+  color: #0053e2;
+}
+
+/* Action buttons */
+.bw-pwa-actions { display: flex; gap: .6rem; margin-top: .85rem; justify-content: flex-end; }
+.bw-pwa-btn {
+  padding: .45rem 1rem;
+  border-radius: .5rem;
+  font-size: .85rem; font-weight: 600;
+  cursor: pointer; border: none;
+  transition: background .15s;
+}
+.bw-pwa-btn--pri { background: #0053e2; color: #fff; }
+.bw-pwa-btn--pri:hover { background: #0047c2; }
+.bw-pwa-btn--sec {
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+.bw-pwa-btn--sec:hover { background: #f3f4f6; }
+html.dark .bw-pwa-btn--sec {
+  background: #3f3f46;
+  border-color: #52525b;
+  color: #e4e4e7;
+}
+html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
 </style>
 
 <script>
 (function () {
   'use strict';
-  /* ── Constants ── */
-  var DISMISS_KEY    = 'bw-pwa-dismissed';   // localStorage key
-  var DISMISS_TTL_MS = 30 * 24 * 3600 * 1e3; // 30 days
+
+  /* ────────────────────────────────────────────────────────────────
+     OFFLINE / ONLINE SYNC
+  ──────────────────────────────────────────────────────────────── */
+  var _offlineBar = null;
+
+  function _getOfflineBar() {
+    return _offlineBar || (_offlineBar = document.getElementById('bw-offline-bar'));
+  }
+
+  function _showOfflineBar() {
+    var bar = _getOfflineBar();
+    if (!bar) return;
+    bar.hidden = false;
+    /* rAF so the browser paints the bar before we animate it in */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        bar.classList.add('bw-offline-bar--show');
+      });
+    });
+  }
+
+  function _hideOfflineBar() {
+    var bar = _getOfflineBar();
+    if (!bar) return;
+    bar.classList.remove('bw-offline-bar--show');
+    /* Wait for CSS transition, then re-hide to free screen space */
+    setTimeout(function () { bar.hidden = true; }, 350);
+  }
+
+  /* Called when network is restored.
+   * Strategy: SW is already network-first, so any fresh HTMX request will
+   * automatically pull updated data.  We show a toast and trigger HTMX to
+   * re-render the active note list so the user sees fresh data immediately
+   * without needing a full page reload.  */
+  function _onOnline() {
+    _hideOfflineBar();
+    /* Show a short "syncing" confirmation via the BookWorm toast system.
+       _bwToast is defined in home-widgets.js which is always loaded. */
+    if (typeof _bwToast === 'function') {
+      _bwToast('Back online — syncing your data…', 'info', 4000);
+    }
+    /* Give the SW a beat to re-establish network, then refresh live data. */
+    setTimeout(function () {
+      /* HTMX refresh: re-trigger whatever boosted link is currently active */
+      if (window.htmx) {
+        /* Refresh the note list if it exists on this page */
+        var noteList = document.getElementById('note-list');
+        if (noteList) {
+          htmx.trigger(noteList, 'bw:sync');
+        }
+        /* Refresh any element carrying [hx-trigger*="bw:sync"] */
+        document.querySelectorAll('[hx-trigger*="bw:sync"]').forEach(function (el) {
+          htmx.trigger(el, 'bw:sync');
+        });
+      }
+    }, 800);
+  }
+
+  function _onOffline() {
+    _showOfflineBar();
+  }
+
+  /* Wire connectivity events */
+  window.addEventListener('online',  _onOnline);
+  window.addEventListener('offline', _onOffline);
+  /* Check immediately in case the page loaded while already offline */
+  if (!navigator.onLine) { _onOffline(); }
+
+  /* ────────────────────────────────────────────────────────────────
+     INSTALL BANNER
+  ──────────────────────────────────────────────────────────────── */
+  var DISMISS_KEY    = 'bw-pwa-dismissed';
+  var DISMISS_TTL_MS = 30 * 24 * 3600 * 1000;
   var _deferredPrompt = null;
 
-  /* ── Helpers ── */
   function _isInstalled() {
     return window.matchMedia('(display-mode: standalone)').matches
         || window.navigator.standalone === true;
@@ -972,12 +1143,12 @@
   function _wasDismissed() {
     try {
       var t = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
-      return t && (Date.now() - t) < DISMISS_TTL_MS;
-    } catch (_) { return false; }
+      return t > 0 && (Date.now() - t) < DISMISS_TTL_MS;
+    } catch (e) { return false; }
   }
 
   function _setDismissed() {
-    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (_) {}
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
   }
 
   function _isIos() {
@@ -986,30 +1157,37 @@
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
 
-  /* ── Show banner ── */
   function _showBanner(mode) {
     var banner = document.getElementById('bw-pwa-banner');
     var std    = document.getElementById('bw-pwa-std');
     var ios    = document.getElementById('bw-pwa-ios');
     if (!banner) return;
+    banner.hidden = false;
+    /* rAF pair to trigger the CSS slide-up transition */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        banner.classList.add('bw-pwa-banner--show');
+      });
+    });
     if (mode === 'ios') {
-      if (std) std.style.display = 'none';
-      if (ios) ios.style.display = '';
+      if (std) std.hidden = true;
+      if (ios) ios.hidden = false;
     } else {
-      if (ios) ios.style.display = 'none';
-      if (std) std.style.display = '';
+      if (ios) ios.hidden = true;
+      if (std) std.hidden = false;
     }
-    banner.style.display = 'block';
   }
 
   function _hideBanner() {
     var banner = document.getElementById('bw-pwa-banner');
-    if (banner) banner.style.display = 'none';
+    if (!banner) return;
+    banner.classList.remove('bw-pwa-banner--show');
+    setTimeout(function () { banner.hidden = true; }, 420);
   }
 
-  /* ── Wire buttons ── */
-  function _wireButtons() {
-    /* Standard: Install */
+  function _wireBannerButtons() {
+    function _dismiss() { _setDismissed(); _hideBanner(); }
+
     var btnInstall = document.getElementById('bw-pwa-install');
     if (btnInstall) {
       btnInstall.addEventListener('click', function () {
@@ -1023,64 +1201,51 @@
         }
       });
     }
-
-    /* Standard: Not now */
-    var btnLater = document.getElementById('bw-pwa-later');
-    if (btnLater) {
-      btnLater.addEventListener('click', function () {
-        _setDismissed(); _hideBanner();
-      });
-    }
-
-    /* Standard: × */
-    var btnDismiss = document.getElementById('bw-pwa-dismiss');
-    if (btnDismiss) {
-      btnDismiss.addEventListener('click', function () {
-        _setDismissed(); _hideBanner();
-      });
-    }
-
-    /* iOS: × */
-    var btnIosDismiss = document.getElementById('bw-pwa-ios-dismiss');
-    if (btnIosDismiss) {
-      btnIosDismiss.addEventListener('click', function () {
-        _setDismissed(); _hideBanner();
-      });
-    }
+    ['bw-pwa-later', 'bw-pwa-dismiss', 'bw-pwa-ios-dismiss'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('click', _dismiss);
+    });
   }
 
-  /* ── Main logic ── */
-  function _init() {
+  function _initInstallBanner() {
     if (_isInstalled() || _wasDismissed()) return;
-
-    _wireButtons();
+    _wireBannerButtons();
 
     if (_isIos()) {
-      /* iOS Safari: no beforeinstallprompt — show manual instructions */
       setTimeout(function () { _showBanner('ios'); }, 4000);
       return;
     }
 
-    /* Chrome / Edge / Samsung Browser / Android: wait for OS prompt */
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault();
       _deferredPrompt = e;
       setTimeout(function () { _showBanner('std'); }, 2000);
     });
 
-    /* Hide banner if user installs via OS prompt elsewhere */
     window.addEventListener('appinstalled', function () {
       _setDismissed(); _hideBanner();
     });
   }
 
-  /* ── Register Service Worker ── */
+  /* ────────────────────────────────────────────────────────────────
+     SERVICE WORKER
+  ──────────────────────────────────────────────────────────────── */
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
         .then(function (reg) {
-          /* Check for updates every 60 minutes */
+          /* Hourly update check */
           setInterval(function () { reg.update(); }, 3600 * 1000);
+
+          /* Listen for messages from the SW (e.g. cache updated) */
+          navigator.serviceWorker.addEventListener('message', function (evt) {
+            if (evt.data && evt.data.type === 'BW_CACHE_UPDATED') {
+              /* SW has cached fresh content — toast if user had been offline */
+              if (typeof _bwToast === 'function') {
+                _bwToast('Content updated in background.', 'info', 3000);
+              }
+            }
+          });
         })
         .catch(function (err) {
           console.warn('[BookWorm SW] Registration failed:', err);
@@ -1088,7 +1253,8 @@
     });
   }
 
-  _init();
+  _initInstallBanner();
+
 })();
 </script>
 </body>

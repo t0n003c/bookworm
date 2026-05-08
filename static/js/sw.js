@@ -1,15 +1,16 @@
-/* BookWorm Service Worker — v1
+/* BookWorm Service Worker — v2
  *
  * Strategy: Network-first with cache fallback.
- * This is a team app with per-user data, so we never want stale content.
- * The SW exists primarily to satisfy PWA installability requirements and
- * to give a graceful offline page instead of Chrome's dinosaur.
+ * This is a multi-user team app — we never want stale notes.
+ * The SW exists to: satisfy PWA installability, give an offline fallback
+ * page, and broadcast cache-update events so the page can re-fetch data
+ * when the network is restored.
  *
- * Cache names are versioned so old caches are cleaned up on activate.
+ * Cache names are versioned so stale caches are purged on activate.
  */
 
-const CACHE_NAME    = 'bw-shell-v1';
-const OFFLINE_URL   = '/offline';
+const CACHE_NAME  = 'bw-shell-v2';
+const OFFLINE_URL = '/offline';
 
 /* App-shell assets to pre-cache on install */
 const PRECACHE = [
@@ -24,7 +25,6 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE))
   );
-  /* Activate immediately without waiting for old tabs to close */
   self.skipWaiting();
 });
 
@@ -37,37 +37,56 @@ self.addEventListener('activate', event => {
       )
     )
   );
-  /* Take control of uncontrolled pages instantly */
   self.clients.claim();
 });
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
+
+/** Broadcast a typed message to all controlled page clients. */
+function _broadcast(msg) {
+  self.clients.matchAll({ includeUncontrolled: false, type: 'window' })
+    .then(clients => clients.forEach(c => c.postMessage(msg)));
+}
+
+/** True when a Request URL looks like an API/dynamic endpoint we must skip. */
+function _isDynamic(url) {
+  const p = url.pathname;
+  return p.startsWith('/home/')
+      || p.startsWith('/auth/')
+      || p.startsWith('/uploads/')
+      || p.startsWith('/wopi/');
+}
 
 /* ── Fetch ──────────────────────────────────────────────────────────────── */
 self.addEventListener('fetch', event => {
   const { request } = event;
 
-  /* Only handle GET; pass everything else through */
+  /* Only intercept GET; let mutations pass through untouched */
   if (request.method !== 'GET') return;
 
-  /* Skip cross-origin requests (CDN, analytics, etc.) */
-  if (!request.url.startsWith(self.location.origin)) return;
-
-  /* Skip API / HTMX endpoints — always fresh */
+  /* Skip cross-origin requests */
   const url = new URL(request.url);
-  if (url.pathname.startsWith('/home/') ||
-      url.pathname.startsWith('/auth/') ||
-      url.pathname.startsWith('/uploads/')) return;
+  if (url.origin !== self.location.origin) return;
+
+  /* Skip dynamic / API endpoints — always need fresh data */
+  if (_isDynamic(url)) return;
 
   event.respondWith(
     fetch(request)
       .then(response => {
-        /* Clone before consuming body */
         if (response.ok) {
+          /* Clone before consuming; update cache in background */
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(c => c.put(request, clone));
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(request, clone);
+            /* Tell the page that fresh content is cached and ready */
+            _broadcast({ type: 'BW_CACHE_UPDATED', url: request.url });
+          });
         }
         return response;
       })
       .catch(() =>
+        /* Network failed — try cache, then offline page */
         caches.match(request).then(cached =>
           cached || caches.match(OFFLINE_URL)
         )

@@ -3,23 +3,28 @@
 Produces four PNG files inside static/img/icons/:
   icon-192.png          — standard 192×192
   icon-512.png          — standard 512×512
-  icon-maskable-512.png — 512×512 with safe-zone padding (Android adaptive icon)
-  apple-touch-icon.png  — 180×180 for iOS "Add to Home Screen"
+  icon-maskable-512.png — 512×512 with safe-zone padding (Android adaptive)
+  apple-touch-icon.png  — 180×180 for iOS Add-to-Home-Screen
 
-All files are only written if they don't already exist, so this is safe to
-call on every startup — it only does real work on the first run.
+Files are only written when missing; call generate_icons(force=True) to redraw.
 
-Design: Walmart blue rounded square, open book with worm peeking from spine.
+Design: bookworm character — round yellow worm with big expressive eyes,
+round bookworm glasses, rosy cheeks, two body segments, sitting in an open
+book on a Walmart-blue rounded-square background.
 """
 import os
 from PIL import Image, ImageDraw
 
-_BLUE   = "#0053e2"   # Walmart primary
-_WHITE  = "#ffffff"
-_YELLOW = "#ffc220"   # Spark accent (worm)
-_PG_R   = "#dce8fc"   # right-page tint
-_LINE_L = "#b8d0f7"   # left-page line colour
-_LINE_R = "#aac8f5"   # right-page line colour
+# ── Palette ─────────────────────────────────────────────────────────────────
+_BLUE     = (0,   83,  226)   # Walmart primary #0053e2
+_YELLOW   = (255, 194,  32)   # Spark / worm body #ffc220
+_YLW_DARK = (220, 160,  10)   # worm segment border / depth
+_WHITE    = (255, 255, 255)
+_INK      = ( 26,  46,  92)   # dark navy for pupils, glasses, smile
+_PG_R     = (220, 232, 252)   # right-page tint
+_LINE_L   = (180, 208, 245)
+_LINE_R   = (165, 198, 238)
+_CHEEK    = (255, 120,  60, 110)  # RGBA — semi-transparent blush
 
 _OUT_DIR = os.path.join(os.path.dirname(__file__), "static", "img", "icons")
 
@@ -31,120 +36,185 @@ _SPECS = [
 ]
 
 
-def _hex(h: str) -> tuple:
-    h = h.lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+# ── Compositing helper ───────────────────────────────────────────────────────
+def _overlay(base: Image.Image, color_rgba: tuple, bbox: tuple) -> tuple:
+    """Alpha-composite a semi-transparent ellipse onto *base*; return (img, draw)."""
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).ellipse(bbox, fill=color_rgba)
+    base = Image.alpha_composite(base, layer)
+    return base, ImageDraw.Draw(base)
 
 
+# ── Main drawing function ────────────────────────────────────────────────────
 def _make_icon(size: int, maskable: bool) -> Image.Image:
-    """Draw one icon at *size*×*size*. maskable=True adds 10 % safe-zone pad."""
     pad = int(size * 0.10) if maskable else 0
-    img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d    = ImageDraw.Draw(img)
+    s   = size  # shorthand
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d   = ImageDraw.Draw(img)
 
     # ── Blue rounded background ──────────────────────────────────────────────
-    r = int(size * 0.22)
     d.rounded_rectangle(
-        [(pad, pad), (size - pad - 1, size - pad - 1)],
-        radius=r, fill=_BLUE,
+        [(pad, pad), (s - pad - 1, s - pad - 1)],
+        radius=int(s * 0.22), fill=_BLUE,
     )
 
-    # ── Book body ────────────────────────────────────────────────────────────
-    bx  = int(size * 0.155) + pad
-    by  = int(size * 0.200) + pad
-    bw  = int(size * 0.690)
-    bh  = int(size * 0.570)
-    sp  = int(size * 0.035)   # spine half-width
-
+    # ════════════════════════════════════════════════════════════════════════
+    # BOOK  (bottom third of icon, worm sits in it)
+    # ════════════════════════════════════════════════════════════════════════
+    bx  = int(s * 0.10)
+    bw  = int(s * 0.80)
+    bh  = int(s * 0.23)
+    by  = int(s * 0.71)
+    sp  = int(s * 0.03)          # spine half-width
     mid = bx + bw // 2
 
-    # Left page
-    d.rectangle([(bx, by), (mid - sp, by + bh)], fill=_WHITE)
-    # Right page
-    d.rectangle([(mid + sp, by), (bx + bw, by + bh)], fill=_PG_R)
-    # Spine strip
-    d.rectangle([(mid - sp, by - int(size * 0.01)),
-                 (mid + sp, by + bh + int(size * 0.01))], fill=_BLUE)
+    d.rectangle([(bx,      by), (mid - sp,  by + bh)], fill=_WHITE)   # left page
+    d.rectangle([(mid + sp, by), (bx + bw, by + bh)], fill=_PG_R)     # right page
+    d.rectangle([(mid - sp, by - int(s * 0.01)),
+                 (mid + sp, by + bh)], fill=_BLUE)                     # spine
 
-    # ── Text lines ───────────────────────────────────────────────────────────
-    lh  = max(2, int(size * 0.025))
-    gap = int(size * 0.070)
-
-    # Left page lines
-    lx0 = bx + int(size * 0.045)
-    lx1 = mid - sp - int(size * 0.035)
-    ly  = by + int(size * 0.095)
-    for _ in range(5):
-        if ly + lh < by + bh - int(size * 0.06):
+    # text lines — left page
+    lx0, lx1 = bx + int(s * 0.04), mid - sp - int(s * 0.03)
+    lh  = max(2, int(s * 0.020))
+    gap = int(s * 0.055)
+    ly  = by + int(s * 0.04)
+    for _ in range(3):
+        if ly + lh < by + bh - int(s * 0.025):
             d.rectangle([(lx0, ly), (lx1, ly + lh)], fill=_LINE_L)
             ly += gap
 
-    # Right page lines (slightly shorter last one)
-    lx0 = mid + sp + int(size * 0.035)
-    lx1 = bx + bw - int(size * 0.045)
-    ly  = by + int(size * 0.095)
-    for i in range(5):
-        if ly + lh < by + bh - int(size * 0.06):
-            x1 = lx1 if i < 4 else lx0 + int((lx1 - lx0) * 0.55)
-            d.rectangle([(lx0, ly), (x1, ly + lh)], fill=_LINE_R)
-            ly += gap
+    # text lines — right page (last line shorter)
+    rx0, rx1 = mid + sp + int(s * 0.03), bx + bw - int(s * 0.04)
+    ry = by + int(s * 0.04)
+    for i in range(3):
+        if ry + lh < by + bh - int(s * 0.025):
+            x1 = rx1 if i < 2 else rx0 + int((rx1 - rx0) * 0.55)
+            d.rectangle([(rx0, ry), (x1, ry + lh)], fill=_LINE_R)
+            ry += gap
 
-    # ── Book cover bottom strip ───────────────────────────────────────────────
-    ct = by + bh - int(size * 0.03)
+    # book cover bottom strip
     d.rounded_rectangle(
-        [(bx, ct), (bx + bw, by + bh + int(size * 0.04))],
-        radius=int(size * 0.025), fill=_BLUE,
+        [(bx, by + bh - int(s * 0.025)), (bx + bw, by + bh + int(s * 0.04))],
+        radius=int(s * 0.025), fill=_BLUE,
     )
 
-    # ── Worm peeking from spine ───────────────────────────────────────────────
-    wx = mid
-    wr = int(size * 0.075)
-    wy = by - wr + int(size * 0.005)          # head centre y (sits on book top)
+    # ════════════════════════════════════════════════════════════════════════
+    # WORM  (drawn bottom-up: body segs first, head on top)
+    # ═══════════════════════════════════════════════════════════════
+    wx  = mid                         # worm x-centre (aligned with spine)
+    wr  = int(s * 0.185)              # head radius — big and friendly
 
-    # Body segments (two, below head, hidden behind book)
-    seg_r = int(wr * 0.65)
-    d.ellipse([(wx - seg_r, wy + wr - 2),
-               (wx + seg_r, wy + wr - 2 + seg_r * 2)], fill=_YELLOW)
+    # Seg 2 — nestled in the book gutter
+    s2r = int(s * 0.090)
+    s2y = by + int(s * 0.005)
+    d.ellipse([(wx - s2r, s2y - s2r), (wx + s2r, s2y + s2r)], fill=_YLW_DARK)
+    d.ellipse([(wx - s2r + int(s*0.005), s2y - s2r + int(s*0.005)),
+               (wx + s2r - int(s*0.005), s2y + s2r - int(s*0.005))], fill=_YELLOW)
+
+    # Seg 1 — connects head to seg 2
+    s1r = int(s * 0.115)
+    s1y = s2y - s1r - s2r + int(s * 0.025)
+    d.ellipse([(wx - s1r, s1y - s1r), (wx + s1r, s1y + s1r)], fill=_YLW_DARK)
+    d.ellipse([(wx - s1r + int(s*0.006), s1y - s1r + int(s*0.006)),
+               (wx + s1r - int(s*0.006), s1y + s1r - int(s*0.006))], fill=_YELLOW)
 
     # Head
-    d.ellipse([(wx - wr, wy - wr), (wx + wr, wy + wr)], fill=_YELLOW)
+    wy = s1y - s1r - wr + int(s * 0.045)   # head centre y
+    d.ellipse([(wx - wr, wy - wr), (wx + wr, wy + wr)], fill=_YLW_DARK)
+    d.ellipse([(wx - wr + int(s*0.008), wy - wr + int(s*0.008)),
+               (wx + wr - int(s*0.008), wy + wr - int(s*0.008))], fill=_YELLOW)
 
-    # Eyes
-    er = max(1, int(size * 0.013))
-    ex_off = int(wr * 0.36)
-    ey_off = int(wr * 0.15)
-    for ex in (wx - ex_off, wx + ex_off):
-        d.ellipse([(ex - er, wy - ey_off - er),
-                   (ex + er, wy - ey_off + er)], fill="#1a2e5c")
+    # Shine / highlight (semi-transparent white blob top-left of head)
+    img, d = _overlay(img,
+                      (255, 255, 255, 70),
+                      (wx - int(wr*0.65), wy - int(wr*0.62),
+                       wx - int(wr*0.05), wy - int(wr*0.12)))
 
-    # Smile
-    smile_r = int(wr * 0.38)
+    # ── Antennae ─────────────────────────────────────────────────────────────
+    aw  = max(2, int(s * 0.018))   # stroke width
+    atr = max(3, int(s * 0.025))   # tip ball radius
+
+    # left antenna
+    ax1b, ay1b = wx - int(wr * 0.42), wy - int(wr * 0.78)
+    ax1t, ay1t = ax1b - int(wr * 0.55), ay1b - int(wr * 0.75)
+    d.line([(ax1b, ay1b), (ax1t, ay1t)], fill=_YLW_DARK, width=aw)
+    d.ellipse([(ax1t - atr, ay1t - atr), (ax1t + atr, ay1t + atr)], fill=_YELLOW)
+    d.ellipse([(ax1t - atr + 1, ay1t - atr + 1),
+               (ax1t + atr - 1, ay1t + atr - 1)], fill=_YELLOW)
+
+    # right antenna (a bit taller for asymmetry)
+    ax2b, ay2b = wx + int(wr * 0.28), wy - int(wr * 0.88)
+    ax2t, ay2t = ax2b + int(wr * 0.45), ay2b - int(wr * 0.80)
+    d.line([(ax2b, ay2b), (ax2t, ay2t)], fill=_YLW_DARK, width=aw)
+    d.ellipse([(ax2t - atr, ay2t - atr), (ax2t + atr, ay2t + atr)], fill=_YELLOW)
+
+    # ── Eyes ─────────────────────────────────────────────────────────────────
+    er    = int(wr * 0.330)    # sclera radius
+    e_off = int(wr * 0.410)    # horizontal offset from centre
+    ey    = wy - int(wr * 0.075)
+
+    for ex in (wx - e_off, wx + e_off):
+        # sclera
+        d.ellipse([(ex - er, ey - er), (ex + er, ey + er)], fill=_WHITE)
+        # pupil
+        pr = int(er * 0.54)
+        d.ellipse([(ex - pr, ey - pr), (ex + pr, ey + pr)], fill=_INK)
+        # iris ring (slight teal tint)
+        ir = int(er * 0.72)
+        d.ellipse([(ex - ir, ey - ir), (ex + ir, ey + ir)],
+                  outline=(50, 100, 180), width=max(1, int(s * 0.008)))
+        # catchlight
+        cr = max(1, int(er * 0.22))
+        cox, coy = ex - int(er * 0.28), ey - int(er * 0.30)
+        d.ellipse([(cox - cr, coy - cr), (cox + cr, coy + cr)], fill=_WHITE)
+
+    # ── Round bookworm glasses ───────────────────────────────────────────────
+    gw  = max(2, int(s * 0.016))   # frame stroke width
+    gr  = int(er * 1.28)           # lens ring radius
+    d.ellipse([(wx - e_off - gr, ey - gr), (wx - e_off + gr, ey + gr)],
+              outline=_INK, width=gw)
+    d.ellipse([(wx + e_off - gr, ey - gr), (wx + e_off + gr, ey + gr)],
+              outline=_INK, width=gw)
+    # nose bridge
+    d.line([(wx - e_off + gr, ey), (wx + e_off - gr, ey)], fill=_INK, width=gw)
+    # temples (short lines extending outward)
+    t_len = int(s * 0.045)
+    d.line([(wx - e_off - gr, ey),
+            (wx - e_off - gr - t_len, ey - int(s * 0.010))], fill=_INK, width=gw)
+    d.line([(wx + e_off + gr, ey),
+            (wx + e_off + gr + t_len, ey - int(s * 0.010))], fill=_INK, width=gw)
+
+    # ── Rosy cheeks (semi-transparent) ───────────────────────────────────────
+    ck_r = int(wr * 0.295)
+    ck_y = ey + int(wr * 0.46)
+    img, d = _overlay(img, _CHEEK, (wx - e_off - ck_r*2, ck_y - ck_r,
+                                     wx - e_off,           ck_y + ck_r))
+    img, d = _overlay(img, _CHEEK, (wx + e_off,           ck_y - ck_r,
+                                     wx + e_off + ck_r*2, ck_y + ck_r))
+
+    # ── Smile ────────────────────────────────────────────────────────────────
+    sm_r = int(wr * 0.50)
+    sm_top = ey + int(wr * 0.24)
     d.arc(
-        [(wx - smile_r, wy + int(wr * 0.05)),
-         (wx + smile_r, wy + int(wr * 0.55))],
-        start=10, end=170, fill="#1a2e5c", width=max(1, int(size * 0.013)),
+        [(wx - sm_r, sm_top), (wx + sm_r, sm_top + int(sm_r * 0.80))],
+        start=8, end=172,
+        fill=_INK, width=max(2, int(s * 0.020)),
     )
-
-    # Antennae tips
-    at_r = max(1, int(size * 0.016))
-    for ax, ay in (
-        (wx - int(wr * 0.55), wy - int(wr * 0.90)),
-        (wx + int(wr * 0.10), wy - int(wr * 1.10)),
-    ):
-        d.ellipse([(ax - at_r, ay - at_r), (ax + at_r, ay + at_r)], fill=_YELLOW)
 
     return img
 
 
-def generate_icons(out_dir: str = _OUT_DIR) -> None:
-    """Create PNG icons under *out_dir*; skips files that already exist."""
+# ── Public API ───────────────────────────────────────────────────────────────
+def generate_icons(out_dir: str = _OUT_DIR, force: bool = False) -> None:
+    """Write PNG icons to *out_dir*. Skips existing files unless *force=True*."""
     os.makedirs(out_dir, exist_ok=True)
     for name, size, maskable in _SPECS:
         path = os.path.join(out_dir, name)
-        if os.path.exists(path):
+        if not force and os.path.exists(path):
             continue
-        img = _make_icon(size, maskable)
-        # Flatten RGBA → RGB on solid blue bg (required for Apple touch icon)
+        icon = _make_icon(size, maskable)
+        # Flatten RGBA → RGB on solid blue background (required for JPEG-only
+        # contexts; PNG keeps transparency but some platforms need opaque icons).
         bg = Image.new("RGB", (size, size), _BLUE)
-        bg.paste(img, mask=img.split()[3])
+        bg.paste(icon, mask=icon.split()[3])
         bg.save(path, "PNG", optimize=True)
