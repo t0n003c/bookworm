@@ -5824,7 +5824,29 @@ function _dbRenderDetailPanel(card) {
     + ' oninput="_dbDetailNoteInput(' + card.id + ',this)"'
     + ' onblur="_dbDetailNoteBlur(' + card.id + ',this)"'
     + ' aria-label="Card notes">'
-    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing… (type / for commands)</p>')
+    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing\u2026 (type / for commands)</p>')
+    + '</div>'
+    // ── Share row ────────────────────────────────────────────────────────────
+    + '<div class="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100 dark:border-zinc-800">'
+    + '<button type="button" onclick="shareOpenModal(\'db_card\',' + card.id + ')"'
+    + ' title="Share this card"'
+    + ' aria-label="Share this card"'
+    + ' class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-600'
+    + ' text-xs text-gray-500 dark:text-zinc-400 hover:text-[#0053e2] hover:border-[#0053e2]'
+    + ' dark:hover:text-blue-400 dark:hover:border-blue-400 transition focus:outline-none">'
+    + '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+    + '<path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342'
+    + 'm0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316'
+    + 'm0 0a3 3 0 105.368-2.684 3 3 0 00-5.368 2.684zm0 9.316a3 3 0 105.368 2.684'
+    + '3 3 0 00-5.368-2.684z"/></svg>'
+    + 'Share'
+    + '</button>'
+    + '<span id="share-badge-db-card-' + card.id + '"'
+    + ' class="hidden"'
+    + ' title="Public link active \u2014 anyone with the link can view this card">'
+    + '\uD83D\uDD17 Shared'
+    + '</span>'
+    + '<div id="share-modal-container-card" class="contents"></div>'
     + '</div>'
     + '</div>'
     // ↑ end content wrapper
@@ -5835,6 +5857,8 @@ function _dbRenderDetailPanel(card) {
   _dbAttachNoteTools(noteEl);
   /* Attach drag-and-drop for attr row reordering */
   _dbAttachAttrDrag(card.id);
+  /* Load the public-share badge asynchronously (non-blocking) */
+  if (typeof shareLoadCardBadge === 'function') shareLoadCardBadge(card.id);
 }
 
 function _dbDetailTitleBlur(cardId, el) {

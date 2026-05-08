@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en-US" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ card.title }} — BookWorm</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  <link rel="stylesheet" href="/static/css/tailwind.css">
+  <script>
+    (function() {
+      var s = localStorage.getItem('bw-theme');
+      if (s !== 'light') document.documentElement.classList.add('dark');
+    })();
+  </script>
+  <style>
+    .bw-note-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .5rem; }
+    .bw-note-content h2 { font-size: 1.25rem; font-weight: 600; margin: .85rem 0 .4rem; }
+    .bw-note-content h3 { font-size: 1.1rem; font-weight: 600; margin: .7rem 0 .35rem; }
+    .bw-note-content p  { margin: .4rem 0; line-height: 1.7; }
+    .bw-note-content ul { list-style: disc; padding-left: 1.4rem; margin: .4rem 0; }
+    .bw-note-content ol { list-style: decimal; padding-left: 1.4rem; margin: .4rem 0; }
+    .bw-note-content li { margin: .2rem 0; }
+    .bw-note-content blockquote {
+      border-left: 3px solid #0053e2; padding-left: 1rem;
+      color: #6b7280; margin: .5rem 0; font-style: italic;
+    }
+    .bw-note-content pre { background: #1e1e1e; border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
+    .bw-note-content code { font-family: ui-monospace, monospace; font-size: .85em; }
+    .bw-note-content pre code { color: #d4d4d4; }
+    .bw-note-content :not(pre) > code { background: #f3f4f6; border-radius: .25rem; padding: .1em .3em; }
+    .dark .bw-note-content :not(pre) > code { background: #27272a; color: #f4f4f5; }
+    .bw-note-content a { color: #0053e2; text-decoration: underline; }
+    .bw-note-content img { max-width: 100%; border-radius: .5rem; margin: .5rem 0; }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 min-h-full flex flex-col">
+
+  {# ── Header bar ── #}
+  <header class="bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-3">
+    <span class="text-xl" aria-hidden="true">🪱</span>
+    <span class="font-bold text-[#0053e2] dark:text-blue-400 text-sm tracking-tight">BookWorm</span>
+    <span class="text-xs text-gray-400 dark:text-zinc-500 ml-2">Shared card</span>
+    <div class="flex-1"></div>
+    <a href="/register"
+       class="text-xs px-3 py-1.5 rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-blue-700 transition">
+      Sign up free
+    </a>
+  </header>
+
+  {# ── Main content ── #}
+  <main class="flex-1 max-w-2xl w-full mx-auto px-4 py-8 sm:py-12">
+
+    {# Cover image #}
+    {% if card.cover_url %}
+    <div class="w-full rounded-xl overflow-hidden mb-6 max-h-56">
+      <img src="{{ card.cover_url }}" alt="Card cover" class="w-full object-cover h-full">
+    </div>
+    {% endif %}
+
+    {# Title #}
+    <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-zinc-100 leading-tight mb-6">
+      {{ card.title }}
+    </h1>
+
+    {# Attributes — definition list #}
+    {% if card.attrs %}
+    <section class="mb-6" aria-label="Card fields">
+      <h2 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Fields</h2>
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+        {% for attr in card.attrs %}
+        {% if attr.attr_value %}
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-xs text-gray-500 dark:text-zinc-400 font-medium">{{ attr.attr_key }}</dt>
+          <dd class="text-sm text-gray-800 dark:text-zinc-200">
+            {% if attr.attr_type == 'checkbox' %}
+              {% if attr.attr_value == 'true' or attr.attr_value == '1' %}✅{% else %}☐{% endif %}
+            {% elif attr.attr_type == 'rating' %}
+              {% for i in range(attr.attr_value | int) %}⭐{% endfor %}
+            {% else %}
+              {{ attr.attr_value }}
+            {% endif %}
+          </dd>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </dl>
+    </section>
+    {% endif %}
+
+    {# Card note content #}
+    {% if card.note_content %}
+    <section aria-label="Card notes">
+      <h2 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Notes</h2>
+      <article class="bw-note-content text-sm text-gray-800 dark:text-zinc-200">
+        {{ card.note_content | safe }}
+      </article>
+    </section>
+    {% endif %}
+
+  </main>
+
+  {# ── Footer CTA ── #}
+  <footer class="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 px-4 py-6">
+    <div class="max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>
+        <p class="font-semibold text-gray-900 dark:text-zinc-100 text-sm">
+          🪱 Enjoy BookWorm — your team's private notes, databases &amp; more.
+        </p>
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+          Self-hosted, no subscriptions, no tracking.
+        </p>
+      </div>
+      <a href="/register"
+         class="px-5 py-2.5 rounded-xl bg-[#0053e2] text-white font-semibold text-sm
+                hover:bg-blue-700 transition whitespace-nowrap">
+        Create your account →
+      </a>
+    </div>
+  </footer>
+
+</body>
+</html>

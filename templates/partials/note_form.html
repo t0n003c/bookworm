@@ -390,7 +390,44 @@
       <button type="button" onclick="closePanel()"
         class="px-4 py-2.5 border border-gray-300 dark:border-zinc-600 rounded-lg text-sm text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition focus:outline-none focus:ring-2 focus:ring-gray-300"
       >Cancel</button>
+      {% if is_edit %}
+      {# ── Share button (opens modal) ── #}
+      <button type="button"
+        onclick="shareOpenModal('note', {{ note.id }})"
+        title="Share this note"
+        aria-label="Share this note"
+        class="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 dark:border-zinc-600
+               text-gray-400 hover:text-[#0053e2] hover:border-[#0053e2] dark:hover:text-blue-400
+               transition focus:outline-none focus:ring-2 focus:ring-[#0053e2] flex-shrink-0"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342
+                   m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316
+                   m0 0a3 3 0 105.368-2.684 3 3 0 00-5.368 2.684zm0 9.316a3 3 0 105.368 2.684
+                   3 3 0 00-5.368-2.684z"/>
+        </svg>
+      </button>
+      {# ── Public link active badge ── #}
+      <span id="share-badge-note-{{ note.id }}"
+        {% if public_link_active %}
+        class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold
+               bg-[#ffc220] text-[#995213] self-center flex-shrink-0 whitespace-nowrap"
+        title="Public link active — anyone with the link can view this note"
+        {% else %}
+        class="hidden"
+        {% endif %}
+      >
+        🔗 Shared
+      </span>
+      {% endif %}
     </div>
+
+    {# Share modal container — populated by shareOpenModal() via HTMX #}
+    {% if is_edit %}
+    <div id="share-modal-container"></div>
+    {% endif %}
   </form>
 </div>
 

@@ -82,6 +82,7 @@ from routers import wopi as wopi_router
 from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
 from routers import note_reminders as note_reminders_router
+from routers import sharing as sharing_router
 from routers.attachments_db import UPLOAD_DIR
 
 
@@ -186,6 +187,7 @@ app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(workspace_databases_router.router)
+app.include_router(sharing_router.router)
 
 
 # ── PWA support routes ───────────────────────────────────────────────────────

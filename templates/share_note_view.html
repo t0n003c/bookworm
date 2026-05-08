@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en-US" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ note.title }} — BookWorm</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  <link rel="stylesheet" href="/static/css/tailwind.css">
+  <script>
+    // Apply saved theme before first paint
+    (function() {
+      var s = localStorage.getItem('bw-theme');
+      if (s !== 'light') document.documentElement.classList.add('dark');
+    })();
+  </script>
+  <style>
+    /* Prose-style note content rendering */
+    .bw-note-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .5rem; }
+    .bw-note-content h2 { font-size: 1.25rem; font-weight: 600; margin: .85rem 0 .4rem; }
+    .bw-note-content h3 { font-size: 1.1rem; font-weight: 600; margin: .7rem 0 .35rem; }
+    .bw-note-content p  { margin: .4rem 0; line-height: 1.7; }
+    .bw-note-content ul { list-style: disc; padding-left: 1.4rem; margin: .4rem 0; }
+    .bw-note-content ol { list-style: decimal; padding-left: 1.4rem; margin: .4rem 0; }
+    .bw-note-content li { margin: .2rem 0; }
+    .bw-note-content blockquote {
+      border-left: 3px solid #0053e2; padding-left: 1rem;
+      color: #6b7280; margin: .5rem 0; font-style: italic;
+    }
+    .bw-note-content pre  { background: #1e1e1e; border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
+    .bw-note-content code { font-family: ui-monospace, monospace; font-size: .85em; }
+    .bw-note-content pre code { color: #d4d4d4; }
+    .bw-note-content :not(pre) > code { background: #f3f4f6; border-radius: .25rem; padding: .1em .3em; }
+    .dark .bw-note-content :not(pre) > code { background: #27272a; color: #f4f4f5; }
+    .bw-note-content a { color: #0053e2; text-decoration: underline; }
+    .bw-note-content table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
+    .bw-note-content th, .bw-note-content td {
+      border: 1px solid #e5e7eb; padding: .4rem .7rem; text-align: left;
+    }
+    .dark .bw-note-content th, .dark .bw-note-content td { border-color: #3f3f46; }
+    .bw-note-content th { background: #f9fafb; font-weight: 600; }
+    .dark .bw-note-content th { background: #27272a; }
+    .bw-note-content img { max-width: 100%; border-radius: .5rem; margin: .5rem 0; }
+    .bw-note-content hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
+    .dark .bw-note-content hr { border-color: #3f3f46; }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 min-h-full flex flex-col">
+
+  {# ── Header bar ── #}
+  <header class="bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-3">
+    <span class="text-xl" aria-hidden="true">🪱</span>
+    <span class="font-bold text-[#0053e2] dark:text-blue-400 text-sm tracking-tight">BookWorm</span>
+    <span class="text-xs text-gray-400 dark:text-zinc-500 ml-2">Shared note</span>
+    <div class="flex-1"></div>
+    <a href="/register"
+       class="text-xs px-3 py-1.5 rounded-lg bg-[#0053e2] text-white font-semibold hover:bg-blue-700 transition">
+      Sign up free
+    </a>
+  </header>
+
+  {# ── Main content ── #}
+  <main class="flex-1 max-w-3xl w-full mx-auto px-4 py-8 sm:py-12">
+
+    {# Note icon + title #}
+    <div class="mb-6">
+      {% if note.icon %}
+      <span class="text-3xl mb-2 block" aria-hidden="true">{{ note.icon }}</span>
+      {% endif %}
+      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-zinc-100 leading-tight">
+        {{ note.title }}
+      </h1>
+      <div class="flex flex-wrap items-center gap-3 mt-3 text-sm text-gray-500 dark:text-zinc-400">
+        {% if note.meeting_date %}
+        <span class="flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          {{ note.meeting_date }}
+        </span>
+        {% endif %}
+        {% for cat in note.categories %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+              style="background:{{ cat.color }}22;color:{{ cat.color }}">
+          {{ cat.name }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Note content #}
+    {% if note.content %}
+    <article class="bw-note-content prose-sm text-gray-800 dark:text-zinc-200">
+      {{ note.content | safe }}
+    </article>
+    {% else %}
+    <p class="text-gray-400 dark:text-zinc-500 italic text-sm">This note has no content.</p>
+    {% endif %}
+
+  </main>
+
+  {# ── Footer CTA ── #}
+  <footer class="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 px-4 py-6">
+    <div class="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>
+        <p class="font-semibold text-gray-900 dark:text-zinc-100 text-sm">
+          🪱 Enjoy BookWorm — your team's private notes, databases &amp; more.
+        </p>
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+          Self-hosted, no subscriptions, no tracking.
+        </p>
+      </div>
+      <a href="/register"
+         class="px-5 py-2.5 rounded-xl bg-[#0053e2] text-white font-semibold text-sm
+                hover:bg-blue-700 transition whitespace-nowrap">
+        Create your account →
+      </a>
+    </div>
+  </footer>
+
+</body>
+</html>

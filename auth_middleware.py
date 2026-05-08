@@ -58,7 +58,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # no session cookie), and public auth pages.
         # NOTE: /wopi/ is prefix-checked here (like /static/), NOT added to _PUBLIC.
         # _PUBLIC is for exact named paths only.
-        if path.startswith("/static/") or path.startswith("/wopi/") or path in _PUBLIC:
+        if (path.startswith("/static/")
+                or path.startswith("/wopi/")
+                or path.startswith("/share/view/")   # public share links — token auth, no session
+                or path in _PUBLIC):
             return await call_next(request)
 
         uid     = request.session.get("user_id")

@@ -1129,6 +1129,29 @@ async def init_db() -> None:
                 "ALTER TABLE note_reminders ADD COLUMN message TEXT NOT NULL DEFAULT ''"
             )
 
+        # ── public_share_links — shareable tokens for notes and DB cards ─────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS public_share_links (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                token       TEXT    NOT NULL UNIQUE,
+                object_type TEXT    NOT NULL
+                            CHECK(object_type IN ('note', 'db_card')),
+                object_id   INTEGER NOT NULL,
+                owner_id    INTEGER NOT NULL
+                            REFERENCES users(id) ON DELETE CASCADE,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expires_at  DATETIME DEFAULT NULL
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pub_share_token "
+            "ON public_share_links(token)"
+        )
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pub_share_object "
+            "ON public_share_links(object_type, object_id, owner_id)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

@@ -19,6 +19,7 @@ from routers.notes_db import (
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
+from routers.sharing_db import get_public_link
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -83,19 +84,22 @@ async def edit_note_form(request: Request, note_id: int):
     note = await get_note_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    uid   = request.session.get("user_id")
     ws_id = note.get("workspace_id")
     categories = await get_categories_for_workspace(ws_id)
-    attr_defs = await get_all_attr_defs()
+    attr_defs  = await get_all_attr_defs()
+    link = await get_public_link("note", note_id, uid) if uid else None
     return templates.TemplateResponse(
         request,
         "partials/note_form.html",
         {
-            "note": note,
-            "is_edit": True,
-            "categories": categories,
-            "attr_defs": attr_defs,
-            "today": note["meeting_date"],
-            "workspace_id": ws_id,
+            "note":               note,
+            "is_edit":            True,
+            "categories":         categories,
+            "attr_defs":          attr_defs,
+            "today":              note["meeting_date"],
+            "workspace_id":       ws_id,
+            "public_link_active": link is not None,
         },
     )
 
