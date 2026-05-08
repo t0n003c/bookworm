@@ -17,6 +17,7 @@ var _dbFilterGroups      = []; // [[{key,op,val},…],…] — OR between groups
 var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = highest priority)
 var _dbGroupBy           = null; // null | {key} — attribute key to group cards by
 var _dbColorRules        = []; // [{key,op,val,color}] — first match wins; color = _DB_OPT_COLORS id
+var _dbCardVisibleAttrs  = null; // null = show all; array of attr_key strings = only those keys shown on card preview
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -485,11 +486,15 @@ function initDatabaseView(wsId) {
   _dbSortLevels    = [];
   _dbGroupBy       = null;
   _dbGroupBy       = null;
+  _dbCardVisibleAttrs = null;
   _dbLoadFilterSort(_dbWsId);
   _dbUpdateFilterBadge();   // restore badge count after page refresh
-  // Close any stale filter panel from a previous workspace
+  // Close any stale filter/fields panel from a previous workspace
   var _stalePanel = document.getElementById('db-filter-panel');
   if (_stalePanel) _stalePanel.remove();
+  var _staleFieldsPanel = document.getElementById('db-fields-panel');
+  if (_staleFieldsPanel) _staleFieldsPanel.remove();
+  _dbUpdateFieldsBadge();   // restore fields badge after page refresh
   // Restore saved size preference (stored per-workspace so each DB is independent)
   var saved = parseInt(localStorage.getItem('_dbSize_' + wsId), 10);
   _dbSizeStep = (saved >= 1 && saved <= 5) ? saved : 3;
@@ -702,7 +707,13 @@ function _dbSaveFilterSort() {
   try {
     localStorage.setItem(
       '_dbFS_' + _dbWsId,
-      JSON.stringify({ groups: _dbFilterGroups, sort: _dbSortLevels, groupBy: _dbGroupBy, colorRules: _dbColorRules })
+      JSON.stringify({
+        groups:       _dbFilterGroups,
+        sort:         _dbSortLevels,
+        groupBy:      _dbGroupBy,
+        colorRules:   _dbColorRules,
+        visibleAttrs: _dbCardVisibleAttrs,   // null = all shown; array of keys = filtered
+      })
     );
   } catch(e) {}
 }
@@ -713,10 +724,14 @@ function _dbLoadFilterSort(wsId) {
     var raw = localStorage.getItem('_dbFS_' + wsId);
     if (!raw) return;
     var data = JSON.parse(raw);
-    if (Array.isArray(data.groups))     _dbFilterGroups = data.groups;
-    if (Array.isArray(data.sort))       _dbSortLevels   = data.sort;
-    if (data.groupBy !== undefined)     _dbGroupBy      = data.groupBy || null;
-    if (Array.isArray(data.colorRules)) _dbColorRules   = data.colorRules;
+    if (Array.isArray(data.groups))     _dbFilterGroups     = data.groups;
+    if (Array.isArray(data.sort))       _dbSortLevels       = data.sort;
+    if (data.groupBy !== undefined)     _dbGroupBy          = data.groupBy || null;
+    if (Array.isArray(data.colorRules)) _dbColorRules       = data.colorRules;
+    // visibleAttrs: null means show-all; an array means only show those keys
+    if (data.visibleAttrs === null || Array.isArray(data.visibleAttrs)) {
+      _dbCardVisibleAttrs = data.visibleAttrs;
+    }
   } catch(e) {}
 }
 
@@ -927,6 +942,240 @@ function _dbClearFilters() {
   if (panel) panel.remove();
   _dbUpdateFilterBadge();
   _dbRenderGrid();
+}
+
+/* ─── Card preview fields badge ────────────────────────────────────────── */
+// Updates the dot on #db-fields-btn: purple when some attrs are hidden, grey otherwise.
+function _dbUpdateFieldsBadge() {
+  var btn = document.getElementById('db-fields-btn');
+  if (!btn) return;
+  var old = btn.querySelector('.db-fields-badge');
+  // Count attrs that exist across all cards but are hidden
+  var allKeys = _dbGetAttrKeys().filter(function(ak) {
+    return ak.key !== '__title' && ak.key !== '__created' && ak.key !== '__updated';
+  });
+  var hiddenCount = (_dbCardVisibleAttrs === null)
+    ? 0
+    : allKeys.filter(function(ak) {
+        return _dbCardVisibleAttrs.indexOf(ak.key) === -1;
+      }).length;
+  if (hiddenCount === 0) {
+    if (old) old.remove();
+    btn.classList.remove('text-purple-600', 'dark:text-purple-400');
+    btn.classList.add('text-gray-400');
+    return;
+  }
+  btn.classList.remove('text-gray-400');
+  btn.classList.add('text-purple-600', 'dark:text-purple-400');
+  if (!old) {
+    var badge = document.createElement('span');
+    badge.className = 'db-fields-badge';
+    badge.style.cssText =
+      'position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;'
+      + 'border-radius:9999px;font-size:9px;font-weight:700;line-height:14px;'
+      + 'text-align:center;padding:0 3px;'
+      + 'background:#7c3aed;color:#fff;pointer-events:none;';
+    btn.appendChild(badge);
+    old = badge;
+  }
+  old.textContent = hiddenCount;
+}
+
+/* ─── Card preview fields toggle panel ─────────────────────────────────── */
+// Lists all user-defined attr keys with an eye-on/eye-off toggle for each one.
+function _dbToggleFieldsPanel() {
+  var existing = document.getElementById('db-fields-panel');
+  if (existing) { existing.remove(); return; }
+
+  // Also close filter panel if open
+  var fp = document.getElementById('db-filter-panel');
+  if (fp) fp.remove();
+
+  var btn    = document.getElementById('db-fields-btn');
+  var isDark = document.documentElement.classList.contains('dark');
+  var panelBg = isDark ? '#1c1c1f' : '#ffffff';
+  var bdr     = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt     = isDark ? '#f4f4f5' : '#111827';
+  var sub     = isDark ? '#71717a' : '#6b7280';
+  var rowHov  = isDark ? '#27272a' : '#f9fafb';
+
+  var rect = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+
+  var panel = document.createElement('div');
+  panel.id  = 'db-fields-panel';
+  panel.style.cssText =
+    'position:fixed;top:' + (rect.bottom + 6) + 'px;'
+    + 'right:' + (window.innerWidth - rect.right) + 'px;'
+    + 'z-index:9500;width:280px;max-width:calc(100vw - 1.5rem);'
+    + 'background:' + panelBg + ';border:1px solid ' + bdr + ';'
+    + 'border-radius:0.75rem;padding:0.85rem;'
+    + 'box-shadow:0 8px 32px rgba(0,0,0,0.18);'
+    + 'display:flex;flex-direction:column;gap:0.5rem;';
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'font-size:0.65rem;font-weight:700;text-transform:uppercase;'
+    + 'letter-spacing:0.06em;color:' + sub + ';margin-bottom:0.2rem;';
+  hdr.textContent = 'Card preview fields';
+  panel.appendChild(hdr);
+
+  // Collect user-defined attr keys (skip built-ins — title/updated are always shown)
+  var attrKeys = _dbGetAttrKeys().filter(function(ak) {
+    return ak.key !== '__title' && ak.key !== '__created' && ak.key !== '__updated';
+  });
+
+  if (attrKeys.length === 0) {
+    var empty = document.createElement('p');
+    empty.style.cssText = 'font-size:0.75rem;color:' + sub + ';text-align:center;padding:0.5rem 0;';
+    empty.textContent = 'No fields yet — add attributes to cards.';
+    panel.appendChild(empty);
+  } else {
+    // Helper: is a key currently visible?
+    function _isVisible(key) {
+      return _dbCardVisibleAttrs === null ||
+             _dbCardVisibleAttrs.indexOf(key) !== -1;
+    }
+
+    // SVG eye-on / eye-off icons
+    var EYE_ON  = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+      + '<path stroke-linecap="round" stroke-linejoin="round"'
+      + ' d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>'
+      + '<path stroke-linecap="round" stroke-linejoin="round"'
+      + ' d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7'
+      + '-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>'
+      + '</svg>';
+    var EYE_OFF = '<svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+      + '<path stroke-linecap="round" stroke-linejoin="round"'
+      + ' d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7'
+      + 'a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243'
+      + 'M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29'
+      + 'm7.532 7.532l3.29 3.29M3 3l3.59 3.59'
+      + 'm0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7'
+      + 'a10.025 10.025 0 01-4.132 5.411M3 3l18 18"/>'
+      + '</svg>';
+
+    // Icon for attr type
+    function _typeIcon(type) {
+      var m = _DB_ATTR_TYPES.find(function(t) { return t.id === type; });
+      return m ? m.icon : '\uD83D\uDCDD';
+    }
+
+    // Render all rows into a scrollable list
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:0.15rem;'
+      + 'max-height:280px;overflow-y:auto;';
+
+    attrKeys.forEach(function(ak) {
+      var row = document.createElement('div');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:0.5rem;'
+        + 'padding:0.3rem 0.4rem;border-radius:0.375rem;cursor:pointer;'
+        + 'transition:background 0.1s;';
+      row.setAttribute('role', 'button');
+      row.setAttribute('tabindex', '0');
+      row.title = _isVisible(ak.key) ? 'Hide from card preview' : 'Show on card preview';
+
+      row.onmouseenter = function() { row.style.background = rowHov; };
+      row.onmouseleave = function() { row.style.background = ''; };
+
+      var icon = document.createElement('span');
+      icon.style.cssText = 'font-size:0.8rem;width:1.1rem;text-align:center;flex-shrink:0;';
+      icon.textContent = _typeIcon(ak.type);
+
+      var label = document.createElement('span');
+      label.style.cssText = 'flex:1;font-size:0.8rem;color:' + txt
+        + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      label.textContent = _dbKeyLabel(ak.key);
+
+      var eyeBtn = document.createElement('span');
+      eyeBtn.style.cssText = 'flex-shrink:0;color:'
+        + (_isVisible(ak.key) ? '#7c3aed' : sub) + ';';
+      eyeBtn.innerHTML = _isVisible(ak.key) ? EYE_ON : EYE_OFF;
+
+      function _toggleRow(key, eyeEl, rowEl) {
+        // Build new array from current state
+        var wasShowAll = _dbCardVisibleAttrs === null;
+        var currentKeys = wasShowAll
+          ? attrKeys.map(function(x) { return x.key; })  // expand null to all
+          : _dbCardVisibleAttrs.slice();
+
+        var idx = currentKeys.indexOf(key);
+        if (idx === -1) {
+          currentKeys.push(key);  // show it
+        } else {
+          currentKeys.splice(idx, 1);  // hide it
+        }
+        // If all keys are now visible, collapse back to null (show-all)
+        var allVisible = attrKeys.every(function(x) {
+          return currentKeys.indexOf(x.key) !== -1;
+        });
+        _dbCardVisibleAttrs = allVisible ? null : currentKeys;
+        _dbSaveFilterSort();
+        _dbUpdateFieldsBadge();
+        _dbRenderGrid();
+
+        // Update this row’s eye icon + colour in place
+        var nowVis = _isVisible(key);
+        eyeEl.innerHTML    = nowVis ? EYE_ON : EYE_OFF;
+        eyeEl.style.color  = nowVis ? '#7c3aed' : sub;
+        rowEl.title = nowVis ? 'Hide from card preview' : 'Show on card preview';
+      }
+
+      row.onclick = function() { _toggleRow(ak.key, eyeBtn, row); };
+      row.onkeydown = function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          _toggleRow(ak.key, eyeBtn, row);
+        }
+      };
+
+      row.appendChild(icon);
+      row.appendChild(label);
+      row.appendChild(eyeBtn);
+      list.appendChild(row);
+    });
+
+    panel.appendChild(list);
+
+    // Footer: Show all
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;justify-content:flex-end;'
+      + 'border-top:1px solid ' + bdr + ';padding-top:0.5rem;margin-top:0.15rem;';
+    var showAllBtn = document.createElement('button');
+    showAllBtn.type = 'button';
+    showAllBtn.textContent = 'Show all fields';
+    showAllBtn.style.cssText = 'font-size:0.73rem;padding:0.22rem 0.7rem;border-radius:0.375rem;'
+      + 'cursor:pointer;border:1px solid ' + bdr + ';background:transparent;color:' + sub + ';';
+    showAllBtn.addEventListener('click', function() {
+      _dbCardVisibleAttrs = null;
+      _dbSaveFilterSort();
+      _dbUpdateFieldsBadge();
+      _dbRenderGrid();
+      panel.remove();
+    });
+    footer.appendChild(showAllBtn);
+    panel.appendChild(footer);
+  }
+
+  document.body.appendChild(panel);
+
+  // Close on outside click or Escape
+  setTimeout(function() {
+    function onOutside(e) {
+      if (!panel.contains(e.target) && e.target !== btn) {
+        panel.remove();
+        document.removeEventListener('mousedown', onOutside, true);
+      }
+    }
+    document.addEventListener('mousedown', onOutside, true);
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        panel.remove();
+        document.removeEventListener('keydown', onKey, true);
+      }
+    }
+    document.addEventListener('keydown', onKey, true);
+  }, 50);
 }
 
 // Returns the card background/border override for the first matching color rule,
@@ -1210,6 +1459,10 @@ function _dbBuildFilterRow(groupIdx, condIdx, attrKeys, listEl) {
 function _dbToggleFilterPanel() {
   var existing = document.getElementById('db-filter-panel');
   if (existing) { existing.remove(); return; }
+
+  // Close fields panel if open
+  var fp = document.getElementById('db-fields-panel');
+  if (fp) fp.remove();
 
   var btn     = document.getElementById('db-filter-btn');
   var isDark  = document.documentElement.classList.contains('dark');
@@ -1993,6 +2246,11 @@ function _dbAttrPills(attrs, cardId) {
     var a = attrs[i];
     var t = a.attr_type  || 'text';
     var v = a.attr_value || '';
+
+    // Skip attrs that the user has hidden from the card preview.
+    if (_dbCardVisibleAttrs !== null &&
+        _dbCardVisibleAttrs.indexOf(a.attr_key) === -1) continue;
+
 
     if (t === 'select') {
       if (v) {
