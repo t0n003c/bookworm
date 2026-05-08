@@ -28,6 +28,8 @@ _PUBLIC = {
     "/demo/cancel-end", # refresh cancel — session still valid
     "/demo/alive",      # heartbeat poller — must work even after user is deleted
     "/health",
+    # PWA — must be public so browsers/OS can fetch them without a session
+    "/manifest.json", "/sw.js", "/offline",
 }
 
 

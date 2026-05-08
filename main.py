@@ -9,7 +9,7 @@ import logging
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -103,6 +103,13 @@ async def _demo_purge_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Generate PWA icons on first boot (no-op if files already exist)
+    try:
+        from bw_pwa_icons import generate_icons
+        generate_icons()
+    except Exception:
+        log.warning("PWA icon generation failed — continuing without icons")
+
     await init_db()
     await purge_expired_trash()   # clean up any trash older than 30 days on boot
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
@@ -167,6 +174,77 @@ app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(workspace_databases_router.router)
+
+
+# ── PWA support routes ───────────────────────────────────────────────────────
+
+_SW_PATH = os.path.join(os.path.dirname(__file__), "static", "js", "sw.js")
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    """Serve the service worker at root scope so it controls all pages."""
+    try:
+        with open(_SW_PATH, "r", encoding="utf-8") as f:
+            body = f.read()
+    except FileNotFoundError:
+        return Response(status_code=404)
+    return Response(
+        content=body,
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/manifest.json", include_in_schema=False)
+async def pwa_manifest(request: Request):
+    """Dynamic web-app manifest so icons resolve relative to host."""
+    base = str(request.base_url).rstrip("/")
+    manifest = {
+        "name": "BookWorm",
+        "short_name": "BookWorm",
+        "description": "Team note-taking app — notes, reminders, CRM & more.",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0053e2",
+        "theme_color": "#0053e2",
+        "orientation": "any",
+        "categories": ["productivity", "utilities"],
+        "icons": [
+            {
+                "src": f"{base}/static/img/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": f"{base}/static/img/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": f"{base}/static/img/icons/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+        "screenshots": [],
+    }
+    return JSONResponse(
+        content=manifest,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/offline", response_class=HTMLResponse, include_in_schema=False)
+async def offline_page(request: Request):
+    """Offline fallback page cached by the service worker."""
+    return templates.TemplateResponse(request, "offline.html")
 
 
 @app.get("/health")

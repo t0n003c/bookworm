@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BookWorm — Team Notes</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  {# ── PWA ───────────────────────────────────────────────────────── #}
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0053e2">
+  <link rel="apple-touch-icon" href="/static/img/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BookWorm">
+  <meta name="mobile-web-app-capable" content="yes">
   <!-- Apply saved theme before render to avoid flash -->
   <script>
     (function () {
@@ -860,6 +868,228 @@
       }
     });
   })();
+</script>
+
+{# ══ PWA install banner ════════════════════════════════════════════════════ #}
+{# Hidden by default. JS below shows it when the install prompt is available   #}
+{# or when iOS Safari is detected. Shared across all pages via base.html.      #}
+<div id="bw-pwa-banner" aria-live="polite" aria-label="Install BookWorm app"
+     style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
+            padding:0 1rem 1rem;pointer-events:none;">
+  <div id="bw-pwa-card"
+       style="pointer-events:auto;max-width:480px;margin:0 auto;
+              background:#fff;border:1px solid #e5e7eb;
+              border-top:3px solid #0053e2;
+              border-radius:1rem 1rem 0.75rem 0.75rem;
+              box-shadow:0 -4px 32px rgba(0,0,0,.14);
+              padding:1rem 1.25rem;
+              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;">
+
+    {# ── Standard prompt (Chrome / Edge / Android) ── #}
+    <div id="bw-pwa-std">
+      <div style="display:flex;align-items:center;gap:.85rem;">
+        <img src="/static/img/icons/icon-192.png" width="44" height="44"
+             alt="" style="border-radius:.6rem;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <p style="margin:0;font-weight:700;font-size:.95rem;color:#111827;">Install BookWorm</p>
+          <p style="margin:.15rem 0 0;font-size:.8rem;color:#6b7280;line-height:1.4;">
+            Add to your home screen for instant launch &amp; offline access.
+          </p>
+        </div>
+        <button id="bw-pwa-dismiss" aria-label="Dismiss install banner"
+                style="flex-shrink:0;background:none;border:none;cursor:pointer;
+                       color:#9ca3af;font-size:1.2rem;line-height:1;padding:.25rem;">&times;</button>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-top:.85rem;justify-content:flex-end;">
+        <button id="bw-pwa-later"
+                style="padding:.45rem 1rem;border-radius:.5rem;border:1px solid #d1d5db;
+                       background:#fff;color:#374151;font-size:.85rem;font-weight:600;cursor:pointer;">
+          Not now
+        </button>
+        <button id="bw-pwa-install"
+                style="padding:.45rem 1.1rem;border-radius:.5rem;border:none;
+                       background:#0053e2;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">
+          Install app
+        </button>
+      </div>
+    </div>
+
+    {# ── iOS Safari manual instructions ── #}
+    <div id="bw-pwa-ios" style="display:none;">
+      <div style="display:flex;align-items:center;gap:.85rem;">
+        <img src="/static/img/icons/icon-192.png" width="44" height="44"
+             alt="" style="border-radius:.6rem;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <p style="margin:0;font-weight:700;font-size:.95rem;color:#111827;">Install BookWorm on iOS</p>
+          <p style="margin:.2rem 0 0;font-size:.82rem;color:#4b5563;line-height:1.45;">
+            Tap the
+            <svg style="display:inline;vertical-align:-.18em;" width="16" height="16" viewBox="0 0 24 24"
+                 fill="none" stroke="#0053e2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+              <polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+            </svg>
+            <strong>Share</strong> button, then choose
+            <strong>&#8220;Add to Home Screen&#8221;</strong>.
+          </p>
+        </div>
+        <button id="bw-pwa-ios-dismiss" aria-label="Dismiss"
+                style="flex-shrink:0;background:none;border:none;cursor:pointer;
+                       color:#9ca3af;font-size:1.2rem;line-height:1;padding:.25rem;">&times;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Dark-mode override for the banner card #}
+<style>
+  @media (prefers-color-scheme: dark) {
+    #bw-pwa-card {
+      background:#27272a!important;border-color:#3f3f46!important;
+    }
+    #bw-pwa-card p { color:#d4d4d8!important; }
+    #bw-pwa-card p:first-child { color:#f4f4f5!important; }
+    #bw-pwa-later { background:#3f3f46!important;border-color:#52525b!important;color:#e4e4e7!important; }
+  }
+  #bw-pwa-banner { transition: transform .35s cubic-bezier(.17,.67,.38,1.3); }
+  #bw-pwa-install:hover { background:#0047c2!important; }
+  #bw-pwa-later:hover   { background:#f3f4f6!important; }
+</style>
+
+<script>
+(function () {
+  'use strict';
+  /* ── Constants ── */
+  var DISMISS_KEY    = 'bw-pwa-dismissed';   // localStorage key
+  var DISMISS_TTL_MS = 30 * 24 * 3600 * 1e3; // 30 days
+  var _deferredPrompt = null;
+
+  /* ── Helpers ── */
+  function _isInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+  }
+
+  function _wasDismissed() {
+    try {
+      var t = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+      return t && (Date.now() - t) < DISMISS_TTL_MS;
+    } catch (_) { return false; }
+  }
+
+  function _setDismissed() {
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (_) {}
+  }
+
+  function _isIos() {
+    var ua = navigator.userAgent || '';
+    return /iPhone|iPad|iPod/.test(ua)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  /* ── Show banner ── */
+  function _showBanner(mode) {
+    var banner = document.getElementById('bw-pwa-banner');
+    var std    = document.getElementById('bw-pwa-std');
+    var ios    = document.getElementById('bw-pwa-ios');
+    if (!banner) return;
+    if (mode === 'ios') {
+      if (std) std.style.display = 'none';
+      if (ios) ios.style.display = '';
+    } else {
+      if (ios) ios.style.display = 'none';
+      if (std) std.style.display = '';
+    }
+    banner.style.display = 'block';
+  }
+
+  function _hideBanner() {
+    var banner = document.getElementById('bw-pwa-banner');
+    if (banner) banner.style.display = 'none';
+  }
+
+  /* ── Wire buttons ── */
+  function _wireButtons() {
+    /* Standard: Install */
+    var btnInstall = document.getElementById('bw-pwa-install');
+    if (btnInstall) {
+      btnInstall.addEventListener('click', function () {
+        _hideBanner();
+        if (_deferredPrompt) {
+          _deferredPrompt.prompt();
+          _deferredPrompt.userChoice.then(function (r) {
+            if (r.outcome === 'accepted') _setDismissed();
+            _deferredPrompt = null;
+          });
+        }
+      });
+    }
+
+    /* Standard: Not now */
+    var btnLater = document.getElementById('bw-pwa-later');
+    if (btnLater) {
+      btnLater.addEventListener('click', function () {
+        _setDismissed(); _hideBanner();
+      });
+    }
+
+    /* Standard: × */
+    var btnDismiss = document.getElementById('bw-pwa-dismiss');
+    if (btnDismiss) {
+      btnDismiss.addEventListener('click', function () {
+        _setDismissed(); _hideBanner();
+      });
+    }
+
+    /* iOS: × */
+    var btnIosDismiss = document.getElementById('bw-pwa-ios-dismiss');
+    if (btnIosDismiss) {
+      btnIosDismiss.addEventListener('click', function () {
+        _setDismissed(); _hideBanner();
+      });
+    }
+  }
+
+  /* ── Main logic ── */
+  function _init() {
+    if (_isInstalled() || _wasDismissed()) return;
+
+    _wireButtons();
+
+    if (_isIos()) {
+      /* iOS Safari: no beforeinstallprompt — show manual instructions */
+      setTimeout(function () { _showBanner('ios'); }, 4000);
+      return;
+    }
+
+    /* Chrome / Edge / Samsung Browser / Android: wait for OS prompt */
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      _deferredPrompt = e;
+      setTimeout(function () { _showBanner('std'); }, 2000);
+    });
+
+    /* Hide banner if user installs via OS prompt elsewhere */
+    window.addEventListener('appinstalled', function () {
+      _setDismissed(); _hideBanner();
+    });
+  }
+
+  /* ── Register Service Worker ── */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(function (reg) {
+          /* Check for updates every 60 minutes */
+          setInterval(function () { reg.update(); }, 3600 * 1000);
+        })
+        .catch(function (err) {
+          console.warn('[BookWorm SW] Registration failed:', err);
+        });
+    });
+  }
+
+  _init();
+})();
 </script>
 </body>
 </html>
