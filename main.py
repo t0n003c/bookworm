@@ -209,8 +209,8 @@ async def pwa_manifest(request: Request):
         "description": "Team note-taking app — notes, reminders, CRM & more.",
         "start_url": "/",
         "display": "standalone",
-        "background_color": "#0053e2",
-        "theme_color": "#0053e2",
+        "background_color": "#1b4332",
+        "theme_color": "#1b4332",
         "orientation": "any",
         "categories": ["productivity", "utilities"],
         "icons": [

@@ -8,23 +8,23 @@ Produces four PNG files inside static/img/icons/:
 
 Files are only written when missing; call generate_icons(force=True) to redraw.
 
-Design: bookworm character — round yellow worm with big expressive eyes,
+Design: bookworm character — round amber worm with big expressive eyes,
 round bookworm glasses, rosy cheeks, two body segments, sitting in an open
-book on a Walmart-blue rounded-square background.
+book on a deep forest-green rounded-square background.
 """
 import os
 from PIL import Image, ImageDraw
 
 # ── Palette ─────────────────────────────────────────────────────────────────
-_BLUE     = (0,   83,  226)   # Walmart primary #0053e2
-_YELLOW   = (255, 194,  32)   # Spark / worm body #ffc220
-_YLW_DARK = (220, 160,  10)   # worm segment border / depth
-_WHITE    = (255, 255, 255)
-_INK      = ( 26,  46,  92)   # dark navy for pupils, glasses, smile
-_PG_R     = (220, 232, 252)   # right-page tint
-_LINE_L   = (180, 208, 245)
-_LINE_R   = (165, 198, 238)
-_CHEEK    = (255, 120,  60, 110)  # RGBA — semi-transparent blush
+_BG       = ( 27,  67,  50)   # deep forest green  #1b4332
+_YELLOW   = (251, 191,  36)   # warm amber          #fbbf24
+_YLW_DARK = (146,  64,  14)   # amber shadow        #92400e
+_WHITE    = (255, 253, 245)   # warm off-white
+_INK      = ( 28,  25,  23)   # near-black          #1c1917
+_PG_R     = (254, 243, 199)   # warm parchment      #fef3c7
+_LINE_L   = (253, 230, 138)   # warm tan            #fde68a
+_LINE_R   = (252, 211,  77)   # golden              #fcd34d
+_CHEEK    = (234,  88,  12, 110)  # RGBA — warm orange blush
 
 _OUT_DIR = os.path.join(os.path.dirname(__file__), "static", "img", "icons")
 
@@ -55,7 +55,7 @@ def _make_icon(size: int, maskable: bool) -> Image.Image:
     # ── Blue rounded background ──────────────────────────────────────────────
     d.rounded_rectangle(
         [(pad, pad), (s - pad - 1, s - pad - 1)],
-        radius=int(s * 0.22), fill=_BLUE,
+        radius=int(s * 0.22), fill=_BG,
     )
 
     # ════════════════════════════════════════════════════════════════════════
@@ -71,7 +71,7 @@ def _make_icon(size: int, maskable: bool) -> Image.Image:
     d.rectangle([(bx,      by), (mid - sp,  by + bh)], fill=_WHITE)   # left page
     d.rectangle([(mid + sp, by), (bx + bw, by + bh)], fill=_PG_R)     # right page
     d.rectangle([(mid - sp, by - int(s * 0.01)),
-                 (mid + sp, by + bh)], fill=_BLUE)                     # spine
+                 (mid + sp, by + bh)], fill=_BG)                     # spine
 
     # text lines — left page
     lx0, lx1 = bx + int(s * 0.04), mid - sp - int(s * 0.03)
@@ -95,7 +95,7 @@ def _make_icon(size: int, maskable: bool) -> Image.Image:
     # book cover bottom strip
     d.rounded_rectangle(
         [(bx, by + bh - int(s * 0.025)), (bx + bw, by + bh + int(s * 0.04))],
-        radius=int(s * 0.025), fill=_BLUE,
+        radius=int(s * 0.025), fill=_BG,
     )
 
     # ════════════════════════════════════════════════════════════════════════
@@ -215,6 +215,6 @@ def generate_icons(out_dir: str = _OUT_DIR, force: bool = False) -> None:
         icon = _make_icon(size, maskable)
         # Flatten RGBA → RGB on solid blue background (required for JPEG-only
         # contexts; PNG keeps transparency but some platforms need opaque icons).
-        bg = Image.new("RGB", (size, size), _BLUE)
+        bg = Image.new("RGB", (size, size), _BG)
         bg.paste(icon, mask=icon.split()[3])
         bg.save(path, "PNG", optimize=True)
