@@ -6,43 +6,22 @@
   <title>{{ note.title }} — BookWorm</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
   <link rel="stylesheet" href="/static/css/tailwind.css">
+  <link rel="stylesheet" href="/static/css/bw-content.css">
+  <!-- highlight.js — vendored, same build as main app -->
+  <link id="hljs-light" rel="stylesheet" disabled
+    href="/static/vendor/hljs-github.min.css">
+  <link id="hljs-dark" rel="stylesheet"
+    href="/static/vendor/hljs-github-dark-dimmed.min.css">
+  <script src="/static/vendor/highlight.min.js"></script>
+  <script src="/static/js/bw-content-render.js"></script>
   <script>
-    // Apply saved theme before first paint
+    // Apply saved theme before first paint, then sync hljs theme
     (function() {
       var s = localStorage.getItem('bw-theme');
       if (s !== 'light') document.documentElement.classList.add('dark');
+      if (typeof _bwSyncHljsTheme === 'function') _bwSyncHljsTheme();
     })();
   </script>
-  <style>
-    /* Prose-style note content rendering */
-    .bw-note-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 .5rem; }
-    .bw-note-content h2 { font-size: 1.25rem; font-weight: 600; margin: .85rem 0 .4rem; }
-    .bw-note-content h3 { font-size: 1.1rem; font-weight: 600; margin: .7rem 0 .35rem; }
-    .bw-note-content p  { margin: .4rem 0; line-height: 1.7; }
-    .bw-note-content ul { list-style: disc; padding-left: 1.4rem; margin: .4rem 0; }
-    .bw-note-content ol { list-style: decimal; padding-left: 1.4rem; margin: .4rem 0; }
-    .bw-note-content li { margin: .2rem 0; }
-    .bw-note-content blockquote {
-      border-left: 3px solid #0053e2; padding-left: 1rem;
-      color: #6b7280; margin: .5rem 0; font-style: italic;
-    }
-    .bw-note-content pre  { background: #1e1e1e; border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
-    .bw-note-content code { font-family: ui-monospace, monospace; font-size: .85em; }
-    .bw-note-content pre code { color: #d4d4d4; }
-    .bw-note-content :not(pre) > code { background: #f3f4f6; border-radius: .25rem; padding: .1em .3em; }
-    .dark .bw-note-content :not(pre) > code { background: #27272a; color: #f4f4f5; }
-    .bw-note-content a { color: #0053e2; text-decoration: underline; }
-    .bw-note-content table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
-    .bw-note-content th, .bw-note-content td {
-      border: 1px solid #e5e7eb; padding: .4rem .7rem; text-align: left;
-    }
-    .dark .bw-note-content th, .dark .bw-note-content td { border-color: #3f3f46; }
-    .bw-note-content th { background: #f9fafb; font-weight: 600; }
-    .dark .bw-note-content th { background: #27272a; }
-    .bw-note-content img { max-width: 100%; border-radius: .5rem; margin: .5rem 0; }
-    .bw-note-content hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
-    .dark .bw-note-content hr { border-color: #3f3f46; }
-  </style>
 </head>
 <body class="bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 min-h-full flex flex-col">
 
@@ -89,7 +68,7 @@
 
     {# Note content #}
     {% if note.content %}
-    <article class="bw-note-content prose-sm text-gray-800 dark:text-zinc-200">
+    <article class="md-body text-sm text-gray-800 dark:text-zinc-200">
       {{ note.content | safe }}
     </article>
     {% else %}
@@ -117,5 +96,10 @@
     </div>
   </footer>
 
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      _bwApplyCodeHighlighting(document.querySelector('.md-body'));
+    });
+  </script>
 </body>
 </html>
