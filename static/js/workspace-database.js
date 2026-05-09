@@ -2147,7 +2147,8 @@ function _dbCardHtml(card) {
     + (cardStyle ? ' style="' + cardStyle + '"' : '') + '>'
     + cover
     + '<div class="p-3 flex flex-col flex-1 gap-2">'    + '<div class="flex items-start gap-2">'
-    + '<div contenteditable="true" class="flex-1 font-bold text-gray-900 dark:text-zinc-100'
+    + '<div class="flex-1 min-w-0 flex items-start gap-1.5">'
+    + '<div contenteditable="true" class="font-bold text-gray-900 dark:text-zinc-100'
     + ' text-2xl leading-snug outline-none empty:before:content-[\'Untitled\']'
     + ' empty:before:text-gray-300 dark:empty:before:text-zinc-600"'
     + ' onblur="_dbTitleBlur(' + card.id + ',this)"'
@@ -2162,6 +2163,7 @@ function _dbCardHtml(card) {
     + ' d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101'
     + 'm-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>'
     + '</svg></span>'
+    + '</div>'
     + '<div class="flex gap-1 flex-shrink-0 opacity-0 group-hover/card:opacity-100 transition">'
     + '<button type="button" onclick="_dbOpenDetail(' + card.id + ')"'
     + ' title="Open card" aria-label="Open card detail"'
