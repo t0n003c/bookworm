@@ -298,3 +298,61 @@ span[data-bw-ti]::before {
 .dark .bw-reminder-chip.bw-rc-plain { text-decoration-color: #60a5fa; }
 .bw-reminder-chip.bw-rc-plain:hover { background: none; border: none; text-decoration-style: solid; }
 .bw-reminder-chip.bw-rc-plain .bw-rc-main { font-weight: inherit; color: inherit; }
+
+/* ── Database attribute: option pill colors (select / multi_select) ──────── */
+/* One class per palette entry; dark variants auto-applied via .dark prefix.  */
+.bw-opt-pill {
+  display: inline-flex; align-items: center;
+  padding: .18rem .65rem; border-radius: 9999px;
+  font-size: .75rem; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.bw-opt-gray   { background: #f3f4f6; color: #374151;  border-color: rgba(156,163,175,.35); }
+.bw-opt-red    { background: #fef2f2; color: #dc2626;  border-color: rgba(239,68,68,.35); }
+.bw-opt-orange { background: #fff7ed; color: #ea580c;  border-color: rgba(249,115,22,.35); }
+.bw-opt-yellow { background: #fefce8; color: #b45309;  border-color: rgba(234,179,8,.35); }
+.bw-opt-green  { background: #f0fdf4; color: #16a34a;  border-color: rgba(34,197,94,.35); }
+.bw-opt-teal   { background: #f0fdfa; color: #0f766e;  border-color: rgba(20,184,166,.35); }
+.bw-opt-blue   { background: #eff6ff; color: #2563eb;  border-color: rgba(59,130,246,.35); }
+.bw-opt-purple { background: #faf5ff; color: #9333ea;  border-color: rgba(168,85,247,.35); }
+.bw-opt-pink   { background: #fdf2f8; color: #db2777;  border-color: rgba(236,72,153,.35); }
+.dark .bw-opt-gray   { background: #3f3f46; color: #d4d4d8; border-color: rgba(161,161,170,.25); }
+.dark .bw-opt-red    { background: #450a0a; color: #f87171; border-color: rgba(248,113,113,.25); }
+.dark .bw-opt-orange { background: #431407; color: #fb923c; border-color: rgba(251,146,60,.25); }
+.dark .bw-opt-yellow { background: #422006; color: #fbbf24; border-color: rgba(251,191,36,.25); }
+.dark .bw-opt-green  { background: #052e16; color: #4ade80; border-color: rgba(74,222,128,.25); }
+.dark .bw-opt-teal   { background: #042f2e; color: #5eead4; border-color: rgba(94,234,212,.25); }
+.dark .bw-opt-blue   { background: #172554; color: #60a5fa; border-color: rgba(96,165,250,.25); }
+.dark .bw-opt-purple { background: #3b0764; color: #c084fc; border-color: rgba(192,132,252,.25); }
+.dark .bw-opt-pink   { background: #500724; color: #f472b6; border-color: rgba(244,114,182,.25); }
+
+/* ── Database attribute: status pill colors ──────────────────────────────── */
+.bw-status-pill {
+  display: inline-flex; align-items: center;
+  padding: .18rem .65rem; border-radius: 9999px;
+  font-size: .75rem; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.bw-status-green  { background: rgba(42,135,3,.1);  color: #2a8703; border-color: rgba(42,135,3,.3); }
+.bw-status-blue   { background: rgba(0,83,226,.1);  color: #0053e2; border-color: rgba(0,83,226,.3); }
+.bw-status-red    { background: rgba(234,17,0,.1);  color: #ea1100; border-color: rgba(234,17,0,.3); }
+.bw-status-amber  { background: rgba(153,82,19,.1); color: #995213; border-color: rgba(153,82,19,.3); }
+.bw-status-gray   { background: rgba(107,114,128,.1);color: #6b7280;border-color: rgba(107,114,128,.3); }
+.bw-status-purple { background: rgba(124,58,237,.1);color: #7c3aed; border-color: rgba(124,58,237,.3); }
+.dark .bw-status-green  { background: rgba(42,135,3,.18);  color: #4ade80; border-color: rgba(74,222,128,.3); }
+.dark .bw-status-blue   { background: rgba(0,83,226,.18);  color: #60a5fa; border-color: rgba(96,165,250,.3); }
+.dark .bw-status-red    { background: rgba(234,17,0,.18);  color: #f87171; border-color: rgba(248,113,113,.3); }
+.dark .bw-status-amber  { background: rgba(153,82,19,.18); color: #fbbf24; border-color: rgba(251,191,36,.3); }
+.dark .bw-status-gray   { background: rgba(107,114,128,.18);color:#a1a1aa;border-color: rgba(161,161,170,.3); }
+.dark .bw-status-purple { background: rgba(124,58,237,.18);color: #c084fc; border-color: rgba(192,132,252,.3); }
+
+/* ── Progress bar (share card view) ──────────────────────────────────────── */
+.bw-progress-track {
+  flex: 1; height: 7px;
+  background: #e5e7eb; border-radius: 9999px; overflow: hidden;
+}
+.dark .bw-progress-track { background: #3f3f46; }
+.bw-progress-fill {
+  height: 100%; background: #0053e2;
+  border-radius: 9999px; transition: width .25s;
+}

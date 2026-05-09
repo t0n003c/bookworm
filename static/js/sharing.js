@@ -206,23 +206,42 @@ function _shareFallbackCopy(url) {
  * badge id pattern:
  *   note    → share-badge-note-{id}
  *   db_card → share-badge-db-card-{id}
+ *             + db-card-grid-share-{id}  (card grid preview badge)
  */
 function shareUpdateBadge(type, id, active) {
+  // ── Detail-panel / note-form badge ──
   var badgeId = type === 'note'
     ? 'share-badge-note-' + id
     : 'share-badge-db-card-' + id;
   var badge = document.getElementById(badgeId);
-  if (!badge) return;
+  if (badge) {
+    if (active) {
+      badge.className = 'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold'
+        + ' bg-[#ffc220] text-[#995213] self-center flex-shrink-0 whitespace-nowrap';
+      badge.textContent = '🔗 Shared';
+      badge.title = 'Public link active — anyone with the link can view this';
+    } else {
+      badge.className = 'hidden';
+      badge.textContent = '';
+      badge.title = '';
+    }
+  }
 
-  if (active) {
-    badge.className = 'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold'
-      + ' bg-[#ffc220] text-[#995213] self-center flex-shrink-0 whitespace-nowrap';
-    badge.textContent = '🔗 Shared';
-    badge.title = 'Public link active — anyone with the link can view this';
-  } else {
-    badge.className = 'hidden';
-    badge.textContent = '';
-    badge.title = '';
+  // ── Card grid preview badge (db_card only) ──
+  if (type === 'db_card') {
+    var gridBadge = document.getElementById('db-card-grid-share-' + id);
+    if (gridBadge) {
+      if (active) {
+        gridBadge.classList.remove('hidden');
+      } else {
+        gridBadge.classList.add('hidden');
+      }
+    }
+    // Also keep the in-memory card state in sync so re-renders reflect reality.
+    if (typeof _dbCards !== 'undefined') {
+      var card = _dbCards.find(function(c) { return c.id === id || c.id === +id; });
+      if (card) card.has_share_link = active;
+    }
   }
 }
 

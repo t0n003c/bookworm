@@ -32,6 +32,7 @@ def _collapse_card_rows(rows: list) -> list[dict]:
                 "sort_order":      r["sort_order"],
                 "created_at":      r["created_at"],
                 "updated_at":      r["updated_at"],
+                "has_share_link":  bool(r.get("has_share_link", 0)),
                 "attrs":           [],
             }
         if r["attr_id"] is not None:
@@ -57,9 +58,12 @@ async def get_db_cards(db_id: int, user_id: int) -> list[dict]:
             "       c.note_content, c.note_box_height, c.sort_order, c.created_at, c.updated_at,"
             "       a.id AS attr_id, a.attr_key, a.attr_value, "
             "       a.attr_type, a.attr_options, a.visibility AS attr_visibility, "
-            "       a.sort_order AS attr_sort "
+            "       a.sort_order AS attr_sort, "
+            "       CASE WHEN psl.token IS NOT NULL THEN 1 ELSE 0 END AS has_share_link "
             "  FROM db_cards c "
             "  LEFT JOIN db_card_attrs a ON a.card_id = c.id "
+            "  LEFT JOIN public_share_links psl"
+            "         ON psl.object_type = 'db_card' AND psl.object_id = c.id "
             " WHERE c.db_id = ? AND c.user_id = ? "
             " ORDER BY c.sort_order ASC, c.id ASC, a.sort_order ASC",
             (db_id, user_id),

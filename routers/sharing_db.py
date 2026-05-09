@@ -428,6 +428,17 @@ async def get_note_for_public_view(note_id: int) -> Optional[dict]:
             (note_id,),
         )
         note["categories"] = [dict(r) for r in await c_cur.fetchall()]
+
+        # Fetch note attributes (key/value pairs)
+        a_cur = await db.execute(
+            """
+            SELECT key, value FROM note_attributes
+            WHERE note_id = ? AND value IS NOT NULL AND value != ''
+            ORDER BY id
+            """,
+            (note_id,),
+        )
+        note["attributes"] = [dict(r) for r in await a_cur.fetchall()]
         return note
 
 
@@ -438,7 +449,7 @@ async def get_db_card_for_public_view(card_id: int) -> Optional[dict]:
             """
             SELECT c.id, c.title, c.cover_url, c.note_content, c.created_at, c.updated_at,
                    a.id AS attr_id, a.attr_key, a.attr_value, a.attr_type,
-                   a.attr_options, a.sort_order AS attr_sort
+                   a.attr_options, a.sort_order AS attr_sort, a.visibility
             FROM db_cards c
             LEFT JOIN db_card_attrs a ON a.card_id = c.id
             WHERE c.id = ?
@@ -462,13 +473,22 @@ async def get_db_card_for_public_view(card_id: int) -> Optional[dict]:
         }
         for r in rows:
             row_d = dict(r)
-            if row_d["attr_id"] is not None:
-                card["attrs"].append({
-                    "attr_key":     row_d["attr_key"],
-                    "attr_value":   row_d["attr_value"],
-                    "attr_type":    row_d["attr_type"],
-                    "attr_options": row_d["attr_options"],
-                })
+            if row_d["attr_id"] is None:
+                continue
+            vis = row_d.get("visibility") or "always"
+            val = row_d["attr_value"] or ""
+            # Respect visibility rules — always_hide attrs are always hidden;
+            # hide_empty attrs are hidden when the value is blank.
+            if vis == "always_hide":
+                continue
+            if vis == "hide_empty" and not val.strip():
+                continue
+            card["attrs"].append({
+                "attr_key":     row_d["attr_key"],
+                "attr_value":   val,
+                "attr_type":    row_d["attr_type"],
+                "attr_options": row_d["attr_options"],
+            })
         return card
 
 

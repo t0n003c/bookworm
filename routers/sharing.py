@@ -1,6 +1,10 @@
 """Sharing router — user-to-user copy + public link management + public views."""
 from __future__ import annotations
 
+import json
+import re
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -27,6 +31,212 @@ from routers.sharing_db import (
 )
 
 router = APIRouter(prefix="/share", tags=["sharing"])
+
+# ── attribute enrichment ──────────────────────────────────────────────────────
+
+_OPT_COLOR_IDS = {"gray","red","orange","yellow","green","teal","blue","purple","pink"}
+
+_RT_ICON: dict[str, tuple[str, str]] = {
+    "star":  ("\u2605", "\u2606"),  # ★ ☆
+    "heart": ("\u2665", "\u2661"),  # ♥ ♡
+    "thumb": ("\U0001f44d", "\u25cb"),  # 👍 ○
+    "dot":   ("\u25cf", "\u25cb"),  # ● ○
+}
+
+
+def _status_css_class(val: str) -> str:
+    v = (val or "").lower()
+    if re.search(r"done|complete|finished|closed|resolved", v): return "green"
+    if re.search(r"progress|doing|active|open|started",     v): return "blue"
+    if re.search(r"block|stuck|problem|error|fail",         v): return "red"
+    if re.search(r"review|pending|wait|hold",               v): return "amber"
+    if re.search(r"cancel|skip|void|archive",               v): return "gray"
+    return "purple"
+
+
+def _parse_select_opts(opts_str: str | None) -> list[dict]:
+    """Parse 'Label|colorId,...' option string into [{label, color}]."""
+    if not opts_str:
+        return []
+    result = []
+    for part in opts_str.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        pipe = part.find("|")
+        if pipe == -1:
+            result.append({"label": part, "color": "gray"})
+        else:
+            lbl = part[:pipe].strip()
+            clr = part[pipe + 1:].strip() or "gray"
+            result.append({"label": lbl, "color": clr if clr in _OPT_COLOR_IDS else "gray"})
+    return result
+
+
+def _fmt_date(iso_date: str, fmt_id: str | None) -> str:
+    """Format a YYYY-MM-DD string per fmt_id. Cross-platform (no %-d)."""
+    try:
+        d = datetime.strptime(iso_date[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return iso_date
+    fmt = fmt_id or "mdy"
+    if fmt == "ymd":  return d.strftime("%Y-%m-%d")
+    if fmt == "dmy":  return d.strftime("%d/%m/%Y")
+    if fmt == "long": return f"{d.strftime('%B')} {d.day}, {d.year}"
+    return d.strftime("%m/%d/%Y")  # 'mdy' default
+
+
+def _safe_int(s: str | None, default: int = 0) -> int:
+    try:
+        return int(str(s or "").lstrip("-").split(".")[0])
+    except (ValueError, TypeError):
+        return default
+
+
+def enrich_card_attrs(card: dict) -> dict:
+    """Return a copy of card with each attr enriched with a '_display' dict."""
+    enriched: list[dict] = []
+    for a in card.get("attrs", []):
+        t       = a.get("attr_type")    or "text"
+        v       = a.get("attr_value")   or ""
+        opts_s  = a.get("attr_options") or ""
+        d: dict = {"type": t}
+
+        if t == "checkbox":
+            d["checked"] = v in ("true", "1", "yes")
+
+        elif t == "select":
+            opts  = _parse_select_opts(opts_s)
+            match = next((o for o in opts if o["label"] == v), None)
+            d["color"] = match["color"] if match else "gray"
+            d["label"] = v
+
+        elif t == "multi_select":
+            opts      = _parse_select_opts(opts_s)
+            color_map = {o["label"]: o.get("color", "gray") for o in opts}
+            selected  = [s.strip() for s in v.split(",") if s.strip()]
+            d["items"] = [{"label": s, "color": color_map.get(s, "gray")} for s in selected]
+
+        elif t == "status":
+            d["color_class"] = _status_css_class(v)
+            d["label"]       = v
+
+        elif t == "date":
+            d["formatted"] = _fmt_date(v, opts_s) if v else ""
+
+        elif t == "date_range":
+            parts = v.split("|")
+            start = parts[0].strip() if parts else ""
+            end   = parts[1].strip() if len(parts) > 1 else ""
+            d["start"] = _fmt_date(start, opts_s) if start else ""
+            d["end"]   = _fmt_date(end,   opts_s) if end   else ""
+
+        elif t == "rating":
+            try:
+                rt = json.loads(opts_s or "{}")
+            except Exception:
+                rt = {}
+            scale   = max(1, _safe_int(rt.get("scale"), 5) or 5)
+            icon_id = str(rt.get("icon") or "star")
+            on_c, off_c = _RT_ICON.get(icon_id, _RT_ICON["star"])
+            val_i   = min(scale, max(0, _safe_int(v)))
+            d["icons"] = [
+                {"char": on_c if i < val_i else off_c, "on": i < val_i}
+                for i in range(scale)
+            ]
+
+        elif t == "progress":
+            try:
+                pg = json.loads(opts_s or "{}")
+            except Exception:
+                pg = {}
+            max_v = max(1, _safe_int(pg.get("max"), 100) or 100)
+            disp  = str(pg.get("display") or "bar")
+            val_i = min(max_v, max(0, _safe_int(v)))
+            pct   = round((val_i / max_v) * 100)
+            d["pct"]     = pct
+            d["label"]   = f"{val_i}%" if max_v == 100 else f"{val_i} / {max_v}"
+            d["display"] = disp
+
+        elif t == "url":
+            fmt = opts_s or "text"
+            d["href"]    = v
+            d["display"] = fmt
+            if v and fmt == "short":
+                d["short_label"] = (
+                    v.replace("https://", "").replace("http://", "").split("/")[0]
+                )
+
+        elif t == "email":
+            d["href"] = f"mailto:{v}" if v else ""
+
+        elif t == "phone":
+            phones = [p.strip() for p in v.split(",") if p.strip()]
+            result_phones = []
+            for ph in phones:
+                digits = re.sub(r"\D", "", ph)
+                if len(digits) == 10:
+                    tel = f"+1{digits}"
+                elif len(digits) >= 11:
+                    tel = f"+{digits}"
+                else:
+                    tel = digits or ph
+                result_phones.append({"display": ph, "tel": tel})
+            d["phones"] = result_phones
+
+        elif t == "person":
+            d["names"] = [n.strip().title() for n in v.split(",") if n.strip()]
+
+        elif t == "place":
+            prov = opts_s or "google"
+            q    = v.replace(" ", "+")
+            if prov == "apple":
+                d["map_url"] = f"https://maps.apple.com/?q={q}"
+            elif prov == "osm":
+                d["map_url"] = f"https://www.openstreetmap.org/search?query={q}"
+            else:
+                d["map_url"] = f"https://maps.google.com/?q={q}"
+
+        elif t == "number":
+            try:
+                num_opts = json.loads(opts_s or "{}")
+            except Exception:
+                num_opts = {}
+            fmt  = str(num_opts.get("format")  or "number")
+            decs = max(0, _safe_int(num_opts.get("decimals"), 0))
+            disp = str(num_opts.get("display") or "number")
+            try:
+                n = float(v)
+                if fmt == "percent":  formatted = f"{n:.{decs}f}%"
+                elif fmt == "dollar": formatted = f"${n:,.{decs}f}"
+                elif fmt == "euro":   formatted = f"\u20ac{n:,.{decs}f}"
+                elif decs > 0:        formatted = f"{n:,.{decs}f}".rstrip("0").rstrip(".")
+                else:                 formatted = f"{int(n):,}"
+            except (ValueError, TypeError):
+                formatted = v
+            d["formatted"] = formatted
+            if disp in ("bar", "ring"):
+                div_by = float(num_opts.get("divideBy") or 100) or 100
+                try:
+                    frac = min(1.0, max(0.0, float(v) / div_by))
+                except (ValueError, TypeError):
+                    frac = 0.0
+                d["pct"]     = round(frac * 100)
+                d["display"] = disp
+            else:
+                d["display"] = "number"
+
+        elif t == "files":
+            d["links"] = [u.strip() for u in v.split(",") if u.strip()]
+
+        attr_copy            = dict(a)
+        attr_copy["render"]   = d
+        enriched.append(attr_copy)
+
+    result          = dict(card)
+    result["attrs"] = enriched
+    return result
+
 
 
 # ── Demo guard helper ────────────────────────────────────────────────────────
@@ -251,5 +461,5 @@ async def public_view_card(request: Request, token: str):
             request, "share_404.html", {}, status_code=404
         )
     return templates.TemplateResponse(
-        request, "share_card_view.html", {"card": card}
+        request, "share_card_view.html", {"card": enrich_card_attrs(card)}
     )

@@ -57,18 +57,47 @@
           {{ note.meeting_date }}
         </span>
         {% endif %}
+        {% if note.updated_at %}
+        <span class="flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Updated {{ note.updated_at[:10] }}
+        </span>
+        {% endif %}
         {% for cat in note.categories %}
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-              style="background:{{ cat.color }}22;color:{{ cat.color }}">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+              style="background:{{ cat.color }}22;color:{{ cat.color }};border:1px solid {{ cat.color }}55">
+          <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:{{ cat.color }}"></span>
           {{ cat.name }}
         </span>
         {% endfor %}
       </div>
     </div>
 
+    {# Attributes #}
+    {% if note.attributes %}
+    <div class="bg-gray-50 dark:bg-zinc-900/50 rounded-lg border border-gray-200 dark:border-zinc-700 p-3 mb-6">
+      <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Attributes</h3>
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        {% for attr in note.attributes %}
+        <div>
+          <dt class="text-xs font-medium text-gray-500 dark:text-zinc-400">{{ attr.key }}</dt>
+          <dd class="text-sm text-gray-900 dark:text-zinc-100 font-semibold">{{ attr.value or '—' }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </div>
+    {% endif %}
+
     {# Note content #}
     {% if note.content %}
-    <article class="md-body text-sm text-gray-800 dark:text-zinc-200">
+    <div class="mb-2">
+      <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Notes</h3>
+    </div>
+    <article class="md-body text-sm text-gray-800 dark:text-zinc-200
+                   bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700
+                   rounded-lg p-4 leading-relaxed">
       {{ note.content | safe }}
     </article>
     {% else %}

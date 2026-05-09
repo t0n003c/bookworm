@@ -2171,8 +2171,18 @@ function _dbCardHtml(card) {
     + '</button>'
     + '</div></div>'
     + (pills ? pills : '')
-    + '<div class="text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">'
-    + (updated ? 'Updated ' + updated : '') + '</div>'
+    + '<div class="flex items-center justify-between gap-1 text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">'
+    + '<span id="db-card-grid-share-' + card.id + '"'
+    + ' class="inline-flex items-center gap-0.5 text-[#0053e2] dark:text-blue-400 font-medium'
+    + (card.has_share_link ? '' : ' hidden') + '"'
+    + ' title="Public link active" aria-label="Public link active">'
+    + '<svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101'
+    + 'm-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>'
+    + '</svg>Shared</span>'
+    + (updated ? '<span>Updated ' + updated + '</span>' : '<span></span>')
+    + '</div>'
     + '</div></div>'
   );
 }

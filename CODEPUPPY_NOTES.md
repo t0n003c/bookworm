@@ -668,6 +668,23 @@ Eddie is always the outermost layer — agents supplement, not replace.
     # ❌ WRONG — chained in one command, urlopen has no timeout = freeze
     start "bw8000" /MIN uvicorn... && ping -n 5 ... && python -c "urlopen('...').read()"
     ```
+26. **☠️ `Get-Process -Name python | Stop-Process -Force` KILLS CODE PUPPY ITSELF.** Code Puppy runs as a Python process. Killing ALL processes named `python` is a self-destruct command — Eddie's own session dies. This happened in a past session and is absolutely forbidden.
+    - **Rule: NEVER run `Get-Process -Name python | Stop-Process -Force` or any equivalent mass-kill of all Python processes.**
+    - To stop the BookWorm server: use `restart.bat` (it handles the stop internally) or kill by **port** (see below) or kill by **specific PID only**.
+    - **✅ Safe — kill only what's on a specific port (surgical):**
+    ```powershell
+    # Kill whatever is listening on port 8000 (BookWorm dev server)
+    $p = (netstat -ano | Select-String ':8000 ') | ForEach-Object { ($_.ToString().Trim() -split '\s+')[-1] } | Select-Object -First 1
+    if ($p) { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }
+    ```
+    - **✅ Safe — kill uvicorn specifically (not all of python):**
+    ```powershell
+    Get-Process -Name uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force
+    ```
+    - **❌ FORBIDDEN — kills Code Puppy, ends the session immediately:**
+    ```powershell
+    Get-Process -Name python | Stop-Process -Force   # ← DO NOT EVER RUN THIS
+    ```
 20. **`_uplJsStr(s)` in `home-page-uploads.js` — JS-string onclick escaping.** Backslash-escapes `\` and `'` so a value can be safely embedded inside a single-quoted JS string literal inside an `onclick` attribute (e.g. `onclick="fn('${_uplJsStr(name)}')"`). Use this instead of `_uplEsc` when the value goes into a JS string context (not an HTML attribute context). `_uplEsc` HTML-encodes for HTML attribute safety; `_uplJsStr` JS-escapes for JS string-literal safety. Mixing them causes either broken JS or XSS.
 21. **WOPI LOCK/UNLOCK not implemented (Phase 7 TODO).** `routers/wopi.py` handles `POST /wopi/files/{file_id}` (the LOCK action) with a stub that returns HTTP 200. Collabora sends lock requests for collaborative multi-user editing — not a scenario we support. Single-user editing works fine without real locking. Do NOT implement a real LOCK table until Phase 7; adding one now would add DB state (lock tokens, expiry) with no corresponding unlock cleanup path.
 22. **`_WOPI_MIMES` JS array in `home-page-uploads-wopi.js` must stay in sync with `WOPI_MIMES` frozenset in `routers/wopi.py`.** These two lists are intentionally separate (server = frozenset, client = array for fast `.includes()` checks) but must contain identical MIME types. If you add a new WOPI-eligible type, update both. Current set: `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (DOCX), `application/msword` (DOC), `application/vnd.oasis.opendocument.text` (ODT), `text/plain` (TXT), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (XLSX), `text/csv` (CSV), `application/vnd.openxmlformats-officedocument.presentationml.presentation` (PPTX). PDF is explicitly excluded.

@@ -119,11 +119,14 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 ### Ports
 - Local dev: **8000** | Docker: **8001** | Teams: **8080** (never touch)
 
-### Server Start & Health Check (READ THIS — ignoring it causes Code Puppy to freeze)
+### Server Start & Health Check (READ THIS — ignoring it causes Code Puppy to freeze or die)
 - **NEVER** chain server-start + health check in one shell command with `&&`. The freeze: `urlopen` with no timeout blocks forever if the server is slow (OneDrive I/O, cold start).
 - **NEVER** use `start /B` or `cmd /c "start /B ..."` to launch uvicorn — child inherits stdout/stderr handles, shell tool waits forever for them to close.
 - **NEVER** call `urllib.request.urlopen(url)` without a `timeout=` argument.
 - **NEVER** use `start /MIN .venv\Scripts\uvicorn.exe ... && ping -n N ... && urlopen(...)` — the `start /MIN` looks innocent but the chained `urlopen` with no timeout freezes Code Puppy the moment the server is slow.
+- ☠️ **NEVER run `Get-Process -Name python | Stop-Process -Force`** — Code Puppy IS a Python process. This command kills Eddie's own session immediately. It happened. Don't do it again.
+  - ✅ Safe alternative — kill by port: `$p = (netstat -ano | Select-String ':8000 ') | ForEach-Object { ($_.ToString().Trim() -split '\s+')[-1] } | Select-Object -First 1; if ($p) { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }`
+  - ✅ Safe alternative — kill uvicorn specifically: `Get-Process -Name uvicorn -ErrorAction SilentlyContinue | Stop-Process -Force`
 
 **✅ CORRECT — use `restart.bat` (safe for both Eddie and humans, no `pause`, polls 30 s):**
   ```
