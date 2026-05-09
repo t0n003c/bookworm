@@ -30,41 +30,71 @@
 
   <div class="ml-auto flex items-center gap-2">
 
-    <!-- Gallery view button -->
-    <button
-      id="gallery-view-btn"
-      onclick="setNoteView('gallery')"
-      class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-      aria-label="Gallery view"
-      aria-pressed="false"
-      title="Gallery view"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-      </svg>
-    </button>
+    <!-- Note view toggles: Gallery + Timeline (hidden in database workspaces) -->
+    <div id="note-view-toggle-group" class="flex items-center gap-2">
+      <!-- Gallery view button -->
+      <button
+        id="gallery-view-btn"
+        onclick="setNoteView('gallery')"
+        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        aria-label="Gallery view"
+        aria-pressed="false"
+        title="Gallery view"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+        </svg>
+      </button>
 
-    <!-- Timeline / Grid toggle -->
-    <button
-      id="list-view-toggle"
-      onclick="setNoteView('timeline')"
-      class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-      aria-label="Toggle timeline view"
-      aria-pressed="false"
-      title="Switch to timeline view"
-    >
-      <!-- List icon (shown when NOT in list view) -->
-      <svg id="icon-grid" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-      </svg>
-      <!-- Timeline icon (shown when in list or gallery view) -->
-      <svg id="icon-timeline" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-      </svg>
-    </button>
+      <!-- Timeline / List toggle -->
+      <button
+        id="list-view-toggle"
+        onclick="setNoteView('timeline')"
+        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        aria-label="Toggle timeline view"
+        aria-pressed="false"
+        title="Switch to timeline view"
+      >
+        <svg id="icon-grid" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+        </svg>
+        <svg id="icon-timeline" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Database view toggles: Grid + Board (hidden in note workspaces) -->
+    <div id="top-db-view-toggle" class="hidden flex items-center gap-2">
+      <button
+        id="db-view-btn-grid"
+        onclick="window.dbSetView && dbSetView('grid')"
+        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        title="Grid view" aria-label="Grid view" aria-pressed="true"
+      >
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3"  y="3"  width="7" height="7" rx="1"/>
+          <rect x="14" y="3"  width="7" height="7" rx="1"/>
+          <rect x="3"  y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+      <button
+        id="db-view-btn-board"
+        onclick="window.dbSetView && dbSetView('board')"
+        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        title="Board view" aria-label="Board view" aria-pressed="false"
+      >
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3"  y="3" width="5" height="18" rx="1"/>
+          <rect x="10" y="3" width="5" height="13" rx="1"/>
+          <rect x="17" y="3" width="4" height="16" rx="1"/>
+        </svg>
+      </button>
+    </div>
 
     <!-- Dark / Light toggle -->
     <button
@@ -1996,11 +2026,16 @@
     if (_dbRoot && typeof initDatabaseView === 'function') {
       initDatabaseView(parseInt(_dbRoot.dataset.wsId, 10));
     } else {
-      // Navigated away from a DB — restore the New Note button and breadcrumb margin
+      // Navigated away from a DB — restore the New Note button, breadcrumb margin,
+      // note-view toggle group, and hide the database view toggle.
       var _btnNN = document.getElementById('btn-new-note');
       if (_btnNN) _btnNN.classList.remove('hidden');
       var _crumbNav = document.querySelector('#ws-breadcrumb nav');
       if (_crumbNav) { _crumbNav.classList.remove('mb-1'); _crumbNav.classList.add('mb-5'); }
+      var _noteGrp = document.getElementById('note-view-toggle-group');
+      if (_noteGrp) _noteGrp.classList.remove('hidden');
+      var _dbGrp = document.getElementById('top-db-view-toggle');
+      if (_dbGrp) _dbGrp.classList.add('hidden');
     }
   });
 

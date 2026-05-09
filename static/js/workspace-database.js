@@ -478,6 +478,11 @@ function initDatabaseView(wsId) {
   // Databases have their own Add Card flow — New Note doesn't apply here.
   var btnNN = document.getElementById('btn-new-note');
   if (btnNN) btnNN.classList.add('hidden');
+  // Show the database view toggle in the top bar; hide the note-view group.
+  var _noteGrp = document.getElementById('note-view-toggle-group');
+  if (_noteGrp) _noteGrp.classList.add('hidden');
+  var _dbGrp = document.getElementById('top-db-view-toggle');
+  if (_dbGrp) _dbGrp.classList.remove('hidden');
   // Tighten breadcrumb bottom margin so it doesn't gap-stack with the DB header.
   var crumbNav = document.querySelector('#ws-breadcrumb nav');
   if (crumbNav) { crumbNav._bwOldMb = crumbNav.className; crumbNav.classList.remove('mb-5'); crumbNav.classList.add('mb-1'); }
@@ -819,14 +824,15 @@ function _dbRenderBoard(grid, display) {
 function _dbUpdateViewButtons() {
   var btnGrid  = document.getElementById('db-view-btn-grid');
   var btnBoard = document.getElementById('db-view-btn-board');
-  var ACTIVE   = ['bg-white', 'dark:bg-zinc-700', 'text-purple-600', 'dark:text-purple-400', 'shadow-sm'];
-  var INACTIVE = ['text-gray-400'];
+  // Active = bright white bg tint + ring (matches the top-bar "pressed" style used by note view btns)
+  var ACTIVE   = ['bg-white/30', 'ring-2', 'ring-white/60'];
+  var INACTIVE = ['bg-white/10'];
 
   function _apply(btn, isActive) {
     if (!btn) return;
-    // Clear both sets first
     ACTIVE.concat(INACTIVE).forEach(function(cls) { btn.classList.remove(cls); });
     (isActive ? ACTIVE : INACTIVE).forEach(function(cls) { btn.classList.add(cls); });
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
 
   _apply(btnGrid,  _dbCurrentView === 'grid');
