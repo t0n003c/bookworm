@@ -18,6 +18,7 @@ var _dbSortLevels        = []; // [{key,dir}] — ordered sort levels (first = h
 var _dbGroupBy           = null; // null | {key} — attribute key to group cards by
 var _dbColorRules        = []; // [{key,op,val,color}] — first match wins; color = _DB_OPT_COLORS id
 var _dbCardVisibleAttrs  = null; // null = show all; array of attr_key strings = only those keys shown on card preview
+var _dbCurrentView       = 'grid'; // 'grid' | 'board'
 
 /* ── block-grip DnD state (DB card note area) ────────────────────────────── */
 var _dbGripDragging     = null;   // the block element being dragged
@@ -485,9 +486,10 @@ function initDatabaseView(wsId) {
   _dbFilterGroups = [];
   _dbSortLevels    = [];
   _dbGroupBy       = null;
-  _dbGroupBy       = null;
+  _dbCurrentView   = 'grid';
   _dbCardVisibleAttrs = null;
   _dbLoadFilterSort(_dbWsId);
+  _dbUpdateViewButtons();
   _dbUpdateFilterBadge();   // restore badge count after page refresh
   // Close any stale filter/fields panel from a previous workspace
   var _stalePanel = document.getElementById('db-filter-panel');
@@ -529,11 +531,17 @@ function _dbApplySize(step) {
     root.style.setProperty('--db-cover-h', cfg.coverH);
   }
   if (grid) {
-    grid.style.gridTemplateColumns = cols;
+    if (_dbCurrentView !== 'board') {
+      grid.style.gridTemplateColumns = cols;
+    }
     // Also update any sub-grids rendered in group-by mode
     grid.querySelectorAll('.db-sub-grid').forEach(function(sg) {
       sg.style.gridTemplateColumns = cols;
     });
+    // Re-render board columns if in board mode so column widths update live
+    if (_dbCurrentView === 'board') {
+      _dbRenderGrid();
+    }
   }
   var slider = document.getElementById('db-size-slider');
   if (slider && slider.value != step) slider.value = step;
@@ -584,6 +592,12 @@ function _dbRenderGrid() {
     return;
   }
   if (noMatch) noMatch.classList.add('hidden');
+
+  // ── board mode ──
+  if (_dbCurrentView === 'board') {
+    _dbRenderBoard(grid, display);
+    return;
+  }
 
   // ── grouped mode ──
   if (_dbGroupBy && _dbGroupBy.key) {
@@ -672,6 +686,181 @@ function _dbRenderGrouped(grid, display) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   BOARD RENDERING
+═══════════════════════════════════════════════════════════════════════════ */
+
+// Board column widths per size step (1–5)
+var _dbBoardColW = ['200px', '240px', '280px', '340px', '400px'];
+
+function _dbRenderBoard(grid, display) {
+  var scrollArea = document.getElementById('db-scroll-area');
+  var isDark     = document.documentElement.classList.contains('dark');
+
+  // Switch scroll area to horizontal flow
+  if (scrollArea) {
+    scrollArea.style.overflowY  = 'hidden';
+    scrollArea.style.overflowX  = 'auto';
+    scrollArea.style.padding    = '1rem 1.5rem';
+  }
+  // The grid becomes a horizontal flex container; disable the CSS grid column template
+  grid.style.gridTemplateColumns = '';
+  grid.style.display   = 'flex';
+  grid.style.flexWrap  = 'nowrap';
+  grid.style.gap       = '1rem';
+  grid.style.height    = '100%';
+
+  // ── resolve grouping key (prefer saved group-by if it's a pill type, else auto-pick) ──
+  var PILL_TYPES = ['select', 'status', 'multi_select'];
+  var allKeys    = _dbGetAttrKeys();
+  var key        = null;
+  if (_dbGroupBy && _dbGroupBy.key) {
+    var meta = allKeys.find(function(k) { return k.key === _dbGroupBy.key; });
+    if (meta && PILL_TYPES.indexOf(meta.type) !== -1) key = _dbGroupBy.key;
+  }
+  if (!key) {
+    var firstPill = allKeys.find(function(k) { return PILL_TYPES.indexOf(k.type) !== -1; });
+    if (firstPill) key = firstPill.key;
+  }
+
+  // No groupable attribute — show guidance
+  if (!key) {
+    var sub  = isDark ? '#71717a' : '#9ca3af';
+    var main = isDark ? '#d4d4d8' : '#374151';
+    grid.style.display  = 'flex';
+    grid.style.flexWrap = 'wrap';
+    grid.innerHTML = '<div style="width:100%;display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;padding:4rem 1rem;text-align:center;">'
+      + '<div style="font-size:2.5rem;margin-bottom:0.75rem">&#128203;</div>'
+      + '<p style="color:' + main + ';font-size:0.875rem;font-weight:600;margin-bottom:0.25rem;">'
+      + 'No Select or Status field found</p>'
+      + '<p style="color:' + sub  + ';font-size:0.75rem;">'
+      + 'Board view groups cards by a <strong>Select</strong> or <strong>Status</strong> attribute.<br>'
+      + 'Open any card and add one to get started.</p></div>';
+    return;
+  }
+
+  // ── bucket cards into ordered columns ──
+  var opts    = _dbGetAttrOptions(key);           // [{label, color}] in user-defined order
+  var keyMeta = allKeys.find(function(k) { return k.key === key; }) || { type: 'select' };
+  var colW    = _dbBoardColW[(_dbSizeStep - 1)] || '280px';
+
+  // Prime buckets in option order so empty columns still appear
+  var order   = opts.map(function(o) { return o.label; });
+  var buckets = {};
+  order.forEach(function(lbl) { buckets[lbl] = []; });
+  buckets['__empty__'] = [];
+
+  display.forEach(function(c) {
+    var val = _dbCardAttrVal(c, key).trim();
+    if (!val || !buckets.hasOwnProperty(val)) {
+      // Unknown / missing value goes into a column named after the value, or empty
+      if (val) {
+        if (!buckets[val]) { buckets[val] = []; order.push(val); }
+      } else {
+        buckets['__empty__'].push(c);
+        return;
+      }
+    }
+    buckets[val].push(c);
+  });
+  order.push('__empty__');
+
+  // ── build HTML ──
+  var hdrBg  = isDark ? '#27272a' : '#f9fafb';
+  var hdrBdr = isDark ? '#3f3f46' : '#e5e7eb';
+  var sub2   = isDark ? '#71717a' : '#9ca3af';
+  var html   = '';
+
+  order.forEach(function(val) {
+    var isEmpty = val === '__empty__';
+    var cards   = buckets[val] || [];
+    var label   = isEmpty ? ('No ' + _dbKeyLabel(key)) : val;
+    var optMeta = opts.find(function(o) { return o.label === val; });
+    var cs      = _dbOptColorStyle((optMeta || {}).color || 'gray');
+
+    html += '<div class="db-board-col" style="'
+          + 'flex:0 0 ' + colW + ';width:' + colW + ';'
+          + 'display:flex;flex-direction:column;'
+          + 'border-radius:0.75rem;overflow:hidden;'
+          + 'background:' + hdrBg + ';'
+          + 'border:1px solid ' + hdrBdr + ';'">';
+
+    // Column header
+    html += '<div style="'
+          + 'display:flex;align-items:center;gap:0.5rem;'
+          + 'padding:0.6rem 0.75rem;'
+          + 'border-bottom:1px solid ' + hdrBdr + ';'
+          + 'flex-shrink:0;">'; 
+
+    if (!isEmpty && (keyMeta.type === 'select' || keyMeta.type === 'status' || keyMeta.type === 'multi_select')) {
+      html += '<span style="display:inline-flex;align-items:center;padding:0.15rem 0.55rem;'
+            + 'border-radius:9999px;font-size:0.7rem;font-weight:700;'
+            + 'background:' + cs.bg + ';color:' + cs.text + ';">'
+            + _esc(label) + '</span>';
+    } else {
+      html += '<span style="font-size:0.75rem;font-weight:700;color:' + sub2 + ';font-style:italic;">'
+            + _esc(label) + '</span>';
+    }
+    html += '<span style="margin-left:auto;font-size:0.7rem;color:' + sub2 + ';font-weight:500;">'
+          + cards.length + '</span>';
+    html += '</div>';
+
+    // Cards area — independently scrollable
+    html += '<div style="flex:1;overflow-y:auto;padding:0.5rem;display:flex;flex-direction:column;gap:0.5rem;min-height:0;">';
+    html += cards.map(function(c) { return _dbCardHtml(c); }).join('');
+    html += '</div>';
+    html += '</div>';
+  });
+
+  grid.innerHTML = html;
+}
+
+// Sync the active/inactive styles on the Grid/Board toggle buttons.
+function _dbUpdateViewButtons() {
+  var btnGrid  = document.getElementById('db-view-btn-grid');
+  var btnBoard = document.getElementById('db-view-btn-board');
+  var ACTIVE   = ['bg-white', 'dark:bg-zinc-700', 'text-purple-600', 'dark:text-purple-400', 'shadow-sm'];
+  var INACTIVE = ['text-gray-400'];
+
+  function _apply(btn, isActive) {
+    if (!btn) return;
+    // Clear both sets first
+    ACTIVE.concat(INACTIVE).forEach(function(cls) { btn.classList.remove(cls); });
+    (isActive ? ACTIVE : INACTIVE).forEach(function(cls) { btn.classList.add(cls); });
+  }
+
+  _apply(btnGrid,  _dbCurrentView === 'grid');
+  _apply(btnBoard, _dbCurrentView === 'board');
+}
+
+// Public: switch view and re-render. Called from HTML onclick.
+window.dbSetView = function(viewId) {
+  if (_dbCurrentView === viewId) return;
+  _dbCurrentView = viewId;
+  _dbSaveFilterSort();
+  _dbUpdateViewButtons();
+
+  // Reset scroll area styling when returning to grid mode
+  if (viewId === 'grid') {
+    var scrollArea = document.getElementById('db-scroll-area');
+    if (scrollArea) {
+      scrollArea.style.overflowY = '';
+      scrollArea.style.overflowX = '';
+      scrollArea.style.padding   = '';
+    }
+    var grid = document.getElementById('db-card-grid');
+    if (grid) {
+      grid.style.display  = '';
+      grid.style.flexWrap = '';
+      grid.style.gap      = '';
+      grid.style.height   = '';
+    }
+    _dbApplySize(_dbSizeStep); // restore grid column template
+  }
+  _dbRenderGrid();
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
    FILTER · SORT ENGINE
 ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -712,7 +901,8 @@ function _dbSaveFilterSort() {
         sort:         _dbSortLevels,
         groupBy:      _dbGroupBy,
         colorRules:   _dbColorRules,
-        visibleAttrs: _dbCardVisibleAttrs,   // null = all shown; array of keys = filtered
+        visibleAttrs: _dbCardVisibleAttrs,
+        view:         _dbCurrentView,
       })
     );
   } catch(e) {}
@@ -728,6 +918,7 @@ function _dbLoadFilterSort(wsId) {
     if (Array.isArray(data.sort))       _dbSortLevels       = data.sort;
     if (data.groupBy !== undefined)     _dbGroupBy          = data.groupBy || null;
     if (Array.isArray(data.colorRules)) _dbColorRules       = data.colorRules;
+    if (data.view === 'board' || data.view === 'grid') _dbCurrentView = data.view;
     // visibleAttrs: null means show-all; an array means only show those keys
     if (data.visibleAttrs === null || Array.isArray(data.visibleAttrs)) {
       _dbCardVisibleAttrs = data.visibleAttrs;
