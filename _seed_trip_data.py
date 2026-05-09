@@ -425,75 +425,100 @@ print(f"  {len(day_blocks)} day blocks inserted.\n")
 # ── 7. TRIP PLAN PANELS ───────────────────────────────────────────────────────
 print("Inserting plan panels …")
 
-# panel_type: 'note' | 'settle' | 'checklist' | etc.
+# panel_type must be one of: 'packing' | 'budget' | 'notes' | 'emergency' | 'documents' | 'settle'
+# content must be a JSON-encoded dict matching the type's schema:
+#   packing:  {"groups": [{"name": str, "items": [{"text": str, "done": bool}]}]}
+#   budget:   {"total": float, "currency": str, "items": [{"label": str, "amount": float, "note": str}]}
+#   notes:    {"text": str}  (markdown)
+
 panels = [
-    (paris_plan, "note", "Paris Packing List",
-     "## Essentials\n"
-     "- [ ] Passport (+ photocopy stored separately)\n"
-     "- [ ] Euros — get ~€200 cash at home, rest from ATM\n"
-     "- [ ] Plug adapter (Type E — round 2-pin)\n"
-     "- [ ] Comfortable walking shoes — you'll walk 10+ miles/day\n"
-     "- [ ] Lightweight scarf (for church visits + breezy evenings)\n\n"
-     "## Apps to Download\n"
-     "- **Citymapper** — best for Paris transit\n"
-     "- **Google Translate** — camera mode for menus\n"
-     "- **TheFork** — restaurant reservations\n"
-     "- **Louvre Official App** — audio guides by room\n\n"
-     "## Useful Phrases\n"
-     "- Bonjour! *(Hello!)*\n"
-     "- S'il vous plaît *(Please)*\n"
-     "- L'addition, s'il vous plaît *(The check, please)*\n"
-     "- Parlez-vous anglais? *(Do you speak English?)*",
-     0),
-    (paris_plan, "note", "Paris Budget Tracker",
-     "## Estimated Costs (per person)\n"
-     "| Category | Budget |\n"
-     "|---|---|\n"
-     "| Flights (round trip) | ~$800 |\n"
-     "| Hotel (4 nights) | ~$1,120 |\n"
-     "| Food & Drink | ~$400 |\n"
-     "| Attractions | ~$120 |\n"
-     "| Transport (Paris) | ~$50 |\n"
-     "| Misc / Shopping | ~$200 |\n"
-     "| **Total** | **~$2,690** |\n\n"
-     "> 💡 Book flights 3–4 months out and use Google Flights price alerts.",
-     10),
-    (japan_plan, "note", "Japan Travel Tips",
-     "## Money\n"
-     "Japan is still largely cash-based. Convenience stores (7-Eleven, FamilyMart) "
-     "have ATMs that accept foreign cards. Get ¥50,000–¥80,000 cash total.\n\n"
-     "## IC Card (Must Have!)\n"
-     "Get a **Suica** or **PASMO** card at Narita airport. Tap on/off for all "
-     "trains, buses, and convenience store purchases. Load it with ¥5,000 to start.\n\n"
-     "## JR Pass\n"
-     "Buy online BEFORE you leave — must be purchased outside Japan. "
-     "7-day pass (~$350) covers Tokyo → Kyoto bullet train both ways + all JR lines.\n\n"
-     "## Etiquette\n"
-     "- No eating while walking\n"
-     "- Bow slightly when greeting\n"
-     "- Trash cans are rare — carry a small bag\n"
-     "- Both hands when giving/receiving business cards\n"
-     "- Quiet in trains (no phone calls)\n\n"
-     "## Must-Try Foods\n"
-     "Ramen · Takoyaki · Taiyaki · Matcha everything · Convenience store onigiri "
-     "(seriously, 7-Eleven Japan slaps) · Wagyu beef · Kaiseki",
-     0),
-    (japan_plan, "note", "Japan Budget Tracker",
-     "## Estimated Costs (per person)\n"
-     "| Category | Budget |\n"
-     "|---|---|\n"
-     "| Flights (round trip) | ~$900 |\n"
-     "| JR Pass (7-day) | ~$350 |\n"
-     "| Ryokan Hiiragiya (3 nights) | ~$1,350 |\n"
-     "| Tokyo hotel (4 nights) | ~$600 |\n"
-     "| Food & Drink | ~$500 |\n"
-     "| Attractions | ~$80 |\n"
-     "| IC Card / local transport | ~$80 |\n"
-     "| Misc / Shopping / Gifts | ~$300 |\n"
-     "| **Total** | **~$4,160** |\n\n"
-     "> 🌸 Cherry blossom season is the most expensive time to visit. "
-     "Book everything 4–6 months out — ryokans sell out first.",
-     10),
+    (
+        paris_plan, 'packing', 'Paris Packing List',
+        json.dumps({"groups": [
+            {"name": "Documents", "items": [
+                {"text": "Passport (+ photocopy stored separately)", "done": False},
+                {"text": "Travel insurance printout", "done": False},
+                {"text": "Hotel confirmation emails", "done": False},
+                {"text": "Eiffel Tower / Louvre tickets (printed or saved offline)", "done": False},
+            ]},
+            {"name": "Money", "items": [
+                {"text": "€200 cash from home bank (avoid airport exchange)", "done": False},
+                {"text": "Notify bank of travel dates", "done": False},
+                {"text": "Backup credit card in separate bag", "done": False},
+            ]},
+            {"name": "Clothing & Comfort", "items": [
+                {"text": "Comfortable walking shoes (you'll hit 10+ miles/day)", "done": False},
+                {"text": "Lightweight scarf (church visits + breezy evenings)", "done": False},
+                {"text": "Packable rain jacket", "done": False},
+                {"text": "Smart-casual outfit for L'Ami Louis dinner", "done": False},
+            ]},
+            {"name": "Tech", "items": [
+                {"text": "Type E plug adapter (round 2-pin)", "done": False},
+                {"text": "Portable charger / power bank", "done": False},
+                {"text": "Download Citymapper (Paris transit)", "done": False},
+                {"text": "Download Google Translate + offline French pack", "done": False},
+                {"text": "Download Louvre app for audio guides", "done": False},
+            ]},
+        ]}),
+        0,
+    ),
+    (
+        paris_plan, 'budget', 'Paris Budget Tracker',
+        json.dumps({
+            "total": 2690,
+            "currency": "USD",
+            "items": [
+                {"label": "Flights (round trip)",  "amount": 800,  "note": "Book 3-4 months out"},
+                {"label": "Hotel — Le Marais (4n)","amount": 1120, "note": "~$280/night"},
+                {"label": "Food & Drink",           "amount": 400,  "note": "Mix of bistros + markets"},
+                {"label": "Attractions",             "amount": 120,  "note": "Eiffel, Louvre, Versailles"},
+                {"label": "Transport (Paris)",       "amount": 50,   "note": "Navigo Semaine pass"},
+                {"label": "Misc / Shopping",         "amount": 200,  "note": ""},
+            ],
+        }),
+        10,
+    ),
+    (
+        japan_plan, 'notes', 'Japan Travel Tips',
+        json.dumps({"text": (
+            "## Money\n"
+            "Japan is still largely cash-based. Convenience stores (7-Eleven, FamilyMart) "
+            "have ATMs that accept foreign cards. Get ¥50,000–¥80,000 cash total.\n\n"
+            "## IC Card (Must Have!)\n"
+            "Get a **Suica** or **PASMO** card at Narita airport. Tap on/off for all "
+            "trains, buses, and convenience store purchases. Load ¥5,000 to start.\n\n"
+            "## JR Pass\n"
+            "Buy online BEFORE you leave — must be purchased outside Japan. "
+            "7-day pass (~$350) covers Tokyo → Kyoto bullet train + all JR lines.\n\n"
+            "## Etiquette\n"
+            "- No eating while walking\n"
+            "- Bow slightly when greeting\n"
+            "- Trash cans are rare — carry a small bag\n"
+            "- Quiet on trains (no phone calls)\n\n"
+            "## Must-Try Foods\n"
+            "Ramen · Takoyaki · Matcha everything · Convenience store onigiri "
+            "(7-Eleven Japan actually slaps) · Wagyu beef · Kaiseki"
+        )}),
+        0,
+    ),
+    (
+        japan_plan, 'budget', 'Japan Budget Tracker',
+        json.dumps({
+            "total": 4160,
+            "currency": "USD",
+            "items": [
+                {"label": "Flights (round trip)",        "amount": 900,  "note": "Book 4-6 months out for sakura season"},
+                {"label": "JR Pass (7-day)",              "amount": 350,  "note": "Buy before leaving the US!"},
+                {"label": "Ryokan Hiiragiya (3n)",        "amount": 1350, "note": "Includes kaiseki dinner + breakfast"},
+                {"label": "Tokyo hotel (4n)",             "amount": 600,  "note": "~$150/night"},
+                {"label": "Food & Drink",                 "amount": 500,  "note": "Mix of ramen, izakaya, one fancy dinner"},
+                {"label": "Attractions & Entrance Fees",  "amount": 80,   "note": "Kinkaku-ji, tea ceremony, etc."},
+                {"label": "IC Card / Local Transport",    "amount": 80,   "note": "Suica loads + Osaka day trip"},
+                {"label": "Shopping / Souvenirs",         "amount": 300,  "note": "Matcha kits, ceramics, snacks"},
+            ],
+        }),
+        10,
+    ),
 ]
 
 for (plan_id, ptype, title, content, sort) in panels:

@@ -814,7 +814,7 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         )
         by_type_rows = await cur.fetchall()
 
-    currencies = {r["currency"] for r in by_type_rows if r["estimated_cost"]}
+    currencies = {r["currency"] for r in by_type_rows if r["total_cost"]}
     currency_note = "" if len(currencies) <= 1 else "mixed currencies"
 
     type_map: dict[str, dict] = {}
