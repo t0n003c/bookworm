@@ -68,30 +68,26 @@
     </div>
 
     <!-- Database view toggles: Grid + Board (hidden in note workspaces) -->
-    <div id="top-db-view-toggle" class="hidden flex items-center gap-2">
+    <!-- Database view toggle: single button cycles Grid ↔ Board -->
+    <div id="top-db-view-toggle" class="hidden">
       <button
-        id="db-view-btn-grid"
-        onclick="window.dbSetView && dbSetView('grid')"
+        id="db-view-toggle-btn"
+        onclick="window.dbToggleView && dbToggleView()"
         class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-        title="Grid view" aria-label="Grid view" aria-pressed="true"
+        title="Switch to board view" aria-label="Switch to board view" aria-pressed="false"
       >
-        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <!-- Board icon — shown in grid view (click → board) -->
+        <svg id="db-icon-board" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3"  y="3" width="5" height="18" rx="1"/>
+          <rect x="10" y="3" width="5" height="13" rx="1"/>
+          <rect x="17" y="3" width="4" height="16" rx="1"/>
+        </svg>
+        <!-- Grid icon — shown in board view (click → grid) -->
+        <svg id="db-icon-grid" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <rect x="3"  y="3"  width="7" height="7" rx="1"/>
           <rect x="14" y="3"  width="7" height="7" rx="1"/>
           <rect x="3"  y="14" width="7" height="7" rx="1"/>
           <rect x="14" y="14" width="7" height="7" rx="1"/>
-        </svg>
-      </button>
-      <button
-        id="db-view-btn-board"
-        onclick="window.dbSetView && dbSetView('board')"
-        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-        title="Board view" aria-label="Board view" aria-pressed="false"
-      >
-        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="3"  y="3" width="5" height="18" rx="1"/>
-          <rect x="10" y="3" width="5" height="13" rx="1"/>
-          <rect x="17" y="3" width="4" height="16" rx="1"/>
         </svg>
       </button>
     </div>

@@ -820,24 +820,32 @@ function _dbRenderBoard(grid, display) {
   grid.innerHTML = html;
 }
 
-// Sync the active/inactive styles on the Grid/Board toggle buttons.
+// Sync the single view-toggle button icon + state after any view change.
 function _dbUpdateViewButtons() {
-  var btnGrid  = document.getElementById('db-view-btn-grid');
-  var btnBoard = document.getElementById('db-view-btn-board');
-  // Active = bright white bg tint + ring (matches the top-bar "pressed" style used by note view btns)
-  var ACTIVE   = ['bg-white/30', 'ring-2', 'ring-white/60'];
-  var INACTIVE = ['bg-white/10'];
+  var btn       = document.getElementById('db-view-toggle-btn');
+  var iconBoard = document.getElementById('db-icon-board');
+  var iconGrid  = document.getElementById('db-icon-grid');
+  var isBoard   = (_dbCurrentView === 'board');
 
-  function _apply(btn, isActive) {
-    if (!btn) return;
-    ACTIVE.concat(INACTIVE).forEach(function(cls) { btn.classList.remove(cls); });
-    (isActive ? ACTIVE : INACTIVE).forEach(function(cls) { btn.classList.add(cls); });
-    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  // Icon swap: show the icon for what you'll switch TO
+  if (iconBoard) iconBoard.classList.toggle('hidden', isBoard);
+  if (iconGrid)  iconGrid.classList.toggle('hidden',  !isBoard);
+
+  // Button pressed state (lit up when board is active)
+  if (btn) {
+    btn.classList.toggle('bg-white/30',   isBoard);
+    btn.classList.toggle('ring-2',        isBoard);
+    btn.classList.toggle('ring-white/60', isBoard);
+    btn.title       = isBoard ? 'Switch to grid view' : 'Switch to board view';
+    btn.setAttribute('aria-label',  btn.title);
+    btn.setAttribute('aria-pressed', isBoard ? 'true' : 'false');
   }
-
-  _apply(btnGrid,  _dbCurrentView === 'grid');
-  _apply(btnBoard, _dbCurrentView === 'board');
 }
+
+// Public: cycle between views. Called from the single toggle button.
+window.dbToggleView = function() {
+  window.dbSetView(_dbCurrentView === 'grid' ? 'board' : 'grid');
+};
 
 // Public: switch view and re-render. Called from HTML onclick.
 window.dbSetView = function(viewId) {
