@@ -2152,6 +2152,16 @@ function _dbCardHtml(card) {
     + ' empty:before:text-gray-300 dark:empty:before:text-zinc-600"'
     + ' onblur="_dbTitleBlur(' + card.id + ',this)"'
     + ' aria-label="Card title">' + _esc(card.title) + '</div>'
+    + '<span id="db-card-grid-share-' + card.id + '"'
+    + ' class="flex-shrink-0 flex items-center self-start mt-1'
+    + ' text-[#0053e2] dark:text-blue-400'
+    + (card.has_share_link ? '' : ' hidden') + '"'
+    + ' title="Public link active" aria-label="Public link active">'
+    + '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101'
+    + 'm-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>'
+    + '</svg></span>'
     + '<div class="flex gap-1 flex-shrink-0 opacity-0 group-hover/card:opacity-100 transition">'
     + '<button type="button" onclick="_dbOpenDetail(' + card.id + ')"'
     + ' title="Open card" aria-label="Open card detail"'
@@ -2185,20 +2195,6 @@ function _dbCoverIsVideo(url) {
 }
 
 function _dbCoverHtml(card) {
-  // Share badge — icon-only, top-right corner, same markup for both cover types.
-  var shareBadge =
-    '<span id="db-card-grid-share-' + card.id + '"'
-    + ' class="absolute top-2 right-2 flex items-center justify-center w-6 h-6 rounded-full'
-    + ' bg-white/80 dark:bg-zinc-900/80 shadow-sm pointer-events-none'
-    + (card.has_share_link ? '' : ' hidden') + '"'
-    + ' title="Public link active" aria-label="Public link active">'
-    + '<svg class="w-3.5 h-3.5 text-[#0053e2] dark:text-blue-400" fill="none" viewBox="0 0 24 24"'
-    + ' stroke="currentColor" stroke-width="2">'
-    + '<path stroke-linecap="round" stroke-linejoin="round"'
-    + ' d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101'
-    + 'm-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>'
-    + '</svg></span>';
-
   if (card.cover_url) {
     var isVid = _dbCoverIsVideo(card.cover_url);
     var media = isVid
@@ -2212,7 +2208,6 @@ function _dbCoverHtml(card) {
       + ' style="height:var(--db-cover-h,9rem);"'
       + ' onclick="_dbOpenDetail(' + card.id + ')">'
       + media
-      + shareBadge
       + '</div>'
     );
   }
@@ -2226,12 +2221,11 @@ function _dbCoverHtml(card) {
   ];
   var grad = gradients[card.id % gradients.length];
   return (
-    '<div style="height:var(--db-cover-h,9rem);" class="relative w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
+    '<div style="height:var(--db-cover-h,9rem);" class="w-full flex-shrink-0 flex items-center justify-center cursor-pointer'
     + ' bg-gradient-to-br ' + grad + ' opacity-70 dark:opacity-80"'
     + ' onclick="_dbOpenDetail(' + card.id + ')">'
     + '<span class="text-3xl font-bold text-white opacity-50 select-none">'
     + _esc((card.title || 'U')[0].toUpperCase()) + '</span>'
-    + shareBadge
     + '</div>'
   );
 }
