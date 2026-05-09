@@ -783,14 +783,14 @@ function _dbRenderBoard(grid, display) {
           + 'display:flex;flex-direction:column;'
           + 'border-radius:0.75rem;overflow:hidden;'
           + 'background:' + hdrBg + ';'
-          + 'border:1px solid ' + hdrBdr + ';'">';
+          + 'border:1px solid ' + hdrBdr + ';">';
 
     // Column header
     html += '<div style="'
           + 'display:flex;align-items:center;gap:0.5rem;'
           + 'padding:0.6rem 0.75rem;'
           + 'border-bottom:1px solid ' + hdrBdr + ';'
-          + 'flex-shrink:0;">'; 
+          + 'flex-shrink:0;">';
 
     if (!isEmpty && (keyMeta.type === 'select' || keyMeta.type === 'status' || keyMeta.type === 'multi_select')) {
       html += '<span style="display:inline-flex;align-items:center;padding:0.15rem 0.55rem;'
