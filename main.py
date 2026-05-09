@@ -44,6 +44,7 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
 from database import init_db
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.notes_db import search_notes
+from routers.sharing_db import get_shared_object_ids
 from routers.workspaces_db import (
     get_all_workspaces,
     get_open_workspaces,
@@ -317,6 +318,10 @@ async def index(request: Request, ws: Optional[int] = None):
     open_ws_ids     = {w["id"] for w in open_workspaces}
     ws_id_set = await get_descendant_ids(active_ws_id) if active_ws_id is not None else None
     notes     = await search_notes(workspace_ids=list(ws_id_set)) if ws_id_set is not None else []
+    if notes:
+        _shared = await get_shared_object_ids("note", [n["id"] for n in notes])
+        for note in notes:
+            note["has_share_link"] = note["id"] in _shared
     categories      = await get_categories_for_workspace(active_ws_id)
     attr_defs       = await get_all_attr_defs()
     breadcrumbs: dict = {}

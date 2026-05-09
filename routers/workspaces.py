@@ -44,6 +44,7 @@ from routers.workspaces_db import (
 )
 from routers.workspace_db_cards import get_db_cards
 from routers.notes_db import search_notes
+from routers.sharing_db import get_shared_object_ids
 from routers.categories_db import (
     get_categories_for_workspace,
     copy_categories_to_workspace,
@@ -93,6 +94,10 @@ async def _ws_context(
     # Expand active workspace to include all descendants so search spans the subtree
     ws_id_set = await get_descendant_ids(active_ws_id) if active_ws_id is not None else None
     notes     = await search_notes(workspace_ids=list(ws_id_set), sort_by=sort_by) if ws_id_set is not None else []
+    if notes:
+        _shared = await get_shared_object_ids("note", [n["id"] for n in notes])
+        for note in notes:
+            note["has_share_link"] = note["id"] in _shared
     open_ids  = {ws["id"] for ws in open_wss}
     # Build breadcrumb list for every open tab
     breadcrumbs: dict[int, list[dict]] = {}
