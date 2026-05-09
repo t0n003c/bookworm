@@ -243,6 +243,18 @@ function shareUpdateBadge(type, id, active) {
       if (card) card.has_share_link = active;
     }
   }
+
+  // ── Note list sidebar badge ──
+  if (type === 'note') {
+    var listBadge = document.getElementById('note-list-share-' + id);
+    if (listBadge) {
+      if (active) {
+        listBadge.classList.remove('hidden');
+      } else {
+        listBadge.classList.add('hidden');
+      }
+    }
+  }
 }
 
 /**

@@ -19,9 +19,18 @@ from routers.notes_db import (
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
-from routers.sharing_db import get_public_link
+from routers.sharing_db import get_public_link, get_shared_object_ids
 
 router = APIRouter(prefix="/notes", tags=["notes"])
+
+
+async def _attach_share_flags(notes: list[dict]) -> None:
+    """Add has_share_link bool to each note dict in-place (one batch query)."""
+    if not notes:
+        return
+    shared = await get_shared_object_ids("note", [n["id"] for n in notes])
+    for note in notes:
+        note["has_share_link"] = note["id"] in shared
 
 
 @router.get("", response_class=HTMLResponse)
@@ -54,6 +63,7 @@ async def list_notes(
         workspace_ids=ws_ids,
         sort_by=sort_by or None,
     )
+    await _attach_share_flags(notes)
     return templates.TemplateResponse(
         request,
         "partials/note_list.html",
@@ -223,6 +233,7 @@ async def create_note_handler(
     attr_defs = await get_all_attr_defs()
     ws_ids = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
     notes = await search_notes(workspace_ids=ws_ids)
+    await _attach_share_flags(notes)
     return templates.TemplateResponse(
         request,
         "partials/after_save.html",
@@ -269,6 +280,7 @@ async def update_note_handler(
     ws_id = int(workspace_id or note.get("workspace_id") or 0) or None
     ws_ids = list(await get_descendant_ids(ws_id)) if ws_id is not None else None
     notes = await search_notes(workspace_ids=ws_ids)
+    await _attach_share_flags(notes)
     categories = await get_categories_for_workspace(ws_id)
     attr_defs = await get_all_attr_defs()
     return templates.TemplateResponse(
@@ -292,6 +304,7 @@ async def delete_note_handler(
     await delete_note(note_id)
     ws_ids = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
     notes = await search_notes(workspace_ids=ws_ids)
+    await _attach_share_flags(notes)
     return templates.TemplateResponse(
         request,
         "partials/note_list.html",

@@ -65,6 +65,27 @@ async def revoke_public_link(
         await db.commit()
 
 
+async def get_shared_object_ids(object_type: str, object_ids: list[int]) -> set[int]:
+    """Return the subset of object_ids that have an active public share link.
+
+    Single batch query — safe to call with an empty list (returns empty set).
+    Does not filter by owner_id so the badge reflects any active share link.
+    """
+    if not object_ids:
+        return set()
+    async with get_db() as db:
+        placeholders = ",".join("?" * len(object_ids))
+        cur = await db.execute(
+            f"""
+            SELECT DISTINCT object_id FROM public_share_links
+            WHERE object_type = ? AND object_id IN ({placeholders})
+              AND (expires_at IS NULL OR expires_at > datetime('now'))
+            """,
+            (object_type, *object_ids),
+        )
+        return {row[0] for row in await cur.fetchall()}
+
+
 async def get_public_link_by_token(token: str) -> Optional[dict]:
     """Look up a public link by its token. Returns None if expired or missing."""
     async with get_db() as db:
