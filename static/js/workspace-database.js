@@ -771,8 +771,6 @@ function _dbRenderBoard(grid, display) {
   order.push('__empty__');
 
   // ── build HTML ──
-  var hdrBg  = isDark ? '#27272a' : '#f9fafb';
-  var hdrBdr = isDark ? '#3f3f46' : '#e5e7eb';
   var sub2   = isDark ? '#71717a' : '#9ca3af';
   var html   = '';
 
@@ -785,16 +783,12 @@ function _dbRenderBoard(grid, display) {
 
     html += '<div class="db-board-col" style="'
           + 'flex:0 0 ' + colW + ';width:' + colW + ';'
-          + 'display:flex;flex-direction:column;'
-          + 'border-radius:0.75rem;overflow:hidden;'
-          + 'background:' + hdrBg + ';'
-          + 'border:1px solid ' + hdrBdr + ';">';
+          + 'display:flex;flex-direction:column;">';
 
     // Column header
     html += '<div style="'
           + 'display:flex;align-items:center;gap:0.5rem;'
-          + 'padding:0.6rem 0.75rem;'
-          + 'border-bottom:1px solid ' + hdrBdr + ';'
+          + 'padding:0.4rem 0.25rem 0.6rem;'
           + 'flex-shrink:0;">';
 
     if (!isEmpty && (keyMeta.type === 'select' || keyMeta.type === 'status' || keyMeta.type === 'multi_select')) {
