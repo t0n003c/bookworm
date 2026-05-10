@@ -195,6 +195,13 @@ function _tppBuildCard(p, isEdit) {
         'title="Add / edit expenses">✏️</button>'
     : '';
 
+  // Badge shown on budget + settle cards: tells user this data feeds the Chart tab
+  var chartBadge = (p.panel_type === 'budget' || p.panel_type === 'settle')
+    ? '<span title="Shown in Chart tab" ' +
+        'class="text-[10px] px-1 py-0.5 rounded-full flex-shrink-0 ' +
+               'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400">📊</span>'
+    : '';
+
   var header =
     '<div class="flex items-center gap-1 px-3 py-2 flex-shrink-0 ' +
          'border-b border-gray-100 dark:border-zinc-800 ' +
@@ -202,7 +209,7 @@ function _tppBuildCard(p, isEdit) {
       '<span class="text-base flex-shrink-0">' + cfg.icon + '</span>' +
       '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-1 truncate">' +
         _tripEsc(title) + '</p>' +
-      moveBtns + actBtns + settleViewEdit +
+      chartBadge + moveBtns + actBtns + settleViewEdit +
     '</div>';
 
   return header + _tppBody(p, data, isEdit);

@@ -4,6 +4,7 @@ All functions use get_db(); never raw aiosqlite.connect().
 get_db() enforces PRAGMA foreign_keys=ON, WAL, busy_timeout=5000.
 """
 from __future__ import annotations
+import json
 
 from database import get_db
 
@@ -767,6 +768,102 @@ async def reorder_day_lane(
 
 # ── Stats helper ──────────────────────────────────────────────────────────────
 
+# ── Panel summaries for Chart tab ────────────────────────────────────────────
+
+def _parse_panel_json(raw: str) -> dict:
+    """Silently return {} on bad JSON — never crash the stats endpoint."""
+    try:
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+async def _panel_summaries(
+    page_id: int, user_id: int, plan_id: int | None
+) -> tuple[list[dict], list[dict]]:
+    """Return (budget_panels, settle_panels) summarised for the chart tab."""
+    async with get_db() as db:
+        if plan_id is None:
+            cur = await db.execute(
+                """
+                SELECT id, panel_type, title, content
+                  FROM trip_plan_panels
+                 WHERE page_id=? AND user_id=?
+                   AND panel_type IN ('budget','settle')
+                 ORDER BY sort_order, id
+                """,
+                (page_id, user_id),
+            )
+        else:
+            cur = await db.execute(
+                """
+                SELECT id, panel_type, title, content
+                  FROM trip_plan_panels
+                 WHERE page_id=? AND user_id=? AND plan_id=?
+                   AND panel_type IN ('budget','settle')
+                 ORDER BY sort_order, id
+                """,
+                (page_id, user_id, plan_id),
+            )
+        rows = await cur.fetchall()
+
+    budget_panels: list[dict] = []
+    settle_panels: list[dict] = []
+
+    for row in rows:
+        c = _parse_panel_json(row["content"])
+        if row["panel_type"] == "budget":
+            items = c.get("items") or []
+            spent = sum(float(it.get("amount") or 0) for it in items)
+            budget_panels.append({
+                "id":              row["id"],
+                "title":           row["title"] or "Budget",
+                "currency":        c.get("currency") or "USD",
+                "ceiling":         float(c.get("total") or 0),
+                "spent":           spent,
+                "items":           [{"label": it.get("label",""), "amount": float(it.get("amount") or 0)}
+                                    for it in items],
+                "linked_settle_id":  c.get("linked_settle_id"),
+                "linked_person_idx": c.get("linked_person_idx"),
+            })
+        elif row["panel_type"] == "settle":
+            people   = c.get("people")   or []
+            expenses = c.get("expenses") or []
+            cur_code = c.get("currency") or "USD"
+            paid_by  = [0.0] * len(people)   # total each person fronted
+            owes     = [0.0] * len(people)   # total each person's fair share
+            total_exp = 0.0
+            for exp in expenses:
+                amt    = float(exp.get("amount") or 0)
+                payer  = exp.get("paid_by")
+                split  = exp.get("split") or list(range(len(people)))
+                total_exp += amt
+                if isinstance(payer, int) and 0 <= payer < len(people):
+                    paid_by[payer] += amt
+                if split:
+                    share = amt / len(split)
+                    for idx in split:
+                        if isinstance(idx, int) and 0 <= idx < len(people):
+                            owes[idx] += share
+            settle_panels.append({
+                "id":             row["id"],
+                "title":          row["title"] or "Settle Up",
+                "currency":       cur_code,
+                "total_expenses": total_exp,
+                "per_person": [
+                    {
+                        "name":    people[i],
+                        "paid":    paid_by[i],
+                        "owes":    owes[i],
+                        "balance": paid_by[i] - owes[i],   # + = gets back, - = still owes
+                    }
+                    for i in range(len(people))
+                ],
+            })
+
+    return budget_panels, settle_panels
+
+
 async def get_trip_stats(
     page_id: int, user_id: int, plan_id: int | None = None
 ) -> dict:
@@ -901,15 +998,19 @@ async def get_trip_stats(
         grand_currency = next(iter(currencies))
         grand_total = sum(t["total_cost"] for t in type_map.values())
 
+    budget_panels, settle_panels = await _panel_summaries(page_id, user_id, plan_id)
+
     return {
-        "total_locations": total_locations,
-        "total_spots":     total_spots,
-        "total_days":      total_days,
-        "spots_in_plan":   spots_in_plan,
-        "grand_total":     grand_total,
-        "grand_currency":  grand_currency,
+        "total_locations":  total_locations,
+        "total_spots":      total_spots,
+        "total_days":       total_days,
+        "spots_in_plan":    spots_in_plan,
+        "grand_total":      grand_total,
+        "grand_currency":   grand_currency,
         "mixed_currencies": len(currencies) > 1,
-        "currencies":      sorted(currencies),
-        "by_type":         list(type_map.values()),
-        "raw_by_type":     raw_by_type,    # client applies FX conversion
+        "currencies":       sorted(currencies),
+        "by_type":          list(type_map.values()),
+        "raw_by_type":      raw_by_type,      # client applies FX conversion
+        "budget_panels":    budget_panels,    # manual budget trackers
+        "settle_panels":    settle_panels,    # group expense split
     }
