@@ -37,8 +37,10 @@ function _tripRenderPersonPicker(data) {
     'class="' + pillBase + (_tripChartSelectedPerson === null ? pillOn : pillOff) + '">All</button>'];
 
   people.forEach(function(name) {
-    var active = _tripChartSelectedPerson === name;
-    pills.push('<button onclick="tripChartSelectPerson(' + JSON.stringify(name) + ')" ' +
+    var active  = _tripChartSelectedPerson === name;
+    // JSON.stringify wraps in double-quotes; escape them for the HTML attribute
+    var safeArg = JSON.stringify(name).replace(/"/g, '&quot;');
+    pills.push('<button onclick="tripChartSelectPerson(' + safeArg + ')" ' +
       'class="' + pillBase + (active ? pillOn : pillOff) + '">' + _tripEsc(name) + '</button>');
   });
 
