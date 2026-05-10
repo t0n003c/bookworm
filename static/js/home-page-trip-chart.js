@@ -232,14 +232,38 @@ function _tripRenderStatCards(data) {
         '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>';
     }
   } else if (budgetCeiling > 0) {
-    costVal   = cur + ' ' + budgetCeiling.toLocaleString('en-US', {maximumFractionDigits: 0});
+    // Actual spend = sum of budget panel line items (same source as ceiling)
+    var budgetSpent = 0;
+    (data.budget_panels || []).forEach(function(bp) {
+      budgetSpent += _tripConvert(bp.spent, bp.currency);
+    });
+    var spentPct = Math.round(budgetSpent / budgetCeiling * 100);
+    var overBudget = budgetSpent > budgetCeiling;
+    var spentColor = overBudget
+      ? 'text-[#ea1100] dark:text-red-400'
+      : spentPct >= 80 ? 'text-[#995213] dark:text-yellow-400'
+      : 'text-[#2a8703] dark:text-green-400';
+    costVal   = cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US');
     costLabel = 'Budget Ceiling (' + cur + ')';
-    costSub   = '';
+    costSub   =
+      '<p class="text-[10px] mt-0.5 ' + spentColor + ' font-medium">' +
+        'Spent ' + cur + '\u00a0' + Math.round(budgetSpent).toLocaleString('en-US') +
+        ' <span class="text-gray-400 dark:text-zinc-500 font-normal">(' + spentPct + '%)</span>' +
+      '</p>';
   } else if (spotTotal > 0) {
-    costVal   = cur + ' ' + spotTotal.toLocaleString('en-US', {maximumFractionDigits: 0});
+    // No budget panels — show spot estimates; add settle total if available
+    var settleTotal = 0;
+    (data.settle_panels || []).forEach(function(sp) {
+      settleTotal += _tripConvert(sp.total_expenses, sp.currency);
+    });
+    costVal   = cur + '\u00a0' + Math.round(spotTotal).toLocaleString('en-US');
     if (data.mixed_currencies) costVal += ' *';
     costLabel = 'Spot Estimates (' + cur + ')';
-    costSub   = '';
+    costSub   = settleTotal > 0
+      ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
+          'Actual logged: ' + cur + '\u00a0' + Math.round(settleTotal).toLocaleString('en-US') +
+        '</p>'
+      : '';
   } else {
     costVal   = '—';
     costLabel = 'Est. Cost (' + cur + ')';
