@@ -479,6 +479,51 @@ panels = [
         10,
     ),
     (
+        # Settle Up: 3 travellers splitting shared Paris expenses.
+        # Balances (server computes these; listed here for reference):
+        #   Tinh  paid 635, owes 390 → +245 (gets back)
+        #   Alex  paid 430, owes 390 →  +40 (gets back)
+        #   Jamie paid  60, owes 345 → -285 (still owes)
+        paris_plan, 'settle', 'Paris Group Split',
+        json.dumps({
+            "currency": "USD",
+            "people": ["Tinh", "Alex", "Jamie"],
+            "expenses": [
+                {
+                    "desc":     "Hotel — Le Marais (4 nights, ½ share each)",
+                    "amount":   560,
+                    "paid_by":  0,          # Tinh fronted it
+                    "split":    [0, 1, 2],  # all three split equally
+                },
+                {
+                    "desc":     "Dinner at L'Ami Louis",
+                    "amount":   340,
+                    "paid_by":  1,          # Alex put it on card
+                    "split":    [0, 1, 2],
+                },
+                {
+                    "desc":     "Louvre + Versailles tickets",
+                    "amount":   75,
+                    "paid_by":  0,          # Tinh
+                    "split":    [0, 1, 2],
+                },
+                {
+                    "desc":     "Metro Navigo weekly passes",
+                    "amount":   60,
+                    "paid_by":  2,          # Jamie
+                    "split":    [0, 1, 2],
+                },
+                {
+                    "desc":     "Versailles day-trip extras (Jamie skipped)",
+                    "amount":   90,
+                    "paid_by":  1,          # Alex
+                    "split":    [0, 1],     # only Tinh + Alex went
+                },
+            ],
+        }),
+        20,
+    ),
+    (
         japan_plan, 'notes', 'Japan Travel Tips',
         json.dumps({"text": (
             "## Money\n"

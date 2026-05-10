@@ -170,35 +170,51 @@ function _tripChartSubhead(icon, title, desc) {
 function _tripRenderStatCards(data) {
   var el = document.getElementById('trip-stats-cards');
   if (!el) return;
+  var cur = _tripChartCurrency;
 
-  // Convert grand total if single currency, or sum raw_by_type with FX
-  var budgetVal = '—';
-  var raw = data.raw_by_type || [];
-  if (raw.length) {
-    var converted = 0;
-    raw.forEach(function(r) { converted += _tripConvert(r.total_cost, r.currency); });
-    if (converted > 0) {
-      budgetVal = _tripChartCurrency + ' ' + converted.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-      if (data.mixed_currencies) budgetVal += ' *';
-    }
+  // Spot estimates total (from researched spots with estimated_cost)
+  var spotTotal = 0;
+  (data.raw_by_type || []).forEach(function(r) {
+    spotTotal += _tripConvert(r.total_cost, r.currency);
+  });
+
+  // Budget panel ceiling total (user's intentional planned budget)
+  var budgetCeiling = 0;
+  (data.budget_panels || []).forEach(function(bp) {
+    budgetCeiling += _tripConvert(bp.ceiling, bp.currency);
+  });
+
+  // Show budget ceiling when available (it's the more intentional number),
+  // fall back to spot estimates, label changes accordingly
+  var costVal, costLabel;
+  if (budgetCeiling > 0) {
+    costVal   = cur + ' ' + budgetCeiling.toLocaleString('en-US', {maximumFractionDigits: 0});
+    costLabel = 'Budget Ceiling (' + cur + ')';
+  } else if (spotTotal > 0) {
+    costVal   = cur + ' ' + spotTotal.toLocaleString('en-US', {maximumFractionDigits: 0});
+    if (data.mixed_currencies) costVal += ' *';
+    costLabel = 'Spot Estimates (' + cur + ')';
+  } else {
+    costVal   = '—';
+    costLabel = 'Est. Cost (' + cur + ')';
   }
 
   var scopeNote = _tripChartPlanId
-    ? (_tripChartPlans.find(function(p){ return p.id===_tripChartPlanId; }) || {}).plan_name || ''
+    ? (_tripChartPlans.find(function(p){ return p.id === _tripChartPlanId; }) || {}).plan_name || ''
     : 'All Research';
 
   var cards = [
-    {icon: '📍', label: 'Locations',        value: data.total_locations || 0},
-    {icon: '🎯', label: 'Spots Researched',  value: data.total_spots    || 0},
-    {icon: '🗓️', label: 'Days Planned',      value: data.total_days     || 0},
-    {icon: '💰', label: 'Est. Cost (' + _tripChartCurrency + ')', value: budgetVal},
+    {icon: '📍', label: 'Locations',       value: data.total_locations || 0},
+    {icon: '🎯', label: 'Spots Researched', value: data.total_spots    || 0},
+    {icon: '🗓️', label: 'Days Planned',     value: data.total_days     || 0},
+    {icon: '💰', label: costLabel,           value: costVal},
   ];
 
   var intro = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
     'Showing stats for: <strong class="text-gray-600 dark:text-zinc-300">' +
     _tripEsc(scopeNote) + '</strong>' +
     (data.mixed_currencies
-      ? ' &nbsp;·&nbsp; <span title="Costs converted using approximate FX rates">💱 Mixed currencies auto-converted to ' + _tripChartCurrency + '</span>'
+      ? ' &nbsp;·&nbsp; <span title="Costs converted using approximate FX rates">💱 Mixed currencies → ' + cur + '</span>'
       : '') +
   '</p>';
 
@@ -216,8 +232,7 @@ function _tripRenderStatCards(data) {
     (data.mixed_currencies
       ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 px-1 italic">' +
         '* Costs converted from ' + (data.currencies || []).join(', ') +
-        ' using approximate rates. Actual costs may vary.' +
-        '</p>'
+        ' using approximate rates. Actual costs may vary.</p>'
       : '');
 }
 
@@ -275,49 +290,76 @@ function _tripRenderTypeChart(data) {
   }
 }
 
-// ── Cost-by-type bar ─────────────────────────────────────────────────────────
+// ── Cost bar: spot estimates + budget panel items merged ──────────────────────
+// Blue bars = costs from researched spots (grouped by spot_type).
+// Yellow bars = line items from budget panels (flights, hotel, etc.).
+// Both are converted to the selected display currency.
 function _tripRenderBudgetChart(data) {
   var wrap   = document.getElementById('trip-chart-budget-wrap');
   var canvas = document.getElementById('trip-canvas-budget');
   if (!canvas || !window.Chart) return;
-
   if (_tripBudgetChart) { _tripBudgetChart.destroy(); _tripBudgetChart = null; }
 
-  // Build converted totals per spot_type using raw_by_type
-  var raw = data.raw_by_type || [];
+  var cur = _tripChartCurrency;
+
+  // ── Dataset A: spot-type estimates (blue) ──────────────────────────────────
   var typeMap = {};
-  raw.forEach(function(r) {
+  (data.raw_by_type || []).forEach(function(r) {
     if (!typeMap[r.spot_type]) typeMap[r.spot_type] = 0;
     typeMap[r.spot_type] += _tripConvert(r.total_cost, r.currency);
   });
-
-  var entries = Object.keys(typeMap)
-    .map(function(k) { return {type: k, cost: typeMap[k]}; })
+  var spotEntries = Object.keys(typeMap)
+    .map(function(k) {
+      return {
+        label:  k.charAt(0).toUpperCase() + k.slice(1),
+        cost:   Math.round(typeMap[k]),
+        source: 'spot',
+      };
+    })
     .filter(function(e) { return e.cost > 0; })
-    .sort(function(a,b) { return b.cost - a.cost; });
+    .sort(function(a, b) { return b.cost - a.cost; });
 
-  if (!entries.length) {
+  // ── Dataset B: budget panel items (yellow) ─────────────────────────────────
+  var budgetEntries = [];
+  (data.budget_panels || []).forEach(function(bp) {
+    (bp.items || []).forEach(function(it) {
+      var converted = Math.round(_tripConvert(it.amount, bp.currency));
+      if (converted > 0) {
+        budgetEntries.push({label: it.label || 'Item', cost: converted,
+                            source: 'budget', panel: bp.title});
+      }
+    });
+  });
+  budgetEntries.sort(function(a, b) { return b.cost - a.cost; });
+  var allEntries = spotEntries.concat(budgetEntries);
+
+  if (!allEntries.length) {
     canvas.parentNode.innerHTML =
-      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-10">No cost estimates yet — ' +
-      'add estimated costs to your spots to see the breakdown.</p>';
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-10">' +
+      'No cost data yet — add estimated costs to spots, or line items to a Budget panel.</p>';
     return;
   }
 
-  var cur    = _tripChartCurrency;
-  var colors = window._tripChartColors || ['#0053e2','#ffc220','#2a8703','#ea1100'];
-  var total  = entries.reduce(function(s,e){ return s+e.cost; }, 0);
+  var total = allEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+  // Colors: blue for spot, spark-yellow for budget items
+  var BG_SPOT   = '#0053e2cc';
+  var BG_BUDGET = '#ffc220cc';
+  var BD_SPOT   = '#0053e2';
+  var BD_BUDGET = '#995213';   // spark.140 for border contrast
 
   _tripBudgetChart = new window.Chart(canvas, {
     type: 'bar',
     data: {
-      labels: entries.map(function(e) {
-        return e.type.charAt(0).toUpperCase() + e.type.slice(1);
-      }),
+      labels: allEntries.map(function(e) { return e.label; }),
       datasets: [{
-        label: 'Est. Cost (' + cur + ')',
-        data:  entries.map(function(e) { return Math.round(e.cost); }),
-        backgroundColor: entries.map(function(_, i) { return colors[i % colors.length] + 'cc'; }),
-        borderColor:     entries.map(function(_, i) { return colors[i % colors.length]; }),
+        label: 'Cost (' + cur + ')',
+        data:  allEntries.map(function(e) { return e.cost; }),
+        backgroundColor: allEntries.map(function(e) {
+          return e.source === 'spot' ? BG_SPOT : BG_BUDGET;
+        }),
+        borderColor: allEntries.map(function(e) {
+          return e.source === 'spot' ? BD_SPOT : BD_BUDGET;
+        }),
         borderWidth: 1.5,
         borderRadius: 4,
       }],
@@ -328,8 +370,10 @@ function _tripRenderBudgetChart(data) {
         legend: {display: false},
         tooltip: {callbacks: {
           label: function(ctx) {
+            var e   = allEntries[ctx.dataIndex];
             var pct = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
-            return ' ' + cur + ' ' + ctx.raw.toLocaleString() + '  (' + pct + '% of total)';
+            var src = e.source === 'spot' ? 'Spot estimate' : ('Budget: ' + (e.panel || ''));
+            return [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' Source: ' + src];
           },
         }},
       },
@@ -339,27 +383,36 @@ function _tripRenderBudgetChart(data) {
           grid: {color: 'rgba(148,163,184,0.15)'},
           ticks: {font: {size: 11}, callback: function(v) { return cur + ' ' + v.toLocaleString(); }},
         },
-        x: {grid: {display: false}, ticks: {font: {size: 11}}},
+        x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
       },
     },
   });
 
+  // Manual color legend + summary below chart
   if (wrap) {
+    var leg = document.getElementById('trip-chart-budget-legend');
+    if (!leg) {
+      leg = document.createElement('div');
+      leg.id = 'trip-chart-budget-legend';
+      leg.className = 'flex flex-wrap gap-3 mt-2 px-1';
+      wrap.appendChild(leg);
+    }
+    var legendItems = [];
+    if (spotEntries.length)   legendItems.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400"><span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#0053e2"></span>Spot estimates</span>');
+    if (budgetEntries.length) legendItems.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400"><span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#ffc220"></span>Budget plan items</span>');
+    leg.innerHTML = legendItems.join('');
+
     var desc = document.getElementById('trip-chart-budget-desc');
     if (!desc) {
       desc = document.createElement('p');
       desc.id = 'trip-chart-budget-desc';
-      desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-2 px-2';
+      desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-1 px-1';
       wrap.appendChild(desc);
     }
-    var lines = entries.map(function(e) {
-      var pct = total > 0 ? Math.round(e.cost/total*100) : 0;
-      return (e.type.charAt(0).toUpperCase()+e.type.slice(1)) + ' ' + pct + '%';
-    });
-    desc.textContent = 'Estimated cost per category converted to ' + cur + '. ' +
-      'Breakdown: ' + lines.join(' · ') + '. ' +
-      (data.mixed_currencies ? 'Original currencies: ' + (data.currencies||[]).join(', ') + '. ' : '') +
-      'Hover bars for exact amounts.';
+    desc.textContent =
+      (spotEntries.length   ? spotEntries.length   + ' spot type' + (spotEntries.length   > 1 ? 's' : '') + ' · ' : '') +
+      (budgetEntries.length ? budgetEntries.length + ' budget item' + (budgetEntries.length > 1 ? 's' : '') + ' · ' : '') +
+      'Total ' + cur + ' ' + total.toLocaleString() + '. Hover bars for source detail.';
   }
 }
 
