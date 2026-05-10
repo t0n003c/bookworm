@@ -821,7 +821,9 @@ async def _panel_summaries(
                 "currency":        c.get("currency") or "USD",
                 "ceiling":         float(c.get("total") or 0),
                 "spent":           spent,
-                "items":           [{"label": it.get("label",""), "amount": float(it.get("amount") or 0)}
+                "items":           [{"label": it.get("label",""),
+                                     "amount": float(it.get("amount") or 0),
+                                     "note":   it.get("note","")}
                                     for it in items],
                 "linked_settle_id":  c.get("linked_settle_id"),
                 "linked_person_idx": c.get("linked_person_idx"),
@@ -862,6 +864,59 @@ async def _panel_summaries(
             })
 
     return budget_panels, settle_panels
+
+
+async def _spots_detail(
+    page_id: int, user_id: int, plan_id: int | None
+) -> list[dict]:
+    """Return lightweight spot records for chart drill-down.
+
+    Each spot: {id, name, spot_type, location_name, estimated_cost,
+                currency, rating, url, notes}.
+    When plan_id is given, only spots assigned to days of that plan.
+    """
+    async with get_db() as db:
+        if plan_id is None:
+            cur = await db.execute(
+                """
+                SELECT s.id, s.name, s.spot_type, l.name AS location_name,
+                       s.estimated_cost, s.currency, s.rating, s.url, s.notes
+                  FROM trip_spots s
+                  LEFT JOIN trip_locations l ON l.id = s.location_id
+                 WHERE s.page_id=? AND s.user_id=?
+                 ORDER BY s.spot_type, s.estimated_cost DESC NULLS LAST
+                """,
+                (page_id, user_id),
+            )
+        else:
+            cur = await db.execute(
+                """
+                SELECT DISTINCT s.id, s.name, s.spot_type, l.name AS location_name,
+                       s.estimated_cost, s.currency, s.rating, s.url, s.notes
+                  FROM trip_spots s
+                  LEFT JOIN trip_locations l ON l.id = s.location_id
+                  JOIN trip_day_spots tds ON tds.spot_id = s.id
+                  JOIN trip_days td       ON td.id = tds.day_id
+                 WHERE td.page_id=? AND td.user_id=? AND td.plan_id=?
+                 ORDER BY s.spot_type, s.estimated_cost DESC
+                """,
+                (page_id, user_id, plan_id),
+            )
+        rows = await cur.fetchall()
+    return [
+        {
+            "id":            r["id"],
+            "name":          r["name"],
+            "spot_type":     r["spot_type"],
+            "location_name": r["location_name"] or "",
+            "estimated_cost": float(r["estimated_cost"]) if r["estimated_cost"] is not None else None,
+            "currency":      r["currency"] or "USD",
+            "rating":        r["rating"],
+            "url":           r["url"] or "",
+            "notes":         r["notes"] or "",
+        }
+        for r in rows
+    ]
 
 
 async def get_trip_stats(
@@ -999,6 +1054,7 @@ async def get_trip_stats(
         grand_total = sum(t["total_cost"] for t in type_map.values())
 
     budget_panels, settle_panels = await _panel_summaries(page_id, user_id, plan_id)
+    spots_detail                  = await _spots_detail(page_id, user_id, plan_id)
 
     return {
         "total_locations":  total_locations,
@@ -1010,7 +1066,8 @@ async def get_trip_stats(
         "mixed_currencies": len(currencies) > 1,
         "currencies":       sorted(currencies),
         "by_type":          list(type_map.values()),
-        "raw_by_type":      raw_by_type,      # client applies FX conversion
-        "budget_panels":    budget_panels,    # manual budget trackers
-        "settle_panels":    settle_panels,    # group expense split
+        "raw_by_type":      raw_by_type,
+        "budget_panels":    budget_panels,
+        "settle_panels":    settle_panels,
+        "spots_detail":     spots_detail,
     }

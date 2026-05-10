@@ -18,6 +18,7 @@ var _tripChartPlanId     = 0;       // 0 = all plans
 var _tripChartCurrency   = 'USD';   // target display currency
 var _tripChartPlans      = [];      // [{id, plan_name, start_date, end_date}]
 var _tripChartLastData   = null;    // last raw API response (for re-render on FX change)
+var _tripChartSelectedPerson = null;  // null = All, or name string from settle panel
 
 // ── Approximate FX rates (all → USD base, updated periodically) ──────────────
 // These are indicative rates for planning purposes only — not live data.
@@ -147,11 +148,12 @@ function _tripChartRefresh() {
 
 // ── Master render ─────────────────────────────────────────────────────────────
 function _tripChartRenderAll(data) {
+  _tripRenderPersonPicker(data);     // drill.js — person pill filter
   _tripRenderStatCards(data);
   _tripRenderTypeChart(data);
   _tripRenderBudgetChart(data);
-  _tripRenderBudgetPanels(data);
-  _tripRenderSettlePanels(data);
+  _tripRenderBudgetPanels(data);     // drill.js — panel cards
+  _tripRenderSettlePanels(data);     // drill.js — panel cards
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,19 +186,38 @@ function _tripRenderStatCards(data) {
     budgetCeiling += _tripConvert(bp.ceiling, bp.currency);
   });
 
-  // Show budget ceiling when available (it's the more intentional number),
-  // fall back to spot estimates, label changes accordingly
-  var costVal, costLabel;
-  if (budgetCeiling > 0) {
+  var costVal, costLabel, costSub;
+  if (_tripChartSelectedPerson) {
+    var personOwes = 0, personPaid = 0, personBal = 0;
+    (data.settle_panels || []).forEach(function(sp) {
+      (sp.per_person || []).forEach(function(pp) {
+        if (pp.name === _tripChartSelectedPerson) {
+          personOwes += _tripConvert(pp.owes,    sp.currency);
+          personPaid += _tripConvert(pp.paid,    sp.currency);
+          personBal  += _tripConvert(pp.balance, sp.currency);
+        }
+      });
+    });
+    costVal   = cur + ' ' + personOwes.toLocaleString('en-US', {maximumFractionDigits: 0});
+    costLabel = _tripChartSelectedPerson + "'s Fair Share";
+    var balStr = (personBal >= 0 ? '+' : '') + cur + ' ' +
+      Math.abs(personBal).toLocaleString('en-US', {maximumFractionDigits: 0});
+    costSub = personBal >= 0
+      ? '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">' + balStr + ' to receive ✓</p>'
+      : '<p class="text-[10px] text-[#ea1100] dark:text-red-400 font-medium mt-0.5">' + balStr + ' owed ⚠</p>';
+  } else if (budgetCeiling > 0) {
     costVal   = cur + ' ' + budgetCeiling.toLocaleString('en-US', {maximumFractionDigits: 0});
     costLabel = 'Budget Ceiling (' + cur + ')';
+    costSub   = '';
   } else if (spotTotal > 0) {
     costVal   = cur + ' ' + spotTotal.toLocaleString('en-US', {maximumFractionDigits: 0});
     if (data.mixed_currencies) costVal += ' *';
     costLabel = 'Spot Estimates (' + cur + ')';
+    costSub   = '';
   } else {
     costVal   = '—';
     costLabel = 'Est. Cost (' + cur + ')';
+    costSub   = '';
   }
 
   var scopeNote = _tripChartPlanId
@@ -204,10 +225,10 @@ function _tripRenderStatCards(data) {
     : 'All Research';
 
   var cards = [
-    {icon: '📍', label: 'Locations',       value: data.total_locations || 0},
-    {icon: '🎯', label: 'Spots Researched', value: data.total_spots    || 0},
-    {icon: '🗓️', label: 'Days Planned',     value: data.total_days     || 0},
-    {icon: '💰', label: costLabel,           value: costVal},
+    {icon: '📍', label: 'Locations',       value: data.total_locations || 0, sub: ''},
+    {icon: '🎯', label: 'Spots Researched', value: data.total_spots    || 0, sub: ''},
+    {icon: '🗓️', label: 'Days Planned',     value: data.total_days     || 0, sub: ''},
+    {icon: '💰', label: costLabel,           value: costVal,                  sub: costSub || ''},
   ];
 
   var intro = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
@@ -226,6 +247,7 @@ function _tripRenderStatCards(data) {
         '<div>' +
           '<p class="text-xs text-gray-500 dark:text-zinc-400">' + c.label + '</p>' +
           '<p class="text-lg font-bold text-gray-800 dark:text-zinc-100">' + c.value + '</p>' +
+          (c.sub || '') +
         '</div>' +
       '</div>';
     }).join('') + '</div>' +
@@ -271,8 +293,15 @@ function _tripRenderTypeChart(data) {
             return ' ' + ctx.label + ': ' + ctx.raw + ' spot' + (ctx.raw === 1 ? '' : 's');
           }}},
         },
+        onClick: function(evt, elements) {
+          if (!elements.length) return;
+          var idx = elements[0].index;
+          var t   = byType[idx];
+          if (t) _tripChartOpenSpotTypeDrawer(t.spot_type, _tripChartLastData);
+        },
       },
     });
+    if (canvas.style) canvas.style.cursor = 'pointer';
   }
 
   if (wrap) {
@@ -311,9 +340,10 @@ function _tripRenderBudgetChart(data) {
   var spotEntries = Object.keys(typeMap)
     .map(function(k) {
       return {
-        label:  k.charAt(0).toUpperCase() + k.slice(1),
-        cost:   Math.round(typeMap[k]),
-        source: 'spot',
+        label:   k.charAt(0).toUpperCase() + k.slice(1),
+        rawType: k,     // original snake_case key for drill-down filtering
+        cost:    Math.round(typeMap[k]),
+        source:  'spot',
       };
     })
     .filter(function(e) { return e.cost > 0; })
@@ -385,8 +415,19 @@ function _tripRenderBudgetChart(data) {
         },
         x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
       },
+      onClick: function(evt, elements) {
+        if (!elements.length) return;
+        var e = allEntries[elements[0].index];
+        if (!e) return;
+        if (e.source === 'spot') {
+          _tripChartOpenSpotTypeDrawer(e.rawType, _tripChartLastData);
+        } else {
+          _tripChartOpenBudgetItemDrawer(e, _tripChartLastData);
+        }
+      },
     },
   });
+  if (canvas.style) canvas.style.cursor = 'pointer';
 
   // Manual color legend + summary below chart
   if (wrap) {
@@ -414,183 +455,4 @@ function _tripRenderBudgetChart(data) {
       (budgetEntries.length ? budgetEntries.length + ' budget item' + (budgetEntries.length > 1 ? 's' : '') + ' · ' : '') +
       'Total ' + cur + ' ' + total.toLocaleString() + '. Hover bars for source detail.';
   }
-}
-
-// ── Budget panel cards ─────────────────────────────────────────────────────
-// Shows each budget panel's ceiling vs actual spend, with line-item rows.
-// Amounts are converted to the user's selected display currency.
-function _tripRenderBudgetPanels(data) {
-  var el = document.getElementById('trip-chart-budget-panels');
-  if (!el) return;
-  var panels = data.budget_panels || [];
-  if (!panels.length) {
-    el.innerHTML = '';
-    return;
-  }
-  var cur = _tripChartCurrency;
-  var sectionCls = 'bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
-                   'dark:border-zinc-800 p-4';
-
-  var cards = panels.map(function(p) {
-    var ceiling  = _tripConvert(p.ceiling,  p.currency);
-    var spent    = _tripConvert(p.spent,    p.currency);
-    var remaining = ceiling - spent;
-    var pct      = ceiling > 0 ? Math.min(Math.round(spent / ceiling * 100), 100) : 0;
-    var barColor = pct >= 90 ? '#ea1100' : pct >= 70 ? '#f59e0b' : '#2a8703';
-    var overBudget = ceiling > 0 && spent > ceiling;
-
-    // Line-item rows
-    var itemRows = (p.items || []).filter(function(it) { return it.amount > 0; })
-      .map(function(it) {
-        var converted = _tripConvert(it.amount, p.currency);
-        var itPct = spent > 0 ? Math.round(converted / spent * 100) : 0;
-        return '<div class="flex items-center gap-2 py-1 border-b ' +
-               'border-gray-50 dark:border-zinc-800/60 last:border-0">' +
-          '<span class="text-[11px] text-gray-600 dark:text-zinc-300 flex-1 truncate">' +
-            _tripEsc(it.label || '—') + '</span>' +
-          '<div class="w-16 h-1.5 bg-gray-100 dark:bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">' +
-            '<div class="h-full rounded-full" style="width:' + itPct + '%;background:' + barColor + '"></div>' +
-          '</div>' +
-          '<span class="text-[11px] font-medium text-gray-700 dark:text-zinc-200 w-20 text-right flex-shrink-0">' +
-            cur + ' ' + converted.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0}) +
-          '</span>' +
-        '</div>';
-      }).join('');
-
-    var converted_note = p.currency !== cur
-      ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500 ml-1">(orig. ' + p.currency + ')</span>' : '';
-
-    return '<div class="' + sectionCls + '">' +
-      // Header
-      '<div class="flex items-center gap-2 mb-3">' +
-        '<span class="text-base">💰</span>' +
-        '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-1">' +
-          _tripEsc(p.title) + '</p>' +
-        '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 ' +
-               'text-[#0053e2] dark:text-blue-400 font-medium">📊 in chart</span>' +
-        converted_note +
-      '</div>' +
-      // Progress bar + numbers
-      '<div class="mb-2">' +
-        '<div class="flex justify-between text-[11px] mb-1">' +
-          '<span class="font-semibold ' + (overBudget ? 'text-red-500' : 'text-gray-700 dark:text-zinc-200') + '">' +
-            cur + ' ' + spent.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ' spent' +
-          '</span>' +
-          '<span class="text-gray-400 dark:text-zinc-500">' +
-            (ceiling > 0
-              ? (overBudget
-                  ? '⚠️ over by ' + cur + ' ' + Math.abs(remaining).toLocaleString('en-US', {maximumFractionDigits: 0})
-                  : cur + ' ' + remaining.toLocaleString('en-US', {maximumFractionDigits: 0}) + ' left of ' +
-                    cur + ' ' + ceiling.toLocaleString('en-US', {maximumFractionDigits: 0}))
-              : 'No ceiling set') +
-          '</span>' +
-        '</div>' +
-        '<div class="h-2 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden">' +
-          '<div class="h-full rounded-full transition-all" style="width:' + pct + '%;background:' + barColor + '"></div>' +
-        '</div>' +
-        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 text-right">' + pct + '% of budget used</p>' +
-      '</div>' +
-      // Line items
-      (itemRows
-        ? '<div class="mt-3 pt-2 border-t border-gray-100 dark:border-zinc-800">' +
-            '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Line items</p>' +
-            itemRows +
-          '</div>'
-        : '<p class="text-[11px] text-gray-400 dark:text-zinc-500 italic">No line items added yet.</p>') +
-    '</div>';
-  }).join('');
-
-  el.innerHTML =
-    '<div class="mb-3">' +
-      '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200">💰 Budget Trackers</p>' +
-      '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-        'Manual budget panels from your trip plan. Ceiling vs what you have logged so far.' +
-      '</p>' +
-    '</div>' +
-    '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + cards + '</div>';
-}
-
-// ── Settle / split panel cards ──────────────────────────────────────────────
-// Shows each settle panel's per-person paid / owes / balance breakdown.
-function _tripRenderSettlePanels(data) {
-  var el = document.getElementById('trip-chart-settle-panels');
-  if (!el) return;
-  var panels = data.settle_panels || [];
-  if (!panels.length) {
-    el.innerHTML = '';
-    return;
-  }
-  var cur = _tripChartCurrency;
-  var sectionCls = 'bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
-                   'dark:border-zinc-800 p-4';
-
-  var cards = panels.map(function(p) {
-    var totalConv = _tripConvert(p.total_expenses, p.currency);
-    var converted_note = p.currency !== cur
-      ? ' <span class="text-[10px] text-gray-400 dark:text-zinc-500">(orig. ' + p.currency + ')</span>' : '';
-
-    var rows = (p.per_person || []).map(function(person) {
-      var paid    = _tripConvert(person.paid,    p.currency);
-      var owes    = _tripConvert(person.owes,    p.currency);
-      var balance = _tripConvert(person.balance, p.currency);
-      var balColor = balance >= 0
-        ? 'text-[#2a8703] dark:text-green-400'
-        : 'text-[#ea1100] dark:text-red-400';
-      var balPrefix = balance >= 0 ? '+' : '';
-      var balLabel  = balance >= 0 ? 'gets back' : 'still owes';
-      return '<tr class="border-b border-gray-50 dark:border-zinc-800 last:border-0">' +
-        '<td class="py-1.5 pr-3 text-[11px] font-medium text-gray-700 dark:text-zinc-200">' +
-          _tripEsc(person.name) + '</td>' +
-        '<td class="py-1.5 pr-3 text-[11px] text-gray-500 dark:text-zinc-400 text-right">' +
-          cur + ' ' + paid.toLocaleString('en-US', {maximumFractionDigits: 0}) + '</td>' +
-        '<td class="py-1.5 pr-3 text-[11px] text-gray-500 dark:text-zinc-400 text-right">' +
-          cur + ' ' + owes.toLocaleString('en-US', {maximumFractionDigits: 0}) + '</td>' +
-        '<td class="py-1.5 text-[11px] font-semibold text-right ' + balColor + '" ' +
-             'title="' + balLabel + '">' +
-          balPrefix + cur + ' ' + Math.abs(balance).toLocaleString('en-US', {maximumFractionDigits: 0}) +
-        '</td>' +
-      '</tr>';
-    }).join('');
-
-    return '<div class="' + sectionCls + '">' +
-      '<div class="flex items-center gap-2 mb-3">' +
-        '<span class="text-base">🤝</span>' +
-        '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-1">' +
-          _tripEsc(p.title) + '</p>' +
-        '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 ' +
-               'text-[#0053e2] dark:text-blue-400 font-medium">📊 in chart</span>' +
-      '</div>' +
-      '<p class="text-[11px] text-gray-500 dark:text-zinc-400 mb-3">' +
-        'Total expenses: <strong class="text-gray-700 dark:text-zinc-200">' +
-          cur + ' ' + totalConv.toLocaleString('en-US', {maximumFractionDigits: 0}) +
-        '</strong>' + converted_note +
-      '</p>' +
-      (rows
-        ? '<div class="overflow-x-auto">' +
-            '<table class="w-full">' +
-              '<thead><tr class="border-b border-gray-100 dark:border-zinc-800">' +
-                '<th class="pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-left">Person</th>' +
-                '<th class="pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Paid</th>' +
-                '<th class="pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Fair Share</th>' +
-                '<th class="pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500 text-right">Balance</th>' +
-              '</tr></thead>' +
-              '<tbody>' + rows + '</tbody>' +
-            '</table>' +
-            '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-2">' +
-              'Green → gets money back · Red → still owes' +
-            '</p>' +
-          '</div>'
-        : '<p class="text-[11px] text-gray-400 dark:text-zinc-500 italic">No people added yet.</p>') +
-    '</div>';
-  }).join('');
-
-  el.innerHTML =
-    '<div class="mb-3">' +
-      '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200">🤝 Group Expenses (Settle Up)</p>' +
-      '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-        'Per-person paid / fair share / balance from your Settle Up panels.' +
-        ' Positive balance means they get money back.' +
-      '</p>' +
-    '</div>' +
-    '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + cards + '</div>';
 }
