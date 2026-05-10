@@ -880,11 +880,12 @@ async def _spots_detail(
             cur = await db.execute(
                 """
                 SELECT s.id, s.name, s.spot_type, l.name AS location_name,
-                       s.estimated_cost, s.currency, s.rating, s.url, s.notes
+                       s.estimated_cost, s.currency, s.priority,
+                       s.cover_url, s.map_url, s.notes
                   FROM trip_spots s
                   LEFT JOIN trip_locations l ON l.id = s.location_id
                  WHERE s.page_id=? AND s.user_id=?
-                 ORDER BY s.spot_type, s.estimated_cost DESC NULLS LAST
+                 ORDER BY s.spot_type, s.estimated_cost DESC
                 """,
                 (page_id, user_id),
             )
@@ -892,7 +893,8 @@ async def _spots_detail(
             cur = await db.execute(
                 """
                 SELECT DISTINCT s.id, s.name, s.spot_type, l.name AS location_name,
-                       s.estimated_cost, s.currency, s.rating, s.url, s.notes
+                       s.estimated_cost, s.currency, s.priority,
+                       s.cover_url, s.map_url, s.notes
                   FROM trip_spots s
                   LEFT JOIN trip_locations l ON l.id = s.location_id
                   JOIN trip_day_spots tds ON tds.spot_id = s.id
@@ -905,15 +907,16 @@ async def _spots_detail(
         rows = await cur.fetchall()
     return [
         {
-            "id":            r["id"],
-            "name":          r["name"],
-            "spot_type":     r["spot_type"],
-            "location_name": r["location_name"] or "",
+            "id":             r["id"],
+            "name":           r["name"],
+            "spot_type":      r["spot_type"],
+            "location_name":  r["location_name"] or "",
             "estimated_cost": float(r["estimated_cost"]) if r["estimated_cost"] is not None else None,
-            "currency":      r["currency"] or "USD",
-            "rating":        r["rating"],
-            "url":           r["url"] or "",
-            "notes":         r["notes"] or "",
+            "currency":       r["currency"] or "USD",
+            "priority":       r["priority"],   # 1=Low 2=Medium 3=High (None = unset)
+            "cover_url":      r["cover_url"] or "",
+            "map_url":        r["map_url"] or "",
+            "notes":          r["notes"] or "",
         }
         for r in rows
     ]

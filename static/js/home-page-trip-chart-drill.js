@@ -119,13 +119,22 @@ window._tripChartOpenSpotTypeDrawer = function(rawType, data) {
     var costStr = (s.estimated_cost !== null && s.estimated_cost !== undefined)
       ? cur + ' ' + Math.round(_tripConvert(s.estimated_cost, s.currency)).toLocaleString()
       : 'No estimate';
-    var stars = s.rating
-      ? '<span class="text-yellow-400">' + '★'.repeat(Math.min(Math.max(Math.round(s.rating), 1), 5)) + '</span>' +
-        '<span class="text-gray-300 dark:text-zinc-600">' + '★'.repeat(5 - Math.min(Math.max(Math.round(s.rating), 1), 5)) + '</span>' +
-        ' <span class="text-[10px] text-gray-400">(' + Number(s.rating).toFixed(1) + ')</span>'
-      : '<span class="text-[10px] text-gray-400 italic">No rating</span>';
-    var nameEl = s.url
-      ? '<a href="' + _tripEsc(s.url) + '" target="_blank" rel="noopener" ' +
+    // priority: 1=Low 2=Medium 3=High (null = unset)
+    var priorityMap = {1: 'Low', 2: 'Medium', 3: 'High'};
+    var priorityColorMap = {
+      1: 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400',
+      2: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400',
+      3: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    };
+    var priEl = s.priority
+      ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium ' +
+          (priorityColorMap[s.priority] || priorityColorMap[1]) + '">' +
+          (priorityMap[s.priority] || 'P' + s.priority) + ' priority</span>'
+      : '';
+    // Prefer map_url as the clickable link; fall back to cover_url
+    var linkUrl = s.map_url || s.cover_url || '';
+    var nameEl = linkUrl
+      ? '<a href="' + _tripEsc(linkUrl) + '" target="_blank" rel="noopener" ' +
           'class="font-medium text-[#0053e2] dark:text-blue-400 hover:underline">' +
           _tripEsc(s.name) + ' ↗</a>'
       : '<span class="font-medium text-gray-800 dark:text-zinc-100">' + _tripEsc(s.name) + '</span>';
@@ -139,8 +148,7 @@ window._tripChartOpenSpotTypeDrawer = function(rawType, data) {
     return '<div class="py-3 border-b border-gray-100 dark:border-zinc-800 last:border-0">' +
       '<div class="flex items-start justify-between gap-2">' +
         '<div class="flex-1 min-w-0">' +
-          nameEl + ' ' + locBadge +
-          '<div class="mt-1">' + stars + '</div>' +
+          '<div class="flex flex-wrap items-center gap-1.5">' + nameEl + locBadge + priEl + '</div>' +
           noteEl +
         '</div>' +
         '<div class="text-right flex-shrink-0">' +
