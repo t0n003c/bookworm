@@ -198,13 +198,39 @@ function _tripRenderStatCards(data) {
         }
       });
     });
-    costVal   = cur + ' ' + personOwes.toLocaleString('en-US', {maximumFractionDigits: 0});
-    costLabel = _tripChartSelectedPerson + "'s Fair Share";
-    var balStr = (personBal >= 0 ? '+' : '') + cur + ' ' +
-      Math.abs(personBal).toLocaleString('en-US', {maximumFractionDigits: 0});
-    costSub = personBal >= 0
-      ? '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">' + balStr + ' to receive ✓</p>'
-      : '<p class="text-[10px] text-[#ea1100] dark:text-red-400 font-medium mt-0.5">' + balStr + ' owed ⚠</p>';
+    // Net cost = what they'll ultimately pay after all settlements
+    // = paid - balance (if positive) or paid + |balance| (if negative)
+    // which always equals owes/fair-share, but framed as a real spend figure.
+    var netCost = personPaid - personBal;   // same as personOwes
+    var fmt = function(n) {
+      return cur + ' ' + Math.abs(Math.round(n)).toLocaleString('en-US');
+    };
+    costVal   = fmt(netCost);
+    costLabel = _tripChartSelectedPerson + "'s Net Trip Cost";
+    // Sub-note breaks down how we got there
+    var paidStr = fmt(personPaid);
+    if (personBal > 0.5) {
+      // they overpaid — getting money back
+      costSub =
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
+          'Paid ' + paidStr +
+          ' &minus; <span class="text-[#2a8703] dark:text-green-400 font-medium">' +
+            fmt(personBal) + ' back✓' +
+          '</span>' +
+        '</p>';
+    } else if (personBal < -0.5) {
+      // they underpaid — still owe more
+      costSub =
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
+          'Paid ' + paidStr +
+          ' + <span class="text-[#ea1100] dark:text-red-400 font-medium">' +
+            fmt(Math.abs(personBal)) + ' owed⚠' +
+          '</span>' +
+        '</p>';
+    } else {
+      costSub =
+        '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>';
+    }
   } else if (budgetCeiling > 0) {
     costVal   = cur + ' ' + budgetCeiling.toLocaleString('en-US', {maximumFractionDigits: 0});
     costLabel = 'Budget Ceiling (' + cur + ')';
