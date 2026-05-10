@@ -814,17 +814,38 @@ async def _panel_summaries(
         c = _parse_panel_json(row["content"])
         if row["panel_type"] == "budget":
             items = c.get("items") or []
-            spent = sum(float(it.get("amount") or 0) for it in items)
+            # items can use either 'label' (old) or 'note' (new panel UI) as the
+            # description field.  Normalise to 'label' for downstream consumers.
+            for it in items:
+                if not it.get("label") and it.get("note"):
+                    it["label"] = it["note"]
+            reconciled_count = sum(1 for it in items if it.get("reconciled"))
+            # Only non-reconciled manual items count toward budget "spent".
+            # Reconciled items are already tracked in the linked settle panel.
+            unreconciled_spent = sum(
+                float(it.get("amount") or 0)
+                for it in items
+                if not it.get("reconciled")
+            )
+            ceiling_source = c.get("ceiling_source", "manual")  # 'manual' | 'spots'
+            spot_types     = c.get("spot_types") or []           # list of spot_type strings
             budget_panels.append({
-                "id":              row["id"],
-                "title":           row["title"] or "Budget",
-                "currency":        c.get("currency") or "USD",
-                "ceiling":         float(c.get("total") or 0),
-                "spent":           spent,
-                "items":           [{"label": it.get("label",""),
-                                     "amount": float(it.get("amount") or 0),
-                                     "note":   it.get("note","")}
-                                    for it in items],
+                "id":                row["id"],
+                "title":             row["title"] or "Budget",
+                "currency":          c.get("currency") or "USD",
+                "ceiling":           float(c.get("total") or 0),
+                "ceiling_source":    ceiling_source,
+                "spot_types":        spot_types,
+                "spent":             unreconciled_spent,
+                "reconciled_count":  reconciled_count,
+                "total_items":       len(items),
+                "items":             [{
+                    "label":      it.get("label") or it.get("note") or "",
+                    "amount":     float(it.get("amount") or 0),
+                    "note":       it.get("note") or it.get("label") or "",
+                    "reconciled": bool(it.get("reconciled")),
+                    "settle_ref": it.get("settle_ref"),
+                } for it in items],
                 "linked_settle_id":  c.get("linked_settle_id"),
                 "linked_person_idx": c.get("linked_person_idx"),
             })
@@ -1058,6 +1079,32 @@ async def get_trip_stats(
 
     budget_panels, settle_panels = await _panel_summaries(page_id, user_id, plan_id)
     spots_detail                  = await _spots_detail(page_id, user_id, plan_id)
+
+    # Override ceiling for budget panels that pull from spot estimates.
+    # Build a cost map: spot_type -> total estimated cost (in spot's own currency).
+    # We do a simple same-currency sum here; FX conversion happens client-side.
+    spot_cost_by_type: dict[str, float] = {}
+    spot_currency_by_type: dict[str, str] = {}
+    for s in spots_detail:
+        if s["estimated_cost"] is not None:
+            t = s["spot_type"]
+            spot_cost_by_type[t]     = spot_cost_by_type.get(t, 0) + s["estimated_cost"]
+            spot_currency_by_type[t] = s["currency"]   # last-seen currency per type
+
+    for bp in budget_panels:
+        if bp["ceiling_source"] == "spots" and bp["spot_types"]:
+            derived = sum(
+                spot_cost_by_type.get(st, 0)
+                for st in bp["spot_types"]
+            )
+            bp["ceiling"] = derived
+            # Expose which currency the spots are in (for display hint)
+            bp["ceiling_currency_hint"] = (
+                spot_currency_by_type.get(bp["spot_types"][0], bp["currency"])
+                if bp["spot_types"] else bp["currency"]
+            )
+        else:
+            bp["ceiling_currency_hint"] = bp["currency"]
 
     return {
         "total_locations":  total_locations,

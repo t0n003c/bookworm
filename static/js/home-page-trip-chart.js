@@ -19,6 +19,7 @@ var _tripChartCurrency   = 'USD';   // target display currency
 var _tripChartPlans      = [];      // [{id, plan_name, start_date, end_date}]
 var _tripChartLastData   = null;    // last raw API response (for re-render on FX change)
 var _tripChartSelectedPerson = null;  // null = All, or name string from settle panel
+var _tripChartPhase      = 'planning'; // 'planning' | 'actuals'
 
 // ── Approximate FX rates (all → USD base, updated periodically) ──────────────
 // These are indicative rates for planning purposes only — not live data.
@@ -72,6 +73,45 @@ function _tripChartLoadPlans() {
     .then(function(d) { _tripChartPlans = Array.isArray(d) ? d : (d.plans || []); })
     .catch(function() { _tripChartPlans = []; });
 }
+
+// ── Phase toggle (Planning vs Actuals) ─────────────────────────────────────
+function _tripChartRenderPhaseToggle() {
+  var el = document.getElementById('trip-chart-phase-toggle');
+  if (!el) return;
+  var btnCls = function(phase) {
+    var active = _tripChartPhase === phase;
+    return 'px-4 py-1.5 text-xs font-semibold rounded-full transition ' +
+      (active
+        ? (phase === 'planning'
+            ? 'bg-[#0053e2] text-white shadow'
+            : 'bg-[#2a8703] text-white shadow')
+        : 'bg-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200');
+  };
+  el.innerHTML =
+    '<div class="flex items-center justify-center gap-1 px-4 py-2.5 ' +
+    'border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">' +
+      '<span class="text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
+      '<div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5">' +
+        '<button onclick="tripChartSetPhase(\'planning\')" class="' + btnCls('planning') + '">' +
+          '🗺️ Planning' +
+        '</button>' +
+        '<button onclick="tripChartSetPhase(\'actuals\')" class="' + btnCls('actuals') + '">' +
+          '✅ Actuals' +
+        '</button>' +
+      '</div>' +
+      '<span class="ml-3 text-[10px] text-gray-400 dark:text-zinc-500 italic">' +
+        (_tripChartPhase === 'planning'
+          ? 'Spot estimates &amp; budget ceiling'
+          : 'Logged expenses &amp; settlements') +
+      '</span>' +
+    '</div>';
+}
+
+window.tripChartSetPhase = function(phase) {
+  _tripChartPhase = phase;
+  _tripChartSelectedPerson = null; // reset person filter on phase switch
+  if (_tripChartLastData) _tripChartRenderAll(_tripChartLastData);
+};
 
 // ── Controls bar (plan picker + currency picker) ──────────────────────────────
 function _tripChartRenderControls() {
@@ -133,6 +173,7 @@ window.tripChartSetCurrency = function(cur) {
 function _tripChartRefresh() {
   var url = '/home/trip/' + _tripPid + '/stats';
   if (_tripChartPlanId) url += '?plan_id=' + _tripChartPlanId;
+  _tripChartRenderPhaseToggle();
   _tripChartRenderControls();
   _tripFetch(url)
     .then(function(r) { return r.json(); })
@@ -148,12 +189,15 @@ function _tripChartRefresh() {
 
 // ── Master render ─────────────────────────────────────────────────────────────
 function _tripChartRenderAll(data) {
-  _tripRenderPersonPicker(data);     // drill.js — person pill filter
+  _tripChartRenderPhaseToggle();
   _tripRenderStatCards(data);
   _tripRenderTypeChart(data);
   _tripRenderBudgetChart(data);
-  _tripRenderBudgetPanels(data);     // drill.js — panel cards
-  _tripRenderSettlePanels(data);     // drill.js — panel cards
+  // Actuals-only sections
+  var isActuals = _tripChartPhase === 'actuals';
+  _tripRenderPersonPicker(isActuals ? data : null);  // drill.js
+  _tripRenderBudgetPanels(isActuals ? data : null);  // drill.js
+  _tripRenderSettlePanels(isActuals ? data : null);  // drill.js
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -168,24 +212,76 @@ function _tripChartSubhead(icon, title, desc) {
   '</div>';
 }
 
-// ── Stat cards ────────────────────────────────────────────────────────────────
+// ── Stat cards ──────────────────────────────────────────────────────────────
 function _tripRenderStatCards(data) {
   var el = document.getElementById('trip-stats-cards');
   if (!el) return;
   var cur = _tripChartCurrency;
 
-  // Spot estimates total (from researched spots with estimated_cost)
+  // Spot estimates total
   var spotTotal = 0;
   (data.raw_by_type || []).forEach(function(r) {
     spotTotal += _tripConvert(r.total_cost, r.currency);
   });
 
-  // Budget panel ceiling total (user's intentional planned budget)
+  // Budget ceiling total
   var budgetCeiling = 0;
   (data.budget_panels || []).forEach(function(bp) {
     budgetCeiling += _tripConvert(bp.ceiling, bp.currency);
   });
 
+  var scopeNote = _tripChartPlanId
+    ? (_tripChartPlans.find(function(p){ return p.id === _tripChartPlanId; }) || {}).plan_name || ''
+    : 'All Research';
+
+  var intro = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
+    'Showing stats for: <strong class="text-gray-600 dark:text-zinc-300">' +
+    _tripEsc(scopeNote) + '</strong>' +
+    (data.mixed_currencies
+      ? ' &nbsp;·&nbsp; <span title="Costs converted using approximate FX rates">💱 Mixed currencies → ' + cur + '</span>'
+      : '') +
+  '</p>';
+
+  // ── PLANNING MODE: spot estimates + budget ceiling only ─────────────────
+  if (_tripChartPhase === 'planning') {
+    var estVal  = spotTotal > 0
+      ? cur + '\u00a0' + Math.round(spotTotal).toLocaleString('en-US')
+      : '—';
+    var ceilVal = budgetCeiling > 0
+      ? cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US')
+      : '—';
+    var planningCards = [
+      {icon: '📍', label: 'Locations',        value: data.total_locations || 0, sub: ''},
+      {icon: '🎯', label: 'Spots Researched', value: data.total_spots    || 0, sub: ''},
+      {icon: '🗓️', label: 'Days Planned',     value: data.total_days     || 0, sub: ''},
+      {icon: '💰', label: 'Est. Cost (' + cur + ')',
+        value: estVal,
+        sub: budgetCeiling > 0
+          ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">of ' +
+              ceilVal + ' ceiling</p>'
+          : ''},
+    ];
+    el.innerHTML = intro + '<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">' +
+      planningCards.map(function(c) {
+        return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
+          'dark:border-zinc-800 p-4 flex items-center gap-3">' +
+          '<span class="text-2xl" aria-hidden="true">' + c.icon + '</span>' +
+          '<div>' +
+            '<p class="text-xs text-gray-500 dark:text-zinc-400">' + c.label + '</p>' +
+            '<p class="text-lg font-bold text-gray-800 dark:text-zinc-100">' + c.value + '</p>' +
+            (c.sub || '') +
+          '</div>' +
+        '</div>';
+      }).join('') + '</div>' +
+      (data.mixed_currencies
+        ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 px-1 italic">' +
+          '* Costs converted from ' + (data.currencies || []).join(', ') +
+          ' using approximate rates. Actual costs may vary.</p>'
+        : '');
+    return;
+  }
+
+  // ── ACTUALS MODE (existing logic) ───────────────────────────────────────
   // Net spent: always pull from settle panels so it matches the per-person
   // breakdown (each person's Net Trip Cost sums to settle total_expenses).
   // Budget panel .spent is a separate dataset and must NOT be mixed in here.
@@ -370,15 +466,30 @@ function _tripRenderTypeChart(data) {
   }
 }
 
-// ── Cost bar: spot estimates + budget panel items merged ──────────────────────
-// Blue bars = costs from researched spots (grouped by spot_type).
-// Yellow bars = line items from budget panels (flights, hotel, etc.).
+// ── Cost bar: spot estimates + budget panel items merged ───────────────────────────
+// Planning mode: blue bars = spot estimates only.
+// Actuals mode: blue = spots, yellow = budget plan items (manual expenses).
 // Both are converted to the selected display currency.
 function _tripRenderBudgetChart(data) {
   var wrap   = document.getElementById('trip-chart-budget-wrap');
   var canvas = document.getElementById('trip-canvas-budget');
   if (!canvas || !window.Chart) return;
   if (_tripBudgetChart) { _tripBudgetChart.destroy(); _tripBudgetChart = null; }
+
+  // Update chart header text to reflect current phase
+  var titleEl = document.getElementById('trip-chart-budget-title');
+  var subEl   = document.getElementById('trip-chart-budget-sub');
+  var isPlanning = _tripChartPhase === 'planning';
+  if (titleEl) {
+    titleEl.textContent = isPlanning
+      ? '💸 Estimated Cost by Spot Type'
+      : '💸 Actuals: Budget Items vs Spot Estimates';
+  }
+  if (subEl) {
+    subEl.innerHTML = isPlanning
+      ? 'Spot estimates by category — switch to <strong>Actuals</strong> to see budget line items. <span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar for details →</span>'
+      : 'Blue = spot estimates, yellow = manual budget items. <span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar for details →</span>';
+  }
 
   var cur = _tripChartCurrency;
 
@@ -400,18 +511,21 @@ function _tripRenderBudgetChart(data) {
     .filter(function(e) { return e.cost > 0; })
     .sort(function(a, b) { return b.cost - a.cost; });
 
-  // ── Dataset B: budget panel items (yellow) ─────────────────────────────────
+  // ── Dataset B: budget panel items (yellow — actuals mode only) ─────────
   var budgetEntries = [];
-  (data.budget_panels || []).forEach(function(bp) {
-    (bp.items || []).forEach(function(it) {
-      var converted = Math.round(_tripConvert(it.amount, bp.currency));
-      if (converted > 0) {
-        budgetEntries.push({label: it.label || 'Item', cost: converted,
-                            source: 'budget', panel: bp.title});
-      }
+  if (!isPlanning) {
+    (data.budget_panels || []).forEach(function(bp) {
+      (bp.items || []).forEach(function(it) {
+        var converted = Math.round(_tripConvert(it.amount, bp.currency));
+        if (converted > 0) {
+          budgetEntries.push({label: it.label || 'Item', cost: converted,
+                              source: 'budget', panel: bp.title,
+                              reconciled: it.reconciled});
+        }
+      });
     });
-  });
-  budgetEntries.sort(function(a, b) { return b.cost - a.cost; });
+    budgetEntries.sort(function(a, b) { return b.cost - a.cost; });
+  }
   var allEntries = spotEntries.concat(budgetEntries);
 
   if (!allEntries.length) {
@@ -454,7 +568,9 @@ function _tripRenderBudgetChart(data) {
             var e   = allEntries[ctx.dataIndex];
             var pct = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
             var src = e.source === 'spot' ? 'Spot estimate' : ('Budget: ' + (e.panel || ''));
-            return [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' Source: ' + src];
+            var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' Source: ' + src];
+            if (e.source === 'budget' && e.reconciled) lines.push(' \u2713 Confirmed via Settle Up');
+            return lines;
           },
         }},
       },

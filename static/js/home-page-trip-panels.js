@@ -426,9 +426,14 @@ function _tppPacking(p, data, isEdit) {
 // ── Budget ────────────────────────────────────────────────────────────────────────────────
 
 function _tppBudget(p, data, isEdit) {
-  var total  = parseFloat(data.total) || 0;
-  var cur    = data.currency || 'USD';
-  var items  = data.items   || [];   // manual expenses
+  var total     = parseFloat(data.total) || 0;
+  var cur       = data.currency || 'USD';
+  var items     = data.items    || [];   // manual expenses
+  var ceilSrc   = data.ceiling_source || 'manual';   // 'manual' | 'spots'
+  var spotTypes = data.spot_types     || [];          // which spot types feed the ceiling
+
+  // Spot type options (must match server _SPOT_TYPES)
+  var _SPOT_TYPE_OPTS = ['hotel','restaurant','attraction','activity','other'];
 
   // ── Resolve linked Settle Up ───────────────────────────────────────────────
   var linkedSettleId  = data.linked_settle_id  != null ? parseInt(data.linked_settle_id,  10) : null;
@@ -479,21 +484,67 @@ function _tppBudget(p, data, isEdit) {
       '</span>'
     : '';
 
+  var ceilSrcBadge = ceilSrc === 'spots'
+    ? '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full ' +
+        'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium mb-1">' +
+        '📍 Ceiling from spots</span>'
+    : '';
+
   var summary =
     '<div class="px-3 py-2 flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
       (isEdit
-        ? '<div class="flex gap-1 items-center mb-2">' +
-            '<input id="tpp-budget-total-' + p.id + '" type="number" step="1" min="0" ' +
-              'value="' + total.toFixed(0) + '" placeholder="Budget" ' +
-              'class="' + _tppInputCls() + ' w-24" />' +
-            '<input id="tpp-budget-cur-' + p.id + '" type="text" maxlength="5" ' +
-              'value="' + _tripEsc(cur) + '" placeholder="USD" ' +
-              'class="' + _tppInputCls() + ' w-14" />' +
-            '<button onclick="tppSaveBudgetTotal(' + p.id + ')" ' +
-              'class="' + _tppBtnPrimary() + '">Set</button>' +
+        // ─ Edit mode: ceiling source toggle + conditional inputs ───────────────────
+        ? '<div class="mb-2 space-y-1.5">' +
+            '<div class="flex items-center gap-1.5">' +
+              '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Ceiling:</label>' +
+              '<select id="tpp-budget-ceil-src-' + p.id + '" ' +
+                'onchange="tppCeilSourceChanged(' + p.id + ')" ' +
+                'class="' + _tppInputCls() + ' flex-1">' +
+                '<option value="manual"' + (ceilSrc !== 'spots' ? ' selected' : '') + '>Manual amount</option>' +
+                '<option value="spots"'  + (ceilSrc === 'spots' ? ' selected' : '') + '>From spot estimates</option>' +
+              '</select>' +
+            '</div>' +
+            '<div id="tpp-budget-ceil-manual-' + p.id + '"' +
+              (ceilSrc === 'spots' ? ' style="display:none"' : '') + '>' +
+              '<div class="flex gap-1 items-center">' +
+                '<input id="tpp-budget-total-' + p.id + '" type="number" step="1" min="0" ' +
+                  'value="' + total.toFixed(0) + '" placeholder="Budget" ' +
+                  'class="' + _tppInputCls() + ' w-24" />' +
+                '<input id="tpp-budget-cur-' + p.id + '" type="text" maxlength="5" ' +
+                  'value="' + _tripEsc(cur) + '" placeholder="USD" ' +
+                  'class="' + _tppInputCls() + ' w-14" />' +
+                '<button onclick="tppSaveBudgetTotal(' + p.id + ')" ' +
+                  'class="' + _tppBtnPrimary() + '">Set</button>' +
+              '</div>' +
+            '</div>' +
+            '<div id="tpp-budget-ceil-spots-' + p.id + '"' +
+              (ceilSrc !== 'spots' ? ' style="display:none"' : '') + '>' +
+              '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-1">' +
+                'Include these spot types in the ceiling total:</p>' +
+              '<div class="flex flex-wrap gap-1.5 mb-1">' +
+                _SPOT_TYPE_OPTS.map(function(st) {
+                  var checked = spotTypes.indexOf(st) !== -1;
+                  var cap = st.charAt(0).toUpperCase() + st.slice(1);
+                  return '<label class="flex items-center gap-1 text-[10px] text-gray-600 dark:text-zinc-300">' +
+                    '<input type="checkbox" ' +
+                      'id="tpp-budget-st-' + p.id + '-' + st + '" ' +
+                      (checked ? 'checked ' : '') +
+                      'class="rounded accent-[#0053e2]" />' +
+                    cap + '</label>';
+                }).join('') +
+              '</div>' +
+              '<div class="flex items-center gap-1.5">' +
+                '<input id="tpp-budget-cur-sp-' + p.id + '" type="text" maxlength="5" ' +
+                  'value="' + _tripEsc(cur) + '" placeholder="USD" ' +
+                  'class="' + _tppInputCls() + ' w-14" />' +
+                '<button onclick="tppSaveBudgetTotal(' + p.id + ')" ' +
+                  'class="' + _tppBtnPrimary() + '">Apply</button>' +
+              '</div>' +
+            '</div>' +
           '</div>'
         : '') +
       (linkedBadge ? '<div>' + linkedBadge + '</div>' : '') +
+      (!isEdit && ceilSrcBadge ? '<div>' + ceilSrcBadge + '</div>' : '') +
       '<div class="flex items-end justify-between mb-1">' +
         '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200">' +
           cur + ' ' + spent.toFixed(2) + ' spent</span>' +
@@ -594,6 +645,18 @@ function _tppBudget(p, data, isEdit) {
     : '';
 
   var manualRows = items.map(function(item, idx) {
+    var isReconciled = !!item.reconciled;
+    var reconcileBtn = isEdit
+      ? '<button title="' + (isReconciled ? 'Mark unconfirmed' : 'Mark confirmed via Settle Up') + '" ' +
+          'onclick="tppToggleBudgetReconcile(' + p.id + ',' + idx + ')" ' +
+          'class="text-xs flex-shrink-0 ' +
+            (isReconciled
+              ? 'text-[#2a8703] dark:text-green-400 hover:text-gray-400'
+              : 'text-gray-300 hover:text-[#2a8703] dark:hover:text-green-400') + '">' +
+          '✓</button>'
+      : (isReconciled
+          ? '<span class="text-[10px] text-[#2a8703] dark:text-green-400 flex-shrink-0" title="Confirmed via Settle Up">✓</span>'
+          : '');
     var del = isEdit
       ? '<button onclick="tppDeleteBudgetItem(' + p.id + ',' + idx + ')" ' +
           'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
@@ -602,10 +665,11 @@ function _tppBudget(p, data, isEdit) {
            'border-gray-50 dark:border-zinc-800 last:border-0">' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-gray-700 dark:text-zinc-200 truncate">' +
-          _tripEsc(item.note || item.category || 'Expense') + '</p>' +
-        (item.category && item.note
+          _tripEsc(item.label || item.note || item.category || 'Expense') + '</p>' +
+        (item.category && (item.note || item.label)
           ? '<p class="text-[10px] text-gray-400">' + _tripEsc(item.category) + '</p>' : '') +
       '</div>' +
+      reconcileBtn +
       '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-shrink-0">' +
         cur + ' ' + (parseFloat(item.amount) || 0).toFixed(2) + '</span>' +
       del + '</div>';
@@ -855,21 +919,64 @@ window.tppDeleteBudgetItem = function(panelId, idx) {
   _tppSave(panelId, d);
 };
 window.tppSaveBudgetItem = function(panelId) {
-  var note = ((document.getElementById('tpp-budget-note-' + panelId) || {}).value || '').trim();
-  var cat  = ((document.getElementById('tpp-budget-cat-'  + panelId) || {}).value || '').trim();
-  var amt  = parseFloat((document.getElementById('tpp-budget-amt-' + panelId) || {}).value || '0');
+  var noteEl = document.getElementById('tpp-budget-note-' + panelId);
+  var catEl  = document.getElementById('tpp-budget-cat-'  + panelId);
+  var amtEl  = document.getElementById('tpp-budget-amt-'  + panelId);
+  var note = (noteEl ? noteEl.value : '').trim();
+  var cat  = (catEl  ? catEl.value  : '').trim();
+  var amt  = parseFloat((amtEl ? amtEl.value : '0') || '0');
   if (!note && !amt) { _tripShowToast('Description or amount required', true); return; }
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   if (!d.items) d.items = [];
-  d.items.push({ note: note, category: cat, amount: amt });
+  // Save both 'label' (for the chart backend) and 'note' (legacy) to cover all consumers.
+  d.items.push({ label: note, note: note, category: cat, amount: amt, reconciled: false });
   _tppSave(panelId, d);
 };
 window.tppSaveBudgetTotal = function(panelId) {
-  var total = parseFloat((document.getElementById('tpp-budget-total-' + panelId) || {}).value || '0');
-  var cur   = ((document.getElementById('tpp-budget-cur-' + panelId) || {}).value || 'USD').trim().toUpperCase();
+  var srcEl    = document.getElementById('tpp-budget-ceil-src-' + panelId);
+  var ceilSrc  = srcEl ? srcEl.value : 'manual';
+  var curEl    = document.getElementById('tpp-budget-cur-' + panelId);
+  var cur      = (curEl ? curEl.value : 'USD').trim().toUpperCase() || 'USD';
   var p = _tppGetPanel(panelId); if (!p) return;
-  var d = _tppParse(p.content); d.total = total; d.currency = cur;
+  var d = _tppParse(p.content);
+  d.currency       = cur;
+  d.ceiling_source = ceilSrc;
+  if (ceilSrc === 'spots') {
+    // Collect which spot types are checked
+    var _SPOT_OPTS = ['hotel','restaurant','attraction','activity','other'];
+    d.spot_types = _SPOT_OPTS.filter(function(st) {
+      var cb = document.getElementById('tpp-budget-st-' + panelId + '-' + st);
+      return cb && cb.checked;
+    });
+    var spCurEl  = document.getElementById('tpp-budget-cur-sp-' + panelId);
+    d.currency   = (spCurEl ? spCurEl.value : 'USD').trim().toUpperCase() || 'USD';
+    // Don't overwrite total — backend will compute it from spots
+  } else {
+    var totalEl = document.getElementById('tpp-budget-total-' + panelId);
+    d.total      = parseFloat(totalEl ? totalEl.value : '0') || 0;
+    d.spot_types = [];
+  }
+  _tppSave(panelId, d);
+};
+
+// Toggle ceiling source UI between manual and spot-derived
+window.tppCeilSourceChanged = function(panelId) {
+  var srcEl   = document.getElementById('tpp-budget-ceil-src-' + panelId);
+  var manDiv  = document.getElementById('tpp-budget-ceil-manual-' + panelId);
+  var spotsDiv= document.getElementById('tpp-budget-ceil-spots-'  + panelId);
+  if (!srcEl || !manDiv || !spotsDiv) return;
+  var isSpots = srcEl.value === 'spots';
+  manDiv.style.display   = isSpots ? 'none' : '';
+  spotsDiv.style.display = isSpots ? '' : 'none';
+};
+
+// Toggle reconciled flag on a specific budget line item
+window.tppToggleBudgetReconcile = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.items || !d.items[idx]) return;
+  d.items[idx].reconciled = !d.items[idx].reconciled;
   _tppSave(panelId, d);
 };
 

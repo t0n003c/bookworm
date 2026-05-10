@@ -13,11 +13,13 @@
  *   _tripChartOpenBudgetItemDrawer(entry, data)   — yellow bars
  */
 
-// ── Person picker ─────────────────────────────────────────────────────────────
+// ── Person picker ──────────────────────────────────────────────────────────────────
 // Extracts unique person names from settle panels and renders pill buttons.
+// In planning mode, chart.js passes null — clear the container and bail.
 function _tripRenderPersonPicker(data) {
   var el = document.getElementById('trip-chart-person-picker');
   if (!el) return;
+  if (!data) { el.innerHTML = ''; return; }  // planning mode: hide picker
   var panels = data.settle_panels || [];
   // Collect unique names across ALL settle panels
   var seen = {}, people = [];
@@ -219,10 +221,11 @@ window._tripChartOpenBudgetItemDrawer = function(entry, data) {
   );
 };
 
-// ── Budget panel cards (moved from chart.js) ──────────────────────────────────
+// ── Budget panel cards ────────────────────────────────────────────────────────────
 function _tripRenderBudgetPanels(data) {
   var el = document.getElementById('trip-chart-budget-panels');
   if (!el) return;
+  if (!data) { el.innerHTML = ''; return; }  // planning mode: hide panels
   var panels = data.budget_panels || [];
   if (!panels.length) { el.innerHTML = ''; return; }
   var cur = _tripChartCurrency;
@@ -241,8 +244,17 @@ function _tripRenderBudgetPanels(data) {
     var itemRows = (p.items || []).filter(function(it) { return it.amount > 0; }).map(function(it) {
       var conv  = _tripConvert(it.amount, p.currency);
       var itPct = spent > 0 ? Math.round(conv / spent * 100) : 0;
+      // Reconciliation badge: confirmed items are green-tagged
+      var reconcBadge = it.reconciled
+        ? '<span class="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded-full ' +
+            'bg-green-50 dark:bg-green-900/30 text-[#2a8703] dark:text-green-400 font-medium ml-1">' +
+            '✓ confirmed</span>'
+        : '';
       return '<div class="flex items-center gap-2 py-1 border-b border-gray-50 dark:border-zinc-800/60 last:border-0">' +
-        '<span class="text-[11px] text-gray-600 dark:text-zinc-300 flex-1 truncate">' + _tripEsc(it.label || '—') + '</span>' +
+        '<div class="flex-1 min-w-0 flex items-center flex-wrap gap-0.5">' +
+          '<span class="text-[11px] text-gray-600 dark:text-zinc-300 truncate">' + _tripEsc(it.label || '—') + '</span>' +
+          reconcBadge +
+        '</div>' +
         '<div class="w-16 h-1.5 bg-gray-100 dark:bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">' +
           '<div class="h-full rounded-full" style="width:' + itPct + '%;background:' + barColor + '"></div>' +
         '</div>' +
@@ -251,10 +263,24 @@ function _tripRenderBudgetPanels(data) {
       '</div>';
     }).join('');
 
+    // Ceiling source badge
+    var ceilSrcBadge = p.ceiling_source === 'spots'
+      ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 ' +
+          'text-[#0053e2] dark:text-blue-400 font-medium ml-1" title="Ceiling is auto-computed from spot estimates">' +
+          '📍 from spots</span>'
+      : '';
+    var reconciledCount = p.reconciled_count || 0;
+    var reconciledSummary = reconciledCount > 0 && p.total_items > 0
+      ? '<p class="text-[10px] text-[#2a8703] dark:text-green-400 mt-1">' +
+          '✓ ' + reconciledCount + ' of ' + p.total_items + ' item' + (p.total_items === 1 ? '' : 's') +
+          ' confirmed via Settle Up</p>'
+      : '';
+
     return '<div class="' + cardCls + '">' +
       '<div class="flex items-center gap-2 mb-3">' +
         '<span class="text-base">💰</span>' +
         '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-1">' + _tripEsc(p.title) + '</p>' +
+        ceilSrcBadge +
         '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium">📊 in chart</span>' +
         fxNote +
       '</div>' +
@@ -272,6 +298,7 @@ function _tripRenderBudgetPanels(data) {
           '<div class="h-full rounded-full transition-all" style="width:' + pct + '%;background:' + barColor + '"></div>' +
         '</div>' +
         '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 text-right">' + pct + '% of budget used</p>' +
+        reconciledSummary +
       '</div>' +
       (itemRows
         ? '<div class="mt-3 pt-2 border-t border-gray-100 dark:border-zinc-800">' +
@@ -287,10 +314,11 @@ function _tripRenderBudgetPanels(data) {
     '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + cards + '</div>';
 }
 
-// ── Settle panel cards (moved + person-highlight added) ───────────────────────
+// ── Settle panel cards ───────────────────────────────────────────────────────────────
 function _tripRenderSettlePanels(data) {
   var el = document.getElementById('trip-chart-settle-panels');
   if (!el) return;
+  if (!data) { el.innerHTML = ''; return; }  // planning mode: hide panels
   var panels = data.settle_panels || [];
   if (!panels.length) { el.innerHTML = ''; return; }
   var cur      = _tripChartCurrency;
