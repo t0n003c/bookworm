@@ -232,23 +232,22 @@ function _tripRenderStatCards(data) {
         '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>';
     }
   } else if (budgetCeiling > 0) {
-    // Actual spend = sum of budget panel line items (same source as ceiling)
     var budgetSpent = 0;
     (data.budget_panels || []).forEach(function(bp) {
       budgetSpent += _tripConvert(bp.spent, bp.currency);
     });
-    var spentPct = Math.round(budgetSpent / budgetCeiling * 100);
+    var spentPct   = Math.round(budgetSpent / budgetCeiling * 100);
     var overBudget = budgetSpent > budgetCeiling;
-    var spentColor = overBudget
+    var pctColor   = overBudget
       ? 'text-[#ea1100] dark:text-red-400'
       : spentPct >= 80 ? 'text-[#995213] dark:text-yellow-400'
       : 'text-[#2a8703] dark:text-green-400';
-    costVal   = cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US');
-    costLabel = 'Budget Ceiling (' + cur + ')';
+    costVal   = cur + '\u00a0' + Math.round(budgetSpent).toLocaleString('en-US');
+    costLabel = 'Net Spent (' + cur + ')';
     costSub   =
-      '<p class="text-[10px] mt-0.5 ' + spentColor + ' font-medium">' +
-        'Spent ' + cur + '\u00a0' + Math.round(budgetSpent).toLocaleString('en-US') +
-        ' <span class="text-gray-400 dark:text-zinc-500 font-normal">(' + spentPct + '%)</span>' +
+      '<p class="text-[10px] mt-0.5 text-gray-400 dark:text-zinc-500">' +
+        'of ' + cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US') + ' ceiling' +
+        ' <span class="font-medium ' + pctColor + '">(' + spentPct + '%)</span>' +
       '</p>';
   } else if (spotTotal > 0) {
     // No budget panels — show spot estimates; add settle total if available
