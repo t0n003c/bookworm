@@ -756,11 +756,11 @@ async def delete_day_block_route(
 # ── Stats (Chart tab) ────────────────────────────────────────────────────────────────
 
 @router.get("/trip/{page_id}/stats")
-async def trip_stats(request: Request, page_id: int):
+async def trip_stats(request: Request, page_id: int, plan_id: int | None = None):
     try:
         uid = _uid(request)
     except PermissionError:
         return _err("not logged in", 401)
     if not await _get_trip_page(page_id, uid):
         return _err("not found", 404)
-    return JSONResponse(await get_trip_stats(page_id, uid))
+    return JSONResponse(await get_trip_stats(page_id, uid, plan_id))

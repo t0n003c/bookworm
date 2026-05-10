@@ -767,65 +767,134 @@ async def reorder_day_lane(
 
 # ── Stats helper ──────────────────────────────────────────────────────────────
 
-async def get_trip_stats(page_id: int, user_id: int) -> dict:
-    """Summary stats for Chart tab."""
+async def get_trip_stats(
+    page_id: int, user_id: int, plan_id: int | None = None
+) -> dict:
+    """Summary stats for Chart tab.
+
+    When plan_id is given, all counts are scoped to spots/days that
+    belong to that specific plan only.  The raw_by_type list keeps
+    one row per (spot_type, currency) pair so the client can apply
+    its own FX conversion without losing precision.
+    """
     async with get_db() as db:
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM trip_locations WHERE page_id=? AND user_id=?",
-            (page_id, user_id),
-        )
-        total_locations = (await cur.fetchone())[0]
+        if plan_id is None:
+            # ── page-wide counts ──────────────────────────────────────────
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM trip_locations WHERE page_id=? AND user_id=?",
+                (page_id, user_id),
+            )
+            total_locations = (await cur.fetchone())[0]
 
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM trip_spots WHERE page_id=? AND user_id=?",
-            (page_id, user_id),
-        )
-        total_spots = (await cur.fetchone())[0]
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM trip_spots WHERE page_id=? AND user_id=?",
+                (page_id, user_id),
+            )
+            total_spots = (await cur.fetchone())[0]
 
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM trip_days WHERE page_id=? AND user_id=?",
-            (page_id, user_id),
-        )
-        total_days = (await cur.fetchone())[0]
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM trip_days WHERE page_id=? AND user_id=?",
+                (page_id, user_id),
+            )
+            total_days = (await cur.fetchone())[0]
 
-        cur = await db.execute(
-            """
-            SELECT COUNT(DISTINCT tds.spot_id)
-              FROM trip_day_spots tds
-              JOIN trip_days td ON td.id = tds.day_id
-             WHERE td.page_id=? AND td.user_id=?
-            """,
-            (page_id, user_id),
-        )
-        spots_in_plan = (await cur.fetchone())[0]
+            cur = await db.execute(
+                """
+                SELECT COUNT(DISTINCT tds.spot_id)
+                  FROM trip_day_spots tds
+                  JOIN trip_days td ON td.id = tds.day_id
+                 WHERE td.page_id=? AND td.user_id=?
+                """,
+                (page_id, user_id),
+            )
+            spots_in_plan = (await cur.fetchone())[0]
 
-        cur = await db.execute(
-            """
-            SELECT spot_type,
-                   COUNT(*)            AS cnt,
-                   SUM(estimated_cost) AS total_cost,
-                   currency
-              FROM trip_spots
-             WHERE page_id=? AND user_id=?
-             GROUP BY spot_type, currency
-             ORDER BY cnt DESC
-            """,
-            (page_id, user_id),
-        )
+            cur = await db.execute(
+                """
+                SELECT spot_type,
+                       COUNT(*)            AS cnt,
+                       SUM(estimated_cost) AS total_cost,
+                       currency
+                  FROM trip_spots
+                 WHERE page_id=? AND user_id=?
+                 GROUP BY spot_type, currency
+                 ORDER BY cnt DESC
+                """,
+                (page_id, user_id),
+            )
+        else:
+            # ── plan-scoped counts: only spots assigned to days of this plan ──
+            cur = await db.execute(
+                """
+                SELECT COUNT(DISTINCT s.location_id)
+                  FROM trip_spots s
+                  JOIN trip_day_spots tds ON tds.spot_id = s.id
+                  JOIN trip_days td       ON td.id = tds.day_id
+                 WHERE td.page_id=? AND td.user_id=? AND td.plan_id=?
+                """,
+                (page_id, user_id, plan_id),
+            )
+            total_locations = (await cur.fetchone())[0]
+
+            cur = await db.execute(
+                """
+                SELECT COUNT(DISTINCT tds.spot_id)
+                  FROM trip_day_spots tds
+                  JOIN trip_days td ON td.id = tds.day_id
+                 WHERE td.page_id=? AND td.user_id=? AND td.plan_id=?
+                """,
+                (page_id, user_id, plan_id),
+            )
+            total_spots = (await cur.fetchone())[0]
+
+            cur = await db.execute(
+                "SELECT COUNT(*) FROM trip_days WHERE page_id=? AND user_id=? AND plan_id=?",
+                (page_id, user_id, plan_id),
+            )
+            total_days = (await cur.fetchone())[0]
+
+            spots_in_plan = total_spots   # by definition when plan-filtered
+
+            cur = await db.execute(
+                """
+                SELECT s.spot_type            AS spot_type,
+                       COUNT(DISTINCT s.id)   AS cnt,
+                       SUM(s.estimated_cost)  AS total_cost,
+                       s.currency             AS currency
+                  FROM trip_spots s
+                  JOIN trip_day_spots tds ON tds.spot_id = s.id
+                  JOIN trip_days td       ON td.id = tds.day_id
+                 WHERE td.page_id=? AND td.user_id=? AND td.plan_id=?
+                 GROUP BY s.spot_type, s.currency
+                 ORDER BY cnt DESC
+                """,
+                (page_id, user_id, plan_id),
+            )
+
         by_type_rows = await cur.fetchall()
 
-    currencies = {r["currency"] for r in by_type_rows if r["total_cost"]}
-    currency_note = "" if len(currencies) <= 1 else "mixed currencies"
+    # ── build raw list (one row per type+currency) for client-side FX ──────
+    raw_by_type = [
+        {
+            "spot_type":  r["spot_type"],
+            "currency":   r["currency"] or "USD",
+            "count":      r["cnt"],
+            "total_cost": float(r["total_cost"] or 0),
+        }
+        for r in by_type_rows
+    ]
 
+    # ── legacy merged view (per spot_type, first currency wins) ────────────
     type_map: dict[str, dict] = {}
-    for r in by_type_rows:
+    for r in raw_by_type:
         st = r["spot_type"]
         if st not in type_map:
             type_map[st] = {"spot_type": st, "count": 0, "total_cost": 0.0,
                             "currency": r["currency"]}
-        type_map[st]["count"] += r["cnt"]
-        type_map[st]["total_cost"] += r["total_cost"] or 0.0
+        type_map[st]["count"]      += r["count"]
+        type_map[st]["total_cost"] += r["total_cost"]
 
+    currencies = {r["currency"] for r in raw_by_type if r["total_cost"]}
     grand_total: float | None = None
     grand_currency = ""
     if len(currencies) == 1:
@@ -839,6 +908,8 @@ async def get_trip_stats(page_id: int, user_id: int) -> dict:
         "spots_in_plan":   spots_in_plan,
         "grand_total":     grand_total,
         "grand_currency":  grand_currency,
-        "currency_note":   currency_note,
+        "mixed_currencies": len(currencies) > 1,
+        "currencies":      sorted(currencies),
         "by_type":         list(type_map.values()),
+        "raw_by_type":     raw_by_type,    # client applies FX conversion
     }

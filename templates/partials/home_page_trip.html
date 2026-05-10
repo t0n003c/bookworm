@@ -135,22 +135,43 @@
   </div>
 
   {# ── Chart panel ───────────────────────────────────────────────────────── #}
-  <div id="trip-panel-chart" class="hidden flex-1 overflow-y-auto p-4">
-    <div id="trip-stats-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
-                  dark:border-zinc-800 p-4">
-        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Spots by Type</p>
-        <div style="position:relative;height:240px;min-width:0;">
-          <canvas id="trip-canvas-type"></canvas>
+  <div id="trip-panel-chart" class="hidden flex-1 overflow-y-auto">
+
+    {# Controls: plan filter + currency picker — rendered by JS #}
+    <div id="trip-chart-controls"></div>
+
+    <div class="p-4">
+      {# Stat cards + intro text — JS writes the full innerHTML #}
+      <div id="trip-stats-cards" class="mb-6"></div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <div id="trip-chart-type-wrap"
+             class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
+                    dark:border-zinc-800 p-4">
+          <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">📊 Spots by Type</p>
+          <p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3">
+            How your researched spots are distributed across categories
+            (hotels, restaurants, attractions, etc.).
+          </p>
+          <div style="position:relative;height:240px;min-width:0;">
+            <canvas id="trip-canvas-type"></canvas>
+          </div>
         </div>
-      </div>
-      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
-                  dark:border-zinc-800 p-4">
-        <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">Budget by Type</p>
-        <div style="position:relative;height:240px;min-width:0;">
-          <canvas id="trip-canvas-budget"></canvas>
+
+        <div id="trip-chart-budget-wrap"
+             class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200
+                    dark:border-zinc-800 p-4">
+          <p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">💸 Estimated Cost by Type</p>
+          <p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3">
+            Sum of estimated costs per spot category, converted to your
+            selected display currency. Change the currency picker above to switch.
+          </p>
+          <div style="position:relative;height:240px;min-width:0;">
+            <canvas id="trip-canvas-budget"></canvas>
+          </div>
         </div>
+
       </div>
     </div>
   </div>
