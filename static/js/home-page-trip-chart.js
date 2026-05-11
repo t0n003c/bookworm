@@ -423,7 +423,8 @@ function _tripRenderTypeChart(data) {
     slot.appendChild(canvas);
   }
 
-  var byType = data.by_type || [];
+  // Only render slices for types that actually have spots
+  var byType = (data.by_type || []).filter(function(t) { return t.count > 0; });
   if (!byType.length) {
     slot.innerHTML =
       '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">No spot data yet</p>';
@@ -498,7 +499,7 @@ function _tripRenderBudgetChart(data) {
       ? '💸 Estimated Cost by Spot Type'
       : person
         ? '🧑 ' + person + '’s Actual Expenses'
-        : '💸 Actuals: Budget Items vs Spot Estimates';
+        : '💰 Budget Items by Category';
   }
   if (subEl) {
     subEl.innerHTML = isPlanning
@@ -508,9 +509,8 @@ function _tripRenderBudgetChart(data) {
         ? '<span style="opacity:1">■</span> Bright = paid upfront &nbsp;·&nbsp; ' +
           '<span style="opacity:0.5">■</span> Dim = shared expense. ' +
           'Bars coloured by category. Hover for details.'
-        : 'Blue = spot estimates &darr; Yellow = manual budget items. ' +
-          'Select a <strong>person above</strong> to see their individual spend. ' +
-          '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar →</span>';
+        : 'Manual budget items grouped by category. Bars coloured by category type. ' +
+          'Select a <strong>person above</strong> to see their individual spend.';
   }
 
   // ─ Destroy previous chart instance ─────────────────────────────────────
@@ -622,56 +622,119 @@ function _tripRenderBudgetChart(data) {
     return;
   }
 
-  // ── Planning OR Actuals / All ─────────────────────────────────────────────
-  var typeMap = {};
-  (data.raw_by_type || []).forEach(function(r) {
-    if (!typeMap[r.spot_type]) typeMap[r.spot_type] = 0;
-    typeMap[r.spot_type] += _tripConvert(r.total_cost, r.currency);
-  });
-  var spotEntries = Object.keys(typeMap)
-    .map(function(k) { return {
-      label: k.charAt(0).toUpperCase() + k.slice(1), rawType: k,
-      cost:  Math.round(typeMap[k]), source: 'spot',
-    }; })
-    .filter(function(e) { return e.cost > 0; })
-    .sort(function(a, b) { return b.cost - a.cost; });
+  // ── Planning OR Actuals / All ───────────────────────────────────────────────────
 
-  var budgetEntries = [];
-  if (!isPlanning) {
-    (data.budget_panels || []).forEach(function(bp) {
-      (bp.items || []).forEach(function(it) {
-        var conv = Math.round(_tripConvert(it.amount, bp.currency));
-        if (conv > 0) budgetEntries.push({
-          label: it.label || 'Item', cost: conv,
-          source: 'budget', panel: bp.title, reconciled: it.reconciled,
-        });
-      });
+  // ── PLANNING: spot estimates by type, clickable ───────────────────────────
+  if (isPlanning) {
+    var typeMap = {};
+    (data.raw_by_type || []).forEach(function(r) {
+      if (!typeMap[r.spot_type]) typeMap[r.spot_type] = 0;
+      typeMap[r.spot_type] += _tripConvert(r.total_cost, r.currency);
     });
-    budgetEntries.sort(function(a, b) { return b.cost - a.cost; });
-  }
-  var allEntries = spotEntries.concat(budgetEntries);
+    var allEntries = Object.keys(typeMap)
+      .map(function(k) { return {
+        label: k.charAt(0).toUpperCase() + k.slice(1), rawType: k,
+        cost:  Math.round(typeMap[k]), source: 'spot',
+      }; })
+      .filter(function(e) { return e.cost > 0; })
+      .sort(function(a, b) { return b.cost - a.cost; });
 
-  if (!allEntries.length) {
-    _showEmpty('No cost data yet — add estimated costs to spots, or line items to a Budget panel.');
+    if (!allEntries.length) {
+      _showEmpty('No cost data yet — add estimated costs to spots.');
+      return;
+    }
+    var total   = allEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+    var BG_SPOT = '#0053e2cc'; var BD_SPOT = '#0053e2';
+    _tripBudgetChart = new window.Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels:   allEntries.map(function(e) { return e.label; }),
+        datasets: [{
+          label: 'Cost (' + cur + ')',
+          data:  allEntries.map(function(e) { return e.cost; }),
+          backgroundColor: BG_SPOT, borderColor: BD_SPOT,
+          borderWidth: 1.5, borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {
+            label: function(ctx) {
+              var e   = allEntries[ctx.dataIndex];
+              var pct = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
+              return [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' Spot estimate'];
+            },
+          }},
+        },
+        scales: {
+          y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
+              ticks: {font: {size: 11}, callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
+          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
+        },
+        onClick: function(evt, elements) {
+          if (!elements.length) return;
+          var e = allEntries[elements[0].index];
+          _tripChartOpenSpotTypeDrawer(e.rawType, _tripChartLastData);
+        },
+      },
+    });
+    if (canvas.style) canvas.style.cursor = 'pointer';
+    _tripUpdateBudgetLegend(wrap, true, false);
     return;
   }
 
-  var total     = allEntries.reduce(function(s, e) { return s + e.cost; }, 0);
-  var BG_SPOT   = '#0053e2cc'; var BD_SPOT   = '#0053e2';
-  var BG_BUDGET = '#ffc220cc'; var BD_BUDGET = '#995213';
+  // ── ACTUALS / ALL: budget items grouped by category, only populated cats shown ──
+  // Build a category → total map from manual budget items only (no spot estimates).
+  var _tc = window._tripTypeColor || function() { return '#ffc220'; };
+  var catMap   = {};  // catName → { total, items[], reconciled }
+  (data.budget_panels || []).forEach(function(bp) {
+    (bp.items || []).forEach(function(it) {
+      var conv = Math.round(_tripConvert(it.amount, bp.currency));
+      if (conv <= 0) return;
+      var cat = (it.category || '').trim() || 'Uncategorized';
+      if (!catMap[cat]) catMap[cat] = { total: 0, items: [], allReconciled: true };
+      catMap[cat].total += conv;
+      catMap[cat].items.push(it.label || it.note || 'Item');
+      if (!it.reconciled) catMap[cat].allReconciled = false;
+    });
+  });
+
+  var catEntries = Object.keys(catMap)
+    .map(function(cat) {
+      return {
+        label:         cat,
+        cost:          catMap[cat].total,
+        items:         catMap[cat].items,
+        allReconciled: catMap[cat].allReconciled,
+      };
+    })
+    .filter(function(e) { return e.cost > 0; })
+    .sort(function(a, b) { return b.cost - a.cost; });
+
+  if (!catEntries.length) {
+    _showEmpty('No budget items yet — add manual expenses to a Budget panel.');
+    return;
+  }
+
+  var catTotal = catEntries.reduce(function(s, e) { return s + e.cost; }, 0);
 
   _tripBudgetChart = new window.Chart(canvas, {
     type: 'bar',
     data: {
-      labels:   allEntries.map(function(e) { return e.label; }),
+      labels: catEntries.map(function(e) { return e.label; }),
       datasets: [{
         label: 'Cost (' + cur + ')',
-        data:  allEntries.map(function(e) { return e.cost; }),
-        backgroundColor: allEntries.map(function(e) {
-          return e.source === 'spot' ? BG_SPOT : BG_BUDGET;
+        data:  catEntries.map(function(e) { return e.cost; }),
+        backgroundColor: catEntries.map(function(e) {
+          // Match Spots pie colours; Uncategorized → spark yellow
+          return e.label === 'Uncategorized'
+            ? '#ffc220cc'
+            : _tc(e.label) + 'cc';
         }),
-        borderColor: allEntries.map(function(e) {
-          return e.source === 'spot' ? BD_SPOT : BD_BUDGET;
+        borderColor: catEntries.map(function(e) {
+          return e.label === 'Uncategorized' ? '#995213' : _tc(e.label);
         }),
         borderWidth: 1.5, borderRadius: 4,
       }],
@@ -682,31 +745,25 @@ function _tripRenderBudgetChart(data) {
         legend: {display: false},
         tooltip: {callbacks: {
           label: function(ctx) {
-            var e   = allEntries[ctx.dataIndex];
-            var pct = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
-            var src = e.source === 'spot' ? 'Spot estimate' : ('Budget: ' + (e.panel || ''));
-            var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' ' + src];
-            if (e.source === 'budget' && e.reconciled) lines.push(' ✓ Confirmed via Settle Up');
+            var e    = catEntries[ctx.dataIndex];
+            var pct  = catTotal > 0 ? Math.round(ctx.raw / catTotal * 100) : 0;
+            var preview = e.items.slice(0, 4).map(function(n) { return '• ' + n; });
+            if (e.items.length > 4) preview.push('… +' + (e.items.length - 4) + ' more');
+            var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)'];
+            lines = lines.concat(preview);
+            if (e.allReconciled) lines.push(' ✓ All confirmed via Settle Up');
             return lines;
           },
         }},
       },
       scales: {
         y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
-            ticks: {font: {size: 11},
-                    callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
+            ticks: {font: {size: 11}, callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
         x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
-      },
-      onClick: function(evt, elements) {
-        if (!elements.length) return;
-        var e = allEntries[elements[0].index];
-        if (e.source === 'spot')   _tripChartOpenSpotTypeDrawer(e.rawType, _tripChartLastData);
-        else                       _tripChartOpenBudgetItemDrawer(e, _tripChartLastData);
       },
     },
   });
-  if (canvas.style) canvas.style.cursor = 'pointer';
-  _tripUpdateBudgetLegend(wrap, spotEntries.length > 0, budgetEntries.length > 0);
+  _tripUpdateBudgetLegend(wrap, false, false);  // category colours are self-labelled
 }
 
 // Helper: update the manual color legend below the chart
@@ -726,4 +783,3 @@ function _tripUpdateBudgetLegend(wrap, hasSpots, hasBudget) {
     '<span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#ffc220"></span>Budget plan items</span>');
   leg.innerHTML = items.join('');
 }
-
