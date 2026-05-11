@@ -1561,14 +1561,14 @@ function _tppSettle(p, data, isEdit) {
   // Category options (shared with Spots — pulled from window._TRIP_TYPES)
   var catTypes   = (window._TRIP_TYPES || ['Restaurant','Hotel','Camping','Hiking',
                                             'City Attraction','Beach','Museum','Other']);
+  // All standard types stay; custom trigger sits at the end
   var catOptions = catTypes.map(function(t) {
     return '<option value="' + _tripEsc(t) + '">' + _tripEsc(t) + '</option>';
-  }).join('') + '<option value="custom">Other (custom…)</option>';
+  }).join('') + '<option value="custom">Custom category…</option>';
 
   var expForm = isEdit && people.length >= 2
     ? '<div id="tpp-settle-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
-        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50" ' +
-        'data-edit-idx="-1">' +
+        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
         '<input type="hidden" id="tpp-settle-edit-idx-' + p.id + '" value="-1">' +
         '<input id="tpp-settle-desc-' + p.id + '" type="text" placeholder="What was it?" maxlength="60" ' +
           'class="' + _tppInputCls() + '" />' +
@@ -1782,7 +1782,6 @@ window.tppEditSettleExp = function(panelId, idx) {
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   var exp = (d.expenses || [])[idx]; if (!exp) return;
-  var people = d.people || [];
   var catTypes = (window._TRIP_TYPES || []);
   // Populate fields
   var descEl   = document.getElementById('tpp-settle-desc-'  + panelId);
@@ -1828,17 +1827,33 @@ window.tppEditSettleExp = function(panelId, idx) {
   if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
-// Cancel edit: reset form to add mode and hide
+// Cancel edit: reset ALL form fields to add-mode defaults and hide
 window.tppSettleCancelEdit = function(panelId) {
+  // Reset edit index
   var editIdxEl = document.getElementById('tpp-settle-edit-idx-' + panelId);
   if (editIdxEl) editIdxEl.value = '-1';
-  var descEl = document.getElementById('tpp-settle-desc-'  + panelId);
-  var amtEl  = document.getElementById('tpp-settle-amt-'   + panelId);
-  var catEl  = document.getElementById('tpp-settle-cat-'   + panelId);
-  if (descEl) descEl.value = '';
-  if (amtEl)  amtEl.value  = '';
-  if (catEl)  catEl.value  = '';
-  window.tppToggleSettleCat(panelId);   // hide custom input
+  // Reset text / number fields
+  var descEl  = document.getElementById('tpp-settle-desc-'  + panelId);
+  var amtEl   = document.getElementById('tpp-settle-amt-'   + panelId);
+  var catEl   = document.getElementById('tpp-settle-cat-'   + panelId);
+  var cusEl   = document.getElementById('tpp-settle-cat-custom-' + panelId);
+  var payerEl = document.getElementById('tpp-settle-payer-' + panelId);
+  if (descEl)  descEl.value  = '';
+  if (amtEl)   amtEl.value   = '';
+  if (catEl)   catEl.value   = '';
+  if (cusEl)   cusEl.value   = '';
+  if (payerEl) payerEl.selectedIndex = 0;   // back to first person
+  window.tppToggleSettleCat(panelId);       // hide custom-category input
+  // Reset all split buttons to fully-selected (default for a new expense)
+  var splitContainer = document.getElementById('tpp-settle-split-' + panelId);
+  if (splitContainer) {
+    var btns = splitContainer.querySelectorAll('.tpp-split-btn');
+    btns.forEach(function(btn) {
+      btn.setAttribute('data-selected', '1');
+      btn.className = 'tpp-split-btn px-1.5 py-0.5 text-[10px] rounded-full border transition '
+        + 'bg-[#0053e2] border-[#0053e2] text-white dark:bg-[#0053e2] dark:border-[#0053e2]';
+    });
+  }
   window.tppHideForm(panelId, 'settle');
 };
 
