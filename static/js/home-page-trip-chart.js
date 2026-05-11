@@ -179,6 +179,7 @@ function _tripChartRefresh() {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       _tripChartLastData = data;
+      window._tripChartLastData = data;   // expose for Plan tab ceiling display
       _tripChartRenderAll(data);
     })
     .catch(function(e) {
@@ -405,51 +406,60 @@ function _tripRenderStatCards(data) {
       : '');
 }
 
-// ── Spot-type doughnut ────────────────────────────────────────────────────────
+// ── Spot-type doughnut ───────────────────────────────────────────────────
 function _tripRenderTypeChart(data) {
-  var wrap   = document.getElementById('trip-chart-type-wrap');
-  var canvas = document.getElementById('trip-canvas-type');
-  if (!canvas || !window.Chart) return;
+  var wrap = document.getElementById('trip-chart-type-wrap');
+  var slot = document.getElementById('trip-canvas-type-slot');
+  if (!window.Chart || !slot) return;
 
   if (_tripTypeChart) { _tripTypeChart.destroy(); _tripTypeChart = null; }
 
+  // Restore canvas if a previous empty-state replaced it
+  var canvas = document.getElementById('trip-canvas-type');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'trip-canvas-type';
+    slot.innerHTML = '';
+    slot.appendChild(canvas);
+  }
+
   var byType = data.by_type || [];
   if (!byType.length) {
-    canvas.parentNode.innerHTML =
-      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-10">No data yet</p>';
-  } else {
-    var colors = window._tripChartColors || ['#0053e2','#ffc220','#2a8703','#ea1100'];
-    _tripTypeChart = new window.Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels: byType.map(function(t) {
-          return t.spot_type.charAt(0).toUpperCase() + t.spot_type.slice(1);
-        }),
-        datasets: [{
-          data: byType.map(function(t) { return t.count; }),
-          backgroundColor: byType.map(function(_, i) { return colors[i % colors.length]; }),
-          borderWidth: 2,
-          borderColor: '#ffffff',
-        }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: {position: 'bottom', labels: {font: {size: 11}, padding: 10, boxWidth: 12}},
-          tooltip: {callbacks: {label: function(ctx) {
-            return ' ' + ctx.label + ': ' + ctx.raw + ' spot' + (ctx.raw === 1 ? '' : 's');
-          }}},
-        },
-        onClick: function(evt, elements) {
-          if (!elements.length) return;
-          var idx = elements[0].index;
-          var t   = byType[idx];
-          if (t) _tripChartOpenSpotTypeDrawer(t.spot_type, _tripChartLastData);
-        },
-      },
-    });
-    if (canvas.style) canvas.style.cursor = 'pointer';
+    slot.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">No spot data yet</p>';
+    return;
   }
+  var colors = window._tripChartColors || ['#0053e2','#ffc220','#2a8703','#ea1100'];
+  _tripTypeChart = new window.Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: byType.map(function(t) {
+        return t.spot_type.charAt(0).toUpperCase() + t.spot_type.slice(1);
+      }),
+      datasets: [{
+        data: byType.map(function(t) { return t.count; }),
+        backgroundColor: byType.map(function(_, i) { return colors[i % colors.length]; }),
+        borderWidth: 2,
+        borderColor: '#ffffff',
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {position: 'bottom', labels: {font: {size: 11}, padding: 10, boxWidth: 12}},
+        tooltip: {callbacks: {label: function(ctx) {
+          return ' ' + ctx.label + ': ' + ctx.raw + ' spot' + (ctx.raw === 1 ? '' : 's');
+        }}},
+      },
+      onClick: function(evt, elements) {
+        if (!elements.length) return;
+        var idx = elements[0].index;
+        var t   = byType[idx];
+        if (t) _tripChartOpenSpotTypeDrawer(t.spot_type, _tripChartLastData);
+      },
+    },
+  });
+  if (canvas.style) canvas.style.cursor = 'pointer';
 
   if (wrap) {
     var desc = document.getElementById('trip-chart-type-desc');
@@ -466,62 +476,166 @@ function _tripRenderTypeChart(data) {
   }
 }
 
-// ── Cost bar: spot estimates + budget panel items merged ───────────────────────────
-// Planning mode: blue bars = spot estimates only.
-// Actuals mode: blue = spots, yellow = budget plan items (manual expenses).
-// Both are converted to the selected display currency.
+// ── Cost bar chart ────────────────────────────────────────────────────────────────
+// Planning mode  : blue bars = spot estimates by type (no budget items)
+// Actuals / All  : blue = spot estimates, yellow = budget items
+// Actuals + person: green = expenses they paid upfront,
+//                   blue  = their share of expenses they didn’t front
 function _tripRenderBudgetChart(data) {
-  var wrap   = document.getElementById('trip-chart-budget-wrap');
-  var canvas = document.getElementById('trip-canvas-budget');
-  if (!canvas || !window.Chart) return;
-  if (_tripBudgetChart) { _tripBudgetChart.destroy(); _tripBudgetChart = null; }
-
-  // Update chart header text to reflect current phase
+  var wrap    = document.getElementById('trip-chart-budget-wrap');
   var titleEl = document.getElementById('trip-chart-budget-title');
   var subEl   = document.getElementById('trip-chart-budget-sub');
+  var slot    = document.getElementById('trip-canvas-budget-slot');  // stable wrapper
+  if (!window.Chart || !slot) return;
+
   var isPlanning = _tripChartPhase === 'planning';
+  var person     = _tripChartSelectedPerson;  // null = All, string = specific person
+  var cur        = _tripChartCurrency;
+
+  // ─ Update title FIRST (before any early return, so it never gets stuck) ─
   if (titleEl) {
     titleEl.textContent = isPlanning
       ? '💸 Estimated Cost by Spot Type'
-      : '💸 Actuals: Budget Items vs Spot Estimates';
+      : person
+        ? '🧑 ' + person + '’s Actual Expenses'
+        : '💸 Actuals: Budget Items vs Spot Estimates';
   }
   if (subEl) {
     subEl.innerHTML = isPlanning
-      ? 'Spot estimates by category — switch to <strong>Actuals</strong> to see budget line items. <span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar for details →</span>'
-      : 'Blue = spot estimates, yellow = manual budget items. <span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar for details →</span>';
+      ? 'Spot estimates by category — switch to <strong>Actuals</strong> to see budget line items. ' +
+        '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar →</span>'
+      : person
+        ? '<span style="color:#2a8703">■ Green</span> = expense they paid upfront &nbsp;·&nbsp; ' +
+          '<span style="color:#0053e2">■ Blue</span> = their share of a group expense. ' +
+          'Data comes from Settle Up panels.'
+        : 'Blue = spot estimates &darr; Yellow = manual budget items. ' +
+          'Select a <strong>person above</strong> to see their individual spend. ' +
+          '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar →</span>';
   }
 
-  var cur = _tripChartCurrency;
+  // ─ Destroy previous chart instance ─────────────────────────────────────
+  if (_tripBudgetChart) { _tripBudgetChart.destroy(); _tripBudgetChart = null; }
 
-  // ── Dataset A: spot-type estimates (blue) ──────────────────────────────────
+  // ─ Ensure canvas exists in the slot (it gets wiped by the empty-state path) ─
+  var canvas = document.getElementById('trip-canvas-budget');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'trip-canvas-budget';
+    slot.innerHTML = '';
+    slot.appendChild(canvas);
+  }
+
+  // Helper: show empty state without destroying the slot permanently
+  function _showEmpty(msg) {
+    slot.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">' + msg + '</p>';
+  }
+
+  // ── ACTUALS + person selected ───────────────────────────────────────────────
+  if (!isPlanning && person) {
+    var personEntries = [];
+    (data.settle_panels || []).forEach(function(sp) {
+      // Find person’s index — use pp.idx if present (new API), else fall back to
+      // loop position (old cached data that pre-dates the idx field).
+      var personIdx = -1;
+      (sp.per_person || []).forEach(function(pp, loopI) {
+        if (pp.name === person) personIdx = (pp.idx !== undefined ? pp.idx : loopI);
+      });
+      if (personIdx < 0) return;  // person not in this settle panel
+
+      (sp.expenses || []).forEach(function(exp) {
+        var splitArr = Array.isArray(exp.split) ? exp.split : [];
+        // Fallback: if split is empty/missing treat as equal split across all people
+        if (!splitArr.length && sp.per_person && sp.per_person.length) {
+          for (var fi = 0; fi < sp.per_person.length; fi++) splitArr.push(fi);
+        }
+        if (splitArr.indexOf(personIdx) === -1) return;  // not in this split
+        var share     = splitArr.length > 0 ? exp.amount / splitArr.length : 0;
+        var shareConv = Math.round(_tripConvert(share, sp.currency));
+        if (shareConv <= 0) return;
+        var didPay = (exp.paid_by === personIdx);
+        personEntries.push({
+          label:  exp.desc || 'Expense',
+          cost:   shareConv,
+          didPay: didPay,
+          panel:  sp.title,
+        });
+      });
+    });
+    personEntries.sort(function(a, b) { return b.cost - a.cost; });
+
+    if (!personEntries.length) {
+      _showEmpty('No settle expenses found for ' + _tripEsc(person) +
+        ' — add expenses to a Settle Up panel, then refresh Charts.');
+      return;
+    }
+
+    var pTotal = personEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+    _tripBudgetChart = new window.Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels:   personEntries.map(function(e) { return e.label; }),
+        datasets: [{
+          label: cur + ' share',
+          data:  personEntries.map(function(e) { return e.cost; }),
+          backgroundColor: personEntries.map(function(e) {
+            return e.didPay ? '#2a8703cc' : '#0053e2cc';
+          }),
+          borderColor: personEntries.map(function(e) {
+            return e.didPay ? '#2a8703' : '#0053e2';
+          }),
+          borderWidth: 1.5, borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {
+            label: function(ctx) {
+              var e   = personEntries[ctx.dataIndex];
+              var pct = pTotal > 0 ? Math.round(ctx.raw / pTotal * 100) : 0;
+              var who = e.didPay ? 'Paid upfront by ' + person : 'Share of group expense';
+              return [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)',
+                      ' ' + who, ' Panel: ' + e.panel];
+            },
+          }},
+        },
+        scales: {
+          y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
+              ticks: {font: {size: 11},
+                      callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
+          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
+        },
+      },
+    });
+    _tripUpdateBudgetLegend(wrap, false, false);
+    return;
+  }
+
+  // ── Planning OR Actuals / All ─────────────────────────────────────────────
   var typeMap = {};
   (data.raw_by_type || []).forEach(function(r) {
     if (!typeMap[r.spot_type]) typeMap[r.spot_type] = 0;
     typeMap[r.spot_type] += _tripConvert(r.total_cost, r.currency);
   });
   var spotEntries = Object.keys(typeMap)
-    .map(function(k) {
-      return {
-        label:   k.charAt(0).toUpperCase() + k.slice(1),
-        rawType: k,     // original snake_case key for drill-down filtering
-        cost:    Math.round(typeMap[k]),
-        source:  'spot',
-      };
-    })
+    .map(function(k) { return {
+      label: k.charAt(0).toUpperCase() + k.slice(1), rawType: k,
+      cost:  Math.round(typeMap[k]), source: 'spot',
+    }; })
     .filter(function(e) { return e.cost > 0; })
     .sort(function(a, b) { return b.cost - a.cost; });
 
-  // ── Dataset B: budget panel items (yellow — actuals mode only) ─────────
   var budgetEntries = [];
   if (!isPlanning) {
     (data.budget_panels || []).forEach(function(bp) {
       (bp.items || []).forEach(function(it) {
-        var converted = Math.round(_tripConvert(it.amount, bp.currency));
-        if (converted > 0) {
-          budgetEntries.push({label: it.label || 'Item', cost: converted,
-                              source: 'budget', panel: bp.title,
-                              reconciled: it.reconciled});
-        }
+        var conv = Math.round(_tripConvert(it.amount, bp.currency));
+        if (conv > 0) budgetEntries.push({
+          label: it.label || 'Item', cost: conv,
+          source: 'budget', panel: bp.title, reconciled: it.reconciled,
+        });
       });
     });
     budgetEntries.sort(function(a, b) { return b.cost - a.cost; });
@@ -529,23 +643,18 @@ function _tripRenderBudgetChart(data) {
   var allEntries = spotEntries.concat(budgetEntries);
 
   if (!allEntries.length) {
-    canvas.parentNode.innerHTML =
-      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-10">' +
-      'No cost data yet — add estimated costs to spots, or line items to a Budget panel.</p>';
+    _showEmpty('No cost data yet — add estimated costs to spots, or line items to a Budget panel.');
     return;
   }
 
-  var total = allEntries.reduce(function(s, e) { return s + e.cost; }, 0);
-  // Colors: blue for spot, spark-yellow for budget items
-  var BG_SPOT   = '#0053e2cc';
-  var BG_BUDGET = '#ffc220cc';
-  var BD_SPOT   = '#0053e2';
-  var BD_BUDGET = '#995213';   // spark.140 for border contrast
+  var total     = allEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+  var BG_SPOT   = '#0053e2cc'; var BD_SPOT   = '#0053e2';
+  var BG_BUDGET = '#ffc220cc'; var BD_BUDGET = '#995213';
 
   _tripBudgetChart = new window.Chart(canvas, {
     type: 'bar',
     data: {
-      labels: allEntries.map(function(e) { return e.label; }),
+      labels:   allEntries.map(function(e) { return e.label; }),
       datasets: [{
         label: 'Cost (' + cur + ')',
         data:  allEntries.map(function(e) { return e.cost; }),
@@ -555,8 +664,7 @@ function _tripRenderBudgetChart(data) {
         borderColor: allEntries.map(function(e) {
           return e.source === 'spot' ? BD_SPOT : BD_BUDGET;
         }),
-        borderWidth: 1.5,
-        borderRadius: 4,
+        borderWidth: 1.5, borderRadius: 4,
       }],
     },
     options: {
@@ -568,58 +676,45 @@ function _tripRenderBudgetChart(data) {
             var e   = allEntries[ctx.dataIndex];
             var pct = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
             var src = e.source === 'spot' ? 'Spot estimate' : ('Budget: ' + (e.panel || ''));
-            var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' Source: ' + src];
-            if (e.source === 'budget' && e.reconciled) lines.push(' \u2713 Confirmed via Settle Up');
+            var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' ' + src];
+            if (e.source === 'budget' && e.reconciled) lines.push(' ✓ Confirmed via Settle Up');
             return lines;
           },
         }},
       },
       scales: {
-        y: {
-          beginAtZero: true,
-          grid: {color: 'rgba(148,163,184,0.15)'},
-          ticks: {font: {size: 11}, callback: function(v) { return cur + ' ' + v.toLocaleString(); }},
-        },
+        y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
+            ticks: {font: {size: 11},
+                    callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
         x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
       },
       onClick: function(evt, elements) {
         if (!elements.length) return;
         var e = allEntries[elements[0].index];
-        if (!e) return;
-        if (e.source === 'spot') {
-          _tripChartOpenSpotTypeDrawer(e.rawType, _tripChartLastData);
-        } else {
-          _tripChartOpenBudgetItemDrawer(e, _tripChartLastData);
-        }
+        if (e.source === 'spot')   _tripChartOpenSpotTypeDrawer(e.rawType, _tripChartLastData);
+        else                       _tripChartOpenBudgetItemDrawer(e, _tripChartLastData);
       },
     },
   });
   if (canvas.style) canvas.style.cursor = 'pointer';
-
-  // Manual color legend + summary below chart
-  if (wrap) {
-    var leg = document.getElementById('trip-chart-budget-legend');
-    if (!leg) {
-      leg = document.createElement('div');
-      leg.id = 'trip-chart-budget-legend';
-      leg.className = 'flex flex-wrap gap-3 mt-2 px-1';
-      wrap.appendChild(leg);
-    }
-    var legendItems = [];
-    if (spotEntries.length)   legendItems.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400"><span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#0053e2"></span>Spot estimates</span>');
-    if (budgetEntries.length) legendItems.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400"><span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#ffc220"></span>Budget plan items</span>');
-    leg.innerHTML = legendItems.join('');
-
-    var desc = document.getElementById('trip-chart-budget-desc');
-    if (!desc) {
-      desc = document.createElement('p');
-      desc.id = 'trip-chart-budget-desc';
-      desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-1 px-1';
-      wrap.appendChild(desc);
-    }
-    desc.textContent =
-      (spotEntries.length   ? spotEntries.length   + ' spot type' + (spotEntries.length   > 1 ? 's' : '') + ' · ' : '') +
-      (budgetEntries.length ? budgetEntries.length + ' budget item' + (budgetEntries.length > 1 ? 's' : '') + ' · ' : '') +
-      'Total ' + cur + ' ' + total.toLocaleString() + '. Hover bars for source detail.';
-  }
+  _tripUpdateBudgetLegend(wrap, spotEntries.length > 0, budgetEntries.length > 0);
 }
+
+// Helper: update the manual color legend below the chart
+function _tripUpdateBudgetLegend(wrap, hasSpots, hasBudget) {
+  if (!wrap) return;
+  var leg = document.getElementById('trip-chart-budget-legend');
+  if (!leg) {
+    leg = document.createElement('div');
+    leg.id = 'trip-chart-budget-legend';
+    leg.className = 'flex flex-wrap gap-3 mt-2 px-1';
+    wrap.appendChild(leg);
+  }
+  var items = [];
+  if (hasSpots)  items.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400">' +
+    '<span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#0053e2"></span>Spot estimates</span>');
+  if (hasBudget) items.push('<span class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400">' +
+    '<span class="inline-block w-3 h-3 rounded-sm flex-shrink-0" style="background:#ffc220"></span>Budget plan items</span>');
+  leg.innerHTML = items.join('');
+}
+

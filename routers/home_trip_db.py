@@ -829,6 +829,8 @@ async def _panel_summaries(
             )
             ceiling_source = c.get("ceiling_source", "manual")  # 'manual' | 'spots'
             spot_types     = c.get("spot_types") or []           # list of spot_type strings
+            budget_scope  = c.get("budget_scope",  "group")   # 'group' | 'individual'
+            budget_person = c.get("budget_person", "")          # free-text name when individual
             budget_panels.append({
                 "id":                row["id"],
                 "title":             row["title"] or "Budget",
@@ -839,6 +841,8 @@ async def _panel_summaries(
                 "spent":             unreconciled_spent,
                 "reconciled_count":  reconciled_count,
                 "total_items":       len(items),
+                "budget_scope":      budget_scope,
+                "budget_person":     budget_person,
                 "items":             [{
                     "label":      it.get("label") or it.get("note") or "",
                     "amount":     float(it.get("amount") or 0),
@@ -873,12 +877,23 @@ async def _panel_summaries(
                 "title":          row["title"] or "Settle Up",
                 "currency":       cur_code,
                 "total_expenses": total_exp,
+                "people":         people,
+                "expenses": [
+                    {
+                        "desc":     exp.get("desc") or "",
+                        "amount":   float(exp.get("amount") or 0),
+                        "paid_by":  exp.get("paid_by"),
+                        "split":    exp.get("split") or list(range(len(people))),
+                    }
+                    for exp in expenses
+                ],
                 "per_person": [
                     {
+                        "idx":     i,
                         "name":    people[i],
                         "paid":    paid_by[i],
                         "owes":    owes[i],
-                        "balance": paid_by[i] - owes[i],   # + = gets back, - = still owes
+                        "balance": paid_by[i] - owes[i],
                     }
                     for i in range(len(people))
                 ],

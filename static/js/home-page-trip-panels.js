@@ -426,15 +426,28 @@ function _tppPacking(p, data, isEdit) {
 // ── Budget ────────────────────────────────────────────────────────────────────────────────
 
 function _tppBudget(p, data, isEdit) {
-  var total     = parseFloat(data.total) || 0;
   var cur       = data.currency || 'USD';
   var items     = data.items    || [];   // manual expenses
   var ceilSrc   = data.ceiling_source || 'manual';   // 'manual' | 'spots'
   var spotTypes = data.spot_types     || [];          // which spot types feed the ceiling
+  var budScope  = data.budget_scope   || 'group';    // 'group' | 'individual'
+  var budPerson = data.budget_person  || '';          // person name when individual
 
   // Spot type options (must match server _SPOT_TYPES)
   var _SPOT_TYPE_OPTS = ['hotel','restaurant','attraction','activity','other'];
 
+  // Resolve ceiling: when source is 'spots', pull the backend-computed value
+  // from the chart data cache (populated after visiting the Charts tab).
+  var total = parseFloat(data.total) || 0;
+  if (ceilSrc === 'spots') {
+    var chartCache = window._tripChartLastData;
+    if (chartCache) {
+      var bpList = chartCache.budget_panels || [];
+      for (var ci = 0; ci < bpList.length; ci++) {
+        if (bpList[ci].id === p.id) { total = bpList[ci].ceiling || 0; break; }
+      }
+    }
+  }
   // ── Resolve linked Settle Up ───────────────────────────────────────────────
   var linkedSettleId  = data.linked_settle_id  != null ? parseInt(data.linked_settle_id,  10) : null;
   var linkedPersonIdx = data.linked_person_idx != null ? parseInt(data.linked_person_idx, 10) : null;
@@ -489,12 +502,40 @@ function _tppBudget(p, data, isEdit) {
         'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium mb-1">' +
         '📍 Ceiling from spots</span>'
     : '';
+  var scopeBadge = budScope === 'individual'
+    ? '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full ' +
+        'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium mb-1">' +
+        '🧑 ' + _tripEsc(budPerson || 'Individual') + '</span>'
+    : '<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full ' +
+        'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 font-medium mb-1">' +
+        '👥 Group</span>';
 
   var summary =
     '<div class="px-3 py-2 flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
       (isEdit
-        // ─ Edit mode: ceiling source toggle + conditional inputs ───────────────────
+        // ─ Edit mode: scope + ceiling source toggle + conditional inputs ──────────────
         ? '<div class="mb-2 space-y-1.5">' +
+            // ─ Scope row ───────────────────────────────────────────────────
+            '<div class="flex items-center gap-1.5">' +
+              '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Scope:</label>' +
+              '<select id="tpp-budget-scope-' + p.id + '" ' +
+                'onchange="tppBudgetScopeChanged(' + p.id + ')" ' +
+                'class="' + _tppInputCls() + ' flex-1">' +
+                '<option value="group"'      + (budScope !== 'individual' ? ' selected' : '') + '>👥 Group budget</option>' +
+                '<option value="individual"' + (budScope === 'individual' ? ' selected' : '') + '>🧑 Individual budget</option>' +
+              '</select>' +
+            '</div>' +
+            // Person name input — only shown when scope = individual
+            '<div id="tpp-budget-person-row-' + p.id + '"' +
+              (budScope !== 'individual' ? ' style="display:none"' : '') + '>' +
+              '<div class="flex items-center gap-1.5">' +
+                '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Person:</label>' +
+                '<input id="tpp-budget-person-' + p.id + '" type="text" ' +
+                  'value="' + _tripEsc(budPerson) + '" placeholder="e.g. Tinh" ' +
+                  'class="' + _tppInputCls() + ' flex-1" />' +
+              '</div>' +
+            '</div>' +
+            // ─ Ceiling row ──────────────────────────────────────────────────
             '<div class="flex items-center gap-1.5">' +
               '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Ceiling:</label>' +
               '<select id="tpp-budget-ceil-src-' + p.id + '" ' +
@@ -544,12 +585,14 @@ function _tppBudget(p, data, isEdit) {
           '</div>'
         : '') +
       (linkedBadge ? '<div>' + linkedBadge + '</div>' : '') +
-      (!isEdit && ceilSrcBadge ? '<div>' + ceilSrcBadge + '</div>' : '') +
+      (!isEdit ? '<div class="flex flex-wrap gap-1">' + scopeBadge + (ceilSrcBadge ? ceilSrcBadge : '') + '</div>' : '') +
       '<div class="flex items-end justify-between mb-1">' +
         '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200">' +
           cur + ' ' + spent.toFixed(2) + ' spent</span>' +
         '<span class="text-[10px] text-gray-400">' +
-          (remaining >= 0 ? cur + ' ' + remaining.toFixed(2) + ' left' : '⚠️ Over budget') +
+          (ceilSrc === 'spots' && total === 0 && !isEdit
+            ? '📊 Open Charts tab to compute ceiling'
+            : remaining >= 0 ? cur + ' ' + remaining.toFixed(2) + ' left' : '⚠️ Over budget') +
         '</span>' +
       '</div>' +
       '<div class="h-2 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden">' +
@@ -938,12 +981,15 @@ window.tppSaveBudgetTotal = function(panelId) {
   var ceilSrc  = srcEl ? srcEl.value : 'manual';
   var curEl    = document.getElementById('tpp-budget-cur-' + panelId);
   var cur      = (curEl ? curEl.value : 'USD').trim().toUpperCase() || 'USD';
+  var scopeEl  = document.getElementById('tpp-budget-scope-'  + panelId);
+  var personEl = document.getElementById('tpp-budget-person-' + panelId);
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   d.currency       = cur;
   d.ceiling_source = ceilSrc;
+  d.budget_scope   = scopeEl  ? scopeEl.value  : (d.budget_scope  || 'group');
+  d.budget_person  = personEl ? personEl.value.trim() : (d.budget_person || '');
   if (ceilSrc === 'spots') {
-    // Collect which spot types are checked
     var _SPOT_OPTS = ['hotel','restaurant','attraction','activity','other'];
     d.spot_types = _SPOT_OPTS.filter(function(st) {
       var cb = document.getElementById('tpp-budget-st-' + panelId + '-' + st);
@@ -951,13 +997,20 @@ window.tppSaveBudgetTotal = function(panelId) {
     });
     var spCurEl  = document.getElementById('tpp-budget-cur-sp-' + panelId);
     d.currency   = (spCurEl ? spCurEl.value : 'USD').trim().toUpperCase() || 'USD';
-    // Don't overwrite total — backend will compute it from spots
   } else {
     var totalEl = document.getElementById('tpp-budget-total-' + panelId);
     d.total      = parseFloat(totalEl ? totalEl.value : '0') || 0;
     d.spot_types = [];
   }
   _tppSave(panelId, d);
+};
+
+// Toggle person-name input row when scope changes
+window.tppBudgetScopeChanged = function(panelId) {
+  var scopeEl  = document.getElementById('tpp-budget-scope-'      + panelId);
+  var personRow= document.getElementById('tpp-budget-person-row-' + panelId);
+  if (!scopeEl || !personRow) return;
+  personRow.style.display = scopeEl.value === 'individual' ? '' : 'none';
 };
 
 // Toggle ceiling source UI between manual and spot-derived
