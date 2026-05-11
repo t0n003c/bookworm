@@ -847,6 +847,7 @@ async def _panel_summaries(
                     "label":      it.get("label") or it.get("note") or "",
                     "amount":     float(it.get("amount") or 0),
                     "note":       it.get("note") or it.get("label") or "",
+                    "category":   it.get("category") or "",
                     "reconciled": bool(it.get("reconciled")),
                     "settle_ref": it.get("settle_ref"),
                 } for it in items],

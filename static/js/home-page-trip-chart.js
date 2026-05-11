@@ -406,15 +406,34 @@ function _tripRenderStatCards(data) {
       : '');
 }
 
-// ── Spot-type doughnut ───────────────────────────────────────────────────
+// ── Doughnut: Spots by Type (Planning) │ Budget by Category (Actuals) ───────
+// Title and subtitle swap with the phase toggle so the card always makes sense.
 function _tripRenderTypeChart(data) {
-  var wrap = document.getElementById('trip-chart-type-wrap');
-  var slot = document.getElementById('trip-canvas-type-slot');
+  var wrap    = document.getElementById('trip-chart-type-wrap');
+  var slot    = document.getElementById('trip-canvas-type-slot');
+  var titleEl = document.getElementById('trip-chart-type-title');
+  var subEl   = document.getElementById('trip-chart-type-sub');
   if (!window.Chart || !slot) return;
+
+  var isActuals = _tripChartPhase === 'actuals';
+  var cur       = _tripChartCurrency;
+
+  // Update title + sub regardless of data availability so they never get stuck
+  if (titleEl) {
+    titleEl.textContent = isActuals
+      ? '💰 Budget by Category'
+      : '📊 Spots by Type';
+  }
+  if (subEl) {
+    subEl.innerHTML = isActuals
+      ? 'Manual budget items grouped by category. Slice size = total spend per category.'
+      : 'How your researched spots are distributed across categories. ' +
+        '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click a slice →</span>';
+  }
 
   if (_tripTypeChart) { _tripTypeChart.destroy(); _tripTypeChart = null; }
 
-  // Restore canvas if a previous empty-state replaced it
+  // Ensure canvas exists (empty-state path replaces it with a <p>)
   var canvas = document.getElementById('trip-canvas-type');
   if (!canvas) {
     canvas = document.createElement('canvas');
@@ -423,11 +442,78 @@ function _tripRenderTypeChart(data) {
     slot.appendChild(canvas);
   }
 
-  // Only render slices for types that actually have spots
+  // Helper shared by both branches
+  function _showEmpty(msg) {
+    slot.innerHTML =
+      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">' + msg + '</p>';
+  }
+
+  // ── ACTUALS: Budget by Category doughnut ────────────────────────────────
+  if (isActuals) {
+    var _tc = window._tripTypeColor || function() { return '#6b7280'; };
+    var catMap = {};
+    (data.budget_panels || []).forEach(function(bp) {
+      (bp.items || []).forEach(function(it) {
+        var conv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
+        if (conv <= 0) return;
+        var cat = (it.category || '').trim() || 'Uncategorized';
+        catMap[cat] = (catMap[cat] || 0) + conv;
+      });
+    });
+    var catEntries = Object.keys(catMap)
+      .map(function(cat) { return { label: cat, total: catMap[cat] }; })
+      .filter(function(e) { return e.total > 0; })
+      .sort(function(a, b) { return b.total - a.total; });
+
+    if (!catEntries.length) {
+      _showEmpty('No budget items yet — add expenses to a Budget panel.');
+      return;
+    }
+    var grandTotal = catEntries.reduce(function(s, e) { return s + e.total; }, 0);
+    _tripTypeChart = new window.Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: catEntries.map(function(e) { return e.label; }),
+        datasets: [{
+          data: catEntries.map(function(e) { return Math.round(e.total); }),
+          backgroundColor: catEntries.map(function(e) {
+            return e.label === 'Uncategorized' ? '#ffc220cc' : _tc(e.label) + 'cc';
+          }),
+          borderColor: catEntries.map(function(e) {
+            return e.label === 'Uncategorized' ? '#995213' : _tc(e.label);
+          }),
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {position: 'bottom', labels: {font: {size: 11}, padding: 10, boxWidth: 12}},
+          tooltip: {callbacks: {label: function(ctx) {
+            var pct = grandTotal > 0 ? Math.round(ctx.raw / grandTotal * 100) : 0;
+            return ' ' + ctx.label + ': ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)';
+          }}},
+        },
+      },
+    });
+    // Bottom description line
+    var desc = document.getElementById('trip-chart-type-desc');
+    if (!desc) {
+      desc = document.createElement('p');
+      desc.id = 'trip-chart-type-desc';
+      desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-2 text-center px-2';
+      if (wrap) wrap.appendChild(desc);
+    }
+    desc.textContent = catEntries.map(function(e) {
+      return e.label + ': ' + cur + ' ' + Math.round(e.total).toLocaleString();
+    }).join(' · ');
+    return;
+  }
+
+  // ── PLANNING: Spots by Type doughnut ──────────────────────────────────
   var byType = (data.by_type || []).filter(function(t) { return t.count > 0; });
   if (!byType.length) {
-    slot.innerHTML =
-      '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">No spot data yet</p>';
+    _showEmpty('No spot data yet');
     return;
   }
   var colors = window._tripChartColors || ['#0053e2','#ffc220','#2a8703','#ea1100'];
@@ -454,27 +540,24 @@ function _tripRenderTypeChart(data) {
       },
       onClick: function(evt, elements) {
         if (!elements.length) return;
-        var idx = elements[0].index;
-        var t   = byType[idx];
+        var t = byType[elements[0].index];
         if (t) _tripChartOpenSpotTypeDrawer(t.spot_type, _tripChartLastData);
       },
     },
   });
   if (canvas.style) canvas.style.cursor = 'pointer';
 
-  if (wrap) {
-    var desc = document.getElementById('trip-chart-type-desc');
-    if (!desc) {
-      desc = document.createElement('p');
-      desc.id = 'trip-chart-type-desc';
-      desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-2 text-center px-2';
-      wrap.appendChild(desc);
-    }
-    desc.textContent = 'Each slice = one spot type. Size reflects count, not cost. ' +
-      byType.map(function(t) {
-        return (t.spot_type.charAt(0).toUpperCase()+t.spot_type.slice(1)) + ': ' + t.count;
-      }).join(' · ');
+  var desc = document.getElementById('trip-chart-type-desc');
+  if (!desc) {
+    desc = document.createElement('p');
+    desc.id = 'trip-chart-type-desc';
+    desc.className = 'text-[11px] text-gray-400 dark:text-zinc-500 mt-2 text-center px-2';
+    if (wrap) wrap.appendChild(desc);
   }
+  desc.textContent = 'Each slice = one spot type. Size reflects count, not cost. ' +
+    byType.map(function(t) {
+      return (t.spot_type.charAt(0).toUpperCase() + t.spot_type.slice(1)) + ': ' + t.count;
+    }).join(' · ');
 }
 
 // ── Cost bar chart ────────────────────────────────────────────────────────────────
