@@ -19,7 +19,7 @@ var _tripChartCurrency   = 'USD';   // target display currency
 var _tripChartPlans      = [];      // [{id, plan_name, start_date, end_date}]
 var _tripChartLastData   = null;    // last raw API response (for re-render on FX change)
 var _tripChartSelectedPerson = null;  // null = All, or name string from settle panel
-var _tripChartPhase      = 'planning'; // 'planning' | 'actuals'
+var _tripChartPhase      = 'actuals'; // 'actuals' | 'planning'  — Actuals is the default view
 
 // ── Approximate FX rates (all → USD base, updated periodically) ──────────────
 // These are indicative rates for planning purposes only — not live data.
@@ -92,11 +92,11 @@ function _tripChartRenderPhaseToggle() {
     'border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">' +
       '<span class="text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
       '<div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5">' +
-        '<button onclick="tripChartSetPhase(\'planning\')" class="' + btnCls('planning') + '">' +
-          '🗺️ Planning' +
-        '</button>' +
         '<button onclick="tripChartSetPhase(\'actuals\')" class="' + btnCls('actuals') + '">' +
           '✅ Actuals' +
+        '</button>' +
+        '<button onclick="tripChartSetPhase(\'planning\')" class="' + btnCls('planning') + '">' +
+          '🗺️ Planning' +
         '</button>' +
       '</div>' +
       '<span class="ml-3 text-[10px] text-gray-400 dark:text-zinc-500 italic">' +
