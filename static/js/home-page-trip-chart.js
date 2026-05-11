@@ -285,12 +285,18 @@ function _tripRenderStatCards(data) {
   }
 
   // ── ACTUALS MODE (existing logic) ───────────────────────────────────────
-  // Net spent: always pull from settle panels so it matches the per-person
-  // breakdown (each person's Net Trip Cost sums to settle total_expenses).
-  // Budget panel .spent is a separate dataset and must NOT be mixed in here.
+  // Net spent: prefer settle panels (group expense log) — they're the source
+  // of truth for per-person breakdowns.  When no settle panel exists, fall
+  // back to the sum of unreconciled manual budget items instead.
   var settleNetSpent = 0;
   (data.settle_panels || []).forEach(function(sp) {
     settleNetSpent += _tripConvert(sp.total_expenses, sp.currency);
+  });
+
+  // Budget tracked = sum of unreconciled manual items across all budget panels.
+  var budgetTracked = 0;
+  (data.budget_panels || []).forEach(function(bp) {
+    budgetTracked += _tripConvert(bp.spent, bp.currency);
   });
 
   var costVal, costLabel, costSub;
@@ -338,30 +344,38 @@ function _tripRenderStatCards(data) {
       costSub =
         '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>';
     }
-  } else if (budgetCeiling > 0 || settleNetSpent > 0) {
-    var overBudget = budgetCeiling > 0 && settleNetSpent > budgetCeiling;
-    var spentPct   = budgetCeiling > 0
-      ? Math.round(settleNetSpent / budgetCeiling * 100)
+  } else if (budgetCeiling > 0 || settleNetSpent > 0 || budgetTracked > 0) {
+    // Prefer settle total; fall back to manual budget items when no settle panel.
+    var displaySpent = settleNetSpent > 0 ? settleNetSpent : budgetTracked;
+    var overBudget   = budgetCeiling > 0 && displaySpent > budgetCeiling;
+    var spentPct     = budgetCeiling > 0
+      ? Math.round(displaySpent / budgetCeiling * 100)
       : null;
-    var pctColor   = overBudget
+    var pctColor     = overBudget
       ? 'text-[#ea1100] dark:text-red-400'
       : spentPct >= 80 ? 'text-[#995213] dark:text-yellow-400'
       : 'text-[#2a8703] dark:text-green-400';
-    costVal   = cur + '\u00a0' + Math.round(settleNetSpent).toLocaleString('en-US');
-    costLabel = 'Net Spent (' + cur + ')';
+    costVal   = cur + '\u00a0' + Math.round(displaySpent).toLocaleString('en-US');
+    // Label tells user where the number came from
+    costLabel = settleNetSpent > 0
+      ? 'Net Spent (' + cur + ')'
+      : 'Budget Tracked (' + cur + ')';
     costSub   = budgetCeiling > 0
       ? '<p class="text-[10px] mt-0.5 text-gray-400 dark:text-zinc-500">' +
           'of ' + cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US') + ' ceiling' +
-          ' <span class="font-medium ' + pctColor + '">(' + spentPct + '%)</span>' +
+          (spentPct !== null
+            ? ' <span class="font-medium ' + pctColor + '">(' + spentPct + '%)</span>'
+            : '') +
         '</p>'
       : '';
   } else if (spotTotal > 0) {
     costVal   = cur + '\u00a0' + Math.round(spotTotal).toLocaleString('en-US');
     if (data.mixed_currencies) costVal += ' *';
     costLabel = 'Spot Estimates (' + cur + ')';
-    costSub   = settleNetSpent > 0
+    costSub   = (settleNetSpent > 0 || budgetTracked > 0)
       ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-          'Actual logged: ' + cur + '\u00a0' + Math.round(settleNetSpent).toLocaleString('en-US') +
+          'Actual logged: ' + cur + '\u00a0' +
+          Math.round(settleNetSpent > 0 ? settleNetSpent : budgetTracked).toLocaleString('en-US') +
         '</p>'
       : '';
   } else {
