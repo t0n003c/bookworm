@@ -58,6 +58,20 @@ window.initTripPage = function(pid) {
   _tripAssignDrawerOpen     = false;
   _tripAssignDays           = [];
   _tripSelectedSpotId       = 0;
+  // Re-seed _TRIP_TYPES: base list + custom cats saved for this trip.
+  // Rebuild the array IN PLACE so the window._TRIP_TYPES reference stays valid.
+  try {
+    var _cckKey    = 'trip_custom_cats_' + pid;
+    var _cckStored = JSON.parse(localStorage.getItem(_cckKey) || '[]');
+    _TRIP_TYPES.length = 0;
+    ['Restaurant','Hotel','Camping','Hiking','City Attraction','Beach','Museum'].forEach(function(t) {
+      _TRIP_TYPES.push(t);
+    });
+    _cckStored.forEach(function(c) {
+      if (c && _TRIP_TYPES.indexOf(c) === -1) _TRIP_TYPES.push(c);
+    });
+    _TRIP_TYPES.push('Other');
+  } catch(e) {}
   tripSetTab('research');
   // Load locations — pass true so sessionStorage drill-in is restored exactly once
   if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
@@ -410,7 +424,7 @@ function _tripRenderSpotForm(v) {
     return '<option value="' + t + '"' + (v.spot_type === t ? ' selected' : '') + '>' + t + '</option>';
   }).join('');
   var isCustom = v.spot_type && _TRIP_TYPES.indexOf(v.spot_type) === -1;
-  typeOpts += '<option value="custom"' + (isCustom ? ' selected' : '') + '>Other (custom…)</option>';
+  typeOpts += '<option value="custom"' + (isCustom ? ' selected' : '') + '>Custom category…</option>';
 
   var currentCover = (v.cover_url || '').trim();
   var coverPreview = currentCover
@@ -681,6 +695,8 @@ window.tripSubmitSpot = function() {
   var currency = (document.getElementById('tsf-currency')   || {}).value || 'USD';
 
   if (!name.trim()) { _tripShowToast('Name is required', true); return; }
+  // Register new custom category so it appears in Budget + Settle Up pickers immediately
+  if (spotType === 'custom' && custom.trim()) window._tripAddCustomCat(custom.trim());
 
   var attrs = _tripSpotCollectAttrs();
   var fd = new URLSearchParams();
@@ -948,7 +964,26 @@ window._tripShowToast = function(msg, isErr) {
 function _tripShowToast(msg, isErr) { window._tripShowToast(msg, isErr); }
 
 // Expose for chart + plan modules
-window._tripChartColors = _TRIP_CHART_COLORS;
-window._tripTypeColor   = _tripTypeColor;
-window._TRIP_TYPE_EMOJI = _TRIP_TYPE_EMOJI;
-window._TRIP_TYPES      = _TRIP_TYPES;   // shared with settle panel category picker
+window._tripChartColors    = _TRIP_CHART_COLORS;
+window._tripTypeColor      = _tripTypeColor;
+window._TRIP_TYPE_EMOJI    = _TRIP_TYPE_EMOJI;
+window._TRIP_TYPES         = _TRIP_TYPES;   // shared with settle + budget panel category pickers
+
+// Register a custom category across all pickers in this session.
+// Inserts before 'Other', persists to localStorage, adds a default emoji.
+window._tripAddCustomCat = function(catName) {
+  catName = (catName || '').trim();
+  if (!catName || _TRIP_TYPES.indexOf(catName) >= 0) return;
+  var otherIdx = _TRIP_TYPES.indexOf('Other');
+  if (otherIdx >= 0) { _TRIP_TYPES.splice(otherIdx, 0, catName); }
+  else               { _TRIP_TYPES.push(catName); }
+  if (!_TRIP_TYPE_EMOJI[catName]) _TRIP_TYPE_EMOJI[catName] = '📌';
+  try {
+    var key    = 'trip_custom_cats_' + _tripPid;
+    var stored = JSON.parse(localStorage.getItem(key) || '[]');
+    if (stored.indexOf(catName) === -1) {
+      stored.push(catName);
+      localStorage.setItem(key, JSON.stringify(stored));
+    }
+  } catch(e) {}
+};

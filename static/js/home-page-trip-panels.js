@@ -701,8 +701,10 @@ function _tppBudget(p, data, isEdit) {
           ? '<span class="text-[10px] text-[#2a8703] dark:text-green-400 flex-shrink-0" title="Confirmed via Settle Up">✓</span>'
           : '');
     var del = isEdit
-      ? '<button onclick="tppDeleteBudgetItem(' + p.id + ',' + idx + ')" ' +
-          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
+      ? '<button onclick="tppEditBudgetItem(' + p.id + ',' + idx + ')" ' +
+          'class="text-gray-300 hover:text-[#0053e2] text-xs flex-shrink-0" title="Edit">✏️</button>' +
+        '<button onclick="tppDeleteBudgetItem(' + p.id + ',' + idx + ')" ' +
+          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1" title="Delete">✕</button>'
       : '';
     return '<div class="flex items-center gap-2 px-3 py-1.5 border-b ' +
            'border-gray-50 dark:border-zinc-800 last:border-0">' +
@@ -719,17 +721,33 @@ function _tppBudget(p, data, isEdit) {
   }).join('');
 
   var form = isEdit
-    ? '<div id="tpp-budget-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
-        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
-        '<input id="tpp-budget-note-' + p.id + '" type="text" placeholder="Description" maxlength="80" ' +
-          'class="' + _tppInputCls() + '" />' +
-        '<input id="tpp-budget-cat-' + p.id + '" type="text" ' +
-          'placeholder="Category (e.g. Food)" maxlength="40" ' +
-          'class="' + _tppInputCls() + '" />' +
-        '<input id="tpp-budget-amt-' + p.id + '" type="number" step="0.01" min="0" ' +
-          'placeholder="Amount" class="' + _tppInputCls() + '" />' +
-        _tppFormBtns('tppSaveBudgetItem(' + p.id + ')', 'tppHideForm(' + p.id + ',\'budget\')') +
-      '</div>'
+    ? (function() {
+        var bCatTypes = (window._TRIP_TYPES || ['Restaurant','Hotel','Camping','Hiking',
+                                                'City Attraction','Beach','Museum','Other']);
+        var bCatOpts  = '<option value="">-- no category --</option>' +
+          bCatTypes.map(function(t) {
+            return '<option value="' + _tripEsc(t) + '">' + _tripEsc(t) + '</option>';
+          }).join('') + '<option value="custom">Custom category…</option>';
+        return '<div id="tpp-budget-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
+          'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
+          '<input type="hidden" id="tpp-budget-edit-idx-' + p.id + '" value="-1">' +
+          '<input id="tpp-budget-note-' + p.id + '" type="text" placeholder="Description" maxlength="80" ' +
+            'class="' + _tppInputCls() + '" />' +
+          '<div>' +
+            '<p class="text-[10px] text-gray-500 dark:text-zinc-400 mb-0.5">Category</p>' +
+            '<select id="tpp-budget-cat-sel-' + p.id + '" ' +
+              'onchange="tppToggleBudgetCat(' + p.id + ')" ' +
+              'class="' + _tppInputCls() + ' w-full">' + bCatOpts + '</select>' +
+          '</div>' +
+          '<div id="tpp-budget-cat-custom-wrap-' + p.id + '" class="hidden">' +
+            '<input id="tpp-budget-cat-custom-' + p.id + '" type="text" maxlength="40" ' +
+              'placeholder="Custom category…" class="' + _tppInputCls() + ' w-full" />' +
+          '</div>' +
+          '<input id="tpp-budget-amt-' + p.id + '" type="number" step="0.01" min="0" ' +
+            'placeholder="Amount" class="' + _tppInputCls() + '" />' +
+          _tppFormBtns('tppSaveBudgetItem(' + p.id + ')', 'tppBudgetCancelEdit(' + p.id + ')') +
+        '</div>';
+      })()
     : '';
 
   var footer = isEdit ? _tppAddBtn('tppShowForm(' + p.id + ',\'budget\')', '＋ Add Manual Expense') : '';
@@ -962,20 +980,91 @@ window.tppDeleteBudgetItem = function(panelId, idx) {
   _tppSave(panelId, d);
 };
 window.tppSaveBudgetItem = function(panelId) {
-  var noteEl = document.getElementById('tpp-budget-note-' + panelId);
-  var catEl  = document.getElementById('tpp-budget-cat-'  + panelId);
-  var amtEl  = document.getElementById('tpp-budget-amt-'  + panelId);
-  var note = (noteEl ? noteEl.value : '').trim();
-  var cat  = (catEl  ? catEl.value  : '').trim();
-  var amt  = parseFloat((amtEl ? amtEl.value : '0') || '0');
+  var noteEl   = document.getElementById('tpp-budget-note-'       + panelId);
+  var catSelEl = document.getElementById('tpp-budget-cat-sel-'    + panelId);
+  var catCusEl = document.getElementById('tpp-budget-cat-custom-' + panelId);
+  var amtEl    = document.getElementById('tpp-budget-amt-'        + panelId);
+  var editIdxEl= document.getElementById('tpp-budget-edit-idx-'   + panelId);
+  var note   = (noteEl   ? noteEl.value   : '').trim();
+  var catSel = (catSelEl ? catSelEl.value : '');
+  var catCus = (catCusEl ? catCusEl.value : '').trim();
+  var cat    = catSel === 'custom' ? catCus : catSel;
+  var amt    = parseFloat((amtEl ? amtEl.value : '0') || '0');
+  var editIdx= editIdxEl ? parseInt(editIdxEl.value, 10) : -1;
   if (!note && !amt) { _tripShowToast('Description or amount required', true); return; }
+  // Register new custom category globally
+  if (catSel === 'custom' && catCus && typeof window._tripAddCustomCat === 'function') {
+    window._tripAddCustomCat(catCus);
+  }
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   if (!d.items) d.items = [];
   // Save both 'label' (for the chart backend) and 'note' (legacy) to cover all consumers.
-  d.items.push({ label: note, note: note, category: cat, amount: amt, reconciled: false });
+  var item = { label: note, note: note, category: cat, amount: amt, reconciled: false };
+  if (editIdx >= 0 && editIdx < d.items.length) {
+    item.reconciled = d.items[editIdx].reconciled || false;  // preserve reconcile flag
+    d.items[editIdx] = item;                                  // update in place
+  } else {
+    d.items.push(item);                                       // new expense
+  }
   _tppSave(panelId, d);
 };
+// Toggle custom-category input for Budget form
+window.tppToggleBudgetCat = function(panelId) {
+  var sel  = document.getElementById('tpp-budget-cat-sel-'          + panelId);
+  var wrap = document.getElementById('tpp-budget-cat-custom-wrap-'  + panelId);
+  if (!sel || !wrap) return;
+  if (sel.value === 'custom') {
+    wrap.classList.remove('hidden');
+    var inp = document.getElementById('tpp-budget-cat-custom-' + panelId);
+    if (inp) inp.focus();
+  } else {
+    wrap.classList.add('hidden');
+  }
+};
+
+// Populate form from an existing Budget item for editing
+window.tppEditBudgetItem = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  var item = (d.items || [])[idx]; if (!item) return;
+  var catTypes = (window._TRIP_TYPES || []);
+  var noteEl   = document.getElementById('tpp-budget-note-'       + panelId);
+  var catSelEl = document.getElementById('tpp-budget-cat-sel-'    + panelId);
+  var catCusEl = document.getElementById('tpp-budget-cat-custom-' + panelId);
+  var amtEl    = document.getElementById('tpp-budget-amt-'        + panelId);
+  var editIdxEl= document.getElementById('tpp-budget-edit-idx-'   + panelId);
+  if (noteEl)    noteEl.value    = item.label || item.note || '';
+  if (amtEl)     amtEl.value     = item.amount || '';
+  if (editIdxEl) editIdxEl.value = idx;
+  var cat = item.category || '';
+  if (catSelEl) {
+    var isKnown = cat === '' || catTypes.indexOf(cat) >= 0;
+    catSelEl.value = isKnown ? cat : 'custom';
+  }
+  window.tppToggleBudgetCat(panelId);
+  if (cat && catTypes.indexOf(cat) < 0 && catCusEl) catCusEl.value = cat;
+  window.tppShowForm(panelId, 'budget');
+  var formEl = document.getElementById('tpp-budget-form-' + panelId);
+  if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
+
+// Cancel edit: reset ALL budget form fields to add-mode defaults and hide
+window.tppBudgetCancelEdit = function(panelId) {
+  var editIdxEl= document.getElementById('tpp-budget-edit-idx-'   + panelId);
+  var noteEl   = document.getElementById('tpp-budget-note-'       + panelId);
+  var catSelEl = document.getElementById('tpp-budget-cat-sel-'    + panelId);
+  var catCusEl = document.getElementById('tpp-budget-cat-custom-' + panelId);
+  var amtEl    = document.getElementById('tpp-budget-amt-'        + panelId);
+  if (editIdxEl) editIdxEl.value = '-1';
+  if (noteEl)    noteEl.value    = '';
+  if (catSelEl)  catSelEl.value  = '';
+  if (catCusEl)  catCusEl.value  = '';
+  if (amtEl)     amtEl.value     = '';
+  window.tppToggleBudgetCat(panelId);   // hide custom input
+  window.tppHideForm(panelId, 'budget');
+};
+
 window.tppSaveBudgetTotal = function(panelId) {
   var srcEl    = document.getElementById('tpp-budget-ceil-src-' + panelId);
   var ceilSrc  = srcEl ? srcEl.value : 'manual';
@@ -1733,6 +1822,10 @@ window.tppSaveSettleExp = function(panelId) {
   var catSel = (document.getElementById('tpp-settle-cat-' + panelId) || {}).value || '';
   var catCus = ((document.getElementById('tpp-settle-cat-custom-' + panelId) || {}).value || '').trim();
   var category = catSel === 'custom' ? catCus : catSel;
+  // Register new custom category globally so Budget + Spot pickers pick it up
+  if (catSel === 'custom' && catCus && typeof window._tripAddCustomCat === 'function') {
+    window._tripAddCustomCat(catCus);
+  }
   // Split indices
   var splitContainer = document.getElementById('tpp-settle-split-' + panelId);
   var splitIdxs = [];
