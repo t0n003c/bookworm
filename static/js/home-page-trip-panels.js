@@ -288,7 +288,16 @@ function _tppBody(p, data, isEdit) {
   if (p.panel_type === 'emergency') return _tppEmerg(p, data, isEdit);
   if (p.panel_type === 'notes')     return _tppNotes(p, data, isEdit);
   if (p.panel_type === 'settle')    return _tppSettle(p, data, isEdit);
-  if (p.panel_type === 'people')    return window._tppPeople(p, data, isEdit);
+  if (p.panel_type === 'people') {
+    try {
+      return typeof window._tppPeople === 'function'
+        ? window._tppPeople(p, data, isEdit)
+        : _tppEmpty('People card JS not loaded yet — try refreshing.');
+    } catch (e) {
+      console.error('[tppPeople] render error:', e);
+      return _tppEmpty('\u26A0\uFE0F People card error: ' + (e.message || e));
+    }
+  }
   return _tppEmpty('Unknown type');
 }
 
@@ -2107,6 +2116,8 @@ window.tripSubmitPanelModal = function() {
     }).then(function(r) { return r.json(); })
       .then(function() {
         window.tripClosePanelModal();
+        // Always expand Trip Resources so the new card is visible
+        localStorage.setItem(_QC_LS_KEY, 'true');
         window._tripLoadPanels(_tppPlanId);
       }).catch(function() { _tripShowToast('Failed to add card', true); });
   } else {
