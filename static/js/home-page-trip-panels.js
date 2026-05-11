@@ -9,7 +9,8 @@
  *   tppSelectType, tppEditPanel, tppDeletePanel, tppMovePanel,
  *   tppTogglePack, tppClearDone, tppShowForm, tppHideForm,
  *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal,
- *   tppSaveBudgetLink, tppBudgetSettleChanged, tppUnlinkBudget
+ *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppBudgetSettleChanged,
+ *   tppBudgetPeopleChanged, tppUnlinkBudget
  */
 
 var _TPP_TYPES = {
@@ -459,36 +460,69 @@ function _tppBudget(p, data, isEdit) {
       }
     }
   }
-  // ── Resolve linked Settle Up ───────────────────────────────────────────────
-  var linkedSettleId  = data.linked_settle_id  != null ? parseInt(data.linked_settle_id,  10) : null;
-  var linkedPersonIdx = data.linked_person_idx != null ? parseInt(data.linked_person_idx, 10) : null;
-  var settlePanel = null;
+  // ── Resolve linked person ──────────────────────────────────────────────────────
+  // Supports two link modes:
+  //   (a) linked_people_id + linked_person_idx → People card member
+  //       Settle card is discovered via the People card’s linked_settle_id.
+  //   (b) legacy: linked_settle_id + linked_person_idx → direct Settle link
+  var linkedSettleId   = data.linked_settle_id   != null ? parseInt(data.linked_settle_id,   10) : null;
+  var linkedPersonIdx  = data.linked_person_idx  != null ? parseInt(data.linked_person_idx,  10) : null;
+  var linkedPeopleId   = data.linked_people_id   != null ? parseInt(data.linked_people_id,   10) : null;
+  var settlePanel      = null;
   var linkedPersonName = '';
-  var linkedExps  = [];
-  var linkedSpent = 0;
+  var linkedExps       = [];
+  var linkedSpent      = 0;
+  var linkSource       = 'settle';  // 'people' | 'settle'
 
-  if (linkedSettleId !== null) {
-    (window._tripPanels || []).forEach(function(x) {
-      if (x.id === linkedSettleId) settlePanel = x;
-    });
+  // Mode (a): resolve through People card
+  if (linkedPeopleId !== null && linkedPersonIdx !== null) {
+    var ppanel = null;
+    (window._tripPanels || []).forEach(function(x) { if (x.id === linkedPeopleId) ppanel = x; });
+    if (ppanel) {
+      var pd = _tppParse(ppanel.content);
+      var member = (pd.members || [])[linkedPersonIdx];
+      linkedPersonName = member ? (member.name || '') : '';
+      // Find the settle panel via the People card’s link
+      var psid = pd.linked_settle_id != null ? parseInt(pd.linked_settle_id, 10) : null;
+      if (psid !== null) {
+        (window._tripPanels || []).forEach(function(x) { if (x.id === psid) settlePanel = x; });
+      }
+      linkSource = 'people';
+    } else {
+      linkedPeopleId  = null;
+      linkedPersonIdx = null;
+    }
   }
+
+  // Mode (b) or settle discovered via People card
+  if (!settlePanel && linkedSettleId !== null) {
+    (window._tripPanels || []).forEach(function(x) { if (x.id === linkedSettleId) settlePanel = x; });
+  }
+
   if (settlePanel) {
     var sd = _tppParse(settlePanel.content);
     var sdPeople = sd.people || [];
-    linkedPersonName = linkedPersonIdx !== null ? (sdPeople[linkedPersonIdx] || '') : '';
-    (sd.expenses || []).forEach(function(exp) {
-      // Use the person's actual SHARE, not the full amount they may have fronted.
-      // An expense only touches this person's budget if they're in the split array.
-      var splitArr = exp.split || [];
-      if (splitArr.indexOf(linkedPersonIdx) !== -1 && splitArr.length > 0) {
-        var share = (parseFloat(exp.amount) || 0) / splitArr.length;
-        linkedExps.push({ desc: exp.desc, amount: share, splitCount: splitArr.length });
-        linkedSpent += share;
-      }
-    });
+    // For People-card links, match by name; for legacy, use stored index.
+    var settleIdx = linkedPersonIdx;
+    if (linkSource === 'people' && linkedPersonName) {
+      settleIdx = sdPeople.indexOf(linkedPersonName);
+    } else if (linkSource === 'settle') {
+      linkedPersonName = settleIdx !== null ? (sdPeople[settleIdx] || '') : '';
+    }
+    if (settleIdx !== null && settleIdx !== -1) {
+      (sd.expenses || []).forEach(function(exp) {
+        var splitArr = exp.split || [];
+        if (splitArr.indexOf(settleIdx) !== -1 && splitArr.length > 0) {
+          var share = (parseFloat(exp.amount) || 0) / splitArr.length;
+          linkedExps.push({ desc: exp.desc, amount: share, splitCount: splitArr.length });
+          linkedSpent += share;
+        }
+      });
+    }
   } else {
-    // linked panel gone — ignore stale IDs in this render
+    // linked panel(s) gone — discard stale IDs
     linkedSettleId  = null;
+    linkedPeopleId  = null;
     linkedPersonIdx = null;
   }
 
@@ -504,7 +538,9 @@ function _tppBudget(p, data, isEdit) {
   var linkedBadge = linkedPersonName
     ? '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ' +
         'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium mb-1">' +
-        '🔗 ' + _tripEsc(linkedPersonName) + ' · Settle Up' +
+        (linkSource === 'people' ? '\uD83D\uDC65' : '\uD83D\uDD17') + ' ' +
+        _tripEsc(linkedPersonName) +
+        (linkSource === 'people' ? ' · People card' : ' · Settle Up') +
       '</span>'
     : '';
 
@@ -619,51 +655,84 @@ function _tppBudget(p, data, isEdit) {
         : '') +
     '</div>';
 
-  // ── Link / Unlink UI (edit mode only) ────────────────────────────────────────────
+  // ── Link / Unlink UI (edit mode only) ──────────────────────────────────────────────────────
   var settlePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; });
+  var peoplePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; });
   var linkSection  = '';
   if (isEdit) {
-    if (linkedPersonName && settlePanel) {
+    var isLinked = linkedPersonName && (settlePanel || linkedPeopleId);
+    if (isLinked) {
       // Already linked — show status + unlink
       linkSection =
         '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
              'bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-2">' +
           '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-1">' +
-            'Tracking expenses paid by <strong>' + _tripEsc(linkedPersonName) + '</strong>' +
+            'Tracking expenses for <strong>' + _tripEsc(linkedPersonName) + '</strong>' +
+            (linkSource === 'people' ? ' via People card' : ' via Settle Up') +
           '</span>' +
           '<button onclick="tppUnlinkBudget(' + p.id + ')" ' +
             'class="text-[10px] text-gray-400 hover:text-red-500 transition whitespace-nowrap">Unlink</button>' +
         '</div>';
-    } else if (settlePanels.length > 0) {
-      // Show settle panel + person pickers
-      var settleOpts = settlePanels.map(function(sp) {
-        return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
-      }).join('');
-      var firstSd   = _tppParse(settlePanels[0].content);
-      var firstPpl  = firstSd.people || [];
-      var personOpts = firstPpl.length
-        ? firstPpl.map(function(name, i) {
-            return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
-          }).join('')
-        : '<option value="">Add people to Settle Up first</option>';
-      linkSection =
-        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
-             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' +
+    } else if (peoplePanels.length > 0 || settlePanels.length > 0) {
+      // ─ People-card picker (preferred) ─────────────────────────────────
+      var peopleSections = '';
+      if (peoplePanels.length > 0) {
+        var firstPP   = peoplePanels[0];
+        var firstPPd  = _tppParse(firstPP.content);
+        var ppMembers = firstPPd.members || [];
+        var ppOpts    = peoplePanels.map(function(pp) {
+          return '<option value="' + pp.id + '">' + _tripEsc(pp.title || 'People') + '</option>';
+        }).join('');
+        var memberOpts = ppMembers.length
+          ? ppMembers.map(function(m, i) {
+              return '<option value="' + i + '">' + _tripEsc(m.name || '?') + '</option>';
+            }).join('')
+          : '<option value="">Add people to the People card first</option>';
+        peopleSections =
+          '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
+               'dark:text-zinc-500">👥 Link to People card</p>' +
+          '<div class="flex gap-1.5 items-center">' +
+            '<select id="tpp-budget-link-people-' + p.id + '" ' +
+              'onchange="tppBudgetPeopleChanged(' + p.id + ')" ' +
+              'class="' + _tppInputCls() + ' flex-1">' + ppOpts + '</select>' +
+            '<select id="tpp-budget-link-pmember-' + p.id + '" ' +
+              'class="' + _tppInputCls() + ' flex-1">' + memberOpts + '</select>' +
+            '<button onclick="tppSaveBudgetPeopleLink(' + p.id + ')" ' +
+              'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
+          '</div>';
+      }
+
+      // ─ Legacy Settle-Up picker (shown if no People panels exist) ───────────
+      var settleSections = '';
+      if (settlePanels.length > 0 && peoplePanels.length === 0) {
+        var settleOpts = settlePanels.map(function(sp) {
+          return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
+        }).join('');
+        var firstSd  = _tppParse(settlePanels[0].content);
+        var firstPpl = firstSd.people || [];
+        var personOpts = firstPpl.length
+          ? firstPpl.map(function(name, i) {
+              return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
+            }).join('')
+          : '<option value="">Add people to Settle Up first</option>';
+        settleSections =
           '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
                'dark:text-zinc-500">🔗 Link to Settle Up person</p>' +
           '<div class="flex gap-1.5 items-center">' +
             '<select id="tpp-budget-link-settle-' + p.id + '" ' +
               'onchange="tppBudgetSettleChanged(' + p.id + ')" ' +
-              'class="' + _tppInputCls() + ' flex-1">' +
-              settleOpts +
-            '</select>' +
+              'class="' + _tppInputCls() + ' flex-1">' + settleOpts + '</select>' +
             '<select id="tpp-budget-link-person-' + p.id + '" ' +
-              'class="' + _tppInputCls() + ' flex-1">' +
-              personOpts +
-            '</select>' +
+              'class="' + _tppInputCls() + ' flex-1">' + personOpts + '</select>' +
             '<button onclick="tppSaveBudgetLink(' + p.id + ')" ' +
               'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
-          '</div>' +
+          '</div>';
+      }
+
+      linkSection =
+        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
+             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' +
+          peopleSections + settleSections +
         '</div>';
     }
   }
@@ -1149,7 +1218,41 @@ window.tppBudgetSettleChanged = function(panelId) {
     : '<option value="">Add people to Settle Up first</option>';
 };
 
-// Save the Budget ↔ Settle Up person link
+// When the People panel dropdown changes, repopulate the member dropdown
+window.tppBudgetPeopleChanged = function(panelId) {
+  var ppEl     = document.getElementById('tpp-budget-link-people-'  + panelId);
+  var memberEl = document.getElementById('tpp-budget-link-pmember-' + panelId);
+  if (!ppEl || !memberEl) return;
+  var pid = parseInt(ppEl.value, 10);
+  var pp  = null;
+  (window._tripPanels || []).forEach(function(x) { if (x.id === pid) pp = x; });
+  var members = pp ? (_tppParse(pp.content).members || []) : [];
+  memberEl.innerHTML = members.length
+    ? members.map(function(m, i) {
+        return '<option value="' + i + '">' + _tripEsc(m.name || '?') + '</option>';
+      }).join('')
+    : '<option value="">Add people to the People card first</option>';
+};
+
+// Save the Budget ↔ People card person link
+window.tppSaveBudgetPeopleLink = function(panelId) {
+  var ppEl     = document.getElementById('tpp-budget-link-people-'  + panelId);
+  var memberEl = document.getElementById('tpp-budget-link-pmember-' + panelId);
+  if (!ppEl || !memberEl || memberEl.value === '') {
+    _tripShowToast('Select a People card and a person first', true);
+    return;
+  }
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  d.linked_people_id  = parseInt(ppEl.value, 10);
+  d.linked_person_idx = parseInt(memberEl.value, 10);
+  // Clear any stale direct-settle link so we don’t double-resolve
+  delete d.linked_settle_id;
+  _tppSave(panelId, d);
+};
+
+// Save the Budget ↔ Settle Up person link (legacy / no People panel)
+// Save the Budget ↔ Settle Up person link (legacy / no People panel)
 window.tppSaveBudgetLink = function(panelId) {
   var settleEl = document.getElementById('tpp-budget-link-settle-' + panelId);
   var personEl = document.getElementById('tpp-budget-link-person-' + panelId);
@@ -1161,15 +1264,18 @@ window.tppSaveBudgetLink = function(panelId) {
   var d = _tppParse(p.content);
   d.linked_settle_id  = parseInt(settleEl.value, 10);
   d.linked_person_idx = parseInt(personEl.value, 10);
+  // Clear People-card link if we’re switching to a direct settle link
+  delete d.linked_people_id;
   _tppSave(panelId, d);
 };
 
-// Remove the Budget ↔ Settle Up person link
+// Remove the Budget person link (clears both modes)
 window.tppUnlinkBudget = function(panelId) {
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   delete d.linked_settle_id;
   delete d.linked_person_idx;
+  delete d.linked_people_id;
   _tppSave(panelId, d);
 };
 
@@ -1593,18 +1699,24 @@ function _tppSettle(p, data, isEdit) {
       _tripEsc(name) + del + '</span>';
   }).join('');
 
+  // When a People card is linked, steer users to manage people there.
   var addPersonRow = isEdit
-    ? '<div class="flex gap-1 mt-1">' +
-        '<input id="tpp-settle-person-' + p.id + '" type="text" maxlength="40" ' +
-          'placeholder="Name" ' +
-          'class="flex-1 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
-                 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
-                 'px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" ' +
-          'onkeydown="if(event.key===\'Enter\'){tppAddSettlePerson(' + p.id + ');event.preventDefault();}" />' +
-        '<button onclick="tppAddSettlePerson(' + p.id + ')" ' +
-          'class="flex-shrink-0 px-2 py-1 text-xs rounded bg-[#0053e2] text-white ' +
-                 'hover:bg-[#0046c0] transition">＋</button>' +
-      '</div>'
+    ? (linkedPeoplePanel
+        ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 italic">' +
+            '👥 People managed via <button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
+              'class="underline text-[#0053e2] dark:text-blue-400 hover:no-underline">' +
+              _tripEsc(linkedPeoplePanel.title || 'People') + '</button>.</p>'
+        : '<div class="flex gap-1 mt-1">' +
+            '<input id="tpp-settle-person-' + p.id + '" type="text" maxlength="40" ' +
+              'placeholder="Name" ' +
+              'class="flex-1 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
+                     'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+                     'px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" ' +
+              'onkeydown="if(event.key===\'Enter\'){tppAddSettlePerson(' + p.id + ');event.preventDefault();}" />' +
+            '<button onclick="tppAddSettlePerson(' + p.id + ')" ' +
+              'class="flex-shrink-0 px-2 py-1 text-xs rounded bg-[#0053e2] text-white ' +
+                     'hover:bg-[#0046c0] transition">\uFF0B</button>' +
+          '</div>')
     : '';
 
   var peopleSection =
@@ -1755,6 +1867,35 @@ function _tppSettle(p, data, isEdit) {
   return layoutPicker + peopleBadge + curRow + peopleSection + expSection + expForm + settleSection + footer;
 }
 
+// ── Settle ↔ People sync helper ────────────────────────────────────────────────
+// Called after settle saves, mirrors changes to any linked People panel.
+// action: 'add' | 'remove'
+function _tppSyncSettleToPeoplePanel(settlePanelId, name, action) {
+  var linkedPeoplePanel = typeof window._tppFindLinkedPeoplePanel === 'function'
+    ? window._tppFindLinkedPeoplePanel(settlePanelId)
+    : null;
+  if (!linkedPeoplePanel) return;
+  var pd = _tppParse(linkedPeoplePanel.content);
+  if (!pd.members) pd.members = [];
+  if (action === 'add') {
+    var exists = pd.members.some(function(m) { return m.name === name; });
+    if (!exists) pd.members.push({ name: name, phone: '', email: '', emergency_name: '', emergency_phone: '' });
+  } else if (action === 'remove') {
+    pd.members = pd.members.filter(function(m) { return m.name !== name; });
+  }
+  // Save quietly — _tppSyncPeopleToSettle is NOT called here to avoid loops.
+  var ppId = linkedPeoplePanel.id;
+  var pp   = _tppGetPanel(ppId);
+  if (!pp) return;
+  pp.content = JSON.stringify(pd);
+  _tripFetch('/home/trip/' + _tripPid + '/plans/' + _tppPlanId + '/panels/' + ppId, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: pp.title, content: pd }),
+  }).then(function() { _tppRefreshCard(ppId); })
+    .catch(function() { _tripShowToast('People card sync failed', true); });
+}
+
 // Compute minimum transactions to settle all debts (greedy algorithm)
 function _tppComputeSettlement(data) {
   var people   = data.people   || [];
@@ -1820,13 +1961,15 @@ window.tppAddSettlePerson = function(panelId) {
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   if (!d.people) d.people = [];
+  if (d.people.indexOf(name) !== -1) { _tripShowToast(name + ' already in the list', true); return; }
   d.people.push(name);
-  _tppSave(panelId, d);
+  _tppSave(panelId, d, function() { _tppSyncSettleToPeoplePanel(panelId, name, 'add'); });
 };
 
 window.tppRemoveSettlePerson = function(panelId, idx) {
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
+  var _removedName = (d.people || [])[idx] || null;
   // Remove person, then remap expense references
   d.people.splice(idx, 1);
   var total = d.people.length;
@@ -1837,7 +1980,9 @@ window.tppRemoveSettlePerson = function(panelId, idx) {
     if (exp.paid_by > idx) exp.paid_by -= 1;
     return exp.split.length > 0 && exp.paid_by >= 0 && exp.paid_by < total;
   });
-  _tppSave(panelId, d);
+  _tppSave(panelId, d, function() {
+    if (_removedName) _tppSyncSettleToPeoplePanel(panelId, _removedName, 'remove');
+  });
 };
 
 window.tppSaveSettleExp = function(panelId) {
@@ -2109,17 +2254,42 @@ window.tripSubmitPanelModal = function() {
 
   if (_tppModalMode === 'add') {
     if (!_tppSelectedType) { _tripShowToast('Pick a card type first', true); return; }
+
+    // Auto-seed People card from an existing Settle panel
+    var initialContent = {};
+    if (_tppSelectedType === 'people') {
+      var seedSettle = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; })[0];
+      if (seedSettle) {
+        var sd = _tppParse(seedSettle.content);
+        var seedMembers = (sd.people || []).map(function(name) {
+          return { name: name, phone: '', email: '', emergency_name: '', emergency_phone: '' };
+        });
+        if (seedMembers.length) {
+          initialContent = { members: seedMembers, linked_settle_id: seedSettle.id };
+        }
+      }
+    }
+
     _tripFetch('/home/trip/' + _tripPid + '/plans/' + _tppPlanId + '/panels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ panel_type: _tppSelectedType, title: title }),
-    }).then(function(r) { return r.json(); })
-      .then(function() {
-        window.tripClosePanelModal();
-        // Always expand Trip Resources so the new card is visible
-        localStorage.setItem(_QC_LS_KEY, 'true');
-        window._tripLoadPanels(_tppPlanId);
-      }).catch(function() { _tripShowToast('Failed to add card', true); });
+      body: JSON.stringify({
+        panel_type: _tppSelectedType,
+        title:      title,
+        content:    Object.keys(initialContent).length ? initialContent : undefined,
+      }),
+    }).then(function(r) {
+      var status = r.status;
+      return r.json().then(function(data) { return { status: status, data: data }; });
+    }).then(function(res) {
+      if (res.status !== 201) {
+        _tripShowToast((res.data && res.data.error) || 'Failed to create card', true);
+        return;
+      }
+      window.tripClosePanelModal();
+      localStorage.setItem(_QC_LS_KEY, 'true');
+      window._tripLoadPanels(_tppPlanId);
+    }).catch(function() { _tripShowToast('Failed to create card', true); });
   } else {
     if (!_tppModalPanel) return;
     var p = _tppGetPanel(_tppModalPanel.id);

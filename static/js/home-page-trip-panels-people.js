@@ -311,7 +311,7 @@ window.tppSavePersonItem = function(panelId) {
   } else {
     d.members.push(member);
   }
-  _tppSave(panelId, d);
+  _tppSave(panelId, d, function() { _tppSyncPeopleToSettle(panelId); });
 };
 
 window.tppDeletePersonItem = function(panelId, idx) {
@@ -319,8 +319,12 @@ window.tppDeletePersonItem = function(panelId, idx) {
   if (!p) return;
   var d = _tppParse(p.content);
   if (!d.members) return;
+  var _removedName = (d.members[idx] || {}).name || null;
   d.members.splice(idx, 1);
-  _tppSave(panelId, d);
+  _tppSave(panelId, d, function() {
+    if (_removedName) _tppRemovePersonFromSettleByName(panelId, _removedName);
+    else              _tppSyncPeopleToSettle(panelId);
+  });
 };
 
 window.tppSavePeopleSettleLink = function(panelId) {
@@ -330,8 +334,30 @@ window.tppSavePeopleSettleLink = function(panelId) {
   var p   = _tppGetPanel(panelId);
   if (!p) return;
   var d = _tppParse(p.content);
+  var prevSid = d.linked_settle_id;
   d.linked_settle_id = sid;
-  _tppSave(panelId, d);
+
+  // When linking a NEW settle panel that already has people, seed any
+  // names not yet in this People card (preserves existing members).
+  if (sid && sid !== prevSid) {
+    var sp = _tppGetPanel(sid);
+    if (sp) {
+      var sd     = _tppParse(sp.content);
+      var sNames = sd.people || [];
+      var existing = (d.members || []).map(function(m) { return m.name; });
+      if (!d.members) d.members = [];
+      sNames.forEach(function(name) {
+        if (name && existing.indexOf(name) === -1) {
+          d.members.push({ name: name, phone: '', email: '', emergency_name: '', emergency_phone: '' });
+        }
+      });
+    }
+  }
+  _tppSave(panelId, d, function() {
+    // After linking, sync this people card's members INTO the settle panel
+    // so the settle panel's people array is always the merged source of truth.
+    _tppSyncPeopleToSettle(panelId);
+  });
 };
 
 window.tppUnlinkPeopleSettle = function(panelId) {
@@ -341,6 +367,50 @@ window.tppUnlinkPeopleSettle = function(panelId) {
   d.linked_settle_id = null;
   _tppSave(panelId, d);
 };
+
+// ── People ↔ Settle sync helpers ────────────────────────────────────────────────
+
+// Rebuild settle panel's people array from all people panel members.
+// Safe to call after any add/edit in the people card.
+function _tppSyncPeopleToSettle(peoplePanelId) {
+  var pp = _tppGetPanel(peoplePanelId);
+  if (!pp) return;
+  var pd = _tppParse(pp.content);
+  var sid = pd.linked_settle_id != null ? parseInt(pd.linked_settle_id, 10) : null;
+  if (!sid) return;
+  var sp = _tppGetPanel(sid);
+  if (!sp) return;
+  var sd = _tppParse(sp.content);
+  var next = (pd.members || []).map(function(m) { return m.name || ''; });
+  if (JSON.stringify(sd.people || []) === JSON.stringify(next)) return; // no-op guard
+  sd.people = next;
+  _tppSave(sid, sd);
+}
+
+// Remove a named person from the linked settle panel + remap expense indices.
+// Mirrors the remap logic from tppRemoveSettlePerson.
+function _tppRemovePersonFromSettleByName(peoplePanelId, name) {
+  var pp = _tppGetPanel(peoplePanelId);
+  if (!pp) return;
+  var pd = _tppParse(pp.content);
+  var sid = pd.linked_settle_id != null ? parseInt(pd.linked_settle_id, 10) : null;
+  if (!sid) return;
+  var sp = _tppGetPanel(sid);
+  if (!sp) return;
+  var sd = _tppParse(sp.content);
+  var idx = (sd.people || []).indexOf(name);
+  if (idx === -1) return;
+  sd.people.splice(idx, 1);
+  var total = sd.people.length;
+  sd.expenses = (sd.expenses || []).filter(function(exp) {
+    exp.split = (exp.split || []).filter(function(i) { return i !== idx; })
+                                 .map(function(i) { return i > idx ? i - 1 : i; });
+    if (exp.paid_by === idx) return false;
+    if (exp.paid_by > idx) exp.paid_by -= 1;
+    return exp.split.length > 0 && exp.paid_by >= 0 && exp.paid_by < total;
+  });
+  _tppSave(sid, sd);
+}
 
 // ── Discovery helper (called by settle & budget renderers) ─────────────────────
 // Returns the first People panel that links to the given settle panel id, or null.
