@@ -19,6 +19,7 @@ var _TPP_TYPES = {
   emergency: { icon: '🆘', label: 'Emergency',    desc: 'Contacts, insurance, medical' },
   notes:     { icon: '📝', label: 'Trip Notes',   desc: 'Free-form scratchpad' },
   settle:    { icon: '🤝', label: 'Settle Up',    desc: 'Split costs & settle debts' },
+  people:    { icon: '👥', label: 'People',        desc: 'Trip members, contacts & balances' },
 };
 
 var _tppModalMode    = 'add';   // 'add' | 'edit'
@@ -287,6 +288,7 @@ function _tppBody(p, data, isEdit) {
   if (p.panel_type === 'emergency') return _tppEmerg(p, data, isEdit);
   if (p.panel_type === 'notes')     return _tppNotes(p, data, isEdit);
   if (p.panel_type === 'settle')    return _tppSettle(p, data, isEdit);
+  if (p.panel_type === 'people')    return window._tppPeople(p, data, isEdit);
   return _tppEmpty('Unknown type');
 }
 
@@ -1532,11 +1534,26 @@ function _tppSettle(p, data, isEdit) {
       }).join('') +
     '</div>';
 
+  // ─ People card badge (if any People panel links to this settle card) ────────
+  var linkedPeoplePanel = typeof window._tppFindLinkedPeoplePanel === 'function'
+    ? window._tppFindLinkedPeoplePanel(p.id)
+    : null;
+  var peopleBadge = linkedPeoplePanel
+    ? '<div class="px-3 py-1 border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">' +
+        '<button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
+          'class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ' +
+                 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 ' +
+                 'hover:bg-blue-100 dark:hover:bg-blue-900/50 transition font-medium cursor-pointer">' +
+          '👥 ' + _tripEsc(linkedPeoplePanel.title || 'People') + ' → view contacts' +
+        '</button>' +
+      '</div>'
+    : '';
+
   // ─ View mode: dispatch non-standard layouts (standard falls through) ─────────
   if (!isEdit) {
-    if (layout === 'compact') return layoutPicker + _tppSettleCompact(p, data);
-    if (layout === 'ledger')  return layoutPicker + _tppSettleLedger(p, data);
-    if (layout === 'receipt') return layoutPicker + _tppSettleReceipt(p, data);
+    if (layout === 'compact') return layoutPicker + peopleBadge + _tppSettleCompact(p, data);
+    if (layout === 'ledger')  return layoutPicker + peopleBadge + _tppSettleLedger(p, data);
+    if (layout === 'receipt') return layoutPicker + peopleBadge + _tppSettleReceipt(p, data);
     // 'standard' falls through to the full standard renderer below
   }
 
@@ -1726,7 +1743,7 @@ function _tppSettle(p, data, isEdit) {
           'Add at least 2 people to start</p>'
       : '');
 
-  return layoutPicker + curRow + peopleSection + expSection + expForm + settleSection + footer;
+  return layoutPicker + peopleBadge + curRow + peopleSection + expSection + expForm + settleSection + footer;
 }
 
 // Compute minimum transactions to settle all debts (greedy algorithm)
