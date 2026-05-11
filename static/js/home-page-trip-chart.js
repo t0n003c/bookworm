@@ -110,7 +110,9 @@ function _tripChartRenderPhaseToggle() {
 window.tripChartSetPhase = function(phase) {
   _tripChartPhase = phase;
   _tripChartSelectedPerson = null; // reset person filter on phase switch
-  if (_tripChartLastData) _tripChartRenderAll(_tripChartLastData);
+  // Always re-fetch on phase switch — avoids serving a stale cached response
+  // that pre-dates backend changes (e.g. category field added to budget items).
+  _tripChartRefresh();
 };
 
 // ── Controls bar (plan picker + currency picker) ──────────────────────────────
