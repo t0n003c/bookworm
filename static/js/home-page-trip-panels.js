@@ -1504,25 +1504,37 @@ function _tppSettle(p, data, isEdit) {
 
   // ─ Expenses list ──────────────────────────────────────
   var expRows = expenses.map(function(exp, idx) {
-    var payer    = people[exp.paid_by] || '?';
+    var payer      = people[exp.paid_by] || '?';
     var splitNames = (exp.split || []).map(function(i) { return people[i] || '?'; }).join(', ');
-    var del = isEdit
-      ? '<button onclick="tppDeleteSettleExp(' + p.id + ',' + idx + ')" ' +
-          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1">✕</button>'
+    var cat        = exp.category || '';
+    var catEmoji   = (window._TRIP_TYPE_EMOJI && cat) ? (window._TRIP_TYPE_EMOJI[cat] || '') : '';
+    var catChip    = cat
+      ? ' <span class="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full text-[9px] ' +
+          'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border ' +
+          'border-gray-200 dark:border-zinc-600">' +
+          (catEmoji ? catEmoji + ' ' : '') + _tripEsc(cat) + '</span>'
+      : '';
+    var editBtn = isEdit
+      ? '<button onclick="tppEditSettleExp(' + p.id + ',' + idx + ')" title="Edit" ' +
+          'class="text-gray-300 hover:text-[#0053e2] text-xs flex-shrink-0 ml-0.5">✏️</button>'
+      : '';
+    var delBtn = isEdit
+      ? '<button onclick="tppDeleteSettleExp(' + p.id + ',' + idx + ')" title="Delete" ' +
+          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-0.5">✕</button>'
       : '';
     return '<div class="flex items-start gap-1 px-3 py-1.5 border-b ' +
              'border-gray-50 dark:border-zinc-800/60 last:border-0">' +
       '<div class="flex-1 min-w-0">' +
         '<div class="flex items-baseline justify-between gap-1">' +
           '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
-            _tripEsc(exp.desc || 'Expense') + '</span>' +
+            _tripEsc(exp.desc || 'Expense') + catChip + '</span>' +
           '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200 flex-shrink-0">' +
-            cur + ' ' + parseFloat(exp.amount || 0).toFixed(2) + '</span>' +
+            cur + ' ' + parseFloat(exp.amount || 0).toFixed(2) + '</span>' +
         '</div>' +
         '<p class="text-[10px] text-gray-400 dark:text-zinc-500 truncate">' +
           '💳 ' + _tripEsc(payer) +
           ' · split: ' + _tripEsc(splitNames) + '</p>' +
-      '</div>' + del + '</div>';
+      '</div>' + editBtn + delBtn + '</div>';
   }).join('');
 
   var expSection =
@@ -1546,9 +1558,18 @@ function _tppSettle(p, data, isEdit) {
       }).join('')
     : '<span class="text-[10px] text-gray-400 dark:text-zinc-500 italic">Add people first</span>';
 
+  // Category options (shared with Spots — pulled from window._TRIP_TYPES)
+  var catTypes   = (window._TRIP_TYPES || ['Restaurant','Hotel','Camping','Hiking',
+                                            'City Attraction','Beach','Museum','Other']);
+  var catOptions = catTypes.map(function(t) {
+    return '<option value="' + _tripEsc(t) + '">' + _tripEsc(t) + '</option>';
+  }).join('') + '<option value="custom">Other (custom…)</option>';
+
   var expForm = isEdit && people.length >= 2
     ? '<div id="tpp-settle-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
-        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
+        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50" ' +
+        'data-edit-idx="-1">' +
+        '<input type="hidden" id="tpp-settle-edit-idx-' + p.id + '" value="-1">' +
         '<input id="tpp-settle-desc-' + p.id + '" type="text" placeholder="What was it?" maxlength="60" ' +
           'class="' + _tppInputCls() + '" />' +
         '<div class="flex gap-1.5">' +
@@ -1560,13 +1581,27 @@ function _tppSettle(p, data, isEdit) {
             }).join('') +
           '</select>' +
         '</div>' +
+        '<div class="flex gap-1.5 items-start">' +
+          '<div class="flex-1">' +
+            '<p class="text-[10px] text-gray-500 dark:text-zinc-400 mb-0.5">Category</p>' +
+            '<select id="tpp-settle-cat-' + p.id + '" ' +
+              'onchange="tppToggleSettleCat(' + p.id + ')" ' +
+              'class="' + _tppInputCls() + ' w-full">' +
+              '<option value="">-- no category --</option>' + catOptions +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div id="tpp-settle-cat-custom-wrap-' + p.id + '" class="hidden">' +
+          '<input id="tpp-settle-cat-custom-' + p.id + '" type="text" maxlength="40" ' +
+            'placeholder="Custom category…" class="' + _tppInputCls() + ' w-full" />' +
+        '</div>' +
         '<div>' +
           '<p class="text-[10px] text-gray-500 dark:text-zinc-400 mb-1">Split between:</p>' +
           '<div id="tpp-settle-split-' + p.id + '" class="flex flex-wrap gap-1">' +
             splitBtns +
           '</div>' +
         '</div>' +
-        _tppFormBtns('tppSaveSettleExp(' + p.id + ')', 'tppHideForm(' + p.id + ',\'settle\')') +
+        _tppFormBtns('tppSaveSettleExp(' + p.id + ')', 'tppSettleCancelEdit(' + p.id + ')') +
       '</div>'
     : '';
 
@@ -1691,9 +1726,14 @@ window.tppRemoveSettlePerson = function(panelId, idx) {
 };
 
 window.tppSaveSettleExp = function(panelId) {
-  var desc  = ((document.getElementById('tpp-settle-desc-'  + panelId) || {}).value || '').trim();
-  var amt   = parseFloat((document.getElementById('tpp-settle-amt-' + panelId) || {}).value || '0');
-  var payer = parseInt((document.getElementById('tpp-settle-payer-' + panelId) || {}).value || '0', 10);
+  var desc   = ((document.getElementById('tpp-settle-desc-'  + panelId) || {}).value || '').trim();
+  var amt    = parseFloat((document.getElementById('tpp-settle-amt-' + panelId) || {}).value || '0');
+  var payer  = parseInt((document.getElementById('tpp-settle-payer-' + panelId) || {}).value || '0', 10);
+  // Category— if 'custom', use the custom input; otherwise use the select value
+  var catSel = (document.getElementById('tpp-settle-cat-' + panelId) || {}).value || '';
+  var catCus = ((document.getElementById('tpp-settle-cat-custom-' + panelId) || {}).value || '').trim();
+  var category = catSel === 'custom' ? catCus : catSel;
+  // Split indices
   var splitContainer = document.getElementById('tpp-settle-split-' + panelId);
   var splitIdxs = [];
   if (splitContainer) {
@@ -1704,15 +1744,104 @@ window.tppSaveSettleExp = function(panelId) {
       }
     }
   }
+  // Validation
   if (!desc) { _tripShowToast('Description required', true); return; }
   if (!amt || amt <= 0) { _tripShowToast('Amount required', true); return; }
   if (!splitIdxs.length) { _tripShowToast('Select at least one person to split with', true); return; }
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   if (!d.expenses) d.expenses = [];
-  d.expenses.push({ desc: desc, paid_by: payer, amount: amt, split: splitIdxs });
+  var expense = { desc: desc, paid_by: payer, amount: amt, split: splitIdxs, category: category };
+  // Edit mode vs add mode
+  var editIdxEl  = document.getElementById('tpp-settle-edit-idx-' + panelId);
+  var editIdx    = editIdxEl ? parseInt(editIdxEl.value, 10) : -1;
+  if (editIdx >= 0 && editIdx < d.expenses.length) {
+    d.expenses[editIdx] = expense;          // update in place
+  } else {
+    d.expenses.push(expense);              // new expense
+  }
   _tppSave(panelId, d);
 };
+
+// Toggle custom category text input when select changes
+window.tppToggleSettleCat = function(panelId) {
+  var sel  = document.getElementById('tpp-settle-cat-'             + panelId);
+  var wrap = document.getElementById('tpp-settle-cat-custom-wrap-' + panelId);
+  if (!sel || !wrap) return;
+  if (sel.value === 'custom') {
+    wrap.classList.remove('hidden');
+    var inp = document.getElementById('tpp-settle-cat-custom-' + panelId);
+    if (inp) inp.focus();
+  } else {
+    wrap.classList.add('hidden');
+  }
+};
+
+// Populate form from an existing expense for editing
+window.tppEditSettleExp = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  var exp = (d.expenses || [])[idx]; if (!exp) return;
+  var people = d.people || [];
+  var catTypes = (window._TRIP_TYPES || []);
+  // Populate fields
+  var descEl   = document.getElementById('tpp-settle-desc-'  + panelId);
+  var amtEl    = document.getElementById('tpp-settle-amt-'   + panelId);
+  var payerEl  = document.getElementById('tpp-settle-payer-' + panelId);
+  var catEl    = document.getElementById('tpp-settle-cat-'   + panelId);
+  var editIdxEl= document.getElementById('tpp-settle-edit-idx-' + panelId);
+  if (descEl)    descEl.value  = exp.desc    || '';
+  if (amtEl)     amtEl.value   = exp.amount  || '';
+  if (payerEl)   payerEl.value = exp.paid_by !== undefined ? exp.paid_by : 0;
+  if (editIdxEl) editIdxEl.value = idx;
+  // Restore category
+  var cat = exp.category || '';
+  if (catEl) {
+    var isKnown = cat === '' || catTypes.indexOf(cat) >= 0;
+    catEl.value = isKnown ? cat : 'custom';
+  }
+  window.tppToggleSettleCat(panelId);
+  if (cat && catTypes.indexOf(cat) < 0 && cat !== '') {
+    var cusEl = document.getElementById('tpp-settle-cat-custom-' + panelId);
+    if (cusEl) cusEl.value = cat;
+  }
+  // Restore split buttons
+  var splitContainer = document.getElementById('tpp-settle-split-' + panelId);
+  if (splitContainer) {
+    var splitSet = {};
+    (exp.split || []).forEach(function(i) { splitSet[i] = true; });
+    var btns = splitContainer.querySelectorAll('.tpp-split-btn');
+    btns.forEach(function(btn) {
+      var bi  = parseInt(btn.getAttribute('data-split-idx'), 10);
+      var on  = !!splitSet[bi];
+      btn.setAttribute('data-selected', on ? '1' : '0');
+      // Reset to base then apply state (avoids fragile string-replace on class)
+      btn.className = 'tpp-split-btn px-1.5 py-0.5 text-[10px] rounded-full border transition '
+        + (on
+          ? 'bg-[#0053e2] border-[#0053e2] text-white dark:bg-[#0053e2] dark:border-[#0053e2]'
+          : 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-600');
+    });
+  }
+  // Show the form
+  window.tppShowForm(panelId, 'settle');
+  var formEl = document.getElementById('tpp-settle-form-' + panelId);
+  if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
+
+// Cancel edit: reset form to add mode and hide
+window.tppSettleCancelEdit = function(panelId) {
+  var editIdxEl = document.getElementById('tpp-settle-edit-idx-' + panelId);
+  if (editIdxEl) editIdxEl.value = '-1';
+  var descEl = document.getElementById('tpp-settle-desc-'  + panelId);
+  var amtEl  = document.getElementById('tpp-settle-amt-'   + panelId);
+  var catEl  = document.getElementById('tpp-settle-cat-'   + panelId);
+  if (descEl) descEl.value = '';
+  if (amtEl)  amtEl.value  = '';
+  if (catEl)  catEl.value  = '';
+  window.tppToggleSettleCat(panelId);   // hide custom input
+  window.tppHideForm(panelId, 'settle');
+};
+
 
 window.tppDeleteSettleExp = function(panelId, idx) {
   var p = _tppGetPanel(panelId); if (!p) return;

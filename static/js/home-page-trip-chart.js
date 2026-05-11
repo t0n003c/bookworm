@@ -505,9 +505,9 @@ function _tripRenderBudgetChart(data) {
       ? 'Spot estimates by category — switch to <strong>Actuals</strong> to see budget line items. ' +
         '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar →</span>'
       : person
-        ? '<span style="color:#2a8703">■ Green</span> = expense they paid upfront &nbsp;·&nbsp; ' +
-          '<span style="color:#0053e2">■ Blue</span> = their share of a group expense. ' +
-          'Data comes from Settle Up panels.'
+        ? '<span style="opacity:1">■</span> Bright = paid upfront &nbsp;·&nbsp; ' +
+          '<span style="opacity:0.5">■</span> Dim = shared expense. ' +
+          'Bars coloured by category. Hover for details.'
         : 'Blue = spot estimates &darr; Yellow = manual budget items. ' +
           'Select a <strong>person above</strong> to see their individual spend. ' +
           '<span class="text-[#0053e2] dark:text-blue-400 font-medium cursor-default">Click any bar →</span>';
@@ -555,10 +555,11 @@ function _tripRenderBudgetChart(data) {
         if (shareConv <= 0) return;
         var didPay = (exp.paid_by === personIdx);
         personEntries.push({
-          label:  exp.desc || 'Expense',
-          cost:   shareConv,
-          didPay: didPay,
-          panel:  sp.title,
+          label:    exp.desc || 'Expense',
+          cost:     shareConv,
+          didPay:   didPay,
+          panel:    sp.title,
+          category: exp.category || '',
         });
       });
     });
@@ -571,6 +572,9 @@ function _tripRenderBudgetChart(data) {
     }
 
     var pTotal = personEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+
+    // Color by category; didPay = full opacity, shared = 55% opacity
+    var _tc = window._tripTypeColor || function() { return '#6b7280'; };
     _tripBudgetChart = new window.Chart(canvas, {
       type: 'bar',
       data: {
@@ -579,12 +583,14 @@ function _tripRenderBudgetChart(data) {
           label: cur + ' share',
           data:  personEntries.map(function(e) { return e.cost; }),
           backgroundColor: personEntries.map(function(e) {
-            return e.didPay ? '#2a8703cc' : '#0053e2cc';
+            var hex = e.category ? _tc(e.category) : '#6b7280';
+            return hex + (e.didPay ? 'cc' : '66');   // full vs dim
           }),
           borderColor: personEntries.map(function(e) {
-            return e.didPay ? '#2a8703' : '#0053e2';
+            return e.category ? _tc(e.category) : '#6b7280';
           }),
-          borderWidth: 1.5, borderRadius: 4,
+          borderWidth: function(ctx) { return personEntries[ctx.dataIndex] && personEntries[ctx.dataIndex].didPay ? 2 : 1; },
+          borderRadius: 4,
         }],
       },
       options: {
@@ -593,11 +599,14 @@ function _tripRenderBudgetChart(data) {
           legend: {display: false},
           tooltip: {callbacks: {
             label: function(ctx) {
-              var e   = personEntries[ctx.dataIndex];
-              var pct = pTotal > 0 ? Math.round(ctx.raw / pTotal * 100) : 0;
-              var who = e.didPay ? 'Paid upfront by ' + person : 'Share of group expense';
-              return [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)',
-                      ' ' + who, ' Panel: ' + e.panel];
+              var e    = personEntries[ctx.dataIndex];
+              var pct  = pTotal > 0 ? Math.round(ctx.raw / pTotal * 100) : 0;
+              var who  = e.didPay ? '🟢 Paid upfront by ' + person : '🔵 Share of group expense';
+              var cat  = e.category ? '🏷️ ' + e.category : '';
+              var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' ' + who];
+              if (cat) lines.push(' ' + cat);
+              lines.push(' Panel: ' + e.panel);
+              return lines;
             },
           }},
         },

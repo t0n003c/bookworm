@@ -429,12 +429,12 @@ function _tripRenderSpotForm(v) {
     '</div>' +
     // Type
     '<div>' +
-      '<label class="' + _lc() + '">Type</label>' +
+      '<label class="' + _lc() + '">Category</label>' +
       '<select id="tsf-type" onchange="tripSpotTypeChange()" class="' + _ic() + '">' +
         typeOpts + '</select>' +
     '</div>' +
     '<div id="tsf-custom-wrap" class="' + (isCustom ? '' : 'hidden') + '">' +
-      '<label class="' + _lc() + '">Custom type</label>' +
+      '<label class="' + _lc() + '">Custom category</label>' +
       '<input id="tsf-type-custom" type="text" ' +
         'value="' + _tripEsc(isCustom ? v.spot_type : '') + '" ' +
         'placeholder="e.g. Winery" class="' + _ic() + '">' +
@@ -951,3 +951,4 @@ function _tripShowToast(msg, isErr) { window._tripShowToast(msg, isErr); }
 window._tripChartColors = _TRIP_CHART_COLORS;
 window._tripTypeColor   = _tripTypeColor;
 window._TRIP_TYPE_EMOJI = _TRIP_TYPE_EMOJI;
+window._TRIP_TYPES      = _TRIP_TYPES;   // shared with settle panel category picker

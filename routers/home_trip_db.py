@@ -884,6 +884,7 @@ async def _panel_summaries(
                         "amount":   float(exp.get("amount") or 0),
                         "paid_by":  exp.get("paid_by"),
                         "split":    exp.get("split") or list(range(len(people))),
+                        "category": exp.get("category") or "",
                     }
                     for exp in expenses
                 ],
