@@ -208,6 +208,87 @@ function _tripEsc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// ── Shared per-person entry builder ──────────────────────────────────────────
+// Computes the canonical flat list of cost entries for a specific person.
+// Used by BOTH the doughnut (Budget by Category) and bar (Actual Expenses)
+// charts so they always display the same total.
+//
+// Each entry: { label, cost, didPay, panel, category, isManual }
+function _tripPersonEntries(data, person) {
+  var entries = [];
+
+  // ─ 1. Settle panel expenses ───────────────────────────────────────
+  (data.settle_panels || []).forEach(function(sp) {
+    var personIdx = -1;
+    (sp.per_person || []).forEach(function(pp, loopI) {
+      if (pp.name === person) personIdx = (pp.idx !== undefined ? pp.idx : loopI);
+    });
+    if (personIdx < 0) return;
+    (sp.expenses || []).forEach(function(exp) {
+      var splitArr = Array.isArray(exp.split) ? exp.split : [];
+      if (!splitArr.length && sp.per_person && sp.per_person.length) {
+        for (var fi = 0; fi < sp.per_person.length; fi++) splitArr.push(fi);
+      }
+      if (splitArr.indexOf(personIdx) === -1) return;
+      var shareConv = Math.round(_tripConvert(exp.amount / (splitArr.length || 1), sp.currency));
+      if (shareConv <= 0) return;
+      entries.push({
+        label:    exp.desc || 'Expense',
+        cost:     shareConv,
+        didPay:   exp.paid_by === personIdx,
+        panel:    sp.title,
+        category: exp.category || '',
+      });
+    });
+  });
+
+  // ─ 2. Budget panel items ─────────────────────────────────────────
+  var settleNames = {};
+  (data.settle_panels || []).forEach(function(sp) {
+    (sp.per_person || []).forEach(function(pp) { settleNames[pp.name] = true; });
+  });
+  var settlePeopleCount = Object.keys(settleNames).length;
+
+  (data.budget_panels || []).forEach(function(bp) {
+    var scope = (bp.budget_scope || 'group');
+    if (scope === 'individual') {
+      if ((bp.budget_person || '').trim() !== person) return;
+      (bp.items || []).forEach(function(it) {
+        var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
+        if (conv <= 0) return;
+        entries.push({
+          label:    it.label || it.note || 'Budget Item',
+          cost:     conv,
+          didPay:   true,
+          panel:    bp.title,
+          category: it.category || '',
+          isManual: true,
+        });
+      });
+    } else {
+      // Group: divide equally; use people_count from linked People card, else
+      // fall back to unique names across all settle panels.
+      var divisor = (bp.people_count && bp.people_count > 0)
+        ? bp.people_count
+        : (settlePeopleCount > 0 ? settlePeopleCount : 1);
+      (bp.items || []).forEach(function(it) {
+        var share = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency) / divisor);
+        if (share <= 0) return;
+        entries.push({
+          label:    it.label || it.note || 'Group Budget Item',
+          cost:     share,
+          didPay:   false,
+          panel:    bp.title + ' (÷' + divisor + ')',
+          category: it.category || '',
+          isManual: true,
+        });
+      });
+    }
+  });
+
+  return entries;
+}
+
 function _tripChartSubhead(icon, title, desc) {
   return '<div class="px-1 pt-4 pb-1">' +
     '<p class="text-xs font-semibold text-gray-700 dark:text-zinc-200">' + icon + ' ' + title + '</p>' +
@@ -499,26 +580,29 @@ function _tripRenderTypeChart(data) {
       '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">' + msg + '</p>';
   }
 
-  // ── ACTUALS: Budget by Category doughnut ────────────────────────────────
+  // ── ACTUALS: Budget by Category doughnut ──────────────────────────────────
   if (isActuals) {
     var _tc = window._tripTypeColor || function() { return '#6b7280'; };
     var catMap = {};
-    // When a person is selected, only count:
-    //   • group-scope panels (everyone's share)
-    //   • individual-scope panels whose budget_person matches the selected name
-    var doughnutPanels = (data.budget_panels || []).filter(function(bp) {
-      if (!person) return true;
-      if ((bp.budget_scope || 'group') !== 'individual') return true;
-      return (bp.budget_person || '').trim() === person;
-    });
-    doughnutPanels.forEach(function(bp) {
-      (bp.items || []).forEach(function(it) {
-        var conv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
-        if (conv <= 0) return;
-        var cat = (it.category || '').trim() || 'Uncategorized';
-        catMap[cat] = (catMap[cat] || 0) + conv;
+
+    if (person) {
+      // ─ Person selected: use the shared entry builder so the doughnut total
+      // always matches the Net Trip Cost stat card and the bar chart.
+      _tripPersonEntries(data, person).forEach(function(e) {
+        var cat = (e.category || '').trim() || 'Uncategorized';
+        catMap[cat] = (catMap[cat] || 0) + e.cost;
       });
-    });
+    } else {
+      // ─ All: budget items grouped by category across all panels
+      (data.budget_panels || []).forEach(function(bp) {
+        (bp.items || []).forEach(function(it) {
+          var conv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
+          if (conv <= 0) return;
+          var cat = (it.category || '').trim() || 'Uncategorized';
+          catMap[cat] = (catMap[cat] || 0) + conv;
+        });
+      });
+    }
     var catEntries = Object.keys(catMap)
       .map(function(cat) { return { label: cat, total: catMap[cat] }; })
       .filter(function(e) { return e.total > 0; })
@@ -672,89 +756,10 @@ function _tripRenderBudgetChart(data) {
     slot.innerHTML =
       '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center pt-14">' + msg + '</p>';
   }
-
-  // ── ACTUALS + person selected ───────────────────────────────────────────────
+  // ── ACTUALS + person selected ───────────────────────────────────────────
   if (!isPlanning && person) {
-    var personEntries = [];
-    (data.settle_panels || []).forEach(function(sp) {
-      // Find person’s index — use pp.idx if present (new API), else fall back to
-      // loop position (old cached data that pre-dates the idx field).
-      var personIdx = -1;
-      (sp.per_person || []).forEach(function(pp, loopI) {
-        if (pp.name === person) personIdx = (pp.idx !== undefined ? pp.idx : loopI);
-      });
-      if (personIdx < 0) return;  // person not in this settle panel
-
-      (sp.expenses || []).forEach(function(exp) {
-        var splitArr = Array.isArray(exp.split) ? exp.split : [];
-        // Fallback: if split is empty/missing treat as equal split across all people
-        if (!splitArr.length && sp.per_person && sp.per_person.length) {
-          for (var fi = 0; fi < sp.per_person.length; fi++) splitArr.push(fi);
-        }
-        if (splitArr.indexOf(personIdx) === -1) return;  // not in this split
-        var share     = splitArr.length > 0 ? exp.amount / splitArr.length : 0;
-        var shareConv = Math.round(_tripConvert(share, sp.currency));
-        if (shareConv <= 0) return;
-        var didPay = (exp.paid_by === personIdx);
-        personEntries.push({
-          label:    exp.desc || 'Expense',
-          cost:     shareConv,
-          didPay:   didPay,
-          panel:    sp.title,
-          category: exp.category || '',
-        });
-      });
-    });
-    // Collect unique people names across ALL settle panels — used as fallback
-    // denominator when a group budget panel has no people_count.
-    var settleNames = {};
-    (data.settle_panels || []).forEach(function(sp) {
-      (sp.per_person || []).forEach(function(pp) { settleNames[pp.name] = true; });
-    });
-    var settlePeopleCount = Object.keys(settleNames).length;
-
-    // Also pull in manual items from individual budget panels for this person
-    (data.budget_panels || []).forEach(function(bp) {
-      var scope = (bp.budget_scope || 'group');
-
-      if (scope === 'individual') {
-        // Individual: only include if this person is explicitly assigned
-        if ((bp.budget_person || '').trim() !== person) return;
-        (bp.items || []).forEach(function(it) {
-          var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
-          if (conv <= 0) return;
-          personEntries.push({
-            label:    it.label || it.note || 'Budget Item',
-            cost:     conv,
-            didPay:   true,
-            panel:    bp.title,
-            category: it.category || '',
-            isManual: true,
-          });
-        });
-
-      } else {
-        // Group: divide each item equally among the group members.
-        // Use people_count from the linked People card; fall back to
-        // the number of unique names across all settle panels.
-        var divisor = (bp.people_count && bp.people_count > 0)
-          ? bp.people_count
-          : (settlePeopleCount > 0 ? settlePeopleCount : 1);
-        (bp.items || []).forEach(function(it) {
-          var fullConv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
-          var share    = Math.round(fullConv / divisor);
-          if (share <= 0) return;
-          personEntries.push({
-            label:    it.label || it.note || 'Group Budget Item',
-            cost:     share,
-            didPay:   false,   // group items = shared cost, dim colour
-            panel:    bp.title + ' (' + divisor + ' people)',
-            category: it.category || '',
-            isManual: true,
-          });
-        });
-      }
-    });
+    // Shared helper ensures bar chart and doughnut always use identical totals.
+    var personEntries = _tripPersonEntries(data, person);
     personEntries.sort(function(a, b) { return b.cost - a.cost; });
 
     if (!personEntries.length) {
