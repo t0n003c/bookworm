@@ -2446,3 +2446,19 @@ window.tripSubmitPanelModal = function() {
     }).catch(function() { _tripShowToast('Failed to save', true); });
   }
 };
+
+// ── tppOpenPanelRef ────────────────────────────────────────────────────────────
+// Scroll the referenced panel card into view and briefly flash a ring around
+// it so the user knows exactly which card was linked.
+window.tppOpenPanelRef = function(panelId) {
+  var card = document.getElementById('trip-panel-card-' + panelId);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  // Flash a blue ring for 1.2 s so it's easy to spot
+  card.style.transition = 'box-shadow 0.15s ease';
+  card.style.boxShadow  = '0 0 0 3px #0053e2';
+  setTimeout(function() {
+    card.style.boxShadow = '';
+    setTimeout(function() { card.style.transition = ''; }, 200);
+  }, 1200);
+};
