@@ -1701,7 +1701,7 @@ window.tppSettleSetLayout = function(panelId, layout) {
 };
 
 // ── Standard layout (view-only) ────────────────────────────────────────────────────
-function _tppSettleStandard(p, data) {
+function _tppSettleStandard(p, data, linkedPeoplePanel) {
   var people   = data.people   || [];
   var expenses = data.expenses || [];
   var cur      = data.currency || 'USD';
@@ -1748,10 +1748,21 @@ function _tppSettleStandard(p, data) {
     '</div>';
 
   // ─ People avatars ──────────────────────────────────────────────
+  var peopleHeaderBtn = linkedPeoplePanel
+    ? '<button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
+        'class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ' +
+               'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 ' +
+               'hover:bg-blue-100 dark:hover:bg-blue-900/50 transition font-medium cursor-pointer">' +
+        '\uD83D\uDC65\u00a0' + _tripEsc(linkedPeoplePanel.title || 'People') + ' \u2192 view contacts' +
+      '</button>'
+    : '';
   var avatarRow = people.length
     ? '<div class="px-4 py-3 border-b border-gray-100 dark:border-zinc-800">' +
-        '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
-           'text-gray-400 dark:text-zinc-500 mb-2">People</p>' +
+        '<div class="flex items-center justify-between mb-2">' +
+          '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
+             'text-gray-400 dark:text-zinc-500">People</p>' +
+          peopleHeaderBtn +
+        '</div>' +
         '<div class="flex flex-wrap gap-3">' +
           people.map(function(name, i) {
             return '<div class="flex flex-col items-center gap-1">' +
@@ -2050,12 +2061,12 @@ function _tppSettle(p, data, isEdit) {
 
   // ─ View mode: dispatch to layout renderers ───────────────────────────────
   if (!isEdit) {
-    if (layout === 'standard') return layoutPicker + peopleBadge + _tppSettleStandard(p, liveData);
+    if (layout === 'standard') return layoutPicker + _tppSettleStandard(p, liveData, linkedPeoplePanel);
     if (layout === 'compact')  return layoutPicker + peopleBadge + _tppSettleCompact(p, liveData);
     if (layout === 'ledger')   return layoutPicker + peopleBadge + _tppSettleLedger(p, liveData);
     if (layout === 'receipt')  return layoutPicker + peopleBadge + _tppSettleReceipt(p, liveData);
     // unknown layout → fall back to standard
-    return layoutPicker + peopleBadge + _tppSettleStandard(p, liveData);
+    return layoutPicker + _tppSettleStandard(p, liveData, linkedPeoplePanel);
   }
 
   // ─ Currency row (edit mode) ────────────────────────────────────
