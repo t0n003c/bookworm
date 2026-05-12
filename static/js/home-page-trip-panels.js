@@ -1819,24 +1819,55 @@ function _tppSettle(p, data, isEdit) {
   }).join('');
 
   // When a People card is linked, steer users to manage people there.
-  var addPersonRow = isEdit
-    ? (linkedPeoplePanel
-        ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 italic">' +
-            '👥 People managed via <button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
-              'class="underline text-[#0053e2] dark:text-blue-400 hover:no-underline">' +
-              _tripEsc(linkedPeoplePanel.title || 'People') + '</button>.</p>'
-        : '<div class="flex gap-1 mt-1">' +
-            '<input id="tpp-settle-person-' + p.id + '" type="text" maxlength="40" ' +
-              'placeholder="Name" ' +
-              'class="flex-1 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
-                     'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
-                     'px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" ' +
-              'onkeydown="if(event.key===\'Enter\'){tppAddSettlePerson(' + p.id + ');event.preventDefault();}" />' +
-            '<button onclick="tppAddSettlePerson(' + p.id + ')" ' +
-              'class="flex-shrink-0 px-2 py-1 text-xs rounded bg-[#0053e2] text-white ' +
-                     'hover:bg-[#0046c0] transition">\uFF0B</button>' +
-          '</div>')
-    : '';
+  var addPersonRow = '';
+  if (isEdit) {
+    if (linkedPeoplePanel) {
+      // Linked — show reference + unlink button
+      addPersonRow =
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 italic">' +
+          '\uD83D\uDC65 People managed via <button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
+            'class="underline text-[#0053e2] dark:text-blue-400 hover:no-underline">' +
+            _tripEsc(linkedPeoplePanel.title || 'People') + '</button>' +
+          ' \u00b7 <button onclick="tppSettleUnlinkPeople(' + p.id + ')" ' +
+            'class="text-red-400 hover:text-red-500">Unlink</button>' +
+        '</p>';
+    } else {
+      // Not linked — manual add row + optional link-to-People-card picker
+      var _settlePeoplePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; });
+      var _peopleLinkRow = '';
+      if (_settlePeoplePanels.length) {
+        _peopleLinkRow =
+          '<div class="mt-2 pt-1.5 border-t border-gray-100 dark:border-zinc-800">' +
+            '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-1">' +
+              '\uD83D\uDD17 Or pull members from a People card:</p>' +
+            '<div class="flex gap-1">' +
+              '<select id="tpp-settle-people-sel-' + p.id + '" ' +
+                'class="flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
+                       'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 px-2 py-1.5">' +
+                _settlePeoplePanels.map(function(pp) {
+                  return '<option value="' + pp.id + '">' + _tripEsc(pp.title || 'People') + '</option>';
+                }).join('') +
+              '</select>' +
+              '<button onclick="tppSettleSavePeopleLink(' + p.id + ')" ' +
+                'class="' + _tppBtnPrimary() + ' flex-shrink-0">Link</button>' +
+            '</div>' +
+          '</div>';
+      }
+      addPersonRow =
+        '<div class="flex gap-1 mt-1">' +
+          '<input id="tpp-settle-person-' + p.id + '" type="text" maxlength="40" ' +
+            'placeholder="Name" ' +
+            'class="flex-1 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
+                   'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+                   'px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" ' +
+            'onkeydown="if(event.key===\'Enter\'){tppAddSettlePerson(' + p.id + ');event.preventDefault();}" />' +
+          '<button onclick="tppAddSettlePerson(' + p.id + ')" ' +
+            'class="flex-shrink-0 px-2 py-1 text-xs rounded bg-[#0053e2] text-white ' +
+                   'hover:bg-[#0046c0] transition">\uFF0B</button>' +
+        '</div>' +
+        _peopleLinkRow;
+    }
+  }
 
   var peopleSection =
     '<div class="px-3 py-2 flex-shrink-0 border-b border-gray-100 dark:border-zinc-800">' +
@@ -2447,7 +2478,7 @@ window.tripSubmitPanelModal = function() {
   }
 };
 
-// ── tppOpenPanelRef ────────────────────────────────────────────────────────────
+// ── tppOpenPanelRef ──────────────────────────────────────────────────────────
 // Scroll the referenced panel card into view and briefly flash a ring around
 // it so the user knows exactly which card was linked.
 window.tppOpenPanelRef = function(panelId) {
@@ -2461,4 +2492,27 @@ window.tppOpenPanelRef = function(panelId) {
     card.style.boxShadow = '';
     setTimeout(function() { card.style.transition = ''; }, 200);
   }, 1200);
+};
+
+// ── Settle-side People-card link handlers ─────────────────────────────────────
+// A settle card can declare its own linked_people_id so multiple settle cards
+// can reference the same People card without the People card knowing about each
+// of them. _tppFindLinkedPeoplePanel checks both directions.
+
+window.tppSettleSavePeopleLink = function(settleId) {
+  var sel = document.getElementById('tpp-settle-people-sel-' + settleId);
+  if (!sel || !sel.value) return;
+  var p = _tppGetPanel(settleId);
+  if (!p) return;
+  var content = _tppParse(p.content);
+  content.linked_people_id = parseInt(sel.value, 10);
+  _tppSave(settleId, content);
+};
+
+window.tppSettleUnlinkPeople = function(settleId) {
+  var p = _tppGetPanel(settleId);
+  if (!p) return;
+  var content = _tppParse(p.content);
+  delete content.linked_people_id;
+  _tppSave(settleId, content);
 };

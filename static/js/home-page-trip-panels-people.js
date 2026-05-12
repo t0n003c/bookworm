@@ -423,6 +423,7 @@ function _tppRemovePersonFromSettleByName(peoplePanelId, name) {
 // ── Discovery helper (called by settle & budget renderers) ─────────────────────
 // Returns the first People panel that links to the given settle panel id, or null.
 window._tppFindLinkedPeoplePanel = function(settlePanelId) {
+  // Direction A: a People card declares linked_settle_id pointing at this settle panel.
   var found = null;
   (window._tripPanels || []).forEach(function(x) {
     if (found || x.panel_type !== 'people') return;
@@ -431,5 +432,24 @@ window._tppFindLinkedPeoplePanel = function(settlePanelId) {
       if (d.linked_settle_id === settlePanelId) found = x;
     } catch (e) {}
   });
-  return found;
+  if (found) return found;
+
+  // Direction B: the settle panel itself declares linked_people_id.
+  // Allows a second (or third) settle card to link to the same People card
+  // without the People card needing to know about every settle card.
+  var settlePanel = null;
+  (window._tripPanels || []).forEach(function(x) {
+    if (x.id === settlePanelId) settlePanel = x;
+  });
+  if (!settlePanel) return null;
+  try {
+    var sd   = JSON.parse(settlePanel.content || '{}');
+    var ppId = sd.linked_people_id ? parseInt(sd.linked_people_id, 10) : null;
+    if (!ppId) return null;
+    var ppanel = null;
+    (window._tripPanels || []).forEach(function(x) {
+      if (x.id === ppId && x.panel_type === 'people') ppanel = x;
+    });
+    return ppanel;
+  } catch (e) { return null; }
 };
