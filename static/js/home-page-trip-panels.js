@@ -1729,7 +1729,7 @@ function _tppSettleStandard(p, data) {
   // ─ Hero summary strip ───────────────────────────────────────────
   var hero =
     '<div class="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 ' +
-              'bg-gradient-to-r from-blue-50 to-white dark:from-zinc-800/60 dark:to-zinc-900/20">' +
+              'bg-gradient-to-r from-blue-50 to-white dark:from-zinc-800 dark:to-zinc-900">'  +
       '<div class="flex items-end justify-between">' +
         '<div>' +
           '<p class="text-[10px] font-semibold uppercase tracking-widest ' +
@@ -1815,8 +1815,8 @@ function _tppSettleStandard(p, data) {
       : '';
 
     var rowBg = ei % 2 === 0
-      ? 'bg-white dark:bg-transparent'
-      : 'bg-gray-50/60 dark:bg-zinc-800/30';
+      ? 'bg-white dark:bg-zinc-900'
+      : 'bg-gray-50/60 dark:bg-zinc-800/40';
 
     return '<div class="flex items-center gap-3 px-4 py-2.5 ' + rowBg +
                ' border-b border-gray-100 dark:border-zinc-800/60 last:border-0">' +
@@ -1923,18 +1923,18 @@ function _tppSettleCompact(p, data) {
   var txns     = _tppComputeSettlement(data);
   var txnRows  = txns.map(function(t) {
     return '<div class="flex items-center gap-1 py-0.5">' +
-      '<span class="text-xs font-medium truncate max-w-[35%]">' + _tripEsc(people[t.from] || '?') + '</span>' +
-      '<span class="text-[10px] text-gray-400 flex-shrink-0">→</span>' +
-      '<span class="text-xs font-medium truncate flex-1">' + _tripEsc(people[t.to] || '?') + '</span>' +
-      '<span class="text-xs font-semibold text-[#0053e2] ml-auto">' + cur + ' ' + t.amt.toFixed(2) + '</span>' +
+      '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate max-w-[35%]">' + _tripEsc(people[t.from] || '?') + '</span>' +
+      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 flex-shrink-0">→</span>' +
+      '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate flex-1">' + _tripEsc(people[t.to] || '?') + '</span>' +
+      '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 ml-auto">' + cur + ' ' + t.amt.toFixed(2) + '</span>' +
     '</div>';
   }).join('');
   return '<div class="px-3 py-2 text-center border-b border-gray-100 dark:border-zinc-800">' +
       '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' + expenses.length + ' expenses</p>' +
-      '<p class="text-xl font-bold text-gray-700 dark:text-zinc-200">' + cur + ' ' + total.toFixed(2) + '</p>' +
+      '<p class="text-xl font-bold text-gray-700 dark:text-zinc-200">' + cur + ' ' + total.toFixed(2) + '</p>' +
     '</div>' +
     '<div class="px-3 py-2">' +
-      (txnRows || '<p class="text-[10px] text-gray-400 italic text-center py-2">🎉 All settled!</p>') +
+      (txnRows || '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic text-center py-2">🎉 All settled!</p>') +
     '</div>';
 }
 
@@ -1942,7 +1942,7 @@ function _tppSettleLedger(p, data) {
   var people   = data.people   || [];
   var expenses = data.expenses || [];
   var cur      = data.currency || 'USD';
-  if (!people.length) return '<p class="text-[10px] text-gray-400 italic px-3 py-2">No people yet</p>';
+  if (!people.length) return '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic px-3 py-2">No people yet</p>';
 
   var paid  = people.map(function() { return 0; });
   var share = people.map(function() { return 0; });
@@ -1990,7 +1990,7 @@ function _tppSettleReceipt(p, data) {
   var people   = data.people   || [];
   var expenses = data.expenses || [];
   var cur      = data.currency || 'USD';
-  if (!expenses.length) return '<p class="text-[10px] text-gray-400 italic px-3 py-2">No expenses recorded</p>';
+  if (!expenses.length) return '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic px-3 py-2">No expenses recorded</p>';
 
   var total = 0;
   var rows = expenses.map(function(exp) {
