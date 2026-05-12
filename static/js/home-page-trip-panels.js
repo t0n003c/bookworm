@@ -500,17 +500,58 @@ function _tppBudget(p, data, isEdit) {
     (window._tripPanels || []).forEach(function(x) { if (x.id === linkedSettleId) settlePanel = x; });
   }
 
+  // ── Resolve the authoritative people list for any settle panel ───────────────
+  // Declared here (before the link-resolution blocks) so it is available to both
+  // the settle-panel name lookup below AND the all-panels expense scan further down.
+  //
+  // Mirrors _tppFindLinkedPeoplePanel / backend settle_to_members:
+  //   (A) settle card stores people[] directly                  → use it
+  //   (B) settle card has linked_people_id → People card members → use them
+  //   (C) a People card has linked_settle_id = this settle card → use its members
+  function _resolveSettlePeople(sp) {
+    var _sd  = _tppParse(sp.content);
+    var _ppl = _sd.people || [];
+    if (_ppl.length) return _ppl;                     // (A) fast path
+
+    // (B) settle card owns the link
+    var _lpId = _sd.linked_people_id ? parseInt(_sd.linked_people_id, 10) : null;
+    if (_lpId) {
+      (window._tripPanels || []).forEach(function(x) {
+        if (x.id !== _lpId || x.panel_type !== 'people') return;
+        var _pd = _tppParse(x.content);
+        _ppl = (_pd.members || []).map(function(m) {
+          return typeof m === 'string' ? m : (m.name || '');
+        });
+      });
+      if (_ppl.length) return _ppl;
+    }
+
+    // (C) People card owns the link
+    (window._tripPanels || []).forEach(function(x) {
+      if (x.panel_type !== 'people' || _ppl.length) return;
+      try {
+        var _d = JSON.parse(x.content || '{}');
+        if (parseInt(_d.linked_settle_id, 10) === sp.id) {
+          _ppl = (_d.members || []).map(function(m) {
+            return typeof m === 'string' ? m : (m.name || '');
+          });
+        }
+      } catch (e) {}
+    });
+    return _ppl;
+  }
+
   if (settlePanel) {
-    var sd = _tppParse(settlePanel.content);
-    var sdPeople = sd.people || [];
-    // For People-card links, match by name; for legacy, use stored index.
+    // Use the same resolver so an empty people[] (card linked via linked_people_id)
+    // still gives us the real names for the Mode-b linkedPersonName lookup.
+    var sdPeople = _resolveSettlePeople(settlePanel);
     var settleIdx = linkedPersonIdx;
     if (linkSource === 'people' && linkedPersonName) {
       settleIdx = sdPeople.indexOf(linkedPersonName);
     } else if (linkSource === 'settle') {
       linkedPersonName = settleIdx !== null ? (sdPeople[settleIdx] || '') : '';
     }
-    // Note: expense collection is deferred to the all-panels loop below.
+    // Expense collection is deferred to the all-panels scan below.
   } else if (linkSource === 'settle' && linkedSettleId !== null) {
     // Direct-settle link but the Settle panel is gone — discard only the settle IDs.
     linkedSettleId  = null;
@@ -521,16 +562,14 @@ function _tppBudget(p, data, isEdit) {
   // exists but has no Settle link — that's fine.
 
   // ── Collect expenses from ALL settle panels for this person ──────────────────────
-  // Previously only one settlePanel was scanned, missing any second+ card.
-  // Now we resolve the person by name across every settle panel.
   if (linkedPersonName) {
     (window._tripPanels || []).forEach(function(sp) {
       if (sp.panel_type !== 'settle') return;
-      var sd2     = _tppParse(sp.content);
-      var people2 = sd2.people || [];
+      var _sd2    = _tppParse(sp.content);
+      var people2 = _resolveSettlePeople(sp);
       var idx2    = people2.indexOf(linkedPersonName);
       if (idx2 === -1) return;   // person not in this panel
-      (sd2.expenses || []).forEach(function(exp) {
+      (_sd2.expenses || []).forEach(function(exp) {
         var splitArr = exp.split || [];
         if (splitArr.indexOf(idx2) === -1 || !splitArr.length) return;
         var share = (parseFloat(exp.amount) || 0) / splitArr.length;
