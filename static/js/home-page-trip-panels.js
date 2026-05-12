@@ -10,7 +10,8 @@
  *   tppTogglePack, tppClearDone, tppShowForm, tppHideForm,
  *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal,
  *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppSaveBudgetGroupLink,
- *   tppBudgetSettleChanged, tppBudgetPeopleChanged, tppUnlinkBudget
+ *   tppBudgetSettleChanged, tppBudgetPeopleChanged, tppBudgetPersonPpChanged,
+ *   tppUnlinkBudget
  */
 
 var _TPP_TYPES = {
@@ -545,6 +546,10 @@ function _tppBudget(p, data, isEdit) {
     }
   }
 
+  // Compute available panels early — used in both person row and link section
+  var peoplePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; });
+  var settlePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; });
+
   // ── Totals ─────────────────────────────────────────────────────────────────────────
   var manualSpent = 0;
   items.forEach(function(it) { manualSpent += parseFloat(it.amount) || 0; });
@@ -603,15 +608,44 @@ function _tppBudget(p, data, isEdit) {
                 '<option value="individual"' + (budScope === 'individual' ? ' selected' : '') + '>🧑 Individual budget</option>' +
               '</select>' +
             '</div>' +
-            // Person name input — only shown when scope = individual
+            // ─ Person row ─ only shown when scope = individual ──────────────────────
             '<div id="tpp-budget-person-row-' + p.id + '"' +
               (budScope !== 'individual' ? ' style="display:none"' : '') + '>' +
-              '<div class="flex items-center gap-1.5">' +
-                '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Person:</label>' +
-                '<input id="tpp-budget-person-' + p.id + '" type="text" ' +
-                  'value="' + _tripEsc(budPerson) + '" placeholder="e.g. Tinh" ' +
-                  'class="' + _tppInputCls() + ' flex-1" />' +
-              '</div>' +
+              (function() {
+                // When a People card exists: dropdown that auto-saves the link
+                if (peoplePanels.length > 0) {
+                  var ppSrc     = peoplePanels[0];
+                  var ppSrcData = _tppParse(ppSrc.content);
+                  var ppMembers = ppSrcData.members || [];
+                  // Build options; first blank placeholder
+                  var mOpts = '<option value="">' +
+                    (ppMembers.length ? '\u2014 pick a person \u2014' : 'Add people to People card first') +
+                    '</option>';
+                  mOpts += ppMembers.map(function(m, i) {
+                    var sel = (linkedPeopleId === ppSrc.id && linkedPersonIdx === i) ? ' selected' : '';
+                    return '<option value="' + i + '"' + sel + '>' + _tripEsc(m.name || '?') + '</option>';
+                  }).join('');
+                  var isPersonLinked = linkedPeopleId === ppSrc.id && linkedPersonIdx !== null;
+                  return '<div class="flex items-center gap-1.5">' +
+                    '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Person:</label>' +
+                    '<select id="tpp-budget-person-pp-' + p.id + '" ' +
+                      'onchange="tppBudgetPersonPpChanged(' + p.id + ')" ' +
+                      'class="' + _tppInputCls() + ' flex-1">' + mOpts + '</select>' +
+                    (isPersonLinked
+                      ? '<button onclick="tppUnlinkBudget(' + p.id + ')" ' +
+                          'class="text-[10px] text-red-400 hover:text-red-600 transition ' +
+                          'whitespace-nowrap flex-shrink-0">Unlink</button>'
+                      : '') +
+                  '</div>';
+                }
+                // No People card: free-text input
+                return '<div class="flex items-center gap-1.5">' +
+                  '<label class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Person:</label>' +
+                  '<input id="tpp-budget-person-' + p.id + '" type="text" ' +
+                    'value="' + _tripEsc(budPerson) + '" placeholder="e.g. Tinh" ' +
+                    'class="' + _tppInputCls() + ' flex-1" />' +
+                '</div>';
+              }()) +
             '</div>' +
             // ─ Ceiling row ──────────────────────────────────────────────────
             '<div class="flex items-center gap-1.5">' +
@@ -687,72 +721,49 @@ function _tppBudget(p, data, isEdit) {
     '</div>';
 
   // ── Link / Unlink UI (edit mode only) ──────────────────────────────────────────────────────
-  var settlePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; });
-  var peoplePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; });
+  // (peoplePanels and settlePanels already computed above)
   var linkSection  = '';
   if (isEdit) {
-    // Is there an active individual link?
-    var isIndividualLinked = budScope === 'individual' && linkedPersonName &&
-      (settlePanel || linkedPeopleId !== null);
-    // Is there an active group link?
+    // Individual link: person was chosen from People card OR legacy direct-settle
+    // We detect by stored IDs alone (not budScope) so it's immune to scope-save issues.
+    var isIndividualLinked = linkedPersonName &&
+      (linkedPeopleId !== null || (settlePanel !== null && linkedSettleId !== null));
+    // Group link: whole People card attached to group budget
     var isGroupLinked = budScope === 'group' && groupPeoplePanel !== null;
 
-    if (isIndividualLinked || isGroupLinked) {
-      // ─ Already linked: show status + Unlink ─────────────────────────────────
-      var linkedDesc = isGroupLinked
-        ? groupMemberCount + ' people from \u201c' + _tripEsc(groupPeoplePanel.title || 'People') + '\u201d'
-        : '\u201c' + _tripEsc(linkedPersonName) + '\u201d' +
-          (linkSource === 'people' ? ' via People card' : ' via Settle Up');
+    if (isGroupLinked) {
+      // Already group-linked — show Unlink only (person row shows its own unlink)
+      var groupDesc = groupMemberCount + ' people from \u201c' +
+        _tripEsc(groupPeoplePanel.title || 'People') + '\u201d';
       linkSection =
         '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
              'bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-2">' +
           '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-1">' +
-            (isGroupLinked ? '\uD83D\uDC65 Group: ' : '\uD83D\uDD17 Tracking: ') + linkedDesc +
+            '\uD83D\uDC65 Group: ' + groupDesc +
           '</span>' +
           '<button onclick="tppUnlinkBudget(' + p.id + ')" ' +
             'class="text-[10px] text-gray-400 hover:text-red-500 transition whitespace-nowrap">Unlink</button>' +
         '</div>';
 
-    } else if (budScope === 'individual' && (peoplePanels.length > 0 || settlePanels.length > 0)) {
-      // ─ Individual: pick a specific person ────────────────────────────────────
-      var indivSections = '';
-      if (peoplePanels.length > 0) {
-        var firstPP   = peoplePanels[0];
-        var firstPPd  = _tppParse(firstPP.content);
-        var ppMembers = firstPPd.members || [];
-        var ppOpts    = peoplePanels.map(function(pp) {
-          return '<option value="' + pp.id + '">' + _tripEsc(pp.title || 'People') + '</option>';
-        }).join('');
-        var memberOpts = ppMembers.length
-          ? ppMembers.map(function(m, i) {
-              return '<option value="' + i + '">' + _tripEsc(m.name || '?') + '</option>';
-            }).join('')
-          : '<option value="">Add people to the People card first</option>';
-        indivSections =
-          '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
-              'dark:text-zinc-500">\uD83D\uDC65 Link to person in People card</p>' +
-          '<div class="flex gap-1.5 items-center">' +
-            '<select id="tpp-budget-link-people-' + p.id + '" ' +
-              'onchange="tppBudgetPeopleChanged(' + p.id + ')" ' +
-              'class="' + _tppInputCls() + ' flex-1">' + ppOpts + '</select>' +
-            '<select id="tpp-budget-link-pmember-' + p.id + '" ' +
-              'class="' + _tppInputCls() + ' flex-1">' + memberOpts + '</select>' +
-            '<button onclick="tppSaveBudgetPeopleLink(' + p.id + ')" ' +
-              'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
-          '</div>';
-      } else if (settlePanels.length > 0) {
-        // Legacy fallback: no People panel, link direct to Settle
-        var settleOpts = settlePanels.map(function(sp) {
-          return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
-        }).join('');
-        var firstSd  = _tppParse(settlePanels[0].content);
-        var firstPpl = firstSd.people || [];
-        var personOpts = firstPpl.length
-          ? firstPpl.map(function(name, i) {
-              return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
-            }).join('')
-          : '<option value="">Add people to Settle Up first</option>';
-        indivSections =
+    } else if (budScope === 'individual' && peoplePanels.length > 0) {
+      // Person row already shows the dropdown + inline Unlink — nothing extra needed here.
+      linkSection = '';
+
+    } else if (budScope === 'individual' && settlePanels.length > 0 && !isIndividualLinked) {
+      // Legacy: no People card, link direct to Settle Up person
+      var settleOpts = settlePanels.map(function(sp) {
+        return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
+      }).join('');
+      var firstSd  = _tppParse(settlePanels[0].content);
+      var firstPpl = firstSd.people || [];
+      var personOpts = firstPpl.length
+        ? firstPpl.map(function(name, i) {
+            return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
+          }).join('')
+        : '<option value="">Add people to Settle Up first</option>';
+      linkSection =
+        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
+             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' +
           '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
               'dark:text-zinc-500">\uD83D\uDD17 Link to Settle Up person</p>' +
           '<div class="flex gap-1.5 items-center">' +
@@ -763,14 +774,11 @@ function _tppBudget(p, data, isEdit) {
               'class="' + _tppInputCls() + ' flex-1">' + personOpts + '</select>' +
             '<button onclick="tppSaveBudgetLink(' + p.id + ')" ' +
               'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
-          '</div>';
-      }
-      linkSection =
-        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
-             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' + indivSections + '</div>';
+          '</div>' +
+        '</div>';
 
     } else if (budScope === 'group' && peoplePanels.length > 0) {
-      // ─ Group: link to a People card (whole group, no person picker) ───────────
+      // Group: link whole People card (no person picker)
       var gpOpts = peoplePanels.map(function(pp) {
         return '<option value="' + pp.id + '">' + _tripEsc(pp.title || 'People') + '</option>';
       }).join('');
@@ -1294,6 +1302,26 @@ window.tppBudgetPeopleChanged = function(panelId) {
 };
 
 // Save the Budget ↔ People card person link
+// Auto-save when the person dropdown (People card) changes in individual scope
+window.tppBudgetPersonPpChanged = function(panelId) {
+  var ppSrc = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; })[0];
+  if (!ppSrc) return;
+  var el = document.getElementById('tpp-budget-person-pp-' + panelId);
+  if (!el || el.value === '') return;  // blank placeholder selected — ignore
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  var idx = parseInt(el.value, 10);
+  var ppData = _tppParse(ppSrc.content);
+  var member = (ppData.members || [])[idx];
+  d.linked_people_id  = ppSrc.id;
+  d.linked_person_idx = idx;
+  d.budget_person     = member ? (member.name || '') : '';
+  d.budget_scope      = 'individual';  // guarantee scope is persisted with the link
+  delete d.linked_settle_id;
+  delete d.linked_group_people_id;
+  _tppSave(panelId, d);
+};
+
 window.tppSaveBudgetPeopleLink = function(panelId) {
   var ppEl     = document.getElementById('tpp-budget-link-people-'  + panelId);
   var memberEl = document.getElementById('tpp-budget-link-pmember-' + panelId);
@@ -1305,7 +1333,8 @@ window.tppSaveBudgetPeopleLink = function(panelId) {
   var d = _tppParse(p.content);
   d.linked_people_id  = parseInt(ppEl.value, 10);
   d.linked_person_idx = parseInt(memberEl.value, 10);
-  // Clear any stale direct-settle link so we don’t double-resolve
+  d.budget_scope      = 'individual';  // always persist scope alongside the link
+  // Clear any stale direct-settle link so we don't double-resolve
   delete d.linked_settle_id;
   _tppSave(panelId, d);
 };
