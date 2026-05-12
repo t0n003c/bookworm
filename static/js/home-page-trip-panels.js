@@ -1700,6 +1700,221 @@ window.tppSettleSetLayout = function(panelId, layout) {
   _tppSave(panelId, d, null); // _tppRefreshCard fires inside _tppSave
 };
 
+// ── Standard layout (view-only) ────────────────────────────────────────────────────
+function _tppSettleStandard(p, data) {
+  var people   = data.people   || [];
+  var expenses = data.expenses || [];
+  var cur      = data.currency || 'USD';
+
+  // ─ Avatar palette: cycles through 6 distinct hues ──────────────────────
+  var _AV = [
+    'bg-blue-100   dark:bg-blue-900/50  text-blue-700   dark:text-blue-300',
+    'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300',
+    'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300',
+    'bg-amber-100  dark:bg-amber-900/50  text-amber-700  dark:text-amber-300',
+    'bg-rose-100   dark:bg-rose-900/50   text-rose-700   dark:text-rose-300',
+    'bg-cyan-100   dark:bg-cyan-900/50   text-cyan-700   dark:text-cyan-300',
+  ];
+  var _dotCls = [
+    'bg-blue-400', 'bg-violet-400', 'bg-emerald-400',
+    'bg-amber-400', 'bg-rose-400',  'bg-cyan-400',
+  ];
+  function _avCls(i)  { return _AV[i % _AV.length]; }
+  function _dotC(i)   { return _dotCls[i % _dotCls.length]; }
+  function _init(nm)  { return (nm || '?').trim().charAt(0).toUpperCase(); }
+
+  // ─ Totals ──────────────────────────────────────────────────────
+  var total = expenses.reduce(function(s, e) { return s + (parseFloat(e.amount) || 0); }, 0);
+
+  // ─ Hero summary strip ───────────────────────────────────────────
+  var hero =
+    '<div class="px-4 py-3 border-b border-gray-100 dark:border-zinc-800 ' +
+              'bg-gradient-to-r from-blue-50 to-white dark:from-zinc-800/60 dark:to-zinc-900/20">' +
+      '<div class="flex items-end justify-between">' +
+        '<div>' +
+          '<p class="text-[10px] font-semibold uppercase tracking-widest ' +
+             'text-gray-400 dark:text-zinc-500 mb-0.5">Total Spent</p>' +
+          '<p class="text-2xl font-bold text-gray-800 dark:text-zinc-100 leading-none">' +
+            cur + '\u00a0' + total.toFixed(2) + '</p>' +
+        '</div>' +
+        '<div class="text-right">' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+            people.length + ' ' + (people.length === 1 ? 'person' : 'people') + '</p>' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+            expenses.length + ' ' + (expenses.length === 1 ? 'expense' : 'expenses') + '</p>' +
+          (people.length >= 2 && total > 0
+            ? '<p class="text-[10px] font-semibold text-[#0053e2] dark:text-blue-400 mt-0.5">' +
+                cur + '\u00a0' + (total / people.length).toFixed(2) + ' / person</p>'
+            : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  // ─ People avatars ──────────────────────────────────────────────
+  var paid  = people.map(function() { return 0; });
+  var owed  = people.map(function() { return 0; });
+  expenses.forEach(function(exp) {
+    var amt = parseFloat(exp.amount) || 0;
+    var pi  = parseInt(exp.paid_by, 10);
+    var spl = exp.split || [];
+    if (!isNaN(pi) && pi >= 0 && pi < people.length) paid[pi] += amt;
+    if (spl.length) spl.forEach(function(i) {
+      if (i >= 0 && i < people.length) owed[i] += amt / spl.length;
+    });
+  });
+  var avatarRow = people.length
+    ? '<div class="px-4 py-3 border-b border-gray-100 dark:border-zinc-800">' +
+        '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
+           'text-gray-400 dark:text-zinc-500 mb-2">People</p>' +
+        '<div class="flex flex-wrap gap-3">' +
+          people.map(function(name, i) {
+            var net    = paid[i] - owed[i];
+            var netFmt = (net > 0.005 ? '+' : '') + net.toFixed(2);
+            var netCls = net > 0.005
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : (net < -0.005 ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-zinc-500');
+            return '<div class="flex flex-col items-center gap-1">' +
+              '<div class="w-9 h-9 rounded-full flex items-center justify-center ' +
+                         'text-sm font-bold flex-shrink-0 ' + _avCls(i) + '">' +
+                _init(name) +
+              '</div>' +
+              '<p class="text-[9px] font-medium text-gray-600 dark:text-zinc-300 ' +
+                 'max-w-[52px] truncate text-center leading-tight">' + _tripEsc(name) + '</p>' +
+              (expenses.length
+                ? '<p class="text-[9px] font-semibold ' + netCls + '">' + netFmt + '</p>'
+                : '') +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>'
+    : '<div class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800">' +
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic">No people added yet</p>' +
+      '</div>';
+
+  // ─ Expense rows ───────────────────────────────────────────────
+  var expRows = expenses.map(function(exp, ei) {
+    var amt      = parseFloat(exp.amount) || 0;
+    var payerIdx = parseInt(exp.paid_by, 10);
+    var payerNm  = people[payerIdx] || '?';
+    var spl      = exp.split || [];
+    var cat      = (exp.category || '').trim();
+    var catEmoji = (window._TRIP_TYPE_EMOJI && cat) ? (window._TRIP_TYPE_EMOJI[cat] || '') : '';
+
+    // Split summary: show first 2 names then "+N more"
+    var splitPreviewed = spl.slice(0, 2).map(function(i) {
+      return people[i] || '?';
+    });
+    var splitMore = spl.length > 2 ? ' +' + (spl.length - 2) : '';
+    var splitStr  = splitPreviewed.join(', ') + splitMore;
+
+    var catBadge = cat
+      ? '<span class="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full ' +
+          'text-[9px] bg-gray-100 dark:bg-zinc-700/80 text-gray-500 dark:text-zinc-400 ' +
+          'border border-gray-200 dark:border-zinc-600/60">' +
+          (catEmoji ? catEmoji + '\u202f' : '') + _tripEsc(cat) + '</span>'
+      : '';
+
+    var rowBg = ei % 2 === 0
+      ? 'bg-white dark:bg-transparent'
+      : 'bg-gray-50/60 dark:bg-zinc-800/30';
+
+    return '<div class="flex items-center gap-3 px-4 py-2.5 ' + rowBg + '
+               border-b border-gray-100 dark:border-zinc-800/60 last:border-0">' +
+      // Payer mini-avatar
+      '<div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ' +
+                 'text-[11px] font-bold ' + _avCls(payerIdx) + '" ' +
+           'title="Paid by ' + _tripEsc(payerNm) + '">' +
+        _init(payerNm) +
+      '</div>' +
+      // Desc + meta
+      '<div class="flex-1 min-w-0">' +
+        '<div class="flex items-baseline gap-1 flex-wrap">' +
+          '<span class="text-[12px] font-semibold text-gray-800 dark:text-zinc-100 truncate">' +
+            _tripEsc(exp.desc || 'Expense') + '</span>' + catBadge +
+        '</div>' +
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
+          '<span class="' + _dotC(payerIdx) + ' inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle"></span>' +
+          _tripEsc(payerNm) + ' paid' +
+          (spl.length > 0
+            ? ' \u00b7 split: ' + _tripEsc(splitStr)
+            : '') +
+        '</p>' +
+      '</div>' +
+      // Amount
+      '<span class="text-sm font-bold text-gray-800 dark:text-zinc-100 flex-shrink-0 tabular-nums">' +
+        cur + '\u00a0' + amt.toFixed(2) +
+      '</span>' +
+    '</div>';
+  }).join('');
+
+  var expSection =
+    '<div class="border-b border-gray-100 dark:border-zinc-800">' +
+      '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
+         'text-gray-400 dark:text-zinc-500 px-4 pt-3 pb-1.5">Expenses</p>' +
+      '<div class="max-h-52 overflow-y-auto">' +
+        (expRows || '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic px-4 pb-3">No expenses yet \u2014 switch to edit mode to add some.</p>') +
+      '</div>' +
+    '</div>';
+
+  // ─ Settlement (Who Pays Who) ────────────────────────────────────
+  var txns = _tppComputeSettlement(data);
+  var settleSection = '';
+  if (people.length >= 2 && expenses.length) {
+    var txnRows = txns.length
+      ? txns.map(function(t) {
+          var fromIdx = t.from;
+          var toIdx   = t.to;
+          return '<div class="flex items-center gap-2 px-4 py-2.5 ' +
+                        'border-b border-gray-100 dark:border-zinc-800 last:border-0">' +
+            // From avatar
+            '<div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ' +
+                       'text-[11px] font-bold ' + _avCls(fromIdx) + '">' +
+              _init(people[fromIdx] || '?') +
+            '</div>' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200 truncate">' +
+                _tripEsc(people[fromIdx] || '?') +
+              '</p>' +
+              '<p class="text-[9px] text-gray-400 dark:text-zinc-500">pays</p>' +
+            '</div>' +
+            // Arrow
+            '<svg class="w-4 h-4 text-gray-300 dark:text-zinc-600 flex-shrink-0" ' +
+                 'fill="none" viewBox="0 0 16 16" stroke="currentColor" stroke-width="2">' +
+              '<path d="M3 8h10M9 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>' +
+            // Amount
+            '<span class="text-sm font-bold text-[#0053e2] dark:text-blue-400 tabular-nums flex-shrink-0">' +
+              cur + '\u00a0' + t.amt.toFixed(2) +
+            '</span>' +
+            // To avatar
+            '<div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ' +
+                       'text-[11px] font-bold ' + _avCls(toIdx) + '">' +
+              _init(people[toIdx] || '?') +
+            '</div>' +
+            '<div class="min-w-0">' +
+              '<p class="text-[11px] font-semibold text-gray-700 dark:text-zinc-200 truncate ' +
+                 'max-w-[52px]">' + _tripEsc(people[toIdx] || '?') + '</p>' +
+              '<p class="text-[9px] text-gray-400 dark:text-zinc-500">receives</p>' +
+            '</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="px-4 py-4 text-center">' +
+          '<p class="text-lg">\uD83C\uDF89</p>' +
+          '<p class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">All settled up!</p>' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">Everyone\'s even.</p>' +
+        '</div>';
+
+    settleSection =
+      '<div class="border-t-2 border-[#0053e2]/10 dark:border-blue-900/30">' +
+        '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
+           'text-[#0053e2] dark:text-blue-400 px-4 pt-3 pb-1.5">\u2705 Who Pays Who</p>' +
+        txnRows +
+      '</div>';
+  }
+
+  return hero + avatarRow + expSection + settleSection;
+}
+
 function _tppSettleCompact(p, data) {
   var people   = data.people   || [];
   var expenses = data.expenses || [];
@@ -1854,12 +2069,14 @@ function _tppSettle(p, data, isEdit) {
     ? Object.assign({}, data, { people: people })
     : data;
 
-  // ─ View mode: dispatch non-standard layouts (standard falls through) ─────────
+  // ─ View mode: dispatch to layout renderers ───────────────────────────────
   if (!isEdit) {
-    if (layout === 'compact') return layoutPicker + peopleBadge + _tppSettleCompact(p, liveData);
-    if (layout === 'ledger')  return layoutPicker + peopleBadge + _tppSettleLedger(p, liveData);
-    if (layout === 'receipt') return layoutPicker + peopleBadge + _tppSettleReceipt(p, liveData);
-    // 'standard' falls through to the full standard renderer below
+    if (layout === 'standard') return layoutPicker + peopleBadge + _tppSettleStandard(p, liveData);
+    if (layout === 'compact')  return layoutPicker + peopleBadge + _tppSettleCompact(p, liveData);
+    if (layout === 'ledger')   return layoutPicker + peopleBadge + _tppSettleLedger(p, liveData);
+    if (layout === 'receipt')  return layoutPicker + peopleBadge + _tppSettleReceipt(p, liveData);
+    // unknown layout → fall back to standard
+    return layoutPicker + peopleBadge + _tppSettleStandard(p, liveData);
   }
 
   // ─ Currency row (edit mode) ────────────────────────────────────
