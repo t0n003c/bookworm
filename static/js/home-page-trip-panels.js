@@ -9,8 +9,8 @@
  *   tppSelectType, tppEditPanel, tppDeletePanel, tppMovePanel,
  *   tppTogglePack, tppClearDone, tppShowForm, tppHideForm,
  *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal,
- *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppBudgetSettleChanged,
- *   tppBudgetPeopleChanged, tppUnlinkBudget
+ *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppSaveBudgetGroupLink,
+ *   tppBudgetSettleChanged, tppBudgetPeopleChanged, tppUnlinkBudget
  */
 
 var _TPP_TYPES = {
@@ -519,11 +519,30 @@ function _tppBudget(p, data, isEdit) {
         }
       });
     }
-  } else {
-    // linked panel(s) gone — discard stale IDs
+  } else if (linkSource === 'settle' && linkedSettleId !== null) {
+    // Direct-settle link but the Settle panel is gone — discard only the settle IDs.
     linkedSettleId  = null;
-    linkedPeopleId  = null;
     linkedPersonIdx = null;
+    // linkedPeopleId is intentionally NOT cleared here.
+  }
+  // When linkSource === 'people' and settlePanel is null, the People card
+  // exists but has no Settle link — that's fine, just no expense rows.
+
+  // ── Group-scope People link (member count → per-person ceiling) ────────────────────
+  var linkedGroupPeopleId = data.linked_group_people_id != null
+    ? parseInt(data.linked_group_people_id, 10) : null;
+  var groupMemberCount = 0;
+  var groupPeoplePanel = null;
+  if (budScope === 'group' && linkedGroupPeopleId !== null) {
+    (window._tripPanels || []).forEach(function(x) {
+      if (x.id === linkedGroupPeopleId) groupPeoplePanel = x;
+    });
+    if (groupPeoplePanel) {
+      var gpd = _tppParse(groupPeoplePanel.content);
+      groupMemberCount = (gpd.members || []).length;
+    } else {
+      linkedGroupPeopleId = null;  // panel gone
+    }
   }
 
   // ── Totals ─────────────────────────────────────────────────────────────────────────
@@ -534,13 +553,25 @@ function _tppBudget(p, data, isEdit) {
   var barColor  = pct >= 90 ? '#ea1100' : pct >= 70 ? '#f59e0b' : '#2a8703';
   var remaining = total - spent;
 
-  // ── Summary / progress bar ───────────────────────────────────────────────────
+  // ── Summary / progress bar ─────────────────────────────────────────────────────
+  var perPersonCeiling = (budScope === 'group' && groupMemberCount > 0 && total > 0)
+    ? total / groupMemberCount
+    : 0;
+
   var linkedBadge = linkedPersonName
     ? '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ' +
         'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 font-medium mb-1">' +
         (linkSource === 'people' ? '\uD83D\uDC65' : '\uD83D\uDD17') + ' ' +
         _tripEsc(linkedPersonName) +
-        (linkSource === 'people' ? ' · People card' : ' · Settle Up') +
+        (linkSource === 'people' ? ' \u00b7 People card' : ' \u00b7 Settle Up') +
+      '</span>'
+    : '';
+  // Group-scope badge shows member count + per-person ceiling
+  var groupPeopleBadge = (budScope === 'group' && groupPeoplePanel)
+    ? '<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ' +
+        'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium mb-1">' +
+        '\uD83D\uDC65 ' + groupMemberCount + ' people' +
+        (perPersonCeiling > 0 ? ' \u00b7 ' + cur + '\u00a0' + perPersonCeiling.toFixed(0) + '/person' : '') +
       '</span>'
     : '';
 
@@ -631,7 +662,7 @@ function _tppBudget(p, data, isEdit) {
             '</div>' +
           '</div>'
         : '') +
-      (linkedBadge ? '<div>' + linkedBadge + '</div>' : '') +
+      (linkedBadge ? '<div>' + linkedBadge + groupPeopleBadge + '</div>' : (groupPeopleBadge ? '<div>' + groupPeopleBadge + '</div>' : '')) +
       (!isEdit ? '<div class="flex flex-wrap gap-1">' + scopeBadge + (ceilSrcBadge ? ceilSrcBadge : '') + '</div>' : '') +
       '<div class="flex items-end justify-between mb-1">' +
         '<span class="text-xs font-semibold text-gray-700 dark:text-zinc-200">' +
@@ -660,22 +691,31 @@ function _tppBudget(p, data, isEdit) {
   var peoplePanels = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'people'; });
   var linkSection  = '';
   if (isEdit) {
-    var isLinked = linkedPersonName && (settlePanel || linkedPeopleId);
-    if (isLinked) {
-      // Already linked — show status + unlink
+    // Is there an active individual link?
+    var isIndividualLinked = budScope === 'individual' && linkedPersonName &&
+      (settlePanel || linkedPeopleId !== null);
+    // Is there an active group link?
+    var isGroupLinked = budScope === 'group' && groupPeoplePanel !== null;
+
+    if (isIndividualLinked || isGroupLinked) {
+      // ─ Already linked: show status + Unlink ─────────────────────────────────
+      var linkedDesc = isGroupLinked
+        ? groupMemberCount + ' people from \u201c' + _tripEsc(groupPeoplePanel.title || 'People') + '\u201d'
+        : '\u201c' + _tripEsc(linkedPersonName) + '\u201d' +
+          (linkSource === 'people' ? ' via People card' : ' via Settle Up');
       linkSection =
         '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
              'bg-blue-50/50 dark:bg-blue-900/10 flex items-center gap-2">' +
           '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-1">' +
-            'Tracking expenses for <strong>' + _tripEsc(linkedPersonName) + '</strong>' +
-            (linkSource === 'people' ? ' via People card' : ' via Settle Up') +
+            (isGroupLinked ? '\uD83D\uDC65 Group: ' : '\uD83D\uDD17 Tracking: ') + linkedDesc +
           '</span>' +
           '<button onclick="tppUnlinkBudget(' + p.id + ')" ' +
             'class="text-[10px] text-gray-400 hover:text-red-500 transition whitespace-nowrap">Unlink</button>' +
         '</div>';
-    } else if (peoplePanels.length > 0 || settlePanels.length > 0) {
-      // ─ People-card picker (preferred) ─────────────────────────────────
-      var peopleSections = '';
+
+    } else if (budScope === 'individual' && (peoplePanels.length > 0 || settlePanels.length > 0)) {
+      // ─ Individual: pick a specific person ────────────────────────────────────
+      var indivSections = '';
       if (peoplePanels.length > 0) {
         var firstPP   = peoplePanels[0];
         var firstPPd  = _tppParse(firstPP.content);
@@ -688,9 +728,9 @@ function _tppBudget(p, data, isEdit) {
               return '<option value="' + i + '">' + _tripEsc(m.name || '?') + '</option>';
             }).join('')
           : '<option value="">Add people to the People card first</option>';
-        peopleSections =
+        indivSections =
           '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
-               'dark:text-zinc-500">👥 Link to People card</p>' +
+              'dark:text-zinc-500">\uD83D\uDC65 Link to person in People card</p>' +
           '<div class="flex gap-1.5 items-center">' +
             '<select id="tpp-budget-link-people-' + p.id + '" ' +
               'onchange="tppBudgetPeopleChanged(' + p.id + ')" ' +
@@ -700,11 +740,8 @@ function _tppBudget(p, data, isEdit) {
             '<button onclick="tppSaveBudgetPeopleLink(' + p.id + ')" ' +
               'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
           '</div>';
-      }
-
-      // ─ Legacy Settle-Up picker (shown if no People panels exist) ───────────
-      var settleSections = '';
-      if (settlePanels.length > 0 && peoplePanels.length === 0) {
+      } else if (settlePanels.length > 0) {
+        // Legacy fallback: no People panel, link direct to Settle
         var settleOpts = settlePanels.map(function(sp) {
           return '<option value="' + sp.id + '">' + _tripEsc(sp.title || 'Settle Up') + '</option>';
         }).join('');
@@ -715,9 +752,9 @@ function _tppBudget(p, data, isEdit) {
               return '<option value="' + i + '">' + _tripEsc(name) + '</option>';
             }).join('')
           : '<option value="">Add people to Settle Up first</option>';
-        settleSections =
+        indivSections =
           '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
-               'dark:text-zinc-500">🔗 Link to Settle Up person</p>' +
+              'dark:text-zinc-500">\uD83D\uDD17 Link to Settle Up person</p>' +
           '<div class="flex gap-1.5 items-center">' +
             '<select id="tpp-budget-link-settle-' + p.id + '" ' +
               'onchange="tppBudgetSettleChanged(' + p.id + ')" ' +
@@ -728,11 +765,28 @@ function _tppBudget(p, data, isEdit) {
               'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
           '</div>';
       }
+      linkSection =
+        '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
+             'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' + indivSections + '</div>';
 
+    } else if (budScope === 'group' && peoplePanels.length > 0) {
+      // ─ Group: link to a People card (whole group, no person picker) ───────────
+      var gpOpts = peoplePanels.map(function(pp) {
+        return '<option value="' + pp.id + '">' + _tripEsc(pp.title || 'People') + '</option>';
+      }).join('');
       linkSection =
         '<div class="px-3 py-2 border-b border-gray-100 dark:border-zinc-800 ' +
              'bg-gray-50 dark:bg-zinc-800/50 space-y-1.5">' +
-          peopleSections + settleSections +
+          '<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
+              'dark:text-zinc-500">\uD83D\uDC65 Divide group budget by People card</p>' +
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+            'Shows per-person ceiling in the Charts tab. Settle Up expenses are counted separately.</p>' +
+          '<div class="flex gap-1.5 items-center">' +
+            '<select id="tpp-budget-link-group-' + p.id + '" ' +
+              'class="' + _tppInputCls() + ' flex-1">' + gpOpts + '</select>' +
+            '<button onclick="tppSaveBudgetGroupLink(' + p.id + ')" ' +
+              'class="' + _tppBtnPrimary() + ' whitespace-nowrap">Link</button>' +
+          '</div>' +
         '</div>';
     }
   }
@@ -1180,6 +1234,11 @@ window.tppBudgetScopeChanged = function(panelId) {
   var personRow= document.getElementById('tpp-budget-person-row-' + panelId);
   if (!scopeEl || !personRow) return;
   personRow.style.display = scopeEl.value === 'individual' ? '' : 'none';
+  // Persist scope + re-render so the link section updates immediately
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  d.budget_scope = scopeEl.value;
+  _tppSave(panelId, d);
 };
 
 // Toggle ceiling source UI between manual and spot-derived
@@ -1269,13 +1328,31 @@ window.tppSaveBudgetLink = function(panelId) {
   _tppSave(panelId, d);
 };
 
-// Remove the Budget person link (clears both modes)
+// Save the Budget group ↔ People card link (whole group, no person picker)
+window.tppSaveBudgetGroupLink = function(panelId) {
+  var gpEl = document.getElementById('tpp-budget-link-group-' + panelId);
+  if (!gpEl || !gpEl.value) {
+    _tripShowToast('Select a People card first', true);
+    return;
+  }
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  d.linked_group_people_id = parseInt(gpEl.value, 10);
+  // Clear any stale individual link
+  delete d.linked_people_id;
+  delete d.linked_person_idx;
+  delete d.linked_settle_id;
+  _tppSave(panelId, d);
+};
+
+// Remove the Budget person link (clears all modes)
 window.tppUnlinkBudget = function(panelId) {
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   delete d.linked_settle_id;
   delete d.linked_person_idx;
   delete d.linked_people_id;
+  delete d.linked_group_people_id;
   _tppSave(panelId, d);
 };
 
