@@ -1818,8 +1818,8 @@ function _tppSettleStandard(p, data) {
       ? 'bg-white dark:bg-transparent'
       : 'bg-gray-50/60 dark:bg-zinc-800/30';
 
-    return '<div class="flex items-center gap-3 px-4 py-2.5 ' + rowBg + '
-               border-b border-gray-100 dark:border-zinc-800/60 last:border-0">' +
+    return '<div class="flex items-center gap-3 px-4 py-2.5 ' + rowBg +
+               ' border-b border-gray-100 dark:border-zinc-800/60 last:border-0">' +
       // Payer mini-avatar
       '<div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ' +
                  'text-[11px] font-bold ' + _avCls(payerIdx) + '" ' +
