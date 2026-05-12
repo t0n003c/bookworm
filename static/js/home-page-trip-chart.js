@@ -441,6 +441,7 @@ function _tripRenderTypeChart(data) {
   if (!window.Chart || !slot) return;
 
   var isActuals = _tripChartPhase === 'actuals';
+  var person    = _tripChartSelectedPerson;   // null = All, string = specific person
   var cur       = _tripChartCurrency;
 
   // Update title + sub regardless of data availability so they never get stuck
