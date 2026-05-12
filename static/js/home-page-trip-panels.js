@@ -1742,37 +1742,18 @@ function _tppSettleStandard(p, data) {
             people.length + ' ' + (people.length === 1 ? 'person' : 'people') + '</p>' +
           '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
             expenses.length + ' ' + (expenses.length === 1 ? 'expense' : 'expenses') + '</p>' +
-          (people.length >= 2 && total > 0
-            ? '<p class="text-[10px] font-semibold text-[#0053e2] dark:text-blue-400 mt-0.5">' +
-                cur + '\u00a0' + (total / people.length).toFixed(2) + ' / person</p>'
-            : '') +
+
         '</div>' +
       '</div>' +
     '</div>';
 
   // ─ People avatars ──────────────────────────────────────────────
-  var paid  = people.map(function() { return 0; });
-  var owed  = people.map(function() { return 0; });
-  expenses.forEach(function(exp) {
-    var amt = parseFloat(exp.amount) || 0;
-    var pi  = parseInt(exp.paid_by, 10);
-    var spl = exp.split || [];
-    if (!isNaN(pi) && pi >= 0 && pi < people.length) paid[pi] += amt;
-    if (spl.length) spl.forEach(function(i) {
-      if (i >= 0 && i < people.length) owed[i] += amt / spl.length;
-    });
-  });
   var avatarRow = people.length
     ? '<div class="px-4 py-3 border-b border-gray-100 dark:border-zinc-800">' +
         '<p class="text-[9px] font-semibold uppercase tracking-widest ' +
            'text-gray-400 dark:text-zinc-500 mb-2">People</p>' +
         '<div class="flex flex-wrap gap-3">' +
           people.map(function(name, i) {
-            var net    = paid[i] - owed[i];
-            var netFmt = (net > 0.005 ? '+' : '') + net.toFixed(2);
-            var netCls = net > 0.005
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : (net < -0.005 ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-zinc-500');
             return '<div class="flex flex-col items-center gap-1">' +
               '<div class="w-9 h-9 rounded-full flex items-center justify-center ' +
                          'text-sm font-bold flex-shrink-0 ' + _avCls(i) + '">' +
@@ -1780,9 +1761,7 @@ function _tppSettleStandard(p, data) {
               '</div>' +
               '<p class="text-[9px] font-medium text-gray-600 dark:text-zinc-300 ' +
                  'max-w-[52px] truncate text-center leading-tight">' + _tripEsc(name) + '</p>' +
-              (expenses.length
-                ? '<p class="text-[9px] font-semibold ' + netCls + '">' + netFmt + '</p>'
-                : '') +
+
             '</div>';
           }).join('') +
         '</div>' +
