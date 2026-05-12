@@ -94,7 +94,7 @@ window._tppPeople = function(p, data, isEdit) {
 
     // Contact lines
     var phoneHtml = m.phone
-      ? '<a href="tel:' + _tripEsc(m.phone.replace(/[\s\-]/g, '')) + '" ' +
+      ? '<a href="tel:' + _tripEsc(m.phone.replace(/[\s\-().]/g, '')) + '" ' +
           'onclick="event.stopPropagation()" ' +
           'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline ' +
                  'flex items-center gap-0.5 leading-tight">' +
@@ -112,7 +112,7 @@ window._tppPeople = function(p, data, isEdit) {
     var emergHtml = '';
     if (m.emergency_name || m.emergency_phone) {
       var emergPhone = m.emergency_phone
-        ? ' \u00b7 <a href="tel:' + _tripEsc(m.emergency_phone.replace(/[\s\-]/g, '')) + '" ' +
+        ? ' \u00b7 <a href="tel:' + _tripEsc(m.emergency_phone.replace(/[\s\-().]/g, '')) + '" ' +
             'onclick="event.stopPropagation()" ' +
             'class="text-[#0053e2] dark:text-blue-400 hover:underline">' +
             _tripEsc(m.emergency_phone) + '</a>'
@@ -169,6 +169,7 @@ window._tppPeople = function(p, data, isEdit) {
           'class="' + _tppInputCls() + '" />' +
         '<input id="tpp-person-phone-' + p.id + '" type="tel" ' +
           'placeholder="Phone (optional)" maxlength="40" ' +
+          'onblur="_tppFmtPhone(this)" ' +
           'class="' + _tppInputCls() + '" />' +
         '<input id="tpp-person-email-' + p.id + '" type="email" ' +
           'placeholder="Email (optional)" maxlength="120" ' +
@@ -180,6 +181,7 @@ window._tppPeople = function(p, data, isEdit) {
           'class="' + _tppInputCls() + '" />' +
         '<input id="tpp-person-ephone-' + p.id + '" type="tel" ' +
           'placeholder="Contact phone (optional)" maxlength="40" ' +
+          'onblur="_tppFmtPhone(this)" ' +
           'class="' + _tppInputCls() + '" />' +
         '<div class="flex gap-1.5">' +
           '<button onclick="tppSavePersonItem(' + p.id + ')" ' +
@@ -254,6 +256,26 @@ function _tppPeopleSettleSection(p, linkedSettleId, settlePanel, isEdit) {
     'bg-gray-50 dark:bg-zinc-800/30 flex-shrink-0">' + inner + '</div>';
 }
 
+// ── Phone formatter ────────────────────────────────────────────────────────────
+// Call on blur. Formats:
+//   10 digits            →  (123) 456-7890
+//   11 digits starting 1 →  +1 (123) 456-7890
+//   starts with +        →  kept as-is (international)
+//   anything else        →  left unchanged
+function _tppFmtPhone(el) {
+  if (!el) return;
+  var raw    = el.value.trim();
+  if (!raw) return;
+  if (raw.charAt(0) === '+') return;            // already international — leave it
+  var digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) {
+    el.value = '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+  } else if (digits.length === 11 && digits.charAt(0) === '1') {
+    el.value = '+1 (' + digits.slice(1,4) + ') ' + digits.slice(4,7) + '-' + digits.slice(7);
+  }
+  // any other length: leave as typed
+}
+
 // ── Event handlers ─────────────────────────────────────────────────────────────
 
 window.tppShowPersonForm = function(panelId) {
@@ -280,9 +302,10 @@ window.tppEditPersonItem = function(panelId, idx) {
   var d = _tppParse(p.content);
   var m = (d.members || [])[idx];
   if (!m) return;
+  // NOTE: use (val == null) guard — NOT val||'' — because idx can be 0 (falsy)
   var set = function(field, val) {
     var el = document.getElementById('tpp-person-' + field + '-' + panelId);
-    if (el) el.value = val || '';
+    if (el) el.value = (val == null) ? '' : val;
   };
   set('edit-idx', idx);
   set('name',     m.name);
