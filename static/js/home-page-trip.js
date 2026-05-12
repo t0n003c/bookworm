@@ -57,6 +57,7 @@ window.initTripPage = function(pid) {
   _tripSpotUploadedCoverUrl = '';
   _tripAssignDrawerOpen     = false;
   _tripAssignDays           = [];
+  _tripAssignSelectedPlanId = null;
   _tripSelectedSpotId       = 0;
   // Re-seed _TRIP_TYPES: base list + custom cats saved for this trip.
   // Rebuild the array IN PLACE so the window._TRIP_TYPES reference stays valid.
@@ -769,27 +770,44 @@ window._tripRenderAssignDrawer = function() {
   var inner = document.getElementById('trip-assign-drawer-inner');
   if (!inner) return;
 
-  if (!window._tripActivePlanId) {
+  // Effective plan: Plan tab's active plan takes priority over drawer-local pick
+  var effectivePlanId = window._tripActivePlanId || _tripAssignSelectedPlanId;
+
+  if (!effectivePlanId) {
+    // No plan active anywhere — show a plan picker
     inner.innerHTML =
-      '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-2">' +
-        '🗓️ Open a trip in the <strong>Plan</strong> tab first, then drag spots here.' +
-      '</p>';
+      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-2 font-medium">Pick a plan to assign spots to:</p>' +
+      '<div id="trip-assign-plan-list" class="flex flex-wrap gap-1.5">' +
+        '<span class="text-[10px] text-gray-400 italic">Loading plans…</span>' +
+      '</div>';
+    _tripAssignFetchPlans();
     return;
   }
 
-  // Prefer _tripDays (Plan tab state) if it has data; else fall back to own fetch
-  var days = (typeof _tripDays !== 'undefined' && _tripDays.length)
+  // Prefer _tripDays (Plan tab state) when it belongs to the effective plan;
+  // otherwise fall back to our own fetch cache.
+  var days = (typeof _tripDays !== 'undefined' && _tripDays.length &&
+              window._tripActivePlanId === effectivePlanId)
     ? _tripDays
     : _tripAssignDays;
 
   if (!days.length) {
     inner.innerHTML =
       '<p class="text-xs text-gray-400 dark:text-zinc-500 italic py-2">Loading days…</p>';
-    window._tripAssignLoadDays();
+    window._tripAssignLoadDays(effectivePlanId);
     return;
   }
 
-  var html = '';
+  // ─ Header: plan name + “switch plan” link
+  var headerHtml =
+    '<div class="flex items-center gap-2 mb-2 w-full flex-shrink-0">' +
+      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 font-medium uppercase tracking-wide">Plan:</span>' +
+      '<span id="trip-assign-plan-name" class="text-[10px] font-semibold text-gray-700 dark:text-zinc-200 truncate flex-1">…</span>' +
+      '<button onclick="tripAssignClearPlan()" ' +
+        'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline flex-shrink-0 cursor-pointer">switch ↺</button>' +
+    '</div>';
+
+  var html = headerHtml;
   days.forEach(function(d) {
     html +=
       '<div id="trip-assign-chip-' + d.id + '" ' +
@@ -816,11 +834,15 @@ window._tripRenderAssignDrawer = function() {
       '</div>';
   });
   inner.innerHTML = html;
+
+  // Fill in plan name from cache (async if needed)
+  _tripAssignFillPlanName(effectivePlanId);
 };
 
-window._tripAssignLoadDays = function() {
-  if (!window._tripActivePlanId) return;
-  _tripFetch('/home/trip/' + _tripPid + '/days?plan_id=' + window._tripActivePlanId)
+window._tripAssignLoadDays = function(planId) {
+  var pid = planId || window._tripActivePlanId || _tripAssignSelectedPlanId;
+  if (!pid) return;
+  _tripFetch('/home/trip/' + _tripPid + '/days?plan_id=' + pid)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       _tripAssignDays = Array.isArray(data) ? data : [];
@@ -833,6 +855,72 @@ window._tripAssignLoadDays = function() {
           '<p class="text-xs text-red-500 italic py-2">Failed to load days.</p>';
       }
     });
+};
+
+// Fetch all plans for this trip page and render as selectable chips
+function _tripAssignFetchPlans() {
+  _tripFetch('/home/trip/' + _tripPid + '/plans')
+    .then(function(r) { return r.json(); })
+    .then(function(plans) {
+      window._tripAssignPlanCache = Array.isArray(plans) ? plans : [];
+      var list = document.getElementById('trip-assign-plan-list');
+      if (!list) return;
+      if (!window._tripAssignPlanCache.length) {
+        list.innerHTML =
+          '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic">No plans found for this trip.</p>';
+        return;
+      }
+      list.innerHTML = window._tripAssignPlanCache.map(function(pl) {
+        return '<button onclick="tripAssignSelectPlan(' + pl.id + ')" ' +
+          'class="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 ' +
+                 'dark:border-zinc-600 bg-white dark:bg-zinc-800 ' +
+                 'text-gray-700 dark:text-zinc-200 ' +
+                 'hover:border-[#0053e2] hover:text-[#0053e2] dark:hover:text-blue-400 ' +
+                 'transition cursor-pointer">' +
+          _tripEsc(pl.plan_name || 'Plan') +
+        '</button>';
+      }).join('');
+    })
+    .catch(function() {
+      var list = document.getElementById('trip-assign-plan-list');
+      if (list) list.innerHTML =
+        '<p class="text-[10px] text-red-500 italic">Failed to load plans.</p>';
+    });
+}
+
+// Fill the active plan name label from cache; re-fetches once if not cached yet
+function _tripAssignFillPlanName(planId) {
+  var nameEl = document.getElementById('trip-assign-plan-name');
+  if (!nameEl) return;
+  var cache = window._tripAssignPlanCache || [];
+  for (var i = 0; i < cache.length; i++) {
+    if (cache[i].id === planId) { nameEl.textContent = cache[i].plan_name || 'Plan'; return; }
+  }
+  // Not in cache yet — fetch plans to warm the cache, then fill
+  _tripFetch('/home/trip/' + _tripPid + '/plans')
+    .then(function(r) { return r.json(); })
+    .then(function(plans) {
+      window._tripAssignPlanCache = Array.isArray(plans) ? plans : [];
+      for (var i = 0; i < window._tripAssignPlanCache.length; i++) {
+        if (window._tripAssignPlanCache[i].id === planId) {
+          var el = document.getElementById('trip-assign-plan-name');
+          if (el) el.textContent = window._tripAssignPlanCache[i].plan_name || 'Plan';
+          break;
+        }
+      }
+    }).catch(function() {});
+}
+
+window.tripAssignSelectPlan = function(planId) {
+  _tripAssignSelectedPlanId = planId;
+  _tripAssignDays = [];          // clear stale cache so fresh days are fetched
+  window._tripRenderAssignDrawer();
+};
+
+window.tripAssignClearPlan = function() {
+  _tripAssignSelectedPlanId = null;
+  _tripAssignDays = [];
+  window._tripRenderAssignDrawer();
 };
 
 window.tripAssignDragOver = function(event) {

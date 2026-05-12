@@ -81,8 +81,9 @@ window.tripCloseLocView = function() {
   if (spotsView) spotsView.classList.add('hidden');
 
   // Reset Quick-Assign drawer so it starts closed on next location open
-  _tripAssignDrawerOpen = false;
-  _tripAssignDays       = [];
+  _tripAssignDrawerOpen     = false;
+  _tripAssignDays           = [];
+  _tripAssignSelectedPlanId = null;
   var _adr = document.getElementById('trip-assign-drawer');
   if (_adr) _adr.classList.add('hidden');
 
