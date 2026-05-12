@@ -128,15 +128,20 @@ function _budsRender(wid) {
 
     if (compact) {
       // ── Compact: dense list row — fits many buds in a small widget ──────────
+      // Bar has a min visible width so even 1 HP isn't invisible
+      var barW = h > 0 ? Math.max(h, 4) : 0;
       return '<div class="flex items-center gap-2 py-1 px-1 border-b border-gray-100'
         + ' dark:border-zinc-800 last:border-0">'
         + '<img src="'+img+'" class="w-8 h-8 object-contain flex-shrink-0 cursor-pointer opacity-90 bud-sway"'
         + '     style="animation-delay:'+swayDelay+'"'
         + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
         + '<div class="flex-1 min-w-0">'
-        + '  <p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate leading-tight">'+_esc(b.name)+'</p>'
-        + '  <div class="h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mt-0.5">'
-        + '    <div class="h-full rounded-full" style="width:'+h+'%;background:'+color+'"></div>'
+        + '  <div class="flex items-center justify-between gap-1">'
+        + '    <p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate leading-tight">'+_esc(b.name)+'</p>'
+        + '    <span class="text-[10px] font-mono flex-shrink-0" style="color:'+color+'">'+h+'</span>'
+        + '  </div>'
+        + '  <div class="h-1.5 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mt-0.5">'
+        + '    <div class="h-full rounded-full transition-all" style="width:'+barW+'%;background:'+color+'"></div>'
         + '  </div>'
         + '</div>'
         + waterBtn
@@ -229,7 +234,13 @@ function _budsWater(wid, budId) {
       if (buds[i].id === data.bud.id) { buds[i] = data.bud; break; }
     }
     _budsRender(wid);
-    window._bwToast && window._bwToast('💧 Watered! +10 HP','success');
+    // If detail panel is open and showing THIS bud, refresh it live
+    var panel = document.getElementById('buds-detail-panel');
+    if (panel && !panel.classList.contains('translate-x-full') &&
+        panel.dataset.wid == wid && panel.dataset.budId == data.bud.id) {
+      _budsDetailFill(data.bud, panel);
+    }
+    window._bwToast && window._bwToast('\uD83D\uDCA7 Watered! +10 HP','success');
   })
   .catch(function() {
     if (_budsState[wid]) _budsState[wid].busy = false;
@@ -287,8 +298,14 @@ function _budsFertilizeComplete() {
       if (buds[i].id == budId) { buds[i] = data.bud; break; }
     }
     _budsRender(wid);
+    // Live-refresh detail panel if it's open for this bud
+    var panel = document.getElementById('buds-detail-panel');
+    if (panel && !panel.classList.contains('translate-x-full') &&
+        panel.dataset.wid == wid && panel.dataset.budId == budId) {
+      _budsDetailFill(data.bud, panel);
+    }
     modal.classList.add('hidden');
-    window._bwToast && window._bwToast('🌱 Visit logged! +25 HP','success');
+    window._bwToast && window._bwToast('\uD83C\uDF31 Visit logged! +25 HP','success');
   });
 }
 
@@ -419,23 +436,35 @@ function _budsDoPermanentDelete(wid, budId) {
 function _budsDetailOpen(wid, budId) {
   var bud = _budsFindBud(wid, budId); if (!bud) return;
   var panel = document.getElementById('buds-detail-panel'); if (!panel) return;
+  // Tag so we can live-refresh when the same bud gets watered/fertilized
+  panel.dataset.wid   = wid;
+  panel.dataset.budId = budId;
+  _budsDetailFill(bud, panel);
+  panel.classList.remove('translate-x-full');
+}
+
+// Fill an already-open detail panel with fresh bud data
+function _budsDetailFill(bud, panel) {
+  panel = panel || document.getElementById('buds-detail-panel');
+  if (!panel) return;
   var h     = Math.round(_budsApplyDecay(bud));
   var tier  = _budsHealthTier(h);
   var color = _budsHealthColor(tier);
+  var wid   = panel.dataset.wid;
+  var budId = bud.id;
   panel.querySelector('#bdp-img').src       = _budsFlowerImg(bud.flower_species, tier);
   panel.querySelector('#bdp-name').textContent = bud.name;
   panel.querySelector('#bdp-species').textContent = _BUDS_NAMES[bud.flower_species] || bud.flower_species;
   panel.querySelector('#bdp-days').textContent = 'Every '+bud.see_every_days+' days';
   panel.querySelector('#bdp-health-bar').style.width     = h+'%';
   panel.querySelector('#bdp-health-bar').style.background = color;
-  panel.querySelector('#bdp-health-num').textContent     = h+'/100';
+  panel.querySelector('#bdp-health-num').textContent     = h+'/100 HP';
   panel.querySelector('#bdp-notes').textContent = bud.notes || '—';
   panel.querySelector('#bdp-plan').textContent  = bud.pending_plan
-    ? ('📅 '+bud.pending_plan.planned_date+(bud.pending_plan.note?' — '+bud.pending_plan.note:''))
+    ? ('\uD83D\uDCC5 '+bud.pending_plan.planned_date+(bud.pending_plan.note?' — '+bud.pending_plan.note:''))
     : 'No upcoming visit planned';
-  panel.querySelector('#bdp-edit-btn').onclick   = function() { _budsDetailClose(); _budsEditOpen(wid,budId); };
-  panel.querySelector('#bdp-delete-btn').onclick  = function() { _budsDetailClose(); _budsDelete(wid,budId); };
-  panel.classList.remove('translate-x-full');
+  panel.querySelector('#bdp-edit-btn').onclick   = function() { _budsDetailClose(); _budsEditOpen(wid, budId); };
+  panel.querySelector('#bdp-delete-btn').onclick  = function() { _budsDetailClose(); _budsDelete(wid, budId); };
 }
 
 function _budsDetailClose() {
