@@ -776,7 +776,7 @@ window._tripRenderAssignDrawer = function() {
   if (!effectivePlanId) {
     // No plan active anywhere — show a plan picker
     inner.innerHTML =
-      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-2 font-medium">Pick a plan to assign spots to:</p>' +
+      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 font-medium mb-1.5">Pick a plan to assign spots to:</p>' +
       '<div id="trip-assign-plan-list" class="flex flex-wrap gap-1.5">' +
         '<span class="text-[10px] text-gray-400 italic">Loading plans…</span>' +
       '</div>';
@@ -798,18 +798,19 @@ window._tripRenderAssignDrawer = function() {
     return;
   }
 
-  // ─ Header: plan name + “switch plan” link
+  // ─ Header: plan name + “switch plan” link (full-width row)
   var headerHtml =
-    '<div class="flex items-center gap-2 mb-2 w-full flex-shrink-0">' +
+    '<div class="flex items-center gap-2 w-full flex-shrink-0">' +
       '<span class="text-[10px] text-gray-400 dark:text-zinc-500 font-medium uppercase tracking-wide">Plan:</span>' +
       '<span id="trip-assign-plan-name" class="text-[10px] font-semibold text-gray-700 dark:text-zinc-200 truncate flex-1">…</span>' +
       '<button onclick="tripAssignClearPlan()" ' +
         'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline flex-shrink-0 cursor-pointer">switch ↺</button>' +
     '</div>';
 
-  var html = headerHtml;
+  // ─ Chips row: horizontally scrollable, chips stay on one line
+  var chipsHtml = '<div class="flex items-center gap-2 overflow-x-auto pb-0.5" style="min-width:0;">';
   days.forEach(function(d) {
-    html +=
+    chipsHtml +=
       '<div id="trip-assign-chip-' + d.id + '" ' +
         'onclick="tripAssignChipTap(event,' + d.id + ')" ' +
         'ondragover="tripAssignDragOver(event)" ' +
@@ -825,15 +826,17 @@ window._tripRenderAssignDrawer = function() {
           _tripEsc(d.day_label || 'Day') +
         '</span>' +
         (d.day_date
-          ? '<span class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+          ? '<span class="text-[10px] text-gray-400 da-zinc-500">' +
               _tripEsc(d.day_date) + '</span>'
           : '') +
         '<span class="text-[10px] text-[#0053e2]">' +
-          (_tripTouchMode ? '👆 Tap to assign' : 'Drop here ↓') +
+          (_tripTouchMode ? '👆 Tap' : 'Drop ↓') +
         '</span>' +
       '</div>';
   });
-  inner.innerHTML = html;
+  chipsHtml += '</div>';
+
+  inner.innerHTML = headerHtml + chipsHtml;
 
   // Fill in plan name from cache (async if needed)
   _tripAssignFillPlanName(effectivePlanId);
