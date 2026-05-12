@@ -510,16 +510,7 @@ function _tppBudget(p, data, isEdit) {
     } else if (linkSource === 'settle') {
       linkedPersonName = settleIdx !== null ? (sdPeople[settleIdx] || '') : '';
     }
-    if (settleIdx !== null && settleIdx !== -1) {
-      (sd.expenses || []).forEach(function(exp) {
-        var splitArr = exp.split || [];
-        if (splitArr.indexOf(settleIdx) !== -1 && splitArr.length > 0) {
-          var share = (parseFloat(exp.amount) || 0) / splitArr.length;
-          linkedExps.push({ desc: exp.desc, amount: share, splitCount: splitArr.length });
-          linkedSpent += share;
-        }
-      });
-    }
+    // Note: expense collection is deferred to the all-panels loop below.
   } else if (linkSource === 'settle' && linkedSettleId !== null) {
     // Direct-settle link but the Settle panel is gone — discard only the settle IDs.
     linkedSettleId  = null;
@@ -527,7 +518,32 @@ function _tppBudget(p, data, isEdit) {
     // linkedPeopleId is intentionally NOT cleared here.
   }
   // When linkSource === 'people' and settlePanel is null, the People card
-  // exists but has no Settle link — that's fine, just no expense rows.
+  // exists but has no Settle link — that's fine.
+
+  // ── Collect expenses from ALL settle panels for this person ──────────────────────
+  // Previously only one settlePanel was scanned, missing any second+ card.
+  // Now we resolve the person by name across every settle panel.
+  if (linkedPersonName) {
+    (window._tripPanels || []).forEach(function(sp) {
+      if (sp.panel_type !== 'settle') return;
+      var sd2     = _tppParse(sp.content);
+      var people2 = sd2.people || [];
+      var idx2    = people2.indexOf(linkedPersonName);
+      if (idx2 === -1) return;   // person not in this panel
+      (sd2.expenses || []).forEach(function(exp) {
+        var splitArr = exp.split || [];
+        if (splitArr.indexOf(idx2) === -1 || !splitArr.length) return;
+        var share = (parseFloat(exp.amount) || 0) / splitArr.length;
+        linkedExps.push({
+          desc:       exp.desc,
+          amount:     share,
+          splitCount: splitArr.length,
+          panel:      sp.title || 'Settle Up',
+        });
+        linkedSpent += share;
+      });
+    });
+  }
 
   // ── Group-scope People link (member count → per-person ceiling) ────────────────────
   var linkedGroupPeopleId = data.linked_group_people_id != null
@@ -802,24 +818,40 @@ function _tppBudget(p, data, isEdit) {
   // ── Linked expenses (read-only rows from Settle Up) ──────────────────────────
   var linkedRows = '';
   if (linkedExps.length) {
+    // Group by panel title so expenses from different settle cards are visually separated
+    var panelGroups = {};
+    var panelOrder  = [];
+    linkedExps.forEach(function(exp) {
+      var key = exp.panel || 'Settle Up';
+      if (!panelGroups[key]) { panelGroups[key] = []; panelOrder.push(key); }
+      panelGroups[key].push(exp);
+    });
     linkedRows =
       '<p class="text-[10px] font-semibold uppercase tracking-wide text-[#0053e2] dark:text-blue-400 ' +
          'px-3 pt-2 pb-0.5 select-none">🔗 From Settle Up</p>' +
-      linkedExps.map(function(exp) {
-        var splitNote = exp.splitCount > 1
-          ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500">your share &middot; split ' +
-              exp.splitCount + ' ways</p>'
+      panelOrder.map(function(panelTitle) {
+        var exps = panelGroups[panelTitle];
+        var header = panelOrder.length > 1
+          ? '<p class="text-[9px] font-semibold uppercase tracking-wide ' +
+              'text-gray-400 dark:text-zinc-500 px-3 pt-1">' +
+              _tripEsc(panelTitle) + '</p>'
           : '';
-        return '<div class="flex items-start gap-2 px-3 py-1.5 border-b ' +
-               'border-gray-50 dark:border-zinc-800 last:border-0">' +
-          '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs text-gray-600 dark:text-zinc-300 truncate">' +
-              _tripEsc(exp.desc || 'Expense') + '</p>' +
-            splitNote +
-          '</div>' +
-          '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0 mt-0.5">' +
-            cur + ' ' + exp.amount.toFixed(2) + '</span>' +
-        '</div>';
+        return header + exps.map(function(exp) {
+          var splitNote = exp.splitCount > 1
+            ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500">your share &middot; split ' +
+                exp.splitCount + ' ways</p>'
+            : '';
+          return '<div class="flex items-start gap-2 px-3 py-1.5 border-b ' +
+                 'border-gray-50 dark:border-zinc-800 last:border-0">' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-xs text-gray-600 dark:text-zinc-300 truncate">' +
+                _tripEsc(exp.desc || 'Expense') + '</p>' +
+              splitNote +
+            '</div>' +
+            '<span class="text-xs font-semibold text-[#0053e2] dark:text-blue-400 flex-shrink-0 mt-0.5">' +
+              cur + ' ' + exp.amount.toFixed(2) + '</span>' +
+          '</div>';
+        }).join('');
       }).join('');
   }
 
