@@ -2268,18 +2268,18 @@ window.tripSubmitPanelModal = function() {
   if (_tppModalMode === 'add') {
     if (!_tppSelectedType) { _tripShowToast('Pick a card type first', true); return; }
 
-    // Auto-seed People card from an existing Settle panel
+    // Auto-seed / auto-link on panel creation
     var initialContent = {};
     if (_tppSelectedType === 'people') {
+      // Find first settle panel in plan (may be empty — link anyway)
       var seedSettle = (window._tripPanels || []).filter(function(x) { return x.panel_type === 'settle'; })[0];
       if (seedSettle) {
         var sd = _tppParse(seedSettle.content);
         var seedMembers = (sd.people || []).map(function(name) {
           return { name: name, phone: '', email: '', emergency_name: '', emergency_phone: '' };
         });
-        if (seedMembers.length) {
-          initialContent = { members: seedMembers, linked_settle_id: seedSettle.id };
-        }
+        // Always link — even when settle has no people yet
+        initialContent = { members: seedMembers, linked_settle_id: seedSettle.id };
       }
     }
 
@@ -2299,6 +2299,27 @@ window.tripSubmitPanelModal = function() {
         _tripShowToast((res.data && res.data.error) || 'Failed to create card', true);
         return;
       }
+      var newPanelId = res.data.id;
+
+      // When a Settle card is created, auto-link any existing unlinked People panels.
+      // This covers the case where the People card was created before the Settle card.
+      if (_tppSelectedType === 'settle' && newPanelId) {
+        (window._tripPanels || []).forEach(function(pp) {
+          if (pp.panel_type !== 'people') return;
+          var pd = _tppParse(pp.content);
+          if (pd.linked_settle_id != null) return;  // already linked — leave it
+          pd.linked_settle_id = newPanelId;
+          _tripFetch('/home/trip/' + _tripPid + '/plans/' + _tppPlanId + '/panels/' + pp.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: pp.title, content: pd }),
+          }).then(function() {
+            // Update local panel cache so next render sees the link immediately
+            pp.content = JSON.stringify(pd);
+          }).catch(function() {});
+        });
+      }
+
       window.tripClosePanelModal();
       localStorage.setItem(_QC_LS_KEY, 'true');
       window._tripLoadPanels(_tppPlanId);
