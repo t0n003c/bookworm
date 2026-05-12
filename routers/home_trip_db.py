@@ -811,14 +811,26 @@ async def _panel_summaries(
             )
         rows = await cur.fetchall()
 
-    # Build a map of people-card ID → member count so group budget panels
-    # can report how many people share their items.
-    people_card_count: dict[int, int] = {}
+    # Build a map of people-card ID → member count / names so group budget panels
+    # can report how many people share their items, and so settle panels can resolve
+    # their authoritative member list when linked via either direction.
+    people_card_count: dict[int, int] = {}        # people_card_id → count
+    people_card_members: dict[int, list[str]] = {}  # people_card_id → [name, ...]
+    settle_to_members: dict[int, list[str]] = {}    # settle_id → [name, ...]  (direction A)
     for row in rows:
         if row["panel_type"] == "people":
             c = _parse_panel_json(row["content"])
-            members = c.get("members") or c.get("people") or []
-            people_card_count[row["id"]] = len(members)
+            raw_members = c.get("members") or c.get("people") or []
+            names = [
+                (m.get("name", "") if isinstance(m, dict) else str(m))
+                for m in raw_members
+            ]
+            people_card_count[row["id"]]   = len(names)
+            people_card_members[row["id"]] = names
+            # Direction A: People card → Settle card via linked_settle_id
+            ls = c.get("linked_settle_id")
+            if ls is not None:
+                settle_to_members[int(ls)] = names
 
     budget_panels: list[dict] = []
     settle_panels: list[dict] = []
@@ -876,7 +888,20 @@ async def _panel_summaries(
                 ),
             })
         elif row["panel_type"] == "settle":
-            people   = c.get("people")   or []
+            # Resolve the authoritative member list — same two-direction lookup
+            # as the frontend _tppFindLinkedPeoplePanel:
+            #   A) A People card has linked_settle_id pointing at this card
+            #   B) This settle card has linked_people_id pointing at a People card
+            # Direction A takes priority (matches frontend precedence).
+            if row["id"] in settle_to_members:
+                people = settle_to_members[row["id"]]
+            else:
+                lp_id = c.get("linked_people_id")
+                lp_id = int(lp_id) if lp_id is not None else None
+                if lp_id is not None and lp_id in people_card_members:
+                    people = people_card_members[lp_id]
+                else:
+                    people = c.get("people") or []
             expenses = c.get("expenses") or []
             cur_code = c.get("currency") or "USD"
             paid_by  = [0.0] * len(people)   # total each person fronted
