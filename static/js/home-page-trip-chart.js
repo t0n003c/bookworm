@@ -208,7 +208,47 @@ function _tripEsc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Shared per-person entry builder ──────────────────────────────────────────
+// ── Shared all-persons entry builder ─────────────────────────────────────────
+// Canonical entry list for the "All" (no person selected) Actuals view.
+// Matches the same sources as Net Spent: settleNetSpent + budgetTracked.
+//   • Settle panel expenses — full group amounts, by category
+//   • Unreconciled budget items only (reconciled ones are already inside settle)
+function _tripAllEntries(data) {
+  var entries = [];
+
+  // 1. Settle panel expenses (complete group spend)
+  (data.settle_panels || []).forEach(function(sp) {
+    (sp.expenses || []).forEach(function(exp) {
+      var conv = Math.round(_tripConvert(parseFloat(exp.amount) || 0, sp.currency));
+      if (conv <= 0) return;
+      entries.push({
+        label:    exp.desc || 'Expense',
+        cost:     conv,
+        category: exp.category || '',
+        source:   'settle',
+        panel:    sp.title,
+      });
+    });
+  });
+
+  // 2. Unreconciled budget items only (skip reconciled — already in settle above)
+  (data.budget_panels || []).forEach(function(bp) {
+    (bp.items || []).forEach(function(it) {
+      if (it.reconciled) return;
+      var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
+      if (conv <= 0) return;
+      entries.push({
+        label:    it.label || it.note || 'Budget Item',
+        cost:     conv,
+        category: it.category || '',
+        source:   'budget',
+        panel:    bp.title,
+      });
+    });
+  });
+
+  return entries;
+}
 // Computes the canonical flat list of cost entries for a specific person.
 // Used by BOTH the doughnut (Budget by Category) and bar (Actual Expenses)
 // charts so they always display the same total.
@@ -593,14 +633,10 @@ function _tripRenderTypeChart(data) {
         catMap[cat] = (catMap[cat] || 0) + e.cost;
       });
     } else {
-      // ─ All: budget items grouped by category across all panels
-      (data.budget_panels || []).forEach(function(bp) {
-        (bp.items || []).forEach(function(it) {
-          var conv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
-          if (conv <= 0) return;
-          var cat = (it.category || '').trim() || 'Uncategorized';
-          catMap[cat] = (catMap[cat] || 0) + conv;
-        });
+      // ─ All: settle expenses + unreconciled budget items — same sources as Net Spent.
+      _tripAllEntries(data).forEach(function(e) {
+        var cat = (e.category || '').trim() || 'Uncategorized';
+        catMap[cat] = (catMap[cat] || 0) + e.cost;
       });
     }
     var catEntries = Object.keys(catMap)
@@ -906,59 +942,41 @@ function _tripRenderBudgetChart(data) {
     return;
   }
 
-  // ─ ACTUALS / ALL: budget items grouped by category, only populated cats shown ──────
-  // Build a category → total map from manual budget items only (no spot estimates).
-  // When a person is selected, filter to group panels + that person's individual panels.
+  // ─ ACTUALS / ALL: settle expenses + unreconciled budget items by category ────────
+  // Uses _tripAllEntries so the chart total always equals Net Spent
+  // (settleNetSpent + budgetTracked).
   var _tc = window._tripTypeColor || function() { return '#ffc220'; };
-  var catMap   = {};  // catName → { total, items[], reconciled }
-  var visibleBudgetPanels = (data.budget_panels || []).filter(function(bp) {
-    if (!person) return true;
-    if ((bp.budget_scope || 'group') !== 'individual') return true;
-    return (bp.budget_person || '').trim() === person;
-  });
-  visibleBudgetPanels.forEach(function(bp) {
-    (bp.items || []).forEach(function(it) {
-      var conv = Math.round(_tripConvert(it.amount, bp.currency));
-      if (conv <= 0) return;
-      var cat = (it.category || '').trim() || 'Uncategorized';
-      if (!catMap[cat]) catMap[cat] = { total: 0, items: [], allReconciled: true };
-      catMap[cat].total += conv;
-      catMap[cat].items.push(it.label || it.note || 'Item');
-      if (!it.reconciled) catMap[cat].allReconciled = false;
-    });
+  var catAggAll = {};  // catName → { total, settleTotal, budgetTotal, items[] }
+  _tripAllEntries(data).forEach(function(e) {
+    var cat = (e.category || '').trim() || 'Uncategorized';
+    if (!catAggAll[cat]) catAggAll[cat] = { total: 0, settleTotal: 0, budgetTotal: 0, items: [] };
+    catAggAll[cat].total += e.cost;
+    if (e.source === 'settle') catAggAll[cat].settleTotal += e.cost;
+    else                       catAggAll[cat].budgetTotal  += e.cost;
+    catAggAll[cat].items.push(e.label);
   });
 
-  var catEntries = Object.keys(catMap)
-    .map(function(cat) {
-      return {
-        label:         cat,
-        cost:          catMap[cat].total,
-        items:         catMap[cat].items,
-        allReconciled: catMap[cat].allReconciled,
-      };
-    })
-    .filter(function(e) { return e.cost > 0; })
-    .sort(function(a, b) { return b.cost - a.cost; });
+  var catEntries = Object.keys(catAggAll)
+    .map(function(cat) { return { label: cat, d: catAggAll[cat] }; })
+    .filter(function(e) { return e.d.total > 0; })
+    .sort(function(a, b) { return b.d.total - a.d.total; });
 
   if (!catEntries.length) {
-    _showEmpty('No budget items yet — add manual expenses to a Budget panel.');
+    _showEmpty('No expenses yet — add expenses to a Settle Up or Budget panel.');
     return;
   }
 
-  var catTotal = catEntries.reduce(function(s, e) { return s + e.cost; }, 0);
+  var catTotal = catEntries.reduce(function(s, e) { return s + e.d.total; }, 0);
 
   _tripBudgetChart = new window.Chart(canvas, {
     type: 'bar',
     data: {
-      labels: catEntries.map(function(e) { return e.label; }),
+      labels:   catEntries.map(function(e) { return e.label; }),
       datasets: [{
         label: 'Cost (' + cur + ')',
-        data:  catEntries.map(function(e) { return e.cost; }),
+        data:  catEntries.map(function(e) { return e.d.total; }),
         backgroundColor: catEntries.map(function(e) {
-          // Match Spots pie colours; Uncategorized → spark yellow
-          return e.label === 'Uncategorized'
-            ? '#ffc220cc'
-            : _tc(e.label) + 'cc';
+          return (e.label === 'Uncategorized' ? '#ffc220' : _tc(e.label)) + 'cc';
         }),
         borderColor: catEntries.map(function(e) {
           return e.label === 'Uncategorized' ? '#995213' : _tc(e.label);
@@ -972,13 +990,20 @@ function _tripRenderBudgetChart(data) {
         legend: {display: false},
         tooltip: {callbacks: {
           label: function(ctx) {
-            var e    = catEntries[ctx.dataIndex];
-            var pct  = catTotal > 0 ? Math.round(ctx.raw / catTotal * 100) : 0;
-            var preview = e.items.slice(0, 4).map(function(n) { return '• ' + n; });
-            if (e.items.length > 4) preview.push('… +' + (e.items.length - 4) + ' more');
+            var e   = catEntries[ctx.dataIndex];
+            var pct = catTotal > 0 ? Math.round(ctx.raw / catTotal * 100) : 0;
             var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)'];
-            lines = lines.concat(preview);
-            if (e.allReconciled) lines.push(' ✓ All confirmed via Settle Up');
+            if (e.d.settleTotal > 0 && e.d.budgetTotal > 0) {
+              lines.push(' \uD83D\uDFE2 Settle: ' + cur + ' ' + e.d.settleTotal.toLocaleString());
+              lines.push(' \uD83D\uDD35 Budget: ' + cur + ' ' + e.d.budgetTotal.toLocaleString());
+            } else if (e.d.settleTotal > 0) {
+              lines.push(' From Settle Up panels');
+            } else {
+              lines.push(' From Budget panels (unreconciled)');
+            }
+            var shown = e.d.items.slice(0, 4);
+            shown.forEach(function(it) { lines.push('   \u2022 ' + it); });
+            if (e.d.items.length > 4) lines.push('   \u2026 +' + (e.d.items.length - 4) + ' more');
             return lines;
           },
         }},
@@ -986,10 +1011,11 @@ function _tripRenderBudgetChart(data) {
       scales: {
         y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
             ticks: {font: {size: 11}, callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
-        x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
+        x: {grid: {display: false}, ticks: {font: {size: 11}, maxRotation: 30}},
       },
     },
   });
+  _tripUpdateBudgetLegend(wrap, false, false);  // category colours are self-labelled
   _tripUpdateBudgetLegend(wrap, false, false);  // category colours are self-labelled
 }
 
