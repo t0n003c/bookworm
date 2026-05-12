@@ -69,17 +69,25 @@ window._tppPeople = function(p, data, isEdit) {
     var hue      = name.split('').reduce(function(a, c) { return a + c.charCodeAt(0); }, 0) % 360;
     var avatarBg = 'background:hsl(' + hue + ',50%,46%)';
 
-    // Settle balance badge
+    // Settle balance badge — balance = paid − owes
+    //   positive → person overpaid → is owed money back
+    //   negative → person underpaid → still owes
     var balBadge = '';
     if (settlePanel && balances[name] !== undefined) {
       var bal    = balances[name].balance;
       var balAbs = settleCur + '\u00a0' + Math.abs(Math.round(bal)).toLocaleString('en-US');
       balBadge = bal > 0.5
         ? '<span class="ml-1 text-[9px] font-semibold text-[#2a8703] dark:text-green-400 ' +
-            'bg-green-50 dark:bg-green-900/30 px-1.5 rounded-full whitespace-nowrap">+' + balAbs + '</span>'
+            'bg-green-50 dark:bg-green-900/30 px-1.5 rounded-full whitespace-nowrap" ' +
+            'title="Overpaid — this person is owed money back">' +
+            '+' + balAbs +
+            '<span class="font-normal opacity-75"> gets back</span></span>'
         : bal < -0.5
           ? '<span class="ml-1 text-[9px] font-semibold text-[#ea1100] dark:text-red-400 ' +
-              'bg-red-50 dark:bg-red-900/30 px-1.5 rounded-full whitespace-nowrap">\u2212' + balAbs + '</span>'
+              'bg-red-50 dark:bg-red-900/30 px-1.5 rounded-full whitespace-nowrap" ' +
+              'title="Underpaid — this person still owes this amount">' +
+              '\u2212' + balAbs +
+              '<span class="font-normal opacity-75"> owes</span></span>'
           : '<span class="ml-1 text-[9px] font-semibold text-[#2a8703] dark:text-green-400 ' +
               'bg-green-50 dark:bg-green-900/30 px-1.5 rounded-full">\u2713 settled</span>';
     }
