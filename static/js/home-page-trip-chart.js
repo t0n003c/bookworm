@@ -308,15 +308,31 @@ function _tripRenderStatCards(data) {
         }
       });
     });
-    // Also include any individual-scope budget panels for this person.
-    // These are manual items not tracked by a Settle panel.
+    // Also include budget panel items for this person:
+    //   • Individual panels explicitly assigned to them
+    //   • Group panels divided equally among the group members
+    var settleNamesMap = {};
+    (data.settle_panels || []).forEach(function(sp) {
+      (sp.per_person || []).forEach(function(pp) { settleNamesMap[pp.name] = true; });
+    });
+    var fallbackCount = Object.keys(settleNamesMap).length;
+
     var indivBudgetSpent = 0;
     (data.budget_panels || []).forEach(function(bp) {
-      if (bp.budget_scope !== 'individual') return;
-      if ((bp.budget_person || '').trim() !== _tripChartSelectedPerson) return;
-      indivBudgetSpent += _tripConvert(bp.spent, bp.currency);
+      var scope = (bp.budget_scope || 'group');
+      if (scope === 'individual') {
+        if ((bp.budget_person || '').trim() !== _tripChartSelectedPerson) return;
+        indivBudgetSpent += _tripConvert(bp.spent, bp.currency);
+      } else {
+        // Group budget: add this person's equal share
+        var div = (bp.people_count && bp.people_count > 0)
+          ? bp.people_count
+          : (fallbackCount > 0 ? fallbackCount : 1);
+        // bp.spent = sum of unreconciled items
+        indivBudgetSpent += _tripConvert(bp.spent, bp.currency) / div;
+      }
     });
-    // Net cost = fair-share from settle + manual individual spend
+    // Net cost = fair-share from settle + manual budget spend
     var netCost = (personPaid - personBal) + indivBudgetSpent;
     var fmt = function(n) {
       return cur + ' ' + Math.abs(Math.round(n)).toLocaleString('en-US');
@@ -680,28 +696,61 @@ function _tripRenderBudgetChart(data) {
         });
       });
     });
+    // Collect unique people names across ALL settle panels — used as fallback
+    // denominator when a group budget panel has no people_count.
+    var settleNames = {};
+    (data.settle_panels || []).forEach(function(sp) {
+      (sp.per_person || []).forEach(function(pp) { settleNames[pp.name] = true; });
+    });
+    var settlePeopleCount = Object.keys(settleNames).length;
+
     // Also pull in manual items from individual budget panels for this person
     (data.budget_panels || []).forEach(function(bp) {
-      if ((bp.budget_scope || 'group') !== 'individual') return;
-      if ((bp.budget_person || '').trim() !== person) return;
-      (bp.items || []).forEach(function(it) {
-        var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
-        if (conv <= 0) return;
-        personEntries.push({
-          label:    it.label || it.note || 'Budget Item',
-          cost:     conv,
-          didPay:   true,   // manual items are self-paid by definition
-          panel:    bp.title,
-          category: it.category || '',
-          isManual: true,
+      var scope = (bp.budget_scope || 'group');
+
+      if (scope === 'individual') {
+        // Individual: only include if this person is explicitly assigned
+        if ((bp.budget_person || '').trim() !== person) return;
+        (bp.items || []).forEach(function(it) {
+          var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
+          if (conv <= 0) return;
+          personEntries.push({
+            label:    it.label || it.note || 'Budget Item',
+            cost:     conv,
+            didPay:   true,
+            panel:    bp.title,
+            category: it.category || '',
+            isManual: true,
+          });
         });
-      });
+
+      } else {
+        // Group: divide each item equally among the group members.
+        // Use people_count from the linked People card; fall back to
+        // the number of unique names across all settle panels.
+        var divisor = (bp.people_count && bp.people_count > 0)
+          ? bp.people_count
+          : (settlePeopleCount > 0 ? settlePeopleCount : 1);
+        (bp.items || []).forEach(function(it) {
+          var fullConv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
+          var share    = Math.round(fullConv / divisor);
+          if (share <= 0) return;
+          personEntries.push({
+            label:    it.label || it.note || 'Group Budget Item',
+            cost:     share,
+            didPay:   false,   // group items = shared cost, dim colour
+            panel:    bp.title + ' (' + divisor + ' people)',
+            category: it.category || '',
+            isManual: true,
+          });
+        });
+      }
     });
     personEntries.sort(function(a, b) { return b.cost - a.cost; });
 
     if (!personEntries.length) {
       _showEmpty('No expenses found for ' + _tripEsc(person) +
-        ' — add expenses to a Settle Up panel or a Budget panel (Individual scope).');
+        ' — add expenses to a Settle Up panel or a Budget panel.');
       return;
     }
 
@@ -735,7 +784,9 @@ function _tripRenderBudgetChart(data) {
             label: function(ctx) {
               var e    = personEntries[ctx.dataIndex];
               var pct  = pTotal > 0 ? Math.round(ctx.raw / pTotal * 100) : 0;
-              var who  = e.didPay ? '🟢 Paid upfront by ' + person : '🔵 Share of group expense';
+              var who  = e.isManual
+                ? (e.didPay ? '🟢 Individual budget item' : '🔵 Share of group budget')
+                : (e.didPay ? '🟢 Paid upfront by ' + person : '🔵 Share of group expense');
               var cat  = e.category ? '🏷️ ' + e.category : '';
               var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' ' + who];
               if (cat) lines.push(' ' + cat);

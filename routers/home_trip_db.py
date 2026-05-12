@@ -781,7 +781,11 @@ def _parse_panel_json(raw: str) -> dict:
 async def _panel_summaries(
     page_id: int, user_id: int, plan_id: int | None
 ) -> tuple[list[dict], list[dict]]:
-    """Return (budget_panels, settle_panels) summarised for the chart tab."""
+    """Return (budget_panels, settle_panels) summarised for the chart tab.
+
+    Also queries 'people' panels so group budget panels can report how many
+    members share the cost (people_count field on each group budget panel).
+    """
     async with get_db() as db:
         if plan_id is None:
             cur = await db.execute(
@@ -789,7 +793,7 @@ async def _panel_summaries(
                 SELECT id, panel_type, title, content
                   FROM trip_plan_panels
                  WHERE page_id=? AND user_id=?
-                   AND panel_type IN ('budget','settle')
+                   AND panel_type IN ('budget','settle','people')
                  ORDER BY sort_order, id
                 """,
                 (page_id, user_id),
@@ -800,18 +804,29 @@ async def _panel_summaries(
                 SELECT id, panel_type, title, content
                   FROM trip_plan_panels
                  WHERE page_id=? AND user_id=? AND plan_id=?
-                   AND panel_type IN ('budget','settle')
+                   AND panel_type IN ('budget','settle','people')
                  ORDER BY sort_order, id
                 """,
                 (page_id, user_id, plan_id),
             )
         rows = await cur.fetchall()
 
+    # Build a map of people-card ID → member count so group budget panels
+    # can report how many people share their items.
+    people_card_count: dict[int, int] = {}
+    for row in rows:
+        if row["panel_type"] == "people":
+            c = _parse_panel_json(row["content"])
+            members = c.get("members") or c.get("people") or []
+            people_card_count[row["id"]] = len(members)
+
     budget_panels: list[dict] = []
     settle_panels: list[dict] = []
 
     for row in rows:
         c = _parse_panel_json(row["content"])
+        if row["panel_type"] == "people":
+            continue   # already consumed above
         if row["panel_type"] == "budget":
             items = c.get("items") or []
             # items can use either 'label' (old) or 'note' (new panel UI) as the
@@ -853,6 +868,12 @@ async def _panel_summaries(
                 } for it in items],
                 "linked_settle_id":  c.get("linked_settle_id"),
                 "linked_person_idx": c.get("linked_person_idx"),
+                "linked_people_id":  c.get("linked_people_id"),
+                # How many members share this group budget.
+                # Resolved from the linked People card; 0 = unknown / individual.
+                "people_count":      people_card_count.get(
+                    int(c["linked_people_id"]) if c.get("linked_people_id") else 0, 0
+                ),
             })
         elif row["panel_type"] == "settle":
             people   = c.get("people")   or []
