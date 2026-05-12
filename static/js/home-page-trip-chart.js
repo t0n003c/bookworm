@@ -756,24 +756,36 @@ function _tripRenderBudgetChart(data) {
 
     var pTotal = personEntries.reduce(function(s, e) { return s + e.cost; }, 0);
 
-    // Color by category; didPay = full opacity, shared = 55% opacity
+    // ── Aggregate flat entries into categories ──────────────────────────────
     var _tc = window._tripTypeColor || function() { return '#6b7280'; };
+    var catAgg = {};  // category -> { total, paidTotal, sharedTotal, items[] }
+    personEntries.forEach(function(e) {
+      var cat = (e.category || '').trim() || 'Uncategorized';
+      if (!catAgg[cat]) catAgg[cat] = { total: 0, paidTotal: 0, sharedTotal: 0, items: [] };
+      catAgg[cat].total       += e.cost;
+      catAgg[cat].paidTotal   += e.didPay ? e.cost : 0;
+      catAgg[cat].sharedTotal += e.didPay ? 0 : e.cost;
+      catAgg[cat].items.push(e);
+    });
+    var catEntries = Object.keys(catAgg)
+      .map(function(cat) { return { cat: cat, d: catAgg[cat] }; })
+      .sort(function(a, b) { return b.d.total - a.d.total; });
+
     _tripBudgetChart = new window.Chart(canvas, {
       type: 'bar',
       data: {
-        labels:   personEntries.map(function(e) { return e.label; }),
+        labels:   catEntries.map(function(e) { return e.cat; }),
         datasets: [{
           label: cur + ' share',
-          data:  personEntries.map(function(e) { return e.cost; }),
-          backgroundColor: personEntries.map(function(e) {
-            var hex = e.category ? _tc(e.category) : '#6b7280';
-            return hex + (e.didPay ? 'cc' : '66');   // full vs dim
+          data:  catEntries.map(function(e) { return e.d.total; }),
+          backgroundColor: catEntries.map(function(e) {
+            var hex = e.cat === 'Uncategorized' ? '#6b7280' : _tc(e.cat);
+            return hex + 'cc';
           }),
-          borderColor: personEntries.map(function(e) {
-            return e.category ? _tc(e.category) : '#6b7280';
+          borderColor: catEntries.map(function(e) {
+            return e.cat === 'Uncategorized' ? '#6b7280' : _tc(e.cat);
           }),
-          borderWidth: function(ctx) { return personEntries[ctx.dataIndex] && personEntries[ctx.dataIndex].didPay ? 2 : 1; },
-          borderRadius: 4,
+          borderWidth: 1.5, borderRadius: 4,
         }],
       },
       options: {
@@ -782,15 +794,25 @@ function _tripRenderBudgetChart(data) {
           legend: {display: false},
           tooltip: {callbacks: {
             label: function(ctx) {
-              var e    = personEntries[ctx.dataIndex];
+              var e    = catEntries[ctx.dataIndex];
               var pct  = pTotal > 0 ? Math.round(ctx.raw / pTotal * 100) : 0;
-              var who  = e.isManual
-                ? (e.didPay ? '🟢 Individual budget item' : '🔵 Share of group budget')
-                : (e.didPay ? '🟢 Paid upfront by ' + person : '🔵 Share of group expense');
-              var cat  = e.category ? '🏷️ ' + e.category : '';
-              var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)', ' ' + who];
-              if (cat) lines.push(' ' + cat);
-              lines.push(' Panel: ' + e.panel);
+              var lines = [' ' + cur + ' ' + ctx.raw.toLocaleString() + ' (' + pct + '%)'];
+              if (e.d.paidTotal > 0 && e.d.sharedTotal > 0) {
+                lines.push(' 🟢 Paid upfront: ' + cur + ' ' + e.d.paidTotal.toLocaleString());
+                lines.push(' 🔵 Shared cost:  ' + cur + ' ' + e.d.sharedTotal.toLocaleString());
+              } else if (e.d.paidTotal > 0) {
+                lines.push(' 🟢 Paid upfront by ' + person);
+              } else {
+                lines.push(' 🔵 Shared cost');
+              }
+              // List up to 5 contributing items
+              var shown = e.d.items.slice(0, 5);
+              shown.forEach(function(it) {
+                lines.push('   • ' + _tripEsc(it.label) + ' – ' + cur + ' ' + it.cost.toLocaleString());
+              });
+              if (e.d.items.length > 5) {
+                lines.push('   … +' + (e.d.items.length - 5) + ' more');
+              }
               return lines;
             },
           }},
@@ -799,7 +821,7 @@ function _tripRenderBudgetChart(data) {
           y: {beginAtZero: true, grid: {color: 'rgba(148,163,184,0.15)'},
               ticks: {font: {size: 11},
                       callback: function(v) { return cur + ' ' + v.toLocaleString(); }}},
-          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 35}},
+          x: {grid: {display: false}, ticks: {font: {size: 11}, maxRotation: 30}},
         },
       },
     });
