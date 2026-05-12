@@ -30,7 +30,7 @@ var _TRIP_FX_TO_USD = {
   INR: 0.012,  VND: 0.000039, BRL: 0.20, MYR: 0.22,
   PHP: 0.017,  HKD: 0.13,  TWD: 0.031, NZD: 0.60,
 };
-var _TRIP_FX_LABELS = ['USD','EUR','GBP','JPY','AUD','CAD','CHF','SGD',
+var _TRIP_FX_LABELS = ['USD','EUR','GBP','JPY','VND','AUD','CAD','CHF','SGD',
                         'THB','IDR','MXN','INR','KRW','BRL','MYR','PHP'];
 
 // Convert an amount from srcCurrency to _tripChartCurrency.

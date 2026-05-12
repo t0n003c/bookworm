@@ -21,7 +21,7 @@ var _subsChartLibsPromise = null;
 var _subsEditingId = 0;          // 0 = add mode, >0 = edit mode (sub id)
 
 var _SUBS_CURRENCIES = [
-  'USD','EUR','GBP','JPY','CAD','AUD','CHF',
+  'USD','EUR','GBP','JPY','VND','CAD','AUD','CHF',
   'SGD','HKD','MXN','BRL','INR','KRW','SEK','NOK'
 ];
 var _SUBS_CYCLES = [

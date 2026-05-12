@@ -2070,17 +2070,24 @@ function _tppSettle(p, data, isEdit) {
   }
 
   // ─ Currency row (edit mode) ────────────────────────────────────
+  var _SETTLE_CURRENCIES = [
+    'USD','EUR','GBP','JPY','VND',
+    'CAD','AUD','CHF','SGD','THB',
+    'KRW','IDR','MYR','PHP','INR',
+    'HKD','MXN','BRL',
+  ];
   var curRow = isEdit
     ? '<div class="flex items-center gap-1.5 px-3 pt-2 pb-1">' +
         '<span class="text-[10px] text-gray-500 dark:text-zinc-400 flex-shrink-0">Currency:</span>' +
-        '<input id="tpp-settle-cur-' + p.id + '" type="text" maxlength="5" ' +
-          'value="' + _tripEsc(cur) + '" ' +
-          'class="w-14 text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
+        '<select id="tpp-settle-cur-' + p.id + '" ' +
+          'onchange="tppSettleSaveCur(' + p.id + ')" ' +
+          'class="text-xs rounded border border-gray-200 dark:border-zinc-700 ' +
                  'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
-                 'px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40" />' +
-        '<button onclick="tppSettleSaveCur(' + p.id + ')" ' +
-          'class="text-[10px] px-2 py-1 rounded bg-gray-100 dark:bg-zinc-700 ' +
-                 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 transition">Set</button>' +
+                 'px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#0053e2]/40 cursor-pointer">' +
+          _SETTLE_CURRENCIES.map(function(c) {
+            return '<option value="' + c + '"' + (cur === c ? ' selected' : '') + '>' + c + '</option>';
+          }).join('') +
+        '</select>' +
       '</div>'
     : '';
 
