@@ -798,13 +798,18 @@ window._tripRenderAssignDrawer = function() {
     return;
   }
 
-  // ─ Header: plan name + “switch plan” link (full-width row)
+  // ─ Header: plan name + “switch plan” button (full-width row)
   var headerHtml =
     '<div class="flex items-center gap-2 w-full flex-shrink-0">' +
       '<span class="text-[10px] text-gray-400 dark:text-zinc-500 font-medium uppercase tracking-wide">Plan:</span>' +
       '<span id="trip-assign-plan-name" class="text-[10px] font-semibold text-gray-700 dark:text-zinc-200 truncate flex-1">…</span>' +
       '<button onclick="tripAssignClearPlan()" ' +
-        'class="text-[10px] text-[#0053e2] dark:text-blue-400 hover:underline flex-shrink-0 cursor-pointer">switch ↺</button>' +
+        'class="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg ' +
+               'bg-[#0053e2] text-white text-xs font-semibold ' +
+               'hover:bg-blue-700 active:bg-blue-800 transition ' +
+               'min-h-[2rem] touch-manipulation">' +
+        '↺ Switch Plan' +
+      '</button>' +
     '</div>';
 
   // ─ Chips row: horizontally scrollable, chips stay on one line
