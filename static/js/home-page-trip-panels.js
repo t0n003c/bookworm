@@ -1626,10 +1626,20 @@ function _tppSettleReceipt(p, data) {
 // ── Settle Up (main renderer) ───────────────────────────────────────────────────
 
 function _tppSettle(p, data, isEdit) {
-  var people   = data.people   || [];
   var expenses = data.expenses || [];
   var cur      = data.currency || 'USD';
   var layout   = data.layout   || 'standard';
+
+  // ─ Resolve linked People panel FIRST — its members are authoritative ─────────
+  // If a People card links to this settle card, use its member names as the live
+  // people list. This means data.people is always up-to-date at render time,
+  // even when the stored blob is stale or empty.
+  var linkedPeoplePanel = typeof window._tppFindLinkedPeoplePanel === 'function'
+    ? window._tppFindLinkedPeoplePanel(p.id)
+    : null;
+  var people = linkedPeoplePanel
+    ? (_tppParse(linkedPeoplePanel.content).members || []).map(function(m) { return m.name || ''; })
+    : (data.people || []);
 
   // ─ Layout picker (shown in BOTH view and edit mode) ─────────────────────────────
   var layouts = ['standard','compact','ledger','receipt'];
@@ -1649,26 +1659,29 @@ function _tppSettle(p, data, isEdit) {
       }).join('') +
     '</div>';
 
-  // ─ People card badge (if any People panel links to this settle card) ────────
-  var linkedPeoplePanel = typeof window._tppFindLinkedPeoplePanel === 'function'
-    ? window._tppFindLinkedPeoplePanel(p.id)
-    : null;
+  // ─ People card badge ─────────────────────────────────────────────
+  // linkedPeoplePanel already resolved above — build the badge
   var peopleBadge = linkedPeoplePanel
     ? '<div class="px-3 py-1 border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">' +
         '<button onclick="tppOpenPanelRef(' + linkedPeoplePanel.id + ')" ' +
           'class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ' +
                  'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-400 ' +
                  'hover:bg-blue-100 dark:hover:bg-blue-900/50 transition font-medium cursor-pointer">' +
-          '👥 ' + _tripEsc(linkedPeoplePanel.title || 'People') + ' → view contacts' +
+          '\uD83D\uDC65 ' + _tripEsc(linkedPeoplePanel.title || 'People') + ' \u2192 view contacts' +
         '</button>' +
       '</div>'
     : '';
 
+  // liveData passes the authoritative people list to all sub-renderers
+  var liveData = linkedPeoplePanel
+    ? Object.assign({}, data, { people: people })
+    : data;
+
   // ─ View mode: dispatch non-standard layouts (standard falls through) ─────────
   if (!isEdit) {
-    if (layout === 'compact') return layoutPicker + peopleBadge + _tppSettleCompact(p, data);
-    if (layout === 'ledger')  return layoutPicker + peopleBadge + _tppSettleLedger(p, data);
-    if (layout === 'receipt') return layoutPicker + peopleBadge + _tppSettleReceipt(p, data);
+    if (layout === 'compact') return layoutPicker + peopleBadge + _tppSettleCompact(p, liveData);
+    if (layout === 'ledger')  return layoutPicker + peopleBadge + _tppSettleLedger(p, liveData);
+    if (layout === 'receipt') return layoutPicker + peopleBadge + _tppSettleReceipt(p, liveData);
     // 'standard' falls through to the full standard renderer below
   }
 
@@ -1832,8 +1845,8 @@ function _tppSettle(p, data, isEdit) {
       '</div>'
     : '';
 
-  // ─ Settlement summary ─────────────────────────────────
-  var txns = _tppComputeSettlement(data);
+  // ─ Settlement summary ─────────────────────────────────────────────
+  var txns = _tppComputeSettlement(liveData);
   var txnRows = txns.map(function(t) {
     return '<div class="flex items-center gap-1 py-1">' +
       '<span class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate max-w-[35%]">' +
