@@ -370,8 +370,9 @@ function _tripRenderStatCards(data) {
         : '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">No expenses recorded yet</p>';
     }
   } else if (budgetCeiling > 0 || settleNetSpent > 0 || budgetTracked > 0) {
-    // Prefer settle total; fall back to manual budget items when no settle panel.
-    var displaySpent = settleNetSpent > 0 ? settleNetSpent : budgetTracked;
+    // Both sources are additive — budgetTracked only counts UNRECONCILED manual
+    // items (reconciled ones are already inside settleNetSpent), so no double-counting.
+    var displaySpent = settleNetSpent + budgetTracked;
     var overBudget   = budgetCeiling > 0 && displaySpent > budgetCeiling;
     var spentPct     = budgetCeiling > 0
       ? Math.round(displaySpent / budgetCeiling * 100)
@@ -381,17 +382,25 @@ function _tripRenderStatCards(data) {
       : spentPct >= 80 ? 'text-[#995213] dark:text-yellow-400'
       : 'text-[#2a8703] dark:text-green-400';
     costVal   = cur + '\u00a0' + Math.round(displaySpent).toLocaleString('en-US');
-    // Label tells user where the number came from
-    costLabel = settleNetSpent > 0
-      ? 'Net Spent (' + cur + ')'
-      : 'Budget Tracked (' + cur + ')';
-    costSub   = budgetCeiling > 0
-      ? '<p class="text-[10px] mt-0.5 text-gray-400 dark:text-zinc-500">' +
-          'of ' + cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US') + ' ceiling' +
-          (spentPct !== null
-            ? ' <span class="font-medium ' + pctColor + '">(' + spentPct + '%)</span>'
-            : '') +
-        '</p>'
+    costLabel = settleNetSpent > 0 ? 'Net Spent (' + cur + ')' : 'Budget Tracked (' + cur + ')';
+    // Sub-note: ceiling progress + source breakdown when both contribute
+    var subParts = [];
+    if (budgetCeiling > 0) {
+      subParts.push(
+        'of ' + cur + '\u00a0' + Math.round(budgetCeiling).toLocaleString('en-US') + ' ceiling' +
+        (spentPct !== null
+          ? ' <span class="font-medium ' + pctColor + '">(' + spentPct + '%)</span>'
+          : '')
+      );
+    }
+    if (settleNetSpent > 0 && budgetTracked > 0) {
+      subParts.push(
+        cur + '\u00a0' + Math.round(settleNetSpent).toLocaleString('en-US') + ' settle' +
+        ' + ' + cur + '\u00a0' + Math.round(budgetTracked).toLocaleString('en-US') + ' manual'
+      );
+    }
+    costSub = subParts.length
+      ? '<p class="text-[10px] mt-0.5 text-gray-400 dark:text-zinc-500">' + subParts.join(' \u00b7 ') + '</p>'
       : '';
   } else if (spotTotal > 0) {
     costVal   = cur + '\u00a0' + Math.round(spotTotal).toLocaleString('en-US');
