@@ -226,7 +226,13 @@ function _tripRenderBudgetPanels(data) {
   var el = document.getElementById('trip-chart-budget-panels');
   if (!el) return;
   if (!data) { el.innerHTML = ''; return; }  // planning mode: hide panels
-  var panels = data.budget_panels || [];
+  // When a person is selected, only show group panels + that person's individual panels.
+  var selected = _tripChartSelectedPerson;
+  var panels = (data.budget_panels || []).filter(function(p) {
+    if (!selected) return true;
+    if ((p.budget_scope || 'group') !== 'individual') return true;
+    return (p.budget_person || '').trim() === selected;
+  });
   if (!panels.length) { el.innerHTML = ''; return; }
   var cur = _tripChartCurrency;
   var cardCls = 'bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 p-4';

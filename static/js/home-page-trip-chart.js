@@ -284,10 +284,7 @@ function _tripRenderStatCards(data) {
     return;
   }
 
-  // ── ACTUALS MODE (existing logic) ───────────────────────────────────────
-  // Net spent: prefer settle panels (group expense log) — they're the source
-  // of truth for per-person breakdowns.  When no settle panel exists, fall
-  // back to the sum of unreconciled manual budget items instead.
+  // ── ACTUALS MODE ──────────────────────────────────────────────────────────
   var settleNetSpent = 0;
   (data.settle_panels || []).forEach(function(sp) {
     settleNetSpent += _tripConvert(sp.total_expenses, sp.currency);
@@ -311,38 +308,50 @@ function _tripRenderStatCards(data) {
         }
       });
     });
-    // Net cost = what they'll ultimately pay after all settlements
-    // = paid - balance (if positive) or paid + |balance| (if negative)
-    // which always equals owes/fair-share, but framed as a real spend figure.
-    var netCost = personPaid - personBal;   // same as personOwes
+    // Also include any individual-scope budget panels for this person.
+    // These are manual items not tracked by a Settle panel.
+    var indivBudgetSpent = 0;
+    (data.budget_panels || []).forEach(function(bp) {
+      if (bp.budget_scope !== 'individual') return;
+      if ((bp.budget_person || '').trim() !== _tripChartSelectedPerson) return;
+      indivBudgetSpent += _tripConvert(bp.spent, bp.currency);
+    });
+    // Net cost = fair-share from settle + manual individual spend
+    var netCost = (personPaid - personBal) + indivBudgetSpent;
     var fmt = function(n) {
-      return cur + ' ' + Math.abs(Math.round(n)).toLocaleString('en-US');
+      return cur + ' ' + Math.abs(Math.round(n)).toLocaleString('en-US');
     };
     costVal   = fmt(netCost);
     costLabel = _tripChartSelectedPerson + "'s Net Trip Cost";
-    // Sub-note breaks down how we got there
     var paidStr = fmt(personPaid);
     if (personBal > 0.5) {
-      // they overpaid — getting money back
       costSub =
         '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-          'Paid ' + paidStr +
+          'Settle: paid ' + paidStr +
           ' &minus; <span class="text-[#2a8703] dark:text-green-400 font-medium">' +
-            fmt(personBal) + ' back✓' +
+            fmt(personBal) + ' back ✓' +
           '</span>' +
+          (indivBudgetSpent > 0 ? ' + ' + fmt(indivBudgetSpent) + ' manual' : '') +
         '</p>';
     } else if (personBal < -0.5) {
-      // they underpaid — still owe more
       costSub =
         '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
-          'Paid ' + paidStr +
+          'Settle: paid ' + paidStr +
           ' + <span class="text-[#ea1100] dark:text-red-400 font-medium">' +
-            fmt(Math.abs(personBal)) + ' owed⚠' +
+            fmt(Math.abs(personBal)) + ' still owed ⚠' +
           '</span>' +
+          (indivBudgetSpent > 0 ? ' + ' + fmt(indivBudgetSpent) + ' manual' : '') +
+        '</p>';
+    } else if (indivBudgetSpent > 0) {
+      costSub =
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">' +
+          (personOwes > 0 ? 'Settle settled ✓ · ' : '') +
+          fmt(indivBudgetSpent) + ' tracked manually' +
         '</p>';
     } else {
-      costSub =
-        '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>';
+      costSub = personOwes > 0
+        ? '<p class="text-[10px] text-[#2a8703] dark:text-green-400 font-medium mt-0.5">Settled up ✓</p>'
+        : '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">No expenses recorded yet</p>';
     }
   } else if (budgetCeiling > 0 || settleNetSpent > 0 || budgetTracked > 0) {
     // Prefer settle total; fall back to manual budget items when no settle panel.
@@ -468,7 +477,15 @@ function _tripRenderTypeChart(data) {
   if (isActuals) {
     var _tc = window._tripTypeColor || function() { return '#6b7280'; };
     var catMap = {};
-    (data.budget_panels || []).forEach(function(bp) {
+    // When a person is selected, only count:
+    //   • group-scope panels (everyone's share)
+    //   • individual-scope panels whose budget_person matches the selected name
+    var doughnutPanels = (data.budget_panels || []).filter(function(bp) {
+      if (!person) return true;
+      if ((bp.budget_scope || 'group') !== 'individual') return true;
+      return (bp.budget_person || '').trim() === person;
+    });
+    doughnutPanels.forEach(function(bp) {
       (bp.items || []).forEach(function(it) {
         var conv = _tripConvert(parseFloat(it.amount) || 0, bp.currency);
         if (conv <= 0) return;
@@ -662,11 +679,28 @@ function _tripRenderBudgetChart(data) {
         });
       });
     });
+    // Also pull in manual items from individual budget panels for this person
+    (data.budget_panels || []).forEach(function(bp) {
+      if ((bp.budget_scope || 'group') !== 'individual') return;
+      if ((bp.budget_person || '').trim() !== person) return;
+      (bp.items || []).forEach(function(it) {
+        var conv = Math.round(_tripConvert(parseFloat(it.amount) || 0, bp.currency));
+        if (conv <= 0) return;
+        personEntries.push({
+          label:    it.label || it.note || 'Budget Item',
+          cost:     conv,
+          didPay:   true,   // manual items are self-paid by definition
+          panel:    bp.title,
+          category: it.category || '',
+          isManual: true,
+        });
+      });
+    });
     personEntries.sort(function(a, b) { return b.cost - a.cost; });
 
     if (!personEntries.length) {
-      _showEmpty('No settle expenses found for ' + _tripEsc(person) +
-        ' — add expenses to a Settle Up panel, then refresh Charts.');
+      _showEmpty('No expenses found for ' + _tripEsc(person) +
+        ' — add expenses to a Settle Up panel or a Budget panel (Individual scope).');
       return;
     }
 
@@ -784,11 +818,17 @@ function _tripRenderBudgetChart(data) {
     return;
   }
 
-  // ── ACTUALS / ALL: budget items grouped by category, only populated cats shown ──
+  // ─ ACTUALS / ALL: budget items grouped by category, only populated cats shown ──────
   // Build a category → total map from manual budget items only (no spot estimates).
+  // When a person is selected, filter to group panels + that person's individual panels.
   var _tc = window._tripTypeColor || function() { return '#ffc220'; };
   var catMap   = {};  // catName → { total, items[], reconciled }
-  (data.budget_panels || []).forEach(function(bp) {
+  var visibleBudgetPanels = (data.budget_panels || []).filter(function(bp) {
+    if (!person) return true;
+    if ((bp.budget_scope || 'group') !== 'individual') return true;
+    return (bp.budget_person || '').trim() === person;
+  });
+  visibleBudgetPanels.forEach(function(bp) {
     (bp.items || []).forEach(function(it) {
       var conv = Math.round(_tripConvert(it.amount, bp.currency));
       if (conv <= 0) return;
