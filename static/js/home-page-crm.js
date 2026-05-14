@@ -470,9 +470,9 @@ function _crmContactModal(c) {
                </span>
              </label>`).join('')
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
-      return `<div class="col-span-2">
-        <div class="flex items-center gap-1 mb-1.5">
-          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</span>
+      return `<div class="col-span-2 flex items-start gap-2">
+        <div class="flex items-center gap-1 flex-shrink-0 pt-0.5">
+          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 whitespace-nowrap">${_crmEsc(f.label)}</span>
           ${delFieldBtn(f.id)}
         </div>
         <div class="flex flex-wrap gap-1.5">${pills}</div>
@@ -497,9 +497,9 @@ function _crmContactModal(c) {
                </span>
              </label>`).join('')
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
-      return `<div class="col-span-2">
-        <div class="flex items-center gap-1 mb-1.5">
-          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</span>
+      return `<div class="col-span-2 flex items-start gap-2">
+        <div class="flex items-center gap-1 flex-shrink-0 pt-0.5">
+          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 whitespace-nowrap">${_crmEsc(f.label)}</span>
           ${delFieldBtn(f.id)}
         </div>
         <div class="flex flex-wrap gap-1.5">${pills}</div>
