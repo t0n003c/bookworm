@@ -145,7 +145,7 @@ function _crmRenderGallery_cards(rows, cv) {
             ${cv('company')&&c.company?`<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>`:''}
             ${cv('email')&&c.email?`<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
               class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-1 leading-tight">${_crmEsc(c.email)}</a>`:''}
-            ${cv('phone')&&c.phone?`<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(c.phone)}</p>`:''}
+            ${cv('phone')&&c.phone?`<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(_crmPhone(c.phone))}</p>`:''}
             ${cfRows}
           </div>
         </div>
@@ -178,7 +178,7 @@ function _crmRenderGallery_compact(rows, cv) {
           <p class="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate leading-tight">${_crmEsc(c.name||'—')}</p>
           ${meta?`<p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">${meta}</p>`:''}
         </div>
-        ${cv('phone')&&c.phone?`<p class="text-[11px] text-gray-400 dark:text-zinc-500 flex-shrink-0 hidden sm:block">${_crmEsc(c.phone)}</p>`:''}
+        ${cv('phone')&&c.phone?`<p class="text-[11px] text-gray-400 dark:text-zinc-500 flex-shrink-0 hidden sm:block">${_crmEsc(_crmPhone(c.phone))}</p>`:''}
         ${tags.length?`<div class="hidden sm:flex gap-1 flex-shrink-0 items-center">
           ${tags.slice(0,3).map(t=>`<span class="w-2 h-2 rounded-full bg-[#0053e2] opacity-50" title="${_crmEsc(t.trim())}"></span>`).join('')}
           ${tags.length>3?`<span class="text-[10px] text-gray-400 dark:text-zinc-500">+${tags.length-3}</span>`:''}

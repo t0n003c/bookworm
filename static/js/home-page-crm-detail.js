@@ -137,7 +137,7 @@ function _crmRenderDetail() {
                 class="inline-flex items-center gap-1 text-xs text-[#0053e2] dark:text-blue-400 hover:underline">
                 ✉ ${_crmEsc(c.email)}</a>` : ''}
               ${c.phone ? `<span class="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400">
-                📞 ${_crmEsc(c.phone)}</span>` : ''}
+                📞 ${_crmEsc(_crmPhone(c.phone))}</span>` : ''}
             </div>
             ${tagHtml ? `<div class="flex flex-wrap gap-1.5 mt-3">${tagHtml}</div>` : ''}
           </div>

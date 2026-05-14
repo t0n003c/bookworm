@@ -249,7 +249,7 @@ function _crmRenderTable() {
       if (col.id === 'name') return `<td class="${tdCls} font-semibold"><button onclick="crmOpenDetail(${c.id})" class="hover:text-[#0053e2] transition text-left">${_crmEsc(c.name||'—')}</button></td>`;
       if (col.id === 'company') return `<td class="${tdCls}">${_crmEsc(c.company||'')}</td>`;
       if (col.id === 'email')   return `<td class="${tdCls}"><a href="mailto:${_crmEsc(c.email||'')}" class="hover:text-[#0053e2]">${_crmEsc(c.email||'')}</a></td>`;
-      if (col.id === 'phone')   return `<td class="${tdCls}">${_crmEsc(c.phone||'')}</td>`;
+      if (col.id === 'phone')   return `<td class="${tdCls}">${_crmEsc(_crmPhone(c.phone||''))}</td>`;
       if (col.id === 'tags') {
         const tags = (c.tags||'').split(',').filter(Boolean).map(t =>
           `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mr-0.5">${_crmEsc(t.trim())}</span>`
@@ -408,8 +408,8 @@ function _crmContactModal(c) {
              placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>`;
 
   // Flat underline input — used for the 6 built-in default fields
-  const flat = (name, val, type='text', placeholder='') =>
-    `<input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}"
+  const flat = (name, val, type='text', placeholder='', extraAttrs='') =>
+    `<input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}" ${extraAttrs}
       class="w-full bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
              text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600
              focus:outline-none focus:border-[#0053e2] transition"/>`;
@@ -420,30 +420,39 @@ function _crmContactModal(c) {
        ${text}${required ? ' <span class="text-red-400">*</span>' : ''}
      </label>`;
 
+  // Shared × delete button for custom fields
+  const delFieldBtn = (fid) =>
+    `<button type="button" onclick="crmModalDeleteField(${fid},${c?.id||0})"
+       title="Remove field from all contacts"
+       class="ml-auto text-gray-300 hover:text-red-500 transition text-xs leading-none flex-shrink-0">
+       ×
+     </button>`;
+
   const customFields = _crmFields.map(f => {
     const val = fv[f.id] || '';
     let control;
     if (f.field_type === 'checkbox') {
-      // Toggle switch — visually obvious, no JS needed (peer utilities)
       return `<div class="col-span-2 flex items-center justify-between
                           rounded-lg border border-gray-200 dark:border-zinc-700
                           px-3 py-2.5">
         <span class="text-sm font-medium text-gray-700 dark:text-zinc-200">${_crmEsc(f.label)}</span>
-        <label class="relative flex items-center cursor-pointer shrink-0">
-          <input type="checkbox" name="cf_${f.id}" value="1"
-                 id="cf_chk_${f.id}" ${val==='1'?'checked':''}
-                 class="sr-only peer"/>
-          <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
-                      peer-checked:bg-[#0053e2] transition-colors"></div>
-          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
-                      transition-transform peer-checked:translate-x-5"></div>
-        </label>
+        <div class="flex items-center gap-2">
+          <label class="relative flex items-center cursor-pointer shrink-0">
+            <input type="checkbox" name="cf_${f.id}" value="1"
+                   id="cf_chk_${f.id}" ${val==='1'?'checked':''}
+                   class="sr-only peer"/>
+            <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
+                        peer-checked:bg-[#0053e2] transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
+                        transition-transform peer-checked:translate-x-5"></div>
+          </label>
+          ${delFieldBtn(f.id)}
+        </div>
       </div>`;
     }
     if (f.field_type === 'multi_select') {
       var ms = []; try { ms = JSON.parse(val); } catch {}
       const opts = (f.options||'').split('|').filter(Boolean);
-      // Pill/chip toggles — sr-only checkbox + peer-checked styling on visible span
       control = opts.length
         ? `<div class="flex flex-wrap gap-1.5">${opts.map(o =>
             `<label class="cursor-pointer">
@@ -458,9 +467,7 @@ function _crmContactModal(c) {
                </span>
              </label>`).join('')}
           </div>`
-        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">
-             No options yet — go to ⚙️ Fields to add some.
-           </p>`;
+        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
     } else if (f.field_type === 'file_links') {
       var fl = []; try { fl = JSON.parse(val); } catch {}
       control = `<textarea name="cf_${f.id}" rows="2" placeholder="One URL per line"
@@ -469,31 +476,30 @@ function _crmContactModal(c) {
                focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(fl.join('\n'))}</textarea>`;
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
-      if (!opts.length) {
-        control = `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">
-          No options yet — go to ⚙️ Fields to add some.</p>`;
-      } else {
-        control = `<select name="cf_${f.id}"
-          class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
-                 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                 focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-          <option value="" class="text-gray-400" ${!val?'selected':''}>— none —</option>
-          ${opts.map(o =>
-            `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
-          ).join('')}
-        </select>`;
-      }
+      control = opts.length
+        ? `<select name="cf_${f.id}"
+            class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
+                   text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                   focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+            <option value="" ${!val?'selected':''}>— none —</option>
+            ${opts.map(o =>
+              `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
+            ).join('')}
+          </select>`
+        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
     } else if (f.field_type === 'date') {
       control = inp(`cf_${f.id}`, val, 'date');
       var remDiv = isEdit
         ? `<div id="crm-rem-${f.id}" class="mt-1.5 text-xs text-gray-400 italic">Loading reminders…</div>`
         : '';
       return `<div class="col-span-2">
-        <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
+          ${delFieldBtn(f.id)}
+        </div>
         ${control}${remDiv}
       </div>`;
     } else if (f.field_type === 'text') {
-      // Multi-line textarea — resize handle matches the file_links box behaviour
       control = `<textarea name="cf_${f.id}" rows="3"
         onkeydown="_crmTextBulletKey(event)"
         class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
@@ -503,7 +509,13 @@ function _crmContactModal(c) {
       var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
       control = inp(`cf_${f.id}`, val, iType);
     }
-    return `<div class="col-span-2"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">${_crmEsc(f.label)}</label>${control}</div>`;
+    return `<div class="col-span-2">
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
+        ${delFieldBtn(f.id)}
+      </div>
+      ${control}
+    </div>`;
   }).join('');
 
   const body = `
@@ -556,7 +568,7 @@ function _crmContactModal(c) {
           </div>
           <div>
             ${flatLbl('Phone')}
-            ${flat('phone', c?.phone, 'tel', '+1 555 000 0000')}
+            ${flat('phone', c?.phone, 'tel', '+1 555 000 0000', 'oninput="crmFmtPhone(this)"')}
           </div>
           <div>
             ${flatLbl('Birthday')}
@@ -572,10 +584,35 @@ function _crmContactModal(c) {
           </div>
         </div>
 
-        <!-- Tags + custom fields -->
+        <!-- Tags + custom fields + add-field form -->
         <div class="grid grid-cols-2 gap-3 mb-3">
           <div class="col-span-2"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Tags <span class="text-gray-400 font-normal">(comma-separated)</span></label>${inp('tags', c?.tags, 'text', 'vendor, priority')}</div>
           ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
+          <div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">
+            <p class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Add field</p>
+            <form onsubmit="crmModalAddField(event,${c?.id||0})" class="flex gap-2 items-center">
+              <input name="label" placeholder="Field name" required
+                class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                       text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                       placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+              <select name="field_type"
+                class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                       text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="url">URL</option>
+                <option value="email">Email</option>
+                <option value="select">Select</option>
+                <option value="multi_select">Multi-select</option>
+                <option value="checkbox">Checkbox</option>
+              </select>
+              <button type="submit"
+                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
+                       hover:bg-blue-700 transition flex-shrink-0">Add</button>
+            </form>
+          </div>
         </div>
 
         <p id="crm-contact-err" class="hidden text-xs text-red-500 mb-2"></p>
@@ -817,6 +854,69 @@ async function crmHandlePicFile(input, contactId) {
 // Field management → home-page-crm-fields.js
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
+// ── Phone formatting ─────────────────────────────────────────────────────────────
+function _crmPhone(raw) {
+  if (!raw) return '';
+  var s = raw.trim();
+  // Keep international numbers (starting with +) as-is if not US
+  var digits = s.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+  }
+  if (digits.length === 11 && digits[0] === '1') {
+    return '+1 (' + digits.slice(1,4) + ') ' + digits.slice(4,7) + '-' + digits.slice(7);
+  }
+  return s;
+}
+
+// Called oninput on the phone field — formats in place
+window.crmFmtPhone = function(el) {
+  var digits = el.value.replace(/\D/g, '');
+  if (digits.length === 10) {
+    el.value = '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+  } else if (digits.length === 11 && digits[0] === '1') {
+    el.value = '+1 (' + digits.slice(1,4) + ') ' + digits.slice(4,7) + '-' + digits.slice(7);
+  }
+};
+
+// ── Inline field management from contact modal ───────────────────────────────────
+window.crmModalAddField = async function(e, contactId) {
+  e.preventDefault();
+  var form = e.target;
+  var label = (form.label.value || '').trim();
+  var type  = form.field_type.value || 'text';
+  if (!label) return;
+  var btn = form.querySelector('button[type=submit]');
+  if (btn) btn.disabled = true;
+  try {
+    var fd = new FormData();
+    fd.append('label', label); fd.append('field_type', type);
+    var r = await fetch('/home/crm/' + _crmPid + '/fields/add', {method:'POST', body:fd});
+    var data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    _crmFields = data;
+    // Reopen modal with the current saved contact (unsaved edits are lost — by design)
+    var contact = contactId ? (_crmContacts.find(function(c){ return c.id===contactId; }) || null) : null;
+    _crmContactModal(contact);
+  } catch(err) { alert('Could not add field: ' + err.message); }
+  finally { if (btn) btn.disabled = false; }
+};
+
+window.crmModalDeleteField = async function(fieldId, contactId) {
+  var f = _crmFields.find(function(x){ return x.id === fieldId; });
+  var label = f ? f.label : 'this field';
+  if (!confirm('Remove field \u201c' + label + '\u201d from ALL contacts on this page? This cannot be undone.')) return;
+  try {
+    var fd = new FormData();
+    var r = await fetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/delete', {method:'POST', body:fd});
+    var data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    _crmFields = data;
+    var contact = contactId ? (_crmContacts.find(function(c){ return c.id===contactId; }) || null) : null;
+    _crmContactModal(contact);
+  } catch(err) { alert('Could not delete field: ' + err.message); }
+};
+
 function _crmShowModal(html) {
   var body = document.getElementById('crm-modal-body');
   var wrap = document.getElementById('crm-modal');
