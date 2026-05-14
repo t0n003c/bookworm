@@ -437,22 +437,21 @@ function _crmContactModal(c) {
     const val = fv[f.id] || '';
     let control;
     if (f.field_type === 'checkbox') {
-      return `<div class="col-span-2 flex items-center justify-between
-                          rounded-lg border border-gray-200 dark:border-zinc-700
-                          px-3 py-2.5">
-        <span class="text-sm font-medium text-gray-700 dark:text-zinc-200">${_crmEsc(f.label)}</span>
-        <div class="flex items-center gap-2">
-          <label class="relative flex items-center cursor-pointer shrink-0">
-            <input type="checkbox" name="cf_${f.id}" value="1"
-                   id="cf_chk_${f.id}" ${val==='1'?'checked':''}
-                   class="sr-only peer"/>
-            <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
-                        peer-checked:bg-[#0053e2] transition-colors"></div>
-            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
-                        transition-transform peer-checked:translate-x-5"></div>
-          </label>
+      return `<div class="col-span-2 flex items-start gap-2">
+        <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
+          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
           ${delFieldBtn(f.id)}
         </div>
+        <label class="relative flex items-center cursor-pointer shrink-0 pt-0.5">
+          <input type="checkbox" name="cf_${f.id}" value="1"
+                 id="cf_chk_${f.id}" ${val==='1'?'checked':''}
+                 class="sr-only peer"/>
+          <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
+                      peer-checked:bg-[#0053e2] transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
+                      transition-transform peer-checked:translate-x-5"></div>
+        </label>
       </div>`;
     }
     if (f.field_type === 'multi_select') {
