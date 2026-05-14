@@ -9,10 +9,11 @@
  */
 
 // ── Module state ──────────────────────────────────────────────────────────────
-var _tripLocations   = [];
-var _tripActiveLocId = null;   // null = top level (location grid shown)
-var _tripActiveLoc   = null;   // full location object when drilling in
-var _tripLocEditing  = null;   // null = add, int = edit loc id
+var _tripLocations     = [];
+var _tripActiveLocId   = null;   // null = top level (location grid shown)
+var _tripActiveLoc     = null;   // full location object when drilling in
+var _tripLocEditing    = null;   // null = add, int = edit loc id
+var _tripLocAttrFieldPx = null;  // null = auto, px after user drag
 
 // Expose to other modules (spots need to know active loc)
 window._tripLocations   = _tripLocations;
@@ -253,118 +254,148 @@ window.tripCloseLocModal = function() {
   _tripLocUploadedCoverUrl = '';
 };
 
-function _tripLocInputCls() {
-  return 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 ' +
-         'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-         'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
-         'focus:ring-2 focus:ring-[#0053e2]/40';
-}
-
-function _tripLocLabelCls() {
-  return 'block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1';
-}
+// ── Helper shortcuts: _ic, _lc, _sec, _card, _rl, _ri from home-page-trip.js
 
 function _tripRenderLocForm(v) {
-  var attrs = (v.attrs || []);
-  var attrRows = attrs.map(function(a, i) {
+  _tripLocAttrFieldPx = null;          // reset column width each open
+  var attrs        = (v.attrs || []);
+  var attrRows     = attrs.map(function(a, i) {
     return _tripLocAttrRow(i, a.attr_key || '', a.attr_value || '');
   }).join('');
-
-  // Cover image section: current preview + toggle URL / Upload
   var currentCover = (v.cover_url || '').trim();
+  var pri          = v.priority || 3;
+  var isDark       = document.documentElement.classList.contains('dark');
+  var nameTxt      = isDark ? '#f4f4f5' : '#111827';
+
+  // Cover preview (shown above inline row when a URL exists)
   var coverPreview = currentCover
-    ? '<img id="tlf-cover-preview" src="' + _tripEsc(currentCover) + '" alt="cover preview" ' +
-        'class="w-full h-28 object-cover rounded-lg mb-2 border border-gray-200 ' +
-               'dark:border-zinc-700" onerror="this.style.display=\'none\'">'
+    ? '<div class="relative mb-0 rounded-t-xl overflow-hidden border-b border-gray-200 dark:border-zinc-700">' +
+        '<img id="tlf-cover-preview" src="' + _tripEsc(currentCover) + '" alt="" ' +
+          'class="w-full h-36 object-cover" onerror="this.parentNode.style.display=\'none\'">' +
+        '<button type="button" onclick="tripLocClearCover()" ' +
+          'class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center ' +
+                 'rounded-full bg-black/50 text-white text-xs hover:bg-black/70 ' +
+                 'transition" title="Remove image">×</button>' +
+      '</div>'
     : '<div id="tlf-cover-preview" class="hidden"></div>';
 
   var html =
-    // Name
+    // ── Location Name — flat, no bubble (matches spot name style) ─────────
     '<div>' +
-      '<label class="' + _tripLocLabelCls() + '">Location Name *</label>' +
+      '<label class="' + _lc() + '">Location Name</label>' +
       '<input id="tlf-name" type="text" value="' + _tripEsc(v.name || '') + '" ' +
-        'placeholder="e.g. Smoky Mountains" class="' + _tripLocInputCls() + '">' +
+        'placeholder="e.g. Smoky Mountains" autofocus ' +
+        'style="color:' + nameTxt + '" ' +
+        'class="w-full bg-transparent border-0 outline-none focus:ring-0 ' +
+               'text-xl font-bold py-1 ' +
+               'placeholder:text-gray-300 dark:placeholder:text-zinc-600">' +
     '</div>' +
-    // Priority — big clickable stars
-    '<div>' +
-      '<label class="' + _tripLocLabelCls() + '">Priority</label>' +
-      '<div class="flex items-center gap-0.5">' +
-        [1,2,3,4,5].map(function(n) {
-          var filled = n <= (v.priority || 3);
-          return '<button type="button" id="tlf-pstar-' + n + '" ' +
-            'onclick="tripLocSetPriorityModal(' + n + ')" ' +
-            'class="text-3xl leading-none transition-transform hover:scale-125 active:scale-95 ' +
-            (filled ? 'text-[#ffc220]' : 'text-gray-300 dark:text-zinc-600') + '" ' +
-            'title="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>';
-        }).join('') +
-        '<span id="tlf-priority-label" ' +
-          'class="ml-2 text-sm font-semibold text-gray-600 dark:text-zinc-300">' +
-          (v.priority || 3) + '/5' +
-        '</span>' +
+
+    // ── Details section (cover + priority in divider rows) ──────────────
+    _sec('Details') +
+    '<div class="divide-y divide-gray-100 dark:divide-zinc-800">' +
+
+      // Cover image inline row
+      '<div>' +
+        coverPreview +
+        '<div class="flex items-center gap-3 px-4 py-3">' +
+          '<div class="flex-1 min-w-0">' +
+            '<div id="tlf-cover-url-wrap" class="flex items-center gap-3">' +
+              '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-loc-lbl-col style="width:120px">Cover</span>' +
+              '<input id="tlf-cover-url" type="url" value="' + _tripEsc(currentCover) + '" ' +
+                'placeholder="https://…" class="' + _ri() + ' flex-1 min-w-0">' +
+            '</div>' +
+            '<div id="tlf-cover-file-wrap" class="hidden flex items-center gap-3">' +
+              '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-loc-lbl-col style="width:120px">Cover</span>' +
+              '<input id="tlf-cover-file" type="file" accept="image/*" ' +
+                'onchange="tripLocUploadCover()" ' +
+                'class="flex-1 min-w-0 text-sm text-gray-500 dark:text-zinc-400 ' +
+                       'file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 ' +
+                       'file:text-xs file:font-semibold file:bg-[#0053e2] file:text-white ' +
+                       'file:cursor-pointer hover:file:bg-[#003eb5]">' +
+              '<p id="tlf-upload-status" class="text-[10px] text-gray-400 mt-0.5"></p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex flex-shrink-0 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 gap-0.5">' +
+            '<button type="button" id="tlf-tab-url" onclick="tripLocCoverTab(\'url\')" ' +
+              'class="px-2 py-1 text-xs font-semibold rounded-md transition ' +
+                     'bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm">🔗 URL</button>' +
+            '<button type="button" id="tlf-tab-file" onclick="tripLocCoverTab(\'file\')" ' +
+              'class="px-2 py-1 text-xs font-semibold rounded-md transition ' +
+                     'text-gray-400 dark:text-zinc-500 hover:text-gray-600">📁</button>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<input type="hidden" id="tlf-priority" value="' + (v.priority || 3) + '">' +
+
+      // Priority inline row
+      '<div class="px-4 py-3 flex items-center gap-3">' +
+        '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-loc-lbl-col style="width:120px">Priority</span>' +
+        '<div class="flex items-center gap-0.5">' +
+          [1,2,3,4,5].map(function(n) {
+            return '<button type="button" id="tlf-pstar-' + n + '" ' +
+              'onclick="tripLocSetPriorityModal(' + n + ')" ' +
+              'class="text-2xl leading-none transition hover:scale-110 focus:outline-none ' +
+              (n <= pri ? 'text-[#ffc220]' : 'text-gray-200 dark:text-zinc-700') + '">' +
+              '★</button>';
+          }).join('') +
+          '<input id="tlf-priority" type="hidden" value="' + pri + '">' +
+        '</div>' +
+      '</div>' +
+
     '</div>' +
-    // Cover image: URL or Upload
-    '<div>' +
-      '<label class="' + _tripLocLabelCls() + '">Cover Image</label>' +
-      coverPreview +
-      '<div class="flex gap-1 mb-2 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 w-fit">' +
-        '<button type="button" id="tlf-tab-url" onclick="tripLocCoverTab(\'url\')" ' +
-          'class="px-3 py-1 text-xs rounded-md font-medium transition ' +
-          'bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm">🔗 URL</button>' +
-        '<button type="button" id="tlf-tab-file" onclick="tripLocCoverTab(\'file\')" ' +
-          'class="px-3 py-1 text-xs rounded-md font-medium transition ' +
-          'text-gray-500 dark:text-zinc-400 hover:text-gray-700">📁 Upload</button>' +
-      '</div>' +
-      '<div id="tlf-cover-url-wrap">' +
-        '<input id="tlf-cover-url" type="url" value="' + _tripEsc(currentCover) + '" ' +
-          'placeholder="https://…" class="' + _tripLocInputCls() + '">' +
-      '</div>' +
-      '<div id="tlf-cover-file-wrap" class="hidden">' +
-        '<input id="tlf-cover-file" type="file" accept="image/*" ' +
-          'onchange="tripLocUploadCover()" ' +
-          'class="block w-full text-sm text-gray-500 dark:text-zinc-400 ' +
-                 'file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 ' +
-                 'file:text-sm file:font-medium file:bg-[#0053e2] file:text-white ' +
-                 'file:cursor-pointer hover:file:bg-[#0046c0]">' +
-        '<p id="tlf-upload-status" class="text-[10px] text-gray-400 mt-1"></p>' +
-      '</div>' +
-    '</div>' +
-    // Custom attributes
-    '<div>' +
-      '<label class="' + _tripLocLabelCls() + '">Custom Attributes</label>' +
+
+    // ── Custom Attributes — no bubble, plain pl-4 ───────────────────
+    _sec('Custom Attributes') +
+    '<div class="pl-4">' +
       '<div id="tlf-attrs-list" class="space-y-1.5">' + attrRows + '</div>' +
       '<button type="button" onclick="tripLocAddAttrRow()" ' +
-        'class="mt-2 text-xs text-[#0053e2] hover:underline">＋ Add attribute</button>' +
+        'class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold ' +
+               'text-[#0053e2] hover:text-[#003eb5] transition">' +
+        '<span class="text-base leading-none">＋</span> Add field' +
+      '</button>' +
     '</div>' +
-    // Notes (bottom)
-    '<div>' +
-      '<label class="' + _tripLocLabelCls() + '">Notes</label>' +
-      '<textarea id="tlf-notes" rows="4" ' +
-        'placeholder="Notes, tips, things to research…" ' +
-        'class="' + _tripLocInputCls() + ' resize-y min-h-[80px]">' +
-        _tripEsc(v.notes || '') +
-      '</textarea>' +
-    '</div>';
+
+    // ── Notes — at the bottom ──────────────────────────────────────
+    _sec('Notes') +
+    '<textarea id="tlf-notes" rows="3" ' +
+      'placeholder="Notes, tips, things to research…" ' +
+      'class="' + _ic() + ' resize-y min-h-[72px]">' +
+      _tripEsc(v.notes || '') +
+    '</textarea>';
+
   document.getElementById('trip-loc-modal-body').innerHTML = html;
+  tripLocSyncAttrWidths();   // align Field col + Detail labels on open
 }
 
 function _tripLocAttrRow(idx, key, val) {
-  return '<div class="flex gap-1.5 items-center" id="tlf-attr-row-' + idx + '">' +
-    '<input type="text" placeholder="Attribute" value="' + _tripEsc(key) + '" ' +
-      'data-attr-key data-idx="' + idx + '" ' +
-      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
-             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
-             'focus:ring-2 focus:ring-[#0053e2]/40">' +
-    '<input type="text" placeholder="Value" value="' + _tripEsc(val) + '" ' +
-      'data-attr-val data-idx="' + idx + '" ' +
-      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
-             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
-             'focus:ring-2 focus:ring-[#0053e2]/40">' +
+  var fieldCls = _ri() + ' border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5';
+  var valCls   = _ri() + ' border border-gray-200 dark:border-zinc-700 rounded-lg pr-2.5 pl-0 py-1.5';
+  var wStyle   = _tripLocAttrFieldPx !== null
+    ? 'width:' + _tripLocAttrFieldPx + 'px'
+    : 'width:' + Math.max(120, ((key || '').length + 2) * 8) + 'px';
+  return '<div class="flex items-center gap-2" id="tlf-attr-row-' + idx + '">' +
+    '<div class="flex-1 min-w-0 flex items-center">' +
+      '<input type="text" placeholder="Field" value="' + _tripEsc(key) + '" ' +
+        'data-attr-key data-idx="' + idx + '" ' +
+        'style="' + wStyle + '" ' +
+        'oninput="tripLocSyncAttrWidths()" ' +
+        'class="flex-shrink-0 ' + fieldCls + '">' +
+      // Invisible drag handle between field and value
+      '<div class="w-3 self-stretch flex-shrink-0 flex items-center justify-center ' +
+               'cursor-col-resize select-none group" ' +
+           'onmousedown="tripLocAttrResizeStart(event)" ' +
+           'ondblclick="tripLocAttrResizeReset()">' +
+        '<div class="w-0.5 h-4 rounded-full bg-transparent ' +
+             'group-hover:bg-[#0053e2]/40 dark:group-hover:bg-[#4f9cf9]/50 transition"></div>' +
+      '</div>' +
+      '<input type="text" placeholder="Value" value="' + _tripEsc(val) + '" ' +
+        'data-attr-val data-idx="' + idx + '" ' +
+        'class="flex-1 min-w-0 ' + valCls + '">' +
+    '</div>' +
     '<button type="button" onclick="tripLocRemoveAttrRow(' + idx + ')" ' +
-      'class="text-gray-300 hover:text-red-500 transition text-sm px-1">✕</button>' +
+      'class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg ' +
+             'text-gray-300 hover:text-red-500 hover:bg-red-50 ' +
+             'dark:hover:bg-red-900/20 transition text-lg">×</button>' +
   '</div>';
 }
 
@@ -375,6 +406,7 @@ window.tripLocAddAttrRow = function() {
   var div = document.createElement('div');
   div.innerHTML = _tripLocAttrRow(idx, '', '');
   list.appendChild(div.firstChild);
+  tripLocSyncAttrWidths();
 };
 
 window.tripLocRemoveAttrRow = function(idx) {
@@ -382,26 +414,78 @@ window.tripLocRemoveAttrRow = function(idx) {
   if (row) row.remove();
 };
 
+// ── Attr column resize (mirrors tripSyncAttrWidths / tripAttrResizeStart in trip.js) ──
+// Uses data-loc-lbl-col so it never conflicts with the spot modal's data-lbl-col.
+
+window.tripLocSyncAttrWidths = function() {
+  var keys = document.querySelectorAll('#tlf-attrs-list [data-attr-key]');
+  var lbls = document.querySelectorAll('[data-loc-lbl-col]');
+  if (_tripLocAttrFieldPx !== null) {
+    keys.forEach(function(k) { k.style.width = _tripLocAttrFieldPx + 'px'; });
+    lbls.forEach(function(l) { l.style.width = _tripLocAttrFieldPx + 'px'; });
+    return;
+  }
+  // Auto: widen to fit the longest key, min 120px so "PRIORITY" never wraps
+  var maxPx = 120;
+  keys.forEach(function(k) { maxPx = Math.max(maxPx, ((k.value || '').length + 2) * 8); });
+  keys.forEach(function(k) { k.style.width = maxPx + 'px'; });
+  lbls.forEach(function(l) { l.style.width = maxPx + 'px'; });
+};
+
+window.tripLocAutoFitLabels = function() {
+  var lbls = document.querySelectorAll('[data-loc-lbl-col]');
+  if (!lbls.length) return;
+  var maxW = 0;
+  lbls.forEach(function(l) {
+    l.style.width = 'max-content';
+    maxW = Math.max(maxW, l.getBoundingClientRect().width);
+  });
+  _tripLocAttrFieldPx = Math.ceil(maxW) + 28;
+  tripLocSyncAttrWidths();
+};
+
+window.tripLocAttrResizeStart = function(e) {
+  e.preventDefault();
+  var startX = e.clientX;
+  var keys   = document.querySelectorAll('#tlf-attrs-list [data-attr-key]');
+  var ref    = keys.length ? keys[0] : document.querySelector('[data-loc-lbl-col]');
+  if (!ref) return;
+  var startW = ref.getBoundingClientRect().width;
+  function onMove(ev) {
+    _tripLocAttrFieldPx = Math.max(60, Math.round(startW + ev.clientX - startX));
+    tripLocSyncAttrWidths();
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+};
+
+window.tripLocAttrResizeReset = function() {
+  _tripLocAttrFieldPx = null;
+  tripLocAutoFitLabels();
+};
+
 // Star priority picker inside the modal
 window.tripLocSetPriorityModal = function(n) {
   var input = document.getElementById('tlf-priority');
-  var label = document.getElementById('tlf-priority-label');
   if (input) input.value = n;
-  if (label) label.textContent = n + '/5';
   for (var i = 1; i <= 5; i++) {
     var star = document.getElementById('tlf-pstar-' + i);
     if (!star) continue;
     if (i <= n) {
       star.classList.add('text-[#ffc220]');
-      star.classList.remove('text-gray-300', 'dark:text-zinc-600');
+      star.classList.remove('text-gray-200', 'dark:text-zinc-700');
     } else {
       star.classList.remove('text-[#ffc220]');
-      star.classList.add('text-gray-300', 'dark:text-zinc-600');
+      star.classList.add('text-gray-200', 'dark:text-zinc-700');
     }
   }
 };
 
-// Cover image tab toggle
+// Cover image tab toggle (compact pill style matching spot modal)
 window.tripLocCoverTab = function(tab) {
   var urlWrap  = document.getElementById('tlf-cover-url-wrap');
   var fileWrap = document.getElementById('tlf-cover-file-wrap');
@@ -412,16 +496,21 @@ window.tripLocCoverTab = function(tab) {
   urlWrap.classList.toggle('hidden', !showUrl);
   fileWrap.classList.toggle('hidden', showUrl);
   if (showUrl) {
-    btnUrl.classList.add('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnUrl.classList.remove('text-gray-500','dark:text-zinc-400');
-    btnFile.classList.remove('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnFile.classList.add('text-gray-500','dark:text-zinc-400');
+    btnUrl.className  = 'px-2 py-1 text-xs font-semibold rounded-md transition bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm';
+    btnFile.className = 'px-2 py-1 text-xs font-semibold rounded-md transition text-gray-400 dark:text-zinc-500 hover:text-gray-600';
   } else {
-    btnFile.classList.add('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnFile.classList.remove('text-gray-500','dark:text-zinc-400');
-    btnUrl.classList.remove('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnUrl.classList.add('text-gray-500','dark:text-zinc-400');
+    btnFile.className = 'px-2 py-1 text-xs font-semibold rounded-md transition bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm';
+    btnUrl.className  = 'px-2 py-1 text-xs font-semibold rounded-md transition text-gray-400 dark:text-zinc-500 hover:text-gray-600';
   }
+};
+
+// Remove cover image preview
+window.tripLocClearCover = function() {
+  _tripLocUploadedCoverUrl = '';
+  var urlInput = document.getElementById('tlf-cover-url');
+  if (urlInput) urlInput.value = '';
+  var preview = document.getElementById('tlf-cover-preview');
+  if (preview) preview.style.display = 'none';
 };
 
 // Immediate upload on file select (returns URL, stored in _tripLocUploadedCoverUrl)
