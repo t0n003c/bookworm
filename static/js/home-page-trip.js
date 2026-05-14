@@ -14,7 +14,9 @@ var _tripSpots      = [];
 var _tripTab        = 'research';
 var _tripTypeFilter = null;
 var _tripQuery      = '';
-var _tripEditingId  = null;   // null = adding, int = editing
+var _tripEditingId    = null;   // null = adding, int = editing
+var _tripAttrFieldPx  = null;   // null = auto ch-based, px after user drag
+var _tripInitialSchema = [];     // schema keys snapshotted when edit form opens
 var _tripSpotUploadedCoverUrl = '';   // set by upload-cover endpoint
 
 // Quick-Assign Drawer state
@@ -223,28 +225,36 @@ function _tripRenderResearch() {
 };
 
 function _tripRenderSpotCard(s) {
-  var emoji  = _TRIP_TYPE_EMOJI[s.spot_type] || '📍';
-  var stars  = _tripStars(s.priority, s.id);
-  var cost   = s.estimated_cost > 0
+  var _hf = (typeof _tripSpotHiddenFields !== 'undefined') ? _tripSpotHiddenFields : {};
+  var emoji  = _TRIP_TYPE_EMOJI[s.spot_type] || '\uD83D\uDCCD';
+  var stars  = _hf['priority'] ? '' : _tripStars(s.priority, s.id);
+  var cost   = (!_hf['cost'] && s.estimated_cost > 0)
     ? '<span class="text-xs text-gray-500 dark:text-zinc-400">' +
-        _tripEsc(s.currency) + ' ' + Number(s.estimated_cost).toFixed(2) + '</span>'
+        _tripEsc(s.currency) + ' ' +
+        Number(s.estimated_cost).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+        '</span>'
     : '';
-  var mapBtn = s.map_url
+  var mapBtn = (!_hf['map'] && s.map_url)
     ? '<a href="' + _tripEsc(s.map_url) + '" target="_blank" rel="noopener noreferrer" ' +
         'onclick="event.stopPropagation()" ' +
-        'class="text-[10px] text-[#0053e2] hover:underline">📍 Map</a>'
+        'class="text-[10px] text-[#0053e2] hover:underline">\uD83D\uDCCD Map</a>'
     : '';
-  var attrs = (s.attrs && s.attrs.length)
+  var allAttrs = (s.attrs && s.attrs.length)
+    ? s.attrs.filter(function(a) {
+        return !(typeof _tripSpotHiddenAttrs !== 'undefined' && _tripSpotHiddenAttrs[a.attr_key]);
+      })
+    : [];
+  var attrs = allAttrs.length
     ? '<div class="flex flex-wrap gap-1 mt-0.5">' +
-        s.attrs.slice(0, 3).map(function(a) {
+        allAttrs.slice(0, 3).map(function(a) {
           return '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
             'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">' +
             _tripEsc(a.attr_key) + ': ' + _tripEsc(a.attr_value) + '</span>';
         }).join('') +
-        (s.attrs.length > 3
+        (allAttrs.length > 3
           ? '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
               'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500">+' +
-              (s.attrs.length - 3) + '</span>'
+              (allAttrs.length - 3) + '</span>'
           : '') +
       '</div>'
     : '';
@@ -283,9 +293,7 @@ function _tripRenderSpotCard(s) {
       '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 italic">' +
         'No days yet — add days in Plan tab</p>';
   } else {
-    daySection =
-      '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5 italic">' +
-        'Open a trip in Plan tab to schedule</p>';
+    daySection = '';
   }
 
   return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
@@ -299,10 +307,11 @@ function _tripRenderSpotCard(s) {
       '<div class="flex items-start justify-between gap-1">' +
         '<p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 leading-tight truncate">' +
           _tripEsc(s.name) + '</p>' +
-        '<span class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ' +
+        (_hf['category'] ? '' :
+          '<span class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ' +
                'text-white whitespace-nowrap" ' +
                'style="background:' + _tripTypeColor(s.spot_type) + '">' +
-          emoji + ' ' + _tripEsc(s.spot_type) + '</span>' +
+            emoji + ' ' + _tripEsc(s.spot_type) + '</span>') +
       '</div>' +
       '<div class="flex items-center gap-1">' + stars + cost + '</div>' +
       attrs +
@@ -388,6 +397,7 @@ window.tripOpenAddSpot = function() {
   document.getElementById('trip-spot-submit').textContent = 'Add Spot';
   _tripRenderSpotForm({});
   document.getElementById('trip-spot-modal').classList.remove('hidden');
+  tripAutoFitLabels();
 };
 
 window.tripOpenEditSpot = function(id) {
@@ -399,6 +409,7 @@ window.tripOpenEditSpot = function(id) {
   document.getElementById('trip-spot-submit').textContent = 'Save Changes';
   _tripRenderSpotForm(s);
   document.getElementById('trip-spot-modal').classList.remove('hidden');
+  tripAutoFitLabels();
 };
 
 window.tripCloseSpotModal = function() {
@@ -410,133 +421,287 @@ window.tripCloseSpotModal = function() {
   _tripSpotUploadedCoverUrl = '';
 };
 
-function _ic() {  // input class shorthand
-  return 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 ' +
+function _ic() {  // input class
+  return 'w-full px-3 py-2 text-sm rounded-xl border border-gray-200 ' +
          'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
          'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
-         'focus:ring-2 focus:ring-[#0053e2]/40';
+         'focus:ring-2 focus:ring-[#0053e2]/30 transition';
 }
-function _lc() {  // label class shorthand
-  return 'block text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1';
+function _lc() {  // label class
+  return 'block text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5';
+}
+function _sec(title) {  // section divider
+  return '<div class="flex items-center gap-2 pt-1">' +
+           '<span class="text-[10px] font-bold uppercase tracking-widest ' +
+                        'text-gray-400 dark:text-zinc-500 whitespace-nowrap">' + title + '</span>' +
+           '<div class="flex-1 h-px bg-gray-100 dark:bg-zinc-800"></div>' +
+         '</div>';
+}
+function _card() {  // seamless grouped card
+  return 'rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden ' +
+         'divide-y divide-gray-100 dark:divide-zinc-800 bg-white dark:bg-zinc-800/60';
+}
+function _rl() {  // row label — tiny caps
+  return 'block text-[10px] font-bold uppercase tracking-wider ' +
+         'text-gray-400 dark:text-zinc-500 mb-0.5';
+}
+function _ri() {  // row input — flat / borderless
+  return 'w-full bg-transparent border-0 outline-none text-sm ' +
+         'text-gray-900 dark:text-zinc-100 focus:ring-0 p-0 ' +
+         'placeholder-gray-300 dark:placeholder-zinc-600';
+}
+
+// Collect all unique attr keys across every spot in the current location (first-seen order)
+function _tripGetAttrSchema() {
+  var seen = {};
+  var keys = [];
+  _tripSpots.forEach(function(s) {
+    (s.attrs || []).forEach(function(a) {
+      if (a.attr_key && !seen[a.attr_key]) {
+        seen[a.attr_key] = true;
+        keys.push(a.attr_key);
+      }
+    });
+  });
+  return keys;
 }
 
 function _tripRenderSpotForm(v) {
+  _tripAttrFieldPx = null;          // reset column width each open
+
+  // Build merged attrs: every schema key this location uses, filled with this spot's values
+  var _schemaKeys  = _tripGetAttrSchema();
+  _tripInitialSchema = _schemaKeys.slice();   // snapshot for delete-key diffing
+  var _spotAttrMap = {};
+  (v.attrs || []).forEach(function(a) { if (a.attr_key) _spotAttrMap[a.attr_key] = a.attr_value || ''; });
+  var _mergedAttrs = _schemaKeys.map(function(k) {
+    return {
+      attr_key:  k,
+      attr_value: _spotAttrMap.hasOwnProperty(k) ? _spotAttrMap[k] : '',
+      inherited:  !_spotAttrMap.hasOwnProperty(k)   // from schema, not this spot
+    };
+  });
+
+  var isDark   = document.documentElement.classList.contains('dark');
+  var nameTxt  = isDark ? '#f4f4f5' : '#111827';
+  var selScheme = isDark ? 'dark' : 'light';
+  var costRaw  = v.estimated_cost || 0;
+  var costFmt  = costRaw ? Number(costRaw).toLocaleString('en-US', {maximumFractionDigits:2}) : '0';
   var typeOpts = _TRIP_TYPES.map(function(t) {
     return '<option value="' + t + '"' + (v.spot_type === t ? ' selected' : '') + '>' + t + '</option>';
   }).join('');
   var isCustom = v.spot_type && _TRIP_TYPES.indexOf(v.spot_type) === -1;
   typeOpts += '<option value="custom"' + (isCustom ? ' selected' : '') + '>Custom category…</option>';
 
+  var _CURRENCIES = [
+    'AED','ARS','AUD','BRL','CAD','CHF','CLP','CNY','COP','CZK',
+    'DKK','EGP','EUR','GBP','HKD','HUF','IDR','INR','JPY','KRW',
+    'KWD','MXN','MYR','NGN','NOK','NZD','PHP','PLN','QAR','RON',
+    'RUB','SAR','SEK','SGD','THB','TRY','TWD','USD','VND','ZAR'
+  ];
+  var _selCur = (v.currency || 'USD').toUpperCase();
+  var currencyOpts = _CURRENCIES.map(function(c) {
+    return '<option value="' + c + '"' + (c === _selCur ? ' selected' : '') + '>' + c + '</option>';
+  }).join('');
+  // If saved currency isn\'t in the list, prepend it so it still selects
+  if (_CURRENCIES.indexOf(_selCur) === -1) {
+    currencyOpts = '<option value="' + _selCur + '" selected>' + _selCur + '</option>' + currencyOpts;
+  }
+
+  // Custom category dropdown items
+  var _curType   = isCustom ? 'custom' : (v.spot_type || _TRIP_TYPES[0]);
+  var _curLabel  = isCustom ? 'Custom category…' : (_curType || _TRIP_TYPES[0]);
+  var _optCls    = 'px-3 py-2 text-sm cursor-pointer rounded-lg ' +
+                   'text-gray-700 dark:text-zinc-200 ' +
+                   'hover:bg-[#0053e2]/10 dark:hover:bg-[#0053e2]/20 transition';
+  var catItems   = _TRIP_TYPES.map(function(t) {
+    return '<div class="' + _optCls + '" data-val="' + t + '" onclick="tripSpotCatSelect(this)">' + t + '</div>';
+  }).join('') +
+  '<div class="' + _optCls + '" data-val="custom" onclick="tripSpotCatSelect(this)">Custom category…</div>';
+
+  var pri        = v.priority || 3;
   var currentCover = (v.cover_url || '').trim();
   var coverPreview = currentCover
-    ? '<img id="tsf-cover-preview" src="' + _tripEsc(currentCover) + '" alt="" ' +
-        'class="w-full h-24 object-cover rounded-lg mb-2 border border-gray-200 ' +
-               'dark:border-zinc-700" onerror="this.style.display=\'none\'">'
+    ? '<div class="relative mb-3 rounded-xl overflow-hidden border border-gray-200 dark:border-zinc-700">' +
+        '<img id="tsf-cover-preview" src="' + _tripEsc(currentCover) + '" alt="" ' +
+          'class="w-full h-36 object-cover" onerror="this.parentNode.style.display=\'none\'">' +
+        '<button type="button" onclick="tripSpotClearCover()" ' +
+          'class="absolute top-2 right-2 w-6 h-6 flex items-center justify-center ' +
+                 'rounded-full bg-black/50 text-white text-xs hover:bg-black/70 ' +
+                 'transition" title="Remove image">×</button>' +
+      '</div>'
     : '<div id="tsf-cover-preview" class="hidden"></div>';
 
-  // Layout (Notes at bottom; Currency inline with Est. Cost)
   var html =
-    // Name
+    // ── Name + close button (same line) ──
     '<div>' +
-      '<label class="' + _lc() + '">Spot Name *</label>' +
+      '<label class="' + _lc() + '">Spot Name</label>' +
+      '<div class="flex items-center gap-2">' +
       '<input id="tsf-name" type="text" value="' + _tripEsc(v.name || '') + '" ' +
-        'placeholder="e.g. Clingmans Dome" class="' + _ic() + '">' +
-    '</div>' +
-    // Type
-    '<div>' +
-      '<label class="' + _lc() + '">Category</label>' +
-      '<select id="tsf-type" onchange="tripSpotTypeChange()" class="' + _ic() + '">' +
-        typeOpts + '</select>' +
-    '</div>' +
-    '<div id="tsf-custom-wrap" class="' + (isCustom ? '' : 'hidden') + '">' +
-      '<label class="' + _lc() + '">Custom category</label>' +
-      '<input id="tsf-type-custom" type="text" ' +
-        'value="' + _tripEsc(isCustom ? v.spot_type : '') + '" ' +
-        'placeholder="e.g. Winery" class="' + _ic() + '">' +
-    '</div>' +
-    // Priority
-    '<div>' +
-      '<label class="' + _lc() + '">Priority (stars)</label>' +
-      '<select id="tsf-priority" class="' + _ic() + '">' +
-        [1,2,3,4,5].map(function(n) {
-          return '<option value="' + n + '"' +
-            ((v.priority || 3) === n ? ' selected' : '') + '>' +
-            '★'.repeat(n) + '☆'.repeat(5 - n) + '</option>';
-        }).join('') +
-      '</select>' +
-    '</div>' +
-    // Est. Cost + Currency (inline, 2-col)
-    '<div class="grid grid-cols-2 gap-3">' +
-      '<div>' +
-        '<label class="' + _lc() + '">Est. Cost</label>' +
-        '<input id="tsf-cost" type="number" min="0" step="0.01" ' +
-          'value="' + (v.estimated_cost || 0) + '" class="' + _ic() + '">' +
-      '</div>' +
-      '<div>' +
-        '<label class="' + _lc() + '">Currency</label>' +
-        '<input id="tsf-currency" type="text" value="' + _tripEsc(v.currency || 'USD') + '" ' +
-          'placeholder="USD" maxlength="3" style="text-transform:uppercase" ' +
-          'class="' + _ic() + '">' +
+        'placeholder="Spot name…" autofocus ' +
+        'style="color:' + nameTxt + '" ' +
+        'class="flex-1 bg-transparent border-0 outline-none focus:ring-0 ' +
+               'text-xl font-bold py-2 ' +
+               'placeholder:text-gray-300 dark:placeholder:text-zinc-600">' +
+      '<button type="button" onclick="tripCloseSpotModal()" aria-label="Close" ' +
+        'class="flex-shrink-0 p-1.5 rounded-lg text-gray-400 ' +
+               'hover:text-gray-700 dark:hover:text-zinc-200 ' +
+               'hover:bg-gray-100 dark:hover:bg-zinc-800 transition">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" ' +
+             'style="width:16px;height:16px;display:inline;vertical-align:middle" ' +
+             'viewBox="0 0 20 20" fill="currentColor">' +
+          '<path fill-rule="evenodd" ' +
+            'd="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 ' +
+               '1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 ' +
+               '4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" ' +
+            'clip-rule="evenodd"/>' +
+        '</svg>' +
       '</div>' +
     '</div>' +
-    // Map link
+
+    // ── Details ──
+    _sec('Details') +
     '<div>' +
-      '<label class="' + _lc() + '">Map Link</label>' +
-      '<input id="tsf-map" type="url" value="' + _tripEsc(v.map_url || '') + '" ' +
-        'placeholder="Google Maps URL" class="' + _ic() + '">' +
-    '</div>' +
-    // Cover image: URL or Upload
-    '<div>' +
-      '<label class="' + _lc() + '">Cover Image</label>' +
       coverPreview +
-      '<div class="flex gap-1 mb-2 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 w-fit">' +
-        '<button type="button" id="tsf-tab-url" onclick="tripSpotCoverTab(\'url\')" ' +
-          'class="px-3 py-1 text-xs rounded-md font-medium transition ' +
-          'bg-white dark:bg-zinc-700 text-gray-800 shadow-sm">🔗 URL</button>' +
-        '<button type="button" id="tsf-tab-file" onclick="tripSpotCoverTab(\'file\')" ' +
-          'class="px-3 py-1 text-xs rounded-md font-medium transition ' +
-          'text-gray-500 dark:text-zinc-400 hover:text-gray-700">📁 Upload</button>' +
-      '</div>' +
-      '<div id="tsf-cover-url-wrap">' +
-        '<input id="tsf-cover-url" type="url" value="' + _tripEsc(currentCover) + '" ' +
-          'placeholder="https://…" class="' + _ic() + '">' +
-      '</div>' +
-      '<div id="tsf-cover-file-wrap" class="hidden">' +
-        '<input id="tsf-cover-file" type="file" accept="image/*" ' +
-          'onchange="tripSpotUploadCover()" ' +
-          'class="block w-full text-sm text-gray-500 dark:text-zinc-400 ' +
-                 'file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 ' +
-                 'file:text-sm file:font-medium file:bg-[#0053e2] file:text-white ' +
-                 'file:cursor-pointer hover:file:bg-[#0046c0]">' +
-        '<p id="tsf-upload-status" class="text-[10px] text-gray-400 mt-1"></p>' +
+      '<div class="flex items-center gap-3 px-4 py-3">' +
+        // Left: toggling label + input (switches between URL and Upload)
+        '<div class="flex-1 min-w-0">' +
+          '<div id="tsf-cover-url-wrap" class="flex items-center gap-3">' +
+            '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Cover Image</span>' +
+            '<input id="tsf-cover-url" type="url" value="' + _tripEsc(currentCover) + '" ' +
+              'placeholder="https://…" class="' + _ri() + ' flex-1 min-w-0">' +
+          '</div>' +
+          '<div id="tsf-cover-file-wrap" class="hidden flex items-center gap-3">' +
+            '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Cover Image</span>' +
+            '<input id="tsf-cover-file" type="file" accept="image/*" ' +
+              'onchange="tripSpotUploadCover()" ' +
+              'class="flex-1 min-w-0 text-sm text-gray-500 dark:text-zinc-400 ' +
+                     'file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 ' +
+                     'file:text-xs file:font-semibold file:bg-[#0053e2] file:text-white ' +
+                     'file:cursor-pointer hover:file:bg-[#003eb5]">' +
+            '<p id="tsf-upload-status" class="text-[10px] text-gray-400 mt-1"></p>' +
+          '</div>' +
+        '</div>' +
+        // Right: always-visible tab pill
+        '<div class="flex flex-shrink-0 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 gap-0.5">' +
+          '<button type="button" id="tsf-tab-url" onclick="tripSpotCoverTab(\'url\')" ' +
+            'class="px-2 py-1 text-xs font-semibold rounded-md transition ' +
+                   'bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 shadow-sm">🔗 URL</button>' +
+          '<button type="button" id="tsf-tab-file" onclick="tripSpotCoverTab(\'file\')" ' +
+            'class="px-2 py-1 text-xs font-semibold rounded-md transition ' +
+                   'text-gray-400 dark:text-zinc-500 hover:text-gray-600">📁</button>' +
+        '</div>' +
       '</div>' +
     '</div>' +
-    // Custom attributes (before Notes)
-    '<div>' +
-      '<label class="' + _lc() + '">Custom Attributes</label>' +
+
+    '<div class="divide-y divide-gray-100 dark:divide-zinc-800">' +
+      // Category row — custom dropdown, inline
+      '<div class="px-4 py-3 flex items-center gap-3">' +
+        '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Category</span>' +
+        '<div class="relative flex-1" id="tsf-cat-wrap">' +
+          // Hidden input keeps value for submit + tripSpotTypeChange
+          '<input type="hidden" id="tsf-type" value="' + _curType + '">' +
+          // Trigger button
+          '<button type="button" onclick="tripSpotCatToggle()" ' +
+            'class="flex items-center justify-between w-full text-sm ' +
+                   'text-gray-800 dark:text-zinc-100 bg-transparent ' +
+                   'focus:outline-none group">' +
+            '<span id="tsf-cat-label">' + _curLabel + '</span>' +
+            '<svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 group-hover:text-gray-600" ' +
+                 'viewBox="0 0 20 20" fill="currentColor">' +
+              '<path fill-rule="evenodd" ' +
+                'd="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 ' +
+                   '0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 ' +
+                   '0 01.02-1.06z" clip-rule="evenodd"/>' +
+            '</svg>' +
+          '</button>' +
+          // Dropdown panel
+          '<div id="tsf-cat-panel" ' +
+            'class="hidden absolute left-0 top-full mt-1 z-50 w-48 ' +
+                   'rounded-xl border border-gray-200 dark:border-zinc-700 ' +
+                   'bg-white dark:bg-zinc-800 shadow-lg ' +
+                   'max-h-56 overflow-y-auto p-1">' +
+            catItems +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      // Custom category (hidden unless needed)
+      '<div id="tsf-custom-wrap" class="' + (isCustom ? '' : 'hidden') + ' px-4 py-3">' +
+        '<span class="' + _rl() + '">Custom category</span>' +
+        '<input id="tsf-type-custom" type="text" ' +
+          'value="' + _tripEsc(isCustom ? v.spot_type : '') + '" ' +
+          'placeholder="e.g. Winery" class="' + _ri() + '">' +
+      '</div>' +
+      // Priority row
+      '<div class="px-4 py-3 flex items-center gap-3">' +
+        '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Priority</span>' +
+        '<div class="flex items-center gap-0.5">' +
+          [1,2,3,4,5].map(function(n) {
+            return '<button type="button" id="tsf-star-' + n + '" ' +
+              'onclick="tripSpotSetPriority(' + n + ')" ' +
+              'class="text-2xl leading-none transition hover:scale-110 focus:outline-none ' +
+              (n <= pri ? 'text-[#ffc220]' : 'text-gray-200 dark:text-zinc-700') + '">' +
+              '★</button>';
+          }).join('') +
+          '<input id="tsf-priority" type="hidden" value="' + pri + '">' +
+        '</div>' +
+      '</div>' +
+      // Est. Cost + Currency row — label | cost (flex-1) | currency select (far right)
+      '<div class="px-4 py-3 flex items-center gap-3">' +
+        '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Est. Cost</span>' +
+        '<input id="tsf-cost" type="text" inputmode="decimal" ' +
+          'value="' + costFmt + '" ' +
+          'onfocus="this.value=this.value.replace(/,/g,\'\')" ' +
+          'onblur="tripFormatCost(this)" ' +
+          'class="min-w-0 flex-1 bg-transparent border-0 outline-none focus:ring-0 ' +
+                 'text-sm py-2 ' +
+                 'text-gray-800 dark:text-zinc-100 transition">' +
+        '<select id="tsf-currency" ' +
+          'class="flex-shrink-0 text-sm rounded-xl px-2 py-2 cursor-pointer ' +
+                 'border border-gray-200 dark:border-zinc-700 ' +
+                 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+                 'focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30 transition">' +
+          currencyOpts +
+        '</select>' +
+      '</div>' +
+      // Map Link row
+      '<div class="px-4 py-3 flex items-center gap-3">' +
+        '<span class="' + _rl() + ' mb-0 flex-shrink-0" data-lbl-col style="width:60px">Map Link</span>' +
+        '<input id="tsf-map" type="url" value="' + _tripEsc(v.map_url || '') + '" ' +
+          'placeholder="https://maps.google.com/…" class="' + _ri() + ' flex-1">' +
+      '</div>' +
+    '</div>' +
+
+    // ── Custom Attributes ──
+    _sec('Custom Attributes') +
+    '<div class="pl-4">' +
       '<div id="tsf-attrs-list" class="space-y-1.5">' +
-        ((v.attrs || []).map(function(a, i) {
-          return _tripSpotAttrRow(i, a.attr_key || '', a.attr_value || '');
+        (_mergedAttrs.map(function(a, i) {
+          return _tripSpotAttrRow(i, a.attr_key || '', a.attr_value || '', a.inherited);
         }).join('')) +
       '</div>' +
       '<button type="button" onclick="tripSpotAddAttrRow()" ' +
-        'class="mt-2 text-xs text-[#0053e2] hover:underline">＋ Add attribute</button>' +
+        'class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold ' +
+               'text-[#0053e2] hover:text-[#003eb5] transition">' +
+        '<span class="text-base leading-none">＋</span> Add field' +
+      '</button>' +
     '</div>' +
-    // Notes (at the bottom, vertically resizable)
+
+    // ── Notes ──
+    _sec('Notes') +
     '<div>' +
-      '<label class="' + _lc() + '">Notes</label>' +
-      // Mini WYSIWYG CE editor — slash commands (⁄), format toolbar, markdown round-trip
       '<div id="tsf-notes-ce" contenteditable="true" spellcheck="true" ' +
         'aria-label="Notes" aria-multiline="true" ' +
-        'class="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 ' +
+        'class="w-full px-3 py-2.5 text-sm rounded-xl border border-gray-200 ' +
                'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
                'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
-               'focus:ring-2 focus:ring-[#0053e2]/40 overflow-y-auto cursor-text" ' +
-        'style="min-height:80px;max-height:280px"></div>' +
+               'focus:ring-2 focus:ring-[#0053e2]/30 overflow-auto cursor-text transition" ' +
+        'style="min-height:90px;max-height:480px;resize:vertical"></div>' +
     '</div>';
 
   document.getElementById('trip-spot-modal-body').innerHTML = html;
   _tripSpotNotesInit(v.notes || '');  // populate CE + wire slash & fmt
+  tripSyncAttrWidths();              // align Field column widths on open
 }
 
 // ── Notes CE helpers ───────────────────────────────────────────────────────────────
@@ -577,31 +742,154 @@ function _tripSpotNotesToMd() {
   return td.turndown(ce.innerHTML).trimEnd();
 }
 
+window.tripSpotCatToggle = function() {
+  var panel = document.getElementById('tsf-cat-panel');
+  if (!panel) return;
+  var open = !panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', open);
+  if (!open) {
+    // close on outside click
+    setTimeout(function() {
+      document.addEventListener('click', function _catClose(e) {
+        var wrap = document.getElementById('tsf-cat-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+          panel.classList.add('hidden');
+          document.removeEventListener('click', _catClose);
+        }
+      });
+    }, 0);
+  }
+};
+
+window.tripSpotCatSelect = function(el) {
+  var val   = el.dataset.val;
+  var label = el.textContent;
+  var inp   = document.getElementById('tsf-type');
+  var lbl   = document.getElementById('tsf-cat-label');
+  var panel = document.getElementById('tsf-cat-panel');
+  if (inp) inp.value = val;
+  if (lbl) lbl.textContent = label;
+  if (panel) panel.classList.add('hidden');
+  tripSpotTypeChange();
+};
+
 window.tripSpotTypeChange = function() {
   var sel  = document.getElementById('tsf-type');
   var wrap = document.getElementById('tsf-custom-wrap');
   if (sel && wrap) wrap.classList.toggle('hidden', sel.value !== 'custom');
 };
 
+window.tripSpotSetPriority = function(n) {
+  var inp = document.getElementById('tsf-priority');
+  if (inp) inp.value = n;
+  for (var i = 1; i <= 5; i++) {
+    var btn = document.getElementById('tsf-star-' + i);
+    if (!btn) continue;
+    btn.className = btn.className
+      .replace(/text-\[#ffc220\]|text-gray-300 dark:text-zinc-600/g, '').trim() +
+      (i <= n ? ' text-[#ffc220]' : ' text-gray-300 dark:text-zinc-600');
+  }
+};
+
+window.tripSpotClearCover = function() {
+  var prev = document.getElementById('tsf-cover-preview');
+  var urlI = document.getElementById('tsf-cover-url');
+  if (prev) prev.parentNode && prev.parentNode.parentNode
+    ? (prev.parentNode.style.display = 'none') : (prev.style.display = 'none');
+  if (urlI) urlI.value = '';
+};
+
 // Spot modal attr-row helpers
-function _tripSpotAttrRow(idx, key, val) {
-  return '<div class="flex gap-1.5 items-center" id="tsf-attr-row-' + idx + '">' +
-    '<input type="text" placeholder="Attribute" value="' + _tripEsc(key) + '" ' +
-      'data-sattr-key data-idx="' + idx + '" ' +
-      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
-             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
-             'focus:ring-2 focus:ring-[#0053e2]/40">' +
-    '<input type="text" placeholder="Value" value="' + _tripEsc(val) + '" ' +
-      'data-sattr-val data-idx="' + idx + '" ' +
-      'class="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
-             'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
-             'text-gray-700 dark:text-zinc-200 focus:outline-none ' +
-             'focus:ring-2 focus:ring-[#0053e2]/40">' +
+function _tripSpotAttrRow(idx, key, val, inherited) {
+  var fieldCls = _ri() + ' border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5';
+  var valCls   = _ri() + ' border border-gray-200 dark:border-zinc-700 rounded-lg pr-2.5 pl-0 py-1.5';
+  var wStyle = _tripAttrFieldPx !== null
+    ? 'width:' + _tripAttrFieldPx + 'px'
+    : 'width:' + Math.max(120, ((key || '').length + 2) * 8) + 'px';
+  return '<div class="flex items-center gap-2" id="tsf-attr-row-' + idx + '"' +
+    (inherited ? ' data-attr-inherited' : '') + '>' +
+    '<div class="flex-1 min-w-0 flex items-center">' +
+      '<input type="text" placeholder="Field" value="' + _tripEsc(key) + '" ' +
+        'data-sattr-key data-idx="' + idx + '" ' +
+        'style="' + wStyle + '" ' +
+        'oninput="tripSyncAttrWidths()" ' +
+        'class="flex-shrink-0 ' + fieldCls + '">' +
+      // Invisible draggable divider — hover shows line, dblclick resets
+      '<div class="w-3 self-stretch flex-shrink-0 flex items-center justify-center ' +
+               'cursor-col-resize select-none group" ' +
+           'onmousedown="tripAttrResizeStart(event)" ' +
+           'ondblclick="tripAttrResizeReset()">' +
+        '<div class="w-0.5 h-4 rounded-full bg-transparent ' +
+             'group-hover:bg-[#0053e2]/40 dark:group-hover:bg-[#4f9cf9]/50 transition"></div>' +
+      '</div>' +
+      '<input type="text" placeholder="Value" value="' + _tripEsc(val) + '" ' +
+        'data-sattr-val data-idx="' + idx + '" class="flex-1 min-w-0 ' + valCls + '">' +
+    '</div>' +
     '<button type="button" onclick="tripSpotRemoveAttrRow(' + idx + ')" ' +
-      'class="text-gray-300 hover:text-red-500 transition text-sm px-1">✕</button>' +
+      'class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg ' +
+             'text-gray-300 hover:text-red-500 hover:bg-red-50 ' +
+             'dark:hover:bg-red-900/20 transition text-lg">×</button>' +
   '</div>';
 }
+
+window.tripFormatCost = function(el) {
+  var raw = (el.value || '').replace(/,/g, '').trim();
+  var num = parseFloat(raw);
+  el.value = isNaN(num) ? '' : num.toLocaleString('en-US', {maximumFractionDigits: 2});
+};
+
+window.tripAttrResizeStart = function(e) {
+  e.preventDefault();
+  var startX = e.clientX;
+  var keys   = document.querySelectorAll('#tsf-attrs-list [data-sattr-key]');
+  // Fall back to a label if no attr rows yet
+  var ref    = keys.length ? keys[0] : document.querySelector('[data-lbl-col]');
+  if (!ref) return;
+  var startW = ref.getBoundingClientRect().width;
+  function onMove(ev) {
+    _tripAttrFieldPx = Math.max(60, Math.round(startW + ev.clientX - startX));
+    tripSyncAttrWidths();
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+};
+
+window.tripAutoFitLabels = function() {
+  var lbls = document.querySelectorAll('[data-lbl-col]');
+  if (!lbls.length) return;
+  // Temporarily unconstrain each label to measure its natural text width
+  var maxW = 0;
+  lbls.forEach(function(l) {
+    l.style.width = 'max-content';
+    maxW = Math.max(maxW, l.getBoundingClientRect().width);
+  });
+  _tripAttrFieldPx = Math.ceil(maxW) + 28;  // 4px safety + ~24px (~3 chars) breathing room
+  tripSyncAttrWidths();
+};
+
+window.tripAttrResizeReset = function() {
+  _tripAttrFieldPx = null;
+  tripAutoFitLabels();
+};
+
+window.tripSyncAttrWidths = function() {
+  var keys = document.querySelectorAll('#tsf-attrs-list [data-sattr-key]');
+  var lbls = document.querySelectorAll('[data-lbl-col]');
+  if (_tripAttrFieldPx !== null) {
+    keys.forEach(function(k) { k.style.width = _tripAttrFieldPx + 'px'; });
+    lbls.forEach(function(l) { l.style.width = _tripAttrFieldPx + 'px'; });
+    return;
+  }
+  // Auto: px-based, min 60px so labels like "COVER IMAGE" never wrap
+  var maxPx = 120;
+  keys.forEach(function(k) { maxPx = Math.max(maxPx, ((k.value || '').length + 2) * 8); });
+  keys.forEach(function(k) { k.style.width = maxPx + 'px'; });
+  lbls.forEach(function(l) { l.style.width = maxPx + 'px'; });
+};
 
 window.tripSpotAddAttrRow = function() {
   var list = document.getElementById('tsf-attrs-list');
@@ -610,6 +898,7 @@ window.tripSpotAddAttrRow = function() {
   var div = document.createElement('div');
   div.innerHTML = _tripSpotAttrRow(idx, '', '');
   list.appendChild(div.firstChild);
+  tripSyncAttrWidths();
 };
 
 window.tripSpotRemoveAttrRow = function(idx) {
@@ -626,7 +915,9 @@ function _tripSpotCollectAttrs() {
   for (var i = 0; i < keyEls.length; i++) {
     var k = (keyEls[i].value || '').trim();
     var v = valEls[i] ? valEls[i].value : '';
-    if (k) attrs.push({attr_key: k, attr_value: v});
+    var isInherited = !!keyEls[i].closest('[data-attr-inherited]');
+    // Skip inherited schema hints that still have no value — don't pollute the DB
+    if (k && !(isInherited && !v.trim())) attrs.push({attr_key: k, attr_value: v});
   }
   return attrs;
 }
@@ -641,17 +932,13 @@ window.tripSpotCoverTab = function(tab) {
   var showUrl = tab === 'url';
   urlWrap.classList.toggle('hidden', !showUrl);
   fileWrap.classList.toggle('hidden', showUrl);
-  if (showUrl) {
-    btnUrl.classList.add('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnUrl.classList.remove('text-gray-500','dark:text-zinc-400');
-    btnFile.classList.remove('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnFile.classList.add('text-gray-500','dark:text-zinc-400');
-  } else {
-    btnFile.classList.add('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnFile.classList.remove('text-gray-500','dark:text-zinc-400');
-    btnUrl.classList.remove('bg-white','dark:bg-zinc-700','text-gray-800','shadow-sm');
-    btnUrl.classList.add('text-gray-500','dark:text-zinc-400');
-  }
+  // Active pill: white bg + shadow; inactive: plain text
+  var active   = ['bg-white','dark:bg-zinc-700','text-gray-800','dark:text-zinc-100','shadow-sm'];
+  var inactive = ['text-gray-400','dark:text-zinc-500','hover:text-gray-600'];
+  var on  = showUrl ? btnUrl  : btnFile;
+  var off = showUrl ? btnFile : btnUrl;
+  active.forEach(function(c)   { on.classList.add(c);     off.classList.remove(c); });
+  inactive.forEach(function(c) { off.classList.add(c);    on.classList.remove(c);  });
 };
 
 // Immediate upload on file pick (spot cover)
@@ -692,7 +979,7 @@ window.tripSubmitSpot = function() {
   var mapUrl   = (document.getElementById('tsf-map')         || {}).value || '';
   var notes    = _tripSpotNotesToMd();
   var priority = parseInt((document.getElementById('tsf-priority') || {}).value || '3', 10);
-  var cost     = parseFloat((document.getElementById('tsf-cost')   || {}).value || '0') || 0;
+  var cost     = parseFloat(((document.getElementById('tsf-cost') || {}).value || '0').replace(/,/g, '')) || 0;
   var currency = (document.getElementById('tsf-currency')   || {}).value || 'USD';
 
   if (!name.trim()) { _tripShowToast('Name is required', true); return; }
@@ -700,8 +987,17 @@ window.tripSubmitSpot = function() {
   if (spotType === 'custom' && custom.trim()) window._tripAddCustomCat(custom.trim());
 
   var attrs = _tripSpotCollectAttrs();
+  // Keys that were in the schema when the form opened but whose rows are now gone
+  var _currentKeys = Array.prototype.slice
+    .call(document.querySelectorAll('#tsf-attrs-list [data-sattr-key]'))
+    .map(function(el) { return (el.value || '').trim(); })
+    .filter(Boolean);
+  var delete_keys = _tripInitialSchema.filter(function(k) {
+    return _currentKeys.indexOf(k) === -1;
+  });
   var fd = new URLSearchParams();
   fd.append('attrs',            JSON.stringify(attrs));
+  fd.append('delete_keys',      JSON.stringify(delete_keys));
   fd.append('name',             name.trim());
   fd.append('spot_type',        spotType);
   fd.append('spot_type_custom', custom.trim());

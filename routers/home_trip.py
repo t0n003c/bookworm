@@ -33,6 +33,7 @@ from routers.home_trip_db import (
     get_trip_spots,
     reorder_trip_spots,
     set_spot_attrs,
+    delete_attr_key_from_location,
     update_trip_spot,
     update_trip_spot_cover,
     update_trip_spot_priority,
@@ -269,6 +270,7 @@ async def add_spot(
     currency:         str   = Form("USD"),
     location_id:      int   = Form(0),
     attrs:            str   = Form("[]"),
+    delete_keys:      str   = Form("[]"),
 ):
     try:
         uid = _uid(request)
@@ -318,6 +320,7 @@ async def update_spot(
     currency:         str   = Form("USD"),
     location_id:      int   = Form(0),
     attrs:            str   = Form("[]"),
+    delete_keys:      str   = Form("[]"),
 ):
     try:
         uid = _uid(request)
@@ -346,6 +349,16 @@ async def update_spot(
     )
     if not ok:
         return _err("not found", 404)
+    try:
+        delete_keys_list = _json.loads(delete_keys)
+    except Exception:
+        delete_keys_list = []
+    # Remove explicitly deleted keys from every spot in this location
+    if location_id > 0 and delete_keys_list:
+        for key in delete_keys_list:
+            key = (key or "").strip()
+            if key:
+                await delete_attr_key_from_location(location_id, key)
     await set_spot_attrs(spot_id, attrs_list)
     return JSONResponse({"ok": True})
 

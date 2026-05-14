@@ -18,6 +18,17 @@ var _tripSortDir = 'asc';     // 'asc' | 'desc'
 var _tripGroupBy = 'none';    // 'none' | 'type' | 'priority' | attr key string
 var _tripAttrKey = '';        // filter: attr key  ('' = off)
 var _tripAttrVal = '';        // filter: attr value ('' = any)
+var _spotSfgOpen = false;       // sort/group/filter panel open
+var _spotColOpen = false;       // attribute visibility panel open
+var _tripSpotHiddenAttrs  = {}; // custom attr_key strings hidden on spot cards
+var _tripSpotHiddenFields = {}; // built-in field keys hidden: 'category'|'priority'|'cost'|'map'
+
+var _SPOT_BUILTIN_FIELDS = [
+  { key: 'category', label: 'Category' },
+  { key: 'priority', label: 'Priority'  },
+  { key: 'cost',     label: 'Est. Cost' },
+  { key: 'map',      label: 'Map Link'  },
+];
 
 // ── Location filter/sort/group state ─────────────────────────────────────────────
 var _locSortBy  = 'default';  // 'default' | 'name' | 'priority' | 'attr:<key>'
@@ -55,21 +66,24 @@ window._tripRenderFilterBar = function() {
   }
   leftHtml += '</div>';
 
-  // ── Right: sort + dir + group + attr filter ──
+  // ── Right: Assign to Days + consolidated Sort / Group / Filter button ──
   var attrKeys = _collectAttrKeys(spots);
   var sortOpts = [
-    ['default',  'Sort: Default'],
-    ['name',     'Sort: Name'],
-    ['priority', 'Sort: Priority'],
-    ['cost',     'Sort: Cost'],
+    ['default',  'Default'],
+    ['name',     'Name'],
+    ['priority', 'Priority'],
+    ['cost',     'Cost'],
   ];
-  attrKeys.forEach(function(k) { sortOpts.push(['attr:' + k, 'Sort: ' + k]); });
+  attrKeys.forEach(function(k) { sortOpts.push(['attr:' + k, k]); });
 
-  var groupOpts = [['none', 'Group: None'], ['type', 'Group: Type'], ['priority', 'Group: Priority']];
-  attrKeys.forEach(function(k) { groupOpts.push([k, 'Group: ' + k]); });
+  var groupOpts = [['none', 'None'], ['type', 'Type'], ['priority', 'Priority']];
+  attrKeys.forEach(function(k) { groupOpts.push([k, k]); });
+
+  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' || _tripAttrKey !== '';
 
   var rightHtml = '<div class="flex items-center gap-2 ml-auto flex-shrink-0">';
-  // Assign to Days button — leftmost item in the right control group
+
+  // Assign to Days button
   var _assignCls = (typeof _tripAssignDrawerOpen !== 'undefined' && _tripAssignDrawerOpen)
     ? 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
       'bg-[#0053e2] text-white font-medium transition'
@@ -79,25 +93,314 @@ window._tripRenderFilterBar = function() {
       'dark:hover:bg-zinc-700 transition';
   rightHtml += '<button onclick="tripToggleAssignDrawer()" ' +
     'id="trip-assign-toggle" title="Quick-assign spots to day cards" ' +
-    'class="' + _assignCls + '">' +
-    '🗓️ Assign to Days</button>';
-  rightHtml += _selectCtrl('tripSetSpotSort', _tripSortBy, sortOpts);
-  if (_tripSortBy !== 'default') rightHtml += _dirToggle('tripToggleSpotSortDir', _tripSortDir);
-  rightHtml += _selectCtrl('tripSetSpotGroup', _tripGroupBy, groupOpts);
-  if (attrKeys.length) {
-    rightHtml += _selectCtrl('tripSetSpotAttrKey', _tripAttrKey,
-      [['', 'Filter: All']].concat(attrKeys.map(function(k) { return [k, k]; })));
-    if (_tripAttrKey) {
-      var valOpts = [['', 'Any']];
-      _collectAttrVals(spots, _tripAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      rightHtml += _selectCtrl('tripSetSpotAttrVal', _tripAttrVal, valOpts);
-    }
-  }
+    'class="' + _assignCls + '">🗓️ Assign to Days</button>';
+
+  // ── Attribute visibility button (eye icon — always shown in spot view) ──
+  var _hasHidden = Object.keys(_tripSpotHiddenAttrs).length > 0 ||
+                   Object.keys(_tripSpotHiddenFields).length > 0;
+    var _colCls = 'flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition ' +
+      (_hasHidden
+        ? 'border-[#0053e2] text-[#0053e2] dark:text-blue-300'
+        : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+          'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700');
+    var _colStyle = _hasHidden ? ' style="background:rgba(0,83,226,0.06)"' : '';
+    rightHtml += '<div class="relative" id="trip-col-anchor">';
+    rightHtml +=   '<button onclick="tripToggleSpotColPanel(event)"' + _colStyle +
+                   ' title="Show / hide attributes on spot cards" class="' + _colCls + '">' +
+                     '<svg xmlns="http://www.w3.org/2000/svg" ' +
+                     'style="width:14px;height:14px;display:inline;vertical-align:-2px" ' +
+                     'viewBox="0 0 20 20" fill="currentColor">' +
+                     '<path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/>' +
+                     '<path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41z" clip-rule="evenodd"/>' +
+                     '</svg>' +
+                     (_hasHidden
+                       ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] ' +
+                               'dark:bg-blue-400 flex-shrink-0"></span>'
+                       : '') +
+                   '</button>';
+    if (_spotColOpen) rightHtml += _spotColPanelHtml(attrKeys);
+    rightHtml += '</div>';
+
+  // ── Sort / Group / Filter button (funnel icon) ──
+  var _sfgCls = 'flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition ' +
+    (hasActive
+      ? 'border-[#0053e2] text-[#0053e2] dark:text-blue-300'
+      : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+        'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700');
+  var _sfgStyle = hasActive ? ' style="background:rgba(0,83,226,0.06)"' : '';
+  rightHtml += '<div class="relative" id="trip-sfg-anchor">';
+  rightHtml +=   '<button onclick="tripToggleSpotSfgPanel(event)"' + _sfgStyle +
+                 ' title="Sort, group &amp; filter spots" class="' + _sfgCls + '">' +
+                   '<svg xmlns="http://www.w3.org/2000/svg" ' +
+                   'style="width:14px;height:14px;display:inline;vertical-align:-2px" ' +
+                   'viewBox="0 0 20 20" fill="currentColor">' +
+                   '<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 01.628.74v2.288a2.25 2.25 0 01-.659 1.59l-4.682 4.683a2.25 2.25 0 00-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 018 18.25v-5.757a2.25 2.25 0 00-.659-1.591L2.659 6.22A2.25 2.25 0 012 4.629V2.34a.75.75 0 01.628-.74z" clip-rule="evenodd"/>' +
+                   '</svg>' +
+                   (hasActive
+                     ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] ' +
+                               'dark:bg-blue-400 flex-shrink-0"></span>'
+                     : '') +
+                 '</button>';
+  if (_spotSfgOpen) rightHtml += _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts);
+  rightHtml += '</div>';
   rightHtml += '</div>';
 
   bar.innerHTML = leftHtml + rightHtml;
 };
 function _tripRenderFilterBar() { window._tripRenderFilterBar(); }
+
+// ── Sort / Group / Filter panel (Spots) ──────────────────────────────────────
+function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
+  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' || _tripAttrKey !== '';
+  var p =
+    '<div id="trip-sfg-panel" ' +
+    'class="absolute right-0 top-full mt-1.5 z-50 w-64 ' +
+           'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+           'rounded-xl shadow-xl p-4 flex flex-col gap-4">';
+
+  // ── Sort ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Sort</div>';
+  p +=   '<div class="flex items-center gap-2">';
+  p +=     _panelSelect('tripSetSpotSort', _tripSortBy, sortOpts, 'flex-1');
+  if (_tripSortBy !== 'default') {
+    p +=   _panelDirBtn('tripToggleSpotSortDir', _tripSortDir);
+  }
+  p +=   '</div>';
+  p += '</div>';
+
+  // ── Group by ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Group by</div>';
+  p +=   _panelSelect('tripSetSpotGroup', _tripGroupBy, groupOpts, 'w-full');
+  p += '</div>';
+
+  // ── Filter (attr-based — only shown when spots have custom attrs) ──
+  if (attrKeys.length) {
+    p += '<div>';
+    p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+                 'text-gray-400 dark:text-zinc-500">Filter</div>';
+    p +=   _panelSelect('tripSetSpotAttrKey', _tripAttrKey,
+             [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
+             'w-full');
+    if (_tripAttrKey) {
+      var valOpts = [['', 'Any value']];
+      _collectAttrVals(spots, _tripAttrKey).forEach(function(v) { valOpts.push([v, v]); });
+      p += '<div class="mt-2">' +
+             _panelSelect('tripSetSpotAttrVal', _tripAttrVal, valOpts, 'w-full') +
+           '</div>';
+    }
+    p += '</div>';
+  }
+
+  // ── Clear All footer ──
+  if (hasActive) {
+    p += '<button onclick="tripClearSpotSfg()" ' +
+      'class="w-full text-center text-xs text-[#ea1100] hover:text-red-700 ' +
+             'font-medium pt-2 border-t border-gray-100 dark:border-zinc-800 transition">' +
+      'Clear All</button>';
+  }
+
+  p += '</div>';
+  return p;
+}
+
+function _panelSelect(onchangeFn, currentVal, options, widthCls) {
+  var opts = options.map(function(o) {
+    return '<option value="' + _tripEsc(o[0]) + '"' +
+      (o[0] === currentVal ? ' selected' : '') + '>' + _tripEsc(o[1]) + '</option>';
+  }).join('');
+  return '<select onchange="' + onchangeFn + '(this.value)" ' +
+    'class="' + widthCls + ' px-2 py-1.5 text-xs rounded-lg border border-gray-200 ' +
+           'dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 ' +
+           'focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40 cursor-pointer">' +
+    opts + '</select>';
+}
+
+function _panelDirBtn(fn, dir) {
+  return '<button onclick="' + fn + '()" title="Toggle sort direction" ' +
+    'class="flex-shrink-0 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 ' +
+           'dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 ' +
+           'hover:bg-gray-50 dark:hover:bg-zinc-700 transition font-medium">' +
+    (dir === 'asc' ? '\u2191 Asc' : '\u2193 Desc') + '</button>';
+}
+
+window.tripToggleSpotSfgPanel = function(e) {
+  if (e) e.stopPropagation();
+  // Close col panel if open before toggling sfg
+  if (_spotColOpen) {
+    _spotColOpen = false;
+    document.removeEventListener('mousedown', _spotColOutsideClick);
+    document.removeEventListener('keydown', _spotColEscHandler);
+  }
+  _spotSfgOpen = !_spotSfgOpen;
+  _tripRenderFilterBar();
+  if (_spotSfgOpen) {
+    setTimeout(function() {
+      document.addEventListener('mousedown', _spotSfgOutsideClick);
+      document.addEventListener('keydown', _spotSfgEscHandler);
+    }, 0);
+  } else {
+    document.removeEventListener('mousedown', _spotSfgOutsideClick);
+    document.removeEventListener('keydown', _spotSfgEscHandler);
+  }
+};
+
+function _spotSfgOutsideClick(e) {
+  // Always re-query: the anchor is rebuilt on every filter-bar re-render.
+  var anchor = document.getElementById('trip-sfg-anchor');
+  if (anchor && anchor.contains(e.target)) return;
+  _spotSfgOpen = false;
+  document.removeEventListener('mousedown', _spotSfgOutsideClick);
+  document.removeEventListener('keydown', _spotSfgEscHandler);
+  _tripRenderFilterBar();
+}
+
+function _spotSfgEscHandler(e) {
+  if (e.key !== 'Escape') return;
+  _spotSfgOpen = false;
+  document.removeEventListener('mousedown', _spotSfgOutsideClick);
+  document.removeEventListener('keydown', _spotSfgEscHandler);
+  _tripRenderFilterBar();
+}
+
+window.tripClearSpotSfg = function() {
+  _tripSortBy = 'default'; _tripSortDir = 'asc';
+  _tripGroupBy = 'none'; _tripAttrKey = ''; _tripAttrVal = '';
+  _spotSfgOpen = false;
+  document.removeEventListener('mousedown', _spotSfgOutsideClick);
+  document.removeEventListener('keydown', _spotSfgEscHandler);
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
+
+// ── Attribute visibility panel (Spots) ─────────────────────────────────────────
+// Safe single-quoted JS string literal for embedding inside a double-quoted HTML attribute.
+// e.g. _jsStr('it\'s fine') → "'it\\'s fine'"
+function _colJsStr(s) {
+  return "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+}
+
+function _spotColPanelHtml(attrKeys) {
+  var anyHidden = Object.keys(_tripSpotHiddenAttrs).length > 0 ||
+                  Object.keys(_tripSpotHiddenFields).length > 0;
+
+  var p =
+    '<div id="trip-col-panel" ' +
+    'class="absolute right-0 top-full mt-1.5 z-50 w-52 ' +
+           'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+           'rounded-xl shadow-xl p-4 flex flex-col gap-1">';
+
+  // ── Built-in fields ──
+  p += '<div class="text-xs font-semibold uppercase tracking-wider mb-1 ' +
+            'text-gray-400 dark:text-zinc-500">Default fields</div>';
+  _SPOT_BUILTIN_FIELDS.forEach(function(f) {
+    var isHidden = !!_tripSpotHiddenFields[f.key];
+    var kJson = _colJsStr(f.key);
+    p += _colCheckRow(
+      'tripToggleSpotField(' + kJson + ')',
+      !isHidden,
+      f.label
+    );
+  });
+
+  // ── Custom attrs (only when present) ──
+  if (attrKeys.length) {
+    p += '<div class="text-xs font-semibold uppercase tracking-wider mt-2 mb-1 ' +
+              'text-gray-400 dark:text-zinc-500">Custom fields</div>';
+    attrKeys.forEach(function(k) {
+      var isHidden = !!_tripSpotHiddenAttrs[k];
+      var kJson = _colJsStr(k);
+      p += _colCheckRow(
+        'tripToggleSpotAttr(' + kJson + ')',
+        !isHidden,
+        k
+      );
+    });
+  }
+
+  if (anyHidden) {
+    p += '<button onclick="tripResetSpotAttrs()" ' +
+      'class="w-full text-center text-xs text-[#0053e2] hover:text-blue-700 ' +
+             'font-medium pt-2 mt-1 border-t border-gray-100 dark:border-zinc-800 transition">' +
+      'Show All</button>';
+  }
+
+  p += '</div>';
+  return p;
+}
+
+function _colCheckRow(onchange, checked, label) {
+  return '<label class="flex items-center gap-2 text-xs cursor-pointer py-1 ' +
+             'text-gray-700 dark:text-zinc-300 select-none ' +
+             'hover:text-gray-900 dark:hover:text-zinc-100">' +
+           '<input type="checkbox" onchange="' + onchange + '" ' +
+             (checked ? 'checked ' : '') +
+             'class="rounded border-gray-300 dark:border-zinc-600 cursor-pointer">' +
+           '<span>' + _tripEsc(label) + '</span>' +
+         '</label>';
+}
+
+window.tripToggleSpotColPanel = function(e) {
+  if (e) e.stopPropagation();
+  // Close sfg panel if open before toggling col
+  if (_spotSfgOpen) {
+    _spotSfgOpen = false;
+    document.removeEventListener('mousedown', _spotSfgOutsideClick);
+    document.removeEventListener('keydown', _spotSfgEscHandler);
+  }
+  _spotColOpen = !_spotColOpen;
+  _tripRenderFilterBar();
+  if (_spotColOpen) {
+    setTimeout(function() {
+      document.addEventListener('mousedown', _spotColOutsideClick);
+      document.addEventListener('keydown', _spotColEscHandler);
+    }, 0);
+  } else {
+    document.removeEventListener('mousedown', _spotColOutsideClick);
+    document.removeEventListener('keydown', _spotColEscHandler);
+  }
+};
+
+function _spotColOutsideClick(e) {
+  var anchor = document.getElementById('trip-col-anchor');
+  if (anchor && anchor.contains(e.target)) return;
+  _spotColOpen = false;
+  document.removeEventListener('mousedown', _spotColOutsideClick);
+  document.removeEventListener('keydown', _spotColEscHandler);
+  _tripRenderFilterBar();
+}
+
+function _spotColEscHandler(e) {
+  if (e.key !== 'Escape') return;
+  _spotColOpen = false;
+  document.removeEventListener('mousedown', _spotColOutsideClick);
+  document.removeEventListener('keydown', _spotColEscHandler);
+  _tripRenderFilterBar();
+}
+
+window.tripToggleSpotField = function(key) {
+  if (_tripSpotHiddenFields[key]) { delete _tripSpotHiddenFields[key]; }
+  else { _tripSpotHiddenFields[key] = true; }
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
+
+window.tripToggleSpotAttr = function(key) {
+  if (_tripSpotHiddenAttrs[key]) { delete _tripSpotHiddenAttrs[key]; }
+  else { _tripSpotHiddenAttrs[key] = true; }
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
+
+window.tripResetSpotAttrs = function() {
+  _tripSpotHiddenAttrs  = {};
+  _tripSpotHiddenFields = {};
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
 
 // ── Location filter bar ───────────────────────────────────────────────────────────
 window._tripRenderLocFilterBar = function() {

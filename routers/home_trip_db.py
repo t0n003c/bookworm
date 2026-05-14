@@ -268,6 +268,32 @@ async def set_spot_attrs(spot_id: int, attrs: list[dict]) -> None:
         await db.commit()
 
 
+async def get_spot_attr_keys(spot_id: int) -> set:
+    """Return the set of attr_key values currently saved for a spot."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT attr_key FROM trip_spot_attrs WHERE spot_id=?", (spot_id,)
+        )
+        rows = await cur.fetchall()
+    return {row["attr_key"] for row in rows}
+
+
+async def delete_attr_key_from_location(location_id: int, attr_key: str) -> None:
+    """Remove attr_key from every spot that belongs to location_id."""
+    async with get_db() as db:
+        await db.execute(
+            """
+            DELETE FROM trip_spot_attrs
+            WHERE attr_key = ?
+              AND spot_id IN (
+                  SELECT id FROM trip_spots WHERE location_id = ?
+              )
+            """,
+            (attr_key, location_id),
+        )
+        await db.commit()
+
+
 
 async def add_trip_spot(
     page_id: int,
