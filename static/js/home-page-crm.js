@@ -458,55 +458,49 @@ function _crmContactModal(c) {
     if (f.field_type === 'multi_select') {
       var ms = []; try { ms = JSON.parse(val); } catch {}
       const opts = (f.options||'').split('|').filter(Boolean);
-      control = opts.length
-        ? `<div class="flex flex-wrap gap-1.5">${opts.map(o =>
+      const pills = opts.length
+        ? opts.map(o =>
             `<label class="cursor-pointer">
                <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
                       ${ms.includes(o)?'checked':''} class="sr-only peer"/>
                <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                            border-gray-300 dark:border-zinc-600
-                            text-gray-600 dark:text-zinc-300
-                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
-                            peer-checked:text-white">
+                            border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
+                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">
                  ${_crmEsc(o)}
                </span>
-             </label>`).join('')}
-          </div>`
-        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
-    } else if (f.field_type === 'file_links') {
-      var fl = []; try { fl = JSON.parse(val); } catch {}
-      control = `<textarea name="cf_${f.id}" rows="2" placeholder="One URL per line"
-        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
-               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-               focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(fl.join('\n'))}</textarea>`;
+             </label>`).join('')
+        : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
+      return `<div class="col-span-2 flex flex-wrap items-center gap-1.5">
+        <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 flex-shrink-0">${_crmEsc(f.label)}</span>
+        ${delFieldBtn(f.id)}
+        ${pills}
+      </div>`;
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
-      control = opts.length
-        ? `<div class="flex flex-wrap gap-1.5">
-            <label class="cursor-pointer">
-              <input type="radio" name="cf_${f.id}" value=""
-                     ${!val?'checked':''} class="sr-only peer"/>
-              <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                           border-gray-300 dark:border-zinc-600
-                           text-gray-600 dark:text-zinc-300
-                           peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
-                           peer-checked:text-white">None</span>
-            </label>
-            ${opts.map(o =>
-              `<label class="cursor-pointer">
-                 <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
-                        ${o===val?'checked':''} class="sr-only peer"/>
-                 <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                              border-gray-300 dark:border-zinc-600
-                              text-gray-600 dark:text-zinc-300
-                              peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
-                              peer-checked:text-white">
-                   ${_crmEsc(o)}
-                 </span>
-               </label>`).join('')}
-          </div>`
-        : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
-    } else if (f.field_type === 'priority') {
+      const pills = opts.length
+        ? `<label class="cursor-pointer">
+             <input type="radio" name="cf_${f.id}" value="" ${!val?'checked':''} class="sr-only peer"/>
+             <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
+                          border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
+                          peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">None</span>
+           </label>` +
+          opts.map(o =>
+            `<label class="cursor-pointer">
+               <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
+                      ${o===val?'checked':''} class="sr-only peer"/>
+               <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
+                            border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
+                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">
+                 ${_crmEsc(o)}
+               </span>
+             </label>`).join('')
+        : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
+      return `<div class="col-span-2 flex flex-wrap items-center gap-1.5">
+        <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 flex-shrink-0">${_crmEsc(f.label)}</span>
+        ${delFieldBtn(f.id)}
+        ${pills}
+      </div>`;
+    } else if (f.field_type === 'file_links') {
       var icon = f.options || '⭐';
       var priVal = parseInt(val) || 0;
       control = '<input type="hidden" name="cf_' + f.id + '" id="cf_pri_' + f.id + '" value="' + priVal + '"/>' +
