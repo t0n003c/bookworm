@@ -932,15 +932,44 @@ window.crmModalAddField = async function(contactId) {
   finally { if (btn) btn.disabled = false; }
 };
 
-window.crmModalDeleteField = async function(fieldId, contactId) {
+window.crmModalDeleteField = function(fieldId, contactId) {
   var f = _crmFields.find(function(x){ return x.id === fieldId; });
   var label = f ? f.label : 'this field';
-  if (!confirm('Remove field \u201c' + label + '\u201d from ALL contacts on this page? This cannot be undone.')) return;
+  _crmShowModal(
+    '<div class="h-1.5 w-full bg-gradient-to-r from-[#ea1100] to-[#ffc220]"></div>' +
+    '<div class="p-6">' +
+      '<div class="flex items-start gap-3 mb-5">' +
+        '<span class="text-3xl leading-none flex-shrink-0">🗑️</span>' +
+        '<div>' +
+          '<h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">Remove field?</h2>' +
+          '<p class="text-sm text-gray-600 dark:text-zinc-300">' +
+            'Remove <strong class="text-gray-900 dark:text-zinc-100">' + _crmEsc(label) + '</strong> ' +
+            'from every contact on this page? All saved values will be permanently lost.' +
+          '</p>' +
+        '</div>' +
+      '</div>' +
+      '<div class="flex gap-2 justify-end">' +
+        '<button type="button" onclick="crmCloseModal()" ' +
+          'class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 ' +
+                 'text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Cancel</button>' +
+        '<button type="button" onclick="_doCrmFieldDelete(' + fieldId + ',' + contactId + ')" ' +
+          'class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-[#ea1100] text-white ' +
+                 'hover:bg-red-700 transition">Remove field</button>' +
+      '</div>' +
+    '</div>'
+  );
+};
+
+window._doCrmFieldDelete = async function(fieldId, contactId) {
   try {
-    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/delete', {method:'POST', body: new URLSearchParams({})});
+    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/delete',
+      {method:'POST', body: new URLSearchParams({})});
     var contact = contactId ? (_crmContacts.find(function(c){ return c.id === contactId; }) || null) : null;
     _crmContactModal(contact);
-  } catch(err) { alert('Could not delete field: ' + (err.message || err)); }
+  } catch(err) {
+    crmCloseModal();
+    alert('Could not delete field: ' + (err.message || err));
+  }
 };
 
 // Priority icon field — inline interaction inside the contact modal
