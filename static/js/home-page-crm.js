@@ -635,7 +635,7 @@ function _crmContactModal(c) {
             <div id="crm-af-icon-row" style="display:none"
               class="flex items-center gap-1 mt-2 flex-wrap">
               <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
-              ${ ['⭐','❤️','🔥','💯','🏆','💎','🌟','👍','🥳','🍎'].map(ico =>
+              ${ ['⭐','❤️','🔥','🌳','🏆','🪱','🌟','👍','🥳','🍎'].map(ico =>
                 `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
                          hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
                   onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
