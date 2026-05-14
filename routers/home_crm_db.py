@@ -181,6 +181,17 @@ async def update_field(
     return await get_fields(page_id, user_id)
 
 
+async def reorder_fields(page_id: int, user_id: int, field_ids: list[int]) -> list[dict]:
+    async with get_db() as db:
+        for i, fid in enumerate(field_ids):
+            await db.execute(
+                "UPDATE crm_custom_fields SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+                (i, fid, page_id, user_id),
+            )
+        await db.commit()
+    return await get_fields(page_id, user_id)
+
+
 async def delete_field(field_id: int, page_id: int, user_id: int) -> list[dict]:
     async with get_db() as db:
         await db.execute(

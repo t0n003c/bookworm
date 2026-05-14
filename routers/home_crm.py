@@ -19,7 +19,7 @@ from routers.home_db import get_home_page
 from routers.home_crm_db import (
     get_contacts, add_contact, update_contact, update_contact_pic,
     delete_contact, reorder_contacts, upsert_field_value,
-    get_fields, add_field, update_field, delete_field,
+    get_fields, add_field, update_field, delete_field, reorder_fields,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
     get_projects, add_project, update_project, delete_project, set_stage_project,
@@ -295,6 +295,22 @@ async def remove_field(request: Request, page_id: int, field_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_field field_id=%s", field_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/fields/reorder")
+async def reorder_fields_route(request: Request, page_id: int, order: str = Form(...)):
+    """Accepts a comma-separated list of field IDs in the new order."""
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        field_ids = [int(x) for x in order.split(",") if x.strip().isdigit()]
+        return JSONResponse(await reorder_fields(page_id, uid, field_ids))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("reorder_fields page_id=%s", page_id)
         return _err(str(e), 500)
 
 

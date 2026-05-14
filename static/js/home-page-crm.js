@@ -433,26 +433,46 @@ function _crmContactModal(c) {
        ×
      </button>`;
 
+  // ── Drag-to-reorder state (scoped to this modal render) ──────────────────
+  var _dragSrcId = null;
+
+  // Wrap field inner HTML in a draggable row with a ⠿ handle on the left.
+  // Each wrapper is identified by data-field-id so drop can compute new order.
+  const wrapDrag = (fieldId, innerHtml) =>
+    `<div class="crm-cf-row flex items-start gap-1 group"
+          data-field-id="${fieldId}" draggable="true"
+          ondragstart="crmCfDragStart(event,${fieldId})"
+          ondragover="crmCfDragOver(event)"
+          ondragleave="crmCfDragLeave(event)"
+          ondrop="crmCfDrop(event,${fieldId},${c?.id||0})"
+          ondragend="crmCfDragEnd(event)">
+       <span class="flex-shrink-0 cursor-grab text-gray-200 dark:text-zinc-700
+                    group-hover:text-gray-400 dark:group-hover:text-zinc-500
+                    select-none pt-1 text-base leading-none">⠿</span>
+       <div class="flex-1 min-w-0">${innerHtml}</div>
+     </div>`;
+
   const customFields = _crmFields.map(f => {
     const val = fv[f.id] || '';
     let control;
     if (f.field_type === 'checkbox') {
-      return `<div class="col-span-2 flex items-start gap-2">
-        <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-          ${delFieldBtn(f.id)}
-        </div>
-        <label class="relative flex items-center cursor-pointer shrink-0 pt-0.5">
-          <input type="checkbox" name="cf_${f.id}" value="1"
-                 id="cf_chk_${f.id}" ${val==='1'?'checked':''}
-                 class="sr-only peer"/>
-          <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
-                      peer-checked:bg-[#0053e2] transition-colors"></div>
-          <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
-                      transition-transform peer-checked:translate-x-5"></div>
-        </label>
-      </div>`;
+      return wrapDrag(f.id,
+        `<div class="flex items-start gap-2">
+          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
+            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+            ${delFieldBtn(f.id)}
+          </div>
+          <label class="relative flex items-center cursor-pointer shrink-0 pt-0.5">
+            <input type="checkbox" name="cf_${f.id}" value="1"
+                   id="cf_chk_${f.id}" ${val==='1'?'checked':''}
+                   class="sr-only peer"/>
+            <div class="w-10 h-5 rounded-full bg-gray-200 dark:bg-zinc-600
+                        peer-checked:bg-[#0053e2] transition-colors"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow
+                        transition-transform peer-checked:translate-x-5"></div>
+          </label>
+        </div>`);
     }
     if (f.field_type === 'multi_select') {
       var ms = []; try { ms = JSON.parse(val); } catch {}
@@ -469,13 +489,15 @@ function _crmContactModal(c) {
                </span>
              </label>`).join('')
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
-      return `<div class="col-span-2 flex items-start gap-2">
-        <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate" title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-          ${delFieldBtn(f.id)}
-        </div>
-        <div class="flex flex-wrap gap-1.5">${pills}</div>
-      </div>`;
+      return wrapDrag(f.id,
+        `<div class="flex items-start gap-2">
+          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
+            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+            ${delFieldBtn(f.id)}
+          </div>
+          <div class="flex flex-wrap gap-1.5">${pills}</div>
+        </div>`);
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
       const pills = opts.length
@@ -496,14 +518,22 @@ function _crmContactModal(c) {
                </span>
              </label>`).join('')
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
-      return `<div class="col-span-2 flex items-start gap-2">
-        <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-          <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate" title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-          ${delFieldBtn(f.id)}
-        </div>
-        <div class="flex flex-wrap gap-1.5">${pills}</div>
-      </div>`;
+      return wrapDrag(f.id,
+        `<div class="flex items-start gap-2">
+          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
+            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+            ${delFieldBtn(f.id)}
+          </div>
+          <div class="flex flex-wrap gap-1.5">${pills}</div>
+        </div>`);
     } else if (f.field_type === 'file_links') {
+      var fl = []; try { fl = JSON.parse(val); } catch {}
+      control = `<textarea name="cf_${f.id}" rows="2" placeholder="One URL per line"
+        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
+               bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+               focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(fl.join('\n'))}</textarea>`;
+    } else if (f.field_type === 'priority') {
       var icon = f.options || '⭐';
       var priVal = parseInt(val) || 0;
       control = '<input type="hidden" name="cf_' + f.id + '" id="cf_pri_' + f.id + '" value="' + priVal + '"/>' +
@@ -522,13 +552,14 @@ function _crmContactModal(c) {
       var remDiv = isEdit
         ? `<div id="crm-rem-${f.id}" class="mt-1.5 text-xs text-gray-400 italic">Loading reminders…</div>`
         : '';
-      return `<div class="col-span-2">
-        <div class="flex items-center justify-between mb-1">
-          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
-          ${delFieldBtn(f.id)}
-        </div>
-        ${control}${remDiv}
-      </div>`;
+      return wrapDrag(f.id,
+        `<div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
+            ${delFieldBtn(f.id)}
+          </div>
+          ${control}${remDiv}
+        </div>`);
     } else if (f.field_type === 'text') {
       control = `<textarea name="cf_${f.id}" rows="3"
         onkeydown="_crmTextBulletKey(event)"
@@ -539,13 +570,14 @@ function _crmContactModal(c) {
       var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
       control = inp(`cf_${f.id}`, val, iType);
     }
-    return `<div class="col-span-2">
-      <div class="flex items-center justify-between mb-1">
-        <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
-        ${delFieldBtn(f.id)}
-      </div>
-      ${control}
-    </div>`;
+    return wrapDrag(f.id,
+      `<div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
+          ${delFieldBtn(f.id)}
+        </div>
+        ${control}
+      </div>`);
   }).join('');
 
   const body = `
@@ -614,8 +646,8 @@ function _crmContactModal(c) {
           </div>
         </div>
 
-        <!-- Custom fields -->
-        ${customFields ? `<div class="grid grid-cols-2 gap-3 mb-3 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">${customFields}</div>` : ''}
+        <!-- Custom fields — flex-col so drag rows stack cleanly -->
+        ${customFields ? `<div class="flex flex-col gap-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">${customFields}</div>` : ''}
 
         <!-- Add field expanded form (hidden; appears above action row) -->
         <div id="crm-af-form" style="display:none"
@@ -1001,6 +1033,55 @@ window.crmSetFieldPriority = function(fieldId, val) {
   document.querySelectorAll('[data-pri-field="' + fieldId + '"]').forEach(function(b) {
     b.style.opacity = parseInt(b.dataset.priVal) <= newVal ? '1' : '0.25';
   });
+};
+
+// ── Custom-field drag-to-reorder ─────────────────────────────────────────────────
+var _crmDragFieldId = null;
+
+window.crmCfDragStart = function(e, fieldId) {
+  _crmDragFieldId = fieldId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.4';
+};
+
+window.crmCfDragEnd = function(e) {
+  e.currentTarget.style.opacity = '';
+  document.querySelectorAll('.crm-cf-row').forEach(function(el) {
+    el.style.borderTop = '';
+  });
+};
+
+window.crmCfDragOver = function(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  // Show drop-indicator line above this row
+  document.querySelectorAll('.crm-cf-row').forEach(function(el) { el.style.borderTop = ''; });
+  e.currentTarget.style.borderTop = '2px solid #0053e2';
+};
+
+window.crmCfDragLeave = function(e) {
+  // Only clear if truly leaving the row (not entering a child)
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    e.currentTarget.style.borderTop = '';
+  }
+};
+
+window.crmCfDrop = async function(e, targetFieldId, contactId) {
+  e.preventDefault();
+  document.querySelectorAll('.crm-cf-row').forEach(function(el) { el.style.borderTop = ''; });
+  var srcId = _crmDragFieldId;
+  _crmDragFieldId = null;
+  if (!srcId || srcId === targetFieldId) return;
+  // Build new order: move src before target
+  var ids = _crmFields.map(function(f) { return f.id; });
+  ids.splice(ids.indexOf(srcId), 1);
+  ids.splice(ids.indexOf(targetFieldId), 0, srcId);
+  try {
+    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/reorder',
+      {method:'POST', body: new URLSearchParams({order: ids.join(',')})});
+    var contact = contactId ? (_crmContacts.find(function(c){ return c.id===contactId; })||null) : null;
+    _crmContactModal(contact);
+  } catch(err) { alert('Reorder failed: ' + (err.message||err)); }
 };
 
 // Add-field toggle — show/hide the form below the trigger button
