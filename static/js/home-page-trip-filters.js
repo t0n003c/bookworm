@@ -30,13 +30,14 @@ var _SPOT_BUILTIN_FIELDS = [
   { key: 'map',      label: 'Map Link'  },
 ];
 
-// ── Location filter/sort/group state ─────────────────────────────────────────────
+// ── Location filter/sort/group state ─────────────────────────────────────────────────
 var _locSortBy  = 'default';  // 'default' | 'name' | 'priority' | 'attr:<key>'
 var _locSortDir = 'asc';
 var _locGroupBy = 'none';     // 'none' | 'priority' | attr key string
 var _locAttrKey = '';
 var _locAttrVal = '';
 var _locQuery   = '';         // text search across name + notes
+var _locSfgOpen = false;      // sort/group/filter panel open
 
 // ── Spot filter bar ───────────────────────────────────────────────────────────
 window._tripRenderFilterBar = function() {
@@ -402,7 +403,7 @@ window.tripResetSpotAttrs = function() {
   if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
 };
 
-// ── Location filter bar ───────────────────────────────────────────────────────────
+// ── Location filter bar ───────────────────────────────────────────────────
 window._tripRenderLocFilterBar = function() {
   var bar  = document.getElementById('trip-locs-filter-bar');
   var locs = typeof _tripLocations !== 'undefined' ? _tripLocations : [];
@@ -410,34 +411,146 @@ window._tripRenderLocFilterBar = function() {
   if (!locs.length) { bar.classList.add('hidden'); return; }
   bar.classList.remove('hidden');
 
-  var attrKeys  = _collectAttrKeys(locs);
-  var sortOpts  = [
-    ['default',  'Sort: Default'],
-    ['name',     'Sort: Name'],
-    ['priority', 'Sort: Priority'],
-  ];
-  attrKeys.forEach(function(k) { sortOpts.push(['attr:' + k, 'Sort: ' + k]); });
+  var attrKeys = _collectAttrKeys(locs);
+  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' || _locAttrKey !== '';
 
-  var groupOpts = [['none', 'Group: None'], ['priority', 'Group: Priority']];
-  attrKeys.forEach(function(k) { groupOpts.push([k, 'Group: ' + k]); });
+  var _sfgCls = 'flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition ' +
+    (hasActive
+      ? 'border-[#0053e2] text-[#0053e2] dark:text-blue-300'
+      : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+        'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700');
+  var _sfgStyle = hasActive ? ' style="background:rgba(0,83,226,0.06)"' : '';
 
-  // All controls pushed to the right end of the bar
-  var html = '<div class="ml-auto flex items-center gap-2 flex-shrink-0">';
-  html += _selectCtrl('tripSetLocSort', _locSortBy, sortOpts);
-  if (_locSortBy !== 'default') html += _dirToggle('tripToggleLocSortDir', _locSortDir);
-  html += _selectCtrl('tripSetLocGroup', _locGroupBy, groupOpts);
-  if (attrKeys.length) {
-    html += _selectCtrl('tripSetLocAttrKey', _locAttrKey,
-      [['', 'Filter: All']].concat(attrKeys.map(function(k) { return [k, k]; })));
-    if (_locAttrKey) {
-      var valOpts = [['', 'Any']];
-      _collectAttrVals(locs, _locAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      html += _selectCtrl('tripSetLocAttrVal', _locAttrVal, valOpts);
-    }
-  }
-  html += '</div>';
+  var html = '<div class="ml-auto flex items-center gap-2 flex-shrink-0">' +
+    '<div class="relative" id="trip-loc-sfg-anchor">' +
+      '<button onclick="tripToggleLocSfgPanel(event)"' + _sfgStyle +
+        ' title="Sort, group &amp; filter locations" class="' + _sfgCls + '">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" ' +
+          'style="width:14px;height:14px;display:inline;vertical-align:-2px" ' +
+          'viewBox="0 0 20 20" fill="currentColor">' +
+          '<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 01.628.74v2.288a2.25 2.25 0 01-.659 1.59l-4.682 4.683a2.25 2.25 0 00-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 018 18.25v-5.757a2.25 2.25 0 00-.659-1.591L2.659 6.22A2.25 2.25 0 012 4.629V2.34a.75.75 0 01.628-.74z" clip-rule="evenodd"/>' +
+        '</svg>' +
+        (hasActive
+          ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] dark:bg-blue-400 flex-shrink-0"></span>'
+          : '') +
+      '</button>' +
+      (_locSfgOpen ? _locSfgPanelHtml(locs, attrKeys) : '') +
+    '</div>' +
+  '</div>';
 
   bar.innerHTML = html;
+};
+
+// ── Location SFG panel HTML ───────────────────────────────────────────────
+function _locSfgPanelHtml(locs, attrKeys) {
+  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' || _locAttrKey !== '';
+
+  var sortOpts = [
+    ['default',  'Default'],
+    ['name',     'Name'],
+    ['priority', 'Priority'],
+  ];
+  attrKeys.forEach(function(k) { sortOpts.push(['attr:' + k, k]); });
+
+  var groupOpts = [['none', 'None'], ['priority', 'Priority']];
+  attrKeys.forEach(function(k) { groupOpts.push([k, k]); });
+
+  var p =
+    '<div id="trip-loc-sfg-panel" ' +
+    'class="absolute right-0 top-full mt-1.5 z-50 w-64 ' +
+           'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+           'rounded-xl shadow-xl p-4 flex flex-col gap-4">';
+
+  // ── Sort ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Sort</div>';
+  p +=   '<div class="flex items-center gap-2">';
+  p +=     _panelSelect('tripSetLocSort', _locSortBy, sortOpts, 'flex-1');
+  if (_locSortBy !== 'default') {
+    p +=   _panelDirBtn('tripToggleLocSortDir', _locSortDir);
+  }
+  p +=   '</div>';
+  p += '</div>';
+
+  // ── Group by ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Group by</div>';
+  p +=   _panelSelect('tripSetLocGroup', _locGroupBy, groupOpts, 'w-full');
+  p += '</div>';
+
+  // ── Filter (only when locations have custom attrs) ──
+  if (attrKeys.length) {
+    p += '<div>';
+    p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+                 'text-gray-400 dark:text-zinc-500">Filter</div>';
+    p +=   _panelSelect('tripSetLocAttrKey', _locAttrKey,
+             [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
+             'w-full');
+    if (_locAttrKey) {
+      var valOpts = [['', 'Any value']];
+      _collectAttrVals(locs, _locAttrKey).forEach(function(v) { valOpts.push([v, v]); });
+      p += '<div class="mt-2">' +
+             _panelSelect('tripSetLocAttrVal', _locAttrVal, valOpts, 'w-full') +
+           '</div>';
+    }
+    p += '</div>';
+  }
+
+  // ── Clear All footer ──
+  if (hasActive) {
+    p += '<button onclick="tripClearLocSfg()" ' +
+      'class="w-full text-center text-xs text-[#ea1100] hover:text-red-700 ' +
+             'font-medium pt-2 border-t border-gray-100 dark:border-zinc-800 transition">' +
+      'Clear All</button>';
+  }
+
+  p += '</div>';
+  return p;
+}
+
+// ── Location SFG panel toggle + outside-click + Escape ─────────────────────
+window.tripToggleLocSfgPanel = function(e) {
+  if (e) e.stopPropagation();
+  _locSfgOpen = !_locSfgOpen;
+  window._tripRenderLocFilterBar();
+  if (_locSfgOpen) {
+    setTimeout(function() {
+      document.addEventListener('mousedown', _locSfgOutsideClick);
+      document.addEventListener('keydown',   _locSfgEscHandler);
+    }, 0);
+  } else {
+    document.removeEventListener('mousedown', _locSfgOutsideClick);
+    document.removeEventListener('keydown',   _locSfgEscHandler);
+  }
+};
+
+function _locSfgOutsideClick(e) {
+  var anchor = document.getElementById('trip-loc-sfg-anchor');
+  if (anchor && anchor.contains(e.target)) return;
+  _locSfgOpen = false;
+  document.removeEventListener('mousedown', _locSfgOutsideClick);
+  document.removeEventListener('keydown',   _locSfgEscHandler);
+  window._tripRenderLocFilterBar();
+}
+
+function _locSfgEscHandler(e) {
+  if (e.key !== 'Escape') return;
+  _locSfgOpen = false;
+  document.removeEventListener('mousedown', _locSfgOutsideClick);
+  document.removeEventListener('keydown',   _locSfgEscHandler);
+  window._tripRenderLocFilterBar();
+}
+
+window.tripClearLocSfg = function() {
+  _locSortBy = 'default'; _locSortDir = 'asc';
+  _locGroupBy = 'none'; _locAttrKey = ''; _locAttrVal = '';
+  _locSfgOpen = false;
+  document.removeEventListener('mousedown', _locSfgOutsideClick);
+  document.removeEventListener('keydown',   _locSfgEscHandler);
+  window._tripRenderLocFilterBar();
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
 };
 
 // ── Spot ops: filter → sort → group ──────────────────────────────────────────
