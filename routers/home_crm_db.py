@@ -60,13 +60,14 @@ async def add_contact(
     profile_pic: str = "",
     birthday: str = "",
     first_met_date: str = "",
+    relationship: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
             "INSERT INTO crm_contacts "
-            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date),
+            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship),
         )
         await db.commit()
     return await get_contacts(page_id, user_id)
@@ -79,13 +80,14 @@ async def update_contact(
     profile_pic: str = "",
     birthday: str = "",
     first_met_date: str = "",
+    relationship: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
             "UPDATE crm_contacts "
-            "SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=?,profile_pic=?,birthday=?,first_met_date=? "
+            "SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=?,profile_pic=?,birthday=?,first_met_date=?,relationship=? "
             "WHERE id=? AND page_id=? AND user_id=?",
-            (name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date,
+            (name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship,
              contact_id, page_id, user_id),
         )
         await db.commit()

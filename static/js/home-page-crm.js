@@ -540,11 +540,15 @@ function _crmContactModal(c) {
           </div>
         </div>
 
-        <!-- Default fields: flat underline style -->
-        <div class="flex flex-col gap-3 mb-4">
+        <!-- Default fields: flat underline style, 2-column grid -->
+        <div class="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">
           <div>
             ${flatLbl('Name', true)}
             ${flat('name', c?.name, 'text', 'Full name')}
+          </div>
+          <div>
+            ${flatLbl('Relationship')}
+            ${flat('relationship', c?.relationship, 'text', 'Friend, colleague…')}
           </div>
           <div>
             ${flatLbl('Email')}
@@ -559,12 +563,12 @@ function _crmContactModal(c) {
             ${flat('birthday', c?.birthday, 'date')}
           </div>
           <div>
-            ${flatLbl('Company')}
-            ${flat('company', c?.company, 'text', 'Acme Corp')}
-          </div>
-          <div>
             ${flatLbl('First Met Date')}
             ${flat('first_met_date', c?.first_met_date, 'date')}
+          </div>
+          <div class="col-span-2">
+            ${flatLbl('Company')}
+            ${flat('company', c?.company, 'text', 'Acme Corp')}
           </div>
         </div>
 

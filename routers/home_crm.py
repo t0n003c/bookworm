@@ -80,6 +80,7 @@ async def create_contact(
     profile_pic:    str = Form(""),
     birthday:       str = Form(""),
     first_met_date: str = Form(""),
+    relationship:   str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -89,7 +90,8 @@ async def create_contact(
                                      phone.strip(), company.strip(),
                                      tags.strip(), avatar_emoji.strip() or "🧑",
                                      profile_pic.strip(),
-                                     birthday.strip(), first_met_date.strip())
+                                     birthday.strip(), first_met_date.strip(),
+                                     relationship.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
@@ -110,6 +112,7 @@ async def edit_contact(
     profile_pic:    str = Form(""),
     birthday:       str = Form(""),
     first_met_date: str = Form(""),
+    relationship:   str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -119,7 +122,8 @@ async def edit_contact(
                                         email.strip(), phone.strip(), company.strip(),
                                         tags.strip(), avatar_emoji.strip() or "🧑",
                                         profile_pic.strip(),
-                                        birthday.strip(), first_met_date.strip())
+                                        birthday.strip(), first_met_date.strip(),
+                                        relationship.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
