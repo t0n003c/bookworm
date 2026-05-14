@@ -71,13 +71,15 @@ async def list_contacts(request: Request, page_id: int):
 @router.post("/crm/{page_id}/contacts/add")
 async def create_contact(
     request: Request, page_id: int,
-    name:         str = Form(""),
-    email:        str = Form(""),
-    phone:        str = Form(""),
-    company:      str = Form(""),
-    tags:         str = Form(""),
-    avatar_emoji: str = Form("🧑"),
-    profile_pic:  str = Form(""),
+    name:           str = Form(""),
+    email:          str = Form(""),
+    phone:          str = Form(""),
+    company:        str = Form(""),
+    tags:           str = Form(""),
+    avatar_emoji:   str = Form("🧑"),
+    profile_pic:    str = Form(""),
+    birthday:       str = Form(""),
+    first_met_date: str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -86,7 +88,8 @@ async def create_contact(
         contacts = await add_contact(page_id, uid, name.strip(), email.strip(),
                                      phone.strip(), company.strip(),
                                      tags.strip(), avatar_emoji.strip() or "🧑",
-                                     profile_pic.strip())
+                                     profile_pic.strip(),
+                                     birthday.strip(), first_met_date.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
@@ -98,13 +101,15 @@ async def create_contact(
 @router.post("/crm/{page_id}/contacts/{contact_id}/update")
 async def edit_contact(
     request: Request, page_id: int, contact_id: int,
-    name:         str = Form(""),
-    email:        str = Form(""),
-    phone:        str = Form(""),
-    company:      str = Form(""),
-    tags:         str = Form(""),
-    avatar_emoji: str = Form("🧑"),
-    profile_pic:  str = Form(""),
+    name:           str = Form(""),
+    email:          str = Form(""),
+    phone:          str = Form(""),
+    company:        str = Form(""),
+    tags:           str = Form(""),
+    avatar_emoji:   str = Form("🧑"),
+    profile_pic:    str = Form(""),
+    birthday:       str = Form(""),
+    first_met_date: str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -113,7 +118,8 @@ async def edit_contact(
         contacts = await update_contact(contact_id, page_id, uid, name.strip(),
                                         email.strip(), phone.strip(), company.strip(),
                                         tags.strip(), avatar_emoji.strip() or "🧑",
-                                        profile_pic.strip())
+                                        profile_pic.strip(),
+                                        birthday.strip(), first_met_date.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)

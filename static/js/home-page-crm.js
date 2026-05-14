@@ -399,11 +399,26 @@ function crmOpenEdit(id) {
 function _crmContactModal(c) {
   const isEdit = !!c;
   const fv = c ? (c.field_values || {}) : {};
+
+  // Bordered input — used for Tags and custom fields
   const inp = (name, val, type='text', placeholder='') =>
     `<input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}"
       class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
              text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
              placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>`;
+
+  // Flat underline input — used for the 6 built-in default fields
+  const flat = (name, val, type='text', placeholder='') =>
+    `<input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}"
+      class="w-full bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
+             text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600
+             focus:outline-none focus:border-[#0053e2] transition"/>`;
+
+  const flatLbl = (text, required=false) =>
+    `<label class="block text-[10px] font-semibold uppercase tracking-wider
+                   text-gray-400 dark:text-zinc-500 mb-0.5">
+       ${text}${required ? ' <span class="text-red-400">*</span>' : ''}
+     </label>`;
 
   const customFields = _crmFields.map(f => {
     const val = fv[f.id] || '';
@@ -496,47 +511,69 @@ function _crmContactModal(c) {
     <div class="p-6">
       <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-4">${isEdit ? '✎ Edit Contact' : '+ Add Contact'}</h2>
       <form id="crm-contact-form" onsubmit="crmSaveContact(event,${c?c.id:0})">
-        <div class="grid grid-cols-2 gap-3 mb-3">
-          <div class="col-span-2 flex gap-4 items-start">
-            <!-- Profile picture upload -->
-            <div class="flex-shrink-0">
-              <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Photo</label>
-              <div id="crm-pic-preview"
-                class="w-16 h-16 rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800
-                       flex items-center justify-center text-3xl leading-none
-                       border-2 border-gray-200 dark:border-zinc-700
-                       ${isEdit ? 'cursor-pointer hover:opacity-75 transition' : 'opacity-50'}"
-                title="${isEdit ? 'Click to upload a photo' : 'Save contact first, then edit to add a photo'}"
-                onclick="${isEdit ? 'document.getElementById(\'crm-pic-file\').click()' : ''}">
-                ${c?.profile_pic
-                  ? `<img id="crm-pic-img" src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
-                  : `<span id="crm-pic-img">${_crmEsc(c?.avatar_emoji||'👤')}</span>`}
-              </div>
-              <p class="text-[10px] text-center text-gray-400 mt-1 italic">${isEdit?'click to upload':'—'}</p>
-              <input type="hidden" name="profile_pic" id="crm-pic-url" value="${_crmEsc(c?.profile_pic||'')}"/>
-              <input type="file" id="crm-pic-file" accept="image/jpeg,image/png,image/gif,image/webp"
-                     class="hidden" onchange="crmHandlePicFile(this,${c?c.id:0})"/>
+
+        <!-- Photo + Emoji row -->
+        <div class="flex gap-4 items-start mb-4">
+          <div class="flex-shrink-0">
+            <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Photo</label>
+            <div id="crm-pic-preview"
+              class="w-16 h-16 rounded-full overflow-hidden bg-gray-100 dark:bg-zinc-800
+                     flex items-center justify-center text-3xl leading-none
+                     border-2 border-gray-200 dark:border-zinc-700
+                     ${isEdit ? 'cursor-pointer hover:opacity-75 transition' : 'opacity-50'}"
+              title="${isEdit ? 'Click to upload a photo' : 'Save contact first, then edit to add a photo'}"
+              onclick="${isEdit ? 'document.getElementById(\'crm-pic-file\').click()' : ''}">
+              ${c?.profile_pic
+                ? `<img id="crm-pic-img" src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
+                : `<span id="crm-pic-img">${_crmEsc(c?.avatar_emoji||'👤')}</span>`}
             </div>
-            <!-- Emoji fallback + Name -->
-            <div class="flex-1 space-y-2">
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Emoji <span class="font-normal text-gray-400 dark:text-zinc-500">(fallback)</span></label>
-                <input name="avatar_emoji" value="${_crmEsc(c?c.avatar_emoji:'👤')}" maxlength="4"
-                  class="w-16 text-center text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg py-1
-                         bg-white dark:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Name <span class="text-red-400">*</span></label>
-                ${inp('name', c?.name, 'text', 'Full name')}
-              </div>
-            </div>
+            <p class="text-[10px] text-center text-gray-400 mt-1 italic">${isEdit?'click to upload':'—'}</p>
+            <input type="hidden" name="profile_pic" id="crm-pic-url" value="${_crmEsc(c?.profile_pic||'')}"/>
+            <input type="file" id="crm-pic-file" accept="image/jpeg,image/png,image/gif,image/webp"
+                   class="hidden" onchange="crmHandlePicFile(this,${c?c.id:0})"/>
           </div>
-          <div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Email</label>${inp('email', c?.email, 'email', 'email@example.com')}</div>
-          <div><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Phone</label>${inp('phone', c?.phone, 'tel', '+1 555 000 0000')}</div>
-          <div class="col-span-2"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Company</label>${inp('company', c?.company, 'text', 'Acme Corp')}</div>
+          <div class="flex-shrink-0">
+            <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Emoji <span class="font-normal text-gray-400">(fallback)</span></label>
+            <input name="avatar_emoji" value="${_crmEsc(c?c.avatar_emoji:'👤')}" maxlength="4"
+              class="w-16 text-center text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg py-1
+                     bg-white dark:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+          </div>
+        </div>
+
+        <!-- Default fields: flat underline style -->
+        <div class="flex flex-col gap-3 mb-4">
+          <div>
+            ${flatLbl('Name', true)}
+            ${flat('name', c?.name, 'text', 'Full name')}
+          </div>
+          <div>
+            ${flatLbl('Email')}
+            ${flat('email', c?.email, 'email', 'email@example.com')}
+          </div>
+          <div>
+            ${flatLbl('Phone')}
+            ${flat('phone', c?.phone, 'tel', '+1 555 000 0000')}
+          </div>
+          <div>
+            ${flatLbl('Birthday')}
+            ${flat('birthday', c?.birthday, 'date')}
+          </div>
+          <div>
+            ${flatLbl('Company')}
+            ${flat('company', c?.company, 'text', 'Acme Corp')}
+          </div>
+          <div>
+            ${flatLbl('First Met Date')}
+            ${flat('first_met_date', c?.first_met_date, 'date')}
+          </div>
+        </div>
+
+        <!-- Tags + custom fields -->
+        <div class="grid grid-cols-2 gap-3 mb-3">
           <div class="col-span-2"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Tags <span class="text-gray-400 font-normal">(comma-separated)</span></label>${inp('tags', c?.tags, 'text', 'vendor, priority')}</div>
           ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
         </div>
+
         <p id="crm-contact-err" class="hidden text-xs text-red-500 mb-2"></p>
         <div id="crm-dup-warn" class="hidden mb-3"></div>
         <div id="crm-action-btns" class="flex gap-2 justify-end pt-2">

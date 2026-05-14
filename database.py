@@ -582,6 +582,14 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE crm_contacts ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''"
             )
+        if "birthday" not in _crm_contact_cols:
+            await db.execute(
+                "ALTER TABLE crm_contacts ADD COLUMN birthday TEXT NOT NULL DEFAULT ''"
+            )
+        if "first_met_date" not in _crm_contact_cols:
+            await db.execute(
+                "ALTER TABLE crm_contacts ADD COLUMN first_met_date TEXT NOT NULL DEFAULT ''"
+            )
 
         # ── crm_projects (pipeline projects — stages belong to a project) ────
         await db.execute("""
