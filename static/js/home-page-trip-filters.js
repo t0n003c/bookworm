@@ -209,34 +209,39 @@ function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
   p += '<div>';
   p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
                'text-gray-400 dark:text-zinc-500">Filter</div>';
-
-  // Details filters (always shown)
   p +=   '<div class="flex flex-col gap-2">';
+
+  // Priority row
   p +=     '<div class="flex items-center gap-2">' +
              '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Priority</span>' +
              _panelSelect('tripSetSpotPriorityMin', _tripPriorityMin, priOpts, 'flex-1') +
            '</div>';
+
+  // Map Link row
   p +=     '<div class="flex items-center gap-2">' +
              '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Map Link</span>' +
              _panelSelect('tripSetSpotHasMap', _tripHasMap, mapOpts, 'flex-1') +
            '</div>';
-  p +=   '</div>';
 
-  // Custom attr filter (only when spots have custom attrs)
+  // Custom attr rows — no divider, same column layout
   if (attrKeys.length) {
-    p += '<div class="pt-2 border-t border-gray-100 dark:border-zinc-800 flex flex-col gap-2">';
-    p +=   '<span class="text-[10px] text-gray-400 dark:text-zinc-500">Custom attribute</span>';
-    p +=   _panelSelect('tripSetSpotAttrKey', _tripAttrKey,
-             [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
-             'w-full');
+    p +=   '<div class="flex items-center gap-2">' +
+             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Attribute</span>' +
+             _panelSelect('tripSetSpotAttrKey', _tripAttrKey,
+               [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
+               'flex-1') +
+           '</div>';
     if (_tripAttrKey) {
       var valOpts = [['', 'Any value']];
       _collectAttrVals(spots, _tripAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      p += _panelSelect('tripSetSpotAttrVal', _tripAttrVal, valOpts, 'w-full');
+      p += '<div class="flex items-center gap-2">' +
+             '<span class="w-14 flex-shrink-0"></span>' +
+             _panelSelect('tripSetSpotAttrVal', _tripAttrVal, valOpts, 'flex-1') +
+           '</div>';
     }
-    p += '</div>';
   }
 
+  p +=   '</div>'; // end gap-2 list
   p += '</div>'; // end Filter
 
   // ── Clear All footer ──
@@ -664,28 +669,31 @@ function _locSfgPanelHtml(locs, attrKeys) {
                'text-gray-400 dark:text-zinc-500">Filter</div>';
   p +=   '<div class="flex flex-col gap-2">';
 
-  // Priority filter (always shown)
+  // Priority row
   p +=     '<div class="flex items-center gap-2">' +
              '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Priority</span>' +
              _panelSelect('tripSetLocPriorityMin', _locPriorityMin, priOpts, 'flex-1') +
            '</div>';
 
-  // Custom attr filter (only when locs have custom attrs)
+  // Custom attr rows — no divider, same column layout
   if (attrKeys.length) {
-    p +=   '<div class="pt-2 border-t border-gray-100 dark:border-zinc-800 flex flex-col gap-2">';
-    p +=     '<span class="text-[10px] text-gray-400 dark:text-zinc-500">Custom attribute</span>';
-    p +=     _panelSelect('tripSetLocAttrKey', _locAttrKey,
+    p +=   '<div class="flex items-center gap-2">' +
+             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Attribute</span>' +
+             _panelSelect('tripSetLocAttrKey', _locAttrKey,
                [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
-               'w-full');
+               'flex-1') +
+           '</div>';
     if (_locAttrKey) {
       var valOpts = [['', 'Any value']];
       _collectAttrVals(locs, _locAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      p +=   _panelSelect('tripSetLocAttrVal', _locAttrVal, valOpts, 'w-full');
+      p += '<div class="flex items-center gap-2">' +
+             '<span class="w-14 flex-shrink-0"></span>' +
+             _panelSelect('tripSetLocAttrVal', _locAttrVal, valOpts, 'flex-1') +
+           '</div>';
     }
-    p +=   '</div>';
   }
 
-  p +=   '</div>'; // end flex-col
+  p +=   '</div>'; // end gap-2 list
   p += '</div>'; // end Filter
 
   // ── Clear All footer ──
