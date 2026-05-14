@@ -38,6 +38,15 @@ var _locAttrKey = '';
 var _locAttrVal = '';
 var _locQuery   = '';         // text search across name + notes
 var _locSfgOpen = false;      // sort/group/filter panel open
+var _locColOpen = false;      // attribute visibility panel open
+var _locHiddenAttrs  = {};    // custom attr_key strings hidden on loc cards
+var _locHiddenFields = {};    // built-in field keys hidden: 'cover'|'priority'|'notes'
+
+var _LOC_BUILTIN_FIELDS = [
+  { key: 'cover',    label: 'Cover Image' },
+  { key: 'priority', label: 'Priority'    },
+  { key: 'notes',    label: 'Notes'       },
+];
 
 // ── Spot filter bar ───────────────────────────────────────────────────────────
 window._tripRenderFilterBar = function() {
@@ -413,7 +422,18 @@ window._tripRenderLocFilterBar = function() {
 
   var attrKeys = _collectAttrKeys(locs);
   var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' || _locAttrKey !== '';
+  var hasHidden = Object.keys(_locHiddenAttrs).length > 0 ||
+                  Object.keys(_locHiddenFields).length > 0;
 
+  // ── Eye (column visibility) button ──
+  var _colCls = 'flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition ' +
+    (hasHidden
+      ? 'border-[#0053e2] text-[#0053e2] dark:text-blue-300'
+      : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
+        'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700');
+  var _colStyle = hasHidden ? ' style="background:rgba(0,83,226,0.06)"' : '';
+
+  // ── Funnel (sort/group/filter) button ──
   var _sfgCls = 'flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition ' +
     (hasActive
       ? 'border-[#0053e2] text-[#0053e2] dark:text-blue-300'
@@ -422,6 +442,23 @@ window._tripRenderLocFilterBar = function() {
   var _sfgStyle = hasActive ? ' style="background:rgba(0,83,226,0.06)"' : '';
 
   var html = '<div class="ml-auto flex items-center gap-2 flex-shrink-0">' +
+
+    // Eye button
+    '<div class="relative" id="trip-loc-col-anchor">' +
+      '<button onclick="tripToggleLocColPanel(event)"' + _colStyle +
+        ' title="Show / hide fields on location cards" class="' + _colCls + '">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" ' +
+          'style="width:14px;height:14px;display:inline;vertical-align:-2px" ' +
+          'viewBox="0 0 20 20" fill="currentColor">' +
+          '<path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/>' +
+          '<path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41z" clip-rule="evenodd"/>' +
+        '</svg>' +
+        (hasHidden ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] dark:bg-blue-400 flex-shrink-0"></span>' : '') +
+      '</button>' +
+      (_locColOpen ? _locColPanelHtml(attrKeys) : '') +
+    '</div>' +
+
+    // Funnel button
     '<div class="relative" id="trip-loc-sfg-anchor">' +
       '<button onclick="tripToggleLocSfgPanel(event)"' + _sfgStyle +
         ' title="Sort, group &amp; filter locations" class="' + _sfgCls + '">' +
@@ -430,15 +467,112 @@ window._tripRenderLocFilterBar = function() {
           'viewBox="0 0 20 20" fill="currentColor">' +
           '<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 01.628.74v2.288a2.25 2.25 0 01-.659 1.59l-4.682 4.683a2.25 2.25 0 00-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 018 18.25v-5.757a2.25 2.25 0 00-.659-1.591L2.659 6.22A2.25 2.25 0 012 4.629V2.34a.75.75 0 01.628-.74z" clip-rule="evenodd"/>' +
         '</svg>' +
-        (hasActive
-          ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] dark:bg-blue-400 flex-shrink-0"></span>'
-          : '') +
+        (hasActive ? '<span class="inline-block w-2 h-2 rounded-full bg-[#0053e2] dark:bg-blue-400 flex-shrink-0"></span>' : '') +
       '</button>' +
       (_locSfgOpen ? _locSfgPanelHtml(locs, attrKeys) : '') +
     '</div>' +
+
   '</div>';
 
   bar.innerHTML = html;
+};
+
+// ── Location column-visibility panel ───────────────────────────────────────────
+function _locColPanelHtml(attrKeys) {
+  var anyHidden = Object.keys(_locHiddenAttrs).length > 0 ||
+                  Object.keys(_locHiddenFields).length > 0;
+  var p =
+    '<div id="trip-loc-col-panel" ' +
+    'class="absolute right-0 top-full mt-1.5 z-50 w-52 ' +
+           'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+           'rounded-xl shadow-xl p-4 flex flex-col gap-1">';
+
+  // ── Default fields ──
+  p += '<div class="text-xs font-semibold uppercase tracking-wider mb-1 ' +
+            'text-gray-400 dark:text-zinc-500">Default fields</div>';
+  _LOC_BUILTIN_FIELDS.forEach(function(f) {
+    var isHidden = !!_locHiddenFields[f.key];
+    p += _colCheckRow('tripToggleLocField(' + _colJsStr(f.key) + ')', !isHidden, f.label);
+  });
+
+  // ── Custom attrs (only when present) ──
+  if (attrKeys.length) {
+    p += '<div class="text-xs font-semibold uppercase tracking-wider mt-2 mb-1 ' +
+              'text-gray-400 dark:text-zinc-500">Custom fields</div>';
+    attrKeys.forEach(function(k) {
+      var isHidden = !!_locHiddenAttrs[k];
+      p += _colCheckRow('tripToggleLocAttr(' + _colJsStr(k) + ')', !isHidden, k);
+    });
+  }
+
+  if (anyHidden) {
+    p += '<button onclick="tripResetLocAttrs()" ' +
+      'class="w-full text-center text-xs text-[#0053e2] hover:text-blue-700 ' +
+             'font-medium pt-2 mt-1 border-t border-gray-100 dark:border-zinc-800 transition">' +
+      'Show All</button>';
+  }
+
+  p += '</div>';
+  return p;
+}
+
+window.tripToggleLocColPanel = function(e) {
+  if (e) e.stopPropagation();
+  // Close sfg panel if open
+  if (_locSfgOpen) {
+    _locSfgOpen = false;
+    document.removeEventListener('mousedown', _locSfgOutsideClick);
+    document.removeEventListener('keydown',   _locSfgEscHandler);
+  }
+  _locColOpen = !_locColOpen;
+  window._tripRenderLocFilterBar();
+  if (_locColOpen) {
+    setTimeout(function() {
+      document.addEventListener('mousedown', _locColOutsideClick);
+      document.addEventListener('keydown',   _locColEscHandler);
+    }, 0);
+  } else {
+    document.removeEventListener('mousedown', _locColOutsideClick);
+    document.removeEventListener('keydown',   _locColEscHandler);
+  }
+};
+
+function _locColOutsideClick(e) {
+  var anchor = document.getElementById('trip-loc-col-anchor');
+  if (anchor && anchor.contains(e.target)) return;
+  _locColOpen = false;
+  document.removeEventListener('mousedown', _locColOutsideClick);
+  document.removeEventListener('keydown',   _locColEscHandler);
+  window._tripRenderLocFilterBar();
+}
+
+function _locColEscHandler(e) {
+  if (e.key !== 'Escape') return;
+  _locColOpen = false;
+  document.removeEventListener('mousedown', _locColOutsideClick);
+  document.removeEventListener('keydown',   _locColEscHandler);
+  window._tripRenderLocFilterBar();
+}
+
+window.tripToggleLocField = function(key) {
+  if (_locHiddenFields[key]) { delete _locHiddenFields[key]; }
+  else { _locHiddenFields[key] = true; }
+  window._tripRenderLocFilterBar();
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
+};
+
+window.tripToggleLocAttr = function(key) {
+  if (_locHiddenAttrs[key]) { delete _locHiddenAttrs[key]; }
+  else { _locHiddenAttrs[key] = true; }
+  window._tripRenderLocFilterBar();
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
+};
+
+window.tripResetLocAttrs = function() {
+  _locHiddenAttrs  = {};
+  _locHiddenFields = {};
+  window._tripRenderLocFilterBar();
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
 };
 
 // ── Location SFG panel HTML ───────────────────────────────────────────────
@@ -513,6 +647,12 @@ function _locSfgPanelHtml(locs, attrKeys) {
 // ── Location SFG panel toggle + outside-click + Escape ─────────────────────
 window.tripToggleLocSfgPanel = function(e) {
   if (e) e.stopPropagation();
+  // Close col panel if open
+  if (_locColOpen) {
+    _locColOpen = false;
+    document.removeEventListener('mousedown', _locColOutsideClick);
+    document.removeEventListener('keydown',   _locColEscHandler);
+  }
   _locSfgOpen = !_locSfgOpen;
   window._tripRenderLocFilterBar();
   if (_locSfgOpen) {

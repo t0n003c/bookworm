@@ -136,30 +136,41 @@ function _tripRenderLocGrid() {
 }
 
 function _tripRenderLocCard(loc) {
+  // Visibility guards — _locHiddenFields / _locHiddenAttrs set by filters.js
+  var _hf = (typeof _locHiddenFields !== 'undefined') ? _locHiddenFields : {};
+  var _ha = (typeof _locHiddenAttrs  !== 'undefined') ? _locHiddenAttrs  : {};
+
   var stars = _tripLocStars(loc.priority, loc.id);
-  var attrs = loc.attrs && loc.attrs.length
+
+  // Custom attrs: skip hidden keys, cap at 4 visible pills
+  var visibleAttrs = (loc.attrs || []).filter(function(a) { return !_ha[a.attr_key]; });
+  var attrs = visibleAttrs.length
     ? '<div class="flex flex-wrap gap-1 mt-1">' +
-        loc.attrs.slice(0, 4).map(function(a) {
+        visibleAttrs.slice(0, 4).map(function(a) {
           return '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
             'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">' +
             _tripEsc(a.attr_key) + ': ' + _tripEsc(a.attr_value) + '</span>';
         }).join('') +
-        (loc.attrs.length > 4
+        (visibleAttrs.length > 4
           ? '<span class="px-1.5 py-0.5 text-[10px] rounded-full ' +
               'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500">' +
-              '+' + (loc.attrs.length - 4) + ' more</span>'
+              '+' + (visibleAttrs.length - 4) + ' more</span>'
           : '') +
       '</div>'
     : '';
-  var cover = loc.cover_url
-    ? '<div class="h-40 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
-        '<img src="' + _tripEsc(loc.cover_url) + '" alt="" ' +
-          'class="w-full h-full object-cover" ' +
-          'onerror="this.parentNode.style.display=\'none\'">' +
-      '</div>'
-    : '<div class="h-28 flex items-center justify-center bg-gradient-to-br ' +
-        'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
-        'select-none">📍</div>';
+
+  // Cover image or placeholder (hidden = always show compact placeholder so card isn't empty)
+  var cover = _hf.cover
+    ? ''
+    : (loc.cover_url
+        ? '<div class="h-40 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
+            '<img src="' + _tripEsc(loc.cover_url) + '" alt="" ' +
+              'class="w-full h-full object-cover" ' +
+              'onerror="this.parentNode.style.display=\'none\'">' +
+          '</div>'
+        : '<div class="h-28 flex items-center justify-center bg-gradient-to-br ' +
+            'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
+            'select-none">📍</div>');
 
   return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
     'dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition ' +
@@ -180,13 +191,12 @@ function _tripRenderLocCard(loc) {
                    'opacity-0 group-hover:opacity-100">🗑️</button>' +
         '</div>' +
       '</div>' +
-      '<div class="flex items-center gap-1">' + stars + '</div>' +
-      (loc.notes
+      (!_hf.priority ? '<div class="flex items-center gap-1">' + stars + '</div>' : '') +
+      (!_hf.notes && loc.notes
         ? '<p class="text-[11px] text-gray-500 dark:text-zinc-400 line-clamp-2">' +
             _tripEsc(loc.notes) + '</p>'
         : '') +
       attrs +
-
     '</div>' +
   '</div>';
 }
