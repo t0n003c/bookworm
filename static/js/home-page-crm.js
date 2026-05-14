@@ -482,15 +482,29 @@ function _crmContactModal(c) {
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
       control = opts.length
-        ? `<select name="cf_${f.id}"
-            class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5
-                   text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                   focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-            <option value="" ${!val?'selected':''}>— none —</option>
+        ? `<div class="flex flex-wrap gap-1.5">
+            <label class="cursor-pointer">
+              <input type="radio" name="cf_${f.id}" value=""
+                     ${!val?'checked':''} class="sr-only peer"/>
+              <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
+                           border-gray-300 dark:border-zinc-600
+                           text-gray-600 dark:text-zinc-300
+                           peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
+                           peer-checked:text-white">None</span>
+            </label>
             ${opts.map(o =>
-              `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
-            ).join('')}
-          </select>`
+              `<label class="cursor-pointer">
+                 <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
+                        ${o===val?'checked':''} class="sr-only peer"/>
+                 <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
+                              border-gray-300 dark:border-zinc-600
+                              text-gray-600 dark:text-zinc-300
+                              peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2]
+                              peer-checked:text-white">
+                   ${_crmEsc(o)}
+                 </span>
+               </label>`).join('')}
+          </div>`
         : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
     } else if (f.field_type === 'priority') {
       var icon = f.options || '⭐';
@@ -603,65 +617,65 @@ function _crmContactModal(c) {
           </div>
         </div>
 
-        <!-- Custom fields + add-field panel (NO nested <form> — uses div + button onclick) -->
-        <div class="grid grid-cols-2 gap-3 mb-3">
-          ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
-          <div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-2 mt-1">
-            <!-- Collapsed trigger -->
-            <button type="button" id="crm-af-toggle" onclick="crmToggleAddField()"
-              class="flex items-center gap-1 text-xs text-gray-400 dark:text-zinc-500
-                     hover:text-[#0053e2] dark:hover:text-blue-400 transition">
-              <span class="text-sm leading-none">+</span> Add field
-            </button>
-            <!-- Expanded form (hidden by default) -->
-            <div id="crm-af-form" style="display:none" class="mt-2">
-              <div class="flex gap-2 items-center">
-                <input id="crm-af-label" placeholder="Field name"
-                  class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                         text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                         placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-                <select id="crm-af-type" onchange="crmAfTypeChange(this)"
-                  class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                         text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-                  <option value="text">Text</option>
-                  <option value="number">Number</option>
-                  <option value="date">Date</option>
-                  <option value="url">URL</option>
-                  <option value="email">Email</option>
-                  <option value="select">Select</option>
-                  <option value="multi_select">Multi-select</option>
-                  <option value="checkbox">Checkbox</option>
-                  <option value="priority">Priority ⭐</option>
-                </select>
-                <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
-                  class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
-                         hover:bg-blue-700 transition flex-shrink-0">Add</button>
-              </div>
-              <!-- Icon picker — only shown for Priority type -->
-              <div id="crm-af-icon-row" style="display:none"
-                class="flex items-center gap-1 mt-2 flex-wrap">
-                <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
-                ${ ['⭐','❤️','🔥','🌳','🏆','🪱','🌟','👍','🥳','🍎'].map(ico =>
-                  `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
-                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
-                    onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
-                ).join('') }
-                <input type="hidden" id="crm-af-icon" value="⭐"/>
-              </div>
-            </div>
+        <!-- Custom fields -->
+        ${customFields ? `<div class="grid grid-cols-2 gap-3 mb-3 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">${customFields}</div>` : ''}
+
+        <!-- Add field expanded form (hidden; appears above action row) -->
+        <div id="crm-af-form" style="display:none"
+          class="mb-3 p-3 rounded-lg bg-gray-50 dark:bg-zinc-800/60
+                 border border-gray-200 dark:border-zinc-700">
+          <div class="flex gap-2 items-center">
+            <input id="crm-af-label" placeholder="Field name"
+              class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                     text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                     placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+            <select id="crm-af-type" onchange="crmAfTypeChange(this)"
+              class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                     text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                     focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="url">URL</option>
+              <option value="email">Email</option>
+              <option value="select">Select</option>
+              <option value="multi_select">Multi-select</option>
+              <option value="checkbox">Checkbox</option>
+              <option value="priority">Priority ⭐</option>
+            </select>
+            <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
+                     hover:bg-blue-700 transition flex-shrink-0">Add</button>
+          </div>
+          <!-- Icon picker — only shown for Priority type -->
+          <div id="crm-af-icon-row" style="display:none"
+            class="flex items-center gap-1 mt-2 flex-wrap">
+            <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
+            ${ ['⭐','❤️','🔥','🌳','🏆','🪱','🌟','👍','🥳','🍎'].map(ico =>
+              `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
+                       hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
+                onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
+            ).join('') }
+            <input type="hidden" id="crm-af-icon" value="⭐"/>
           </div>
         </div>
 
         <p id="crm-contact-err" class="hidden text-xs text-red-500 mb-2"></p>
         <div id="crm-dup-warn" class="hidden mb-3"></div>
-        <div id="crm-action-btns" class="flex gap-2 justify-end pt-2">
-          <button type="button" onclick="crmCloseModal()"
-            class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Cancel</button>
-          <button type="submit" id="crm-contact-save"
-            class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-[#0053e2] text-white hover:bg-blue-700 transition">
-            ${isEdit ? 'Save' : 'Add Contact'}</button>
+        <div id="crm-action-btns" class="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+          <button type="button" id="crm-af-toggle" onclick="crmToggleAddField()"
+            class="flex items-center gap-1 text-xs text-gray-400 dark:text-zinc-500
+                   hover:text-[#0053e2] dark:hover:text-blue-400 transition">
+            <span class="text-sm leading-none">+</span> Add field
+          </button>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" onclick="crmCloseModal()"
+              class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                     text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Cancel</button>
+            <button type="submit" id="crm-contact-save"
+              class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-[#0053e2] text-white hover:bg-blue-700 transition">
+              ${isEdit ? 'Save' : 'Add Contact'}</button>
+          </div>
         </div>
       </form>
     </div>`;
