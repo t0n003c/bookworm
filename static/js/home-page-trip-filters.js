@@ -209,13 +209,11 @@ function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
                'text-gray-400 dark:text-zinc-500">Filter</div>';
   p +=   '<div class="flex flex-col gap-2">';
   p +=     '<div class="flex items-center gap-2">' +
-             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Attribute</span>' +
-             _panelSelect('tripSetSpotFilterKey', _tripFilterKey, keyOpts, 'flex-1') +
+             _panelSelect('tripSetSpotFilterKey', _tripFilterKey, keyOpts, 'w-full') +
            '</div>';
   if (valOpts) {
     p +=   '<div class="flex items-center gap-2">' +
-             '<span class="w-14 flex-shrink-0"></span>' +
-             _panelSelect('tripSetSpotFilterVal', _tripFilterVal, valOpts, 'flex-1') +
+             _panelSelect('tripSetSpotFilterVal', _tripFilterVal, valOpts, 'w-full') +
            '</div>';
   }
   p +=   '</div>';
@@ -648,13 +646,11 @@ function _locSfgPanelHtml(locs, attrKeys) {
                'text-gray-400 dark:text-zinc-500">Filter</div>';
   p +=   '<div class="flex flex-col gap-2">';
   p +=     '<div class="flex items-center gap-2">' +
-             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Attribute</span>' +
-             _panelSelect('tripSetLocFilterKey', _locFilterKey, keyOpts, 'flex-1') +
+             _panelSelect('tripSetLocFilterKey', _locFilterKey, keyOpts, 'w-full') +
            '</div>';
   if (valOpts) {
     p +=   '<div class="flex items-center gap-2">' +
-             '<span class="w-14 flex-shrink-0"></span>' +
-             _panelSelect('tripSetLocFilterVal', _locFilterVal, valOpts, 'flex-1') +
+             _panelSelect('tripSetLocFilterVal', _locFilterVal, valOpts, 'w-full') +
            '</div>';
   }
   p +=   '</div>';
