@@ -12,16 +12,18 @@
  * Direction: 'asc' | 'desc'  (applies to every sort except 'default').
  */
 
-// ── Spot filter/sort/group state ──────────────────────────────────────────────
-var _tripSortBy  = 'default'; // 'default' | 'name' | 'priority' | 'cost' | 'attr:<key>'
-var _tripSortDir = 'asc';     // 'asc' | 'desc'
-var _tripGroupBy = 'none';    // 'none' | 'type' | 'priority' | attr key string
-var _tripAttrKey = '';        // filter: attr key  ('' = off)
-var _tripAttrVal = '';        // filter: attr value ('' = any)
-var _spotSfgOpen = false;       // sort/group/filter panel open
-var _spotColOpen = false;       // attribute visibility panel open
-var _tripSpotHiddenAttrs  = {}; // custom attr_key strings hidden on spot cards
-var _tripSpotHiddenFields = {}; // built-in field keys hidden: 'category'|'priority'|'cost'|'map'
+// ── Spot filter/sort/group state ─────────────────────────────────────────────────────
+var _tripSortBy      = 'default'; // 'default' | 'name' | 'priority' | 'cost' | 'attr:<key>'
+var _tripSortDir     = 'asc';     // 'asc' | 'desc'
+var _tripGroupBy     = 'none';    // 'none' | 'type' | 'priority' | attr key string
+var _tripAttrKey     = '';        // filter: attr key  ('' = off)
+var _tripAttrVal     = '';        // filter: attr value ('' = any)
+var _tripPriorityMin = '';        // filter: min priority '' | '1'..'5'
+var _tripHasMap      = '';        // filter: map link   '' | 'yes' | 'no'
+var _spotSfgOpen     = false;     // sort/group/filter panel open
+var _spotColOpen     = false;     // attribute visibility panel open
+var _tripSpotHiddenAttrs  = {};
+var _tripSpotHiddenFields = {};
 
 var _SPOT_BUILTIN_FIELDS = [
   { key: 'category', label: 'Category' },
@@ -31,16 +33,17 @@ var _SPOT_BUILTIN_FIELDS = [
 ];
 
 // ── Location filter/sort/group state ─────────────────────────────────────────────────
-var _locSortBy  = 'default';  // 'default' | 'name' | 'priority' | 'attr:<key>'
-var _locSortDir = 'asc';
-var _locGroupBy = 'none';     // 'none' | 'priority' | attr key string
-var _locAttrKey = '';
-var _locAttrVal = '';
-var _locQuery   = '';         // text search across name + notes
-var _locSfgOpen = false;      // sort/group/filter panel open
-var _locColOpen = false;      // attribute visibility panel open
-var _locHiddenAttrs  = {};    // custom attr_key strings hidden on loc cards
-var _locHiddenFields = {};    // built-in field keys hidden: 'cover'|'priority'|'notes'
+var _locSortBy      = 'default';
+var _locSortDir     = 'asc';
+var _locGroupBy     = 'none';
+var _locAttrKey     = '';
+var _locAttrVal     = '';
+var _locQuery       = '';
+var _locPriorityMin = '';          // filter: min priority '' | '1'..'5'
+var _locSfgOpen     = false;
+var _locColOpen     = false;
+var _locHiddenAttrs  = {};
+var _locHiddenFields = {};
 
 var _LOC_BUILTIN_FIELDS = [
   { key: 'cover',    label: 'Cover Image' },
@@ -89,7 +92,8 @@ window._tripRenderFilterBar = function() {
   var groupOpts = [['none', 'None'], ['type', 'Type'], ['priority', 'Priority']];
   attrKeys.forEach(function(k) { groupOpts.push([k, k]); });
 
-  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' || _tripAttrKey !== '';
+  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' ||
+                  _tripAttrKey !== '' || _tripPriorityMin !== '' || _tripHasMap !== '';
 
   var rightHtml = '<div class="flex items-center gap-2 ml-auto flex-shrink-0">';
 
@@ -161,7 +165,23 @@ function _tripRenderFilterBar() { window._tripRenderFilterBar(); }
 
 // ── Sort / Group / Filter panel (Spots) ──────────────────────────────────────
 function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
-  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' || _tripAttrKey !== '';
+  var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' ||
+                  _tripAttrKey !== '' || _tripPriorityMin !== '' || _tripHasMap !== '';
+
+  var priOpts = [
+    ['',  'Any priority'],
+    ['1', '★ 1+ stars'],
+    ['2', '★★ 2+ stars'],
+    ['3', '★★★ 3+ stars'],
+    ['4', '★★★★ 4+ stars'],
+    ['5', '★★★★★ 5 stars only'],
+  ];
+  var mapOpts = [
+    ['',    'Any'],
+    ['yes', 'Has map link'],
+    ['no',  'No map link'],
+  ];
+
   var p =
     '<div id="trip-sfg-panel" ' +
     'class="absolute right-0 top-full mt-1.5 z-50 w-64 ' +
@@ -174,9 +194,7 @@ function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
                'text-gray-400 dark:text-zinc-500">Sort</div>';
   p +=   '<div class="flex items-center gap-2">';
   p +=     _panelSelect('tripSetSpotSort', _tripSortBy, sortOpts, 'flex-1');
-  if (_tripSortBy !== 'default') {
-    p +=   _panelDirBtn('tripToggleSpotSortDir', _tripSortDir);
-  }
+  if (_tripSortBy !== 'default') p += _panelDirBtn('tripToggleSpotSortDir', _tripSortDir);
   p +=   '</div>';
   p += '</div>';
 
@@ -187,23 +205,39 @@ function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
   p +=   _panelSelect('tripSetSpotGroup', _tripGroupBy, groupOpts, 'w-full');
   p += '</div>';
 
-  // ── Filter (attr-based — only shown when spots have custom attrs) ──
+  // ── Filter ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Filter</div>';
+
+  // Details filters (always shown)
+  p +=   '<div class="flex flex-col gap-2">';
+  p +=     '<div class="flex items-center gap-2">' +
+             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Priority</span>' +
+             _panelSelect('tripSetSpotPriorityMin', _tripPriorityMin, priOpts, 'flex-1') +
+           '</div>';
+  p +=     '<div class="flex items-center gap-2">' +
+             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Map Link</span>' +
+             _panelSelect('tripSetSpotHasMap', _tripHasMap, mapOpts, 'flex-1') +
+           '</div>';
+  p +=   '</div>';
+
+  // Custom attr filter (only when spots have custom attrs)
   if (attrKeys.length) {
-    p += '<div>';
-    p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
-                 'text-gray-400 dark:text-zinc-500">Filter</div>';
+    p += '<div class="pt-2 border-t border-gray-100 dark:border-zinc-800 flex flex-col gap-2">';
+    p +=   '<span class="text-[10px] text-gray-400 dark:text-zinc-500">Custom attribute</span>';
     p +=   _panelSelect('tripSetSpotAttrKey', _tripAttrKey,
              [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
              'w-full');
     if (_tripAttrKey) {
       var valOpts = [['', 'Any value']];
       _collectAttrVals(spots, _tripAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      p += '<div class="mt-2">' +
-             _panelSelect('tripSetSpotAttrVal', _tripAttrVal, valOpts, 'w-full') +
-           '</div>';
+      p += _panelSelect('tripSetSpotAttrVal', _tripAttrVal, valOpts, 'w-full');
     }
     p += '</div>';
   }
+
+  p += '</div>'; // end Filter
 
   // ── Clear All footer ──
   if (hasActive) {
@@ -279,6 +313,7 @@ function _spotSfgEscHandler(e) {
 window.tripClearSpotSfg = function() {
   _tripSortBy = 'default'; _tripSortDir = 'asc';
   _tripGroupBy = 'none'; _tripAttrKey = ''; _tripAttrVal = '';
+  _tripPriorityMin = ''; _tripHasMap = '';
   _spotSfgOpen = false;
   document.removeEventListener('mousedown', _spotSfgOutsideClick);
   document.removeEventListener('keydown', _spotSfgEscHandler);
@@ -421,7 +456,8 @@ window._tripRenderLocFilterBar = function() {
   bar.classList.remove('hidden');
 
   var attrKeys = _collectAttrKeys(locs);
-  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' || _locAttrKey !== '';
+  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' ||
+                  _locAttrKey !== '' || _locPriorityMin !== '';
   var hasHidden = Object.keys(_locHiddenAttrs).length > 0 ||
                   Object.keys(_locHiddenFields).length > 0;
 
@@ -577,7 +613,8 @@ window.tripResetLocAttrs = function() {
 
 // ── Location SFG panel HTML ───────────────────────────────────────────────
 function _locSfgPanelHtml(locs, attrKeys) {
-  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' || _locAttrKey !== '';
+  var hasActive = _locSortBy !== 'default' || _locGroupBy !== 'none' ||
+                  _locAttrKey !== '' || _locPriorityMin !== '';
 
   var sortOpts = [
     ['default',  'Default'],
@@ -588,6 +625,15 @@ function _locSfgPanelHtml(locs, attrKeys) {
 
   var groupOpts = [['none', 'None'], ['priority', 'Priority']];
   attrKeys.forEach(function(k) { groupOpts.push([k, k]); });
+
+  var priOpts = [
+    ['',  'Any priority'],
+    ['1', '★ 1+ stars'],
+    ['2', '★★ 2+ stars'],
+    ['3', '★★★ 3+ stars'],
+    ['4', '★★★★ 4+ stars'],
+    ['5', '★★★★★ 5 stars only'],
+  ];
 
   var p =
     '<div id="trip-loc-sfg-panel" ' +
@@ -601,9 +647,7 @@ function _locSfgPanelHtml(locs, attrKeys) {
                'text-gray-400 dark:text-zinc-500">Sort</div>';
   p +=   '<div class="flex items-center gap-2">';
   p +=     _panelSelect('tripSetLocSort', _locSortBy, sortOpts, 'flex-1');
-  if (_locSortBy !== 'default') {
-    p +=   _panelDirBtn('tripToggleLocSortDir', _locSortDir);
-  }
+  if (_locSortBy !== 'default') p += _panelDirBtn('tripToggleLocSortDir', _locSortDir);
   p +=   '</div>';
   p += '</div>';
 
@@ -614,23 +658,35 @@ function _locSfgPanelHtml(locs, attrKeys) {
   p +=   _panelSelect('tripSetLocGroup', _locGroupBy, groupOpts, 'w-full');
   p += '</div>';
 
-  // ── Filter (only when locations have custom attrs) ──
+  // ── Filter ──
+  p += '<div>';
+  p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
+               'text-gray-400 dark:text-zinc-500">Filter</div>';
+  p +=   '<div class="flex flex-col gap-2">';
+
+  // Priority filter (always shown)
+  p +=     '<div class="flex items-center gap-2">' +
+             '<span class="text-[10px] text-gray-400 dark:text-zinc-500 w-14 flex-shrink-0">Priority</span>' +
+             _panelSelect('tripSetLocPriorityMin', _locPriorityMin, priOpts, 'flex-1') +
+           '</div>';
+
+  // Custom attr filter (only when locs have custom attrs)
   if (attrKeys.length) {
-    p += '<div>';
-    p +=   '<div class="text-xs font-semibold uppercase tracking-wider mb-1.5 ' +
-                 'text-gray-400 dark:text-zinc-500">Filter</div>';
-    p +=   _panelSelect('tripSetLocAttrKey', _locAttrKey,
-             [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
-             'w-full');
+    p +=   '<div class="pt-2 border-t border-gray-100 dark:border-zinc-800 flex flex-col gap-2">';
+    p +=     '<span class="text-[10px] text-gray-400 dark:text-zinc-500">Custom attribute</span>';
+    p +=     _panelSelect('tripSetLocAttrKey', _locAttrKey,
+               [['', 'Any attribute']].concat(attrKeys.map(function(k) { return [k, k]; })),
+               'w-full');
     if (_locAttrKey) {
       var valOpts = [['', 'Any value']];
       _collectAttrVals(locs, _locAttrKey).forEach(function(v) { valOpts.push([v, v]); });
-      p += '<div class="mt-2">' +
-             _panelSelect('tripSetLocAttrVal', _locAttrVal, valOpts, 'w-full') +
-           '</div>';
+      p +=   _panelSelect('tripSetLocAttrVal', _locAttrVal, valOpts, 'w-full');
     }
-    p += '</div>';
+    p +=   '</div>';
   }
+
+  p +=   '</div>'; // end flex-col
+  p += '</div>'; // end Filter
 
   // ── Clear All footer ──
   if (hasActive) {
@@ -686,6 +742,7 @@ function _locSfgEscHandler(e) {
 window.tripClearLocSfg = function() {
   _locSortBy = 'default'; _locSortDir = 'asc';
   _locGroupBy = 'none'; _locAttrKey = ''; _locAttrVal = '';
+  _locPriorityMin = '';
   _locSfgOpen = false;
   document.removeEventListener('mousedown', _locSfgOutsideClick);
   document.removeEventListener('keydown',   _locSfgEscHandler);
@@ -693,14 +750,18 @@ window.tripClearLocSfg = function() {
   if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
 };
 
-// ── Spot ops: filter → sort → group ──────────────────────────────────────────
+// ── Spot ops: filter → sort → group ──────────────────────────────────────────────────
 window._tripApplySpotOps = function(spots) {
-  var tf = typeof _tripTypeFilter !== 'undefined' ? _tripTypeFilter : null;
-  var q  = (typeof _tripQuery !== 'undefined' ? _tripQuery : '').toLowerCase();
+  var tf     = typeof _tripTypeFilter !== 'undefined' ? _tripTypeFilter : null;
+  var q      = (typeof _tripQuery !== 'undefined' ? _tripQuery : '').toLowerCase();
+  var priMin = _tripPriorityMin ? parseInt(_tripPriorityMin, 10) : 0;
   var items = spots.filter(function(s) {
     if (tf && s.spot_type !== tf) return false;
     if (q && s.name.toLowerCase().indexOf(q) === -1 &&
              (s.notes || '').toLowerCase().indexOf(q) === -1) return false;
+    if (priMin && (s.priority || 0) < priMin) return false;
+    if (_tripHasMap === 'yes' && !s.map_url) return false;
+    if (_tripHasMap === 'no'  &&  s.map_url) return false;
     if (_tripAttrKey) {
       var match = (s.attrs || []).some(function(a) {
         return a.attr_key === _tripAttrKey &&
@@ -714,12 +775,14 @@ window._tripApplySpotOps = function(spots) {
   return _groupItems(items, _tripGroupBy);
 };
 
-// ── Location ops: filter → sort → group ───────────────────────────────────────────
+// ── Location ops: filter → sort → group ───────────────────────────────────────────────
 window._tripApplyLocOps = function(locs) {
-  var q = _locQuery.toLowerCase();
+  var q      = _locQuery.toLowerCase();
+  var priMin = _locPriorityMin ? parseInt(_locPriorityMin, 10) : 0;
   var items = locs.filter(function(l) {
     if (q && l.name.toLowerCase().indexOf(q) === -1 &&
              (l.notes || '').toLowerCase().indexOf(q) === -1) return false;
+    if (priMin && (l.priority || 0) < priMin) return false;
     if (_locAttrKey) {
       var match = (l.attrs || []).some(function(a) {
         return a.attr_key === _locAttrKey &&
@@ -772,6 +835,18 @@ window.tripSetSpotAttrVal = function(val) {
   if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
 };
 
+window.tripSetSpotPriorityMin = function(val) {
+  _tripPriorityMin = val;
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
+
+window.tripSetSpotHasMap = function(val) {
+  _tripHasMap = val;
+  _tripRenderFilterBar();
+  if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+};
+
 // ── Location controls ─────────────────────────────────────────────────────
 window.tripSearchLoc = function() {
   var el = document.getElementById('trip-search');
@@ -807,6 +882,12 @@ window.tripSetLocAttrKey = function(val) {
 
 window.tripSetLocAttrVal = function(val) {
   _locAttrVal = val;
+  window._tripRenderLocFilterBar();
+  if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
+};
+
+window.tripSetLocPriorityMin = function(val) {
+  _locPriorityMin = val;
   window._tripRenderLocFilterBar();
   if (typeof _tripRenderLocGrid === 'function') _tripRenderLocGrid();
 };
