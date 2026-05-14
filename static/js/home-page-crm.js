@@ -367,6 +367,11 @@ function _crmTextBulletKey(e) {
 function _crmFieldDisplay(f, c) {
   const raw = String((c.field_values || {})[f.id] ?? '');
   if (f.field_type === 'checkbox')     return raw === '1' ? '✅' : '☐';
+  if (f.field_type === 'priority') {
+    var n = parseInt(raw) || 0;
+    var icon = f.options || '⭐';
+    return n ? Array.from({length:n}, function(){ return icon; }).join('') : '—';
+  }
   if (f.field_type === 'multi_select') {
     try {
       const arr = JSON.parse(raw);
@@ -487,6 +492,20 @@ function _crmContactModal(c) {
             ).join('')}
           </select>`
         : `<p class="text-xs text-amber-600 dark:text-amber-400 py-1">No options yet — go to ⚙️ Fields to add some.</p>`;
+    } else if (f.field_type === 'priority') {
+      var icon = f.options || '⭐';
+      var priVal = parseInt(val) || 0;
+      control = '<input type="hidden" name="cf_' + f.id + '" id="cf_pri_' + f.id + '" value="' + priVal + '"/>' +
+        '<div class="flex gap-0.5 mt-0.5">' +
+        [1,2,3,4,5].map(function(i) {
+          return '<button type="button"' +
+            ' data-pri-field="' + f.id + '" data-pri-val="' + i + '"' +
+            ' onclick="crmSetFieldPriority(' + f.id + ',' + i + ')"' +
+            ' style="font-size:1.5rem;line-height:1;background:none;border:none;cursor:pointer;' +
+              'padding:0 1px;opacity:' + (i <= priVal ? '1' : '0.2') + ';transition:opacity .15s">' +
+            icon + '</button>';
+        }).join('') +
+        '</div>';
     } else if (f.field_type === 'date') {
       control = inp(`cf_${f.id}`, val, 'date');
       var remDiv = isEdit
@@ -584,18 +603,17 @@ function _crmContactModal(c) {
           </div>
         </div>
 
-        <!-- Tags + custom fields + add-field form -->
+        <!-- Custom fields + add-field panel (NO nested <form> — uses div + button onclick) -->
         <div class="grid grid-cols-2 gap-3 mb-3">
-          <div class="col-span-2"><label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Tags <span class="text-gray-400 font-normal">(comma-separated)</span></label>${inp('tags', c?.tags, 'text', 'vendor, priority')}</div>
           ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
           <div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">
             <p class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Add field</p>
-            <form onsubmit="crmModalAddField(event,${c?.id||0})" class="flex gap-2 items-center">
-              <input name="label" placeholder="Field name" required
+            <div class="flex gap-2 items-center">
+              <input id="crm-af-label" placeholder="Field name"
                 class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                        placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-              <select name="field_type"
+              <select id="crm-af-type" onchange="crmAfTypeChange(this)"
                 class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
@@ -607,11 +625,23 @@ function _crmContactModal(c) {
                 <option value="select">Select</option>
                 <option value="multi_select">Multi-select</option>
                 <option value="checkbox">Checkbox</option>
+                <option value="priority">Priority ⭐</option>
               </select>
-              <button type="submit"
+              <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
                 class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
                        hover:bg-blue-700 transition flex-shrink-0">Add</button>
-            </form>
+            </div>
+            <!-- Icon picker — only shown for Priority type -->
+            <div id="crm-af-icon-row" style="display:none"
+              class="flex items-center gap-1 mt-2 flex-wrap">
+              <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
+              ${ ['⭐','❤️','🔥','💯','🏆','💎','🌟','👍','🥳','🍎'].map(ico =>
+                `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
+                         hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
+                  onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
+              ).join('') }
+              <input type="hidden" id="crm-af-icon" value="⭐"/>
+            </div>
           </div>
         </div>
 
@@ -880,25 +910,25 @@ window.crmFmtPhone = function(el) {
 };
 
 // ── Inline field management from contact modal ───────────────────────────────────
-window.crmModalAddField = async function(e, contactId) {
-  e.preventDefault();
-  var form = e.target;
-  var label = (form.label.value || '').trim();
-  var type  = form.field_type.value || 'text';
-  if (!label) return;
-  var btn = form.querySelector('button[type=submit]');
+// Reads IDs injected into the modal DOM — NOT a nested <form>, just a <div>
+window.crmModalAddField = async function(contactId) {
+  var labelEl = document.getElementById('crm-af-label');
+  var typeEl  = document.getElementById('crm-af-type');
+  var iconEl  = document.getElementById('crm-af-icon');
+  if (!labelEl || !typeEl) return;
+  var label = (labelEl.value || '').trim();
+  var type  = typeEl.value || 'text';
+  var icon  = (iconEl && iconEl.value) ? iconEl.value : '⭐';
+  if (!label) { labelEl.focus(); return; }
+  var btn = document.getElementById('crm-af-btn');
   if (btn) btn.disabled = true;
   try {
-    var fd = new FormData();
-    fd.append('label', label); fd.append('field_type', type);
-    var r = await fetch('/home/crm/' + _crmPid + '/fields/add', {method:'POST', body:fd});
-    var data = await r.json();
-    if (data.error) { alert(data.error); return; }
-    _crmFields = data;
-    // Reopen modal with the current saved contact (unsaved edits are lost — by design)
-    var contact = contactId ? (_crmContacts.find(function(c){ return c.id===contactId; }) || null) : null;
+    var body = new URLSearchParams({label: label, field_type: type,
+      options: type === 'priority' ? icon : ''});
+    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/add', {method:'POST', body: body});
+    var contact = contactId ? (_crmContacts.find(function(c){ return c.id === contactId; }) || null) : null;
     _crmContactModal(contact);
-  } catch(err) { alert('Could not add field: ' + err.message); }
+  } catch(err) { alert('Could not add field: ' + (err.message || err)); }
   finally { if (btn) btn.disabled = false; }
 };
 
@@ -907,14 +937,37 @@ window.crmModalDeleteField = async function(fieldId, contactId) {
   var label = f ? f.label : 'this field';
   if (!confirm('Remove field \u201c' + label + '\u201d from ALL contacts on this page? This cannot be undone.')) return;
   try {
-    var fd = new FormData();
-    var r = await fetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/delete', {method:'POST', body:fd});
-    var data = await r.json();
-    if (data.error) { alert(data.error); return; }
-    _crmFields = data;
-    var contact = contactId ? (_crmContacts.find(function(c){ return c.id===contactId; }) || null) : null;
+    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/delete', {method:'POST', body: new URLSearchParams({})});
+    var contact = contactId ? (_crmContacts.find(function(c){ return c.id === contactId; }) || null) : null;
     _crmContactModal(contact);
-  } catch(err) { alert('Could not delete field: ' + err.message); }
+  } catch(err) { alert('Could not delete field: ' + (err.message || err)); }
+};
+
+// Priority icon field — inline interaction inside the contact modal
+window.crmSetFieldPriority = function(fieldId, val) {
+  var inp = document.getElementById('cf_pri_' + fieldId);
+  if (!inp) return;
+  // Clicking same value again clears it
+  var newVal = (parseInt(inp.value) === val) ? 0 : val;
+  inp.value = String(newVal);
+  document.querySelectorAll('[data-pri-field="' + fieldId + '"]').forEach(function(b) {
+    b.style.opacity = parseInt(b.dataset.priVal) <= newVal ? '1' : '0.25';
+  });
+};
+
+// Add-field type picker — show/hide icon row
+window.crmAfTypeChange = function(sel) {
+  var row = document.getElementById('crm-af-icon-row');
+  if (row) row.style.display = sel.value === 'priority' ? 'flex' : 'none';
+};
+
+window.crmAfSelectIcon = function(btn, icon) {
+  var inp = document.getElementById('crm-af-icon');
+  if (inp) inp.value = icon;
+  document.querySelectorAll('.crm-af-icon-btn').forEach(function(b) {
+    b.style.outline = b === btn ? '2px solid #0053e2' : 'none';
+    b.style.borderRadius = '4px';
+  });
 };
 
 function _crmShowModal(html) {
