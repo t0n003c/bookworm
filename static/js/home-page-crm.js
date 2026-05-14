@@ -606,41 +606,49 @@ function _crmContactModal(c) {
         <!-- Custom fields + add-field panel (NO nested <form> — uses div + button onclick) -->
         <div class="grid grid-cols-2 gap-3 mb-3">
           ${customFields ? `<div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1 grid grid-cols-2 gap-3">${customFields}</div>` : ''}
-          <div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-3 mt-1">
-            <p class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2">Add field</p>
-            <div class="flex gap-2 items-center">
-              <input id="crm-af-label" placeholder="Field name"
-                class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                       text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                       placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-              <select id="crm-af-type" onchange="crmAfTypeChange(this)"
-                class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                       text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                       focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-                <option value="text">Text</option>
-                <option value="number">Number</option>
-                <option value="date">Date</option>
-                <option value="url">URL</option>
-                <option value="email">Email</option>
-                <option value="select">Select</option>
-                <option value="multi_select">Multi-select</option>
-                <option value="checkbox">Checkbox</option>
-                <option value="priority">Priority ⭐</option>
-              </select>
-              <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
-                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
-                       hover:bg-blue-700 transition flex-shrink-0">Add</button>
-            </div>
-            <!-- Icon picker — only shown for Priority type -->
-            <div id="crm-af-icon-row" style="display:none"
-              class="flex items-center gap-1 mt-2 flex-wrap">
-              <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
-              ${ ['⭐','❤️','🔥','🌳','🏆','🪱','🌟','👍','🥳','🍎'].map(ico =>
-                `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
-                         hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
-                  onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
-              ).join('') }
-              <input type="hidden" id="crm-af-icon" value="⭐"/>
+          <div class="col-span-2 border-t border-gray-100 dark:border-zinc-800 pt-2 mt-1">
+            <!-- Collapsed trigger -->
+            <button type="button" id="crm-af-toggle" onclick="crmToggleAddField()"
+              class="flex items-center gap-1 text-xs text-gray-400 dark:text-zinc-500
+                     hover:text-[#0053e2] dark:hover:text-blue-400 transition">
+              <span class="text-sm leading-none">+</span> Add field
+            </button>
+            <!-- Expanded form (hidden by default) -->
+            <div id="crm-af-form" style="display:none" class="mt-2">
+              <div class="flex gap-2 items-center">
+                <input id="crm-af-label" placeholder="Field name"
+                  class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                         text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                         placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+                <select id="crm-af-type" onchange="crmAfTypeChange(this)"
+                  class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                         text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="date">Date</option>
+                  <option value="url">URL</option>
+                  <option value="email">Email</option>
+                  <option value="select">Select</option>
+                  <option value="multi_select">Multi-select</option>
+                  <option value="checkbox">Checkbox</option>
+                  <option value="priority">Priority ⭐</option>
+                </select>
+                <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
+                  class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
+                         hover:bg-blue-700 transition flex-shrink-0">Add</button>
+              </div>
+              <!-- Icon picker — only shown for Priority type -->
+              <div id="crm-af-icon-row" style="display:none"
+                class="flex items-center gap-1 mt-2 flex-wrap">
+                <span class="text-[10px] text-gray-400 dark:text-zinc-500 mr-1">Icon:</span>
+                ${ ['⭐','❤️','🔥','🌳','🏆','🪱','🌟','👍','🥳','🍎'].map(ico =>
+                  `<button type="button" class="crm-af-icon-btn text-xl px-1 py-0.5 rounded
+                           hover:bg-gray-100 dark:hover:bg-zinc-700 transition"
+                    onclick="crmAfSelectIcon(this,'${ico}')">${ico}</button>`
+                ).join('') }
+                <input type="hidden" id="crm-af-icon" value="⭐"/>
+              </div>
             </div>
           </div>
         </div>
@@ -982,6 +990,20 @@ window.crmSetFieldPriority = function(fieldId, val) {
   document.querySelectorAll('[data-pri-field="' + fieldId + '"]').forEach(function(b) {
     b.style.opacity = parseInt(b.dataset.priVal) <= newVal ? '1' : '0.25';
   });
+};
+
+// Add-field toggle — show/hide the form below the trigger button
+window.crmToggleAddField = function() {
+  var form   = document.getElementById('crm-af-form');
+  var toggle = document.getElementById('crm-af-toggle');
+  if (!form) return;
+  var opening = form.style.display === 'none';
+  form.style.display = opening ? 'block' : 'none';
+  if (toggle) toggle.style.color = opening ? 'var(--tw-color-blue, #0053e2)' : '';
+  if (opening) {
+    var lbl = document.getElementById('crm-af-label');
+    if (lbl) lbl.focus();
+  }
 };
 
 // Add-field type picker — show/hide icon row
