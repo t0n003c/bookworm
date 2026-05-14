@@ -446,7 +446,7 @@ function _crmContactModal(c) {
           ondragleave="crmCfDragLeave(event)"
           ondrop="crmCfDrop(event,${fieldId},${c?.id||0})"
           ondragend="crmCfDragEnd(event)">
-       <span class="flex-shrink-0 cursor-grab text-gray-200 dark:text-zinc-700
+       <span class="crm-cf-handle flex-shrink-0 cursor-grab text-gray-200 dark:text-zinc-700
                     group-hover:text-gray-400 dark:group-hover:text-zinc-500
                     select-none pt-1 text-base leading-none">⠿</span>
        <div class="flex-1 min-w-0">${innerHtml}</div>
@@ -1045,6 +1045,8 @@ window.crmSetFieldPriority = function(fieldId, val) {
 var _crmDragFieldId = null;
 
 window.crmCfDragStart = function(e, fieldId) {
+  // Cancel drag unless it originated from the ⠿ handle
+  if (!e.target.closest('.crm-cf-handle')) { e.preventDefault(); return; }
   _crmDragFieldId = fieldId;
   e.dataTransfer.effectAllowed = 'move';
   e.currentTarget.style.opacity = '0.4';
