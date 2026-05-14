@@ -482,9 +482,11 @@ function _crmContactModal(c) {
             `<label class="cursor-pointer">
                <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
                       ${ms.includes(o)?'checked':''} class="sr-only peer"/>
-               <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                            border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
-                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">
+               <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                            bg-gray-100 dark:bg-zinc-800
+                            text-gray-500 dark:text-zinc-400
+                            peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                            peer-checked:font-medium">
                  ${_crmEsc(o)}
                </span>
              </label>`).join('')
@@ -503,17 +505,21 @@ function _crmContactModal(c) {
       const pills = opts.length
         ? `<label class="cursor-pointer">
              <input type="radio" name="cf_${f.id}" value="" ${!val?'checked':''} class="sr-only peer"/>
-             <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                          border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
-                          peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">None</span>
+             <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                          bg-gray-100 dark:bg-zinc-800
+                          text-gray-500 dark:text-zinc-400
+                          peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                          peer-checked:font-medium">None</span>
            </label>` +
           opts.map(o =>
             `<label class="cursor-pointer">
                <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
                       ${o===val?'checked':''} class="sr-only peer"/>
-               <span class="inline-flex px-3 py-1 text-xs rounded-full border transition-all
-                            border-gray-300 dark:border-zinc-600 text-gray-600 dark:text-zinc-300
-                            peer-checked:bg-[#0053e2] peer-checked:border-[#0053e2] peer-checked:text-white">
+               <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                            bg-gray-100 dark:bg-zinc-800
+                            text-gray-500 dark:text-zinc-400
+                            peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                            peer-checked:font-medium">
                  ${_crmEsc(o)}
                </span>
              </label>`).join('')
