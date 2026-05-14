@@ -436,20 +436,25 @@ function _crmContactModal(c) {
   // ── Drag-to-reorder state (scoped to this modal render) ──────────────────
   var _dragSrcId = null;
 
-  // Wrap field inner HTML in a draggable row with a ⠿ handle on the left.
-  // Each wrapper is identified by data-field-id so drop can compute new order.
+  // Row wrapper: drop target on the div, draggable ONLY on the ⠿ handle span.
+  // Keeping draggable off the row div lets child inputs/labels receive clicks.
   const wrapDrag = (fieldId, innerHtml) =>
     `<div class="crm-cf-row flex items-start gap-1 group"
-          data-field-id="${fieldId}" draggable="true"
-          ondragstart="crmCfDragStart(event,${fieldId})"
+          data-field-id="${fieldId}"
           ondragover="crmCfDragOver(event)"
           ondragleave="crmCfDragLeave(event)"
           ondrop="crmCfDrop(event,${fieldId},${c?.id||0})"
           ondragend="crmCfDragEnd(event)">
        <span class="crm-cf-handle flex-shrink-0 cursor-grab text-gray-200 dark:text-zinc-700
                     group-hover:text-gray-400 dark:group-hover:text-zinc-500
-                    select-none pt-1 text-base leading-none">⠿</span>
+                    select-none pt-1 text-base leading-none"
+             draggable="true"
+             ondragstart="crmCfDragStart(event,${fieldId})">⠿</span>
        <div class="flex-1 min-w-0">${innerHtml}</div>
+       <button type="button" onclick="crmModalDeleteField(${fieldId},${c?.id||0})"
+         title="Remove field from all contacts"
+         class="flex-shrink-0 ml-1 text-gray-300 hover:text-red-500 transition
+                text-xs leading-none pt-1">×</button>
      </div>`;
 
   const customFields = _crmFields.map(f => {
@@ -457,13 +462,10 @@ function _crmContactModal(c) {
     let control;
     if (f.field_type === 'checkbox') {
       return wrapDrag(f.id,
-        `<div class="flex items-start gap-2">
-          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-            ${delFieldBtn(f.id)}
-          </div>
-          <label class="relative flex items-center cursor-pointer shrink-0 pt-0.5">
+        `<div class="flex items-center gap-2">
+          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          <label class="relative flex items-center cursor-pointer shrink-0">
             <input type="checkbox" name="cf_${f.id}" value="1"
                    id="cf_chk_${f.id}" ${val==='1'?'checked':''}
                    class="sr-only peer"/>
@@ -493,11 +495,8 @@ function _crmContactModal(c) {
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
-          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-            ${delFieldBtn(f.id)}
-          </div>
+          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate pt-0.5"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
           <div class="flex flex-wrap gap-1.5">${pills}</div>
         </div>`);
     } else if (f.field_type === 'select') {
@@ -526,11 +525,8 @@ function _crmContactModal(c) {
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
-          <div class="w-28 flex-shrink-0 flex items-center gap-1 pt-0.5">
-            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
-            ${delFieldBtn(f.id)}
-          </div>
+          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate pt-0.5"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
           <div class="flex flex-wrap gap-1.5">${pills}</div>
         </div>`);
     } else if (f.field_type === 'file_links') {
@@ -560,10 +556,7 @@ function _crmContactModal(c) {
         : '';
       return wrapDrag(f.id,
         `<div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
-            ${delFieldBtn(f.id)}
-          </div>
+          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400 block mb-1">${_crmEsc(f.label)}</label>
           ${control}${remDiv}
         </div>`);
     } else if (f.field_type === 'text') {
@@ -578,10 +571,7 @@ function _crmContactModal(c) {
     }
     return wrapDrag(f.id,
       `<div>
-        <div class="flex items-center justify-between mb-1">
-          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">${_crmEsc(f.label)}</label>
-          ${delFieldBtn(f.id)}
-        </div>
+        <label class="text-xs font-medium text-gray-500 dark:text-zinc-400 block mb-1">${_crmEsc(f.label)}</label>
         ${control}
       </div>`);
   }).join('');
@@ -1045,15 +1035,16 @@ window.crmSetFieldPriority = function(fieldId, val) {
 var _crmDragFieldId = null;
 
 window.crmCfDragStart = function(e, fieldId) {
-  // Cancel drag unless it originated from the ⠿ handle
-  if (!e.target.closest('.crm-cf-handle')) { e.preventDefault(); return; }
   _crmDragFieldId = fieldId;
   e.dataTransfer.effectAllowed = 'move';
-  e.currentTarget.style.opacity = '0.4';
+  // Fade the whole row, not just the handle span
+  var row = e.currentTarget.closest('.crm-cf-row');
+  if (row) row.style.opacity = '0.4';
 };
 
 window.crmCfDragEnd = function(e) {
-  e.currentTarget.style.opacity = '';
+  var row = e.currentTarget.closest('.crm-cf-row');
+  if (row) row.style.opacity = '';
   document.querySelectorAll('.crm-cf-row').forEach(function(el) {
     el.style.borderTop = '';
   });
