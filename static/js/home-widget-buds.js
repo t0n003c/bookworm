@@ -461,6 +461,18 @@ function _budsDetailFill(bud, panel) {
   panel.querySelector('#bdp-health-bar').style.background = color;
   panel.querySelector('#bdp-health-num').textContent     = h+'/100 HP';
   panel.querySelector('#bdp-notes').textContent = bud.notes || '—';
+  // CRM link chip
+  var crmSec = panel.querySelector('#bdp-crm-section');
+  var crmBtn = panel.querySelector('#bdp-crm-btn');
+  var crmLbl = panel.querySelector('#bdp-crm-label');
+  if (bud.crm_contact_id && bud.crm_page_id) {
+    crmSec.classList.remove('hidden');
+    crmLbl.textContent = bud.crm_contact_name || 'View contact';
+    var _pid = bud.crm_page_id, _cid = bud.crm_contact_id;
+    crmBtn.onclick = function() { _budsDetailClose(); _budsNavToCrmContact(_pid, _cid); };
+  } else {
+    crmSec.classList.add('hidden');
+  }
   panel.querySelector('#bdp-plan').textContent  = bud.pending_plan
     ? ('\uD83D\uDCC5 '+bud.pending_plan.planned_date+(bud.pending_plan.note?' — '+bud.pending_plan.note:''))
     : 'No upcoming visit planned';
@@ -473,6 +485,27 @@ function _budsDetailClose() {
   if (panel) panel.classList.add('translate-x-full');
   var bd = document.getElementById('buds-detail-backdrop');
   if (bd) bd.classList.add('hidden');
+}
+
+// Navigate to the linked CRM page, then open the contact detail once loaded.
+function _budsNavToCrmContact(pageId, contactId) {
+  if (typeof openHomePage !== 'function') return;
+  openHomePage(pageId);
+  var attempts = 0;
+  var poll = setInterval(function() {
+    attempts++;
+    if (attempts > 60) { clearInterval(poll); return; }  // 6 s safety bail
+    var root   = document.getElementById('crm-page-root');
+    var rootPid = root ? Number(root.dataset.pageId) : null;
+    // Wait until the CRM page is in the DOM AND contacts have been fetched
+    if (rootPid === pageId
+        && typeof _crmPid !== 'undefined' && _crmPid === pageId
+        && typeof crmOpenDetail === 'function'
+        && typeof _crmContacts !== 'undefined') {
+      clearInterval(poll);
+      crmOpenDetail(contactId);
+    }
+  }, 100);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -607,7 +640,16 @@ function _budsInjectModals() {
     + '<div><p class="text-xs text-gray-400">Upcoming visit</p>'
     + '<p id="bdp-plan" class="text-sm text-gray-700 dark:text-zinc-200"></p></div>'
     + '<div><p class="text-xs text-gray-400">Notes</p>'
-    + '<p id="bdp-notes" class="text-sm text-gray-700 dark:text-zinc-200"></p></div></div>'
+    + '<p id="bdp-notes" class="text-sm text-gray-700 dark:text-zinc-200"></p></div>'
+    + '<div id="bdp-crm-section" class="hidden">'
+    + '<p class="text-xs text-gray-400 mb-1">CRM contact</p>'
+    + '<button id="bdp-crm-btn"'
+    + ' class="w-full flex items-center gap-2 px-3 py-2 rounded-lg'
+    + ' bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
+    + ' text-[#0053e2] dark:text-blue-400 text-sm font-medium'
+    + ' hover:bg-blue-100 dark:hover:bg-blue-900/30 transition">'
+    + '\uD83D\uDC65 <span id="bdp-crm-label">View contact</span>'
+    + '<span class="ml-auto opacity-50 text-xs">\u2192</span></button></div></div>'
     + '<div class="p-4 border-t border-gray-100 dark:border-zinc-700 flex gap-2">'
     + '<button id="bdp-edit-btn" class="flex-1 px-3 py-2 border border-gray-200 dark:border-zinc-600'
     + ' rounded-lg text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700'

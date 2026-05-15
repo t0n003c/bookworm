@@ -68,8 +68,11 @@ async def list_buds(widget_id: int, user_id: int) -> list[dict]:
     """Return all buds for a widget with live-decayed health + pending plan."""
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT * FROM buds WHERE widget_id=? AND user_id=? "
-            "ORDER BY sort_order, id",
+            "SELECT b.*, cc.page_id AS crm_page_id, cc.name AS crm_contact_name "
+            "FROM buds b "
+            "LEFT JOIN crm_contacts cc ON b.crm_contact_id = cc.id "
+            "WHERE b.widget_id=? AND b.user_id=? "
+            "ORDER BY b.sort_order, b.id",
             (widget_id, user_id),
         )
         rows = await cur.fetchall()
@@ -198,7 +201,13 @@ async def water_bud(bud_id: int, user_id: int) -> dict:
             (new_health, today, today, bud_id, user_id),
         )
         await db.commit()
-        cur = await db.execute("SELECT * FROM buds WHERE id=?", (bud_id,))
+        cur = await db.execute(
+            "SELECT b.*, cc.page_id AS crm_page_id, cc.name AS crm_contact_name "
+            "FROM buds b "
+            "LEFT JOIN crm_contacts cc ON b.crm_contact_id = cc.id "
+            "WHERE b.id=?",
+            (bud_id,)
+        )
         row = await cur.fetchone()
     b = dict(row)
     b["health_tier"] = _health_tier(b["health"])
