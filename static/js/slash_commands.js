@@ -22,6 +22,15 @@
                                Range at the deletion point (restore before insertHTML
                                if focus is stolen, e.g., by a dialog).
    ───────────────────────────────────────── */
+// ── Plant GIF pool ──────────────────────────────────────────────────────────
+// URLs sourced from Tinh's own Plants note (already embedded there).
+// Giphy's embed model is link-only — the files live on Giphy's CDN.
+// Add more IDs here as you collect them: 'https://media.giphy.com/media/{ID}/giphy.gif'
+const _PLANT_GIFS = [
+  'https://media.giphy.com/media/daa8oT5L8Ox3ffWVjr/giphy.gif',
+  'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
+];
+
 const SLASH_COMMANDS = [
   {
     id: 'h1', label: 'Heading 1', desc: 'Large section heading',
@@ -250,6 +259,33 @@ const SLASH_COMMANDS = [
       } else {
         // TA mode: _sc.ta is still valid here (called synchronously before _close).
         _reminderDialog(_sc.ta, null, null);
+      }
+    },
+  },
+  {
+    id: 'plant-gif', label: 'Plant GIF', desc: 'Insert a random animated plant GIF 🌿',
+    icon: `<span style="font-size:1.15rem;line-height:1">🌿</span>`,
+    // action() called with no args in TA mode (slash text already erased, cursor at slash pos).
+    // action(ce, actRange) called in CE mode.
+    action(ce, actRange) {
+      const url = _PLANT_GIFS[Math.floor(Math.random() * _PLANT_GIFS.length)];
+      if (ce) {
+        // CE mode: restore selection point then inject the <img> via execCommand
+        ce.focus();
+        const sel = window.getSelection();
+        if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
+        document.execCommand('insertHTML', false,
+          `<img src="${url}" alt="plant gif"
+               style="max-width:240px;border-radius:8px;display:block"><p><br></p>`);
+      } else {
+        // TA mode: insert Markdown image syntax at the cursor
+        const ta  = _sc.ta;
+        const pos = ta.selectionStart;
+        const md  = `![](${ url })\n`;
+        ta.value  = ta.value.slice(0, pos) + md + ta.value.slice(pos);
+        ta.setSelectionRange(pos + md.length, pos + md.length);
+        ta.focus();
+        ta.dispatchEvent(new Event('input'));
       }
     },
   },
