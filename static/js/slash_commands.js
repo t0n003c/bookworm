@@ -31,14 +31,14 @@ const _PLANT_GIFS = [
   'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
 ];
 
+const _PLANT_GIFS = [
+  'https://media.giphy.com/media/daa8oT5L8Ox3ffWVjr/giphy.gif',
+  'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
+];
+const _PGP_KEY = 'bw_plant_gifs_custom'; // localStorage key for user-added GIFs
+
 // ── Plant GIF picker ────────────────────────────────────────────────────────
-const _pgp = {
-  el:       null,  // floating picker DOM node (built once, reused)
-  ce:       null,  // saved CE element; null in TA mode
-  actRange: null,  // saved collapsed CE Range; null in TA mode
-  ta:       null,  // saved textarea; null in CE mode
-  taPos:    -1,    // saved TA cursor position
-};
+const _pgp = { el: null, ce: null, actRange: null, ta: null, taPos: -1 };
 
 function _pgpClose() {
   if (_pgp.el) _pgp.el.style.display = 'none';
@@ -47,19 +47,18 @@ function _pgpClose() {
 }
 
 function _pgpInsert(url) {
-  // Snapshot state before closing clears it
   const ce = _pgp.ce, actRange = _pgp.actRange;
-  const ta = _pgp.ta, pos = _pgp.taPos;
+  const ta = _pgp.ta, pos      = _pgp.taPos;
   _pgpClose();
   if (ce) {
     ce.focus();
     const sel = window.getSelection();
     if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
     document.execCommand('insertHTML', false,
-      `<img src="${url}" alt="plant gif"
-           style="max-width:240px;border-radius:8px;display:block"><p><br></p>`);
+      '<img src="' + url + '" alt="plant gif" ' +
+      'style="max-width:240px;border-radius:8px;display:block"><p><br></p>');
   } else if (ta) {
-    const md = `![](${url})\n`;
+    const md = '![](' + url + ')\n';
     ta.value = ta.value.slice(0, pos) + md + ta.value.slice(pos);
     ta.setSelectionRange(pos + md.length, pos + md.length);
     ta.focus();
@@ -67,29 +66,107 @@ function _pgpInsert(url) {
   }
 }
 
-function _pgpOpen(ce, actRange, ta, taPos, anchorRect) {
-  // Build the picker DOM element once
+function _pgpRebuildGrid() {
+  const grid = _pgp.el.querySelector('#pgp-grid');
+  grid.innerHTML = '';
+  let custom = [];
+  try { custom = JSON.parse(localStorage.getItem(_PGP_KEY) || '[]'); } catch {}
+  _PLANT_GIFS.concat(custom).forEach(function(url, i) {
+    const isCustom = i >= _PLANT_GIFS.length;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;display:inline-block;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.title = 'Insert this GIF';
+    btn.style.cssText = 'border:2.5px solid transparent;border-radius:8px;padding:2px;' +
+      'background:none;cursor:pointer;transition:border-color .12s,transform .1s;outline:none;display:block;';
+    btn.onmouseenter = function() { btn.style.borderColor='#0053e2'; btn.style.transform='scale(1.05)'; };
+    btn.onmouseleave = function() { btn.style.borderColor='transparent'; btn.style.transform='scale(1)'; };
+
+    const img = document.createElement('img');
+    img.src = url; img.alt = 'plant gif';
+    img.style.cssText = 'width:112px;height:84px;object-fit:cover;border-radius:6px;display:block;';
+    btn.appendChild(img);
+    btn.addEventListener('mousedown', function(e) {
+      e.preventDefault(); e.stopPropagation(); _pgpInsert(url);
+    });
+    wrap.appendChild(btn);
+
+    // User-added GIFs get a × remove button on hover
+    if (isCustom) {
+      const del = document.createElement('button');
+      del.type = 'button'; del.title = 'Remove'; del.textContent = '\xd7';
+      del.style.cssText = 'position:absolute;top:0;right:0;width:18px;height:18px;font-size:12px;' +
+        'background:#ea1100;color:#fff;border:none;border-radius:50%;cursor:pointer;' +
+        'line-height:18px;padding:0;display:none;z-index:1;';
+      wrap.onmouseenter = function() { del.style.display = 'block'; };
+      wrap.onmouseleave = function() { del.style.display = 'none'; };
+      del.addEventListener('mousedown', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        try {
+          const saved = JSON.parse(localStorage.getItem(_PGP_KEY) || '[]');
+          localStorage.setItem(_PGP_KEY, JSON.stringify(saved.filter(function(u){ return u !== url; })));
+        } catch {}
+        _pgpRebuildGrid();
+      });
+      wrap.appendChild(del);
+    }
+    grid.appendChild(wrap);
+  });
+}
+
+function _pgpOpen(ce, actRange, ta, taPos, anchor) {
+  // Build picker DOM once
   if (!_pgp.el) {
     const el = document.createElement('div');
     el.id = 'plant-gif-picker';
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', 'Pick a plant GIF');
-    el.style.cssText =
-      'position:fixed;z-index:10000;border-radius:12px;padding:10px 10px 8px;' +
-      'box-shadow:0 8px 30px rgba(0,0,0,.22);display:none;' +
-      'flex-direction:column;gap:8px;min-width:260px;max-width:380px;';
+    el.style.cssText = 'position:fixed;z-index:10000;border-radius:12px;padding:10px;' +
+      'box-shadow:0 8px 30px rgba(0,0,0,.22);display:none;flex-direction:column;gap:8px;max-width:420px;';
     el.innerHTML =
-      '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;' +
-      'text-transform:uppercase;margin:0 0 4px;opacity:.55">\uD83C\uDF3F Pick a plant GIF</p>' +
-      '<div id="pgp-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>';
+      '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;' +
+        'margin:0 0 2px;opacity:.55">🌿 Pick a plant GIF</p>' +
+      '<div id="pgp-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>' +
+      '<div style="display:flex;gap:6px;margin-top:2px">' +
+        '<input id="pgp-url-inp" type="url"' +
+          ' placeholder="Paste a .gif URL from Giphy to add…"' +
+          ' style="flex:1;font-size:11px;padding:4px 8px;border-radius:6px;' +
+            'border:1px solid #d1d5db;outline:none;min-width:0;">' +
+        '<button id="pgp-url-btn" type="button"' +
+          ' style="font-size:11px;padding:4px 10px;border-radius:6px;' +
+            'background:#0053e2;color:#fff;border:none;cursor:pointer;white-space:nowrap;">+ Add</button>' +
+      '</div>';
     document.body.appendChild(el);
     _pgp.el = el;
 
-    // Outside-click dismisses (capture phase so it fires before anything else)
+    el.querySelector('#pgp-url-btn').addEventListener('mousedown', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      const inp = el.querySelector('#pgp-url-inp');
+      const url = inp.value.trim();
+      if (!url) return;
+      try {
+        const saved = JSON.parse(localStorage.getItem(_PGP_KEY) || '[]');
+        if (!saved.includes(url) && !_PLANT_GIFS.includes(url)) {
+          saved.push(url);
+          localStorage.setItem(_PGP_KEY, JSON.stringify(saved));
+        }
+      } catch {}
+      inp.value = '';
+      _pgpRebuildGrid();
+    });
+    el.querySelector('#pgp-url-inp').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        el.querySelector('#pgp-url-btn').dispatchEvent(new MouseEvent('mousedown'));
+      }
+      e.stopPropagation(); // prevent palette from handling the keystroke
+    });
+
+    // Outside-click dismisses (capture phase)
     document.addEventListener('mousedown', function(e) {
       if (_pgp.el.style.display !== 'none' && !_pgp.el.contains(e.target)) _pgpClose();
     }, true);
-    // Escape dismisses without inserting
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && _pgp.el.style.display !== 'none') {
         e.stopPropagation(); e.preventDefault(); _pgpClose();
@@ -97,64 +174,40 @@ function _pgpOpen(ce, actRange, ta, taPos, anchorRect) {
     }, true);
   }
 
-  // Save insertion context
-  _pgp.ce = ce;  _pgp.actRange = actRange;
-  _pgp.ta = ta;  _pgp.taPos   = taPos;
+  _pgp.ce = ce; _pgp.actRange = actRange;
+  _pgp.ta = ta; _pgp.taPos   = taPos;
+  _pgpRebuildGrid();
 
-  // Rebuild the thumbnail grid (pool may have grown since last open)
-  const grid = _pgp.el.querySelector('#pgp-grid');
-  grid.innerHTML = '';
-  _PLANT_GIFS.forEach(function(url, i) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.title = 'Insert GIF ' + (i + 1);
-    btn.style.cssText =
-      'border:2.5px solid transparent;border-radius:8px;padding:2px;' +
-      'background:none;cursor:pointer;transition:border-color .12s,transform .1s;outline:none;';
-    btn.onmouseenter = function() {
-      btn.style.borderColor = '#0053e2';
-      btn.style.transform   = 'scale(1.05)';
-    };
-    btn.onmouseleave = function() {
-      btn.style.borderColor = 'transparent';
-      btn.style.transform   = 'scale(1)';
-    };
-    const img = document.createElement('img');
-    img.src   = url;
-    img.alt   = 'plant gif ' + (i + 1);
-    img.style.cssText = 'width:112px;height:84px;object-fit:cover;border-radius:6px;display:block;';
-    btn.appendChild(img);
-    // mousedown (not click) so we fire before the outside-click listener can close us
-    btn.addEventListener('mousedown', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      _pgpInsert(url);
-    });
-    grid.appendChild(btn);
-  });
-
-  // Dark mode theming
+  // Dark-mode theming
   const dark = document.documentElement.classList.contains('dark');
   Object.assign(_pgp.el.style, {
-    background:  dark ? '#18181b' : '#ffffff',
-    border:      dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    background: dark ? '#18181b' : '#ffffff',
+    border:     dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    color:      dark ? '#f4f4f5' : '#111827',
+    display:    'flex',
+  });
+  const inp = _pgp.el.querySelector('#pgp-url-inp');
+  Object.assign(inp.style, {
+    background:  dark ? '#27272a' : '#ffffff',
     color:       dark ? '#f4f4f5' : '#111827',
-    display:     'flex',
+    borderColor: dark ? '#52525b' : '#d1d5db',
   });
 
-  // Position below the anchor; flip above if near the bottom of the viewport
-  const vw  = window.innerWidth, vh = window.innerHeight;
-  const elW = _pgp.el.offsetWidth  || 300;
-  const elH = _pgp.el.offsetHeight || 160;
-  const ax  = anchorRect ? anchorRect.left   : 120;
-  const ab  = anchorRect ? anchorRect.bottom : 120;
-  const at  = anchorRect ? anchorRect.top    : 100;
-  let top  = ab + 8;
-  let left = ax;
-  if (top + elH > vh - 16) top = at - elH - 8;
-  if (left + elW > vw - 16) left = vw - elW - 16;
-  _pgp.el.style.top  = Math.max(8, top)  + 'px';
-  _pgp.el.style.left = Math.max(8, left) + 'px';
+  // Position: hide off-screen first, then measure + place in next frame
+  _pgp.el.style.top = _pgp.el.style.left = '-9999px';
+  requestAnimationFrame(function() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const elW = _pgp.el.offsetWidth  || 320;
+    const elH = _pgp.el.offsetHeight || 200;
+    const ax  = (anchor && anchor.x != null) ? anchor.x : vw / 2 - elW / 2;
+    const ay  = (anchor && anchor.y != null) ? anchor.y : vh / 2 - elH / 2;
+    let top  = ay + 10;
+    let left = ax;
+    if (top  + elH > vh - 16) top  = ay - elH - 10;
+    if (left + elW > vw - 16) left = vw - elW - 16;
+    _pgp.el.style.top  = Math.max(8, top)  + 'px';
+    _pgp.el.style.left = Math.max(8, left) + 'px';
+  });
 }
 
 const SLASH_COMMANDS = [
@@ -393,16 +446,18 @@ const SLASH_COMMANDS = [
     icon: `<span style="font-size:1.15rem;line-height:1">🌿</span>`,
     action(ce, actRange) {
       if (ce) {
-        // CE mode — actRange is already collapsed at the insertion point.
-        // Use that range rect as the picker anchor.
-        const rect = actRange ? actRange.getBoundingClientRect() : null;
-        _pgpOpen(ce, actRange, null, -1, rect);
+        // CE mode — restore focus+selection first so _ceCaretCoords() reads live coords
+        ce.focus();
+        const sel = window.getSelection();
+        if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
+        const coords = _ceCaretCoords();  // {x, y} where y = bottom of caret
+        _pgpOpen(ce, actRange, null, -1, coords);
       } else {
-        // TA mode — capture position NOW before _close() resets _sc.ta.
+        // TA mode — _sc.ta/slashPos still valid (action runs before _close())
         const ta  = _sc.ta;
         const pos = ta.selectionStart;
-        const rect = ta.getBoundingClientRect();
-        _pgpOpen(null, null, ta, pos, rect);
+        const coords = _taCaretCoords(ta, pos); // {x, y} pixel coords of caret
+        _pgpOpen(null, null, ta, pos, coords);
       }
     },
   },
