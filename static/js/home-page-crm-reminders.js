@@ -141,27 +141,26 @@ function _crmRenderReminderSection(el, reminders, contactId, contactName, fieldI
   var addArgs      = "this," + contactId + "," + fieldId + ",'" + _crmEsc(fieldLabel) + "','" + _crmEsc(contactName) + "','" + _crmEsc(dateVal) + "'";
   var cancelArgs   = "null," + contactId + "," + fieldId;
 
-  el.innerHTML = `
-    <div class="mt-2 border border-gray-200 dark:border-zinc-700 rounded-lg">
-      <button type="button"
-        onclick="_crmToggleRemForm(this,${contactId},${fieldId})"
-        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
-               text-[#0053e2] dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20
-               transition text-left">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none"
-             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159
-                   c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-        </svg>
-        ${reminders.length ? 'Reminders (' + reminders.length + ')' : '+ Set Reminder'}
-      </button>
+  // Inject compact toggle button into the inline slot on the date row
+  var btnEl = document.getElementById('crm-rem-btn-' + fieldId);
+  if (btnEl) {
+    btnEl.innerHTML =
+      '<button type="button" onclick="_crmToggleRemForm(this,' + contactId + ',' + fieldId + ')"' +
+      ' class="flex items-center gap-1 text-xs font-medium' +
+      ' text-gray-400 dark:text-zinc-500' +
+      ' hover:text-[#0053e2] dark:hover:text-blue-400 transition flex-shrink-0">' +
+      '\uD83D\uDD14 ' + (reminders.length ? '(' + reminders.length + ')' : '+ Set') +
+      '</button>';
+  }
 
-      ${existingRows ? `<div class="px-3 border-t border-gray-100 dark:border-zinc-700">${existingRows}</div>` : ''}
+  // Detail block: existing rows + add form, rendered below the date row
+  el.innerHTML = `
+    <div>
+      ${existingRows ? `<div class="mt-1.5 border border-gray-200 dark:border-zinc-700 rounded-lg px-3">${existingRows}</div>` : ''}
 
       <div id="crm-rem-form-${fieldId}"
-           class="hidden border-t border-gray-200 dark:border-zinc-700 px-3 py-3
-                  bg-gray-50 dark:bg-zinc-800/60 rounded-b-lg">
+           class="hidden mt-1.5 border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-3
+                  bg-gray-50 dark:bg-zinc-800/60">
         <div class="flex flex-col gap-2">
 
           <div>

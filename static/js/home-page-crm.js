@@ -550,9 +550,6 @@ function _crmContactModal(c) {
         }).join('') +
         '</div>';
     } else if (f.field_type === 'date') {
-      var remDiv = isEdit
-        ? `<div id="crm-rem-${f.id}" class="mt-1 pl-30 text-xs text-gray-400 italic">Loading reminders…</div>`
-        : '';
       return wrapDrag(f.id,
         `<div>
           <div class="flex items-center gap-2">
@@ -562,8 +559,9 @@ function _crmContactModal(c) {
               class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
                      text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
                      focus:outline-none focus:border-[#0053e2] transition"/>
+            ${isEdit ? `<span id="crm-rem-btn-${f.id}" class="flex-shrink-0"></span>` : ''}
           </div>
-          ${remDiv}
+          ${isEdit ? `<div id="crm-rem-${f.id}" class="mt-1"></div>` : ''}
         </div>`);
     } else if (f.field_type === 'text') {
       control = `<textarea name="cf_${f.id}" rows="3"
