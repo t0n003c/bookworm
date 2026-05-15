@@ -128,7 +128,7 @@ async def buds_water(widget_id: int, bud_id: int, request: Request):
     try:
         bud = await water_bud(bud_id, uid)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail="already_watered_today")
     except LookupError:
         raise HTTPException(status_code=404, detail="bud not found")
     return JSONResponse({"bud": bud})

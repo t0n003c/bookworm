@@ -176,7 +176,7 @@ async def delete_bud(bud_id: int, user_id: int) -> bool:
 # ── Care actions ──────────────────────────────────────────────────────────────
 
 async def water_bud(bud_id: int, user_id: int) -> dict:
-    """Apply weekly water (+10 HP). Raises ValueError if already watered."""
+    """Apply water (+10 HP). Once per day cooldown."""
     async with get_db() as db:
         cur = await db.execute(
             "SELECT * FROM buds WHERE id=? AND user_id=?", (bud_id, user_id)
@@ -185,10 +185,9 @@ async def water_bud(bud_id: int, user_id: int) -> dict:
     if not row:
         raise LookupError("bud not found")
     b = dict(row)
-    current_week = _week_key()
-    if b.get("last_watered_week") == current_week:
-        raise ValueError("already_watered_this_week")
     today = datetime.date.today().isoformat()
+    if b.get("last_watered_week") == today:
+        raise ValueError("already_watered_today")
     decayed_health = _apply_decay(b["health"], b["see_every_days"],
                                   b["health_updated_at"])
     new_health = min(100.0, round(decayed_health + _WATER_HP, 2))
@@ -196,7 +195,7 @@ async def water_bud(bud_id: int, user_id: int) -> dict:
         await db.execute(
             "UPDATE buds SET health=?, health_updated_at=?, last_watered_week=? "
             "WHERE id=? AND user_id=?",
-            (new_health, today, current_week, bud_id, user_id),
+            (new_health, today, today, bud_id, user_id),
         )
         await db.commit()
         cur = await db.execute("SELECT * FROM buds WHERE id=?", (bud_id,))

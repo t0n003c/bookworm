@@ -108,17 +108,18 @@ function _budsRender(wid) {
     var tier    = _budsHealthTier(h);
     var color   = _budsHealthColor(tier);
     var img     = _budsFlowerImg(b.flower_species, tier);
-    var swayDelay = ((b.id % 6) * 0.65).toFixed(2) + 's'; // stagger per-bud so they don't all swing in sync
-    var watered = (b.last_watered_week === _budsWeekKey());
+    var swayDelay = ((b.id % 6) * 0.65).toFixed(2) + 's';
+    var todayStr = new Date().toISOString().slice(0, 10);  // YYYY-MM-DD
+    var watered = (b.last_watered_week === todayStr);
     var hasPlan = !!(b.pending_plan);
     var waterCls   = watered
       ? 'text-gray-300 dark:text-zinc-600 cursor-not-allowed p-1'
       : 'hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 hover:text-blue-700 p-1.5';
-    var waterTitle = watered ? 'Already watered this week' : 'Water — chat this week';
+    var waterTitle = watered ? 'Already watered today' : 'Water — chat today';
     var waterDis   = watered ? 'disabled' : '';
     var waterBtn = '<button title="'+waterTitle+'" '+waterDis
       +' onclick="_budsWater(\''+wid+'\','+b.id+')"'
-      +' class="rounded-lg text-sm transition flex-shrink-0 '+waterCls+'">\uD83D\uDCA7</button>';
+      +' class="rounded-lg text-sm transition flex-shrink-0 '+waterCls+'">💧</button>';
 
     // fertilizeBtn shared between compact and full layouts
     var fertilizeBtn = '<button title="'+(hasPlan?'View / complete visit plan':'Plan in-person visit')+'"'
@@ -223,7 +224,7 @@ function _budsWater(wid, budId) {
   fetch('/home/buds/'+wid+'/'+budId+'/water',
     {method:'POST', credentials:'same-origin'})
   .then(function(r) {
-    if (r.status === 409) { window._bwToast && window._bwToast('Already watered this week!','warn'); return null; }
+    if (r.status === 409) { window._bwToast && window._bwToast('Already watered today!','warn'); return null; }
     return r.ok ? r.json() : null;
   })
   .then(function(data) {
