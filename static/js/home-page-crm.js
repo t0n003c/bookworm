@@ -550,14 +550,20 @@ function _crmContactModal(c) {
         }).join('') +
         '</div>';
     } else if (f.field_type === 'date') {
-      control = inp(`cf_${f.id}`, val, 'date');
       var remDiv = isEdit
-        ? `<div id="crm-rem-${f.id}" class="mt-1.5 text-xs text-gray-400 italic">Loading reminders…</div>`
+        ? `<div id="crm-rem-${f.id}" class="mt-1 pl-30 text-xs text-gray-400 italic">Loading reminders…</div>`
         : '';
       return wrapDrag(f.id,
         `<div>
-          <label class="text-xs font-medium text-gray-500 dark:text-zinc-400 block mb-1">${_crmEsc(f.label)}</label>
-          ${control}${remDiv}
+          <div class="flex items-center gap-2">
+            <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+            <input name="cf_${f.id}" type="date" value="${_crmEsc(val)}"
+              class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
+                     text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
+                     focus:outline-none focus:border-[#0053e2] transition"/>
+          </div>
+          ${remDiv}
         </div>`);
     } else if (f.field_type === 'text') {
       control = `<textarea name="cf_${f.id}" rows="3"
@@ -567,7 +573,16 @@ function _crmContactModal(c) {
                placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(val)}</textarea>`;
     } else {
       var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
-      control = inp(`cf_${f.id}`, val, iType);
+      return wrapDrag(f.id,
+        `<div class="flex items-center gap-2">
+          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          <input name="cf_${f.id}" type="${iType}" value="${_crmEsc(val)}"
+            class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
+                   text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
+                   placeholder-gray-300 dark:placeholder-zinc-600
+                   focus:outline-none focus:border-[#0053e2] transition"/>
+        </div>`);
     }
     return wrapDrag(f.id,
       `<div>
