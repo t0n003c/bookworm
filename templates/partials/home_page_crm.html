@@ -95,11 +95,13 @@
   {# ── Modal container — body injected by JS ────────────────────────────── #}
   <div id="crm-modal"
        class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
-       role="dialog" aria-modal="true">
+       role="dialog" aria-modal="true"
+       onclick="crmCloseModal()">
     <div id="crm-modal-body"
          class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
                 w-full max-w-lg border border-gray-200 dark:border-zinc-700
-                overflow-hidden max-h-[90vh] overflow-y-auto pb-4">
+                overflow-hidden max-h-[90vh] overflow-y-auto pb-4"
+         onclick="event.stopPropagation()">
     </div>
   </div>
 
