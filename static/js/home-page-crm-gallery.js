@@ -397,11 +397,11 @@ function _crmRenderGallery_photo(rows, cv) {
         <!-- Dark gradient scrim + name at the bottom -->
         <div class="absolute inset-x-0 bottom-0 pt-10
                     bg-gradient-to-t from-black/80 via-black/30 to-transparent
-                    px-3 pb-2.5">
-          <p class="text-white font-semibold text-sm truncate leading-tight drop-shadow">
+                    px-3 pb-3">
+          <p class="text-white font-bold text-xl truncate leading-tight drop-shadow-lg">
             ${_crmEsc(c.name || '\u2014')}
           </p>
-          ${c.company ? `<p class="text-white/65 text-[11px] truncate">${_crmEsc(c.company)}</p>` : ''}
+          ${c.company ? `<p class="text-white/70 text-sm truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
         </div>
 
         <!-- Action buttons — appear on hover, top-right -->
