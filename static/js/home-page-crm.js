@@ -166,7 +166,7 @@ function _crmRenderViewToggle() {
                     : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#ffc220]'}"
        >☑ Select</button>`
     : '';
-  const galStyles = [['cards','⊟ Cards'],['compact','☰ Compact'],['profile','◉ Profile'],['minimal','⊡ Minimal']];
+  const galStyles = [['cards','⊟ Cards'],['compact','☰ Compact'],['profile','◉ Profile'],['minimal','⧡ Minimal'],['photo','◼ Photo']];
   const galPicker = _crmView === 'gallery'
     ? `<select onchange="crmSetGalleryStyle(this.value)"
          class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600

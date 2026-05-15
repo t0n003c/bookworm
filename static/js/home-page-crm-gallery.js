@@ -1,5 +1,5 @@
 // home-page-crm-gallery.js
-// Gallery view — dispatcher + 4 card styles: cards | compact | profile | minimal.
+// Gallery view — dispatcher + 5 card styles: cards | compact | profile | minimal | photo.
 // Globals from home-page-crm.js / siblings:
 //   _crmPid, _crmContacts, _crmFields, _crmQuery, _crmGalleryStyle
 //   _crmEsc, _crmSetMain, _crmFiltered, _crmRender, _crmFetch, _crmFieldDisplay
@@ -110,6 +110,7 @@ function _crmRenderGallery() {
   if      (style === 'compact') _crmRenderGallery_compact(rows, cv);
   else if (style === 'profile') _crmRenderGallery_profile(rows, cv);
   else if (style === 'minimal') _crmRenderGallery_minimal(rows, cv);
+  else if (style === 'photo')   _crmRenderGallery_photo(rows, cv);
   else                          _crmRenderGallery_cards(rows, cv);
 }
 
@@ -358,4 +359,66 @@ async function crmQuickCheckbox(e, cid, fid, checked) {
   ).catch(err => alert('Could not save: ' + err.message));
   var c = _crmContacts.find(x => x.id === cid);
   if (c) (c.field_values = c.field_values || {})[fid] = val;
+}
+
+// ── Style: photo (full-bleed photo wall) ───────────────────────────────────────────────
+// Square cards where the photo IS the card. No fields shown.
+// Name + company overlaid at the bottom with a dark gradient scrim.
+// Click → crmOpenDetail().
+function _crmRenderGallery_photo(rows, cv) {
+  var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
+  var html = rows.map(function(c, i) {
+    var isSel  = typeof _crmSelected !== 'undefined' && _crmSelected.has(c.id);
+    var grpHdr = _galGroupHdr(rows, i, c);
+    var selCls = bulkMode && isSel
+      ? 'ring-4 ring-[#0053e2]'
+      : 'ring-4 ring-transparent hover:ring-[#0053e2]/40';
+
+    // Full-bleed image or emoji fallback
+    var thumb = c.profile_pic
+      ? `<img src="${_crmEsc(c.profile_pic)}"
+             class="absolute inset-0 w-full h-full object-cover"
+             alt="${_crmEsc(c.name||'')}"/>`
+      : `<div class="absolute inset-0 flex items-center justify-center
+               bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff]
+               dark:from-zinc-700 dark:to-zinc-600 text-7xl leading-none select-none">
+           ${_crmEsc(c.avatar_emoji || '\uD83D\uDC64')}
+         </div>`;
+
+    return grpHdr + `
+      <div class="crm-gallery-card group relative overflow-hidden rounded-2xl
+                  cursor-pointer aspect-square shadow-sm
+                  hover:shadow-xl transition-all duration-150 ${selCls}"
+           ${_galDragAttrs(c, bulkMode)}
+           onclick="typeof _crmBulkMode!=='undefined'&&_crmBulkMode?crmBulkToggle(${c.id}):crmOpenDetail(${c.id})">
+
+        ${thumb}
+
+        <!-- Dark gradient scrim + name at the bottom -->
+        <div class="absolute inset-x-0 bottom-0 pt-10
+                    bg-gradient-to-t from-black/80 via-black/30 to-transparent
+                    px-3 pb-2.5">
+          <p class="text-white font-semibold text-sm truncate leading-tight drop-shadow">
+            ${_crmEsc(c.name || '\u2014')}
+          </p>
+          ${c.company ? `<p class="text-white/65 text-[11px] truncate">${_crmEsc(c.company)}</p>` : ''}
+        </div>
+
+        <!-- Action buttons — appear on hover, top-right -->
+        <div class="absolute top-2 right-2 flex gap-0.5
+                    opacity-0 group-hover:opacity-100 transition">
+          ${_galActionBtns(c)}
+        </div>
+
+        <!-- Bulk select checkbox — top-left -->
+        ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
+          <input type="checkbox" ${isSel ? 'checked' : ''}
+            onchange="crmBulkToggle(${c.id}, this.checked)"
+            class="w-4 h-4 accent-[#0053e2] cursor-pointer"/>
+        </label>` : ''}
+      </div>`;
+  }).join('');
+
+  _crmSetMain(`<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">${html}</div>`
+  );
 }
