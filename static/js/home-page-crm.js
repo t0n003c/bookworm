@@ -367,6 +367,7 @@ function _crmTextBulletKey(e) {
 function _crmFieldDisplay(f, c) {
   const raw = String((c.field_values || {})[f.id] ?? '');
   if (f.field_type === 'checkbox')     return raw === '1' ? '✅' : '☐';
+  if (f.field_type === 'number')       return _crmFmtNumber(raw);
   if (f.field_type === 'priority') {
     var n = parseInt(raw) || 0;
     var icon = f.options || '⭐';
@@ -569,8 +570,20 @@ function _crmContactModal(c) {
         class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
                bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(val)}</textarea>`;
+    } else if (f.field_type === 'number') {
+      return wrapDrag(f.id,
+        `<div class="flex items-center gap-2">
+          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
+                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          <input name="cf_${f.id}" type="text" value="${_crmEsc(_crmFmtNumber(val))}"
+            onblur="crmFmtNumberInput(this)"
+            class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
+                   text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
+                   placeholder-gray-300 dark:placeholder-zinc-600
+                   focus:outline-none focus:border-[#0053e2] transition"/>
+        </div>`);
     } else {
-      var iType = {number:'number', url:'url', email:'email'}[f.field_type] || 'text';
+      var iType = {url:'url', email:'email'}[f.field_type] || 'text';
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">
           <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
@@ -944,6 +957,21 @@ async function crmHandlePicFile(input, contactId) {
 // Field management → home-page-crm-fields.js
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
+// ── Number formatting ─────────────────────────────────────────────────────────────
+function _crmFmtNumber(raw) {
+  if (raw === '' || raw === null || raw === undefined) return '';
+  var stripped = String(raw).replace(/,/g, '').trim();
+  var n = parseFloat(stripped);
+  if (isNaN(n)) return stripped;
+  return n.toLocaleString('en-US', {maximumFractionDigits: 2});
+}
+
+// Called onblur on number inputs in the edit modal
+window.crmFmtNumberInput = function(el) {
+  var n = parseFloat(el.value.replace(/,/g, '').trim());
+  if (!isNaN(n)) el.value = n.toLocaleString('en-US', {maximumFractionDigits: 2});
+};
+
 // ── Phone formatting ─────────────────────────────────────────────────────────────
 function _crmPhone(raw) {
   if (!raw) return '';
