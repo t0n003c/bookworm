@@ -168,9 +168,7 @@ function _buildTabsRow() {
       + `</button>`;
   }).join('');
 
-  return `
-    <div class="flex items-center gap-1.5 px-1 py-2 overflow-x-auto
-                border-b border-gray-100 dark:border-zinc-800">
+  return `<div class="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
       ${tabs}
       <div class="flex items-center gap-1.5 ml-2 flex-shrink-0">
         <input id="crm-view-save-inp" type="text" placeholder="View name…"
@@ -182,7 +180,7 @@ function _buildTabsRow() {
         <button onclick="crmToggleSaveInput()" title="Save current settings as a named view"
           class="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium
                  bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400
-                 hover:bg-[#0053e2] hover:text-white transition">
+                 hover:bg-[#0053e2] hover:text-white transition flex-shrink-0">
           + Save view
         </button>
       </div>
@@ -279,10 +277,10 @@ window.crmRenderToolbar = function() {
     </div>` : '';
 
   el.innerHTML =
-    // Row 1 — right-side controls
-    `<div class="flex items-center gap-1.5 px-1 py-2 border-b border-gray-100 dark:border-zinc-800">
-       <div class="flex-1"></div>
-       <div class="flex items-center gap-1.5">
+    `<div class="flex items-center gap-2 px-1 py-2 border-b border-gray-100 dark:border-zinc-800">
+       ${_buildTabsRow()}
+       <div class="flex items-center gap-1.5 flex-shrink-0 ml-auto pl-2
+                   border-l border-gray-100 dark:border-zinc-800">
          ${autofitBtn}
          <div class="relative">
            <button onclick="crmToggleSfgPanel(event)" title="Sort, filter and group"
@@ -299,9 +297,7 @@ window.crmRenderToolbar = function() {
            ${colsPanel}
          </div>
        </div>
-     </div>` +
-    // Row 2 — saved-views tabs
-    _buildTabsRow();
+     </div>`;
 
   // Outside-click: close whichever panel is open
   if (_colPanelOpen || _sfgPanelOpen) {
