@@ -9,13 +9,16 @@
  */
 
 // ── Module state ──────────────────────────────────────────────────────────────
-var _crmSortKey      = '';
+var _crmSortField    = '';   // 'name' | 'company' | 'cf_{id}'
+var _crmSortDir      = 'asc'; // 'asc' | 'desc'
+var _crmSortKey      = '';   // derived: '{field}_{dir}' — used by _crmProcessed
 var _crmFilterField  = '';
 var _crmFilterValue  = '';
 var _crmGroupField   = '';
 var _colPanelOpen    = false;
 var _sfgPanelOpen    = false;
-var _crmActiveViewId = null;   // null = 'All' pseudo-tab
+var _crmActiveViewId = null;
+var _crmPendingDelId = null;  // view id awaiting delete confirmation
 
 // ── Shared escape helper ──────────────────────────────────────────────────────
 function _tbEsc(s) {
@@ -24,7 +27,78 @@ function _tbEsc(s) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Refresh content without toggling panels ───────────────────────────────────
+// ── Delete-view confirmation modal ──────────────────────────────────────────────
+function _ensureViewDelModal() {
+  if (document.getElementById('crm-view-del-modal')) return;
+  var el = document.createElement('div');
+  el.id = 'crm-view-del-modal';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.className = 'hidden fixed inset-0 z-[60] flex items-center justify-center';
+  el.setAttribute('onkeydown', "if(event.key==='Escape') crmCancelDelView()");
+  el.innerHTML = `
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+         onclick="crmCancelDelView()" aria-hidden="true"></div>
+    <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+                w-full max-w-sm mx-4 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30
+                     flex items-center justify-center text-[#ea1100]">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+               viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94
+                     a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+        </span>
+        <h2 class="text-base font-bold text-gray-900 dark:text-zinc-100">Remove saved view?</h2>
+      </div>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-1">
+        <span class="font-semibold text-gray-800 dark:text-zinc-200"
+              id="crm-view-del-name"></span>
+      </p>
+      <p class="text-sm text-gray-600 dark:text-zinc-400 mb-5">
+        This saved view will be permanently removed.
+      </p>
+      <div class="flex gap-3 justify-end">
+        <button type="button" onclick="crmCancelDelView()"
+          class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-zinc-600
+                 text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800
+                 transition focus:outline-none focus:ring-2 focus:ring-gray-300"
+          id="crm-view-del-cancel">Cancel</button>
+        <button type="button" onclick="crmConfirmDelView()"
+          class="px-4 py-2 text-sm rounded-lg bg-[#ea1100] text-white font-semibold
+                 hover:bg-red-700 transition focus:outline-none focus:ring-2
+                 focus:ring-red-400">Remove</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+window.crmAskDeleteView = function(id, name) {
+  _crmPendingDelId = id;
+  _ensureViewDelModal();
+  var modal = document.getElementById('crm-view-del-modal');
+  modal.querySelector('#crm-view-del-name').textContent = '"' + name + '"';
+  modal.classList.remove('hidden');
+  setTimeout(function() {
+    modal.querySelector('#crm-view-del-cancel')?.focus();
+  }, 50);
+};
+
+window.crmCancelDelView = function() {
+  var modal = document.getElementById('crm-view-del-modal');
+  if (modal) modal.classList.add('hidden');
+  _crmPendingDelId = null;
+};
+
+window.crmConfirmDelView = function() {
+  var id = _crmPendingDelId;
+  crmCancelDelView();
+  if (id) crmDeleteView(id);
+};
+
+// ── Refresh content without toggling panels ────────────────────────────────────
 function _crmRefreshContent() {
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
   if (typeof _crmView === 'undefined') return;
@@ -49,8 +123,9 @@ window.crmSaveView = function(name) {
   var id = Date.now().toString(36);
   views.push({
     id, name: name.trim(),
-    sort: _crmSortKey, filterField: _crmFilterField,
-    filterValue: _crmFilterValue, group: _crmGroupField,
+    sortField: _crmSortField, sortDir: _crmSortDir,
+    filterField: _crmFilterField, filterValue: _crmFilterValue,
+    group: _crmGroupField,
   });
   _saveViews(views);
   _crmActiveViewId = id;
@@ -81,11 +156,14 @@ window.crmDeleteView = function(id) {
 window.crmApplyView = function(id) {
   _crmActiveViewId = id;
   if (!id) {
-    _crmSortKey = _crmFilterField = _crmFilterValue = _crmGroupField = '';
+    _crmSortField = ''; _crmSortDir = 'asc'; _crmSortKey = '';
+    _crmFilterField = _crmFilterValue = _crmGroupField = '';
   } else {
     var v = _loadViews().find(function(x) { return x.id === id; });
     if (!v) return;
-    _crmSortKey     = v.sort        || '';
+    _crmSortField   = v.sortField   || '';
+    _crmSortDir     = v.sortDir     || 'asc';
+    _crmSortKey     = _crmSortField ? (_crmSortField + '_' + _crmSortDir) : '';
     _crmFilterField = v.filterField || '';
     _crmFilterValue = v.filterValue || '';
     _crmGroupField  = v.group       || '';
@@ -93,15 +171,23 @@ window.crmApplyView = function(id) {
   _crmRefreshContent();
 };
 
-// ── ⚙ View panel (Sort / Filter / Group) ─────────────────────────────────────
-function _buildSfgPanel(sortDefs, filterDefs, filterVals, groupDefs, sc) {
+// ── ⚙ View panel (Sort / Filter / Group) ───────────────────────────────────────────────
+function _buildSfgPanel(sortFieldDefs, filterDefs, filterVals, groupDefs, sc) {
   if (!_sfgPanelOpen) return '';
 
-  const sel = (defs, cur, cb) =>
-    `<select class="${sc} w-full" onchange="${cb}(this.value)">` +
+  const sel = (defs, cur, cb, extra) =>
+    `<select class="${sc} w-full${extra||''}" onchange="${cb}(this.value)">` +
     defs.map(([v, l]) =>
       `<option value="${_tbEsc(v)}" ${cur === v ? 'selected' : ''}>${l}</option>`
     ).join('') + `</select>`;
+
+  // Two-step sort: field picker + direction picker
+  const sortDirDefs = [['asc', 'A → Z (ascending)'], ['desc', 'Z → A (descending)']];
+  const sortBlock = `
+    ${sel(sortFieldDefs, _crmSortField, 'crmSetSortField')}
+    ${_crmSortField
+      ? `<div class="mt-1.5">${sel(sortDirDefs, _crmSortDir, 'crmSetSortDir')}</div>`
+      : ''}` ;
 
   const filterValSel = _crmFilterField
     ? `<select class="${sc} w-full mt-1" onchange="crmSetFilterValue(this.value)">
@@ -118,7 +204,7 @@ function _buildSfgPanel(sortDefs, filterDefs, filterVals, groupDefs, sc) {
        ${body}
      </div>`;
 
-  const hasActive = _crmSortKey || _crmFilterField || _crmGroupField;
+  const hasActive = _crmSortField || _crmFilterField || _crmGroupField;
 
   return `
     <div id="crm-sfg-panel"
@@ -126,9 +212,9 @@ function _buildSfgPanel(sortDefs, filterDefs, filterVals, groupDefs, sc) {
                 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
                 rounded-xl shadow-xl p-4">
       <p class="text-[11px] font-bold text-gray-700 dark:text-zinc-200 mb-3">View Settings</p>
-      ${section('Sort',          sel(sortDefs,   _crmSortKey,     'crmSetSort'))}
-      ${section('Filter by',     sel(filterDefs, _crmFilterField, 'crmSetFilterField') + filterValSel)}
-      ${section('Group by',      sel(groupDefs,  _crmGroupField,  'crmSetGroup'))}
+      ${section('Sort',     sortBlock)}
+      ${section('Filter by', sel(filterDefs, _crmFilterField, 'crmSetFilterField') + filterValSel)}
+      ${section('Group by',  sel(groupDefs,  _crmGroupField,  'crmSetGroup'))}
       ${hasActive ? `
       <div class="border-t border-gray-100 dark:border-zinc-800 pt-3">
         <button onclick="crmClearFilters()"
@@ -159,9 +245,10 @@ function _buildTabsRow() {
 
   tabs += views.map(function(v) {
     var active = _crmActiveViewId === v.id;
+    var escapedName = v.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     return `<button class="${tabCls(active)}" onclick="crmApplyView('${_tbEsc(v.id)}')">`
       + _tbEsc(v.name)
-      + `<span onclick="event.stopPropagation();crmDeleteView('${_tbEsc(v.id)}')"
+      + `<span onclick="event.stopPropagation();crmAskDeleteView('${_tbEsc(v.id)}','${escapedName}')"
                title="Remove view"
                class="ml-1 leading-none opacity-50 hover:opacity-100
                       hover:text-red-300 transition cursor-pointer">&times;</span>`
@@ -194,16 +281,10 @@ window.crmRenderToolbar = function() {
 
   const fields = (typeof _crmFields !== 'undefined' ? _crmFields : []);
 
-  // Sort options
-  const sortDefs = [
-    ['', '\u2500 Sort \u2500'],
-    ['name_asc', 'Name A\u2192Z'], ['name_desc', 'Name Z\u2192A'],
-    ['company_asc', 'Company A\u2192Z'], ['company_desc', 'Company Z\u2192A'],
-  ];
-  for (const f of fields) {
-    const l = _tbEsc(f.label || ('Field ' + f.id));
-    sortDefs.push([`cf_${f.id}_asc`, l + ' A\u2192Z'], [`cf_${f.id}_desc`, l + ' Z\u2192A']);
-  }
+  // Sort: field picker only (direction is a separate select shown after picking a field)
+  const sortFieldDefs = [['', '\u2500 Sort by \u2500'], ['name', 'Name'], ['company', 'Company']];
+  for (const f of fields)
+    sortFieldDefs.push([`cf_${f.id}`, _tbEsc(f.label || ('Field ' + f.id))]);
 
   // Filter options
   const filterDefs = [['', '\u2500 Field \u2500'], ['company', 'Company']];
@@ -240,10 +321,10 @@ window.crmRenderToolbar = function() {
     : '';
 
   // ⚙ View button — show active setting names on the label
-  const hasActive  = _crmSortKey || _crmFilterField || _crmGroupField;
+  const hasActive  = _crmSortField || _crmFilterField || _crmGroupField;
   const sfgActive  = hasActive || _sfgPanelOpen;
   const sfgParts   = [];
-  if (_crmSortKey)     sfgParts.push('Sort');
+  if (_crmSortField)   sfgParts.push('Sort');
   if (_crmFilterField) sfgParts.push('Filter');
   if (_crmGroupField)  sfgParts.push('Group');
   const sfgLabel   = sfgParts.length ? '\u2699\ufe0e ' + sfgParts.join(' \xb7 ') : '\u2699\ufe0e View';
@@ -287,7 +368,7 @@ window.crmRenderToolbar = function() {
              class="text-[11px] px-2.5 py-1 rounded-lg border transition ${sfgBtnCls}">
              ${sfgLabel}
            </button>
-           ${_buildSfgPanel(sortDefs, filterDefs, filterVals, groupDefs, sc)}
+           ${_buildSfgPanel(sortFieldDefs, filterDefs, filterVals, groupDefs, sc)}
          </div>
          <div class="relative">
            <button onclick="crmToggleColPanel(event)" title="Show/hide columns"
@@ -343,13 +424,19 @@ window.crmToggleColFromPanel = function(id) {
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
 };
 
-// ── Setters (called by panel selects) ────────────────────────────────────────
-window.crmSetSort        = function(k) { _crmSortKey = k;     _crmRefreshContent(); };
+// ── Setters (called by panel selects) ────────────────────────────────────────────
+function _syncSortKey() {
+  _crmSortKey = _crmSortField ? (_crmSortField + '_' + _crmSortDir) : '';
+}
+window.crmSetSortField   = function(f) { _crmSortField = f; _syncSortKey(); _crmRefreshContent(); };
+window.crmSetSortDir     = function(d) { _crmSortDir   = d; _syncSortKey(); _crmRefreshContent(); };
+window.crmSetSort        = function(k) { _crmSortKey = k; _crmRefreshContent(); }; // legacy compat
 window.crmSetFilterField = function(f) { _crmFilterField = f; _crmFilterValue = ''; _crmRefreshContent(); };
 window.crmSetFilterValue = function(v) { _crmFilterValue = v; _crmRefreshContent(); };
 window.crmSetGroup       = function(f) { _crmGroupField = f;  _crmRefreshContent(); };
 window.crmClearFilters   = function()  {
-  _crmSortKey = _crmFilterField = _crmFilterValue = _crmGroupField = '';
+  _crmSortField = ''; _crmSortDir = 'asc'; _crmSortKey = '';
+  _crmFilterField = _crmFilterValue = _crmGroupField = '';
   _crmActiveViewId = null;
   _crmRefreshContent();
 };
