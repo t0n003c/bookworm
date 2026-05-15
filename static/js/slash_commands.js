@@ -31,6 +31,132 @@ const _PLANT_GIFS = [
   'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
 ];
 
+// ── Plant GIF picker ────────────────────────────────────────────────────────
+const _pgp = {
+  el:       null,  // floating picker DOM node (built once, reused)
+  ce:       null,  // saved CE element; null in TA mode
+  actRange: null,  // saved collapsed CE Range; null in TA mode
+  ta:       null,  // saved textarea; null in CE mode
+  taPos:    -1,    // saved TA cursor position
+};
+
+function _pgpClose() {
+  if (_pgp.el) _pgp.el.style.display = 'none';
+  _pgp.ce = _pgp.actRange = _pgp.ta = null;
+  _pgp.taPos = -1;
+}
+
+function _pgpInsert(url) {
+  // Snapshot state before closing clears it
+  const ce = _pgp.ce, actRange = _pgp.actRange;
+  const ta = _pgp.ta, pos = _pgp.taPos;
+  _pgpClose();
+  if (ce) {
+    ce.focus();
+    const sel = window.getSelection();
+    if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
+    document.execCommand('insertHTML', false,
+      `<img src="${url}" alt="plant gif"
+           style="max-width:240px;border-radius:8px;display:block"><p><br></p>`);
+  } else if (ta) {
+    const md = `![](${url})\n`;
+    ta.value = ta.value.slice(0, pos) + md + ta.value.slice(pos);
+    ta.setSelectionRange(pos + md.length, pos + md.length);
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+  }
+}
+
+function _pgpOpen(ce, actRange, ta, taPos, anchorRect) {
+  // Build the picker DOM element once
+  if (!_pgp.el) {
+    const el = document.createElement('div');
+    el.id = 'plant-gif-picker';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Pick a plant GIF');
+    el.style.cssText =
+      'position:fixed;z-index:10000;border-radius:12px;padding:10px 10px 8px;' +
+      'box-shadow:0 8px 30px rgba(0,0,0,.22);display:none;' +
+      'flex-direction:column;gap:8px;min-width:260px;max-width:380px;';
+    el.innerHTML =
+      '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;' +
+      'text-transform:uppercase;margin:0 0 4px;opacity:.55">\uD83C\uDF3F Pick a plant GIF</p>' +
+      '<div id="pgp-grid" style="display:flex;flex-wrap:wrap;gap:8px"></div>';
+    document.body.appendChild(el);
+    _pgp.el = el;
+
+    // Outside-click dismisses (capture phase so it fires before anything else)
+    document.addEventListener('mousedown', function(e) {
+      if (_pgp.el.style.display !== 'none' && !_pgp.el.contains(e.target)) _pgpClose();
+    }, true);
+    // Escape dismisses without inserting
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && _pgp.el.style.display !== 'none') {
+        e.stopPropagation(); e.preventDefault(); _pgpClose();
+      }
+    }, true);
+  }
+
+  // Save insertion context
+  _pgp.ce = ce;  _pgp.actRange = actRange;
+  _pgp.ta = ta;  _pgp.taPos   = taPos;
+
+  // Rebuild the thumbnail grid (pool may have grown since last open)
+  const grid = _pgp.el.querySelector('#pgp-grid');
+  grid.innerHTML = '';
+  _PLANT_GIFS.forEach(function(url, i) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.title = 'Insert GIF ' + (i + 1);
+    btn.style.cssText =
+      'border:2.5px solid transparent;border-radius:8px;padding:2px;' +
+      'background:none;cursor:pointer;transition:border-color .12s,transform .1s;outline:none;';
+    btn.onmouseenter = function() {
+      btn.style.borderColor = '#0053e2';
+      btn.style.transform   = 'scale(1.05)';
+    };
+    btn.onmouseleave = function() {
+      btn.style.borderColor = 'transparent';
+      btn.style.transform   = 'scale(1)';
+    };
+    const img = document.createElement('img');
+    img.src   = url;
+    img.alt   = 'plant gif ' + (i + 1);
+    img.style.cssText = 'width:112px;height:84px;object-fit:cover;border-radius:6px;display:block;';
+    btn.appendChild(img);
+    // mousedown (not click) so we fire before the outside-click listener can close us
+    btn.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      _pgpInsert(url);
+    });
+    grid.appendChild(btn);
+  });
+
+  // Dark mode theming
+  const dark = document.documentElement.classList.contains('dark');
+  Object.assign(_pgp.el.style, {
+    background:  dark ? '#18181b' : '#ffffff',
+    border:      dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    color:       dark ? '#f4f4f5' : '#111827',
+    display:     'flex',
+  });
+
+  // Position below the anchor; flip above if near the bottom of the viewport
+  const vw  = window.innerWidth, vh = window.innerHeight;
+  const elW = _pgp.el.offsetWidth  || 300;
+  const elH = _pgp.el.offsetHeight || 160;
+  const ax  = anchorRect ? anchorRect.left   : 120;
+  const ab  = anchorRect ? anchorRect.bottom : 120;
+  const at  = anchorRect ? anchorRect.top    : 100;
+  let top  = ab + 8;
+  let left = ax;
+  if (top + elH > vh - 16) top = at - elH - 8;
+  if (left + elW > vw - 16) left = vw - elW - 16;
+  _pgp.el.style.top  = Math.max(8, top)  + 'px';
+  _pgp.el.style.left = Math.max(8, left) + 'px';
+}
+
 const SLASH_COMMANDS = [
   {
     id: 'h1', label: 'Heading 1', desc: 'Large section heading',
@@ -263,29 +389,20 @@ const SLASH_COMMANDS = [
     },
   },
   {
-    id: 'plant-gif', label: 'Plant GIF', desc: 'Insert a random animated plant GIF 🌿',
+    id: 'plant-gif', label: 'Plant GIF', desc: 'Pick a plant GIF to insert 🌿',
     icon: `<span style="font-size:1.15rem;line-height:1">🌿</span>`,
-    // action() called with no args in TA mode (slash text already erased, cursor at slash pos).
-    // action(ce, actRange) called in CE mode.
     action(ce, actRange) {
-      const url = _PLANT_GIFS[Math.floor(Math.random() * _PLANT_GIFS.length)];
       if (ce) {
-        // CE mode: restore selection point then inject the <img> via execCommand
-        ce.focus();
-        const sel = window.getSelection();
-        if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
-        document.execCommand('insertHTML', false,
-          `<img src="${url}" alt="plant gif"
-               style="max-width:240px;border-radius:8px;display:block"><p><br></p>`);
+        // CE mode — actRange is already collapsed at the insertion point.
+        // Use that range rect as the picker anchor.
+        const rect = actRange ? actRange.getBoundingClientRect() : null;
+        _pgpOpen(ce, actRange, null, -1, rect);
       } else {
-        // TA mode: insert Markdown image syntax at the cursor
+        // TA mode — capture position NOW before _close() resets _sc.ta.
         const ta  = _sc.ta;
         const pos = ta.selectionStart;
-        const md  = `![](${ url })\n`;
-        ta.value  = ta.value.slice(0, pos) + md + ta.value.slice(pos);
-        ta.setSelectionRange(pos + md.length, pos + md.length);
-        ta.focus();
-        ta.dispatchEvent(new Event('input'));
+        const rect = ta.getBoundingClientRect();
+        _pgpOpen(null, null, ta, pos, rect);
       }
     },
   },
