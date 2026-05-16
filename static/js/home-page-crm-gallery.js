@@ -132,7 +132,7 @@ function _crmRenderGallery_cards(rows, cv) {
     var avatarInner = c.profile_pic
       ? `<img src="${_crmEsc(c.profile_pic)}"
              class="absolute inset-0 w-full h-full object-cover" alt=""/>`
-      : `<div class="absolute inset-0 flex items-center justify-center text-5xl leading-none
+      : `<div class="absolute inset-0 flex items-center justify-center text-4xl leading-none
                bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">
            ${_crmEsc(c.avatar_emoji||'\uD83D\uDC64')}
          </div>`;
@@ -152,16 +152,16 @@ function _crmRenderGallery_cards(rows, cv) {
     })() : '';
 
     return grpHdr + `
-      <div class="crm-gallery-card group relative bg-white dark:bg-zinc-900 rounded-2xl shadow-sm
+      <div class="crm-gallery-card group relative bg-white dark:bg-zinc-900 rounded-xl shadow-sm
                   hover:shadow-lg transition-all duration-150 overflow-hidden cursor-pointer
                   border border-gray-100 dark:border-zinc-800 ${selCls}"
            ${_galDragAttrs(c, bulkMode)}
            onclick="typeof _crmBulkMode!=='undefined'&&_crmBulkMode?crmBulkToggle(${c.id}):crmOpenDetail(${c.id})">
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-        <div class="flex min-h-[7rem]">
+        <div class="flex">
 
-          <!-- Full-height avatar: square left panel -->
-          <div class="relative w-28 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
+          <!-- Avatar: auto-height left panel, sized to content -->
+          <div class="relative w-20 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
             ${avatarInner}
             ${budBar}
             ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
@@ -170,9 +170,9 @@ function _crmRenderGallery_cards(rows, cv) {
                 class="w-4 h-4 accent-[#0053e2] cursor-pointer"/></label>` : ''}
           </div>
 
-          <!-- Info panel -->
-          <div class="flex-1 p-3 min-w-0 flex flex-col">
-            <div class="flex items-start justify-between gap-1 mb-0.5">
+          <!-- Info panel: no fixed height, stacks to content -->
+          <div class="flex-1 px-3 py-2.5 min-w-0">
+            <div class="flex items-start justify-between gap-1">
               <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">
                 ${_crmEsc(c.name||'\u2014')}
               </p>
@@ -180,18 +180,18 @@ function _crmRenderGallery_cards(rows, cv) {
                 ${_galActionBtns(c)}
               </div>
             </div>
-            ${cv('company')&&c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">${_crmEsc(c.company)}</p>` : ''}
+            ${cv('company')&&c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
             ${cv('email')&&c.email    ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
               class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-0.5 leading-tight">
               ${_crmEsc(c.email)}</a>` : ''}
             ${cv('phone')&&c.phone   ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(_crmPhone(c.phone))}</p>` : ''}
-            ${cfRows                  ? `<div class="mt-1 flex-1 min-w-0">${cfRows}</div>` : ''}
-            ${tags                    ? `<div class="flex flex-wrap gap-1 mt-auto pt-1.5">${tags}</div>` : ''}
+            ${cfRows                  ? `<div class="mt-1 min-w-0">${cfRows}</div>` : ''}
+            ${tags                    ? `<div class="flex flex-wrap gap-1 mt-1.5">${tags}</div>` : ''}
           </div>
         </div>
       </div>`;
   }).join('');
-  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">${html}</div>`);
+  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">${html}</div>`);
 }
 
 // ── Style: compact (list rows) ────────────────────────────────────────────────
