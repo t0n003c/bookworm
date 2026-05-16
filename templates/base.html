@@ -17,8 +17,17 @@
   <script>
     (function () {
       const saved = localStorage.getItem('bw-theme');
-      if (saved === 'light') document.documentElement.classList.remove('dark');
-      else document.documentElement.classList.add('dark');
+      if (saved === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else if (saved === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        // No explicit preference saved — respect the OS / system setting.
+        // Most phones default to light mode unless the user turned on dark.
+        const prefersDark = window.matchMedia &&
+                            window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', prefersDark);
+      }
 
       // ── HomeSpace flash prevention ────────────────────────────────────────
       // If sessionStorage has a home-page ID we're about to restore, brand the

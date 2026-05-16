@@ -2833,6 +2833,18 @@
   }
   syncThemeIcon();
 
+  // Follow OS dark/light changes automatically — but only when the user
+  // hasn’t explicitly picked a theme (no bw-theme in localStorage).
+  (function () {
+    var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (!mq) return;
+    mq.addEventListener('change', function (e) {
+      if (localStorage.getItem('bw-theme')) return; // user has an explicit choice
+      document.documentElement.classList.toggle('dark', e.matches);
+      syncThemeIcon();
+    });
+  })();
+
   /* ---- Note list views: list / gallery / timeline ---- */
   function getNoteView() {
     if (typeof bwTimeline !== 'undefined' && bwTimeline.isMounted()) return 'timeline';
