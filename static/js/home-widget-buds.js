@@ -77,10 +77,23 @@ function _budsWeekKey() {
   return isoYear + '-W' + String(week).padStart(2, '0');
 }
 
+// Parse a YYYY-MM-DD string as LOCAL midnight (new Date(str) parses as UTC
+// which shifts the date back by one day in timezones west of UTC).
+function _budsParseLocalDate(s) {
+  var p = s.split('-');
+  return new Date(+p[0], +p[1] - 1, +p[2]);
+}
+// Today's date as YYYY-MM-DD in local time (not UTC).
+function _budsLocalToday() {
+  var d = new Date();
+  return d.getFullYear() + '-'
+    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0');
+}
 function _budsApplyDecay(bud) {
   if (!bud.health_updated_at) return bud.health;
-  var anchor = new Date(bud.health_updated_at); anchor.setHours(0,0,0,0);
-  var today  = new Date(); today.setHours(0,0,0,0);
+  var anchor = _budsParseLocalDate(bud.health_updated_at);
+  var today  = _budsParseLocalDate(_budsLocalToday());
   var days   = Math.max(0, Math.round((today - anchor) / 86400000));
   if (days <= 0) return bud.health;
   var loss   = (25 / Math.max(bud.see_every_days, 1)) * days;
@@ -109,7 +122,7 @@ function _budsRender(wid) {
     var color   = _budsHealthColor(tier);
     var img     = _budsFlowerImg(b.flower_species, tier);
     var swayDelay = ((b.id % 6) * 0.65).toFixed(2) + 's';
-    var todayStr = new Date().toISOString().slice(0, 10);  // YYYY-MM-DD
+    var todayStr = _budsLocalToday();
     var watered = (b.last_watered_week === todayStr);
     var hasPlan = !!(b.pending_plan);
     var waterCls   = watered
