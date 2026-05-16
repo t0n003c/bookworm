@@ -313,18 +313,22 @@ window.crmRenderToolbar = function() {
     'focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer',
   ].join(' ');
 
-  // Card-size slider (gallery only)
-  const isGallery   = (typeof _crmView !== 'undefined' && _crmView === 'gallery');
-  const sizeSlider  = isGallery ? `
-    <div class="flex items-center gap-1 flex-shrink-0"
-         title="Card size — double-click to reset">
-      <span style="font-size:9px;opacity:0.35;line-height:1;color:inherit">&#9632;</span>
+  // Card-size slider — shown for 'cards' and 'photo' gallery styles only
+  const galStyle     = (typeof _crmGalleryStyle !== 'undefined') ? _crmGalleryStyle : 'cards';
+  const showSlider   = (typeof _crmView !== 'undefined') && _crmView === 'gallery'
+                     && (galStyle === 'cards' || galStyle === 'photo');
+  const sizeSlider   = showSlider ? `
+    <div class="flex items-center gap-1.5 flex-shrink-0"
+         title="Card size \u2014 double-click to reset">
+      <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor"
+           style="opacity:.35;flex-shrink:0"><rect width="9" height="9" rx="1.5"/></svg>
       <input id="crm-size-slider" type="range" min="1" max="5" step="1"
              value="${window._crmCardSize}"
              oninput="crmSetCardSize(this.value)"
              ondblclick="crmSetCardSize(3)"
-             style="width:64px;accent-color:#0053e2;cursor:pointer;display:block"/>
-      <span style="font-size:14px;opacity:0.35;line-height:1;color:inherit">&#9632;</span>
+             style="width:68px;accent-color:#0053e2;cursor:pointer;display:block"/>
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"
+           style="opacity:.35;flex-shrink:0"><rect width="13" height="13" rx="2"/></svg>
     </div>` : '';
 
   // Autofit (table only)

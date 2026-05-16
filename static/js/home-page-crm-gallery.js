@@ -167,10 +167,11 @@ function _crmRenderGallery_cards(rows, cv) {
            ${_galDragAttrs(c, bulkMode)}
            onclick="typeof _crmBulkMode!=='undefined'&&_crmBulkMode?crmBulkToggle(${c.id}):crmOpenDetail(${c.id})">
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-        <div class="flex" style="min-height:${rowMinH}px">
+        <div class="flex">
 
-          <!-- Avatar panel — width driven by slider, self-stretch fills card height -->
-          <div class="relative flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800" style="width:${avatarPx}px">
+          <!-- Avatar panel — explicit min-height forces card height; width from slider -->
+          <div class="relative flex-shrink-0 bg-gray-100 dark:bg-zinc-800"
+               style="width:${avatarPx}px;min-height:${rowMinH}px">
             ${avatarInner}
             ${budBar}
             ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
@@ -375,6 +376,8 @@ async function crmQuickCheckbox(e, cid, fid, checked) {
 // Name + company overlaid at the bottom with a dark gradient scrim.
 // Click → crmOpenDetail().
 function _crmRenderGallery_photo(rows, cv) {
+  var step     = Math.max(1, Math.min(5, window._crmCardSize || 3));
+  var cellPx   = [110, 140, 175, 215, 260][step - 1]; // photo cell size px per step
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
     var isSel  = typeof _crmSelected !== 'undefined' && _crmSelected.has(c.id);
@@ -390,7 +393,8 @@ function _crmRenderGallery_photo(rows, cv) {
              alt="${_crmEsc(c.name||'')}"/>`
       : `<div class="absolute inset-0 flex items-center justify-center
                bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff]
-               dark:from-zinc-700 dark:to-zinc-600 text-7xl leading-none select-none">
+               dark:from-zinc-700 dark:to-zinc-600 leading-none select-none"
+             style="font-size:${Math.round(cellPx * 0.38)}px">
            ${_crmEsc(c.avatar_emoji || '\uD83D\uDC64')}
          </div>`;
 
@@ -428,6 +432,6 @@ function _crmRenderGallery_photo(rows, cv) {
       </div>`;
   }).join('');
 
-  _crmSetMain(`<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">${html}</div>`
+  _crmSetMain(`<div class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(${cellPx}px,${cellPx}px))">${html}</div>`);
   );
 }
