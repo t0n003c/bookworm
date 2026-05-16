@@ -171,7 +171,7 @@ function _crmRenderGallery_cards(rows, cv) {
           </div>
 
           <!-- Info — no flex-col/flex-1, just stacks naturally to content height -->
-          <div class="flex-1 px-3 py-2.5 min-w-0">
+          <div class="flex-1 pl-5 pr-3 py-2.5 min-w-0">
             <div class="flex items-start justify-between gap-1">
               <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">
                 ${_crmEsc(c.name||'\u2014')}
