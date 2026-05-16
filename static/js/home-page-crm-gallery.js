@@ -115,8 +115,8 @@ function _crmRenderGallery() {
 }
 
 // ── Style: cards (default) ─────────────────────────────────────────────────────────────────
-// Grid of rounded cards — full-height square avatar on the left,
-// info panel on the right, Walmart gradient top strip.
+// Portrait cards — full-width avatar image/emoji at top, info stacked below.
+// No side-by-side layout so there's no wasted right-hand space.
 function _crmRenderGallery_cards(rows, cv) {
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
@@ -126,13 +126,13 @@ function _crmRenderGallery_cards(rows, cv) {
     var isSel  = typeof _crmSelected !== 'undefined' && _crmSelected.has(c.id);
     var selCls = bulkMode && isSel
       ? 'ring-2 ring-[#0053e2]'
-      : 'ring-2 ring-transparent hover:ring-[#0053e2]/20';
+      : 'ring-2 ring-transparent hover:ring-[#0053e2]/30';
 
-    // Full-height avatar panel (image or emoji, fills the left column absolutely)
-    var avatarInner = c.profile_pic
-      ? `<img src="${_crmEsc(c.profile_pic)}"
-             class="absolute inset-0 w-full h-full object-cover" alt=""/>`
-      : `<div class="absolute inset-0 flex items-center justify-center text-4xl leading-none
+    // Full-width avatar block (photo or emoji fills the whole top area)
+    var avatarBlock = c.profile_pic
+      ? `<img src="${_crmEsc(c.profile_pic)}" alt=""
+             class="w-full h-full object-cover"/>`
+      : `<div class="w-full h-full flex items-center justify-center text-5xl leading-none
                bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">
            ${_crmEsc(c.avatar_emoji||'\uD83D\uDC64')}
          </div>`;
@@ -143,11 +143,12 @@ function _crmRenderGallery_cards(rows, cv) {
       var col = hp >= 75 ? '#2a8703' : hp >= 40 ? '#ffc220' : '#ea1100';
       var ico = hp >= 75 ? '\uD83C\uDF38' : hp >= 40 ? '\uD83C\uDF3C' : '\uD83E\uDD87';
       return `<div class="absolute bottom-0 left-0 right-0 flex items-center gap-1
-                   bg-black/30 px-1.5 py-0.5" title="Bud HP ${hp}">
+                   bg-black/30 backdrop-blur-[1px] px-2 py-1" title="Bud HP ${hp}">
         <span class="text-[10px] leading-none">${ico}</span>
         <div class="flex-1 h-1 bg-white/30 rounded-full overflow-hidden">
           <div class="h-full rounded-full" style="width:${hp}%;background:${col}"></div>
         </div>
+        <span class="text-white text-[10px] leading-none">${hp}</span>
       </div>`;
     })() : '';
 
@@ -157,41 +158,42 @@ function _crmRenderGallery_cards(rows, cv) {
                   border border-gray-100 dark:border-zinc-800 ${selCls}"
            ${_galDragAttrs(c, bulkMode)}
            onclick="typeof _crmBulkMode!=='undefined'&&_crmBulkMode?crmBulkToggle(${c.id}):crmOpenDetail(${c.id})">
-        <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-        <div class="flex">
 
-          <!-- Avatar: auto-height left panel, sized to content -->
-          <div class="relative w-20 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
-            ${avatarInner}
-            ${budBar}
-            ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
-              <input type="checkbox" ${isSel?'checked':''}
-                onchange="crmBulkToggle(${c.id},this.checked)"
-                class="w-4 h-4 accent-[#0053e2] cursor-pointer"/></label>` : ''}
+        <!-- Full-width avatar — 3:4 aspect ratio, fills card edge-to-edge -->
+        <div class="relative w-full" style="padding-top:75%">
+          <div class="absolute inset-0">${avatarBlock}</div>
+          ${budBar}
+          <!-- Walmart gradient accent at very top -->
+          <div class="absolute top-0 left-0 right-0 h-[3px]
+                      bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
+          <!-- Hover action buttons -->
+          <div class="absolute top-2 right-2 flex gap-0.5
+                      opacity-0 group-hover:opacity-100 transition">
+            ${_galActionBtns(c)}
           </div>
+          <!-- Bulk select -->
+          ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
+            <input type="checkbox" ${isSel?'checked':''}
+              onchange="crmBulkToggle(${c.id},this.checked)"
+              class="w-4 h-4 accent-[#0053e2] cursor-pointer"/></label>` : ''}
+        </div>
 
-          <!-- Info panel: no fixed height, stacks to content -->
-          <div class="flex-1 px-3 py-2.5 min-w-0">
-            <div class="flex items-start justify-between gap-1">
-              <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">
-                ${_crmEsc(c.name||'\u2014')}
-              </p>
-              <div class="flex gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-                ${_galActionBtns(c)}
-              </div>
-            </div>
-            ${cv('company')&&c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
-            ${cv('email')&&c.email    ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
-              class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-0.5 leading-tight">
-              ${_crmEsc(c.email)}</a>` : ''}
-            ${cv('phone')&&c.phone   ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(_crmPhone(c.phone))}</p>` : ''}
-            ${cfRows                  ? `<div class="mt-1 min-w-0">${cfRows}</div>` : ''}
-            ${tags                    ? `<div class="flex flex-wrap gap-1 mt-1.5">${tags}</div>` : ''}
-          </div>
+        <!-- Info block — full card width, no wasted space -->
+        <div class="px-3 py-2.5">
+          <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-snug">
+            ${_crmEsc(c.name||'\u2014')}
+          </p>
+          ${cv('company')&&c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
+          ${cv('email')&&c.email    ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
+            class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-0.5">
+            ${_crmEsc(c.email)}</a>` : ''}
+          ${cv('phone')&&c.phone   ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">${_crmEsc(_crmPhone(c.phone))}</p>` : ''}
+          ${cfRows ? `<div class="mt-1 min-w-0">${cfRows}</div>` : ''}
+          ${tags   ? `<div class="flex flex-wrap gap-1 mt-1.5">${tags}</div>` : ''}
         </div>
       </div>`;
   }).join('');
-  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">${html}</div>`);
+  _crmSetMain(`<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">${html}</div>`);
 }
 
 // ── Style: compact (list rows) ────────────────────────────────────────────────
