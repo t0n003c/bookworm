@@ -1215,14 +1215,35 @@ function openPageLayout(pageId) {
   const grid = document.querySelector(`[data-page-id="${pageId}"] [data-col-count]`);
   const cur  = parseInt(grid?.dataset.colCount || '3', 10);
 
+  // How many columns are actually allowed at the current viewport width?
+  // Reuse the same cap logic as the grid renderer (DRY).
+  const maxCols = (typeof window._wpEffCols === 'function')
+    ? window._wpEffCols(99)   // pass 99 so the cap itself is the answer
+    : 5;
+
+  // Show only the buttons that make sense at this viewport size.
+  // Hide 4 & 5 on phones; unhide them on desktop.
+  const btnGrid = document.getElementById('pg-col-btn-grid');
+  const visibleBtns = [];
   document.querySelectorAll('.pg-col-btn').forEach(btn => {
-    const n = +btn.dataset.cols;
-    btn.classList.toggle('border-wblue',         n === cur);
-    btn.classList.toggle('bg-blue-50',           n === cur);
-    btn.classList.toggle('dark:bg-blue-900/20',  n === cur);
-    btn.classList.toggle('border-gray-200',      n !== cur);
-    btn.classList.toggle('dark:border-zinc-700', n !== cur);
+    const n      = +btn.dataset.cols;
+    const show   = n <= maxCols;
+    btn.style.display = show ? '' : 'none';
+    if (show) visibleBtns.push(btn);
+
+    // Active state highlight
+    const active = n === cur;
+    btn.classList.toggle('border-wblue',         active);
+    btn.classList.toggle('bg-blue-50',           active);
+    btn.classList.toggle('dark:bg-blue-900/20',  active);
+    btn.classList.toggle('border-gray-200',      !active);
+    btn.classList.toggle('dark:border-zinc-700', !active);
   });
+
+  // Reflow the button grid to only as many columns as are visible.
+  if (btnGrid) {
+    btnGrid.style.gridTemplateColumns = `repeat(${visibleBtns.length}, 1fr)`;
+  }
 
   modal.classList.remove('hidden');
 }

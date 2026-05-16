@@ -4150,16 +4150,21 @@
       </button>
     </div>
     <p class="text-xs text-gray-400 dark:text-zinc-500 mb-3">Choose how many columns your widgets span.</p>
-    <div class="grid grid-cols-4 gap-2 mb-4">
-      {% for n in [2, 3, 4, 5] %}
+    {# pg-col-btn-grid: openPageLayout() sets grid-template-columns + hides
+       the 4 & 5 col buttons when on a phone so the picker matches the cap. #}
+    <div id="pg-col-btn-grid" class="grid gap-2 mb-4"
+         style="grid-template-columns: repeat(5,1fr)">
+      {% for n in [1, 2, 3, 4, 5] %}
       <button type="button" onclick="selectPageLayout({{ n }})"
               data-cols="{{ n }}"
               class="pg-col-btn flex flex-col items-center gap-1.5 p-2 rounded-xl
                      border-2 border-gray-200 dark:border-zinc-700
                      hover:border-wblue transition">
-        <div class="grid gap-0.5 w-full" style="grid-template-columns: repeat({{ n }}, 1fr)">
+        <div class="grid gap-0.5 w-full"
+             style="grid-template-columns: repeat({{ n }}, 1fr)">
           {% for _ in range(n) %}
-          <div class="bg-gray-300 dark:bg-zinc-600 rounded-sm h-5"></div>
+          <div class="bg-gray-300 dark:bg-zinc-600 rounded-sm"
+               style="height:{{ [20, 20, 16, 12, 10][loop.index0 if loop.index0 < 5 else 4] }}px"></div>
           {% endfor %}
         </div>
         <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">{{ n }} col</span>

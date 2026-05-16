@@ -1398,11 +1398,23 @@ window._wpEffCols = function(saved) {
 };
 
 // Apply the responsive col cap to every widget grid currently in the DOM.
+// Also caps each widget card's grid-column span so a card that was
+// configured for span-4 on desktop doesn't blow past the 3-col mobile grid
+// and create implicit extra columns (which would break uniform row widths).
 function _applyWidgetGridColCap() {
   document.querySelectorAll('[data-col-count]').forEach(function(grid) {
     var saved = parseInt(grid.dataset.colCount || '3', 10);
     var eff   = window._wpEffCols(saved);
     grid.style.gridTemplateColumns = 'repeat(' + eff + ', minmax(0, 1fr))';
+
+    // Cap every widget card’s col-span to the effective column count so no
+    // single card accidentally creates implicit extra columns.
+    grid.querySelectorAll('[data-col-span]').forEach(function(card) {
+      var span    = parseInt(card.dataset.colSpan || '1', 10);
+      var effSpan = Math.min(span, eff);
+      // Preserve full-width spans as 1/-1 shorthand; use numbered span otherwise.
+      card.style.gridColumn = (effSpan >= eff) ? '1 / -1' : 'span ' + effSpan;
+    });
   });
 }
 

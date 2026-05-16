@@ -1924,7 +1924,7 @@
   {% set page_type = _pt %}
   {% include "partials/home_page_coming_soon.html" %}
 {% else %}
-<div id="home-canvas" class="min-h-full bg-gray-50 dark:bg-zinc-950 p-4" data-page-id="{{ page.id }}">
+<div id="home-canvas" class="min-h-full bg-gray-50 dark:bg-zinc-950 p-2 sm:p-4" data-page-id="{{ page.id }}">
 
   <!-- Widget grid -->
   {% if not widgets %}
@@ -1940,7 +1940,7 @@
     </button>
   </div>
   {% else %}
-  <div class="grid gap-3"
+  <div class="grid gap-2 sm:gap-3"
        id="widget-grid-{{ page.id }}"
        {%- set _pgcfg = page.get('config', {}) -%}
        data-col-count="{{ _pgcfg.get('col_count', 3) }}"
