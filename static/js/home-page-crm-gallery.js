@@ -124,6 +124,8 @@ function _crmRenderGallery_cards(rows, cv) {
   var cardMin    = 200 + (step - 1) * 60;  // 200 / 260 / 320 / 380 / 440
   var cardMax    = cardMin + 40;
   var avatarPx   = 80  + (step - 1) * 20;  // 80  / 100 / 120 / 140 / 160
+  var padY       = [8, 10, 14, 18, 22][step - 1]; // vertical padding px per step
+  var emojiPx    = [28, 32, 38, 44, 50][step - 1]; // emoji font-size px per step
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
     var tags   = _galTags(c, cv);
@@ -138,8 +140,9 @@ function _crmRenderGallery_cards(rows, cv) {
     var avatarInner = c.profile_pic
       ? `<img src="${_crmEsc(c.profile_pic)}"
              class="absolute inset-0 w-full h-full object-cover" alt=""/>`
-      : `<div class="absolute inset-0 flex items-center justify-center text-5xl leading-none
-               bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">
+      : `<div class="absolute inset-0 flex items-center justify-center leading-none
+               bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600"
+             style="font-size:${emojiPx}px">
            ${_crmEsc(c.avatar_emoji||'\uD83D\uDC64')}
          </div>`;
 
@@ -176,8 +179,8 @@ function _crmRenderGallery_cards(rows, cv) {
                 class="w-4 h-4 accent-[#0053e2] cursor-pointer"/></label>` : ''}
           </div>
 
-          <!-- Info — no flex-col/flex-1, just stacks naturally to content height -->
-          <div class="flex-1 pl-5 pr-3 py-2.5 min-w-0">
+          <!-- Info — vertical padding scales with card size -->
+          <div class="flex-1 pl-5 pr-3 min-w-0" style="padding-top:${padY}px;padding-bottom:${padY}px">
             <div class="flex items-start justify-between gap-1">
               <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">
                 ${_crmEsc(c.name||'\u2014')}

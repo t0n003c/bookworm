@@ -316,11 +316,22 @@ window.crmRenderToolbar = function() {
   // Card-size slider (gallery only)
   const isGallery   = (typeof _crmView !== 'undefined' && _crmView === 'gallery');
   const sizeSlider  = isGallery ? `
-    <div class="flex items-center gap-1 flex-shrink-0" title="Card size">
-      <span class="text-[11px] text-gray-400 dark:text-zinc-500 select-none">&#8862;</span>
+    <div class="flex items-center gap-1.5 flex-shrink-0"
+         style="background:var(--sl-bg,#f3f4f6);border-radius:10px;padding:4px 8px"
+         title="Card size &mdash; double-click to reset">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 16 16" fill="currentColor"
+           style="color:#9ca3af;flex-shrink:0">
+        <rect x="3" y="3" width="10" height="10" rx="2"/>
+      </svg>
       <input type="range" min="1" max="5" step="1" value="${window._crmCardSize}"
              oninput="crmSetCardSize(this.value)"
-             style="width:64px;accent-color:#0053e2;cursor:pointer"/>
+             ondblclick="crmSetCardSize(3)"
+             style="width:72px;accent-color:#0053e2;cursor:pointer;
+                    height:4px;outline:none;border:none;background:transparent"/>
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="currentColor"
+           style="color:#9ca3af;flex-shrink:0">
+        <rect x="1" y="1" width="14" height="14" rx="2"/>
+      </svg>
     </div>` : '';
 
   // Autofit (table only)
