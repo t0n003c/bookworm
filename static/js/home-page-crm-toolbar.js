@@ -313,17 +313,18 @@ window.crmRenderToolbar = function() {
     'focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer',
   ].join(' ');
 
-  // Card-size slider — shown for 'cards' and 'photo' gallery styles only
-  const galStyle     = (typeof _crmGalleryStyle !== 'undefined') ? _crmGalleryStyle : 'cards';
-  const showSlider   = (typeof _crmView !== 'undefined') && _crmView === 'gallery'
-                     && (galStyle === 'cards' || galStyle === 'photo');
-  const sizeSlider   = showSlider ? `
+  // Card-size slider — hidden only for compact / minimal / profile; shown for everything else
+  const galStyle   = (typeof _crmGalleryStyle !== 'undefined') ? _crmGalleryStyle : 'cards';
+  const isGallery  = (typeof _crmView !== 'undefined') && _crmView === 'gallery';
+  const noSlider   = galStyle === 'compact' || galStyle === 'minimal' || galStyle === 'profile';
+  const safeSize   = Math.max(1, Math.min(5, parseInt(window._crmCardSize, 10) || 3));
+  const sizeSlider = (isGallery && !noSlider) ? `
     <div class="flex items-center gap-1.5 flex-shrink-0"
          title="Card size \u2014 double-click to reset">
       <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor"
            style="opacity:.35;flex-shrink:0"><rect width="9" height="9" rx="1.5"/></svg>
       <input id="crm-size-slider" type="range" min="1" max="5" step="1"
-             value="${window._crmCardSize}"
+             value="${safeSize}"
              oninput="crmSetCardSize(this.value)"
              ondblclick="crmSetCardSize(3)"
              style="width:68px;accent-color:#0053e2;cursor:pointer;display:block"/>
