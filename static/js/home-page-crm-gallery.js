@@ -433,5 +433,4 @@ function _crmRenderGallery_photo(rows, cv) {
   }).join('');
 
   _crmSetMain(`<div class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(${cellPx}px,${cellPx}px))">${html}</div>`);
-  );
 }
