@@ -322,25 +322,15 @@ window.crmRenderToolbar = function() {
   const _isDark    = document.documentElement.classList.contains('dark');
   const _iconCol   = _isDark ? '#71717a' : '#9ca3af';
   const sizeSlider = (isGallery && !noSlider) ? `
-    <div style="display:flex;align-items:center;gap:5px;flex-shrink:0"
+    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"
          title="Card size \u2014 double-click to reset">
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="${_iconCol}" style="flex-shrink:0">
-        <rect x="0" y="0" width="4" height="4" rx="1"/>
-        <rect x="6" y="0" width="4" height="4" rx="1"/>
-        <rect x="0" y="6" width="4" height="4" rx="1"/>
-        <rect x="6" y="6" width="4" height="4" rx="1"/>
-      </svg>
+      <span style="font-size:0.75rem;color:${_iconCol};user-select:none;line-height:1">&#8722;</span>
       <input id="crm-size-slider" type="range" min="1" max="5" step="1"
              value="${safeSize}"
              oninput="crmSetCardSize(this.value)"
              ondblclick="crmSetCardSize(3)"
              style="width:60px;accent-color:#0053e2;cursor:pointer;display:block"/>
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="${_iconCol}" style="flex-shrink:0">
-        <rect x="0" y="0" width="6" height="6" rx="1.5"/>
-        <rect x="8" y="0" width="6" height="6" rx="1.5"/>
-        <rect x="0" y="8" width="6" height="6" rx="1.5"/>
-        <rect x="8" y="8" width="6" height="6" rx="1.5"/>
-      </svg>
+      <span style="font-size:0.75rem;color:${_iconCol};user-select:none;line-height:1">&#43;</span>
     </div>` : '';
 
   // Autofit (table only)
