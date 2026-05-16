@@ -23,17 +23,32 @@
                                if focus is stolen, e.g., by a dialog).
    ───────────────────────────────────────── */
 // ── Plant GIF pool ──────────────────────────────────────────────────────────
-// URLs sourced from Tinh's own Plants note (already embedded there).
-// Giphy's embed model is link-only — the files live on Giphy's CDN.
-// Add more IDs here as you collect them: 'https://media.giphy.com/media/{ID}/giphy.gif'
+// Giphy sticker/GIF links. Add more URLs here to grow the picker.
 const _PLANT_GIFS = [
+  // originals from Tinh's Plants note
   'https://media.giphy.com/media/daa8oT5L8Ox3ffWVjr/giphy.gif',
   'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
-];
-
-const _PLANT_GIFS = [
-  'https://media.giphy.com/media/daa8oT5L8Ox3ffWVjr/giphy.gif',
-  'https://media.giphy.com/media/kBrUzSA32eZhhfrmzX/giphy.gif',
+  // user-provided batch
+  'https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExYTZmMGE4Nzhtc2dhajJjcnAxY2tlYjl0ZDBlemZxYXdxMTNmaHBjciZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/Y07V7Botkq0ZXqbrCo/giphy.webp',
+  'https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYTZmMGE4Nzhtc2dhajJjcnAxY2tlYjl0ZDBlemZxYXdxMTNmaHBjciZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/ODBMXfLEzgetwH6Srl/giphy.webp',
+  'https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExYTZmMGE4Nzhtc2dhajJjcnAxY2tlYjl0ZDBlemZxYXdxMTNmaHBjciZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/MsKiBZT2JTlqj9oeUa/giphy.webp',
+  'https://media4.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3a3F0c3hqOW53cHlqNmoyYzNqZ3IwYzA2dG5kd3liM240dm9nZGxucyZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/KfNT41VlVdLrO0DLqd/giphy.webp',
+  'https://media0.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bzdiNGNta2U4d2lpazlwN3F4Y2U5dGI4aDVoYjhzdTE1NXg5eDUxZiZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/VhiFFIiLING7GjH0uG/giphy.webp',
+  'https://media3.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bzdiNGNta2U4d2lpazlwN3F4Y2U5dGI4aDVoYjhzdTE1NXg5eDUxZiZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/XyhI2sj7dRmQ1cMPOU/giphy.webp',
+  'https://media1.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cnR5bzdicGd5cWQ3emd3Nm16ZmQzdXJ5ODE4ZnhienJsY3lmdm9icCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/jQc4Jd44ZEXT56HBkg/giphy.webp',
+  'https://media0.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cnR5bzdicGd5cWQ3emd3Nm16ZmQzdXJ5ODE4ZnhienJsY3lmdm9icCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/xWMhY813H0g8KgcRSH/giphy.webp',
+  'https://media3.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ejY0ajJiMTlpM2p2enRkNjV6b2g0dTBjajBwa3RpbDliaHdhYzN5NiZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/xAZIwkTkPUi1puZTu9/giphy.webp',
+  'https://media0.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bzJwcGRxZm5vcHJxejhiaXRvNzJxNGY3ZmlpZWJqd3U0N293bDh1diZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/TLmWXAZHksx1AOUG9M/giphy.webp',
+  'https://media0.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3MnhpZmN1cW1rMWJoYXNmdDBjcWR5NGN3OWM5d3plamdyeXgwMGZzeCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/vx31xGPJ5K8YpA7gIZ/giphy.webp',
+  'https://media3.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bnlhZzA3bGo2MDdsbndwN2JjMG1pMDJyanZwcXc1Nnh6MzE3OTl2MCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/zio1xCjXDwlOf9o6bQ/giphy.webp',
+  'https://media4.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bnlhZzA3bGo2MDdsbndwN2JjMG1pMDJyanZwcXc1Nnh6MzE3OTl2MCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/cPBEAhZFxUuW0tgMfj/giphy.webp',
+  'https://media4.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3N2Rsc3VsYnZydWN6a3pwcWN5ZGptbmVkc2d2cjNybmxsYmFkeHR3ZyZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/gHuRHfVXI6O7hBMk9r/giphy.webp',
+  'https://media3.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3NDAzYjlxMHQ0MDMwMG9pZ2lyMHJ2NGRjdjAzcDNwcXcxendzNHlxNyZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/2Bu26jek9MPGusCPFc/giphy.webp',
+  'https://media2.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cnA1cGwyeDVxOXF5dTFmMnRieG94dHM5cGFoeXM4dW9sc2F6aGd4cCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/8OcDLZQfu2dz1Qw6dl/giphy.webp',
+  'https://media2.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cnA1cGwyeDVxOXF5dTFmMnRieG94dHM5cGFoeXM4dW9sc2F6aGd4cCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/h5ZzBCemGga52HSD6T/giphy.webp',
+  'https://media3.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3aHFyamZkenZueHR3b2x5YnQyazJwejV5ZW1zajZia2xpcHI4ZmI1dyZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/gF30ZKxdMVSMnQ8iKY/giphy.webp',
+  'https://media2.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3b2tybnE4ODVmbTIxNzVjZzF6d3YydXp6cmcycnEwYXQ3ZGhmdmM3ZyZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/Ibr95iW6K83nnhXGeJ/200.webp',
+  'https://media2.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3NjZ2bnppMHprcXh5bWh5OXVycjJseHU2a2h5dWVmdHhzeHdoZDUwMCZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/elgV4mxFHQRAyjXMSH/giphy.webp',
 ];
 const _PGP_KEY = 'bw_plant_gifs_custom'; // localStorage key for user-added GIFs
 
