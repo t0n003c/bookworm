@@ -411,6 +411,10 @@ window.crmRenderToolbar = function() {
        </div>
      </div>`;
 
+  // Inject slider style once, then paint the filled track
+  _crmInjectSliderStyle();
+  setTimeout(function() { _crmUpdateSliderFill(safeSize); }, 0);
+
   // Outside-click: close whichever panel is open
   if (_colPanelOpen || _sfgPanelOpen) {
     setTimeout(function() {
@@ -466,15 +470,46 @@ window.crmSetFilterField = function(f) { _crmFilterField = f; _crmFilterValue = 
 window.crmSetFilterValue = function(v) { _crmFilterValue = v; _crmRefreshContent(); };
 window.crmSetGroup       = function(f) { _crmGroupField = f;  _crmRefreshContent(); };
 
-// ── Card size slider ──────────────────────────────────────────────────────────
-// Scales both card width and avatar width proportionally.
-// Step 1 = smallest (~200px card), step 5 = largest (~440px card).
+// ── Card size slider ─────────────────────────────────────────────────────────────
+// Injects custom CSS for the range track + thumb once, then updates
+// the filled-portion gradient whenever the size changes.
+function _crmInjectSliderStyle() {
+  if (document.getElementById('crm-size-slider-style')) return;
+  var s = document.createElement('style');
+  s.id = 'crm-size-slider-style';
+  s.textContent = [
+    '#crm-size-slider{-webkit-appearance:none;appearance:none;',
+    'height:4px;border-radius:9999px;outline:none;border:none;',
+    'background:#e5e7eb;transition:background .15s}',
+    '.dark #crm-size-slider{background:#3f3f46}',
+    '#crm-size-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;',
+    'width:13px;height:13px;border-radius:50%;',
+    'background:#0053e2;cursor:pointer;border:2px solid #fff;',
+    'box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .1s}',
+    '#crm-size-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}',
+    '#crm-size-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;',
+    'background:#0053e2;cursor:pointer;border:2px solid #fff;',
+    'box-shadow:0 1px 3px rgba(0,0,0,.25)}',
+    '#crm-size-slider::-moz-range-track{height:4px;border-radius:9999px;',
+    'background:inherit}',
+  ].join('');
+  document.head.appendChild(s);
+}
+function _crmUpdateSliderFill(step) {
+  var el = document.getElementById('crm-size-slider');
+  if (!el) return;
+  var pct   = ((step - 1) / 4) * 100;
+  var fill  = '#0053e2';
+  var track = document.documentElement.classList.contains('dark') ? '#3f3f46' : '#e5e7eb';
+  el.style.background =
+    'linear-gradient(to right,' + fill + ' ' + pct + '%,' + track + ' ' + pct + '%)';
+}
 window.crmSetCardSize = function(v) {
   window._crmCardSize = parseInt(v, 10);
   localStorage.setItem('crm-card-size', window._crmCardSize);
-  // Sync slider thumb position without re-rendering the toolbar
   var sl = document.getElementById('crm-size-slider');
   if (sl) sl.value = window._crmCardSize;
+  _crmUpdateSliderFill(window._crmCardSize);
   if (typeof _crmRenderGallery === 'function') _crmRenderGallery();
 };
 window.crmClearFilters   = function()  {
