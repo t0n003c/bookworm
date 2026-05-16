@@ -75,11 +75,29 @@
 
     /* ── Mobile / touch overrides ───────────────────────────────────── */
     /* On touch screens there is no pointer hover — action buttons hidden
-       behind group-hover stay permanently invisible.  Force them visible
-       on any device that does not support hover (phones, tablets).        */
+       behind group-hover stay permanently invisible.
+
+       The selector targets every element that is BOTH:
+         • opacity-0  (the initial hidden state), AND
+         • uses a group-hover variant to become visible (group-hover:opacity-100,
+           group-hover/wcard:opacity-100, group-hover/row:opacity-100, etc.)
+
+       This covers in one rule:
+         • HomeSpace widget action bars  (.hw-actions-bar)
+         • Todo item delete buttons      (group-hover/tdi)
+         • Calendar event delete buttons (group-hover/evt)
+         • Reminder delete buttons       (group-hover/rem)
+         • Workspace rename/delete btns  (group-hover/row)
+         • Trash item restore/delete     (group-hover/titem)
+         • Workspace tab close ×         (group-hover)
+         • Attachment delete button      (group-hover)
+
+       False-positive guard: invisible file-inputs use opacity-0 but
+       never have group-hover in their class — they are NOT affected.   */
     @media (hover: none) {
-      /* HomeSpace widget action bar (settings gear + delete + drag handle) */
-      .hw-actions-bar { opacity: 1 !important; }
+      [class*="group-hover"][class*="opacity-0"] {
+        opacity: 1 !important;
+      }
     }
 
     /* Prevent iOS Safari from zooming when an input is focused.

@@ -2284,7 +2284,7 @@
       /* ── Side Panel (default) ──
          On mobile (<768 px) the panel must go fullscreen — there isn't
          enough horizontal space to run list + panel side-by-side.        */
-      if (_isMobile()) {
+      if (window.innerWidth < 768) {
         panel.style.position  = 'fixed';
         panel.style.inset     = '0';
         panel.style.zIndex    = '40';
