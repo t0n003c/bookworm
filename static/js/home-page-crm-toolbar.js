@@ -19,6 +19,8 @@ var _colPanelOpen    = false;
 var _sfgPanelOpen    = false;
 var _crmActiveViewId = null;
 var _crmPendingDelId = null;  // view id awaiting delete confirmation
+window._crmCardSize  = window._crmCardSize
+  || parseInt(localStorage.getItem('crm-card-size') || '3', 10);
 
 // ── Shared escape helper ──────────────────────────────────────────────────────
 function _tbEsc(s) {
@@ -311,6 +313,16 @@ window.crmRenderToolbar = function() {
     'focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer',
   ].join(' ');
 
+  // Card-size slider (gallery only)
+  const isGallery   = (typeof _crmView !== 'undefined' && _crmView === 'gallery');
+  const sizeSlider  = isGallery ? `
+    <div class="flex items-center gap-1 flex-shrink-0" title="Card size">
+      <span class="text-[11px] text-gray-400 dark:text-zinc-500 select-none">&#8862;</span>
+      <input type="range" min="1" max="5" step="1" value="${window._crmCardSize}"
+             oninput="crmSetCardSize(this.value)"
+             style="width:64px;accent-color:#0053e2;cursor:pointer"/>
+    </div>` : '';
+
   // Autofit (table only)
   const isTable    = (typeof _crmView !== 'undefined' && _crmView === 'table');
   const autofitBtn = isTable
@@ -362,6 +374,7 @@ window.crmRenderToolbar = function() {
        ${_buildTabsRow()}
        <div class="flex items-center gap-1.5 flex-shrink-0 ml-auto pl-2
                    border-l border-gray-100 dark:border-zinc-800">
+         ${sizeSlider}
          ${autofitBtn}
          <div class="relative">
            <button onclick="crmToggleSfgPanel(event)" title="Sort, filter and group"
@@ -434,6 +447,15 @@ window.crmSetSort        = function(k) { _crmSortKey = k; _crmRefreshContent(); 
 window.crmSetFilterField = function(f) { _crmFilterField = f; _crmFilterValue = ''; _crmRefreshContent(); };
 window.crmSetFilterValue = function(v) { _crmFilterValue = v; _crmRefreshContent(); };
 window.crmSetGroup       = function(f) { _crmGroupField = f;  _crmRefreshContent(); };
+
+// ── Card size slider ──────────────────────────────────────────────────────────
+// Scales both card width and avatar width proportionally.
+// Step 1 = smallest (~200px card), step 5 = largest (~440px card).
+window.crmSetCardSize = function(v) {
+  window._crmCardSize = parseInt(v, 10);
+  localStorage.setItem('crm-card-size', window._crmCardSize);
+  if (typeof _crmRenderGallery === 'function') _crmRenderGallery();
+};
 window.crmClearFilters   = function()  {
   _crmSortField = ''; _crmSortDir = 'asc'; _crmSortKey = '';
   _crmFilterField = _crmFilterValue = _crmGroupField = '';

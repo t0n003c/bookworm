@@ -117,7 +117,13 @@ function _crmRenderGallery() {
 // ── Style: cards (default) ─────────────────────────────────────────────────────────────────
 // Horizontal cards — square avatar on the left, info stacks on the right.
 // Card height collapses to content — no forced min-height, no wasted space.
+// Card + avatar size is driven by window._crmCardSize (1–5), set by the toolbar slider.
 function _crmRenderGallery_cards(rows, cv) {
+  // Size scale: step 1 = smallest, step 5 = largest
+  var step       = Math.max(1, Math.min(5, window._crmCardSize || 3));
+  var cardMin    = 200 + (step - 1) * 60;  // 200 / 260 / 320 / 380 / 440
+  var cardMax    = cardMin + 40;
+  var avatarPx   = 80  + (step - 1) * 20;  // 80  / 100 / 120 / 140 / 160
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
     var tags   = _galTags(c, cv);
@@ -160,8 +166,8 @@ function _crmRenderGallery_cards(rows, cv) {
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
         <div class="flex">
 
-          <!-- Avatar panel — 160px wide, self-stretch fills card height -->
-          <div class="relative flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800" style="width:160px">
+          <!-- Avatar panel — width driven by slider, self-stretch fills card height -->
+          <div class="relative flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800" style="width:${avatarPx}px">
             ${avatarInner}
             ${budBar}
             ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
@@ -191,8 +197,8 @@ function _crmRenderGallery_cards(rows, cv) {
         </div>
       </div>`;
   }).join('');
-  // auto-fill caps card width at 280px so the info panel never stretches empty
-  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(340px,380px))">${html}</div>`);
+  // auto-fill caps card width so the info panel never stretches empty
+  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(${cardMin}px,${cardMax}px))">${html}</div>`);
 }
 // ── Style: compact (list rows) ────────────────────────────────────────────────
 // Full-width rows — small avatar, name + company + email on one line. Great for
