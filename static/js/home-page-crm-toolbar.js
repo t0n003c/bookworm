@@ -313,23 +313,29 @@ window.crmRenderToolbar = function() {
     'focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer',
   ].join(' ');
 
-  // Card-size slider — hidden only for compact / minimal / profile; shown for everything else
+  // Card-size slider — hidden only for compact / minimal / profile
   const galStyle   = (typeof _crmGalleryStyle !== 'undefined') ? _crmGalleryStyle : 'cards';
   const isGallery  = (typeof _crmView !== 'undefined') && _crmView === 'gallery';
   const noSlider   = galStyle === 'compact' || galStyle === 'minimal' || galStyle === 'profile';
   const safeSize   = Math.max(1, Math.min(5, parseInt(window._crmCardSize, 10) || 3));
   const sizeSlider = (isGallery && !noSlider) ? `
-    <div class="flex items-center gap-1.5 flex-shrink-0"
+    <div class="flex items-center gap-2 flex-shrink-0 px-2 py-1 rounded-lg
+                border border-gray-200 dark:border-zinc-700"
          title="Card size \u2014 double-click to reset">
-      <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor"
-           style="opacity:.35;flex-shrink:0"><rect width="9" height="9" rx="1.5"/></svg>
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
+           class="text-gray-400 dark:text-zinc-500 flex-shrink-0">
+        <rect width="8" height="8" rx="1.5"/>
+      </svg>
       <input id="crm-size-slider" type="range" min="1" max="5" step="1"
              value="${safeSize}"
              oninput="crmSetCardSize(this.value)"
              ondblclick="crmSetCardSize(3)"
-             style="width:68px;accent-color:#0053e2;cursor:pointer;display:block"/>
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"
-           style="opacity:.35;flex-shrink:0"><rect width="13" height="13" rx="2"/></svg>
+             class="block cursor-pointer"
+             style="width:60px;accent-color:#0053e2"/>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"
+           class="text-gray-400 dark:text-zinc-500 flex-shrink-0">
+        <rect width="12" height="12" rx="2"/>
+      </svg>
     </div>` : '';
 
   // Autofit (table only)

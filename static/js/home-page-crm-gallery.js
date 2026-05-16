@@ -12,6 +12,7 @@ var _galDragId = null;
 function crmSetGalleryStyle(s) {
   if (typeof _crmGalleryStyle !== 'undefined') _crmGalleryStyle = s;
   localStorage.setItem('bw_crm_gstyle', s);
+  if (typeof crmRenderToolbar === 'function') crmRenderToolbar(); // show/hide slider
   _crmRenderGallery();
 }
 
@@ -167,9 +168,9 @@ function _crmRenderGallery_cards(rows, cv) {
            ${_galDragAttrs(c, bulkMode)}
            onclick="typeof _crmBulkMode!=='undefined'&&_crmBulkMode?crmBulkToggle(${c.id}):crmOpenDetail(${c.id})">
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
-        <div class="flex">
+        <div class="flex" style="min-height:${rowMinH}px">
 
-          <!-- Avatar panel — explicit min-height forces card height; width from slider -->
+          <!-- Avatar panel — width+height both set inline; flex row min-height does the rest -->
           <div class="relative flex-shrink-0 bg-gray-100 dark:bg-zinc-800"
                style="width:${avatarPx}px;min-height:${rowMinH}px">
             ${avatarInner}
@@ -376,8 +377,9 @@ async function crmQuickCheckbox(e, cid, fid, checked) {
 // Name + company overlaid at the bottom with a dark gradient scrim.
 // Click → crmOpenDetail().
 function _crmRenderGallery_photo(rows, cv) {
-  var step     = Math.max(1, Math.min(5, window._crmCardSize || 3));
-  var cellPx   = [110, 140, 175, 215, 260][step - 1]; // photo cell size px per step
+  // Step 3 = 260px (large default). Steps 1-2 shrink, 4-5 grow.
+  var step   = Math.max(1, Math.min(5, window._crmCardSize || 3));
+  var cellPx = [130, 190, 260, 320, 390][step - 1];
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
     var isSel  = typeof _crmSelected !== 'undefined' && _crmSelected.has(c.id);
