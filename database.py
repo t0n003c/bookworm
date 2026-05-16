@@ -1164,6 +1164,71 @@ async def init_db() -> None:
             "ON public_share_links(object_type, object_id, owner_id)"
         )
 
+        # ── Performance indexes (2026-05-13) ────────────────────────────────────────────────
+        # SQLite does NOT auto-index FK columns — every FK without an explicit index is a
+        # potential full table scan.  These 11 indexes cover the highest-traffic query paths
+        # identified by the perf-detective audit.  All use IF NOT EXISTS — safe to re-run.
+
+        # home_pages — hit on every session page load
+        #   Query shape: WHERE user_id=? AND deleted_at IS NULL ORDER BY sort_order
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_home_pages_user "
+            "ON home_pages(user_id, deleted_at, sort_order)"
+        )
+        # home_widgets — FK; fetched on every home page render
+        #   Query shape: WHERE page_id=? ORDER BY sort_order, id
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_home_widgets_page "
+            "ON home_widgets(page_id, sort_order)"
+        )
+        # notes — primary filter in every search_notes() call
+        #   Query shape: WHERE workspace_id IN (?,?,?) ORDER BY meeting_date DESC
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_workspace "
+            "ON notes(workspace_id, meeting_date DESC)"
+        )
+        # note_categories — reverse direction of the PK (note_id, category_id)
+        #   Needed for bulk-category JOIN in the N+1 fix: WHERE category_id IN (...)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_note_cat_category "
+            "ON note_categories(category_id)"
+        )
+        # note_attributes — FK; called per-note in _fetch_note_attributes
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_note_attrs_note "
+            "ON note_attributes(note_id)"
+        )
+        # note_attachments — FK; called per-note in attachment fetch
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_note_attach_note "
+            "ON note_attachments(note_id)"
+        )
+        # crm_contacts — every CRM page query filters on both page_id and user_id
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crm_contacts_page_user "
+            "ON crm_contacts(page_id, user_id, sort_order)"
+        )
+        # crm_custom_fields — same dual-column filter as contacts
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crm_fields_page_user "
+            "ON crm_custom_fields(page_id, user_id, sort_order)"
+        )
+        # crm_stages — pipeline board renders depend on this
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crm_stages_page_user "
+            "ON crm_stages(page_id, user_id, sort_order)"
+        )
+        # crm_deals — joined with contacts; stage_id also appears in WHERE
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crm_deals_page_user "
+            "ON crm_deals(page_id, user_id, stage_id, sort_order)"
+        )
+        # bud_fertilize_plans — _get_pending_plan() queries bud_id + user_id + completed_at
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bud_plans_bud_user "
+            "ON bud_fertilize_plans(bud_id, user_id, completed_at, planned_date)"
+        )
+
         await db.commit()
 
 @asynccontextmanager
