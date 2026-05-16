@@ -125,8 +125,9 @@ function _crmRenderGallery_cards(rows, cv) {
   var cardMin    = 200 + (step - 1) * 60;  // 200 / 260 / 320 / 380 / 440
   var cardMax    = cardMin + 40;
   var avatarPx   = 80  + (step - 1) * 20;  // 80  / 100 / 120 / 140 / 160
-  var rowMinH    = [56, 72, 90, 112, 136][step - 1]; // min-height of the flex row (drives card height)
-  var emojiPx    = [24, 30, 36, 42, 48][step - 1];   // emoji font-size px
+  var rowMinH    = [56, 72, 90, 112, 136][step - 1]; // flex row min-height
+  var padY       = [6,  10, 14, 20,  28][step - 1];  // info panel vertical padding (always grows)
+  var emojiPx    = [24, 30, 36, 42,  48][step - 1];  // emoji font-size px
   var bulkMode = typeof _crmBulkMode !== 'undefined' && _crmBulkMode;
   var html = rows.map(function(c, i) {
     var tags   = _galTags(c, cv);
@@ -181,8 +182,9 @@ function _crmRenderGallery_cards(rows, cv) {
                 class="w-4 h-4 accent-[#0053e2] cursor-pointer"/></label>` : ''}
           </div>
 
-          <!-- Info — py scales via flex centering, min-height drives vertical size -->
-          <div class="flex-1 pl-5 pr-3 py-2.5 min-w-0 flex flex-col justify-center">
+          <!-- Info — padY scales with step so height grows even with dense content -->
+          <div class="flex-1 min-w-0 flex flex-col justify-center"
+               style="padding:${padY}px 12px ${padY}px 20px">
             <div class="flex items-start justify-between gap-1">
               <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate leading-tight">
                 ${_crmEsc(c.name||'\u2014')}
