@@ -629,10 +629,17 @@ function _crmContactModal(c) {
                    class="hidden" onchange="crmHandlePicFile(this,${c?c.id:0})"/>
           </div>
           <div class="flex-shrink-0">
-            <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Emoji <span class="font-normal text-gray-400">(fallback)</span></label>
-            <input name="avatar_emoji" value="${_crmEsc(c?c.avatar_emoji:'👤')}" maxlength="4"
-              class="w-16 text-center text-2xl border border-gray-300 dark:border-zinc-700 rounded-lg py-1
-                     bg-white dark:bg-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+            <label class="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1">Emoji</label>
+            <button type="button" id="crm-emoji-btn"
+              title="Choose an emoji avatar"
+              class="w-16 h-16 rounded-full flex items-center justify-center text-3xl leading-none
+                     border-2 border-dashed border-gray-300 dark:border-zinc-600
+                     hover:border-[#0053e2] hover:bg-blue-50 dark:hover:bg-zinc-800
+                     transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+              ${_crmEsc(c?.avatar_emoji||'👤')}
+            </button>
+            <input type="hidden" id="crm-emoji-val" name="avatar_emoji"
+              value="${_crmEsc(c?.avatar_emoji||'👤')}"/>
           </div>
         </div>
 
@@ -738,6 +745,7 @@ function _crmContactModal(c) {
       if (form) _crmAttachSlash(form);
     }, 0);
   }
+  setTimeout(_crmInitEmojiPicker, 0);
   if (isEdit && typeof crmLoadReminders === 'function') {
     _crmFields.filter(function(f) { return f.field_type === 'date'; })
       .forEach(function(f) {
@@ -820,6 +828,122 @@ function _crmDupSaveAnyway(contactId, label) {
   // Re-trigger form submit — the override flag will skip the dup check
   var form = document.getElementById('crm-contact-form');
   if (form) form.requestSubmit();
+}
+
+// ── Emoji avatar picker ───────────────────────────────────────────────────────
+function _crmInitEmojiPicker() {
+  var btn    = document.getElementById('crm-emoji-btn');
+  var hidden = document.getElementById('crm-emoji-val');
+  if (!btn || !hidden) return;
+
+  /* Remove stale popup from a previous open */
+  var old = document.getElementById('crm-emoji-pop');
+  if (old) old.remove();
+
+  var SECTIONS = [
+    { label: 'People',    emojis: ['👤','👥','👨','👩','🧑','👴','👵','🧔','👦','👧','👶','🧒','🧑\u200d💼','👨\u200d💼','👩\u200d💼','🧑\u200d💻','👨\u200d💻','👩\u200d💻','🧑\u200d🔬','👨\u200d🔬','👩\u200d🔬','🧑\u200d🎨','👨\u200d🎨','👩\u200d🎨','🧑\u200d🏫','👨\u200d🏫','👩\u200d🏫','🧑\u200d⚕️','👨\u200d⚕️','👩\u200d⚕️'] },
+    { label: 'Work',      emojis: ['💼','🏢','🤝','📊','💰','🎯','🏆','📋','📝','🔑','📞','📧','🖥️','💻','📱','✈️','🚗','📣','🎤','📡'] },
+    { label: 'Emotions',  emojis: ['❤️','💙','💚','💛','💜','🧡','🖤','🤍','🤎','💗','💓','😊','😄','😎','🥳','🤩','🤗','🙏','👍','💪','🌟','⭐','🔥','🎉'] },
+    { label: 'Animals',   emojis: ['🦁','🐯','🐻','🦊','🐼','🐨','🐸','🐙','🦋','🦅','🦜','🐬','🐺','🦒','🦓','🐘','🦔','🐝'] },
+  ];
+
+  var dark = document.documentElement.classList.contains('dark');
+
+  /* Build popup on body so modal overflow-hidden won't clip it */
+  var pop = document.createElement('div');
+  pop.id = 'crm-emoji-pop';
+  Object.assign(pop.style, {
+    position: 'fixed', zIndex: '9999', display: 'none',
+    width: '272px', maxHeight: '300px', overflowY: 'auto',
+    background: dark ? '#18181b' : '#fff',
+    border:     dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    borderRadius: '12px', padding: '10px',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
+  });
+
+  SECTIONS.forEach(function(sec) {
+    var hdr = document.createElement('p');
+    hdr.textContent = sec.label;
+    Object.assign(hdr.style, {
+      fontSize: '10px', fontWeight: '600', letterSpacing: '.05em',
+      textTransform: 'uppercase', color: dark ? '#71717a' : '#9ca3af',
+      margin: '4px 0 4px',
+    });
+    pop.appendChild(hdr);
+
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:4px';
+
+    sec.emojis.forEach(function(em) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = em;
+      Object.assign(b.style, {
+        fontSize: '20px', lineHeight: '1', padding: '4px', borderRadius: '6px',
+        border: 'none', background: 'transparent', cursor: 'pointer',
+      });
+      b.addEventListener('mouseenter', function() { b.style.background = dark ? '#3f3f46' : '#eff6ff'; });
+      b.addEventListener('mouseleave', function() { b.style.background = 'transparent'; });
+      b.addEventListener('mousedown', function(e) {
+        e.preventDefault(); // don't steal focus from the form
+        _crmEmojiSelect(em);
+        _crmEmojiClose();
+      });
+      grid.appendChild(b);
+    });
+    pop.appendChild(grid);
+  });
+
+  document.body.appendChild(pop);
+
+  /* ── Helpers ── */
+  function _crmEmojiSelect(emoji) {
+    hidden.value = emoji;
+    btn.textContent = emoji;
+    /* Also update the big photo-preview circle if it's still showing the emoji span */
+    var pic = document.getElementById('crm-pic-img');
+    if (pic && pic.tagName === 'SPAN') pic.textContent = emoji;
+  }
+
+  function _crmEmojiOpen() {
+    var rect = btn.getBoundingClientRect();
+    pop.style.display = 'block';
+    /* Flip above if too close to viewport bottom */
+    var spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < 320) {
+      pop.style.top  = (rect.top - pop.offsetHeight - 6) + 'px';
+    } else {
+      pop.style.top  = (rect.bottom + 6) + 'px';
+    }
+    pop.style.left = rect.left + 'px';
+    btn.setAttribute('aria-expanded', 'true');
+    setTimeout(function() {
+      document.addEventListener('mousedown', _outsideClick);
+      document.addEventListener('keydown',   _escKey);
+    }, 0);
+  }
+
+  function _crmEmojiClose() {
+    pop.style.display = 'none';
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', _outsideClick);
+    document.removeEventListener('keydown',   _escKey);
+  }
+
+  function _outsideClick(e) {
+    if (!pop.contains(e.target) && e.target !== btn) _crmEmojiClose();
+  }
+
+  function _escKey(e) {
+    if (e.key === 'Escape') { e.stopPropagation(); _crmEmojiClose(); }
+  }
+
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (pop.style.display === 'none') _crmEmojiOpen(); else _crmEmojiClose();
+  });
 }
 
 async function crmSaveContact(e, contactId) {
@@ -1165,6 +1289,8 @@ function _crmShowModal(html) {
 
 function crmCloseModal() {
   if (typeof _slashHide === 'function') _slashHide();
+  var ep = document.getElementById('crm-emoji-pop');
+  if (ep) ep.remove();
   var wrap = document.getElementById('crm-modal');
   var bd   = document.getElementById('crm-backdrop');
   var body = document.getElementById('crm-modal-body');
