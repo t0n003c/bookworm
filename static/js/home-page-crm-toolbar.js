@@ -316,22 +316,15 @@ window.crmRenderToolbar = function() {
   // Card-size slider (gallery only)
   const isGallery   = (typeof _crmView !== 'undefined' && _crmView === 'gallery');
   const sizeSlider  = isGallery ? `
-    <div class="flex items-center gap-1.5 flex-shrink-0"
-         style="background:var(--sl-bg,#f3f4f6);border-radius:10px;padding:4px 8px"
-         title="Card size &mdash; double-click to reset">
-      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 16 16" fill="currentColor"
-           style="color:#9ca3af;flex-shrink:0">
-        <rect x="3" y="3" width="10" height="10" rx="2"/>
-      </svg>
-      <input type="range" min="1" max="5" step="1" value="${window._crmCardSize}"
+    <div class="flex items-center gap-1 flex-shrink-0"
+         title="Card size — double-click to reset">
+      <span style="font-size:9px;opacity:0.35;line-height:1;color:inherit">&#9632;</span>
+      <input id="crm-size-slider" type="range" min="1" max="5" step="1"
+             value="${window._crmCardSize}"
              oninput="crmSetCardSize(this.value)"
              ondblclick="crmSetCardSize(3)"
-             style="width:72px;accent-color:#0053e2;cursor:pointer;
-                    height:4px;outline:none;border:none;background:transparent"/>
-      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="currentColor"
-           style="color:#9ca3af;flex-shrink:0">
-        <rect x="1" y="1" width="14" height="14" rx="2"/>
-      </svg>
+             style="width:64px;accent-color:#0053e2;cursor:pointer;display:block"/>
+      <span style="font-size:14px;opacity:0.35;line-height:1;color:inherit">&#9632;</span>
     </div>` : '';
 
   // Autofit (table only)
@@ -465,6 +458,9 @@ window.crmSetGroup       = function(f) { _crmGroupField = f;  _crmRefreshContent
 window.crmSetCardSize = function(v) {
   window._crmCardSize = parseInt(v, 10);
   localStorage.setItem('crm-card-size', window._crmCardSize);
+  // Sync slider thumb position without re-rendering the toolbar
+  var sl = document.getElementById('crm-size-slider');
+  if (sl) sl.value = window._crmCardSize;
   if (typeof _crmRenderGallery === 'function') _crmRenderGallery();
 };
 window.crmClearFilters   = function()  {
