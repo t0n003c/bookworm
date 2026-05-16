@@ -72,6 +72,28 @@
     /* Firefox */
     * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
     .dark * { scrollbar-color: #3f3f46 transparent; }
+
+    /* ── Mobile / touch overrides ───────────────────────────────────── */
+    /* On touch screens there is no pointer hover — action buttons hidden
+       behind group-hover stay permanently invisible.  Force them visible
+       on any device that does not support hover (phones, tablets).        */
+    @media (hover: none) {
+      /* HomeSpace widget action bar (settings gear + delete + drag handle) */
+      .hw-actions-bar { opacity: 1 !important; }
+    }
+
+    /* Prevent iOS Safari from zooming when an input is focused.
+       Safari zooms whenever the focused input has font-size < 16px;
+       Tailwind text-sm = 14px triggers this on every text field.
+       We clamp to 1rem (16px) on narrow viewports only — desktop is
+       unaffected and the visual difference is imperceptible.              */
+    @media (max-width: 767px) {
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+      textarea,
+      select {
+        font-size: 1rem !important;
+      }
+    }
   </style>
   <link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">
   <link rel="stylesheet" href="/static/css/bw-content.css?v={{ static_v }}">

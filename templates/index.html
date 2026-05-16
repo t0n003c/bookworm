@@ -828,7 +828,7 @@
   </aside>
 
   <!-- MAIN NOTE LIST -->
-  <main class="flex-1 main-scroll bg-gray-50 dark:bg-zinc-950 px-6 py-6" id="main-content" aria-label="Note list">
+  <main class="flex-1 main-scroll bg-gray-50 dark:bg-zinc-950 px-3 md:px-6 py-6" id="main-content" aria-label="Note list">
 
     <!-- workspace breadcrumb (only visible for sub-workspaces) -->
     <div id="ws-breadcrumb">
@@ -2281,10 +2281,22 @@
       dp.style.background   = isDark ? '#18181b' : '#ffffff';
 
     } else {
-      /* ── Side Panel (default) ── */
-      const w = wide ? '56rem' : '28rem';
-      panel.style.width  = w;
-      dp.style.minWidth  = w;
+      /* ── Side Panel (default) ──
+         On mobile (<768 px) the panel must go fullscreen — there isn't
+         enough horizontal space to run list + panel side-by-side.        */
+      if (_isMobile()) {
+        panel.style.position  = 'fixed';
+        panel.style.inset     = '0';
+        panel.style.zIndex    = '40';
+        panel.style.width     = '100%';
+        panel.style.height    = '100%';
+        panel.style.overflowY = 'auto';
+        dp.classList.add('max-w-4xl', 'mx-auto');
+      } else {
+        const w = wide ? '56rem' : '28rem';
+        panel.style.width  = w;
+        dp.style.minWidth  = w;
+      }
     }
 
     // Center mode: #panel is a full-viewport flex container (z:39) that sits
