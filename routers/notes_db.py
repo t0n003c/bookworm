@@ -182,12 +182,43 @@ async def search_notes(
     async with get_db() as db:
         cursor = await db.execute(sql, params)
         rows = await cursor.fetchall()
-        notes = []
-        for row in rows:
-            note = dict(row)
-            note["categories"] = await _fetch_note_categories(db, note["id"])
-            note["attributes"] = await _fetch_note_attributes(db, note["id"])
-            notes.append(note)
+        if not rows:
+            return []
+        notes = [dict(row) for row in rows]
+        note_ids = [n["id"] for n in notes]
+        ph = ",".join("?" * len(note_ids))
+
+        # Bulk-fetch ALL categories for every note in one query, then stitch.
+        # Replaces N per-note _fetch_note_categories() calls → 1 query total.
+        cat_cur = await db.execute(
+            f"""SELECT nc.note_id, c.id, c.name, c.color, c.description, c.created_at
+                FROM note_categories nc
+                JOIN categories c ON c.id = nc.category_id
+                WHERE nc.note_id IN ({ph})""",
+            note_ids,
+        )
+        cat_map: dict[int, list] = {}
+        for r in await cat_cur.fetchall():
+            r = dict(r)
+            nid = r.pop("note_id")
+            cat_map.setdefault(nid, []).append(r)
+
+        # Bulk-fetch ALL attributes in one query, then stitch.
+        # Replaces N per-note _fetch_note_attributes() calls → 1 query total.
+        attr_cur = await db.execute(
+            f"SELECT note_id, id, key, value, attr_def_id"
+            f" FROM note_attributes WHERE note_id IN ({ph})",
+            note_ids,
+        )
+        attr_map: dict[int, list] = {}
+        for r in await attr_cur.fetchall():
+            r = dict(r)
+            nid = r.pop("note_id")
+            attr_map.setdefault(nid, []).append(r)
+
+        for note in notes:
+            note["categories"] = cat_map.get(note["id"], [])
+            note["attributes"] = attr_map.get(note["id"], [])
         return notes
 
 

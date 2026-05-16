@@ -76,15 +76,38 @@ async def list_buds(widget_id: int, user_id: int) -> list[dict]:
             (widget_id, user_id),
         )
         rows = await cur.fetchall()
+        if not rows:
+            return []
 
-    buds = []
-    for row in rows:
-        b = dict(row)
+        buds = [dict(r) for r in rows]
+        bud_ids = [b["id"] for b in buds]
+        ph = ",".join("?" * len(bud_ids))
+
+        # Bulk-fetch all pending plans in ONE query instead of N get_db() calls.
+        # Only picks the earliest pending plan per bud (MIN planned_date).
+        plan_cur = await db.execute(
+            f"""SELECT bfp.*
+                FROM bud_fertilize_plans bfp
+                INNER JOIN (
+                    SELECT bud_id, MIN(planned_date) AS earliest
+                    FROM bud_fertilize_plans
+                    WHERE bud_id IN ({ph}) AND user_id=? AND completed_at IS NULL
+                    GROUP BY bud_id
+                ) best ON best.bud_id = bfp.bud_id AND best.earliest = bfp.planned_date
+                WHERE bfp.completed_at IS NULL AND bfp.user_id=?""",
+            (*bud_ids, user_id, user_id),
+        )
+        plan_map: dict[int, dict] = {}
+        for r in await plan_cur.fetchall():
+            r = dict(r)
+            # Only keep the first match per bud_id (MIN already picked it)
+            plan_map.setdefault(r["bud_id"], r)
+
+    for b in buds:
         b["health"] = _apply_decay(b["health"], b["see_every_days"],
                                    b["health_updated_at"])
         b["health_tier"] = _health_tier(b["health"])
-        b["pending_plan"] = await _get_pending_plan(b["id"], user_id)
-        buds.append(b)
+        b["pending_plan"] = plan_map.get(b["id"])
     return buds
 
 

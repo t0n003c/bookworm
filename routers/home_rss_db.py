@@ -136,57 +136,68 @@ async def sync_widget_feeds_to_rss_pages(
     - New feeds added directly in the reader page never flow back to the widget.
 
     Idempotent: safe to call on every widget create / config save.
+
+    Performance: previously opened a new get_db() connection per feed per page
+    (M × N connections).  Now uses ONE connection per RSS page: bulk-reads
+    existing URLs, computes new feeds in Python, inserts all via executemany.
     """
     if not widget_feeds:
         return
 
     async with get_db() as db:
-        # Find all RSS reader pages belonging to this user.
+        # 1. Find all RSS reader pages for this user in one shot.
         cur = await db.execute(
             "SELECT id FROM home_pages WHERE user_id=? AND page_type='rss'",
             (user_id,),
         )
         rss_pages = [r[0] for r in await cur.fetchall()]
 
-    if not rss_pages:
-        return
+        if not rss_pages:
+            return
 
-    for page_id in rss_pages:
-        existing = await get_page_feeds(page_id, user_id)
-        existing_urls = {f["url"] for f in existing}
+        for page_id in rss_pages:
+            # 2. One query to get existing URLs + current max sort_order.
+            cur = await db.execute(
+                "SELECT url, COALESCE(MAX(sort_order), 0) AS max_sort "
+                "FROM rss_page_feeds "
+                "WHERE page_id=? AND user_id=?",
+                (page_id, user_id),
+            )
+            agg_row = await cur.fetchone()
+            # agg_row always has a row (COUNT/MAX on empty = NULL/0)
+            max_sort = agg_row["max_sort"] if agg_row else 0
 
-        # Determine how many feeds already exist so we pick a good palette color.
-        offset = len(existing_urls)
+            cur = await db.execute(
+                "SELECT url FROM rss_page_feeds WHERE page_id=? AND user_id=?",
+                (page_id, user_id),
+            )
+            existing_urls = {r[0] for r in await cur.fetchall()}
+            offset = len(existing_urls)
 
-        for i, feed in enumerate(widget_feeds):
-            url = (feed.get("url") or "").strip()
-            if not url or url in existing_urls:
-                continue  # skip blank or already-present feeds
+            # 3. Build the batch of rows to insert in Python (no extra queries).
+            to_insert: list[tuple] = []
+            seen_in_batch: set[str] = set()
+            sort = max_sort
+            for i, feed in enumerate(widget_feeds):
+                url = (feed.get("url") or "").strip()
+                if not url or url in existing_urls or url in seen_in_batch:
+                    continue
+                label = (feed.get("label") or "").strip()
+                color = (feed.get("color") or "").strip() or _COLORS[(offset + i) % len(_COLORS)]
+                sort += 1
+                to_insert.append((page_id, user_id, url, label, color, sort, "", widget_id))
+                seen_in_batch.add(url)
 
-            label = (feed.get("label") or "").strip()
-            color = (feed.get("color") or "").strip()
-            if not color:
-                color = _COLORS[(offset + i) % len(_COLORS)]
-
-            async with get_db() as db:
-                cur = await db.execute(
-                    "SELECT COALESCE(MAX(sort_order), 0) + 1 "
-                    "FROM rss_page_feeds WHERE page_id=? AND user_id=?",
-                    (page_id, user_id),
-                )
-                row = await cur.fetchone()
-                sort = row[0] if row else 1
-
-                await db.execute(
+            # 4. Single executemany — one round-trip for the entire batch.
+            if to_insert:
+                await db.executemany(
                     "INSERT OR IGNORE INTO rss_page_feeds"
                     "(page_id, user_id, url, label, color, sort_order, category, source_widget_id)"
                     " VALUES (?,?,?,?,?,?,?,?)",
-                    (page_id, user_id, url, label, color, sort, '', widget_id),
+                    to_insert,
                 )
-                await db.commit()
 
-            existing_urls.add(url)  # prevent double-insert within same call
-            offset += 1
+        await db.commit()
 
 
 async def get_all_rss_widget_feeds(user_id: int) -> list[dict]:
