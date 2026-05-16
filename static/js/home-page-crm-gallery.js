@@ -191,7 +191,8 @@ function _crmRenderGallery_cards(rows, cv) {
         </div>
       </div>`;
   }).join('');
-  _crmSetMain(`<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">${html}</div>`);
+  // auto-fill caps card width at 280px so the info panel never stretches empty
+  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(240px,280px))">${html}</div>`);
 }
 // ── Style: compact (list rows) ────────────────────────────────────────────────
 // Full-width rows — small avatar, name + company + email on one line. Great for
