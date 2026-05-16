@@ -160,8 +160,8 @@ function _crmRenderGallery_cards(rows, cv) {
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
         <div class="flex">
 
-          <!-- Square avatar — w-32, self-stretch so it fills card height -->
-          <div class="relative w-32 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
+          <!-- Square avatar — w-40, self-stretch so it fills card height -->
+          <div class="relative w-40 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
             ${avatarInner}
             ${budBar}
             ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
@@ -192,7 +192,7 @@ function _crmRenderGallery_cards(rows, cv) {
       </div>`;
   }).join('');
   // auto-fill caps card width at 280px so the info panel never stretches empty
-  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(300px,340px))">${html}</div>`);
+  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(340px,380px))">${html}</div>`);
 }
 // ── Style: compact (list rows) ────────────────────────────────────────────────
 // Full-width rows — small avatar, name + company + email on one line. Great for
