@@ -160,8 +160,8 @@ function _crmRenderGallery_cards(rows, cv) {
         <div class="h-[3px] bg-gradient-to-r from-[#0053e2] to-[#ffc220]"></div>
         <div class="flex">
 
-          <!-- Square avatar — w-40, self-stretch so it fills card height -->
-          <div class="relative w-40 flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800">
+          <!-- Avatar panel — 160px wide, self-stretch fills card height -->
+          <div class="relative flex-shrink-0 self-stretch bg-gray-100 dark:bg-zinc-800" style="width:160px">
             ${avatarInner}
             ${budBar}
             ${bulkMode ? `<label onclick="event.stopPropagation()" class="absolute top-2 left-2 z-10">
