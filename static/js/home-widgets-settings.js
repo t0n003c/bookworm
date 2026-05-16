@@ -1240,7 +1240,11 @@ async function selectPageLayout(cols) {
   const grid = document.querySelector(`[data-page-id="${pageId}"] [data-col-count]`);
   if (grid) {
     grid.dataset.colCount = cols;
-    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    // Apply the responsive mobile cap — on phones the grid will show at most 3
+    // columns; on tablets at most 4. The raw user choice (cols) is still saved
+    // to the backend so their desktop preference is preserved.
+    var eff = (typeof window._wpEffCols === 'function') ? window._wpEffCols(cols) : cols;
+    grid.style.gridTemplateColumns = `repeat(${eff}, minmax(0, 1fr))`;
     // Update col max for any open size pickers
   }
 

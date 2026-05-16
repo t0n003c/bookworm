@@ -1353,29 +1353,57 @@ const _NEW_NOTE_HTML = `<button
 function _setTopActionAddWidget(pageId) {
   const area = document.getElementById('top-action-area');
   if (!area) return;
-  area.innerHTML = `<div class="flex items-center gap-2">
+  // bw-hpb-btn / bw-hpb-label are CSS classes defined in index.html <style>:
+  // on phones (<640 px) they hide the label text + tighten button padding so
+  // only the + icon shows, keeping the header from overflowing.
+  area.innerHTML = `<div class="flex items-center gap-1.5">
     <button onclick="openAddWidget(${pageId})"
-      class="flex items-center gap-2 bg-wblue text-white font-semibold px-4 py-2 rounded-lg
-             hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue"
+      class="bw-hpb-btn flex items-center gap-1.5 bg-wblue text-white font-semibold
+             px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm
+             focus:outline-none focus:ring-2 focus:ring-wblue"
       aria-label="Add widget">
-      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+      <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+           stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2.5" d="M12 4v16m8-8H4"/>
       </svg>
-      Add Widget
+      <span class="bw-hpb-label">Add Widget</span>
     </button>
     <button onclick="openPageLayout(${pageId})"
-      title="Page layout settings"
+      title="Page layout"
       class="p-2 rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-500
              hover:text-wblue hover:border-wblue dark:text-zinc-400 dark:hover:border-wblue
              transition focus:outline-none focus:ring-2 focus:ring-wblue"
       aria-label="Page layout settings">
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
            stroke-width="2" aria-hidden="true">
-        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
       </svg>
     </button>
   </div>`;
+}
+
+// ── Mobile widget-grid column cap ─────────────────────────────────────────────
+// Returns the effective column count given the user's saved preference.
+// Caps at 3 on phones (< 640 px) and 4 on tablets (640–1023 px) so widgets
+// never get squished to < ~100 px each, regardless of the desktop setting.
+// Exposed as window._wpEffCols so home-widgets-settings.js can call it too.
+window._wpEffCols = function(saved) {
+  var w   = window.innerWidth;
+  var cap = (w < 640) ? 3 : (w < 1024) ? 4 : 99;
+  return Math.min(saved, cap);
+};
+
+// Apply the responsive col cap to every widget grid currently in the DOM.
+function _applyWidgetGridColCap() {
+  document.querySelectorAll('[data-col-count]').forEach(function(grid) {
+    var saved = parseInt(grid.dataset.colCount || '3', 10);
+    var eff   = window._wpEffCols(saved);
+    grid.style.gridTemplateColumns = 'repeat(' + eff + ', minmax(0, 1fr))';
+  });
 }
 
 function _setTopActionNewNote() {
@@ -1814,6 +1842,9 @@ function initHomeWidgets() {
     const pageId = canvas.dataset.pageId;
     const grid   = canvas.querySelector('[id^="widget-grid-"]');
     if (grid) _initDnD(grid, pageId);
+    // Clamp columns to the mobile / tablet cap immediately after rendering
+    // so a 5-col desktop setting doesn’t squish widgets on a phone.
+    _applyWidgetGridColCap();
   }
   // Text widgets — render markdown and attach editor
   if (typeof initTextWidgets === 'function') initTextWidgets();
@@ -1843,7 +1874,16 @@ function initHomeWidgets() {
 document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('home-canvas')) initHomeWidgets();
 
-  // ── Restore HomeSpace page across browser F5 refresh ──────────────────
+  // Reapply the mobile column cap whenever the viewport resizes
+  // (e.g. phone rotates landscape, or DevTools is resized).
+  // Debounced at 150ms so we don’t thrash the style on every pixel.
+  var _colCapTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(_colCapTimer);
+    _colCapTimer = setTimeout(_applyWidgetGridColCap, 150);
+  });
+
+  // ── Restore HomeSpace page across browser F5 refresh ─────────────────────────
   // sessionStorage survives F5 but is cleared when the tab is closed.
   // showHomePage() writes it; homeExit() clears it.
   const _hpRaw = sessionStorage.getItem('bw-hp');

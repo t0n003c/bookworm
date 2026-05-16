@@ -1,5 +1,19 @@
 {% extends "base.html" %}
 {% block body %}
+<style>
+/* ── Mobile top-bar responsive helpers ────────────────────────────────────
+   .bw-hpb-label : text inside "Add Widget" button — hidden on phones so only
+                   the + icon shows, keeping the header from overflowing.
+   .bw-hpb-btn   : the Add Widget button itself — icon-only padding on phones.
+   .bw-wordmark  : " BookWorm" word — hidden on phones; emoji stays visible.
+   Keep in sync with _setTopActionAddWidget() in home-widgets.js
+   ──────────────────────────────────────────────────────────────────────── */
+@media (max-width: 639px) {
+  .bw-hpb-label  { display: none; }
+  .bw-hpb-btn    { padding-left: .5rem !important; padding-right: .5rem !important; }
+  .bw-wordmark   { display: none; }
+}
+</style>
 
 <!-- ===== TOP NAV ===== -->
 <header class="h-16 bg-wblue flex items-center px-4 shadow-md fixed top-0 left-0 right-0 z-30 gap-3">
@@ -18,7 +32,7 @@
     </svg>
   </button>
 
-  <span class="text-2xl font-bold text-white tracking-tight flex-shrink-0">🪱 BookWorm</span>
+  <span class="text-2xl font-bold text-white tracking-tight flex-shrink-0" aria-label="BookWorm">🪱<span class="bw-wordmark"> BookWorm</span></span>
 
   <!-- Workspace tab strip -->
   <div id="workspace-tabs"
