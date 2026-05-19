@@ -322,7 +322,7 @@ window.crmRenderToolbar = function() {
   const _isDark    = document.documentElement.classList.contains('dark');
   const _iconCol   = _isDark ? '#71717a' : '#9ca3af';
   const sizeSlider = (isGallery && !noSlider) ? `
-    <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"
+    <div class="hidden sm:flex items-center flex-shrink-0" style="gap:4px"
          title="Card size \u2014 double-click to reset">
       <span style="font-size:0.75rem;color:${_iconCol};user-select:none;line-height:1">&#8722;</span>
       <input id="crm-size-slider" type="range" min="1" max="5" step="1"
@@ -349,7 +349,15 @@ window.crmRenderToolbar = function() {
   if (_crmSortField)   sfgParts.push('Sort');
   if (_crmFilterField) sfgParts.push('Filter');
   if (_crmGroupField)  sfgParts.push('Group');
-  const sfgLabel   = sfgParts.length ? '\u2699\ufe0e ' + sfgParts.join(' \xb7 ') : '\u2699\ufe0e View';
+  // Filter-funnel icon (always visible) + text label (hidden on mobile)
+  const _filterSvg = '<svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24"'
+    + ' stroke="currentColor" stroke-width="2">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707'
+    + 'l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707'
+    + 'L3.293 7.293A1 1 0 013 6.586V4z"/></svg>';
+  const sfgTextLbl = sfgParts.length ? sfgParts.join(' \xb7 ') : 'View';
+  const sfgLabel   = _filterSvg + '<span class="hidden sm:inline">' + sfgTextLbl + '</span>';
   const sfgBtnCls  = sfgActive
     ? 'border-[#0053e2] text-[#0053e2] bg-blue-50 dark:bg-blue-900/20'
     : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2]';
@@ -388,15 +396,22 @@ window.crmRenderToolbar = function() {
          ${autofitBtn}
          <div class="relative">
            <button onclick="crmToggleSfgPanel(event)" title="Sort, filter and group"
-             class="text-[11px] px-2.5 py-1 rounded-lg border transition ${sfgBtnCls}">
+             class="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition ${sfgBtnCls}">
              ${sfgLabel}
            </button>
            ${_buildSfgPanel(sortFieldDefs, filterDefs, filterVals, groupDefs, sc)}
          </div>
          <div class="relative">
            <button onclick="crmToggleColPanel(event)" title="Show/hide columns"
-             class="text-[11px] px-2.5 py-1 rounded-lg border transition ${colBtnCls}">
-             \u2630 Columns
+             class="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition ${colBtnCls}">
+             <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor" stroke-width="2">
+               <path stroke-linecap="round" stroke-linejoin="round"
+                 d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2
+                    m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2
+                    m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+             </svg>
+             <span class="hidden sm:inline">Columns</span>
            </button>
            ${colsPanel}
          </div>

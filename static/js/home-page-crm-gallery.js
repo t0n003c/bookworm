@@ -204,8 +204,13 @@ function _crmRenderGallery_cards(rows, cv) {
         </div>
       </div>`;
   }).join('');
-  // auto-fill caps card width so the info panel never stretches empty
-  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(${cardMin}px,${cardMax}px))">${html}</div>`);
+  // auto-fill caps card width so the info panel never stretches empty.
+  // On mobile (<640 px) a single full-width column is forced regardless of
+  // the size slider — the slider is hidden on mobile anyway.
+  var _galCols = window.innerWidth < 640
+    ? '1fr'
+    : 'repeat(auto-fill,minmax(' + cardMin + 'px,' + cardMax + 'px))';
+  _crmSetMain(`<div class="grid gap-3" style="grid-template-columns:${_galCols}">${html}</div>`);;
 }
 // ── Style: compact (list rows) ────────────────────────────────────────────────
 // Full-width rows — small avatar, name + company + email on one line. Great for
@@ -436,5 +441,8 @@ function _crmRenderGallery_photo(rows, cv) {
       </div>`;
   }).join('');
 
-  _crmSetMain(`<div class="grid gap-2" style="grid-template-columns:repeat(auto-fill,minmax(${cellPx}px,${cellPx}px))">${html}</div>`);
+  var _photoCols = window.innerWidth < 640
+    ? '1fr'
+    : 'repeat(auto-fill,minmax(' + cellPx + 'px,' + cellPx + 'px))';
+  _crmSetMain(`<div class="grid gap-2" style="grid-template-columns:${_photoCols}">${html}</div>`);
 }
