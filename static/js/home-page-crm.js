@@ -74,6 +74,7 @@ function initCrmPage(pid) {
     .then(function(map){ window._crmBudHealthMap = map || {}; _crmRender(); })
     .catch(function(){ window._crmBudHealthMap = {}; });
   _crmLoadAll();
+  if (typeof _crmInitLongPress   === 'function') _crmInitLongPress();
   if (typeof initCrmRemindersPolling === 'function') initCrmRemindersPolling();
 }
 
@@ -144,45 +145,112 @@ function _crmRender() {
 }
 
 // ── View toggle ──────────────────────────────────────────────────────
+// Mobile (<640 px): one icon button + stacked popup (view + gallery style).
+// Desktop: the original select dropdowns. Select/bulk button removed
+//          everywhere — long-press on any card activates multi-select.
 function _crmRenderViewToggle() {
   const el = document.getElementById('crm-view-toggle');
   if (!el) return;
+
   const views = [
-    ['table',    '☰ Table'],
-    ['gallery',  '⊞ Gallery'],
-    ['pipeline', '⬜ Pipeline'],
-    ['calendar', '📅 Calendar'],
+    ['table',    '☰', 'Table'],
+    ['gallery',  '⊞', 'Gallery'],
+    ['pipeline', '⬜', 'Pipeline'],
+    ['calendar', '📅', 'Calendar'],
   ];
-  const opts = views.map(([v, l]) =>
-    `<option value="${v}" ${_crmView === v ? 'selected' : ''}>${l}</option>`
-  ).join('');
-  // Bulk "Select" toggle — only relevant for table & gallery
-  const canBulk = (_crmView === 'table' || _crmView === 'gallery');
-  const bulkBtn = canBulk
-    ? `<button onclick="crmToggleBulkMode()"
-         class="text-[11px] px-2.5 py-1 rounded-lg border transition
-                ${_crmBulkMode
-                    ? 'bg-[#ffc220] text-gray-900 border-[#ffc220]'
-                    : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-[#ffc220]'}"
-       >☑ Select</button>`
-    : '';
-  const galStyles = [['cards','⊟ Cards'],['compact','☰ Compact'],['profile','◉ Profile'],['minimal','⧡ Minimal'],['photo','◼ Photo']];
-  const galPicker = _crmView === 'gallery'
-    ? `<select onchange="crmSetGalleryStyle(this.value)"
-         class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600
-                bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-         ${galStyles.map(([v,l])=>`<option value="${v}" ${_crmGalleryStyle===v?'selected':''}>${l}</option>`).join('')}
-       </select>`
-    : '';
-  el.innerHTML =
-    `<select onchange="crmSetView(this.value)"
-       class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600
-              bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-              focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-       ${opts}
-     </select>${galPicker ? ' ' + galPicker : ''}${canBulk ? ' ' + bulkBtn : ''}`;
+  const galStyles = [
+    ['cards',   '⊟', 'Cards'],
+    ['compact', '☰', 'Compact'],
+    ['profile', '◉', 'Profile'],
+    ['minimal', '⧡', 'Minimal'],
+    ['photo',   '◼', 'Photo'],
+  ];
+
+  const isMobile = window.innerWidth < 640;
+
+  if (isMobile) {
+    // ── Mobile: icon button + floating popup ─────────────────────────
+    const cur    = views.find(function(v){ return v[0] === _crmView; }) || views[0];
+    const popId  = 'crm-view-popup';
+    const base   = 'flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg text-left transition ';
+    const on     = 'bg-[#0053e2]/10 text-[#0053e2] dark:text-blue-400 font-semibold';
+    const off    = 'text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800';
+    const chk    = '<span class="ml-auto text-[#0053e2]">✓</span>';
+
+    const viewRows = views.map(function(v) {
+      const a = _crmView === v[0];
+      return '<button onclick="crmSetView(\'' + v[0] + '\')" class="' + base + (a ? on : off) + '">'
+           + '<span>' + v[1] + '</span><span>' + v[2] + '</span>' + (a ? chk : '') + '</button>';
+    }).join('');
+
+    const galRows = _crmView === 'gallery'
+      ? '<div class="mt-1 pt-1 border-t border-gray-100 dark:border-zinc-700">'
+        + '<div class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Style</div>'
+        + galStyles.map(function(s) {
+            const a = _crmGalleryStyle === s[0];
+            return '<button onclick="crmSetGalleryStyle(\'' + s[0] + '\')" class="' + base + (a ? on : off) + '">'
+                 + '<span>' + s[1] + '</span><span>' + s[2] + '</span>' + (a ? chk : '') + '</button>';
+          }).join('') + '</div>'
+      : '';
+
+    el.innerHTML =
+      '<div class="relative">'
+      + '<button onclick="crmToggleViewPopup()" aria-haspopup="true" title="View options"'
+      + ' class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border'
+      + ' border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-200'
+      + ' text-xs font-medium transition hover:border-[#0053e2] hover:text-[#0053e2]">'
+      + cur[1]
+      + '<svg class="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">'
+      + '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>'
+      + '</button>'
+      + '<div id="' + popId + '" class="hidden absolute right-0 top-full mt-1 w-44'
+      + ' bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700'
+      + ' rounded-xl shadow-xl z-50 py-1 overflow-hidden">' + viewRows + galRows + '</div>'
+      + '</div>';
+  } else {
+    // ── Desktop: original select dropdowns ───────────────────────────
+    const opts = views.map(function(v) {
+      return '<option value="' + v[0] + '" ' + (_crmView === v[0] ? 'selected' : '') + '>' + v[2] + '</option>';
+    }).join('');
+    const galPicker = _crmView === 'gallery'
+      ? '<select onchange="crmSetGalleryStyle(this.value)"'
+        + ' class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600'
+        + ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200'
+        + ' focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">'
+        + galStyles.map(function(s) {
+            return '<option value="' + s[0] + '" ' + (_crmGalleryStyle === s[0] ? 'selected' : '') + '>' + s[2] + '</option>';
+          }).join('') + '</select>'
+      : '';
+    el.innerHTML =
+      '<select onchange="crmSetView(this.value)"'
+      + ' class="text-[11px] px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-600'
+      + ' bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200'
+      + ' focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">'
+      + opts + '</select>' + (galPicker ? ' ' + galPicker : '');
+  }
 }
+
+// Toggle the mobile view popup. Global so inline onclick can reach it.
+window.crmToggleViewPopup = function() {
+  var p = document.getElementById('crm-view-popup');
+  if (!p) return;
+  var nowOpen = !p.classList.toggle('hidden');
+  if (nowOpen) {
+    // Close on next outside-click (one-shot).
+    setTimeout(function() {
+      function _outsideClose(e) {
+        var pop = document.getElementById('crm-view-popup');
+        if (!pop) { document.removeEventListener('click', _outsideClose); return; }
+        var toggle = document.getElementById('crm-view-toggle');
+        if (toggle && !toggle.contains(e.target)) {
+          pop.classList.add('hidden');
+          document.removeEventListener('click', _outsideClose);
+        }
+      }
+      document.addEventListener('click', _outsideClose);
+    }, 0);
+  }
+};
 
 function crmSetView(v) {
   // Exit bulk mode when switching to views that don't support it

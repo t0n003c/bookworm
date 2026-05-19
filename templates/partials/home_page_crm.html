@@ -12,49 +12,57 @@
   <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-900">
-    <span class="text-lg leading-none">{{ page.emoji }}</span>
-    <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
+
+    {# Icon always visible #}
+    <span class="text-lg leading-none flex-shrink-0">{{ page.emoji }}</span>
+
+    {# Page name + CRM badge — desktop only #}
+    <h1 class="hidden sm:block text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
       {{ page.name }}
     </h1>
-    <span class="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
+    <span class="hidden sm:inline-flex px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide
                  bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
       CRM
     </span>
 
-    {# Search — wired by JS #}
+    {# Search — fills remaining space on mobile, fixed width on desktop #}
     <input id="crm-search" type="search" placeholder="Search contacts…"
            oninput="crmSearch()"
-           class="ml-4 w-48 border border-gray-300 dark:border-zinc-700 rounded-lg
+           class="flex-1 sm:flex-none sm:w-48 min-w-0
+                  sm:ml-4 border border-gray-300 dark:border-zinc-700 rounded-lg
                   px-3 py-1 text-xs bg-white dark:bg-zinc-800
                   text-gray-800 dark:text-zinc-100 placeholder-gray-400
                   focus:outline-none focus:ring-1 focus:ring-[#0053e2]" />
 
-    {# View toggle — populated by JS #}
-    <div id="crm-view-toggle" class="ml-auto flex items-center gap-1 flex-shrink-0"></div>
+    {# View toggle — populated by JS (mobile: icon+popup; desktop: selects) #}
+    <div id="crm-view-toggle" class="ml-auto sm:ml-0 flex items-center gap-1 flex-shrink-0"></div>
 
-    {# Upcoming reminders #}
+    {# Reminders — icon only on mobile #}
     <button id="crm-rem-panel-btn" onclick="crmToggleRemindersPanel()"
-            class="ml-2 text-xs font-medium px-2.5 py-1.5 rounded-lg flex-shrink-0
+            title="Reminders"
+            class="text-xs font-medium px-2 sm:px-2.5 py-1.5 rounded-lg flex-shrink-0
                    border border-gray-300 dark:border-zinc-600
                    text-gray-600 dark:text-zinc-300
                    hover:border-[#0053e2] hover:text-[#0053e2] transition">
-      🔔 Reminders
+      🔔<span class="hidden sm:inline ml-1">Reminders</span>
     </button>
 
-    {# Manage fields #}
+    {# Fields — icon only on mobile #}
     <button onclick="crmOpenFields()"
-            class="ml-2 text-xs font-medium px-2.5 py-1.5 rounded-lg flex-shrink-0
+            title="Manage fields"
+            class="text-xs font-medium px-2 sm:px-2.5 py-1.5 rounded-lg flex-shrink-0
                    border border-gray-300 dark:border-zinc-600
                    text-gray-600 dark:text-zinc-300
                    hover:border-[#0053e2] hover:text-[#0053e2] transition">
-      ⚙ Fields
+      ⚙<span class="hidden sm:inline ml-1">Fields</span>
     </button>
 
-    {# Add contact #}
+    {# Add contact — icon only on mobile #}
     <button onclick="crmOpenAdd()"
-            class="text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0
+            title="Add contact"
+            class="text-xs font-semibold px-2 sm:px-3 py-1.5 rounded-lg flex-shrink-0
                    bg-[#0053e2] text-white hover:bg-blue-700 transition">
-      + Contact
+      +<span class="hidden sm:inline ml-0.5">Contact</span>
     </button>
   </div>
 

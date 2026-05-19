@@ -4,7 +4,68 @@
 //          _crmFetch, _crmRender, _crmLoadAll, _crmEsc, _crmShowModal, crmCloseModal
 'use strict';
 
-// ── Toggle bulk mode ───────────────────────────────────────────────────────────
+// ── Long-press → bulk select ──────────────────────────────────────────────
+// Holding a card for 600 ms enters multi-select mode and selects that card.
+// Works for both gallery cards (.crm-gallery-card[data-cid]) and table rows
+// (tr[data-cid]). Replaces the old top-bar “Select” button entirely.
+var _lpTimer   = null;         // long-press setTimeout handle
+var _lpBlockClick = false;     // suppresses the click that fires after pointerup
+var _lpX = 0, _lpY = 0;        // start coords (cancel on scroll)
+
+function _crmInitLongPress() {
+  var main = document.getElementById('crm-main');
+  if (!main || main._crmLPInit) return;
+  main._crmLPInit = true;
+
+  main.addEventListener('pointerdown', function(e) {
+    var card = e.target.closest('[data-cid]');
+    if (!card) return;
+    // Only gallery cards and table rows, not pipeline / calendar widgets
+    var isCard = card.classList.contains('crm-gallery-card') || card.tagName === 'TR';
+    if (!isCard) return;
+    var cid = parseInt(card.dataset.cid, 10);
+    if (!cid) return;
+    _lpX = e.clientX; _lpY = e.clientY;
+    _lpTimer = setTimeout(function() {
+      _lpTimer = null;
+      _lpBlockClick = true;
+      if (!_crmBulkMode) {
+        _crmBulkMode = true;
+        _crmSelected = new Set();
+        _crmRender();           // re-render with checkboxes
+        // After re-render the original card is gone; select via the new DOM.
+        crmBulkToggle(cid);
+      } else {
+        crmBulkToggle(cid);     // already in bulk mode — just toggle
+      }
+      // Haptic pulse on supported devices
+      try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) {}
+    }, 600);
+  });
+
+  main.addEventListener('pointermove', function(e) {
+    if (_lpTimer === null) return;
+    var dx = e.clientX - _lpX, dy = e.clientY - _lpY;
+    if (dx * dx + dy * dy > 64) { clearTimeout(_lpTimer); _lpTimer = null; } // >8 px
+  });
+
+  function _cancelLP() {
+    if (_lpTimer !== null) { clearTimeout(_lpTimer); _lpTimer = null; }
+  }
+  main.addEventListener('pointerup',     _cancelLP);
+  main.addEventListener('pointercancel', _cancelLP);
+
+  // Capture-phase click listener: swallow the tap that fires right after a long-press.
+  main.addEventListener('click', function(e) {
+    if (_lpBlockClick) {
+      _lpBlockClick = false;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
+}
+
+// ── Toggle bulk mode ───────────────────────────────────────────────
 function crmToggleBulkMode() {
   _crmBulkMode = !_crmBulkMode;
   _crmSelected = new Set();
