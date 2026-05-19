@@ -183,15 +183,7 @@ function _crmRenderViewToggle() {
            + '<span>' + v[1] + '</span><span>' + v[2] + '</span>' + (a ? chk : '') + '</button>';
     }).join('');
 
-    const galRows = _crmView === 'gallery'
-      ? '<div class="mt-1 pt-1 border-t border-gray-100 dark:border-zinc-700">'
-        + '<div class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Style</div>'
-        + galStyles.map(function(s) {
-            const a = _crmGalleryStyle === s[0];
-            return '<button onclick="crmSetGalleryStyle(\'' + s[0] + '\')" class="' + base + (a ? on : off) + '">'
-                 + '<span>' + s[1] + '</span><span>' + s[2] + '</span>' + (a ? chk : '') + '</button>';
-          }).join('') + '</div>'
-      : '';
+    const galRows = ''; // gallery style picker moved to toolbar on mobile
 
     el.innerHTML =
       '<div class="relative">'

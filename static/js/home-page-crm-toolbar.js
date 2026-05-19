@@ -321,6 +321,38 @@ window.crmRenderToolbar = function() {
   // Detect dark mode for inline styling (dark: Tailwind prefix not in bundle)
   const _isDark    = document.documentElement.classList.contains('dark');
   const _iconCol   = _isDark ? '#71717a' : '#9ca3af';
+
+  // Gallery-style picker — mobile only (sm:hidden), shown left of View button
+  const _galStyleDefs = [
+    ['cards','Cards'],['compact','Compact'],['profile','Profile'],['minimal','Minimal'],['photo','Photo'],
+  ];
+  const _galStyleLabel = (_galStyleDefs.find(s => s[0] === galStyle) || _galStyleDefs[0])[1];
+  const _galStyleActive = 'bg-[#0053e2]/10 text-[#0053e2] dark:text-blue-400 font-semibold';
+  const _galStyleOff    = 'text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800';
+  const galStyleBtn = isGallery ? `
+    <div class="relative sm:hidden flex-shrink-0">
+      <button onclick="crmToggleGalStylePanel(event)" title="Card style"
+        class="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition
+               border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400
+               hover:border-[#0053e2] hover:text-[#0053e2]">
+        ${_tbEsc(_galStyleLabel)}
+        <svg class="w-3 h-3 opacity-50 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="crm-galstyle-panel"
+           class="hidden absolute left-0 top-full mt-1 w-36 z-50 py-1 overflow-hidden
+                  bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
+                  rounded-xl shadow-xl">
+        ${_galStyleDefs.map(s => {
+          const a = galStyle === s[0];
+          return `<button onclick="crmSetGalleryStyle('${s[0]}')" class="flex items-center gap-2 w-full px-3 py-2 text-xs text-left transition ${a ? _galStyleActive : _galStyleOff}">
+            <span>${_tbEsc(s[1])}</span>${a ? '<span class="ml-auto text-[#0053e2] text-[10px]">✓</span>' : ''}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
   const sizeSlider = (isGallery && !noSlider) ? `
     <div class="hidden sm:flex items-center flex-shrink-0" style="gap:4px"
          title="Card size \u2014 double-click to reset">
@@ -394,6 +426,7 @@ window.crmRenderToolbar = function() {
                    border-l border-gray-100 dark:border-zinc-800">
          ${sizeSlider}
          ${autofitBtn}
+         ${galStyleBtn}
          <div class="relative">
            <button onclick="crmToggleSfgPanel(event)" title="Sort, filter and group"
              class="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border transition ${sfgBtnCls}">
@@ -464,6 +497,23 @@ window.crmToggleColPanel = function(e) {
 window.crmToggleColFromPanel = function(id) {
   if (typeof crmToggleCol === 'function') crmToggleCol(id);
   if (typeof crmRenderToolbar === 'function') crmRenderToolbar();
+};
+
+// Toggle the mobile gallery-style dropdown in the toolbar.
+window.crmToggleGalStylePanel = function(e) {
+  e.stopPropagation();
+  var p = document.getElementById('crm-galstyle-panel');
+  if (!p) return;
+  var opening = p.classList.toggle('hidden') === false;
+  if (opening) {
+    setTimeout(function() {
+      document.addEventListener('click', function _away(ev) {
+        var panel = document.getElementById('crm-galstyle-panel');
+        if (panel && !panel.contains(ev.target)) panel.classList.add('hidden');
+        document.removeEventListener('click', _away);
+      });
+    }, 30);
+  }
 };
 
 // ── Setters (called by panel selects) ────────────────────────────────────────────
