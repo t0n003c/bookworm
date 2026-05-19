@@ -34,9 +34,11 @@
 
   <span class="text-2xl font-bold text-white tracking-tight flex-shrink-0" aria-label="BookWorm">🪱<span class="bw-wordmark"> BookWorm</span></span>
 
-  <!-- Workspace tab strip -->
+  <!-- Workspace tab strip — desktop/laptop only.
+       Hidden on phones (< 768 px); the sidebar holds workspace navigation
+       on mobile so the top bar doesn't overflow on small screens. -->
   <div id="workspace-tabs"
-    class="flex flex-row flex-nowrap items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide px-1"
+    class="hidden md:flex flex-row flex-nowrap items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide px-1"
     role="tablist" aria-label="Workspaces"
   >
     {% include "partials/workspace_tabs.html" %}
