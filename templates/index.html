@@ -3221,58 +3221,52 @@
      page reload lands on the right workspace via the server's ?ws= param.    */
 
   /* ---- Workspace navigation ---- */
-
   /* Single-click: switch view (sidebar).  Double-click: open (pin) + switch. */
   function wsSingleClick(id) {
-    _sortApplyWorkspace(id); // load this workspace's saved sort before the HTMX request
-    const hc = document.getElementById('home-content');
+    _sortApplyWorkspace(id);
+    const hc       = document.getElementById('home-content');
     const fromHome = !!(hc && !hc.classList.contains('hidden'));
+    const nl       = document.getElementById('note-list');
 
+    // Exit the home canvas immediately so the UI feels responsive,
+    // but defer the HTMX request so a rapid second click (double-click)
+    // can cancel it before any network request fires.
     if (fromHome) {
-      // Homespace → workspace: exit the canvas, keep #note-list hidden until
-      // the new content arrives so stale HTML never flashes through.
       if (typeof homeExit === 'function') homeExit();
-      const nl = document.getElementById('note-list');
-      if (nl) nl.classList.add('hidden'); // counteract homeExit’s unhide
-      document.getElementById('active-workspace').value = id;
-      _bwSetActiveWs(id);
-      clearTimeout(_wsClickTimer); _wsClickTimer = null;
+      if (nl) nl.classList.add('hidden');
+    }
+
+    document.getElementById('active-workspace').value = id;
+    _bwSetActiveWs(id);
+    clearTimeout(_wsClickTimer);
+    _wsClickTimer = setTimeout(() => {
+      _wsClickTimer = null;
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
       }).then(() => {
-        if (nl) nl.classList.remove('hidden'); // reveal with correct content
+        if (nl) nl.classList.remove('hidden');
         refreshCatFilter(id);
       });
-    } else {
-      // Workspace → workspace: debounce to batch rapid sidebar clicks.
-      document.getElementById('active-workspace').value = id;
-      _bwSetActiveWs(id);
-      clearTimeout(_wsClickTimer);
-      _wsClickTimer = setTimeout(() => {
-        _wsClickTimer = null;
-        htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
-          target: '#note-list', swap: 'innerHTML',
-        }).then(() => refreshCatFilter(id));
-      }, 150);
-    }
+    }, 280); // long enough for ondblclick to fire on any OS/browser
   }
 
   function wsDoubleClick(id) {
     clearTimeout(_wsClickTimer); _wsClickTimer = null;
-    const hc = document.getElementById('home-content');
+    const hc       = document.getElementById('home-content');
     const fromHome = !!(hc && !hc.classList.contains('hidden'));
+    const nl       = document.getElementById('note-list');
     if (typeof homeExit === 'function') homeExit();
-    const nl = document.getElementById('note-list');
     if (fromHome && nl) nl.classList.add('hidden');
-    _sortApplyWorkspace(id); // load this workspace's saved sort before the HTMX request
+    _sortApplyWorkspace(id);
     document.getElementById('active-workspace').value = id;
     _bwSetActiveWs(id);
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
     }).then(() => {
-      if (fromHome && nl) nl.classList.remove('hidden');
+      if (nl) nl.classList.remove('hidden');
       refreshCatFilter(id);
     });
+  }
   }
 
   /* Top-bar tab click — tabs only visible in workspace view, never from Homespace. */
