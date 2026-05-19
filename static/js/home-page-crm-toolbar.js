@@ -349,7 +349,7 @@ window.crmRenderToolbar = function() {
   const _viewIcon = _viewIcons[curView] || _viewIcons.table;
 
   const viewStyleBtn = `
-    <div class="relative sm:hidden flex-shrink-0">
+    <div class="relative flex-shrink-0">
       <button onclick="crmToggleViewStylePanel(event)" title="${_tbEsc(_btnTitle)}"
         class="flex items-center gap-1 px-2 py-1.5 rounded-lg border transition
                border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400
