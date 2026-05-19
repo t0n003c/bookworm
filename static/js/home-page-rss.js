@@ -26,6 +26,59 @@ let _groupMode   = 'none';    // 'none' | 'category'
 let _read        = new Set();
 let _initEl      = null;
 
+// ── Feeds-panel collapse / expand ───────────────────────────────────────────
+let _feedsPanelOpen = true;       // current state
+const _RSS_FP_WIDTH  = '14rem';   // must match the template inline style
+
+function _isMobileRss() { return window.innerWidth < 768; }
+
+function _applyFeedsPanel(animate) {
+  const panel = document.getElementById('rss-feeds-panel');
+  const btn   = document.getElementById('rss-feeds-toggle');
+  if (!panel) return;
+  if (animate) {
+    panel.style.transition = 'width 0.25s ease';
+  } else {
+    panel.style.transition = 'none';
+  }
+  panel.style.width = _feedsPanelOpen ? _RSS_FP_WIDTH : '0';
+  if (btn) {
+    btn.setAttribute('aria-expanded', _feedsPanelOpen ? 'true' : 'false');
+    btn.title      = _feedsPanelOpen ? 'Collapse feeds' : 'Expand feeds';
+    btn.setAttribute('aria-label', btn.title);
+    // Rotate the icon 180° when collapsed so it points "open" again.
+    btn.style.transform = _feedsPanelOpen ? '' : 'scaleX(-1)';
+  }
+  if (animate) {
+    // Restore browser default transition after the animation completes so future
+    // class-based transitions on the element aren't clobbered.
+    panel.addEventListener('transitionend', function _cleanup() {
+      panel.style.transition = '';
+      panel.removeEventListener('transitionend', _cleanup);
+    });
+  }
+}
+
+function rssToggleFeedsPanel() {
+  _feedsPanelOpen = !_feedsPanelOpen;
+  try {
+    localStorage.setItem('bw-rss-feeds-open-' + _pid, _feedsPanelOpen ? '1' : '0');
+  } catch (_) {}
+  // On mobile: snap instantly (avoid the squish-content problem). On desktop: animate.
+  _applyFeedsPanel(!_isMobileRss());
+}
+
+function _initFeedsPanel() {
+  // Default: collapsed on mobile, open on desktop.
+  const saved = localStorage.getItem('bw-rss-feeds-open-' + _pid);
+  if (saved !== null) {
+    _feedsPanelOpen = (saved === '1');
+  } else {
+    _feedsPanelOpen = !_isMobileRss();
+  }
+  _applyFeedsPanel(false);   // initial paint — no animation
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function initRssPage(pageId) {
   const root = document.getElementById('rss-page-root');
@@ -35,6 +88,7 @@ async function initRssPage(pageId) {
   _read = new Set(); _feeds = []; _rawItems = []; _items = [];
   _selFeed = null; _selCategory = null; _selItemCat = null;
   _sortMode = 'newest'; _filterMode = 'all'; _groupMode = 'none';
+  _initFeedsPanel();          // restore / set feeds-panel open state
   await _syncReadFromServer();
   await _loadFeeds();
   _initAddForm();
