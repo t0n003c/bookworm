@@ -171,11 +171,27 @@
           </button>
         </div>
         <div id="rem-bell-list"
-             class="max-h-64 overflow-y-auto px-4 py-1 divide-y
+             class="max-h-48 overflow-y-auto px-4 py-1 divide-y
                     divide-gray-100 dark:divide-zinc-800">
           <p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-4">
             No missed reminders 🎉
           </p>
+        </div>
+        {# ── CRM upcoming reminders — mobile only, shown by JS when CRM page is active ── #}
+        <div id="rem-bell-crm-section"
+             class="hidden sm:hidden border-t border-gray-100 dark:border-zinc-800">
+          <div class="flex items-center justify-between px-4 py-2">
+            <span class="text-xs font-bold text-gray-700 dark:text-zinc-200
+                         uppercase tracking-wide">📅 Upcoming CRM</span>
+            <button onclick="crmToggleRemindersPanel&&crmToggleRemindersPanel()"
+                    class="text-[11px] text-gray-400 hover:text-wblue
+                           dark:hover:text-blue-400 transition">See all</button>
+          </div>
+          <div id="rem-bell-crm-body"
+               class="max-h-48 overflow-y-auto px-4 pb-2 divide-y
+                      divide-gray-100 dark:divide-zinc-800">
+            <p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-3">Loading…</p>
+          </div>
         </div>
       </div>
     </div>

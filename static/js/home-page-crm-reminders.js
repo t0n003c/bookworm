@@ -400,7 +400,65 @@ async function crmDeleteReminder(reminderIdStr, contactId, fieldId, fieldLabel, 
   }
 }
 
-// ── Upcoming Reminders Panel ────────────────────────────────────────────────────
+// ── Bell-panel CRM section (mobile) ──────────────────────────────────────────────────
+// Compact renderer — fetches the same data as the slide panel but renders a
+// minimal list suitable for the narrow top-bar bell dropdown on mobile.
+window._crmLoadBellSection = async function() {
+  var body = document.getElementById('rem-bell-crm-body');
+  if (!body || !_crmPid) return;
+  body.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-3">Loading…</p>';
+  try {
+    var results = await Promise.all([
+      _crmFetch('/home/crm/' + _crmPid + '/reminders/upcoming'),
+      _crmFetch('/home/crm/' + _crmPid + '/birthdays/upcoming'),
+    ]);
+    var items     = Array.isArray(results[0]) ? results[0] : [];
+    var birthdays = Array.isArray(results[1]) ? results[1] : [];
+
+    if (items.length === 0 && birthdays.length === 0) {
+      body.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-3">No upcoming reminders 🎉</p>';
+      return;
+    }
+
+    var rowCls = 'flex items-start gap-2 py-2 border-b border-gray-100'
+               + ' dark:border-zinc-800 last:border-0';
+
+    var html = '';
+
+    // Birthday rows
+    birthdays.forEach(function(b) {
+      var days = b.days_away === 0 ? 'Today! 🎉'
+               : b.days_away === 1 ? 'Tomorrow'
+               : b.days_away + ' days';
+      html += '<div class="' + rowCls + '">'
+            + '<span class="text-sm leading-none mt-0.5 shrink-0">🎂</span>'
+            + '<div class="flex-1 min-w-0">'
+            + '<p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate">'
+            + _crmEsc(b.contact_name) + '</p>'
+            + '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' + _crmEsc(days) + '</p>'
+            + '</div></div>';
+    });
+
+    // Reminder rows
+    items.forEach(function(r) {
+      html += '<div class="' + rowCls + '">'
+            + '<span class="text-sm leading-none mt-0.5 shrink-0">🔔</span>'
+            + '<div class="flex-1 min-w-0">'
+            + '<p class="text-xs font-medium text-gray-800 dark:text-zinc-100 truncate">'
+            + _crmEsc(r.contact_name || '\u2014') + '</p>'
+            + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 truncate">'
+            + _crmEsc(r.label) + ' · ' + _crmEsc(r.reminder_date)
+            + (r.reminder_time ? ' ' + _crmEsc(r.reminder_time) : '') + '</p>'
+            + '</div></div>';
+    });
+
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<p class="text-xs text-red-400 text-center py-3">Could not load</p>';
+  }
+};
+
+// ── Upcoming Reminders Panel ────────────────────────────────────────────
 function crmToggleRemindersPanel() {
   var panel = document.getElementById('crm-rem-panel');
   var btn   = document.getElementById('crm-rem-panel-btn');

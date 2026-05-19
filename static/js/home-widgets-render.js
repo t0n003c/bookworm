@@ -724,9 +724,20 @@ function _remBellUpdateBadge() {
 window.toggleRemBell = function () {
   const panel = document.getElementById('rem-bell-panel');
   if (!panel) return;
-  const opening = panel.classList.toggle('hidden');
-  // When opening populate the list
-  if (!panel.classList.contains('hidden')) _remBellRender();
+  panel.classList.toggle('hidden');
+  // When opening: populate missed list + CRM section (mobile only).
+  if (!panel.classList.contains('hidden')) {
+    _remBellRender();
+    // Inject CRM upcoming reminders on mobile when the CRM page is mounted.
+    const crmRoot = document.getElementById('crm-page-root');
+    const crmSec  = document.getElementById('rem-bell-crm-section');
+    if (crmRoot && crmSec && window.innerWidth < 640) {
+      crmSec.classList.remove('hidden');
+      if (typeof window._crmLoadBellSection === 'function') window._crmLoadBellSection();
+    } else if (crmSec) {
+      crmSec.classList.add('hidden');
+    }
+  }
   // Click-away
   if (!panel.classList.contains('hidden')) {
     setTimeout(() => {
