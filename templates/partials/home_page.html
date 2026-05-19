@@ -336,14 +336,14 @@
     <li class="text-xs text-gray-400 italic text-center py-1">Nothing pending 🎉</li>
     {% endfor %}
   </ul>
-  <div class="flex gap-1 mt-1.5">
+  <div class="flex gap-1 mt-1.5 min-w-0">
     <input id="todo-input-{{ w.id }}" type="text" placeholder="Quick add…"
-           class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
+           class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
                   focus:outline-none focus:ring-1 focus:ring-wblue"
            onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
     <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
-            class="px-2.5 py-1 bg-wblue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition">+</button>
+            class="flex-shrink-0 px-2.5 py-1 bg-wblue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition">+</button>
   </div>
   {% if done_count > 0 %}
   <button onclick="todoToggleDone({{ w.id }})" id="todo-show-done-{{ w.id }}"
@@ -389,14 +389,14 @@
     </li>
     {% endfor %}
   </ul>
-  <div class="flex gap-2 mt-2">
+  <div class="flex gap-1.5 mt-2 min-w-0">
     <input id="todo-input-{{ w.id }}" type="text" placeholder="Add a task…"
-           class="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5
+           class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
                   focus:outline-none focus:ring-2 focus:ring-wblue"
            onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
     <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
-            class="px-3 py-1.5 bg-wblue text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition">Add</button>
+            class="flex-shrink-0 px-2.5 py-1.5 bg-wblue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition">+</button>
   </div>
   {% if done_count > 0 %}
   <button onclick="todoClearDone({{ w.id }})" title="Remove all completed tasks"
