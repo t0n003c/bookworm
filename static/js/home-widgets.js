@@ -1401,6 +1401,8 @@ window._wpEffCols = function(saved) {
 // Also caps each widget card's grid-column span so a card that was
 // configured for span-4 on desktop doesn't blow past the 3-col mobile grid
 // and create implicit extra columns (which would break uniform row widths).
+// Exposed as window._applyWidgetGridColCap so home-widgets-settings.js can
+// call it after a layout picker selection (selectPageLayout).
 function _applyWidgetGridColCap() {
   document.querySelectorAll('[data-col-count]').forEach(function(grid) {
     var saved = parseInt(grid.dataset.colCount || '3', 10);
@@ -1417,6 +1419,7 @@ function _applyWidgetGridColCap() {
     });
   });
 }
+window._applyWidgetGridColCap = _applyWidgetGridColCap;
 
 function _setTopActionNewNote() {
   const area = document.getElementById('top-action-area');
