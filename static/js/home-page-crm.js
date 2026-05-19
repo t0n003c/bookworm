@@ -825,16 +825,15 @@ function _crmContactModal(c) {
     _modalBody.addEventListener('dblclick', function(e) {
       var lbl = e.target.closest('.crm-cf-lbl');
       if (!lbl) return;
-      var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
-      if (fid) crmCfHandleClick(e, fid);
+      e.preventDefault();
+      crmCfInlineEdit(lbl);
     });
     _modalBody.addEventListener('mousedown', function(e) {
       var lbl = e.target.closest('.crm-cf-lbl');
-      if (!lbl) return;
+      if (!lbl || lbl.querySelector('input')) return; // already editing
       _holdTimer = setTimeout(function() {
         _holdTimer = null;
-        var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
-        if (fid) crmCfHandleClick(e, fid);
+        crmCfInlineEdit(lbl);
       }, 500);
     });
     _modalBody.addEventListener('mouseup',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
@@ -842,11 +841,10 @@ function _crmContactModal(c) {
     // Touch: press-and-hold on mobile
     _modalBody.addEventListener('touchstart', function(e) {
       var lbl = e.target.closest('.crm-cf-lbl');
-      if (!lbl) return;
+      if (!lbl || lbl.querySelector('input')) return;
       _holdTimer = setTimeout(function() {
         _holdTimer = null;
-        var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
-        if (fid) crmCfHandleClick(e.touches[0] || e, fid);
+        crmCfInlineEdit(lbl);
       }, 500);
     }, { passive: true });
     _modalBody.addEventListener('touchend',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
@@ -1492,6 +1490,74 @@ window.crmCfPopSave = async function(fieldId) {
   } catch(err) {
     if (errEl) { errEl.textContent = err.message || 'Could not save.'; errEl.style.display = 'block'; }
   }
+};
+
+window.crmToggleAddField = function() {
+
+// ── Inline label editor — dblclick or hold on a .crm-cf-lbl element ──
+// Swaps the label text for a borderless input in-place.
+// Enter / blur  → save via API, revert to updated text.
+// Escape        → cancel, revert to original.
+window.crmCfInlineEdit = function(lblEl) {
+  if (!lblEl || lblEl.querySelector('input')) return; // guard: already editing
+  var fieldId = parseInt(lblEl.getAttribute('data-field-id'), 10);
+  var f = (_crmFields || []).find(function(x) { return x.id === fieldId; });
+  if (!f) return;
+
+  var origText = f.label;
+
+  var inp = document.createElement('input');
+  inp.type  = 'text';
+  inp.value = origText;
+  inp.style.cssText =
+    'width:100%;min-width:48px;box-sizing:border-box;'
+    + 'font:inherit;color:inherit;background:transparent;'
+    + 'border:none;border-bottom:1.5px solid #0053e2;outline:none;'
+    + 'padding:0;margin:0;cursor:text;';
+
+  lblEl.textContent = '';
+  lblEl.classList.remove('cursor-pointer', 'select-none');
+  lblEl.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  var _committed = false;
+
+  function revert() {
+    if (_committed) return;
+    _committed = true;
+    lblEl.textContent = origText;
+    lblEl.title = origText + ' \u2014 double-click or hold to edit';
+    lblEl.classList.add('cursor-pointer', 'select-none');
+  }
+
+  async function commit() {
+    if (_committed) return;
+    _committed = true;
+    var newLabel = inp.value.trim();
+    if (!newLabel || newLabel === origText) { revert(); _committed = false; revert(); return; }
+    try {
+      _crmFields = await _crmFetch(
+        '/home/crm/' + _crmPid + '/fields/' + fieldId + '/update',
+        { method: 'POST', body: new URLSearchParams(
+            { label: newLabel, field_type: f.field_type, options: f.options || '' }) });
+      // Patch just the label text in-place — no full modal rebuild needed
+      lblEl.textContent = newLabel;
+      lblEl.title = newLabel + ' \u2014 double-click or hold to edit';
+      lblEl.classList.add('cursor-pointer', 'select-none');
+    } catch(err) {
+      lblEl.textContent = origText;
+      lblEl.title = origText + ' \u2014 double-click or hold to edit';
+      lblEl.classList.add('cursor-pointer', 'select-none');
+      alert(err.message || 'Could not save label.');
+    }
+  }
+
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); revert(); }
+  });
+  inp.addEventListener('blur', commit);
 };
 
 window.crmToggleAddField = function() {
