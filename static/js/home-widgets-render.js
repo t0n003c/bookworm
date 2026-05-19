@@ -728,10 +728,10 @@ window.toggleRemBell = function () {
   // When opening: populate missed list + CRM section (mobile only).
   if (!panel.classList.contains('hidden')) {
     _remBellRender();
-    // Inject CRM upcoming reminders on mobile when the CRM page is mounted.
+    // Inject CRM upcoming reminders whenever the CRM page is mounted.
     const crmRoot = document.getElementById('crm-page-root');
     const crmSec  = document.getElementById('rem-bell-crm-section');
-    if (crmRoot && crmSec && window.innerWidth < 640) {
+    if (crmRoot && crmSec) {
       crmSec.classList.remove('hidden');
       if (typeof window._crmLoadBellSection === 'function') window._crmLoadBellSection();
     } else if (crmSec) {

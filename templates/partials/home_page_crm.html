@@ -37,16 +37,9 @@
     {# View toggle — populated by JS (mobile: icon+popup; desktop: selects) #}
     <div id="crm-view-toggle" class="ml-auto sm:ml-0 flex items-center gap-1 flex-shrink-0"></div>
 
-    {# Reminders — desktop only; on mobile the top-bar bell carries upcoming CRM reminders #}
-    <button id="crm-rem-panel-btn" onclick="crmToggleRemindersPanel()"
-            title="Reminders"
-            class="hidden sm:flex items-center text-xs font-medium px-2.5 py-1.5
-                   rounded-lg flex-shrink-0
-                   border border-gray-300 dark:border-zinc-600
-                   text-gray-600 dark:text-zinc-300
-                   hover:border-[#0053e2] hover:text-[#0053e2] transition">
-      🔔<span class="ml-1">Reminders</span>
-    </button>
+    {# Reminders button removed — upcoming CRM reminders now live in the
+       top-bar bell panel on all screen sizes. The slide panel (#crm-rem-panel)
+       is still reachable via the "See all" link inside the bell. #}
 
     {# Fields — icon only on mobile #}
     <button onclick="crmOpenFields()"
