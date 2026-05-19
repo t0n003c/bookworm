@@ -528,14 +528,25 @@ function _crmContactModal(c) {
                 text-xs leading-none pt-1">×</button>
      </div>`;
 
+  // Helper: renders a field label span/block with dblclick + hold-to-edit wired in.
+  // Extra classes can be appended; block=true renders a <div> for text/priority/file.
+  const cfLabel = (f, extraCls = '', block = false) => {
+    const tag  = block ? 'div' : 'span';
+    const base = block
+      ? 'text-xs font-medium text-gray-500 dark:text-zinc-400 block mb-1 cursor-pointer select-none'
+      : 'w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate cursor-pointer select-none';
+    return `<${tag} class="crm-cf-lbl ${base} ${extraCls}"
+      data-field-id="${f.id}"
+      title="${_crmEsc(f.label)} — double-click or hold to edit">${_crmEsc(f.label)}</${tag}>`;
+  };
+
   const customFields = _crmFields.map(f => {
     const val = fv[f.id] || '';
     let control;
     if (f.field_type === 'checkbox') {
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">
-          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          ${cfLabel(f)}
           <label class="relative flex items-center cursor-pointer shrink-0">
             <input type="checkbox" name="cf_${f.id}" value="1"
                    id="cf_chk_${f.id}" ${val==='1'?'checked':''}
@@ -566,8 +577,7 @@ function _crmContactModal(c) {
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
-          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate pt-0.5"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          ${cfLabel(f, 'pt-0.5')}
           <div class="flex flex-wrap gap-1.5">${pills}</div>
         </div>`);
     } else if (f.field_type === 'select') {
@@ -596,8 +606,7 @@ function _crmContactModal(c) {
         : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
-          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate pt-0.5"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          ${cfLabel(f, 'pt-0.5')}
           <div class="flex flex-wrap gap-1.5">${pills}</div>
         </div>`);
     } else if (f.field_type === 'file_links') {
@@ -624,8 +633,7 @@ function _crmContactModal(c) {
       return wrapDrag(f.id,
         `<div>
           <div class="flex items-center gap-2">
-            <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                  title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+            ${cfLabel(f)}
             <input name="cf_${f.id}" type="date" value="${_crmEsc(val)}"
               class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
                      text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
@@ -643,8 +651,7 @@ function _crmContactModal(c) {
     } else if (f.field_type === 'number') {
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">
-          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          ${cfLabel(f)}
           <input name="cf_${f.id}" type="text" value="${_crmEsc(_crmFmtNumber(val))}"
             onblur="crmFmtNumberInput(this)"
             class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
@@ -656,8 +663,7 @@ function _crmContactModal(c) {
       var iType = {url:'url', email:'email'}[f.field_type] || 'text';
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">
-          <span class="w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-zinc-400 truncate"
-                title="${_crmEsc(f.label)}">${_crmEsc(f.label)}</span>
+          ${cfLabel(f)}
           <input name="cf_${f.id}" type="${iType}" value="${_crmEsc(val)}"
             class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
                    text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
@@ -667,7 +673,7 @@ function _crmContactModal(c) {
     }
     return wrapDrag(f.id,
       `<div>
-        <label class="text-xs font-medium text-gray-500 dark:text-zinc-400 block mb-1">${_crmEsc(f.label)}</label>
+        ${cfLabel(f, '', true)}
         ${control}
       </div>`);
   }).join('');
@@ -811,6 +817,41 @@ function _crmContactModal(c) {
   // Stamp the contact id so the field-handle popover can re-open this modal after a save
   var _modalWrap = document.getElementById('crm-modal');
   if (_modalWrap) _modalWrap.setAttribute('data-contact-id', c ? String(c.id) : '');
+
+  // Double-click OR press-and-hold (500 ms) on any field label → open edit popover
+  var _holdTimer = null;
+  var _modalBody = document.getElementById('crm-modal-body');
+  if (_modalBody) {
+    _modalBody.addEventListener('dblclick', function(e) {
+      var lbl = e.target.closest('.crm-cf-lbl');
+      if (!lbl) return;
+      var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
+      if (fid) crmCfHandleClick(e, fid);
+    });
+    _modalBody.addEventListener('mousedown', function(e) {
+      var lbl = e.target.closest('.crm-cf-lbl');
+      if (!lbl) return;
+      _holdTimer = setTimeout(function() {
+        _holdTimer = null;
+        var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
+        if (fid) crmCfHandleClick(e, fid);
+      }, 500);
+    });
+    _modalBody.addEventListener('mouseup',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
+    _modalBody.addEventListener('mouseleave', function() { clearTimeout(_holdTimer); _holdTimer = null; });
+    // Touch: press-and-hold on mobile
+    _modalBody.addEventListener('touchstart', function(e) {
+      var lbl = e.target.closest('.crm-cf-lbl');
+      if (!lbl) return;
+      _holdTimer = setTimeout(function() {
+        _holdTimer = null;
+        var fid = parseInt(lbl.getAttribute('data-field-id'), 10);
+        if (fid) crmCfHandleClick(e.touches[0] || e, fid);
+      }, 500);
+    }, { passive: true });
+    _modalBody.addEventListener('touchend',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
+    _modalBody.addEventListener('touchmove',  function() { clearTimeout(_holdTimer); _holdTimer = null; });
+  }
   // Attach slash-command palette to all text fields in the modal
   if (typeof _crmAttachSlash === 'function') {
     setTimeout(function() {
