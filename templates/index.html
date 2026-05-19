@@ -2170,11 +2170,31 @@
   function _mobileSidebarClose() {
     const sb  = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-toggle');
-    sb.style.cssText = '';
-    sb.classList.remove('w-72');
-    sb.classList.add('w-0');
+
+    // 1. Remove backdrop immediately — content is interactive again right away.
     const bd = document.getElementById('_sb-mobile-backdrop');
     if (bd) bd.remove();
+
+    // 2. Snap the sidebar closed without animation.
+    //    When the sidebar was open as a fixed overlay it was outside the flex
+    //    flow. Clearing cssText drops it back IN to the flex row at its
+    //    natural w-72 width. With transition-all still active that triggers a
+    //    300 ms shrink animation that squishes #main-content to ~87 px on a
+    //    phone — the "darkened / not active" feeling the user sees. Suppress
+    //    the transition for this one frame so the collapse is instant, then
+    //    restore it so future open/close animations still work smoothly.
+    sb.style.transition = 'none';
+    sb.style.cssText    = '';
+    sb.style.transition = 'none';  // cssText reset clears the previous line
+    sb.classList.remove('w-72');
+    sb.classList.add('w-0');
+    // Re-enable transition after the browser has painted the collapsed state.
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        sb.style.transition = '';
+      });
+    });
+
     sidebarOpen = false;
     btn.setAttribute('aria-expanded', 'false');
   }
