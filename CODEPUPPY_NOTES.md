@@ -148,11 +148,13 @@
 | `routers/account.py` | User profile / password change / admin user management |
 | `routers/totp.py` | 2FA (TOTP) setup + verify routes |
 | `routers/totp_db.py` | DB helpers for TOTP |
-| `templates/index.html` | Main SPA shell (~112 KB — massive) |
-| `templates/base.html` | Base layout (~24 KB) |
-| `templates/partials/home_page.html` | All home widget macros + grid render (~54 KB) |
+| `templates/index.html` | Main SPA shell (~208 KB — massive) |
+| `templates/base.html` | Base layout (~52 KB) |
+| `templates/partials/home_page.html` | All home widget macros + grid render (~117 KB — read in chunks) |
 | `templates/partials/home_page_crm.html` | CRM page shell — `#crm-page-root`, `#crm-main`, modal container. No inline script blocks. |
-| `templates/partials/note_form.html` | Note editor (huge — ~122 KB) |
+| `templates/partials/home_page_trip.html` | Trip Planning page shell (~48 KB) — spots board, day lanes, plans tabs, panels sidebar. |
+| `templates/partials/home_page_grid.html` | Grid homespace page shell (~17 KB) — masonry/grid cell layout for photo boards. |
+| `templates/partials/note_form.html` | Note editor (huge — ~165 KB) |
 | `static/js/home-page-uploads.js` | Uploads page JS module (590 lines). State: `_uplGrouped` (grouped-by-MIME display toggle). Detail panel (image/video/audio/embed/text preview), filter tabs, tag rendering, `_uplJsStr()` / `_uplEsc()` escaping helpers. Tags CRUD delegates to `home-page-uploads-tags.js`. Two defensive hooks at end of `_uplRenderDetail` and `_uplRender` call `_uplDocStudioInit(f)` and `_uplDocAfterRender()` when present. |
 | `static/js/home-page-uploads-docs.js` | **Document Studio companion** (440 lines, Phase 4). Called via hooks in main uploads JS. `_uplDocStudioInit(f)` renders the studio panel inside `#upl-doc-studio` after detail panel HTML is written. `_uplDocAfterRender()` injects the ☐ Select button for multi-select mode. Operations: view full text, inline edit + save, → PDF, → TXT, Sign (drawn signature → PDF), Merge PDFs / Join Text (floating toolbar). Eligibility by file type: note-src = read-only label; page-src text/JSON = view/edit/→PDF; page-src PDF = sign/→TXT; page-src DOCX = view/→PDF/→TXT. Also checks `_uplWopiEnabled()` (defined by the wopi companion below) to gate the "✏️ Edit in Collabora" button. |
 | `static/js/home-page-uploads-wopi.js` | **WOPI modal companion** (Phase 6, commit `801ee6a`). Loaded in `base.html` after `home-page-uploads-docs.js` and before `home-page-uploads-spreadsheet.js` — `_uplWopiEnabled()` must be defined before `_uplDocStudioInit` calls it. API: `_uplWopiOpen(f)` fetches `/wopi-token`, injects Collabora editor URL into `#upl-wopi-frame`, shows `#upl-wopi-modal`; `_uplWopiClose()` clears iframe src + hides modal; `_uplWopiFrameLoaded()` removes loading spinner; `_uplWopiEnabled()` returns bool (true when Collabora is configured); `_uplWopiPageId()` returns current page id; `_uplWopiBindPostMessage()` listens for Collabora PostMessage events (save complete → refresh file list). `_WOPI_MIMES` JS array must stay in sync with `WOPI_MIMES` frozenset in `routers/wopi.py`. |
@@ -174,9 +176,51 @@
 | `static/js/bw-spellcheck.js` | Spell-check integration |
 | `static/js/home-widget-text.js` | Text/title widget editor |
 | `static/js/home-widget-upload-preview.js` | **File Preview widget engine** (commit `92b68bc`). Public API: `_loadUploadPreview(el)` (entry point, called on widget boot), `_uplPrevOpenPicker(widgetId)`, `_uplPrevClosePicker()`, `_uplPrevFetchPages()`, `_uplPrevLoadFiles(pageId)`, `_uplPrevFetch()`, `_uplPrevRenderPickerGrid(files)`, `_uplPrevToggleFile(fileId)`, `_uplPrevPrevPage()`, `_uplPrevNextPage()`, `_uplPrevConfirm()` (async — saves config + reloads widget). All module state uses `var`. |
-| `static/js/home-widget-settle.js` | **Settle Up widget engine**. All `var` (HTMX re-injection safe). Module state: `_suState` keyed by widget id. Entry point: `_settleUpInit(el)` — called from `initHomeWidgets()` for each `.settle-up-widget`; branches to sync (`_suFetchSync`) or standalone (seeds from `#su-data-{wid}` JSON blob) then calls `_suRender`. Key fns: `_suFetchSync(wid, el)` — fetches panel from `GET /home/trip/{pg}/plans/{pl}/panels/{pa}`, populates state; `_suRender(wid, el)` — renders people list, expense list, settlement table; `_suSettlementCalc(people, expenses)` — greedy debt simplification algorithm. People CRUD: `_suShowAddPerson`, `_suCommitPerson`, `_suRemovePerson`. Expense CRUD: `_suOpenExpenseForm`, `_suSaveExpense`, `_suDeleteExpense`. `_suSave(wid)` — branches to `PUT` panel endpoint (sync) or widget endpoint (standalone). `_suShowStatus(wid, msg, isError)` — inline 2s badge, no `alert()`. Cascade helpers live in `home-widgets.js`: `_suCascadePlans(tripPageSel)`, `_suCascadePanels(planSel)`. |
+| `static/js/home-widget-buds.js` | **Buds widget engine** (animated flower sprites). Entry: `_budsInit(el)` called from `initHomeWidgets()`. Renders bud cards with animated species sprites (`static/img/buds/`), health bars, watering buttons. Manages add/edit/delete bud modals. Fertilize plan CRUD. All `var`. |
+| `static/js/home-widget-events.js` | **Events widget engine** — countdown badges, recurring recurrence expansion, next-occurrence sort. Powered by `evt_prepare_items` Jinja2 filter on the server side for initial render; JS handles add/edit/delete CRUD. |
+| `static/js/home-widget-rss.js` | **RSS feed widget engine**. Fetches items via `GET /home/rss?url=…` proxy. Renders card/compact/minimal views. `_rssRerender(el)` re-renders from cached `el._rssAllItems` without network fetch (used after settings-only changes). `_rssTextOnWhite(hex)` — luminance guard for light accent colours. |
+| `static/js/home-widget-stack.js` | **Stack carousel widget engine**. `initStackCards()` — overrides inner card padding, wires prev/next/dots navigation. `min_height_px` applied from config as `min-height` CSS so stack never squashes children. |
+| `static/js/home-widget-text-fmt.js` | **Text formatting toolbar** for the `text` and `sticky` widgets (bold/italic/link/etc.). Loaded before `bw-block-menu.js` in `base.html`. |
+| `static/js/home-page-trip.js` | **Trip Planning page JS module** (~63 KB). Entry: `initTripPage(pid)`. Manages spots board, day lanes, drag-to-day-lane assignment. |
+| `static/js/home-page-trip-plan.js` | Trip plan tabs + plan CRUD (~93 KB). |
+| `static/js/home-page-trip-panels.js` | Trip plan panels (side-cards: packing, budget, documents, settle) (~138 KB). |
+| `static/js/home-page-trip-panels-people.js` | People management inside trip panels (~21 KB). |
+| `static/js/home-page-trip-filters.js` | Trip spot filters/search/sort (~45 KB). |
+| `static/js/home-page-trip-chart.js` | Trip budget chart (Chart.js) (~46 KB). |
+| `static/js/home-page-trip-chart-drill.js` | Trip chart drill-down detail (~21 KB). |
+| `static/js/home-page-trip-locs.js` | Trip locations research layer (~29 KB). |
+| `static/js/home-page-grid.js` | **Grid homespace page JS module** (~29 KB). Entry: `initGridPage(pid)`. Manages `home_grid_cells` — drag-to-position images, aspect-ratio picker, caption editor. |
+| `static/js/home-page-grid-actions.js` | Grid cell action toolbar (delete, move, lightbox) (~15 KB). |
+| `static/js/home-page-grid-lightbox.js` | Grid lightbox fullscreen viewer (~4 KB). |
+| `static/js/home-page-crm-bulk.js` | CRM bulk select + multi-action toolbar (~11 KB). |
+| `static/js/home-page-crm-calendar.js` | CRM calendar view — contact events on a monthly calendar (~14 KB). |
+| `static/js/home-page-crm-detail.js` | CRM contact detail/profile panel (~10 KB). |
+| `static/js/home-page-crm-gallery.js` | CRM gallery (card grid) view renderer (~27 KB). |
+| `static/js/home-page-crm-pipeline.js` | CRM kanban pipeline view — stages + deals drag-and-drop (~24 KB). |
+| `static/js/home-page-crm-reminders.js` | CRM contact reminders — per-contact date/time reminders with recurrence (~26 KB). |
+| `static/js/home-page-crm-slash.js` | CRM slash commands for inline field entry in contact notes (~9 KB). |
+| `static/js/home-page-crm-table.js` | CRM table view renderer — sortable columns, inline cell edit (~9 KB). |
+| `static/js/home-page-uploads-sign.js` | **PDF signature drawing module**. Canvas-based signature pad + ghost drag-to-place flow. `_uplSigConfirmGhost()` stamps the drawn PNG at chosen coords. `_uplSigGhostActive` reset-before-guard (Quirk #23). |
+| `static/js/sharing.js` | **Public share link UI** (~13 KB). `shareOpenModal(type, id)`, `shareCreateLink()`, `shareRevokeLink()`, `shareCopyLink()`. Wired from share buttons in note detail and DB card panels. |
 | `routers/home_subscriptions.py` | **Subscriptions page API** (Phase 1, commit `177a335`). 5 JSON endpoints under `/home/subscriptions/{page_id}/…`: list (`GET /`), summary (`GET /summary`), add (`POST /`), update (`PUT /{sub_id}`), delete (`DELETE /{sub_id}`). Auth via `_uid()` + `_get_subs_page()` (ownership + page-type guard). |
 | `routers/home_settle.py` | **Settle Up widget API** (Settle Up feature). Prefix `/home`. Cascade picker endpoints (read-only, no demo guard): `GET /settle-up/trip-pages` — trip pages for current user; `GET /settle-up/trip-plans?page_id=N` — plans for a trip page (validates ownership + page_type); `GET /settle-up/settle-panels?page_id=N&plan_id=N` — `settle`-type panels for a plan. Standalone data write: `PUT /pages/{page_id}/widgets/{widget_id}/settle` — demo-guarded + ownership double-check on both page and widget; sanitises `currency`, `people`, `expenses`; merges into existing config (preserves sync keys). |
+| `routers/home_buds.py` | **Buds widget API.** Endpoints under `/home/buds/{widget_id}/`: list buds, add bud, update bud (health, watered, name, species, notes), delete bud, add/complete/delete fertilize plans. Auth via `_uid()` + widget ownership check. |
+| `routers/home_buds_db.py` | DB helpers for the Buds widget (`buds` + `bud_fertilize_plans` tables). |
+| `routers/home_grid.py` | **Grid homespace page API.** Manages `home_grid_cells` (position, cell_type, upload_id, aspect, caption). |
+| `routers/home_grid_db.py` | DB helpers for Grid page cells. |
+| `routers/home_trip.py` | **Trip Planning homespace page API** (~26 KB). Endpoints for trip spots, day lanes, day-spot assignments, day blocks. Ownership gated via `_get_trip_page()`. |
+| `routers/home_trip_db.py` | DB helpers for trip planning (~47 KB) — spots CRUD, days CRUD, blocks CRUD, all location + attrs queries. |
+| `routers/home_trip_panels.py` | **Trip plan panels API** — side-card CRUD for documents/packing/budget/settle panels. Also handles Settle Up sync writes. |
+| `routers/home_uploads_catalogs.py` | **Upload catalogs API** — label-tree CRUD for grouping uploads. Endpoints under `/home/uploads/{pid}/catalogs/`. |
+| `routers/home_uploads_folders.py` | **Upload folders API** — virtual folder tree CRUD. Endpoints under `/home/uploads/{pid}/folders/`. |
+| `routers/uploads_catalogs_db.py` | DB helpers for upload catalogs (`upload_catalogs` + `upload_catalog_files`). |
+| `routers/uploads_folders_db.py` | DB helpers for upload folders (`upload_folders` table). |
+| `routers/sharing.py` | **Public share links** — create/revoke shareable tokens for notes and DB cards. Serves public view pages under `/share/view/{token}`. Auth bypassed via prefix check. |
+| `routers/sharing_db.py` | DB helpers for `public_share_links` table. |
+| `routers/workspace_databases.py` | **Workspace Database node API** — manages database-type workspaces (`ws_type='database'`). |
+| `routers/workspace_db_cards.py` | **DB card CRUD API** — create/read/update/delete `db_cards` + `db_card_attrs`; card cover upload/unlink. |
+| `routers/note_reminders.py` | **Note reminders API** — CRUD for `note_reminders` (reminders set via `/reminder` slash command in note editor). |
+| `routers/seed_uploads.py` | Dev/demo helper — seeds sample upload files; not exposed in prod. |
 | `routers/home_subscriptions_db.py` | **Subscriptions DB helpers + business logic** (Phase 1). Key fns: `get_price_per_month(cycle, frequency, amount)` — normalises any cycle to monthly cost; `get_subscription_progress(cycle, frequency, next_payment_date)` — returns 0.0–1.0 progress float through current billing period; `get_subscriptions`, `add_subscription`, `update_subscription`, `delete_subscription`, `get_summary_data` (totals + per-category breakdown, active-only). |
 | `templates/partials/home_page_subscriptions.html` | **Subscriptions page shell** (Phase 1). Two-panel layout. Root: `#subs-page-root[data-page-id]`. Left panel: `#subs-filter-bar`, `#subs-list`, add button. Right panel: `#subs-summary-cards`, `#subs-donut-chart`, `#subs-bar-chart` (both in fixed-height divs), `#subs-upcoming`. Modals: `#subs-modal` (add/edit), `#subs-del-modal` (delete confirm). No inline `<script>` blocks. |
 | `static/js/home-page-subscriptions.js` | **Subscriptions JS module** (Phase 1). All `var`. Entry: `initSubsPage(pid)` called by `_initSwappedPage()`. Key fns: `_subsLoadAll`, `_subsRenderList`, `_subsRenderSummaryCards`, `_subsLoadCharts` (lazy-loads `chart.umd.min.js`), `_subsRenderDonut`, `_subsRenderBar`, `_subsRenderUpcoming`, `subsOpenAddModal`, `subsCloseModal`, `_subsEdit`, `_subsSubmitForm`, `_subsDeletePrompt`. Inactive subscriptions excluded from all analytics totals. |
@@ -193,6 +237,7 @@
 **`users`**
 - `id, username, password_hash, role (user/superadmin), created_at`
 - `totp_secret, totp_enabled` — added via migration
+- `unlimited_uploads INTEGER NOT NULL DEFAULT 0` — added via migration (bypasses per-user upload cap when 1)
 - First created user is auto-promoted to `superadmin`
 
 **`workspaces`**
@@ -217,6 +262,7 @@
 - Soft-delete via `deleted_at`; `purge_expired_home_pages()` hard-deletes pages trashed >30 days on server startup
 
 **`home_widgets`** — widgets on a page (`page_id, widget_type, style, config_json, sort_order`)
+- `group_id INTEGER REFERENCES home_widgets(id) ON DELETE SET NULL` — added via migration; non-NULL = child slide of a `stack` widget. ON DELETE SET NULL frees children when the stack container is deleted.
 
 **`rss_page_feeds`**
 - `id, page_id, user_id, url, label, color, sort_order, created_at`
@@ -233,6 +279,10 @@
 **`crm_contacts`** — contact records scoped per CRM page
 - `id, page_id, user_id, name, email, phone, company, tags` (comma-sep), `avatar_emoji, sort_order, created_at, updated_at`
 - `updated_at` maintained by SQLite trigger `crm_contacts_updated_at`
+- `profile_pic TEXT NOT NULL DEFAULT ''` — added via migration (base64 or URL)
+- `birthday TEXT NOT NULL DEFAULT ''` — added via migration (ISO date)
+- `first_met_date TEXT NOT NULL DEFAULT ''` — added via migration (ISO date)
+- `relationship TEXT NOT NULL DEFAULT ''` — added via migration (free-text relationship label)
 
 **`crm_custom_fields`** — field definitions per CRM page
 - `id, page_id, user_id, label, field_type`, `options` (pipe-sep for select/multi_select), `sort_order, created_at`
@@ -261,6 +311,9 @@
 
 **`page_uploads`** — standalone files dropped directly on an Uploads homespace page
 - `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `filename, original_name, mime_type, size, created_at`
+- `folder_id INTEGER REFERENCES upload_folders(id) ON DELETE SET NULL` — added via migration (virtual folder assignment)
+- `db_card_id INTEGER REFERENCES db_cards(id) ON DELETE SET NULL` — added via migration (links upload to a DB card)
+- `db_card_attr_id INTEGER REFERENCES db_card_attrs(id) ON DELETE SET NULL` — added via migration (links to specific attr)
 - Index: `idx_page_uploads_user ON page_uploads(user_id, created_at)`
 
 **`page_upload_tags`** — user-defined tags applied to any file (note attachment or standalone upload)
@@ -292,6 +345,117 @@
 - `notes TEXT NOT NULL DEFAULT ''`
 - `created_at DATETIME DEFAULT CURRENT_TIMESTAMP`
 - Indexes: `idx_subscriptions_page(page_id)`, `idx_subscriptions_next_payment(page_id, next_payment_date)`
+- `website_url TEXT NOT NULL DEFAULT ''` — added via migration (icon/link display)
+- `reminder_days INTEGER NOT NULL DEFAULT 0` — added via migration (0 = no reminder; shows banner N days before due date)
+- `start_date TEXT` — added via migration (ISO date `YYYY-MM-DD`, nullable; when the subscription began)
+
+**`upload_folders`** — virtual folder tree scoped to an Uploads homespace page
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `name, parent_id` (→`upload_folders` SET NULL), `sort_order, created_at`
+- `deleted_at DATETIME DEFAULT NULL` — added via migration (soft-delete)
+- Index: `idx_upload_folders_page ON upload_folders(page_id, user_id, parent_id, sort_order)`
+
+**`upload_catalogs`** — many-to-many label tree for Uploads pages (tags groups of files)
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `name, parent_id` (→`upload_catalogs` SET NULL), `sort_order, created_at`
+- `deleted_at DATETIME DEFAULT NULL` — added via migration (soft-delete)
+- Index: `idx_upload_catalogs_page ON upload_catalogs(page_id, user_id, parent_id, sort_order)`
+
+**`upload_catalog_files`** — M2M junction: catalogs ↔ page_uploads
+- `catalog_id` (→`upload_catalogs` CASCADE), `upload_id` (→`page_uploads` CASCADE), `user_id` (→`users` CASCADE), `added_at`
+- `PRIMARY KEY (catalog_id, upload_id)`
+- Index: `idx_ucf_upload ON upload_catalog_files(upload_id, user_id)`
+
+**`buds`** — plant-care / relationship tracker entries per widget
+- `id, widget_id` (→`home_widgets` CASCADE), `user_id` (→`users` CASCADE), `name, flower_species TEXT DEFAULT 'daisy'`
+- `see_every_days INTEGER DEFAULT 7` — target watering interval
+- `health REAL DEFAULT 100.0` — 0–100 score, degrades when overdue
+- `health_updated_at DATE DEFAULT date('now')`, `last_watered_week TEXT`
+- `crm_contact_id INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL` — optional CRM link
+- `notes TEXT, sort_order, created_at`
+- Indexes: `idx_buds_widget(widget_id, sort_order)`, `idx_buds_user(user_id)`, `idx_buds_crm(crm_contact_id)`
+
+**`bud_fertilize_plans`** — scheduled check-in/fertilize events per bud
+- `id, bud_id` (→`buds` CASCADE), `user_id` (→`users` CASCADE), `planned_date DATE, note TEXT, completed_at DATETIME, created_at`
+
+**`home_grid_cells`** — grid layout cells for Grid-type homespace pages
+- `id, page_id` (→`home_pages` CASCADE), `position INTEGER DEFAULT 0`
+- `cell_type TEXT DEFAULT 'empty'`, `upload_id INTEGER REFERENCES page_uploads(id) ON DELETE SET NULL`
+- `aspect TEXT DEFAULT '1:1'`, `caption TEXT DEFAULT ''`, `config_json TEXT DEFAULT '{}'`, `created_at`
+- Index: `idx_grid_cells_page ON home_grid_cells(page_id, position)`
+
+**`trip_spots`** — researched destinations / points of interest per Trip page
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `name, spot_type TEXT DEFAULT 'Other'`
+- `cover_url, map_url, notes TEXT, priority INTEGER DEFAULT 3, estimated_cost REAL DEFAULT 0, currency TEXT DEFAULT 'USD'`
+- `sort_order, created_at, updated_at` — `updated_at` maintained by trigger `trip_spots_updated_at`
+- `location_id INTEGER REFERENCES trip_locations(id) ON DELETE SET NULL` — added via migration
+- Index: `idx_trip_spots_page ON trip_spots(page_id, user_id)`
+
+**`trip_days`** — day lanes inside a trip plan
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `day_label TEXT, day_date TEXT, sort_order, created_at`
+- `plan_id INTEGER REFERENCES trip_plans(id) ON DELETE CASCADE` — added via migration (nullable for pre-existing rows)
+- Index: `idx_trip_days_page ON trip_days(page_id, user_id)`
+
+**`trip_day_spots`** — M2M: spots assigned to specific day lanes
+- `id, day_id` (→`trip_days` CASCADE), `spot_id` (→`trip_spots` CASCADE), `time_label TEXT, sort_order`
+- `UNIQUE(day_id, spot_id)`
+- Index: `idx_trip_day_spots_day ON trip_day_spots(day_id)`
+
+**`trip_day_blocks`** — flexible block content inside day lanes (notes, checklists, etc.)
+- `id, day_id` (→`trip_days` CASCADE), `block_type TEXT DEFAULT 'note'`, `order_idx INTEGER DEFAULT 0`
+- `time_label TEXT, content TEXT DEFAULT '{}'`
+- Index: `idx_trip_day_blocks_day ON trip_day_blocks(day_id)`
+
+**`trip_locations`** — research-layer locations (parent of spots) per Trip page
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `name, priority INTEGER DEFAULT 3`
+- `notes TEXT, cover_url TEXT, sort_order, created_at`
+- Index: `idx_trip_locations_page ON trip_locations(page_id, user_id, sort_order)`
+
+**`trip_location_attrs`** — user-defined key/value attributes per location
+- `id, location_id` (→`trip_locations` CASCADE), `attr_key TEXT, attr_value TEXT, sort_order`
+- Index: `idx_trip_loc_attrs_loc ON trip_location_attrs(location_id)`
+
+**`trip_spot_attrs`** — user-defined key/value attributes per spot
+- `id, spot_id` (→`trip_spots` CASCADE), `attr_key TEXT, attr_value TEXT, sort_order`
+- Index: `idx_trip_spot_attrs_spot ON trip_spot_attrs(spot_id)`
+
+**`trip_plans`** — itinerary segments (named trips with date ranges) per Trip page
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE)`
+- `plan_name TEXT DEFAULT 'Trip'`, `plan_desc TEXT`, `start_date TEXT, end_date TEXT, sort_order, created_at`
+- `cover_url TEXT NOT NULL DEFAULT ''` — added via migration
+- Index: `idx_trip_plans_page ON trip_plans(page_id, user_id)`
+
+**`trip_plan_panels`** — utility side-cards per plan (documents, packing, budget, emergency info, settle-up)
+- `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `plan_id` (→`trip_plans` CASCADE)
+- `panel_type TEXT NOT NULL`, `title TEXT, content TEXT DEFAULT '{}', sort_order, created_at`
+- Index: `idx_trip_plan_panels_plan ON trip_plan_panels(plan_id)`
+- `panel_type='settle'` rows are read/written by the Settle Up widget in sync mode
+
+**`db_cards`** — kanban/grid cards inside a Database-type workspace node
+- `id, db_id` (→`workspaces` CASCADE), `user_id` (→`users` CASCADE)
+- `title TEXT DEFAULT 'Untitled'`, `cover_url TEXT, note_content TEXT, note_box_height INTEGER DEFAULT 200`
+- `sort_order, created_at, updated_at` — `updated_at` by trigger `db_cards_updated_at`
+- `cover_upload_id INTEGER REFERENCES page_uploads(id)` — added via migration; `page_uploads_cover_unlink` BEFORE DELETE trigger auto-clears on upload delete
+- Index: `idx_db_cards_db ON db_cards(db_id, sort_order)`
+
+**`db_card_attrs`** — user-defined attribute fields per DB card
+- `id, card_id` (→`db_cards` CASCADE), `attr_key TEXT, attr_value TEXT, attr_type TEXT DEFAULT 'text'`
+- `attr_options TEXT DEFAULT ''`, `sort_order`
+- `visibility TEXT NOT NULL DEFAULT 'always'` — added via migration
+- Index: `idx_db_card_attrs_card ON db_card_attrs(card_id, sort_order)`
+
+**`note_reminders`** — inline reminders set via the `/reminder` slash command in notes
+- `id, user_id` (→`users` CASCADE), `note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL`
+- `label TEXT, reminder_date TEXT NOT NULL, reminder_time TEXT DEFAULT '09:00'`
+- `message TEXT DEFAULT ''` — also added via additive migration for existing DBs
+- `fired INTEGER DEFAULT 0`, `created_at`
+- Index: `idx_note_reminders_user_date ON note_reminders(user_id, reminder_date)`
+
+**`public_share_links`** — shareable tokens for notes and DB cards
+- `id, token TEXT NOT NULL UNIQUE`
+- `object_type TEXT CHECK(IN 'note', 'db_card')`, `object_id INTEGER NOT NULL`
+- `owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE`
+- `created_at DATETIME, expires_at DATETIME DEFAULT NULL`
+- Indexes: `idx_pub_share_token(token)`, `UNIQUE idx_pub_share_object(object_type, object_id, owner_id)`
+- Routes served under `/share/view/` prefix — bypassed by auth middleware (prefix check, NOT in `_PUBLIC`)
 
 ---
 
@@ -320,6 +484,8 @@ Each widget has a `widget_type` (string) and a `style` (string variant). Config 
 | `rss_feed` | `card`, `compact`, `minimal` | RSS feed widget; feeds auto-sync to linked RSS Reader pages |
 | `upload_preview` | `grid`, `carousel` | **File Preview widget** — pinned uploads from any Uploads page rendered as a thumbnail grid or carousel. Config: `{upload_ids: [int], caption: "0"\|"1", style: "grid"\|"carousel"}`. No new DB tables — reads from existing `page_uploads` table. JS engine: `home-widget-upload-preview.js`. File picker calls `GET /home/pages` then `GET /home/uploads/{pid}/files?scoped=1`. |
 | `settle_up` | `default`, `compact` | **Settle Up dashboard widget** — group expense splitter. Two modes: **standalone** (owns `{currency, people, expenses}` in `home_widgets.config_json`) and **sync** (reads/writes a Trip Planning `trip_plan_panels` row of `panel_type='settle'`). Config keys: `currency`, `people`, `expenses`, `synced_page_id`, `synced_plan_id`, `synced_panel_id`. JS engine: `home-widget-settle.js`. Sync-mode entry point: `_settleUpInit(el)` → `_suFetchSync` → `_suRender`; standalone seeds from `<script id="su-data-{wid}">` JSON blob. Settlement calc: `_suSettlementCalc(people, expenses)` — greedy debt simplification. Standalone write: `PUT /home/pages/{page_id}/widgets/{widget_id}/settle` (demo-guarded, ownership double-checked). Sync write: `PUT /home/trip/{page_id}/plans/{plan_id}/panels/{panel_id}`. Cascade picker endpoints (read-only, no demo guard): `GET /home/settle-up/trip-pages`, `GET /home/settle-up/trip-plans?page_id=N`, `GET /home/settle-up/settle-panels?page_id=N&plan_id=N`. Cascade helpers in `home-widgets.js`: `_suCascadePlans(tripPageSel)`, `_suCascadePanels(planSel)` — each repopulates its downstream select and restores saved value via `data-savedVal`. |
+| `buds` | `default` | **Plant-care / relationship tracker widget.** Each "bud" is a person or virtual plant with a species (daisy/tulip/rose/etc.), a watering schedule (`see_every_days`), and a `health` score (0–100, degrades when overdue). Optional link to a CRM contact (`crm_contact_id`). DB: `buds` table + `bud_fertilize_plans` (scheduled check-ins). Router: `routers/home_buds.py` + `routers/home_buds_db.py`. JS engine: `home-widget-buds.js` (animated flower sprites from `static/img/buds/`). Entry point: `_budsInit(el)` called from `initHomeWidgets()`. |
+| `subscriptions_summary` | `default` | **Subscriptions summary card** — compact read-only summary of active subscription costs (total monthly + count) that links to a Subscriptions homespace page. Config: `{linked_page_id}`. Data fetched from the `subscriptions` table via the Subscriptions page API. JS engine: inline via `home-widgets-render.js`. No standalone CRUD — purely a cross-page display widget. |
 
 **Jinja2 filters used by widget templates** (all registered in `templates_env.py`):
 - `fmt_bytes` — human-readable file sizes
@@ -355,7 +521,8 @@ The stack widget is a carousel container. Its sizing is tricky because slides ar
 
 - Session-based via `starlette.middleware.sessions` (30-day cookie TTL)
 - `AuthMiddleware` in `auth_middleware.py` intercepts unauthenticated requests
-- Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`
+- Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`, `/manifest.json`, `/sw.js`, `/offline`
+  - PWA routes (`/manifest.json`, `/sw.js`, `/offline`) are public so browsers and the OS can fetch them without a session cookie (needed for installable PWA / offline page support)
 - `/static/` prefix is allowed separately via path-prefix check, not via `_PUBLIC`
 - `/wopi/` prefix is also bypassed via the same path-prefix check (alongside `/static/`) — **NOT added to `_PUBLIC`**. This lets Collabora’s server-to-server WOPI callbacks (CheckFileInfo, GetFile, PutFile) reach BookWorm without a session cookie; they carry a short-lived `itsdangerous` token in `?access_token=` instead.
 - First-run: `/setup` creates the first user (role=`superadmin`). Blocked if any user exists.
@@ -494,6 +661,24 @@ YouTube's `feeds/videos.xml?channel_id=UC…` endpoint returns **HTTP 404 for al
 | Feeds not loading at all | `initRssPage()` in `home-page-rss.js`; `_initSwappedPage()` in `home-widgets.js` |
 | RSS page blank after HTMX nav | `home-widgets.js` → `_initSwappedPage()` → `rss-page-root` guard |
 | Session expiry triggers wrong error | `auth_middleware.py` `_bounce()` — fetch() gets 302→HTML; check `r.redirected` before `r.json()` |
+
+---
+
+## 🚧 In Progress / Last Session Work
+
+> ⚠️ **This section requires human judgment to update — not auto-updated by docs-keeper.**
+> Last recorded session: **2026-04-22** (Subscriptions Phase 1 + Tailwind CDN debt resolved).
+> As of 2026-05-16 that is **24 days ago** — consider updating before the next coding session.
+
+| Item | Status | Notes |
+|---|---|---|
+| Subscriptions Phase 1 | ✅ Shipped (2026-04-22) | 5 endpoints, Chart.js donut+bar, `subscriptions` table |
+| Tailwind CDN → local bundle | ✅ Shipped (2026-04-22) | CLI v3.4.17, `static/css/tailwind.css` committed |
+| Trip Planning homespace | ✅ Shipped | `trip_*` tables, panels, buds, grid all in DB |
+| Buds widget | ✅ Shipped | `buds` + `bud_fertilize_plans` tables, widget type in dispatch |
+| Grid homespace | ✅ Shipped | `home_grid_cells` table, `home-page-grid.js` |
+| Public share links | ✅ Shipped | `public_share_links` table, `/share/view/` routes |
+| Next planned work | ❓ Unknown | Update this section at start of next session |
 
 ---
 
@@ -636,8 +821,8 @@ Eddie is always the outermost layer — agents supplement, not replace.
 2. **Git not in PATH** on this machine. Git binary not found in standard locations. Use `restart.bat` for server management. Track changes by file `LastWriteTime` if needed.
 3. **Inline Python `-c` scripts** don't flush stdout reliably in Windows cmd — use a `.py` file instead.
 4. **Template filter test trap:** Testing Jinja2 templates with a vanilla `jinja2.Environment()` will always fail for BookWorm's custom filters. Always import from `templates_env` to get the properly configured environment.
-5. **`note_form.html` is 122 KB** — avoid reading the whole thing at once; use `start_line`/`num_lines`.
-6. **`home_page.html` is 54 KB** — same deal.
+5. **`note_form.html` is ~165 KB** — avoid reading the whole thing at once; use `start_line`/`num_lines`.
+6. **`home_page.html` is ~117 KB** — same deal.
 7. **HTMX OOB swaps** — if a partial response needs to update the sidebar, it must return OOB fragments with correct IDs.
 8. **Port conflict** — Teams uses 8080. Never kill that. BookWorm is on 8000 (local dev via `restart.bat`) or 8001 (Docker). **Confirmed 2026-04-10: server is currently running via `python main.py` on port 8001.** `restart.bat` targets port 8000 via uvicorn directly — these two startup paths are mismatched. The `python main.py` path uses `uvicorn.run(..., reload=True)` so file changes auto-reload, but the DB migration only runs on cold startup. **Workaround:** When a new DB migration is needed that the reload didn't pick up, run `_migrate_once.py` directly against `bookworm.db` using `.venv\Scripts\python.exe`. The running process holds a read lock but SQLite allows `ALTER TABLE` from a second connection as long as no write transaction is active.
 9. **`netstat` may show ghost PIDs on port 8001** — PID entries are real but invisible to `Get-Process`/`wmic`/`Get-CimInstance`. These are likely Windows port-forwarding entries from Docker/WSL2 NAT. The actual Python server process is not killable via normal Windows process tools when started this way. To restart: use the uvicorn file-watcher (`reload=True`) for Python changes; touch static JS files to bump their mtime for cache-busting.
@@ -704,6 +889,15 @@ Eddie is always the outermost layer — agents supplement, not replace.
     - If the worker URL is on a different version than the main script, `getDocument()` silently hangs — no error thrown, no timeout, spinner never resolves. Always update **both** URLs together when upgrading PDF.js. (G3 in `home-page-uploads-annot.js` guards this with an inline comment.)
 25. **`GET /home/pages` is a shared dependency for two pickers in `routers/home.py`** (commit `92b68bc`). Both the add-widget modal's **CRM pages** `<select>` field (`select-crm-pages`) AND the **upload-preview file picker** call `GET /home/pages` to populate their page-selector dropdowns. If this endpoint is ever removed, renamed, or placed **after** `/pages/{page_id}` in the router, both pickers silently break with an empty dropdown — no JS error, just nothing to select. Rule: keep `list_pages_json` as the first route under the `/pages` prefix in `routers/home.py`.
 26. **`_fetch_raw(send_rss_accept=True)` MUST be `False` when following autodiscovered YouTube feed URLs.** The initial fetch of a YouTube channel page uses `send_rss_accept=True` (adds `Accept: application/rss+xml…` to help generic sites serve the feed directly). However, if you then call `_fetch_raw(feed_url, True)` on the *discovered* `feeds/videos.xml` URL, YouTube returns HTTP 500 (not 404) when that Accept header is present — the server interprets it as an API call and fails. The fix is `_fetch_raw(feed_url, False)` for any URL returned by `_autodiscover_feed_url()`. This is already wired correctly in `rss_proxy()` (`partial(_fetch_raw, feed_url, False)`) — do NOT change it to `True` when refactoring this code path. Same applies to the `/videos` tab fallback fetch.
+27. **A stray `}` in an inline `<script>` block silently kills every function in that block — and `typeof` guards make it harder to notice.** A single extra closing brace anywhere in a large `<script>` causes a `SyntaxError` that prevents the browser from registering **every** function in that block. The symptom is buttons that do nothing silently — no console error. The problem is made worse when `typeof fn==='function'&&fn()` onclick guards are used: the guard catches the undefined-function case and short-circuits, swallowing all evidence of the crash. Root case: commit `9971f5f` accidentally left a duplicate `}` after `wsDoubleClick()`, nuking all 78 functions in the 1 700-line main `<script>` block. Fixed in commit `656ebf3` (1-line deletion). **Rule: after editing any inline `<script>` block in `index.html`, run the brace-balance checker:**
+    ```
+    .venv\Scripts\python.exe _check_js3.py
+    # All three must read net: +0
+    #   {} net: +0  ✅
+    #   [] net:  +0  ✅
+    #   () net:  +0  ✅
+    ```
+    `_check_js3.py` strips Jinja2 `{{ }}` / `{% %}`, then block comments, line comments, template literals, double-quoted strings, and single-quoted strings (all with `re.DOTALL`) before counting bracket balance. A `net: -1` on `{}` means a real syntax error — do NOT paper over it with more `typeof` guards; find and delete the stray brace.
 
 ---
 
@@ -763,6 +957,7 @@ powershell -Command "Start-Sleep 5"
 
 | Date | What happened |
 |---|---|
+| 2026-05-13 | **Root-cause fix: stray `}` after `wsDoubleClick` silently killed all 78 main-script functions (commit `656ebf3`).** Symptom: workspace and homespace collapse/expand buttons did nothing. Initial investigation added `typeof fn==='function'&&fn()` onclick guards (commit `035a4eb`) to prevent `ReferenceError`, but that masked the deeper crash. Root cause found via a Python brace-balance scanner (`_check_js3.py`) on the extracted main `<script>` block: `{} net: -1` revealed one extra closing `}` after `wsDoubleClick()` (inserted in commit `9971f5f`). The stray brace caused a `SyntaxError` that prevented the browser from parsing the entire 1 700-line block, leaving all 78 functions undefined. Fix: remove the duplicate `}` (1-line deletion). Lesson documented as Quirk #27. |
 | 2026-04-22 | **Subscriptions Homespace page — Phase 1 (commit `177a335`).** New page type for tracking recurring costs (Wallos-inspired). New DB table: `subscriptions` (12 columns, 2 indexes; cycle codes 1=daily/2=weekly/3=monthly/4=yearly; `active=0` excluded from analytics). `PAGE_TYPES` frozenset in `routers/home_db.py` updated. `_initSwappedPage()` in `home-widgets.js` dispatches `#subs-page-root` → `initSubsPage(pid)` (inserted after CRM block, before Grid fallback). Chart.js 4.4.4 bundled locally as `static/js/vendor/chart.umd.min.js` (≈200 KB); loaded lazily by `_subsLoadCharts()` on first render — not in `base.html`. New router: `routers/home_subscriptions.py` (5 JSON endpoints: list, summary, add, update, delete; `_get_subs_page()` handles ownership+type guard). New DB helpers: `routers/home_subscriptions_db.py` (`get_price_per_month`, `get_subscription_progress`, `get_subscriptions`, `add_subscription`, `update_subscription`, `delete_subscription`, `get_summary_data`). New template: `templates/partials/home_page_subscriptions.html` (two-panel shell; root `#subs-page-root[data-page-id]`; left: `#subs-filter-bar`, `#subs-list`; right: `#subs-summary-cards`, `#subs-donut-chart`, `#subs-bar-chart`, `#subs-upcoming`; modals `#subs-modal` + `#subs-del-modal`). New JS module: `static/js/home-page-subscriptions.js` (all `var`; entry `initSubsPage(pid)`; key fns: `_subsLoadAll`, `_subsRenderList`, `_subsRenderSummaryCards`, `_subsLoadCharts`, `_subsRenderDonut`, `_subsRenderBar`, `_subsRenderUpcoming`, `subsOpenAddModal`, `subsCloseModal`, `_subsEdit`, `_subsSubmitForm`, `_subsDeletePrompt`). |
 | 2026-04-22 | **Stack widget sizing + File Preview scroll fixes (5 commits, `cbae523` final).** Four separate bugs squashed: **(1) File Preview thumbnails invisible in grid style** — `#upl-prev-{id}` had `overflow-hidden` (clipping) and the grid had `h-full` (no overflow to scroll). Fixed: `overflow-y-auto` on container, `h-full` removed from grid so content grows naturally. **(2) Single-file preview squished in stack** — new single-file branch in `_uplPrevRender` skips the grid entirely; renders thumbnail with `w-full h-full` inside `flex-col h-full` wrapper. `_uplThumbHtml` gained `sizeClass` param (default `'aspect-square'`; pass `'w-full h-full'` for fill layout). **(3) Stack child page order ignored drag direction** — `create_stack_widget` now stores `child_order:[targetId,srcId]` in config. `stack_add_child` appends new child to `child_order`. `get_widgets()` re-sorts children by `child_order` on read; backwards-compat seeds from `sort_order` when key absent. **(4) Stack content squished (root cause: `grid-auto-rows:auto` magic)** — standalone widgets expand rows to fit content; stacked widgets can’t (slides are `absolute inset-0`). Previous attempts at chrome math all missed the real height. Real fix: JS `_stackHeightHint(card)` captures `card.offsetHeight` at drop time (capped `rowSpan×250px` to prevent sibling-grid inflation), sends as `height_px_hint` form field. `create_stack_widget` / `stack_add_child` store it as `min_height_px` in config. Template applies `min-height: Npx` directly when present; formula fallback for old stacks. Row span is **never auto-inflated** (user requirement). Old squished stacks: unstack + re-stack to re-measure. Files: `home-widget-upload-preview.js`, `home-widget-stack.js`, `home-widgets.js`, `home.py`, `home_db.py`, `home_page.html`. |
 | 2026-04-20 | **YouTube RSS scraper + Walmart proxy fix shipped.** Root cause of YouTube feed failures: Walmart's McAfee Web Gateway (`sysproxy.wal-mart.com:8080`) requires Kerberos/NTLM proxy auth; `urllib.request.ProxyHandler` cannot negotiate this → 407 on all outbound feeds. Fix: (1) **`_curl_fetch()`** replaces urllib — runs `curl --proxy-negotiate -u :` (Windows SSPI Kerberos, no password) via `subprocess.run` with a tempfile for the response body; returns `(bytes, content_type_str)`. (2) **`_fetch_raw(url, send_rss_accept=True)`** — `send_rss_accept=False` flag added for autodiscovered feed URLs (YouTube RSS returns 500 with the Accept header). (3) **`_parse_yt_html(html_text)`** — NEW: BFS-walks `ytInitialData` JSON embedded in YouTube channel HTML. Collects `gridVideoRenderer` (channel Videos tab) + `videoRenderer` (Home/search) nodes; returns `{feed_title, items}` matching `_parse_rss()` shape, or `None` if no videos. Bypasses `feeds/videos.xml` entirely (blocked by McAfee egress IP rate-limit). (4) **`rss_proxy()`** YouTube branch: `_parse_yt_html` on Home page → fallback to `/videos` tab → 502 if both fail. (5) **`_autodiscover_feed_url()`** — YouTube-specific extraction from `ytInitialData` (`externalChannelId`, `channelId` patterns) before generic `<link>` tag scan. File changed: `routers/home.py`. See **🌐 Network & Proxy** section above. |
