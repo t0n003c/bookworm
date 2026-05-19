@@ -849,6 +849,8 @@ function _crmContactModal(c) {
     }, { passive: true });
     _modalBody.addEventListener('touchend',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
     _modalBody.addEventListener('touchmove',  function() { clearTimeout(_holdTimer); _holdTimer = null; });
+    // Stamp the mobile pencil hint on all labels
+    setTimeout(function() { _crmCfInjectMobileHints(_modalBody); }, 0);
   }
   // Attach slash-command palette to all text fields in the modal
   if (typeof _crmAttachSlash === 'function') {
@@ -1496,12 +1498,43 @@ window.crmCfPopSave = async function(fieldId) {
 // Swaps the label text for a borderless input in-place.
 // Enter / blur  → save via API, revert to updated text.
 // Escape        → cancel, revert to original.
+
+/** Stamp a ✎ pencil tap-target on every label. Mobile-only (hidden ≥640 px). */
+function _crmCfInjectMobileHints(body) {
+  if (!body) return;
+  body.querySelectorAll('.crm-cf-lbl').forEach(function(lbl) {
+    if (lbl.querySelector('.crm-cf-lbl-hint')) return; // already stamped
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'crm-cf-lbl-hint';
+    btn.setAttribute('aria-label', 'Edit field name');
+    btn.setAttribute('title', 'Tap to rename field');
+    btn.style.cssText =
+      'display:' + (window.innerWidth < 640 ? 'inline-flex' : 'none') + ';'
+      + 'align-items:center;justify-content:center;'
+      + 'margin-left:4px;width:16px;height:16px;'
+      + 'font-size:10px;line-height:1;color:#9ca3af;'
+      + 'background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;'
+      + 'vertical-align:middle;border-radius:3px;';
+    btn.textContent = '\u270e';
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      crmCfInlineEdit(lbl);
+    });
+    lbl.appendChild(btn);
+  });
+}
+
 window.crmCfInlineEdit = function(lblEl) {
   if (!lblEl || lblEl.querySelector('input')) return; // guard: already editing
   var fieldId = parseInt(lblEl.getAttribute('data-field-id'), 10);
   var f = (_crmFields || []).find(function(x) { return x.id === fieldId; });
   if (!f) return;
 
+  // Strip any injected hint button so origText is clean plain text
+  var existingHint = lblEl.querySelector('.crm-cf-lbl-hint');
+  if (existingHint) existingHint.remove();
   var origText = f.label;
 
   var inp = document.createElement('input');
@@ -1520,33 +1553,34 @@ window.crmCfInlineEdit = function(lblEl) {
   inp.select();
 
   var _committed = false;
+  var _modalBody = lblEl.closest('#crm-modal-body');
+
+  function _restore(text) {
+    lblEl.textContent = text;
+    lblEl.title = text + ' \u2014 double-click or hold to edit';
+    lblEl.classList.add('cursor-pointer', 'select-none');
+    _crmCfInjectMobileHints(_modalBody); // re-stamp pencil with fresh listener
+  }
 
   function revert() {
     if (_committed) return;
     _committed = true;
-    lblEl.textContent = origText;
-    lblEl.title = origText + ' \u2014 double-click or hold to edit';
-    lblEl.classList.add('cursor-pointer', 'select-none');
+    _restore(origText);
   }
 
   async function commit() {
     if (_committed) return;
     _committed = true;
     var newLabel = inp.value.trim();
-    if (!newLabel || newLabel === origText) { revert(); _committed = false; revert(); return; }
+    if (!newLabel || newLabel === origText) { _restore(origText); return; }
     try {
       _crmFields = await _crmFetch(
         '/home/crm/' + _crmPid + '/fields/' + fieldId + '/update',
         { method: 'POST', body: new URLSearchParams(
             { label: newLabel, field_type: f.field_type, options: f.options || '' }) });
-      // Patch just the label text in-place — no full modal rebuild needed
-      lblEl.textContent = newLabel;
-      lblEl.title = newLabel + ' \u2014 double-click or hold to edit';
-      lblEl.classList.add('cursor-pointer', 'select-none');
+      _restore(newLabel);
     } catch(err) {
-      lblEl.textContent = origText;
-      lblEl.title = origText + ' \u2014 double-click or hold to edit';
-      lblEl.classList.add('cursor-pointer', 'select-none');
+      _restore(origText);
       alert(err.message || 'Could not save label.');
     }
   }
