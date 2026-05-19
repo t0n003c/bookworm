@@ -46,7 +46,7 @@
   {# Close (×) button #}
   <button
     type="button"
-    onclick="event.stopPropagation(); wsCloseTab({{ ws.id }})"
+    onclick="event.stopPropagation();typeof wsCloseTab==='function'&&wsCloseTab({{ ws.id }})"
     title="Close {{ ws.name }}"
     aria-label="Close workspace {{ ws.name }}"
     class="-ml-1 flex items-center justify-center w-4 h-4 rounded-full text-white/50

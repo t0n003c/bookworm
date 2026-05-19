@@ -94,7 +94,7 @@
     <button
       id="ws-toggle-all-btn"
       type="button"
-      onclick="wsToggleAll()"
+      onclick="typeof wsToggleAll==='function'&&wsToggleAll()"
       title="Collapse all workspaces"
       aria-label="Collapse all workspaces"
       class="p-1 rounded text-gray-300 dark:text-zinc-600
@@ -111,7 +111,7 @@
     {# Add root-level workspace #}
     <button
       type="button"
-      onclick="openNewWsModal(null, null)"
+      onclick="typeof openNewWsModal==='function'&&openNewWsModal(null,null)"
       title="Add workspace"
       aria-label="Add new workspace"
       class="p-1 rounded text-gray-300 dark:text-zinc-600
@@ -127,7 +127,7 @@
     <button
       id="ws-hide-mode-btn"
       type="button"
-      onclick="_wsHideModeToggle()"
+      onclick="typeof _wsHideModeToggle==='function'&&_wsHideModeToggle()"
       title="Show / manage hidden workspaces"
       aria-label="Toggle hidden workspaces"
       aria-pressed="false"
@@ -195,7 +195,7 @@
         {% if has_kids %}
         <button
           type="button"
-          onclick="wsToggleCollapse({{ node.id }}, this)"
+          onclick="typeof wsToggleCollapse==='function'&&wsToggleCollapse({{ node.id }},this)"
           class="collapse-btn flex-shrink-0 w-4 h-4 flex items-center justify-center
                  text-gray-400 hover:text-gray-700 dark:hover:text-zinc-300 transition rounded"
           aria-label="Toggle sub-workspaces"
@@ -215,8 +215,8 @@
         <button
           type="button"
           data-ws-id="{{ node.id }}"
-          onclick="wsSingleClick({{ node.id }})"
-          ondblclick="wsDoubleClick({{ node.id }})"
+          onclick="typeof wsSingleClick==='function'&&wsSingleClick({{ node.id }})"
+          ondblclick="typeof wsDoubleClick==='function'&&wsDoubleClick({{ node.id }})"
           title="{{ node.name }} — click to view, double-click to pin to top bar"
           aria-label="Switch to workspace {{ node.name }}"
           class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left
@@ -286,7 +286,7 @@
         {# ⋮ row menu (Add sub / Duplicate / Edit / Delete) #}
         <button
           type="button"
-          onclick="event.stopPropagation(); _wsRowMenuOpen(event, {{ node.id }}, {{ node.name | tojson }}, {{ node.emoji | tojson }}, {{ node.parent_id | tojson }}, {{ node.ws_type | tojson }})"
+          onclick="event.stopPropagation();typeof _wsRowMenuOpen==='function'&&_wsRowMenuOpen(event,{{ node.id }},{{ node.name | tojson }},{{ node.emoji | tojson }},{{ node.parent_id | tojson }},{{ node.ws_type | tojson }})"
           title="More actions"
           aria-label="More actions for {{ node.name }}"
           aria-haspopup="menu"

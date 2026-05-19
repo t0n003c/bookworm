@@ -18,49 +18,6 @@
 }
 </style>
 
-<!-- ── Parse-time safety stubs ────────────────────────────────────────────────
-     Problem: index.html is large. The sidebar and top-nav render 700-1 500
-     template lines BEFORE the <script> blocks that define their onclick
-     handlers.  During the browser's HTML parse phase a user can click a
-     button before its handler is defined, producing:
-       Uncaught ReferenceError: <fn> is not defined
-     Fix: assign no-op stubs for every onclick-referenced function here,
-     BEFORE any HTML renders.  Each real `function foo()` declaration that
-     appears later automatically overwrites window.foo (global function
-     declarations always win), so these stubs never run in practice.
-     ────────────────────────────────────────────────────────────────────── -->
-<script>
-  (function _installStubs() {
-    var fns = [
-      /* sidebar workspace list */
-      '_wsHideModeToggle', '_wsRowMenuOpen', '_wsSecCollapseToggle',
-      'wsToggleCollapse', 'wsToggleAll', 'openNewWsModal',
-      /* workspace clicks */
-      'wsSingleClick', 'wsDoubleClick',
-      /* workspace tabs */
-      'wsTabClick', 'wsCloseTab', 'openEditWsModal',
-      /* workspace modals */
-      'closeEditWsModal', 'closeDeleteWsModal', '_confirmDeleteWs',
-      'closeDeleteNoteModal', '_confirmDeleteNote', 'endDemoNow',
-      /* top-nav / global UI */
-      'toggleSidebar', 'toggleTheme', 'toggleSettings',
-      'setNoteView', 'showShortcuts', 'showAccountModal',
-      /* home-page widgets */
-      '_hpgCollapseToggle', '_hpgHideModeToggle',
-      /* emoji / other late blocks */
-      'openEmojiPicker',
-    ];
-    fns.forEach(function(fn) {
-      if (typeof window[fn] === 'undefined') {
-        window[fn] = function() {
-          /* no-op stub — overwritten by the real definition when its
-             <script> block is parsed later in the document */
-        };
-      }
-    });
-  })();
-</script>
-
 <!-- ===== TOP NAV ===== -->
 <header class="h-16 bg-wblue flex items-center px-4 shadow-md fixed top-0 left-0 right-0 z-30 gap-3">
 
@@ -763,7 +720,7 @@
           <div class="flex items-center justify-between mb-2">
 
             <!-- Label doubles as collapse toggle -->
-            <button id="hpg-collapse-btn" type="button" onclick="_hpgCollapseToggle()"
+            <button id="hpg-collapse-btn" type="button" onclick="typeof _hpgCollapseToggle==='function'&&_hpgCollapseToggle()"
               aria-expanded="true" title="Collapse / expand Homespace"
               class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
                      text-gray-400 dark:text-zinc-500 select-none
@@ -788,7 +745,7 @@
 
             <!-- Right-side controls: eye (manage hidden) + new page -->
             <div class="flex items-center gap-0.5">
-              <button id="hpg-hide-mode-btn" type="button" onclick="_hpgHideModeToggle()"
+              <button id="hpg-hide-mode-btn" type="button" onclick="typeof _hpgHideModeToggle==='function'&&_hpgHideModeToggle()"
                 title="Manage hidden pages" aria-pressed="false"
                 class="p-1 rounded-lg transition
                        text-gray-300 dark:text-zinc-600
@@ -798,7 +755,7 @@
                      viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 </svg>
               </button>
-              <button type="button" onclick="openNewHomePage()"
+              <button type="button" onclick="typeof openNewHomePage==='function'&&openNewHomePage()"
                 title="Create a new personal page"
                 class="p-1 rounded-lg text-gray-400 hover:text-wblue hover:bg-gray-100
                        dark:hover:bg-zinc-800 transition"
@@ -821,7 +778,7 @@
           <div class="flex items-center justify-between mb-2">
 
             <!-- Label doubles as section collapse toggle -->
-            <button id="ws-collapse-btn" type="button" onclick="_wsSecCollapseToggle()"
+            <button id="ws-collapse-btn" type="button" onclick="typeof _wsSecCollapseToggle==='function'&&_wsSecCollapseToggle()"
               aria-expanded="true" title="Collapse / expand Workspaces"
               class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
                      text-gray-400 dark:text-zinc-500 select-none
