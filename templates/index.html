@@ -18,6 +18,49 @@
 }
 </style>
 
+<!-- ── Parse-time safety stubs ────────────────────────────────────────────────
+     Problem: index.html is large. The sidebar and top-nav render 700-1 500
+     template lines BEFORE the <script> blocks that define their onclick
+     handlers.  During the browser's HTML parse phase a user can click a
+     button before its handler is defined, producing:
+       Uncaught ReferenceError: <fn> is not defined
+     Fix: assign no-op stubs for every onclick-referenced function here,
+     BEFORE any HTML renders.  Each real `function foo()` declaration that
+     appears later automatically overwrites window.foo (global function
+     declarations always win), so these stubs never run in practice.
+     ────────────────────────────────────────────────────────────────────── -->
+<script>
+  (function _installStubs() {
+    var fns = [
+      /* sidebar workspace list */
+      '_wsHideModeToggle', '_wsRowMenuOpen', '_wsSecCollapseToggle',
+      'wsToggleCollapse', 'wsToggleAll', 'openNewWsModal',
+      /* workspace clicks */
+      'wsSingleClick', 'wsDoubleClick',
+      /* workspace tabs */
+      'wsTabClick', 'wsCloseTab', 'openEditWsModal',
+      /* workspace modals */
+      'closeEditWsModal', 'closeDeleteWsModal', '_confirmDeleteWs',
+      'closeDeleteNoteModal', '_confirmDeleteNote', 'endDemoNow',
+      /* top-nav / global UI */
+      'toggleSidebar', 'toggleTheme', 'toggleSettings',
+      'setNoteView', 'showShortcuts', 'showAccountModal',
+      /* home-page widgets */
+      '_hpgCollapseToggle', '_hpgHideModeToggle',
+      /* emoji / other late blocks */
+      'openEmojiPicker',
+    ];
+    fns.forEach(function(fn) {
+      if (typeof window[fn] === 'undefined') {
+        window[fn] = function() {
+          /* no-op stub — overwritten by the real definition when its
+             <script> block is parsed later in the document */
+        };
+      }
+    });
+  })();
+</script>
+
 <!-- ===== TOP NAV ===== -->
 <header class="h-16 bg-wblue flex items-center px-4 shadow-md fixed top-0 left-0 right-0 z-30 gap-3">
 
