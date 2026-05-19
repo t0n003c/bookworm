@@ -518,6 +518,8 @@ function _crmContactModal(c) {
                     group-hover:text-gray-400 dark:group-hover:text-zinc-500
                     select-none pt-1 text-base leading-none"
              draggable="true"
+             title="Drag to reorder · Click to edit field"
+             onclick="crmCfHandleClick(event,${fieldId})"
              ondragstart="crmCfDragStart(event,${fieldId})">⠿</span>
        <div class="flex-1 min-w-0">${innerHtml}</div>
        <button type="button" onclick="crmModalDeleteField(${fieldId},${c?.id||0})"
@@ -806,6 +808,9 @@ function _crmContactModal(c) {
       </form>
     </div>`;
   _crmShowModal(body);
+  // Stamp the contact id so the field-handle popover can re-open this modal after a save
+  var _modalWrap = document.getElementById('crm-modal');
+  if (_modalWrap) _modalWrap.setAttribute('data-contact-id', c ? String(c.id) : '');
   // Attach slash-command palette to all text fields in the modal
   if (typeof _crmAttachSlash === 'function') {
     setTimeout(function() {
@@ -1269,6 +1274,7 @@ var _crmDragFieldId = null;
 
 window.crmCfDragStart = function(e, fieldId) {
   _crmDragFieldId = fieldId;
+  window._crmCfDragged = true;          // tells click handler: this was a drag
   e.dataTransfer.effectAllowed = 'move';
   // Fade the whole row, not just the handle span
   var row = e.currentTarget.closest('.crm-cf-row');
@@ -1281,6 +1287,8 @@ window.crmCfDragEnd = function(e) {
   document.querySelectorAll('.crm-cf-row').forEach(function(el) {
     el.style.borderTop = '';
   });
+  // Clear flag after the browser fires any synthetic click from the drag gesture
+  setTimeout(function() { window._crmCfDragged = false; }, 120);
 };
 
 window.crmCfDragOver = function(e) {
@@ -1317,6 +1325,134 @@ window.crmCfDrop = async function(e, targetFieldId, contactId) {
 };
 
 // Add-field toggle — show/hide the form below the trigger button
+
+// ── Handle-click popover (click ≦5 to edit a custom field from the contact modal) ──
+window.crmCfHandleClick = function(e, fieldId) {
+  e.stopPropagation();
+  if (window._crmCfDragged) return;   // was a drag, not a plain click
+  var f = (_crmFields || []).find(function(x) { return x.id === fieldId; });
+  if (!f) return;
+
+  // Remove any existing popover first
+  crmCfPopClose();
+
+  var showOpts = f.field_type === 'select' || f.field_type === 'multi_select';
+  var typeLabels = {
+    text: 'Text', number: 'Number', date: 'Date', checkbox: 'Checkbox',
+    select: 'Select', multi_select: 'Multi-select', url: 'URL',
+    email: 'Email', phone: 'Phone', priority: 'Priority',
+  };
+  var typeName = typeLabels[f.field_type] || f.field_type;
+
+  // Position the popover next to the handle
+  var rect  = e.currentTarget.getBoundingClientRect();
+  var top   = rect.bottom + 6;
+  var left  = rect.left;
+  // Flip up if not enough room below
+  var popH  = showOpts ? 240 : 180;
+  if (top + popH > window.innerHeight - 20) top = rect.top - popH - 6;
+  // Keep inside the right edge
+  if (left + 280 > window.innerWidth - 16) left = window.innerWidth - 296;
+
+  var pop = document.createElement('div');
+  pop.id  = 'crm-cf-pop';
+  pop.style.cssText = 'position:fixed;z-index:9999;width:272px;'
+    + 'top:' + top + 'px;left:' + left + 'px;'
+    + 'background:#fff;border:1px solid #e5e7eb;border-radius:12px;'
+    + 'box-shadow:0 8px 24px rgba(0,0,0,.14);overflow:hidden;';
+  // Dark-mode
+  if (document.documentElement.classList.contains('dark')) {
+    pop.style.background = '#18181b';
+    pop.style.border = '1px solid #3f3f46';
+    pop.style.color  = '#f4f4f5';
+  }
+
+  pop.innerHTML =
+    '<div style="height:3px;background:linear-gradient(90deg,#0053e2,#ffc220)"></div>'
+    + '<div style="padding:14px 16px">'
+    + '<p style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
+    +    'color:#9ca3af;margin:0 0 10px">Edit field</p>'
+    + '<label style="display:block;font-size:11px;font-weight:500;color:#6b7280;margin-bottom:4px">Label</label>'
+    + '<input id="crm-cf-pop-label" value="' + _crmEsc(f.label) + '" required'
+    +   ' style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;'
+    +          'padding:6px 10px;font-size:13px;outline:none;background:inherit;color:inherit;"/>'
+    + '<p style="font-size:11px;color:#9ca3af;margin:8px 0 ' + (showOpts?'10px':'12px') + '">'
+    +   'Type: <strong style="color:#6b7280">' + typeName + '</strong>'
+    +   ' <em>(delete &amp; re-add to change)</em></p>'
+    + (showOpts
+        ? '<label style="display:block;font-size:11px;font-weight:500;color:#6b7280;margin-bottom:4px">'
+          + 'Options <span style="font-weight:400;color:#9ca3af">(pipe-separated)</span></label>'
+          + '<input id="crm-cf-pop-opts" value="' + _crmEsc(f.options || '') + '"'
+          +   ' placeholder="Option A|Option B|Option C"'
+          +   ' style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;'
+          +          'padding:6px 10px;font-size:13px;outline:none;background:inherit;color:inherit;margin-bottom:12px;"/>'
+        : '')
+    + '<p id="crm-cf-pop-err" style="display:none;font-size:11px;color:#ea1100;margin-bottom:6px"></p>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +   '<button onclick="crmCfPopClose()"'
+    +     ' style="padding:5px 14px;font-size:12px;border-radius:8px;'
+    +            'border:1px solid #d1d5db;background:transparent;cursor:pointer;color:inherit;">Cancel</button>'
+    +   '<button onclick="crmCfPopSave(' + fieldId + ')"'
+    +     ' style="padding:5px 14px;font-size:12px;font-weight:600;border-radius:8px;'
+    +            'border:none;background:#0053e2;color:#fff;cursor:pointer;">Save</button>'
+    + '</div></div>';
+
+  document.body.appendChild(pop);
+  var inp = document.getElementById('crm-cf-pop-label');
+  if (inp) { inp.focus(); inp.select(); }
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener('click', _crmCfPopAway);
+    document.addEventListener('keydown', _crmCfPopKey);
+  }, 30);
+};
+
+function _crmCfPopAway(e) {
+  var pop = document.getElementById('crm-cf-pop');
+  if (pop && !pop.contains(e.target)) crmCfPopClose();
+}
+function _crmCfPopKey(e) {
+  if (e.key === 'Escape') crmCfPopClose();
+}
+
+window.crmCfPopClose = function() {
+  var pop = document.getElementById('crm-cf-pop');
+  if (pop) pop.remove();
+  document.removeEventListener('click', _crmCfPopAway);
+  document.removeEventListener('keydown', _crmCfPopKey);
+};
+
+window.crmCfPopSave = async function(fieldId) {
+  var lblEl  = document.getElementById('crm-cf-pop-label');
+  var optsEl = document.getElementById('crm-cf-pop-opts');
+  var errEl  = document.getElementById('crm-cf-pop-err');
+  var label  = (lblEl ? lblEl.value.trim() : '');
+  if (!label) {
+    if (errEl) { errEl.textContent = 'Label is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  var f = (_crmFields || []).find(function(x) { return x.id === fieldId; });
+  if (!f) return;
+  var body = new URLSearchParams({
+    label: label,
+    field_type: f.field_type,
+    options: (optsEl ? optsEl.value.trim() : (f.options || '')),
+  });
+  try {
+    _crmFields = await _crmFetch('/home/crm/' + _crmPid + '/fields/' + fieldId + '/update',
+      { method: 'POST', body });
+    crmCfPopClose();
+    // Re-open the contact modal so new label is reflected — contact id is on the modal
+    var modal = document.getElementById('crm-modal');
+    var cidAttr = modal ? modal.getAttribute('data-contact-id') : null;
+    var contact = cidAttr ? (_crmContacts.find(function(c) { return String(c.id) === cidAttr; }) || null) : null;
+    _crmContactModal(contact);
+  } catch(err) {
+    if (errEl) { errEl.textContent = err.message || 'Could not save.'; errEl.style.display = 'block'; }
+  }
+};
+
 window.crmToggleAddField = function() {
   var form   = document.getElementById('crm-af-form');
   var toggle = document.getElementById('crm-af-toggle');
@@ -1359,6 +1495,7 @@ function crmCloseModal() {
   if (typeof _slashHide === 'function') _slashHide();
   var ep = document.getElementById('crm-emoji-pop');
   if (ep) ep.remove();
+  if (typeof crmCfPopClose === 'function') crmCfPopClose(); // dismiss field popover if open
   var wrap = document.getElementById('crm-modal');
   var bd   = document.getElementById('crm-backdrop');
   var body = document.getElementById('crm-modal-body');
