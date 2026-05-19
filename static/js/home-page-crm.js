@@ -849,8 +849,6 @@ function _crmContactModal(c) {
     }, { passive: true });
     _modalBody.addEventListener('touchend',   function() { clearTimeout(_holdTimer); _holdTimer = null; });
     _modalBody.addEventListener('touchmove',  function() { clearTimeout(_holdTimer); _holdTimer = null; });
-    // Stamp the mobile pencil hint on all labels
-    setTimeout(function() { _crmCfInjectMobileHints(_modalBody); }, 0);
   }
   // Attach slash-command palette to all text fields in the modal
   if (typeof _crmAttachSlash === 'function') {
@@ -1495,37 +1493,6 @@ window.crmCfPopSave = async function(fieldId) {
 };
 
 // ── Inline label editor — dblclick or hold on a .crm-cf-lbl element ──
-// Swaps the label text for a borderless input in-place.
-// Enter / blur  → save via API, revert to updated text.
-// Escape        → cancel, revert to original.
-
-/** Stamp a ✎ pencil tap-target on every label. Mobile-only (hidden ≥640 px). */
-function _crmCfInjectMobileHints(body) {
-  if (!body) return;
-  body.querySelectorAll('.crm-cf-lbl').forEach(function(lbl) {
-    if (lbl.querySelector('.crm-cf-lbl-hint')) return; // already stamped
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'crm-cf-lbl-hint';
-    btn.setAttribute('aria-label', 'Edit field name');
-    btn.setAttribute('title', 'Tap to rename field');
-    btn.style.cssText =
-      'display:' + (window.innerWidth < 640 ? 'inline-flex' : 'none') + ';'
-      + 'align-items:center;justify-content:center;'
-      + 'margin-left:4px;width:16px;height:16px;'
-      + 'font-size:10px;line-height:1;color:#9ca3af;'
-      + 'background:none;border:none;cursor:pointer;padding:0;flex-shrink:0;'
-      + 'vertical-align:middle;border-radius:3px;';
-    btn.textContent = '\u270e';
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      e.preventDefault();
-      crmCfInlineEdit(lbl);
-    });
-    lbl.appendChild(btn);
-  });
-}
-
 window.crmCfInlineEdit = function(lblEl) {
   if (!lblEl || lblEl.querySelector('input')) return; // guard: already editing
   var fieldId = parseInt(lblEl.getAttribute('data-field-id'), 10);
@@ -1533,8 +1500,6 @@ window.crmCfInlineEdit = function(lblEl) {
   if (!f) return;
 
   // Strip any injected hint button so origText is clean plain text
-  var existingHint = lblEl.querySelector('.crm-cf-lbl-hint');
-  if (existingHint) existingHint.remove();
   var origText = f.label;
 
   var inp = document.createElement('input');
@@ -1559,7 +1524,6 @@ window.crmCfInlineEdit = function(lblEl) {
     lblEl.textContent = text;
     lblEl.title = text + ' \u2014 double-click or hold to edit';
     lblEl.classList.add('cursor-pointer', 'select-none');
-    _crmCfInjectMobileHints(_modalBody); // re-stamp pencil with fresh listener
   }
 
   function revert() {
