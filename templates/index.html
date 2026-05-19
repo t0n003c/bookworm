@@ -6,12 +6,15 @@
                    the + icon shows, keeping the header from overflowing.
    .bw-hpb-btn   : the Add Widget button itself — icon-only padding on phones.
    .bw-wordmark  : " BookWorm" word — hidden on phones; emoji stays visible.
+   #workspace-tabs: workspace tab strip — hidden on phones (sidebar handles
+                   workspace navigation on mobile), visible on laptop+.
    Keep in sync with _setTopActionAddWidget() in home-widgets.js
    ──────────────────────────────────────────────────────────────────────── */
-@media (max-width: 639px) {
-  .bw-hpb-label  { display: none; }
-  .bw-hpb-btn    { padding-left: .5rem !important; padding-right: .5rem !important; }
-  .bw-wordmark   { display: none; }
+@media (max-width: 767px) {
+  .bw-hpb-label   { display: none; }
+  .bw-hpb-btn     { padding-left: .5rem !important; padding-right: .5rem !important; }
+  .bw-wordmark    { display: none; }
+  #workspace-tabs { display: none !important; }
 }
 </style>
 
@@ -35,10 +38,10 @@
   <span class="text-2xl font-bold text-white tracking-tight flex-shrink-0" aria-label="BookWorm">🪱<span class="bw-wordmark"> BookWorm</span></span>
 
   <!-- Workspace tab strip — desktop/laptop only.
-       Hidden on phones (< 768 px); the sidebar holds workspace navigation
-       on mobile so the top bar doesn't overflow on small screens. -->
+       Hidden on phones (< 768 px) via the @media rule in the <style> block above;
+       the sidebar handles workspace navigation on mobile. -->
   <div id="workspace-tabs"
-    class="hidden md:flex flex-row flex-nowrap items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide px-1"
+    class="flex flex-row flex-nowrap items-center gap-1 overflow-x-auto flex-1 min-w-0 scrollbar-hide px-1"
     role="tablist" aria-label="Workspaces"
   >
     {% include "partials/workspace_tabs.html" %}
