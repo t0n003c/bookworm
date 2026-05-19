@@ -846,6 +846,38 @@
 
   </aside>
 
+  <!-- ── Sidebar tab switcher — defined HERE so the function exists the instant
+       the sidebar buttons are in the DOM.  Defining it later (in the main
+       <script> block ~2 000 lines down) left a parse-time window where a fast
+       click on a sidebar tab threw ReferenceError: switchSidebarTab is not defined. -->
+  <script>
+    function switchSidebarTab(tab) {
+      ['search', 'workspaces', 'folders'].forEach(function(t) {
+        var btn   = document.getElementById('sb-tab-' + t);
+        var panel = document.getElementById('sb-panel-' + t);
+        if (!btn || !panel) return;
+        var isActive = t === tab;
+        btn.classList.toggle('border-wblue',       isActive);
+        btn.classList.toggle('text-wblue',         isActive);
+        btn.classList.toggle('border-transparent', !isActive);
+        btn.classList.toggle('text-gray-500',      !isActive);
+        btn.classList.toggle('dark:text-zinc-400', !isActive);
+        panel.classList.toggle('hidden', !isActive);
+      });
+      localStorage.setItem('bw-sidebar-tab', tab);
+    }
+
+    // Restore saved tab on page load.
+    // 'home' was merged into 'workspaces' in an older release — migrate stale pref.
+    // 'folders' is fine to restore directly: switchSidebarTab hides the other
+    // panels immediately; _uplFolderEnterUploadsPage un-hides its tab button later.
+    (function initSidebarTab() {
+      var raw   = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
+      var saved = (raw === 'home') ? 'workspaces' : raw;
+      switchSidebarTab(saved);
+    })();
+  </script>
+
   <!-- MAIN NOTE LIST -->
   <main class="flex-1 main-scroll bg-gray-50 dark:bg-zinc-950 px-3 md:px-6 py-6" id="main-content" aria-label="Note list">
 
@@ -2098,36 +2130,6 @@
     }
     wsUpdateToggleAllBtn();
   }
-
-  /* ---- Sidebar tabs ---- */
-  const SB_TAB_ACTIVE   = ['border-wblue', 'text-wblue'];
-  const SB_TAB_INACTIVE = ['border-transparent', 'text-gray-500', 'dark:text-zinc-400'];
-
-  function switchSidebarTab(tab) {
-    ['search', 'workspaces', 'folders'].forEach(function(t) {
-      var btn   = document.getElementById('sb-tab-' + t);
-      var panel = document.getElementById('sb-panel-' + t);
-      if (!btn || !panel) return;
-      var isActive = t === tab;
-      btn.classList.toggle('border-wblue',      isActive);
-      btn.classList.toggle('text-wblue',        isActive);
-      btn.classList.toggle('border-transparent', !isActive);
-      btn.classList.toggle('text-gray-500',     !isActive);
-      btn.classList.toggle('dark:text-zinc-400', !isActive);
-      panel.classList.toggle('hidden', !isActive);
-    });
-    localStorage.setItem('bw-sidebar-tab', tab);
-  }
-
-  // Restore saved tab — 'home' was merged into 'workspaces', migrate old pref
-  (function initSidebarTab() {
-    var raw   = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
-    // 'home' was merged into 'workspaces'. 'folders' is fine to restore directly —
-    // switchSidebarTab shows the panel but leaves the tab button's hidden class alone,
-    // so the panel pre-loads invisibly and _uplFolderEnterUploadsPage just unhides the button.
-    var saved = (raw === 'home') ? 'workspaces' : raw;
-    switchSidebarTab(saved);
-  })();
 
   /* ---- Sidebar open/close — mobile overlay + desktop push ---- */
   let sidebarOpen = window.innerWidth >= 768; // collapsed by default on mobile
