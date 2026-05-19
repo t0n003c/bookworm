@@ -251,6 +251,11 @@ function showHomePage(pageId) {
   if (_tl) _tl.style.display = 'none';
   const _gl = document.getElementById('gallery-view-btn');
   if (_gl) _gl.style.display = 'none';
+  // Hide the workspace-database view toggle — it only belongs on DB nodes.
+  // htmx:afterSettle handles the workspace→workspace path; this covers the
+  // workspace-DB → homespace path where HTMX never fires.
+  const _dbTgl = document.getElementById('top-db-view-toggle');
+  if (_dbTgl) _dbTgl.classList.add('hidden');
   const hc = document.getElementById('home-content');
   if (!hc) return;
   _setHomePageActive(pageId);
