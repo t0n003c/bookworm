@@ -1492,8 +1492,6 @@ window.crmCfPopSave = async function(fieldId) {
   }
 };
 
-window.crmToggleAddField = function() {
-
 // ── Inline label editor — dblclick or hold on a .crm-cf-lbl element ──
 // Swaps the label text for a borderless input in-place.
 // Enter / blur  → save via API, revert to updated text.
