@@ -11,28 +11,51 @@
 <style>
   .trip-day-items-area > * { min-height: var(--trip-item-h, 40px); box-sizing: border-box; }
 
-  /* ── Mobile spot cards (< 640 px) ───────────────────────────────────
-     Keep the vertical (column) layout; just make the cover image taller so
-     it’s prominent on a full-width single-column card.  Hide the type-filter
-     pills row (All / Restaurant / Hotel …) to unclutter the filter bar.
-     Make action buttons comfortably tappable (min 44 px touch target).
+  /* ── Mobile layout (< 768 px) ──────────────────────────────────────
+     The desktop layout traps everything in a fixed-height viewport box with
+     internal scrolling panels (flex-1 overflow-hidden chains).  On mobile
+     that cage squeezes the spot-card grid to near-zero height depending on
+     how many lines the filter bar wraps to, making cards invisible.
+
+     Fix: release the cage on mobile.  The outer #main-content scroll
+     container handles page scrolling.  The tab bar becomes sticky so the
+     user can switch tabs without scrolling back to the top.
   ──────────────────────────────────────────────────── */
-  @media (max-width: 639px) {
-    /* Hide preset type-filter pills (All / Restaurant / Hotel / …) */
-    .trip-type-pills-wrap  { display: none; }
+  @media (max-width: 767px) {
+    /* 1. Release the fixed-height viewport cage */
+    #trip-page-root         { height: auto !important; overflow: visible !important; }
 
-    /* Cover image: taller on mobile for a more prominent preview */
-    .trip-spot-cover       { height: 12rem; }
-    /* Emoji placeholder matches the taller box with a bigger emoji */
-    .trip-spot-cover-empty { height: 9rem; font-size: 3.5rem; }
+    /* 2. Tab/control bar: sticky so it stays reachable while scrolling */
+    #trip-topbar            { position: sticky; top: 0; z-index: 30;
+                              background: #fff; }
+    .dark #trip-topbar      { background: #09090b; }   /* zinc-950 */
 
-    /* Card body: a touch more breathing room */
-    .trip-spot-body        { padding: 0.75rem; }
+    /* 3. Research / Plan / Chart panels: stop clipping, flow naturally */
+    #trip-panel-research,
+    #trip-panel-plan,
+    #trip-panel-chart       { overflow: visible; flex: none; }
 
-    /* Action row buttons: minimum 44 px tall for reliable tap targets (WCAG 2.5.5) */
+    /* 4. Location + spot view containers: same */
+    #trip-locs-view,
+    #trip-spots-view        { overflow: visible; flex: none; }
+
+    /* 5. The grids: let them grow to full content height (no internal scroll) */
+    #trip-locs-grid,
+    #trip-spots-grid,
+    #trip-plans-grid        { flex: none; overflow: visible;
+                              min-height: 4rem; /* keep a floor so empty state shows */ }
+
+    /* 6. Hide preset type-filter pills (All / Restaurant / Hotel / …) */
+    .trip-type-pills-wrap   { display: none; }
+
+    /* 7. Spot cards: full-width vertical card with a prominent cover image */
+    .trip-spot-cover        { height: 13rem !important; }
+    .trip-spot-cover-empty  { height: 9rem  !important; font-size: 3.5rem; }
+    .trip-spot-body         { padding: 0.75rem; }
+
+    /* 8. Action row: WCAG 2.5.5 touch targets (44 px min) */
     .trip-spot-actions button,
-    .trip-spot-actions a   { min-height: 2.75rem; display: flex;
-                             align-items: center; }
+    .trip-spot-actions a    { min-height: 2.75rem; display: flex; align-items: center; }
   }
 </style>
 
@@ -42,7 +65,7 @@
      style="height:calc(100vh - 3.5rem); overflow:hidden;">
 
   {# ── Top bar ───────────────────────────────────────────────────────────── #}
-  <div class="flex-shrink-0 flex items-center gap-3 px-4 py-2
+  <div id="trip-topbar" class="flex-shrink-0 flex items-center gap-3 px-4 py-2
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-950">
     <span class="text-xl" aria-hidden="true">{{ page.emoji or '✈️' }}</span>

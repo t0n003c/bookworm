@@ -124,7 +124,7 @@ window._tripRenderTopbarControls = function() {
   var inLoc = !!(window._tripActiveLocId);
   // On small screens shorten add-button labels and narrow the search box so
   // the topbar doesn't overflow (emoji + name + tabs + controls all share one row).
-  var _sm      = window.innerWidth < 640;
+  var _sm      = window.innerWidth < 768;
   var _srchW   = _sm ? 'w-20' : 'w-36';
   var _btnBase = 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
                  'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition';
