@@ -143,13 +143,13 @@ function _tripChartRenderControls() {
     '<div id="trip-chart-controls-bar" class="flex flex-wrap items-center gap-3 px-4 py-2 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/60">' +
       '<label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">' +
-        '🗓️ <span>Plan</span>' +
+        '🗓️ <span class="trip-chart-ctrl-lbl">Plan</span>' +
         '<select class="' + selCls + '" onchange="tripChartSetPlan(+this.value)">' +
           planOpts +
         '</select>' +
       '</label>' +
       '<label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">' +
-        '💱 <span>Display in</span>' +
+        '💱 <span class="trip-chart-ctrl-lbl">Display in</span>' +
         '<select class="' + selCls + '" onchange="tripChartSetCurrency(this.value)">' +
           curOpts +
         '</select>' +
