@@ -98,8 +98,9 @@
 
   {# ── Grid canvas ──────────────────────────────────────────────────────── #}
   <div id="grid-scroll-area" class="flex-1 overflow-y-auto">
-    {# Outer flex wrapper centers the grid block horizontally #}
-    <div class="flex justify-center min-h-full px-1 py-2 sm:p-4">
+    {# Canvas wrapper — block (not flex) so w-full fills 100 % on every screen size;
+       the grid's own justify-content:center handles centering of px-mode columns #}
+    <div class="min-h-full py-2 sm:p-4">
       <div id="grid-canvas" class="grid w-full">
         {# Cells injected by home-page-grid.js _gridRender() #}
       </div>
