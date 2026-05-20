@@ -154,7 +154,7 @@ function _tripChartRenderControls() {
           curOpts +
         '</select>' +
       '</label>' +
-      '<span class="text-[10px] text-gray-400 dark:text-zinc-500 italic ml-auto">' +
+      '<span class="trip-chart-meta-note text-[10px] text-gray-400 dark:text-zinc-500 italic ml-auto">' +
         'FX rates are approximate — for planning only' +
       '</span>' +
     '</div>';
@@ -358,7 +358,7 @@ function _tripRenderStatCards(data) {
     ? (_tripChartPlans.find(function(p){ return p.id === _tripChartPlanId; }) || {}).plan_name || ''
     : 'All Research';
 
-  var intro = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
+  var intro = '<p class="trip-chart-meta-note text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
     'Showing stats for: <strong class="text-gray-600 dark:text-zinc-300">' +
     _tripEsc(scopeNote) + '</strong>' +
     (data.mixed_currencies
@@ -550,7 +550,7 @@ function _tripRenderStatCards(data) {
     {icon: '💰', label: costLabel,           value: costVal,                  sub: costSub || ''},
   ];
 
-  var intro = '<p class="text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
+  var intro = '<p class="trip-chart-meta-note text-[11px] text-gray-400 dark:text-zinc-500 mb-3 px-1">' +
     'Showing stats for: <strong class="text-gray-600 dark:text-zinc-300">' +
     _tripEsc(scopeNote) + '</strong>' +
     (data.mixed_currencies
