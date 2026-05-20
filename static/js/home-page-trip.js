@@ -122,6 +122,12 @@ window._tripRenderTopbarControls = function() {
   var el = document.getElementById('trip-topbar-controls');
   if (!el) return;
   var inLoc = !!(window._tripActiveLocId);
+  // On small screens shorten add-button labels and narrow the search box so
+  // the topbar doesn't overflow (emoji + name + tabs + controls all share one row).
+  var _sm      = window.innerWidth < 640;
+  var _srchW   = _sm ? 'w-20' : 'w-36';
+  var _btnBase = 'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
+                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition';
   if (_tripTab === 'research') {
     if (inLoc) {
       // Inside a location — show search + add spot (Assign to Days is in the filter bar)
@@ -131,11 +137,10 @@ window._tripRenderTopbarControls = function() {
           'class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 ' +
                  'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
                  'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
-                 'focus:ring-2 focus:ring-[#0053e2]/40 w-36">' +
-        '<button onclick="tripOpenAddSpot()" ' +
-          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Spot</button>';
+                 'focus:ring-2 focus:ring-[#0053e2]/40 ' + _srchW + '">' +
+        '<button onclick="tripOpenAddSpot()" class="' + _btnBase + '" ' +
+          'title="Add Spot" aria-label="Add Spot">' +
+          (_sm ? '＋' : '＋ Add Spot') + '</button>';
     } else {
       // Top-level locations view — search + add
       el.innerHTML =
@@ -145,11 +150,10 @@ window._tripRenderTopbarControls = function() {
           'class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 ' +
                  'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
                  'text-gray-800 dark:text-zinc-100 focus:outline-none ' +
-                 'focus:ring-2 focus:ring-[#0053e2]/40 w-36">' +
-        '<button onclick="tripOpenAddLoc()" ' +
-          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Location</button>';
+                 'focus:ring-2 focus:ring-[#0053e2]/40 ' + _srchW + '">' +
+        '<button onclick="tripOpenAddLoc()" class="' + _btnBase + '" ' +
+          'title="Add Location" aria-label="Add Location">' +
+          (_sm ? '＋' : '＋ Add Location') + '</button>';
     }
   } else if (_tripTab === 'plan') {
     if (window._tripActivePlanId) {
@@ -173,6 +177,19 @@ window._tripRenderTopbarControls = function() {
 };
 
 function _tripRenderTopbarControls() { window._tripRenderTopbarControls(); }
+
+// Re-render topbar on resize so mobile ↔ desktop label switch works on orientation change.
+(function() {
+  var _tripResizeTimer = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(_tripResizeTimer);
+    _tripResizeTimer = setTimeout(function() {
+      if (document.getElementById('trip-topbar-controls')) {
+        _tripRenderTopbarControls();
+      }
+    }, 200);
+  });
+}());
 
 // ── Research: load spots for a specific location ──────────────────────────────
 window._tripLoadSpots = function(locId) {
@@ -259,12 +276,12 @@ function _tripRenderSpotCard(s) {
       '</div>'
     : '';
   var cover = s.cover_url
-    ? '<div class="h-40 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
+    ? '<div class="trip-spot-cover h-40 bg-gray-100 dark:bg-zinc-800 overflow-hidden">' +
         '<img src="' + _tripEsc(s.cover_url) + '" alt="" ' +
           'class="w-full h-full object-cover" ' +
           'onerror="this.parentNode.style.display=\'none\'">' +
       '</div>'
-    : '<div class="h-28 flex items-center justify-center bg-gradient-to-br ' +
+    : '<div class="trip-spot-cover trip-spot-cover-empty h-28 flex items-center justify-center bg-gradient-to-br ' +
         'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
         'select-none">' + emoji + '</div>';
 
@@ -296,14 +313,14 @@ function _tripRenderSpotCard(s) {
     daySection = '';
   }
 
-  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
+  return '<div class="trip-spot-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
     'dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition ' +
     'flex flex-col group" ' +
     'draggable="true" ' +
     'ondragstart="tripDragSpotStart(event,' + s.id + ')" ' +
     'ondragend="tripDragSpotEnd(event)">' +
     cover +
-    '<div class="p-3 flex flex-col gap-1.5 flex-1">' +
+    '<div class="trip-spot-body p-3 flex flex-col gap-1.5 flex-1">' +
       '<div class="flex items-start justify-between gap-1">' +
         '<p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 leading-tight truncate">' +
           _tripEsc(s.name) + '</p>' +
@@ -315,7 +332,7 @@ function _tripRenderSpotCard(s) {
       '</div>' +
       '<div class="flex items-center gap-1">' + stars + cost + '</div>' +
       attrs +
-      '<div class="flex items-center gap-2 mt-auto pt-1">' +
+      '<div class="trip-spot-actions flex items-center gap-2 mt-auto pt-1">' +
         mapBtn +
         (_tripTouchMode
           ? '<button onclick="event.stopPropagation();tripSelectSpotForAssign(' + s.id + ')" ' +
