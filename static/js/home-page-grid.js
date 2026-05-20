@@ -566,19 +566,21 @@ function _gridApplyLayout() {
             var totalGap = _gridGap * (_gridFixedCols - 1);
             var cellPx   = Math.max(40, Math.round((parentW - totalGap) / _gridFixedCols * z));
             canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', ' + cellPx + 'px)';
+            canvas.style.justifyContent = 'center'; // centre narrow px-cols inside full-width canvas
         } else {
-            // 100% zoom: 1fr fills the container responsively (original behaviour)
+            // 100% zoom: 1fr stretches to fill — centering would leave side gaps.
             canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
+            canvas.style.justifyContent = 'stretch';
         }
     } else {
         // Auto-fill (size slider): scale min-width by zoom.
-        // Column count naturally shifts with zoom in auto-fill — that’s fine.
+        // Column count naturally shifts with zoom in auto-fill — that's fine.
         var minPx = Math.max(40, Math.round(_gridMin * z));
         canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + minPx + 'px)';
+        canvas.style.justifyContent = 'center'; // centre auto-fill rows when they don't span full width
     }
 
-    canvas.style.gap            = _gridGap + 'px';
-    canvas.style.justifyContent = 'center';  // centres px-cols when narrower than container
+    canvas.style.gap = _gridGap + 'px';
 
     // gap=0: strip ring box-shadow + border-radius so cells truly touch.
     var zeroGap = (_gridGap === 0);
