@@ -549,15 +549,14 @@ function _gridApplyLayout() {
     canvas.style.width = '';
 
     var z = _gridZoom / 100;  // 0.30 – 1.00
+    // On narrow screens the zoom slider is hidden and centering px-cols creates
+    // unwanted side gaps. Force 1fr mode on mobile so the grid always fills edge-to-edge.
+    var isMobileGrid = window.innerWidth < 640;
 
     if (_gridFixedCols) {
-        if (z < 1) {
-            // Zoom < 100% with a column preset:
-            //   Switch 1fr → explicit px so cell SIZE shrinks with zoom while
-            //   COLUMN COUNT stays exactly _gridFixedCols.
-            //
-            //   parentW: read computed padding so it works across all screen sizes.
-            //   Falls back to 800 on first render before layout is calculated.
+        if (z < 1 && !isMobileGrid) {
+            // Zoom < 100% on desktop: explicit px so cell SIZE shrinks with zoom
+            // while COLUMN COUNT stays exactly _gridFixedCols.
             var parent  = canvas.parentElement;
             var cs      = parent ? getComputedStyle(parent) : null;
             var hPad    = cs ? (parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 32;
@@ -567,17 +566,19 @@ function _gridApplyLayout() {
             var cellPx   = Math.max(40, Math.round((parentW - totalGap) / _gridFixedCols * z));
             canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', ' + cellPx + 'px)';
             canvas.style.justifyContent = 'center'; // centre narrow px-cols inside full-width canvas
+            canvas.style.width = '100%';
         } else {
-            // 100% zoom: 1fr stretches to fill — centering would leave side gaps.
+            // 100% zoom or mobile: 1fr stretches to fill — no centering gaps.
             canvas.style.gridTemplateColumns = 'repeat(' + _gridFixedCols + ', 1fr)';
-            canvas.style.justifyContent = 'stretch';
+            canvas.style.justifyContent = '';
+            canvas.style.width = '100%';
         }
     } else {
         // Auto-fill (size slider): scale min-width by zoom.
-        // Column count naturally shifts with zoom in auto-fill — that's fine.
         var minPx = Math.max(40, Math.round(_gridMin * z));
-        canvas.style.gridTemplateColumns = 'repeat(auto-fill, ' + minPx + 'px)';
-        canvas.style.justifyContent = 'center'; // centre auto-fill rows when they don't span full width
+        canvas.style.gridTemplateColumns = 'repeat(auto-fill, minmax(' + minPx + 'px, 1fr))';
+        canvas.style.justifyContent = '';
+        canvas.style.width = '100%';
     }
 
     canvas.style.gap = _gridGap + 'px';
