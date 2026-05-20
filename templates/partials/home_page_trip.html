@@ -62,6 +62,9 @@
     /* 7b. Chart tab: hide meta-note lines ("Showing stats for" + "FX rates") */
     .trip-chart-meta-note   { display: none; }
 
+    /* 7c. Chart tab: Plan + Currency selectors always share one row */
+    #trip-chart-controls-bar { flex-wrap: nowrap; gap: 1rem; padding-left: 0.75rem; padding-right: 0.75rem; }
+
     /* 8. Spot cards: full-width vertical card with a prominent cover image */
     .trip-spot-cover        { height: 13rem !important; }
     .trip-spot-cover-empty  { height: 9rem  !important; font-size: 3.5rem; }

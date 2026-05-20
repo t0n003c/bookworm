@@ -140,7 +140,7 @@ function _tripChartRenderControls() {
                'px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40';
 
   el.innerHTML =
-    '<div class="flex flex-wrap items-center gap-3 px-4 py-2 ' +
+    '<div id="trip-chart-controls-bar" class="flex flex-wrap items-center gap-3 px-4 py-2 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/60">' +
       '<label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">' +
         '🗓️ <span>Plan</span>' +
