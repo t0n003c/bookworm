@@ -63,9 +63,11 @@
     .trip-chart-meta-note   { display: none; }
 
     /* 7c. Chart tab: Plan + Currency selectors always share one row;
-           hide the text labels so just emoji + select fits on narrow screens */
-    #trip-chart-controls-bar { flex-wrap: nowrap; gap: 0.75rem; padding-left: 0.75rem; padding-right: 0.75rem; }
-    .trip-chart-ctrl-lbl     { display: none; }
+           hide the text labels so just emoji + select fits on narrow screens;
+           cap select width so the All-Plans option can't push the second off-screen */
+    #trip-chart-controls-bar          { flex-wrap: nowrap; gap: 0.5rem; padding-left: 0.75rem; padding-right: 0.75rem; }
+    .trip-chart-ctrl-lbl              { display: none; }
+    #trip-chart-controls-bar select   { max-width: 38vw; min-width: 0; }
 
     /* 8. Spot cards: full-width vertical card with a prominent cover image */
     .trip-spot-cover        { height: 13rem !important; }
