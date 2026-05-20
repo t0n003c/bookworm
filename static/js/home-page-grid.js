@@ -556,11 +556,12 @@ function _gridApplyLayout() {
             //   Switch 1fr → explicit px so cell SIZE shrinks with zoom while
             //   COLUMN COUNT stays exactly _gridFixedCols.
             //
-            //   parentW: p-4 wrapper has 16px padding each side (32px total);
-            //   subtract so px cells match the actual visible space.
+            //   parentW: read computed padding so it works across all screen sizes.
             //   Falls back to 800 on first render before layout is calculated.
             var parent  = canvas.parentElement;
-            var parentW = parent ? Math.max(0, parent.clientWidth - 32) : 0;
+            var cs      = parent ? getComputedStyle(parent) : null;
+            var hPad    = cs ? (parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 32;
+            var parentW = parent ? Math.max(0, parent.clientWidth - hPad) : 0;
             if (parentW <= 0) parentW = 800;
             var totalGap = _gridGap * (_gridFixedCols - 1);
             var cellPx   = Math.max(40, Math.round((parentW - totalGap) / _gridFixedCols * z));
