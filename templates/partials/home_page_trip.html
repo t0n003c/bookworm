@@ -30,30 +30,38 @@
                               background: #fff; }
     .dark #trip-topbar      { background: #09090b; }   /* zinc-950 */
 
-    /* 3. Research / Plan / Chart panels: stop clipping, flow naturally */
+    /* 3. All tab panels + inner view containers: stop clipping, flow naturally */
     #trip-panel-research,
     #trip-panel-plan,
-    #trip-panel-chart       { overflow: visible; flex: none; }
-
-    /* 4. Location + spot view containers: same */
+    #trip-panel-chart,
     #trip-locs-view,
-    #trip-spots-view        { overflow: visible; flex: none; }
+    #trip-spots-view,
+    #trip-plans-view,
+    #trip-days-view,
+    #trip-days-container    { overflow: visible; flex: none; }
 
-    /* 5. The grids: let them grow to full content height (no internal scroll) */
+    /* 4. All scrollable grids: grow to full content height (no internal scroll) */
     #trip-locs-grid,
     #trip-spots-grid,
     #trip-plans-grid        { flex: none; overflow: visible;
-                              min-height: 4rem; /* keep a floor so empty state shows */ }
+                              min-height: 4rem; }
 
-    /* 6. Hide preset type-filter pills (All / Restaurant / Hotel / …) */
+    /* 5. Day lanes: stack vertically + each lane fills full width */
+    #trip-days-row          { flex-direction: column; }
+    .trip-day-lane-card     { width: 100% !important; }
+
+    /* 6. Hide card-width slider — irrelevant when lanes are full-width */
+    #trip-day-size-wrap     { display: none !important; }
+
+    /* 7. Hide preset type-filter pills (All / Restaurant / Hotel / …) */
     .trip-type-pills-wrap   { display: none; }
 
-    /* 7. Spot cards: full-width vertical card with a prominent cover image */
+    /* 8. Spot cards: full-width vertical card with a prominent cover image */
     .trip-spot-cover        { height: 13rem !important; }
     .trip-spot-cover-empty  { height: 9rem  !important; font-size: 3.5rem; }
     .trip-spot-body         { padding: 0.75rem; }
 
-    /* 8. Action row: WCAG 2.5.5 touch targets (44 px min) */
+    /* 9. Action row: WCAG 2.5.5 touch targets (44 px min) */
     .trip-spot-actions button,
     .trip-spot-actions a    { min-height: 2.75rem; display: flex; align-items: center; }
   }

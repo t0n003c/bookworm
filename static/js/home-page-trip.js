@@ -159,17 +159,15 @@ window._tripRenderTopbarControls = function() {
     if (window._tripActivePlanId) {
       // Inside a trip — show Add Day
       el.innerHTML =
-        '<button onclick="tripOpenAddDay()" ' +
-          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Day</button>';
+        '<button onclick="tripOpenAddDay()" class="' + _btnBase + '" ' +
+          'title="Add Day" aria-label="Add Day">' +
+          (_sm ? '＋' : '＋ Add Day') + '</button>';
     } else {
       // Top-level trip cards — show Add Trip
       el.innerHTML =
-        '<button onclick="tripOpenAddPlan()" ' +
-          'class="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ' +
-                 'bg-[#0053e2] hover:bg-[#0046c0] text-white font-medium transition">' +
-          '＋ Add Trip</button>';
+        '<button onclick="tripOpenAddPlan()" class="' + _btnBase + '" ' +
+          'title="Add Trip" aria-label="Add Trip">' +
+          (_sm ? '＋' : '＋ Add Trip') + '</button>';
     }
   } else {
     el.innerHTML = '';
