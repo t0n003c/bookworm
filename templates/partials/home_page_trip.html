@@ -11,28 +11,28 @@
 <style>
   .trip-day-items-area > * { min-height: var(--trip-item-h, 40px); box-sizing: border-box; }
 
-  /* ── Mobile spot card: flip to horizontal layout on small screens ─────────
-     On xs/sm viewports the cards span full width (grid-cols-1) so the tall
-     vertical tile wastes a lot of screen. We switch to a side-by-side layout:
-     cover thumbnail on the left (fixed square), content on the right.
-     On md+ the original vertical card layout is preserved intact.
+  /* ── Mobile spot cards (< 640 px) ───────────────────────────────────
+     Keep the vertical (column) layout; just make the cover image taller so
+     it’s prominent on a full-width single-column card.  Hide the type-filter
+     pills row (All / Restaurant / Hotel …) to unclutter the filter bar.
+     Make action buttons comfortably tappable (min 44 px touch target).
   ──────────────────────────────────────────────────── */
   @media (max-width: 639px) {
-    /* Outer card: row instead of column */
-    .trip-spot-card        { flex-direction: row; }
+    /* Hide preset type-filter pills (All / Restaurant / Hotel / …) */
+    .trip-type-pills-wrap  { display: none; }
 
-    /* Cover: fixed square thumbnail on the left, no horizontal overflow */
-    .trip-spot-cover       { width: 96px; min-width: 96px; height: auto !important;
-                             flex-shrink: 0; align-self: stretch; }
-    /* Emoji placeholder: fill the same box, shrink the emoji */
-    .trip-spot-cover-empty { font-size: 2rem; }
+    /* Cover image: taller on mobile for a more prominent preview */
+    .trip-spot-cover       { height: 12rem; }
+    /* Emoji placeholder matches the taller box with a bigger emoji */
+    .trip-spot-cover-empty { height: 9rem; font-size: 3.5rem; }
 
-    /* Body: takes remaining width, scrolls internally if needed */
-    .trip-spot-body        { padding: 0.5rem 0.625rem; gap: 0.25rem; min-width: 0; }
+    /* Card body: a touch more breathing room */
+    .trip-spot-body        { padding: 0.75rem; }
 
-    /* Action row: tighten up so edit/delete buttons have decent tap size */
-    .trip-spot-actions     { padding-top: 0.25rem; }
-    .trip-spot-actions button { min-height: 1.75rem; }
+    /* Action row buttons: minimum 44 px tall for reliable tap targets (WCAG 2.5.5) */
+    .trip-spot-actions button,
+    .trip-spot-actions a   { min-height: 2.75rem; display: flex;
+                             align-items: center; }
   }
 </style>
 

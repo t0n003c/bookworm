@@ -294,14 +294,14 @@ function _tripRenderSpotCard(s) {
         _tripEsc(d.day_label || 'Day') + '</option>';
     });
     daySection =
-      '<div class="flex items-center gap-1 mt-0.5">' +
+      '<div class="flex items-center gap-1 mt-0.5" onclick="event.stopPropagation()">' +
         '<select id="trip-add-day-sel-' + s.id + '" ' +
           'class="flex-1 text-xs px-1.5 py-1.5 rounded-lg border border-gray-200 ' +
                  'dark:border-zinc-700 bg-white dark:bg-zinc-800 ' +
                  'text-gray-700 dark:text-zinc-200 focus:outline-none">' +
           dayOpts +
         '</select>' +
-        '<button onclick="tripAddSpotToDay(' + s.id + ')" ' +
+        '<button onclick="event.stopPropagation();tripAddSpotToDay(' + s.id + ')" ' +
           'class="px-3 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white ' +
                  'hover:bg-[#0046c0] transition font-medium">＋ Day</button>' +
       '</div>';
@@ -315,7 +315,8 @@ function _tripRenderSpotCard(s) {
 
   return '<div class="trip-spot-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
     'dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition ' +
-    'flex flex-col group" ' +
+    'flex flex-col group cursor-pointer" ' +
+    'onclick="tripOpenEditSpot(' + s.id + ')" ' +
     'draggable="true" ' +
     'ondragstart="tripDragSpotStart(event,' + s.id + ')" ' +
     'ondragend="tripDragSpotEnd(event)">' +

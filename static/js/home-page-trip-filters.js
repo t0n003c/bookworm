@@ -70,9 +70,11 @@ window._tripRenderFilterBar = function() {
   spots.forEach(function(s) { presentTypes[s.spot_type] = true; });
   var types = Object.keys(presentTypes).sort();
   if (types.length) {
-    leftHtml += '<span class="text-gray-300 dark:text-zinc-600 text-xs">|</span>';
-    leftHtml += _typePill(null, _tripTypeFilter === null);
+    leftHtml += '<div class="trip-type-pills-wrap flex items-center gap-1 flex-wrap">' +
+      '<span class="text-gray-300 dark:text-zinc-600 text-xs">|</span>' +
+      _typePill(null, _tripTypeFilter === null);
     types.forEach(function(t) { leftHtml += _typePill(t, _tripTypeFilter === t); });
+    leftHtml += '</div>';
   }
   leftHtml += '</div>';
 
