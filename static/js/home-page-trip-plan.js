@@ -579,7 +579,7 @@ function _tripRenderPlanCard(p) {
       '</div>' +
     '</div>';
 
-  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
+  return '<div class="trip-plan-card bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
     'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all ' + cardBorder + '" ' +
     'onclick="tripOpenPlan(' + p.id + ',\'' + jsName + '\')">' +
     cover +
