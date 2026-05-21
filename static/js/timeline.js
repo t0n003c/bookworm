@@ -20,10 +20,11 @@ window.bwTimeline = (function () {
   const PX_MIN    = 0.8;
   const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
-  const CARD_W    = 272;
-  const CARD_H    = 118;   // approx. card height for vertical lane stacking
-  const STEM_H    = 80;
-  const PAD_ENDS  = 120;   // left & right padding inside the rail
+  const _isMob    = window.innerWidth < 768;
+  const CARD_W    = _isMob ? 170 : 272;
+  const CARD_H    = _isMob ? 80  : 118;  // approx. card height for vertical lane stacking
+  const STEM_H    = _isMob ? 52  : 80;
+  const PAD_ENDS  = _isMob ? 80  : 120;  // left & right padding inside the rail
 
   // ── Module state ──────────────────────────────────────────────────
   let _mounted         = false;
@@ -147,7 +148,7 @@ window.bwTimeline = (function () {
     // Config bundle passed to stateless render helpers in timeline-render.js.
     const rCfg = {
       pxPerDay: _pxPerDay, PAD_ENDS, SPINE_Y, STEM_H, CARD_H, CARD_W,
-      daysBetween: _daysBetween, esc: _esc, fmtDate: _fmtDate,
+      daysBetween: _daysBetween, esc: _esc, fmtDate: _fmtDate, isMobile: _isMob,
     };
     _bwTLRender.buildTicks(rail, earliest, span, rCfg, t);
 
@@ -244,56 +245,66 @@ window.bwTimeline = (function () {
   }
 
   // ── Drag + momentum (Pointer Events API + setPointerCapture) ─────
-  //
-  // Why not window mousemove/mouseup?
-  //   • preventDefault() on mousedown blocks mousemove in Chrome/Edge.
-  //   • Events are lost when mouse briefly leaves the window.
-  //   • Listeners accumulate on window across remounts.
-  // setPointerCapture pins all pointer events to `outer` for the
-  // entire drag, handling mouse + touch + stylus in one API.
-  function _attachDrag(outer, getRail, onMove) {
+  // getWrap  : () => contentWrap element (translates vertically on mobile)
+  // maxVert  : max |translateY| in px (0 on desktop = no vertical drag)
+  function _attachDrag(outer, getWrap, getRail, onMove, maxVert) {
     let dragging = false, didDrag = false;
-    let startX = 0, startLeft = 0, lastX = 0, lastTime = 0, velX = 0;
+    let startX = 0, startLeft = 0, lastX = 0, velX = 0;
+    let startY = 0, startTransY = 0, lastY = 0, velY = 0;
+    let lastTime = 0;
 
-    // Delegate to the module-level _clamp so drag and zoom share identical bounds.
     function clamp(v) { return _clamp(outer, getRail, v); }
+    function clampV(v) { return Math.max(-maxVert, Math.min(maxVert, v)); }
+    function getTransY() {
+      const m = (getWrap().style.transform || '').match(/translateY\(([\d.-]+)px\)/);
+      return m ? parseFloat(m[1]) : 0;
+    }
 
     outer.addEventListener('pointerdown', e => {
-      // Only respond to primary button (left mouse, first touch/pen)
       if (!e.isPrimary) return;
-      // Ignore right-click
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-      dragging  = true; didDrag = false;
-      startX    = e.clientX;
-      startLeft = parseFloat(getRail().style.left) || 0;
-      lastX     = startX; lastTime = Date.now(); velX = 0;
+      dragging = true; didDrag = false;
+      startX = e.clientX; startY = e.clientY;
+      startLeft  = parseFloat(getRail().style.left) || 0;
+      startTransY = getTransY();
+      lastX = startX; lastY = startY;
+      lastTime = Date.now(); velX = 0; velY = 0;
       outer.style.cursor = 'grabbing';
-      // Capture keeps pointermove/pointerup on this element even
-      // when the pointer moves outside the browser window.
       outer.setPointerCapture(e.pointerId);
     });
 
     outer.addEventListener('pointermove', e => {
       if (!dragging || !e.isPrimary) return;
-      const cx  = e.clientX;
+      const cx = e.clientX, cy = e.clientY;
       const now = Date.now(), dt = now - lastTime || 1;
-      if (Math.abs(cx - startX) > 3) didDrag = true;
-      velX  = (cx - lastX) / dt * 16;
-      lastX = cx; lastTime = now;
+      if (Math.abs(cx - startX) > 3 || Math.abs(cy - startY) > 3) didDrag = true;
+      velX = (cx - lastX) / dt * 16;
+      velY = (cy - lastY) / dt * 16;
+      lastX = cx; lastY = cy; lastTime = now;
       getRail().style.left = clamp(startLeft + (cx - startX)) + 'px';
+      if (maxVert > 0) {
+        getWrap().style.transform =
+          'translateY(' + clampV(startTransY + (cy - startY)) + 'px)';
+      }
       if (onMove) onMove();
     });
 
     function endDrag(e) {
       if (!dragging || !e.isPrimary) return;
       dragging = false; outer.style.cursor = 'grab';
-      let pos = parseFloat(getRail().style.left) || 0;
+      let posX = parseFloat(getRail().style.left) || 0;
+      let posY = getTransY();
       function decay() {
-        velX *= 0.93;
-        if (Math.abs(velX) < 0.4) return;
-        pos = clamp(pos + velX);
-        getRail().style.left = pos + 'px';
+        velX *= 0.93; velY *= 0.93;
+        const moving = Math.abs(velX) >= 0.4 || (maxVert > 0 && Math.abs(velY) >= 0.4);
+        if (!moving) return;
+        posX = clamp(posX + velX);
+        getRail().style.left = posX + 'px';
+        if (maxVert > 0) {
+          posY = clampV(posY + velY);
+          getWrap().style.transform = 'translateY(' + posY + 'px)';
+        }
         if (onMove) onMove();
         _rafId = requestAnimationFrame(decay);
       }
@@ -304,12 +315,10 @@ window.bwTimeline = (function () {
       if (e.isPrimary) { dragging = false; outer.style.cursor = 'grab'; }
     });
 
-    // Swallow click that follows a drag so cards don't open
     outer.addEventListener('click', e => {
       if (didDrag) { e.stopPropagation(); e.preventDefault(); didDrag = false; }
     }, true);
 
-    // No window listeners → cleanup is a no-op
     return () => {};
   }
 
@@ -354,8 +363,16 @@ window.bwTimeline = (function () {
       transition: 'opacity 0.15s ease',
     });
 
-    // ── Spine on outer — always spans full viewport width ────
-    //    (never scrolls with the rail — this is the fix for bug 1)
+    // ── contentWrap: holds spine + rail + year labels + worm ─────────────
+    // On mobile this element is translateY’d for vertical panning.
+    // outer keeps overflow:hidden so cards clip at viewport edges.
+    const contentWrap = document.createElement('div');
+    Object.assign(contentWrap.style, {
+      position: 'absolute', inset: '0', pointerEvents: 'none',
+    });
+    outer.appendChild(contentWrap);
+
+    // ── Spine on contentWrap — spans full width, never scrolls horizontally ──
     const spine = document.createElement('div');
     Object.assign(spine.style, {
       position: 'absolute', top: `${SPINE_Y * 100}%`,
@@ -363,13 +380,13 @@ window.bwTimeline = (function () {
       background: t.spine, borderRadius: '2px',
       transform: 'translateY(-50%)', zIndex: '1', pointerEvents: 'none',
     });
-    outer.appendChild(spine);
+    contentWrap.appendChild(spine);
 
-    // ── Rail (slides; spine-free) ────────────────────────────
+    // ── Rail (slides; spine-free) ─────────────────────────────
     let _rail = _buildRail(notes, t);
-    outer.appendChild(_rail);
+    contentWrap.appendChild(_rail);
     const getRail = ()  => _rail;
-    const setRail = (r) => { _rail = r; outer.appendChild(r); };
+    const setRail = (r) => { _rail = r; contentWrap.appendChild(r); };
 
     // ── Year corner labels ─────────────────────────────────────
     // Fixed to the far-left and far-right corners of the viewport.
@@ -387,10 +404,10 @@ window.bwTimeline = (function () {
     };
     const yearLabelL = document.createElement('div');
     Object.assign(yearLabelL.style, { ..._ylStyle, left: '12px' });
-    outer.appendChild(yearLabelL);
+    contentWrap.appendChild(yearLabelL);
     const yearLabelR = document.createElement('div');
     Object.assign(yearLabelR.style, { ..._ylStyle, right: '12px' });
-    outer.appendChild(yearLabelR);
+    contentWrap.appendChild(yearLabelR);
 
     function updateYearLabels() {
       const rail = getRail();
@@ -443,7 +460,7 @@ window.bwTimeline = (function () {
     const worm = notes.length
       ? _bwTLUi.buildWorm(_rail._earliest, SPINE_Y, outer)
       : null;
-    if (worm) { outer.appendChild(worm.el); _wormCleanup = worm.destroy; }
+    if (worm) { contentWrap.appendChild(worm.el); _wormCleanup = worm.destroy; }
 
     // ── Unified onMove ─────────────────────────────
     function onAllMove() {
@@ -454,7 +471,15 @@ window.bwTimeline = (function () {
     }
 
     // ── Drag ───────────────────────────────────────────
-    const cleanupDrag = _attachDrag(outer, getRail, onAllMove);
+    // maxVert: how far up/down contentWrap can translateY.
+    // Approximated from note count × lane height; capped at 480 px.
+    // Desktop stays at 0 (no vertical drag — wheel zoom covers it).
+    const laneCount = Math.ceil(notes.length / 2);
+    const maxVert   = _isMob
+      ? Math.min(480, STEM_H + laneCount * (CARD_H + 12) + 40)
+      : 0;
+    const cleanupDrag = _attachDrag(
+      outer, () => contentWrap, getRail, onAllMove, maxVert);
     outer._cleanup    = cleanupDrag;
 
     // ── Wheel zoom ──────────────────────────────────
@@ -582,7 +607,9 @@ window.bwTimeline = (function () {
       fontSize: '10px', color: t.hintClr,
       pointerEvents: 'none', userSelect: 'none', whiteSpace: 'nowrap',
     });
-    hint.textContent = '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today  \u00b7  \uD83D\uDCC5 / \uD83D\uDD04 = date mode';
+    hint.textContent = _isMob
+      ? '\u2190\u2192 drag to scroll  \u00b7  \u2195 drag up/down  \u00b7  \u2194 fit  \u00b7  T = today'
+      : '\u2190 drag  \u00b7  scroll to zoom  \u00b7  \u2194 fit  \u00b7  T = today  \u00b7  \uD83D\uDCC5 / \uD83D\uDD04 = date mode';
     outer.appendChild(hint);
 
     // ── Center on Today on first render (after layout is available) ──
