@@ -143,7 +143,7 @@ window._bwTLRender = (function () {
   // the dot from the spine line for a clean "pin" appearance.
   function buildPin(rail, note, x, above, laneIdx, cfg, t) {
     const { SPINE_Y, STEM_H, CARD_H, CARD_W, esc, fmtDate, isMobile } = cfg;
-    const DOT = isMobile ? 11 : 15, GAP = isMobile ? 8 : 12;
+    const DOT = isMobile ? 9 : 15, GAP = isMobile ? 6 : 12;
     const stemH   = STEM_H + laneIdx * (CARD_H + GAP);
     const pinClr  = note.catColor || t.spine;
     const stemClr = note.catColor ? (note.catColor + '50') : t.spineFade;
@@ -192,33 +192,32 @@ window._bwTLRender = (function () {
     Object.assign(card.style, {
       position: 'absolute', left: (x - CARD_W / 2) + 'px', width: CARD_W + 'px',
       background: t.cardBg, border: `1px solid ${t.cardBord}`,
-      borderRadius: isMobile ? '8px' : '10px',
-      padding: isMobile ? '8px 10px' : '15px 18px',
+      borderRadius: isMobile ? '6px' : '10px',
+      padding: isMobile ? '6px 8px' : '15px 18px',
       boxShadow: t.shadow,
       cursor: 'pointer', pointerEvents: 'all', zIndex: '4',
       transition: 'box-shadow .15s, border-color .15s', ...vert,
     });
     card.innerHTML =
-      `<h3 style="font-size:${isMobile ? '.82rem' : '1.05rem'};font-weight:700;color:${t.titleClr};
-                  margin:0 0 ${isMobile ? '3px' : '6px'};line-height:1.3;
-                  display:-webkit-box;-webkit-line-clamp:2;
+      `<h3 style="font-size:${isMobile ? '.75rem' : '1.05rem'};font-weight:700;color:${t.titleClr};
+                  margin:0 0 ${isMobile ? '2px' : '6px'};line-height:1.25;
+                  display:-webkit-box;-webkit-line-clamp:${isMobile ? 1 : 2};
                   -webkit-box-orient:vertical;overflow:hidden;">
         ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
       </h3>
-      <time style="font-size:${isMobile ? '.72rem' : '.875rem'};color:${t.subClr};display:block;">
+      <time style="font-size:${isMobile ? '.68rem' : '.875rem'};color:${t.subClr};display:block;">
         ${note.isDb ? '&#128197; Updated ' : '&#128197; '}${fmtDate(note.dateStr)}
       </time>
       ${note.isDb
-        ? `<span style="display:inline-block;margin-top:${isMobile ? '4px' : '7px'};
-                        font-size:${isMobile ? '.68rem' : '.78rem'};font-weight:700;
-                        letter-spacing:.06em;padding:2px 5px;border-radius:4px;
-                        background:#7c3aed18;color:#7c3aed;">&#x1F5C3;&#xFE0F; DB CARD</span>`
+        ? `<span style="display:inline-block;margin-top:${isMobile ? '3px' : '7px'};
+                        font-size:${isMobile ? '.62rem' : '.78rem'};font-weight:700;
+                        letter-spacing:.06em;padding:2px 4px;border-radius:3px;
+                        background:#7c3aed18;color:#7c3aed;">DB</span>`
         : ''}`;
 
-    // Stop pointerdown bubbling so outer's drag handler never calls
-    // setPointerCapture on a card tap — otherwise the browser routes
-    // the subsequent click to outer and HTMX never fires.
-    card.addEventListener('pointerdown', e => e.stopPropagation());
+    // Allow pointerdown to bubble so the outer drag handler can activate
+    // even when a touch starts on a card. The outer click-guard suppresses
+    // card navigation after a genuine swipe.
 
     card.addEventListener('mouseenter', () => {
       card.style.boxShadow    = t.shadowHov;

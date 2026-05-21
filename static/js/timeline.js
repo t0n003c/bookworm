@@ -21,10 +21,10 @@ window.bwTimeline = (function () {
   const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
   const _isMob    = window.innerWidth < 768;
-  const CARD_W    = _isMob ? 170 : 272;
-  const CARD_H    = _isMob ? 80  : 118;  // approx. card height for vertical lane stacking
-  const STEM_H    = _isMob ? 52  : 80;
-  const PAD_ENDS  = _isMob ? 80  : 120;  // left & right padding inside the rail
+  const CARD_W    = _isMob ? 145 : 272;
+  const CARD_H    = _isMob ? 60  : 118;  // approx. card height for vertical lane stacking
+  const STEM_H    = _isMob ? 38  : 80;
+  const PAD_ENDS  = _isMob ? 70  : 120;  // left & right padding inside the rail
 
   // ── Module state ──────────────────────────────────────────────────
   let _mounted         = false;
@@ -244,46 +244,86 @@ window.bwTimeline = (function () {
     outer.style.opacity = '1';
   }
 
-  // ── Drag + momentum (Pointer Events API + setPointerCapture) ─────
-  // getWrap  : () => contentWrap element (translates vertically on mobile)
-  // maxVert  : max |translateY| in px (0 on desktop = no vertical drag)
+  // ── Drag + momentum (Pointer Events API, lazy capture, axis-locked) ─────
+  // Lazy capture: setPointerCapture is deferred until the drag threshold is
+  // exceeded in pointermove. This allows pointerdown on card elements (which
+  // stop propagation) to still be captured during a genuine swipe gesture,
+  // because the card's *pointermove* events bubble up to outer normally.
+  //
+  // Axis-lock: after 8 px of movement the dominant axis is locked for the
+  // rest of the gesture so vertical and horizontal swipes never fight each
+  // other. Axis resets on every pointerdown.
+  //
+  // maxVert : max |translateY| in px (0 on desktop = no vertical drag)
   function _attachDrag(outer, getWrap, getRail, onMove, maxVert) {
-    let dragging = false, didDrag = false;
+    let dragging = false, captured = false, didDrag = false;
+    let axis = null;  // null | 'h' | 'v'
     let startX = 0, startLeft = 0, lastX = 0, velX = 0;
     let startY = 0, startTransY = 0, lastY = 0, velY = 0;
-    let lastTime = 0;
+    let activeId = null, lastTime = 0;
 
-    function clamp(v) { return _clamp(outer, getRail, v); }
+    function clampH(v) { return _clamp(outer, getRail, v); }
     function clampV(v) { return Math.max(-maxVert, Math.min(maxVert, v)); }
     function getTransY() {
-      const m = (getWrap().style.transform || '').match(/translateY\(([\d.-]+)px\)/);
+      const m = (getWrap().style.transform || '').match(/translateY\((-?[\d.]+)px\)/);
       return m ? parseFloat(m[1]) : 0;
     }
 
+    // pointerdown on outer (direct hits on empty rail areas)
     outer.addEventListener('pointerdown', e => {
       if (!e.isPrimary) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-      dragging = true; didDrag = false;
+      dragging = true; captured = false; didDrag = false; axis = null;
+      activeId = e.pointerId;
       startX = e.clientX; startY = e.clientY;
-      startLeft  = parseFloat(getRail().style.left) || 0;
+      startLeft   = parseFloat(getRail().style.left) || 0;
       startTransY = getTransY();
-      lastX = startX; lastY = startY;
-      lastTime = Date.now(); velX = 0; velY = 0;
+      lastX = startX; lastY = startY; lastTime = Date.now();
+      velX = 0; velY = 0;
       outer.style.cursor = 'grabbing';
       outer.setPointerCapture(e.pointerId);
+      captured = true;
     });
 
+    // pointermove on outer — also fires for bubbled moves from card children
     outer.addEventListener('pointermove', e => {
-      if (!dragging || !e.isPrimary) return;
+      if (!e.isPrimary) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+
+      // Lazy capture: if a card ate the pointerdown, grab now on first move
+      if (!dragging && (adx > 3 || ady > 3)) {
+        dragging = true; didDrag = false; axis = null;
+        activeId = e.pointerId;
+        startX = e.clientX - dx; startY = e.clientY - dy; // back-calc start
+        startLeft   = parseFloat(getRail().style.left) || 0;
+        startTransY = getTransY();
+        lastX = e.clientX; lastY = e.clientY; lastTime = Date.now();
+        velX = 0; velY = 0;
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+        try { outer.setPointerCapture(e.pointerId); captured = true; } catch(_) {}
+        outer.style.cursor = 'grabbing';
+      }
+      if (!dragging) return;
+
       const cx = e.clientX, cy = e.clientY;
       const now = Date.now(), dt = now - lastTime || 1;
-      if (Math.abs(cx - startX) > 3 || Math.abs(cy - startY) > 3) didDrag = true;
+
+      // Lock axis once we know the dominant direction
+      if (!axis && (adx > 8 || ady > 8)) {
+        axis = adx >= ady ? 'h' : 'v';
+      }
+      if (adx > 3 || ady > 3) didDrag = true;
+
       velX = (cx - lastX) / dt * 16;
       velY = (cy - lastY) / dt * 16;
       lastX = cx; lastY = cy; lastTime = now;
-      getRail().style.left = clamp(startLeft + (cx - startX)) + 'px';
-      if (maxVert > 0) {
+
+      if (axis !== 'v') {  // horizontal (or not yet locked)
+        getRail().style.left = clampH(startLeft + (cx - startX)) + 'px';
+      }
+      if (axis !== 'h' && maxVert > 0) {  // vertical (or not yet locked)
         getWrap().style.transform =
           'translateY(' + clampV(startTransY + (cy - startY)) + 'px)';
       }
@@ -295,13 +335,14 @@ window.bwTimeline = (function () {
       dragging = false; outer.style.cursor = 'grab';
       let posX = parseFloat(getRail().style.left) || 0;
       let posY = getTransY();
+      const lockedAxis = axis;
       function decay() {
         velX *= 0.93; velY *= 0.93;
-        const moving = Math.abs(velX) >= 0.4 || (maxVert > 0 && Math.abs(velY) >= 0.4);
-        if (!moving) return;
-        posX = clamp(posX + velX);
-        getRail().style.left = posX + 'px';
-        if (maxVert > 0) {
+        const moveH = lockedAxis !== 'v' && Math.abs(velX) >= 0.4;
+        const moveV = lockedAxis !== 'h' && maxVert > 0 && Math.abs(velY) >= 0.4;
+        if (!moveH && !moveV) return;
+        if (moveH) { posX = clampH(posX + velX); getRail().style.left = posX + 'px'; }
+        if (moveV) {
           posY = clampV(posY + velY);
           getWrap().style.transform = 'translateY(' + posY + 'px)';
         }
@@ -315,6 +356,7 @@ window.bwTimeline = (function () {
       if (e.isPrimary) { dragging = false; outer.style.cursor = 'grab'; }
     });
 
+    // Swallow click after a real drag so card HTMX links don’t fire
     outer.addEventListener('click', e => {
       if (didDrag) { e.stopPropagation(); e.preventDefault(); didDrag = false; }
     }, true);
