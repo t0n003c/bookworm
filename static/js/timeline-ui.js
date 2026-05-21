@@ -284,8 +284,9 @@ window._bwTLUi = (function () {
 
     const inner = document.createElement('span');
     inner.textContent = '\uD83D\uDC1B';  // \uD83D\uDC1B caterpillar
+    const _isMobile = window.innerWidth < 768;
     Object.assign(inner.style, {
-      fontSize:        '42px',           // large, clearly visible on the spine
+      fontSize:        _isMobile ? '26px' : '42px',  // smaller on narrow screens
       display:         'inline-block',
       animation:       '_bwIdle 2.6s ease-in-out infinite',
       transformOrigin: 'bottom center',
@@ -293,7 +294,7 @@ window._bwTLUi = (function () {
     wrap.appendChild(inner);
 
     // ─ Movement state ───────────────────────────────────
-    const WORM_W   = 48;    // approx. pixel width at 42px font
+    const WORM_W   = _isMobile ? 30 : 48;  // approx. pixel width matching font size
     const PEEK     = 8;     // min gap from viewport edges
     const SPEED_W  = 0.55;  // px per frame while wandering (slow crawl)
     const SPEED_H  = 3.5;   // px per frame while homing to today
