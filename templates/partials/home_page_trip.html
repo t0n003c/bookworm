@@ -64,8 +64,11 @@
 
     /* 7c. Chart tab: Plan + Currency selectors always share one row;
            hide the text labels so just emoji + select fits on narrow screens;
-           cap select width so the All-Plans option can't push the second off-screen */
+           cap select width so the All-Plans option can't push the second off-screen;
+           left-align and equalise padding across all three toolbar bars */
     #trip-chart-controls-bar          { flex-wrap: nowrap; gap: 0.5rem; padding-left: 0.75rem; padding-right: 0.75rem; }
+    #trip-chart-phase-bar             { justify-content: flex-start; padding-left: 0.75rem; padding-right: 0.75rem; }
+    #trip-chart-person-bar            { padding-left: 0.75rem; padding-right: 0.75rem; }
     .trip-chart-ctrl-lbl              { display: none; }
     #trip-chart-controls-bar select   { max-width: 38vw; min-width: 0; }
 

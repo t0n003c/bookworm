@@ -88,7 +88,7 @@ function _tripChartRenderPhaseToggle() {
         : 'bg-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200');
   };
   el.innerHTML =
-    '<div class="flex items-center justify-center gap-1 px-4 py-2.5 ' +
+    '<div id="trip-chart-phase-bar" class="flex items-center justify-center gap-1 px-4 py-2.5 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">' +
       '<span class="text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
       '<div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5">' +
