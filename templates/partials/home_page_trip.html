@@ -21,6 +21,9 @@
      container handles page scrolling.  The tab bar becomes sticky so the
      user can switch tabs without scrolling back to the top.
   ──────────────────────────────────────────────────── */
+  /* Global: Plan: label is desktop-hidden (mobile CSS re-enables it below) */
+  .trip-chart-controls-lbl  { display: none; }
+
   @media (max-width: 767px) {
     /* 1. Release the fixed-height viewport cage */
     #trip-page-root         { height: auto !important; overflow: visible !important; }
@@ -62,15 +65,16 @@
     /* 7b. Chart tab: hide meta-note lines ("Showing stats for" + "FX rates") */
     .trip-chart-meta-note   { display: none; }
 
-    /* 7c. Chart tab: Plan + Currency selectors always share one row;
-           hide the text labels so just emoji + select fits on narrow screens;
-           cap select width so the All-Plans option can't push the second off-screen;
-           left-align and equalise padding across all three toolbar bars */
-    #trip-chart-controls-bar          { flex-wrap: nowrap; gap: 0.5rem; padding-left: 0.75rem; padding-right: 0.75rem; }
-    #trip-chart-phase-bar             { justify-content: flex-start; padding-left: 0.75rem; padding-right: 0.75rem; }
-    #trip-chart-person-bar            { padding-left: 0.75rem; padding-right: 0.75rem; }
-    .trip-chart-ctrl-lbl              { display: none; }
-    #trip-chart-controls-bar select   { max-width: 38vw; min-width: 0; }
+    /* 7c. Chart tab: three control bars — aligned label column on mobile */
+    #trip-chart-controls-bar,
+    #trip-chart-phase-bar,
+    #trip-chart-person-bar  { flex-wrap: nowrap; gap: 0.5rem;
+                              padding-left: 0.75rem; padding-right: 0.75rem;
+                              justify-content: flex-start; }
+    .trip-chart-bar-lbl     { min-width: 3rem; flex-shrink: 0; }
+    .trip-chart-controls-lbl { display: inline-flex; align-items: center; }
+    .trip-chart-ctrl-lbl    { display: none; }
+    #trip-chart-controls-bar select { max-width: 35vw; min-width: 0; }
 
     /* 8. Spot cards: full-width vertical card with a prominent cover image */
     .trip-spot-cover        { height: 13rem !important; }

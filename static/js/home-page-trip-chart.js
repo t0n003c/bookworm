@@ -90,20 +90,20 @@ function _tripChartRenderPhaseToggle() {
   el.innerHTML =
     '<div id="trip-chart-phase-bar" class="flex items-center justify-center gap-1 px-4 py-2.5 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">' +
-      '<span class="trip-chart-ctrl-lbl text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
+      '<span class="trip-chart-bar-lbl text-xs text-gray-400 dark:text-zinc-500">View:</span>' +
       '<div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5">' +
         '<button onclick="tripChartSetPhase(\'actuals\')" class="' + btnCls('actuals') + '">' +
-          '✅ Actuals' +
+          '\u2705 Actuals' +
         '</button>' +
         '<button onclick="tripChartSetPhase(\'planning\')" class="' + btnCls('planning') + '">' +
-          '🗺️ Planning' +
+          '\uD83D\uDDFA\uFE0F Planning' +
         '</button>' +
       '</div>' +
-      '<span class="ml-3 text-[10px] text-gray-400 dark:text-zinc-500 italic">' +
+      '<span class="trip-chart-meta-note ml-3 text-[10px] text-gray-400 dark:text-zinc-500 italic">' +
         (_tripChartPhase === 'planning'
           ? 'Spot estimates &amp; budget ceiling'
           : 'Logged expenses &amp; settlements') +
-      '</span>' +
+      '</span>'
     '</div>';
 }
 
@@ -142,14 +142,17 @@ function _tripChartRenderControls() {
   el.innerHTML =
     '<div id="trip-chart-controls-bar" class="flex flex-wrap items-center gap-3 px-4 py-2 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/60">' +
+      '<span class="trip-chart-bar-lbl trip-chart-controls-lbl text-xs text-gray-400 dark:text-zinc-500">Plan:</span>' +
       '<label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">' +
-        '🗓️ <span class="trip-chart-ctrl-lbl">Plan</span>' +
+        '<span class="trip-chart-ctrl-lbl">🗓️</span>' +
+        '<span class="trip-chart-ctrl-lbl">Plan</span>' +
         '<select class="' + selCls + '" onchange="tripChartSetPlan(+this.value)">' +
           planOpts +
         '</select>' +
       '</label>' +
       '<label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400">' +
-        '💱 <span class="trip-chart-ctrl-lbl">Display in</span>' +
+        '<span class="trip-chart-ctrl-lbl">💱</span>' +
+        '<span class="trip-chart-ctrl-lbl">Display in</span>' +
         '<select class="' + selCls + '" onchange="tripChartSetCurrency(this.value)">' +
           curOpts +
         '</select>' +
