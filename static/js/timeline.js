@@ -20,11 +20,15 @@ window.bwTimeline = (function () {
   const PX_MIN    = 0.8;
   const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
-  const _isMob    = window.innerWidth < 768;
-  const CARD_W    = _isMob ? 145 : 272;
-  const CARD_H    = _isMob ? 60  : 118;  // approx. card height for vertical lane stacking
-  const STEM_H    = _isMob ? 38  : 80;
-  const PAD_ENDS  = _isMob ? 70  : 120;  // left & right padding inside the rail
+  // Use the smaller dimension so landscape phones still get mobile sizing.
+  const _isMob    = Math.min(window.innerWidth, window.innerHeight) < 600;
+  const CARD_W    = _isMob ? 140 : 272;
+  const CARD_H    = _isMob ? 58  : 118;  // approx. card height for vertical lane stacking
+  const STEM_H    = _isMob ? 36  : 80;
+  const PAD_ENDS  = _isMob ? 60  : 120;  // left & right padding inside the rail
+  // Extra px the contentWrap extends above AND below outer on mobile.
+  // This gives translateY something real to reveal (inset:0 wrap = nothing to scroll).
+  const MOB_VPAD  = 400;
 
   // ── Module state ──────────────────────────────────────────────────
   let _mounted         = false;
@@ -409,9 +413,23 @@ window.bwTimeline = (function () {
     // On mobile this element is translateY’d for vertical panning.
     // outer keeps overflow:hidden so cards clip at viewport edges.
     const contentWrap = document.createElement('div');
-    Object.assign(contentWrap.style, {
-      position: 'absolute', inset: '0', pointerEvents: 'none',
-    });
+    // On mobile contentWrap extends MOB_VPAD px above AND below outer so
+    // translateY has real content to reveal (inset:0 = nothing to scroll).
+    // Spine at 50% of the taller box still lands at outer's visual centre:
+    //   spineFromOuterTop = (outerH + 2*MOB_VPAD)/2 - MOB_VPAD = outerH/2
+    if (_isMob) {
+      Object.assign(contentWrap.style, {
+        position: 'absolute',
+        left: '0', right: '0',
+        top:    (-MOB_VPAD) + 'px',
+        height: 'calc(100% + ' + (MOB_VPAD * 2) + 'px)',
+        pointerEvents: 'none',
+      });
+    } else {
+      Object.assign(contentWrap.style, {
+        position: 'absolute', inset: '0', pointerEvents: 'none',
+      });
+    }
     outer.appendChild(contentWrap);
 
     // ── Spine on contentWrap — spans full width, never scrolls horizontally ──
@@ -516,10 +534,8 @@ window.bwTimeline = (function () {
     // maxVert: how far up/down contentWrap can translateY.
     // Approximated from note count × lane height; capped at 480 px.
     // Desktop stays at 0 (no vertical drag — wheel zoom covers it).
-    const laneCount = Math.ceil(notes.length / 2);
-    const maxVert   = _isMob
-      ? Math.min(480, STEM_H + laneCount * (CARD_H + 12) + 40)
-      : 0;
+    // maxVert matches MOB_VPAD — the exact extra height added above/below.
+    const maxVert = _isMob ? MOB_VPAD : 0;
     const cleanupDrag = _attachDrag(
       outer, () => contentWrap, getRail, onAllMove, maxVert);
     outer._cleanup    = cleanupDrag;
