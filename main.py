@@ -372,6 +372,7 @@ async def index(request: Request, ws: Optional[int] = None):
             "trashed_home_pages": trashed_home_pages,
             "is_demo":            request.session.get("is_demo", False),
             "demo_expires_at":    request.session.get("demo_expires_at"),
+            "current_user_id":    user_id,
         },
     )
     # Prevent the browser from caching this page — it is user-specific and must

@@ -59,23 +59,25 @@
   </style>
 </head>
 
-<body data-bw-page="login" class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-hidden relative">
+<body data-bw-page="login" class="min-h-screen bg-[#080c1a] flex items-center justify-center p-4 overflow-x-hidden overflow-y-auto relative">
 
   <!-- ── Demo button — top right (hidden when BW_DEMO_ENABLED=false) ── -->
   {% if demo_enabled %}
-  <div class="fixed top-4 right-4 z-50">
+  <div class="fixed top-3 right-3 z-50 sm:top-4 sm:right-4">
     <form method="post" action="/demo/start">
       <button type="submit"
-              class="group flex items-center gap-2 px-4 py-2 rounded-xl
+              class="group flex items-center gap-1.5 sm:gap-2
+                     px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl
                      bg-[#ffc220] hover:bg-[#e6ae1d] active:bg-[#cca019]
-                     text-[#1a0f00] font-bold text-sm shadow-lg
+                     text-[#1a0f00] font-bold text-xs sm:text-sm shadow-lg
                      focus:outline-none focus:ring-2 focus:ring-[#ffc220]
                      focus:ring-offset-2 focus:ring-offset-[#080c1a]
                      transition-all active:scale-95"
               aria-label="Try BookWorm without an account">
-        <span class="text-base leading-none">🐛</span>
-        <span>Try Demo</span>
-        <svg class="w-3.5 h-3.5 opacity-70 group-hover:translate-x-0.5 transition-transform"
+        <span class="text-sm leading-none sm:text-base" aria-hidden="true">🐛</span>
+        <span class="hidden xs:inline sm:inline">Try Demo</span>
+        <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-70
+                    group-hover:translate-x-0.5 transition-transform"
              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
              aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
@@ -96,14 +98,14 @@
   <span class="floaty" style="left:82%; animation-duration:16s; animation-delay:4s">✨</span>
   <span class="floaty" style="left:91%; animation-duration:18s; animation-delay:0.5s">🔖</span>
 
-  <!-- ── card ── -->
-  <div class="relative z-10 w-full max-w-sm">
+  <!-- —— card —— -->
+  <div class="relative z-10 w-full max-w-sm py-8">
 
     <!-- logo -->
-    <div class="text-center mb-6">
-      <div class="bob text-6xl mb-3 drop-shadow-lg select-none inline-block"
+    <div class="text-center mb-4 sm:mb-6">
+      <div class="bob text-5xl sm:text-6xl mb-2 sm:mb-3 drop-shadow-lg select-none inline-block"
            role="img" aria-label="Books">📚</div>
-      <h1 class="text-3xl font-extrabold text-white tracking-tight">BookWorm</h1>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">BookWorm</h1>
       <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
         Welcome back, word nerd 🧐
       </p>
@@ -111,7 +113,7 @@
 
     <!-- crawling worm -->
     <div id="worm-track"
-         class="relative w-full h-9 mb-2 overflow-hidden"
+         class="relative w-full h-8 sm:h-9 mb-2 overflow-hidden"
          aria-hidden="true">
       <span id="worm"
             class="absolute bottom-1 left-0 text-3xl select-none"
@@ -120,7 +122,7 @@
       </span>
     </div>
 
-    <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
+    <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-5 sm:p-8">
 
       <!-- success banners -->
       {% if created %}

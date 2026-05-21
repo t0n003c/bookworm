@@ -223,7 +223,16 @@ function _hpFetch(pageId, { silent = false, onDone = null } = {}) {
         }
       }
     })
-    .catch(err => { _hpFlight.delete(pageId); console.warn('[home] page fetch failed:', err); });
+    .catch(err => {
+      _hpFlight.delete(pageId);
+      console.warn('[home] page fetch failed:', err);
+      // If the stored page is the one that just 404'd, evict it so a
+      // refresh doesn't loop on a bad restore.
+      if (String(pageId) === sessionStorage.getItem('bw-hp')) {
+        sessionStorage.removeItem('bw-hp');
+        document.documentElement.classList.remove('bw-hp-restore');
+      }
+    });
 }
 
 /** Pre-warm cache on sidebar tab hover — called from inline onmouseenter. */

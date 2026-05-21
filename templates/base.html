@@ -35,6 +35,15 @@
       // HTMX, before any content is painted.  The CSS rule below then keeps
       // #note-list / #ws-breadcrumb invisible for the entire initial render so
       // the workspace never flashes before the home canvas takes over.
+      //
+      // User-isolation guard: if the stored user ID doesn't match the current
+      // server-rendered user (e.g. demo start, logout+login in same tab) clear
+      // the stale page ID immediately so we never try to fetch a 404 page.
+      var _bwUid = {{ current_user_id | default(0) | tojson }};
+      if (_bwUid && sessionStorage.getItem('bw-uid') !== String(_bwUid)) {
+        sessionStorage.removeItem('bw-hp');
+        sessionStorage.setItem('bw-uid', String(_bwUid));
+      }
       if (parseInt(sessionStorage.getItem('bw-hp') || '0', 10)) {
         document.documentElement.classList.add('bw-hp-restore');
       }

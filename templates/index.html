@@ -4254,12 +4254,13 @@
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
        onclick="closeWidgetSettings()" aria-hidden="true"></div>
 
-  <!-- Card -->
+  <!-- Card — flex-col so header+footer pin, body scrolls on mobile -->
   <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
-              w-full max-w-xs mx-4 p-5">
+              w-full max-w-xs mx-4 p-5 flex flex-col overflow-hidden"
+       style="max-height:85vh;max-height:85dvh">
 
     <!-- Header -->
-    <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
       <h2 id="ws-settings-title"
           class="flex items-center gap-2 text-sm font-bold
                  text-gray-900 dark:text-zinc-100">
@@ -4279,11 +4280,13 @@
       </button>
     </div>
 
-    <!-- Dynamic settings body (populated by openWidgetSettings) -->
-    <div id="ws-settings-body" class="space-y-2.5"></div>
+    <!-- Dynamic settings body — scrollable so it never overflows the card -->
+    <div id="ws-settings-body"
+         class="space-y-2.5 overflow-y-auto flex-1 min-h-0
+                -mx-1 px-1"></div>
 
     <!-- Footer -->
-    <div class="mt-5 flex justify-end">
+    <div class="mt-5 flex justify-end flex-shrink-0">
       <button type="button" onclick="saveAndCloseWidgetSettings()"
               class="px-4 py-2 text-sm rounded-lg bg-wblue text-white
                      font-semibold hover:bg-blue-700 transition
