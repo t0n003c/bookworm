@@ -1198,14 +1198,16 @@ function _dbToggleFieldsPanel() {
   var sub     = isDark ? '#71717a' : '#6b7280';
   var rowHov  = isDark ? '#27272a' : '#f9fafb';
 
-  var rect = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+  var rect     = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+  var isMobile  = window.innerWidth < 768;
+  var rightPx   = isMobile ? 8 : (window.innerWidth - rect.right);
 
   var panel = document.createElement('div');
   panel.id  = 'db-fields-panel';
   panel.style.cssText =
     'position:fixed;top:' + (rect.bottom + 6) + 'px;'
-    + 'right:' + (window.innerWidth - rect.right) + 'px;'
-    + 'z-index:9500;width:280px;max-width:calc(100vw - 1.5rem);'
+    + 'right:' + rightPx + 'px;'
+    + 'z-index:9500;width:280px;max-width:calc(100vw - 1rem);'
     + 'background:' + panelBg + ';border:1px solid ' + bdr + ';'
     + 'border-radius:0.75rem;padding:0.85rem;'
     + 'box-shadow:0 8px 32px rgba(0,0,0,0.18);'
@@ -1673,14 +1675,16 @@ function _dbToggleFilterPanel() {
   var secBg   = isDark ? '#27272a' : '#f9fafb';
 
   // Position below the filter button
-  var rect = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+  var rect     = btn ? btn.getBoundingClientRect() : { bottom: 56, right: 300 };
+  var isMobile  = window.innerWidth < 768;
+  var rightPx   = isMobile ? 8 : (window.innerWidth - rect.right);
 
   var panel = document.createElement('div');
   panel.id  = 'db-filter-panel';
   panel.style.cssText =
     'position:fixed;top:' + (rect.bottom + 6) + 'px;'
-    + 'right:' + (window.innerWidth - rect.right) + 'px;'
-    + 'z-index:9500;width:360px;max-width:calc(100vw - 1.5rem);'
+    + 'right:' + rightPx + 'px;'
+    + 'z-index:9500;width:360px;max-width:calc(100vw - 1rem);'
     + 'background:' + panelBg + ';border:1px solid ' + bdr + ';'
     + 'border-radius:0.75rem;padding:1rem;'
     + 'box-shadow:0 8px 32px rgba(0,0,0,0.18);'
