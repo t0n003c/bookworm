@@ -51,7 +51,7 @@ function _tripRenderPersonPicker(data) {
          'border-b border-gray-100 dark:border-zinc-800 ' +
          'bg-gray-50 dark:bg-zinc-900/60">' +
       '<span class="text-[11px] text-gray-400 dark:text-zinc-500 flex-shrink-0">' +
-        '<span class="trip-chart-ctrl-lbl">View by </span>Person' +
+        '<span class="trip-chart-ctrl-lbl">View by </span>Person:' +
       '</span>' +
       pills.join('') +
     '</div>';

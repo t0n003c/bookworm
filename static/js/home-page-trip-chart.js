@@ -90,7 +90,7 @@ function _tripChartRenderPhaseToggle() {
   el.innerHTML =
     '<div id="trip-chart-phase-bar" class="flex items-center justify-center gap-1 px-4 py-2.5 ' +
     'border-b border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-950">' +
-      '<span class="text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
+      '<span class="trip-chart-ctrl-lbl text-xs text-gray-400 dark:text-zinc-500 mr-2">View:</span>' +
       '<div class="flex items-center gap-0.5 bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5">' +
         '<button onclick="tripChartSetPhase(\'actuals\')" class="' + btnCls('actuals') + '">' +
           '✅ Actuals' +
