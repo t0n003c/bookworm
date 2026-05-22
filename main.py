@@ -9,6 +9,7 @@ import logging
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,12 +22,7 @@ from security import load_secret_key
 
 # ── Security response headers ─────────────────────────────────────────────────
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Inject standard security headers on every response.
-
-    Deliberately skips Content-Security-Policy: the app uses Tailwind/HTMX/
-    Chart.js from CDN and has inline <script> blocks throughout the templates.
-    A nonce-based CSP is the right long-term fix but is out of scope here.
-    """
+    """Inject standard security headers on every response."""
     _HEADERS = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options":        "SAMEORIGIN",
@@ -38,6 +34,27 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for k, v in self._HEADERS.items():
             response.headers.setdefault(k, v)
+        return response
+
+
+class _StaticCacheMiddleware(BaseHTTPMiddleware):
+    """Add long-lived cache headers to versioned static assets.
+
+    The app injects ?v={{ static_v }} on every <script>/<link> tag, so the
+    URL changes on every deploy.  That makes it safe to cache aggressively.
+
+    /static/ paths WITHOUT a ?v= param get a 1-hour cache (e.g. favicon,
+    fonts) so they are still refreshed regularly.  Dynamic routes are
+    untouched.
+    """
+    _IMMUTABLE = "public, max-age=31536000, immutable"  # 1 year
+    _SHORT     = "public, max-age=3600"                # 1 hour
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            cc = self._IMMUTABLE if request.query_params.get("v") else self._SHORT
+            response.headers["Cache-Control"] = cc
         return response
 
 
@@ -148,6 +165,12 @@ app.add_middleware(
 )
 # Outermost — runs last on responses, so it stamps headers on everything.
 app.add_middleware(_SecurityHeadersMiddleware)
+app.add_middleware(_StaticCacheMiddleware)
+
+# GZip all text responses ≥1 KB.  Typically cuts JS/CSS/HTML 65-80%.
+# Must be added AFTER the security-headers middleware so it wraps the
+# whole stack and compresses the final outgoing bytes.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 # When BookWorm runs behind a reverse proxy (Cloudflare Tunnel, nginx, Traefik…)
 # the proxy terminates TLS and forwards requests over plain HTTP on localhost.

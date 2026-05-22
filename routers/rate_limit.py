@@ -43,6 +43,17 @@ def _evict(key: str) -> None:
     dq = _attempts[key]
     while dq and dq[0] < cutoff:
         dq.popleft()
+    # If the deque is now empty, remove the key entirely to bound dict size.
+    if not dq:
+        _attempts.pop(key, None)
+
+
+def _evict_blocks() -> None:
+    """Remove expired hard-block entries — called probabilistically."""
+    now = monotonic()
+    expired = [k for k, t in _blocked_until.items() if t < now]
+    for k in expired:
+        _blocked_until.pop(k, None)
 
 
 def check_rate_limit(key: str) -> None:
@@ -66,7 +77,12 @@ def check_rate_limit(key: str) -> None:
             )
         # Block expired — clear it and let them try again
         del _blocked_until[key]
-        _attempts[key].clear()
+        _attempts.pop(key, None)
+
+    # Probabilistic eviction of stale block entries (~1-in-20 calls)
+    import random
+    if random.randint(0, 19) == 0:
+        _evict_blocks()
 
 
 def record_failure(key: str) -> None:

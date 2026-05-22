@@ -12,6 +12,7 @@ time HTMX sees the response, and window.location.replace() doesn't halt JS
 execution synchronously — so HTMX could complete a swap before the navigation
 took effect, producing a broken half-page login inside the app shell.
 """
+from time import monotonic
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
@@ -32,12 +33,53 @@ _PUBLIC = {
     "/manifest.json", "/sw.js", "/offline",
 }
 
+# ── TTL cache for _user_exists ────────────────────────────────────────────────
+# Avoids a DB round-trip on every authenticated request.  A positive entry
+# means the user existed at the time of the last check.  TTL is intentionally
+# short (120 s) so that a deleted or disabled account stops being accepted
+# within 2 minutes, which is a very acceptable window for a team app.
+#
+# Negative results (user NOT found) are never cached — we always re-query so
+# that a user who is restored to the DB is recognised immediately.
+_USER_CACHE: dict[int, float] = {}   # { user_id → monotonic expiry time }
+_USER_CACHE_TTL = 120.0              # seconds
+
+
+def _cache_evict_expired() -> None:
+    """Drop expired entries — called probabilistically to bound memory use."""
+    now = monotonic()
+    expired = [uid for uid, exp in _USER_CACHE.items() if exp < now]
+    for uid in expired:
+        _USER_CACHE.pop(uid, None)
+
 
 async def _user_exists(user_id: int) -> bool:
-    """Single indexed PK lookup — confirms the session's user_id is still in DB."""
+    """Return True if user_id is present in the users table.
+
+    Positive results are cached for _USER_CACHE_TTL seconds to avoid a DB
+    query on every request.  Expired entries and negative results always
+    trigger a fresh DB lookup.
+    """
+    now = monotonic()
+    expiry = _USER_CACHE.get(user_id)
+    if expiry and expiry > now:
+        return True   # cache hit
+
     async with get_db() as db:
         cur = await db.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
-        return await cur.fetchone() is not None
+        found = await cur.fetchone() is not None
+
+    if found:
+        _USER_CACHE[user_id] = now + _USER_CACHE_TTL
+        # Probabilistic eviction: ~1-in-50 calls to keep dict bounded.
+        import random
+        if random.randint(0, 49) == 0:
+            _cache_evict_expired()
+    else:
+        # User was deleted — immediately remove stale positive entry if present.
+        _USER_CACHE.pop(user_id, None)
+
+    return found
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
