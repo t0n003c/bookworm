@@ -224,7 +224,7 @@ rebuild_css.bat
 
 # macOS / Linux — download the Tailwind CLI binary first:
 # https://github.com/tailwindlabs/tailwindcss/releases
-./tailwindcss -i static/css/tailwind.src.css -o static/css/tailwind.css --minify
+./tailwindcss -c tailwind.config.js -i static/css/input.css -o static/css/tailwind.css --minify
 ```
 
 ---
