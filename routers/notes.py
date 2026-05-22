@@ -151,9 +151,6 @@ async def url_title_endpoint(url: str = Query(..., description="URL whose page t
     2. The hostname is resolved and every returned IP is checked against
        ipaddress.ip_address().is_private / is_loopback / is_link_local /
        is_reserved.  Any private IP causes a silent empty-string return.
-    3. SSL verification is skipped because Walmart's proxy performs SSL
-       inspection with a corporate CA that Python's bundled OpenSSL does
-       not trust.  The SSRF-by-IP guard is the meaningful control here.
 
     Always returns JSON {"title": str} — empty string on any failure so
     callers treat it as a graceful no-op.
@@ -188,13 +185,7 @@ async def url_title_endpoint(url: str = Query(..., description="URL whose page t
             return ""
         try:
             import ssl
-            # Walmart proxy does SSL inspection with a corporate CA that Python's
-            # bundled OpenSSL doesn't trust.  Skip verification for this lightweight
-            # metadata fetch (no sensitive data, read-only, title only).
-            # The SSRF-by-IP guard above is the primary security control.
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode    = ssl.CERT_NONE
+            ctx = ssl.create_default_context()  # full certificate verification
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": "Mozilla/5.0 (BookWorm/1.0 mention-preview)"},

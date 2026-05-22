@@ -7,6 +7,31 @@ __pycache__/
 venv/
 .env
 
+# ── Internal dev / AI-agent files (never publish) ────────────────────────────
+# These are Code Puppy / Claude agent memory files and internal planning docs.
+# They contain local paths, internal infrastructure details, and dev notes
+# that should never appear on a public repo.
+AGENTS.md
+CLAUDE.md
+CODEPUPPY_NOTES.md
+PLAN.md
+PLAN_CRM_PHASE3.md
+
+# ── Local dev utility scripts ─────────────────────────────────────────────────
+# Handy locally but noisy and sometimes contain hardcoded paths / user IDs.
+_start_server.py
+_health_check.py
+_seed_trip_data.py
+_seed_*.py
+restart.bat
+restart.vbs
+restart.ps1
+
+# ── Personal / named assets (PII) ────────────────────────────────────────────
+# Avatars or images named after specific people.
+static/img/buds/Tinh*.png
+static/img/buds/*personal*.png
+
 # Eddie debug / temp scripts + scratch files (never commit these)
 # Prefixed patterns (Eddie's naming convention)
 _check_*.py

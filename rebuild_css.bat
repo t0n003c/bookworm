@@ -5,8 +5,8 @@ REM Output: static/css/tailwind.css  (commit this file)
 REM
 REM Requirements: tailwindcss.exe must exist in the project root.
 REM Download it once from:
-REM   https://generic.ci.artifacts.walmart.com/artifactory/github-releases-generic-release-remote/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-windows-x64.exe
-REM   (rename the download to tailwindcss.exe)
+REM   https://github.com/tailwindlabs/tailwindcss/releases/latest
+REM   (pick tailwindcss-windows-x64.exe and rename it to tailwindcss.exe)
 
 if not exist tailwindcss.exe (
     echo [ERROR] tailwindcss.exe not found in project root.

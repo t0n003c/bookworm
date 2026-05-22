@@ -99,14 +99,11 @@ async def _user_notes(uid: int, limit: int = 50) -> list[dict]:
 
 
 def _fetch_json(url: str) -> dict:
-    """Synchronous JSON fetch — runs in the thread-pool executor.
-    Uses the Walmart corporate proxy so server-side requests can reach the internet.
-    """
-    proxy = urllib.request.ProxyHandler({
-        "http":  "http://sysproxy.wal-mart.com:8080",
-        "https": "http://sysproxy.wal-mart.com:8080",
-    })
-    opener = urllib.request.build_opener(proxy)
+    """Synchronous JSON fetch — runs in the thread-pool executor."""
+    handlers: list = []
+    if _PROXY:
+        handlers.append(urllib.request.ProxyHandler({"http": _PROXY, "https": _PROXY}))
+    opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "BookWorm/1.0 (weather proxy)"},
@@ -131,8 +128,8 @@ async def home_sidebar(request: Request):
 
 
 # ── Weather proxy ──────────────────────────────────────────────────────────────────
-# Fetches geocoding + weather from open-meteo server-side so that
-# corporate-proxy restrictions that block browser fetch() don’t apply.
+# Fetches geocoding + weather from open-meteo server-side so browser
+# same-origin policy doesn't apply (and BW_HTTP_PROXY is respected).
 
 @router.get("/weather")
 async def weather_proxy(
@@ -307,7 +304,11 @@ _RSS_UA = (
 )
 
 
-_PROXY = 'http://sysproxy.wal-mart.com:8080'
+# Optional outbound HTTP proxy — e.g. "http://proxy.example.com:8080".
+# Leave unset for direct internet access (the default).
+# Set BW_HTTP_PROXY in your .env or docker-compose.yml when BookWorm is
+# deployed behind a corporate proxy that intercepts outbound HTTPS.
+_PROXY: str = os.getenv("BW_HTTP_PROXY", "")
 
 # Friendly messages for known curl exit codes (CURLE_* constants)
 _CURL_EXIT_MSGS: dict[int, str] = {
@@ -327,11 +328,12 @@ def _curl_fetch(url: str, extra_headers: list | None = None,
     tmp_fd, tmp_path = tempfile.mkstemp(suffix='.curl_body')
     os.close(tmp_fd)                # release fd so curl can write
     try:
-        cmd = [
-            'curl', '-s', '-L',
-            '--proxy', _PROXY,
-            '--proxy-negotiate', '-u', ':',  # Kerberos/NTLM via Windows SSPI — no password needed
-            '-A', _RSS_UA,
+        cmd = ['curl', '-s', '-L']
+        if _PROXY:
+            # Kerberos/NTLM via SSPI — no password needed when running on
+            # a domain-joined machine behind a corporate proxy.
+            cmd += ['--proxy', _PROXY, '--proxy-negotiate', '-u', ':']
+        cmd += ['-A', _RSS_UA,
             '--max-time', str(timeout),
             '-o', tmp_path,
             '-w', '%{content_type}\n%{http_code}',
@@ -348,11 +350,11 @@ def _curl_fetch(url: str, extra_headers: list | None = None,
             parts_err = result.stdout.strip().splitlines()
             http_code = parts_err[1].strip() if len(parts_err) > 1 else ''
             if result.returncode == 56 and http_code in ('000', ''):
-                # Proxy CONNECT tunnel was closed — almost always a corporate
-                # proxy block (HTTP 403 URLBlocked from sysproxy.wal-mart.com).
+                # Proxy CONNECT tunnel closed — usually a corporate proxy block.
+                proxy_hint = f' (via {_PROXY})' if _PROXY else ''
                 raise urllib.error.URLError(
-                    'This feed URL is blocked by the Walmart corporate proxy. '
-                    'Try a different URL, or ask IT to allow it.'
+                    f'Connection blocked{proxy_hint}. '
+                    'Check the URL or your network/proxy settings.'
                 )
             msg = _CURL_EXIT_MSGS.get(result.returncode) or (
                 result.stderr.strip() or f'Network error (curl code {result.returncode})'
@@ -376,7 +378,7 @@ def _curl_fetch(url: str, extra_headers: list | None = None,
 
 
 def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple:
-    """Fetch URL through Walmart proxy (NTLM). Returns (text, content_type_header).
+    """Fetch URL (optionally via BW_HTTP_PROXY). Returns (text, content_type_header).
 
     send_rss_accept=True  → adds Accept: application/rss+xml… header (initial fetch).
     send_rss_accept=False → plain fetch, no Accept header (autodiscovered feed URLs;
@@ -394,7 +396,7 @@ def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple:
 
 
 def _fetch_bytes(url: str) -> tuple[bytes, str]:
-    """Fetch binary content through Walmart proxy (NTLM). Returns (raw_bytes, content_type)."""
+    """Fetch binary content (optionally via BW_HTTP_PROXY). Returns (raw_bytes, content_type)."""
     body, ct = _curl_fetch(url, timeout=10)
     return body, ct.split(';')[0].strip() or 'application/octet-stream'
 
@@ -685,7 +687,7 @@ async def article_proxy(request: Request, url: str = Query(...)):
 
 @router.get('/img')
 async def img_proxy(url: str = Query(...)):
-    """Proxy an image URL through the Walmart network proxy.
+    """Proxy an image URL server-side (respects BW_HTTP_PROXY if set).
 
     Only allows http/https and only passes through image/* content types so
     this cannot be used as an open proxy for arbitrary content.

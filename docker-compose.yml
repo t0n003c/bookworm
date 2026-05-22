@@ -82,11 +82,17 @@ services:
       # Short-lived WOPI access token lifetime in seconds (default: 1 hour).
       BW_WOPI_TOKEN_EXPIRY: ${BW_WOPI_TOKEN_EXPIRY:-3600}
 
-      # ── Uvicorn workers ───────────────────────────────────────────────────
+      # ── Uvicorn workers ────────────────────────────────────────────────────
       # Keep at 1 for SQLite (safe default). Max ~4 with WAL mode.
       # NOTE: each worker runs its own background demo-purge loop — that is
       # harmless (idempotent deletes) but keep WORKERS ≤ 4 with SQLite.
       WORKERS: ${WORKERS:-1}
+
+      # ── Outbound HTTP proxy (optional) ──────────────────────────────────
+      # Set when BookWorm is behind a corporate proxy that intercepts
+      # outbound HTTP/HTTPS (affects RSS, weather, image proxy, link previews).
+      # Leave empty for direct internet (the default for most deployments).
+      BW_HTTP_PROXY: ${BW_HTTP_PROXY:-}
 
     volumes:
       - bookworm_data:/data

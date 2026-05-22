@@ -89,6 +89,7 @@ cp .env.example .env
 | `BW_DEMO_ENABLED` | `true` | Set `false` to hide the Try Demo button. |
 | `BW_MAX_UPLOAD_MB` | `200` | Max file size per upload in MB. |
 | `WORKERS` | `1` | Uvicorn worker count. Safe up to ~4 with SQLite; migrate to PostgreSQL for more. |
+| `BW_HTTP_PROXY` | *(empty)* | Outbound HTTP/HTTPS proxy for RSS, weather, image proxy and link previews. Format: `http://proxy.example.com:8080`. Leave empty for direct internet access. |
 | `BW_COLLABORA_URL` | *(empty)* | Browser-facing URL of Collabora Online. Leave empty to disable document editing. |
 | `BW_WOPI_BASE_URL` | *(empty)* | Server-to-server URL for Collabora → BookWorm WOPI calls. Required when `BW_COLLABORA_URL` is set. |
 
