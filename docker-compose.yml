@@ -16,6 +16,12 @@
 #   4. Set BW_ALLOW_REGISTRATION=false for invite-only teams.
 #   5. Set BW_DEMO_ENABLED=false for private deployments.
 
+# Locks the Compose project name so the data volume is always named
+# "bookworm_bookworm_data" regardless of what directory you cloned into.
+# Without this, cloning into "my-notes/" would create "my-notes_bookworm_data"
+# and break the backup/restore commands below.
+name: bookworm
+
 # ── Option A: build from source (default) ────────────────────────────────────
 # This is the default.  Docker builds the image locally from the Dockerfile.
 # Switch to Option B below if you want to pull a pre-built image from GitHub
@@ -77,11 +83,32 @@ services:
       BW_WOPI_TOKEN_EXPIRY: ${BW_WOPI_TOKEN_EXPIRY:-3600}
 
       # ── Uvicorn workers ───────────────────────────────────────────────────
+      # Keep at 1 for SQLite (safe default). Max ~4 with WAL mode.
+      # NOTE: each worker runs its own background demo-purge loop — that is
+      # harmless (idempotent deletes) but keep WORKERS ≤ 4 with SQLite.
       WORKERS: ${WORKERS:-1}
 
     volumes:
       - bookworm_data:/data
     restart: unless-stopped
+
+    # ── Log rotation ──────────────────────────────────────────────────────────
+    # Caps Docker log files so they can't silently fill disk on a long-running server.
+    # 10 MB × 5 files = 50 MB max total log storage.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # ── Resource limits (optional — uncomment for shared servers) ─────────────
+    # Prevents a memory leak or traffic spike from starving the host.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 512m
+    #       cpus: "1.0"
+
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
@@ -118,6 +145,10 @@ services:
 
 # Named volume — survives container rebuilds and image updates.
 # All your notes, uploads, and settings live here.
+#
+# The `name: bookworm` at the top of this file locks the project name so the
+# volume is always "bookworm_bookworm_data", no matter which folder you cloned
+# into.  Use that exact name in the backup/restore commands below.
 #
 # Backup your data:
 #   docker run --rm \

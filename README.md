@@ -109,6 +109,9 @@ Your data volume is untouched — all notes survive updates.
 
 ## 💾 Backing up
 
+The `docker-compose.yml` pins `name: bookworm` so the data volume is always
+named `bookworm_bookworm_data` regardless of which folder you cloned into.
+
 ```bash
 # Full backup (database + uploads) as a tar.gz
 docker run --rm \
@@ -132,6 +135,8 @@ docker run --rm \
   -v "$(pwd)":/backup \
   alpine tar xzf /backup/bookworm-backup.tar.gz -C /
 ```
+
+> **Tip:** verify the volume name on your machine with `docker volume ls | grep bookworm`.
 
 ---
 

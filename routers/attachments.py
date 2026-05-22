@@ -20,7 +20,7 @@ from routers.sharing_db import note_belongs_to_user
 router = APIRouter(prefix="/notes", tags=["attachments"])
 
 # Respects the same env var used by the home-uploads router.
-_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "20"))
+_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "200"))
 MAX_UPLOAD_BYTES = _MAX_MB * 1024 * 1024
 
 
