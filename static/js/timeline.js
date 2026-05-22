@@ -21,13 +21,15 @@ window.bwTimeline = (function () {
   const PX_MAX    = 120; // allows ~8-day minimum view at full width
   const SPINE_Y   = 0.50;  // spine at 50 % of container height
   // Use the smaller dimension so landscape phones still get mobile sizing.
-  const _isMob    = Math.min(window.innerWidth, window.innerHeight) < 600;
-  const CARD_W    = _isMob ? 140 : 272;
-  const CARD_H    = _isMob ? 58  : 118;  // approx. card height for vertical lane stacking
-  const STEM_H    = _isMob ? 36  : 80;
-  const PAD_ENDS  = _isMob ? 60  : 120;  // left & right padding inside the rail
-  // Extra px the contentWrap extends above AND below outer on mobile.
-  // This gives translateY something real to reveal (inset:0 wrap = nothing to scroll).
+  // Touch capability is the reliable mobile signal.
+  // innerWidth-based checks break on Safari 'Request Desktop Site'.
+  const _isMob    = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const CARD_W    = _isMob ? 130 : 272;
+  const CARD_H    = _isMob ? 52  : 118;  // approx. card height for vertical lane stacking
+  const STEM_H    = _isMob ? 30  : 80;
+  const PAD_ENDS  = _isMob ? 50  : 120;  // left & right padding inside the rail
+  // Scroll headroom added above/below the viewport on mobile.
+  // vScroll.scrollTop is initialised to MOB_VPAD so the spine sits centred.
   const MOB_VPAD  = 400;
 
   // ── Module state ──────────────────────────────────────────────────
@@ -258,20 +260,17 @@ window.bwTimeline = (function () {
   // rest of the gesture so vertical and horizontal swipes never fight each
   // other. Axis resets on every pointerdown.
   //
-  // maxVert : max |translateY| in px (0 on desktop = no vertical drag)
-  function _attachDrag(outer, getWrap, getRail, onMove, maxVert) {
+  // maxScrollY : max scrollTop in px (0 on desktop = no vertical pan)
+  function _attachDrag(outer, getVScroll, getRail, onMove, maxScrollY) {
     let dragging = false, captured = false, didDrag = false;
     let axis = null;  // null | 'h' | 'v'
     let startX = 0, startLeft = 0, lastX = 0, velX = 0;
-    let startY = 0, startTransY = 0, lastY = 0, velY = 0;
+    let startY = 0, startST = 0,    lastY = 0, velY = 0;  // startST = scrollTop at drag start
     let activeId = null, lastTime = 0;
 
-    function clampH(v) { return _clamp(outer, getRail, v); }
-    function clampV(v) { return Math.max(-maxVert, Math.min(maxVert, v)); }
-    function getTransY() {
-      const m = (getWrap().style.transform || '').match(/translateY\((-?[\d.]+)px\)/);
-      return m ? parseFloat(m[1]) : 0;
-    }
+    function clampH(v)  { return _clamp(outer, getRail, v); }
+    // clampST: keep scrollTop between 0 and maxScrollY (= MOB_VPAD*2 on mobile, 0 desktop)
+    function clampST(v) { return Math.max(0, Math.min(maxScrollY, v)); }
 
     // pointerdown on outer (direct hits on empty rail areas)
     outer.addEventListener('pointerdown', e => {
@@ -281,8 +280,9 @@ window.bwTimeline = (function () {
       dragging = true; captured = false; didDrag = false; axis = null;
       activeId = e.pointerId;
       startX = e.clientX; startY = e.clientY;
-      startLeft   = parseFloat(getRail().style.left) || 0;
-      startTransY = getTransY();
+      startLeft = parseFloat(getRail().style.left) || 0;
+      const _vs0 = getVScroll();
+      startST   = _vs0 ? _vs0.scrollTop : 0;
       lastX = startX; lastY = startY; lastTime = Date.now();
       velX = 0; velY = 0;
       outer.style.cursor = 'grabbing';
@@ -293,16 +293,20 @@ window.bwTimeline = (function () {
     // pointermove on outer — also fires for bubbled moves from card children
     outer.addEventListener('pointermove', e => {
       if (!e.isPrimary) return;
+      // Short-circuit if no button is physically held — prevents lazy-capture
+      // from re-activating the drag after pointerup (stale startX/Y issue).
+      if (!dragging && e.buttons === 0) return;
       const dx = e.clientX - startX, dy = e.clientY - startY;
       const adx = Math.abs(dx), ady = Math.abs(dy);
 
-      // Lazy capture: if a card ate the pointerdown, grab now on first move
-      if (!dragging && (adx > 3 || ady > 3)) {
+      // Lazy capture: card ate the pointerdown — grab on first move while pressed
+      if (!dragging && e.buttons > 0 && (adx > 3 || ady > 3)) {
         dragging = true; didDrag = false; axis = null;
         activeId = e.pointerId;
         startX = e.clientX - dx; startY = e.clientY - dy; // back-calc start
-        startLeft   = parseFloat(getRail().style.left) || 0;
-        startTransY = getTransY();
+        startLeft = parseFloat(getRail().style.left) || 0;
+        const _vs1 = getVScroll();
+        startST   = _vs1 ? _vs1.scrollTop : 0;
         lastX = e.clientX; lastY = e.clientY; lastTime = Date.now();
         velX = 0; velY = 0;
         if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
@@ -314,9 +318,9 @@ window.bwTimeline = (function () {
       const cx = e.clientX, cy = e.clientY;
       const now = Date.now(), dt = now - lastTime || 1;
 
-      // Lock axis once we know the dominant direction
+      // Lock axis — bias toward vertical so upward swipes aren't eaten by h
       if (!axis && (adx > 8 || ady > 8)) {
-        axis = adx >= ady ? 'h' : 'v';
+        axis = adx > ady ? 'h' : 'v';
       }
       if (adx > 3 || ady > 3) didDrag = true;
 
@@ -327,9 +331,10 @@ window.bwTimeline = (function () {
       if (axis !== 'v') {  // horizontal (or not yet locked)
         getRail().style.left = clampH(startLeft + (cx - startX)) + 'px';
       }
-      if (axis !== 'h' && maxVert > 0) {  // vertical (or not yet locked)
-        getWrap().style.transform =
-          'translateY(' + clampV(startTransY + (cy - startY)) + 'px)';
+      if (axis !== 'h' && maxScrollY > 0) {  // vertical (or not yet locked)
+        // Drag finger DOWN → content follows → scrollTop DECREASES
+        const _vs2 = getVScroll();
+        if (_vs2) _vs2.scrollTop = clampST(startST - (cy - startY));
       }
       if (onMove) onMove();
     });
@@ -338,17 +343,19 @@ window.bwTimeline = (function () {
       if (!dragging || !e.isPrimary) return;
       dragging = false; outer.style.cursor = 'grab';
       let posX = parseFloat(getRail().style.left) || 0;
-      let posY = getTransY();
+      const _vs3 = getVScroll();
+      let posY = _vs3 ? _vs3.scrollTop : 0;
       const lockedAxis = axis;
       function decay() {
         velX *= 0.93; velY *= 0.93;
         const moveH = lockedAxis !== 'v' && Math.abs(velX) >= 0.4;
-        const moveV = lockedAxis !== 'h' && maxVert > 0 && Math.abs(velY) >= 0.4;
+        const moveV = lockedAxis !== 'h' && maxScrollY > 0 && Math.abs(velY) >= 0.4 && _vs3;
         if (!moveH && !moveV) return;
         if (moveH) { posX = clampH(posX + velX); getRail().style.left = posX + 'px'; }
         if (moveV) {
-          posY = clampV(posY + velY);
-          getWrap().style.transform = 'translateY(' + posY + 'px)';
+          // velY > 0 = was dragging down → keep scrolling content down (scrollTop decreases)
+          posY = clampST(posY - velY);
+          _vs3.scrollTop = posY;
         }
         if (onMove) onMove();
         _rafId = requestAnimationFrame(decay);
@@ -357,7 +364,10 @@ window.bwTimeline = (function () {
     }
     outer.addEventListener('pointerup',     endDrag);
     outer.addEventListener('pointercancel', e => {
-      if (e.isPrimary) { dragging = false; outer.style.cursor = 'grab'; }
+      if (e.isPrimary) {
+        dragging = false; axis = null; outer.style.cursor = 'grab';
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+      }
     });
 
     // Swallow click after a real drag so card HTMX links don’t fire
@@ -410,27 +420,41 @@ window.bwTimeline = (function () {
     });
 
     // ── contentWrap: holds spine + rail + year labels + worm ─────────────
-    // On mobile this element is translateY’d for vertical panning.
-    // outer keeps overflow:hidden so cards clip at viewport edges.
-    const contentWrap = document.createElement('div');
-    // On mobile contentWrap extends MOB_VPAD px above AND below outer so
-    // translateY has real content to reveal (inset:0 = nothing to scroll).
-    // Spine at 50% of the taller box still lands at outer's visual centre:
-    //   spineFromOuterTop = (outerH + 2*MOB_VPAD)/2 - MOB_VPAD = outerH/2
+    // On mobile contentWrap lives inside vScroll and is taller than the viewport;
+    // scrollTop panning reveals cards above/below. outer keeps overflow:hidden.
+    // Mobile: vScroll is a native-scrollable shell that gives the contentWrap
+    // real height to scroll through. touchAction:'none' lets our pointer handler
+    // own scrollTop; the hidden scrollbar keeps it invisible to the user.
+    // Spine lives at 50% of contentWrap. With scrollTop = MOB_VPAD the spine
+    // appears at exactly 50% of vScroll's client height. ✓
+    let vScroll = null;
     if (_isMob) {
-      Object.assign(contentWrap.style, {
-        position: 'absolute',
-        left: '0', right: '0',
-        top:    (-MOB_VPAD) + 'px',
-        height: 'calc(100% + ' + (MOB_VPAD * 2) + 'px)',
-        pointerEvents: 'none',
+      if (!document.getElementById('_bwVsStyle')) {
+        const _s = document.createElement('style');
+        _s.id = '_bwVsStyle';
+        _s.textContent = '._bwVs::-webkit-scrollbar{display:none}';
+        document.head.appendChild(_s);
+      }
+      vScroll = document.createElement('div');
+      Object.assign(vScroll.style, {
+        position: 'absolute', inset: '0',
+        overflowY: 'scroll', overflowX: 'hidden',
+        touchAction: 'none',   // we drive scrollTop; block native scroll
+        scrollbarWidth: 'none',
       });
-    } else {
-      Object.assign(contentWrap.style, {
-        position: 'absolute', inset: '0', pointerEvents: 'none',
-      });
+      vScroll.className = '_bwVs';
+      outer.appendChild(vScroll);
     }
-    outer.appendChild(contentWrap);
+
+    const contentWrap = document.createElement('div');
+    Object.assign(contentWrap.style, {
+      position: 'absolute', left: '0', right: '0', top: '0',
+      // On mobile: taller than vScroll so there's room to scroll vertically.
+      // scrollHeight - clientHeight = MOB_VPAD*2. Init scrollTop = MOB_VPAD centres spine.
+      height: _isMob ? ('calc(100% + ' + (MOB_VPAD * 2) + 'px)') : '100%',
+      pointerEvents: 'none',
+    });
+    (vScroll || outer).appendChild(contentWrap);
 
     // ── Spine on contentWrap — spans full width, never scrolls horizontally ──
     const spine = document.createElement('div');
@@ -531,13 +555,10 @@ window.bwTimeline = (function () {
     }
 
     // ── Drag ───────────────────────────────────────────
-    // maxVert: how far up/down contentWrap can translateY.
-    // Approximated from note count × lane height; capped at 480 px.
-    // Desktop stays at 0 (no vertical drag — wheel zoom covers it).
-    // maxVert matches MOB_VPAD — the exact extra height added above/below.
-    const maxVert = _isMob ? MOB_VPAD : 0;
+    // On mobile: maxScrollY = MOB_VPAD*2 (= contentWrap overflow).
+    // On desktop: 0 (no vertical pan — wheel zoom is enough).
     const cleanupDrag = _attachDrag(
-      outer, () => contentWrap, getRail, onAllMove, maxVert);
+      outer, () => vScroll, getRail, onAllMove, _isMob ? MOB_VPAD * 2 : 0);
     outer._cleanup    = cleanupDrag;
 
     // ── Wheel zoom ──────────────────────────────────
@@ -583,6 +604,7 @@ window.bwTimeline = (function () {
     }));
     bar.appendChild(makeBtn('&#8596;', 'Fit all notes in view', () => {
       _doAutofit(outer, notes, t, getRail, setRail);
+      if (vScroll) vScroll.scrollTop = MOB_VPAD;  // reset vertical to spine-centre
       onAllMove();
     }));
 
@@ -673,6 +695,9 @@ window.bwTimeline = (function () {
     // ── Center on Today on first render (after layout is available) ──
     outer._onMount = () => {
       _centerToday(outer, notes, t, getRail, setRail);
+      // Centre spine vertically — must happen AFTER _centerToday so
+      // the rail has its final dimensions before we show the overlay.
+      if (vScroll) vScroll.scrollTop = MOB_VPAD;
       onAllMove();
     };
 

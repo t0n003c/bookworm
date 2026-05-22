@@ -1,15 +1,30 @@
-fastapi==0.115.12
-starlette==0.46.2
-uvicorn[standard]
-jinja2
-python-multipart
-aiosqlite
-bcrypt
-httpx
-itsdangerous
-pyotp
-qrcode
-Pillow>=10.0.0
-pypdf>=4.0.0
-python-docx>=1.1.0
-reportlab>=4.0.0
+# BookWorm — pinned production dependencies
+# Generated from the dev environment (Python 3.13).
+# To update: install in a venv, run `pip freeze`, then trim to direct deps.
+
+# Web framework
+fastapi==0.135.2
+starlette==1.0.0
+uvicorn[standard]==0.42.0
+
+# Templates & forms
+jinja2==3.1.6
+python-multipart==0.0.22
+
+# Database
+aiosqlite==0.22.1
+
+# Auth & security
+bcrypt==5.0.0
+itsdangerous==2.2.0
+pyotp==2.9.0
+qrcode==8.2
+
+# HTTP client (used by WOPI and RSS fetching)
+httpx==0.28.1
+
+# File processing
+Pillow>=12.2.0
+pypdf>=6.10.1
+python-docx>=1.2.0
+reportlab>=4.4.10

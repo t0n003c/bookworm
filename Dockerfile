@@ -1,35 +1,53 @@
 # ── BookWorm Dockerfile ─────────────────────────────────────────────────────
-# Single stage — pure Python, no compiled assets. (YAGNI on multi-stage.)
-FROM python:3.12-slim
+# Single-stage build — no compiled assets; Tailwind CSS is pre-built and
+# committed to the repo, so no Node.js layer is needed.
+FROM python:3.13-slim-bookworm
+
+# Sane Python defaults for containers:
+#   PYTHONDONTWRITEBYTECODE — skip .pyc files (saves ~10 MB, irrelevant in containers)
+#   PYTHONUNBUFFERED        — stdout/stderr go straight to Docker logs, no buffering
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    BW_DATA_DIR=/data
 
 WORKDIR /app
 
-# Install dependencies first so Docker layer cache skips this on code-only changes.
+# Install dependencies first — Docker caches this layer as long as
+# requirements.txt hasn't changed, even if source files have.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source (DB, logs, uploads, and secrets are gitignored + dockerignored).
-# static/css/tailwind.css is pre-built and committed — copied here automatically.
-# To update CSS after template changes: run rebuild_css.bat locally, then commit
-# the updated static/css/tailwind.css before rebuilding the Docker image.
+# Copy application source.
+# .dockerignore strips: *.db, uploads/, *.log, *.secret, .git/, dev scripts,
+# Windows batch files, and Tailwind CLI binary.
 COPY . .
 
-# /data is the volume mount point for persistent state:
-#   /data/bookworm.db     — SQLite database
-#   /data/bookworm.secret — auto-generated secret key (overridden by BW_SECRET_KEY)
-#   /data/uploads/        — user-uploaded attachments
-RUN mkdir -p /data/uploads
+# /data is the volume mount point for all persistent state:
+#   /data/bookworm.db      — SQLite database
+#   /data/bookworm.secret  — auto-generated session key (or override via BW_SECRET_KEY)
+#   /data/uploads/         — user-uploaded attachments
+#
+# Create the directory and a non-root user in one RUN layer to keep
+# the image lean.  The bookworm user owns /data so it can write the
+# DB and uploads without running as root.
+RUN mkdir -p /data/uploads \
+    && addgroup --system bookworm \
+    && adduser --system --ingroup bookworm --no-create-home bookworm \
+    && chown -R bookworm:bookworm /data /app
+
+USER bookworm
 
 EXPOSE 8001
 
-# WORKERS: SQLite with WAL mode safely supports a small number of concurrent
-# writers. For a small team (< ~50 concurrent users), 1 worker is fine.
-# Raise to 2–4 via the WORKERS environment variable for more throughput,
-# but avoid going above 4 with SQLite (lock contention outweighs the gains;
-# migrate to PostgreSQL if you need more).
+# WORKERS: SQLite + WAL safely handles a small number of concurrent writers.
+# 1 worker is correct for most self-hosted team deployments (< ~50 users).
+# Raise to 2–4 via the WORKERS env var for more throughput, but stay ≤ 4
+# with SQLite — beyond that, write contention outweighs the gains.
+# Migrate to PostgreSQL for larger teams.
 #
-# Do NOT use --reload in production.
-CMD uvicorn main:app \
+# exec replaces the shell so uvicorn is PID 1 and receives SIGTERM directly
+# (clean shutdown, no zombie processes).
+CMD exec uvicorn main:app \
       --host 0.0.0.0 \
       --port 8001 \
       --workers ${WORKERS:-1}

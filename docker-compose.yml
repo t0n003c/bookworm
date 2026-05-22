@@ -1,27 +1,54 @@
 # BookWorm — docker compose up -d  →  http://localhost:8001
 #
-# FIRST-RUN CHECKLIST:
-#   1. Copy this file's env block to a .env file (never commit it).
+# QUICK START (zero config):
+#   docker compose up -d
+#   open http://localhost:8001
+#
+# The app auto-generates and persists a secret key in the data volume on
+# first boot.  For production, set BW_SECRET_KEY in a .env file to prevent
+# session invalidation if the volume is ever replaced.
+#
+# FIRST-RUN CHECKLIST (production):
+#   1. Copy .env.example → .env and fill in your values.
 #   2. Set BW_SECRET_KEY to a long random string:
 #        python -c "import secrets; print(secrets.token_hex(32))"
-#   3. Set BW_HTTPS=true if you're putting this behind nginx/Caddy/Traefik.
+#   3. Set BW_HTTPS=true if you're behind nginx / Caddy / Traefik / Cloudflare.
 #   4. Set BW_ALLOW_REGISTRATION=false for invite-only teams.
 #   5. Set BW_DEMO_ENABLED=false for private deployments.
+
+# ── Option A: build from source (default) ────────────────────────────────────
+# This is the default.  Docker builds the image locally from the Dockerfile.
+# Switch to Option B below if you want to pull a pre-built image from GitHub
+# Container Registry instead.
 
 services:
   bookworm:
     build: .
+    # ── Option B: pre-built image from GitHub Container Registry ─────────────
+    # Comment out `build: .` above and uncomment the line below to pull the
+    # latest image without building locally.  Useful for servers with limited
+    # CPU (Raspberry Pi, cheap VPS, etc.).
+    #   image: ghcr.io/YOUR_GITHUB_USERNAME/bookworm:latest
     ports:
       - "8001:8001"
     environment:
       # ── Data location ──────────────────────────────────────────────────────
       BW_DATA_DIR: /data
 
-      # ── Secret key (REQUIRED) ─────────────────────────────────────────────
-      BW_SECRET_KEY: ${BW_SECRET_KEY:?BW_SECRET_KEY must be set — see docker-compose.yml header}
+      # ── Secret key ────────────────────────────────────────────────────────
+      # Optional — the app auto-generates and persists one in /data/bookworm.secret
+      # on first boot.  Set this in .env for production so sessions survive
+      # volume replacements.
+      BW_SECRET_KEY: ${BW_SECRET_KEY:-}
 
       # ── HTTPS cookies ──────────────────────────────────────────────────────
       BW_HTTPS: ${BW_HTTPS:-false}
+
+      # ── Reverse proxy headers ─────────────────────────────────────────────
+      # Set to true when behind nginx / Caddy / Traefik / Cloudflare Tunnel.
+      # Enables reading X-Forwarded-Proto / X-Forwarded-For.
+      # Do NOT enable if BookWorm is exposed directly (no proxy in front).
+      BW_TRUST_PROXY: ${BW_TRUST_PROXY:-false}
 
       # ── Open registration ──────────────────────────────────────────────────
       BW_ALLOW_REGISTRATION: ${BW_ALLOW_REGISTRATION:-true}
@@ -29,8 +56,8 @@ services:
       # ── Demo mode ──────────────────────────────────────────────────────────
       BW_DEMO_ENABLED: ${BW_DEMO_ENABLED:-true}
 
-        # Max upload size in MB (images + videos). Default 200 MB.
-        BW_MAX_UPLOAD_MB: ${BW_MAX_UPLOAD_MB:-200}
+      # ── Max upload size in MB (images + videos). Default 200 MB. ──────────
+      BW_MAX_UPLOAD_MB: ${BW_MAX_UPLOAD_MB:-200}
 
       # ── Collabora Online (LibreOffice in browser) ──────────────────────────
       # BW_COLLABORA_URL: URL the *browser* uses to reach Collabora (port 9980).
@@ -49,6 +76,9 @@ services:
       # Short-lived WOPI access token lifetime in seconds (default: 1 hour).
       BW_WOPI_TOKEN_EXPIRY: ${BW_WOPI_TOKEN_EXPIRY:-3600}
 
+      # ── Uvicorn workers ───────────────────────────────────────────────────
+      WORKERS: ${WORKERS:-1}
+
     volumes:
       - bookworm_data:/data
     restart: unless-stopped
@@ -58,30 +88,28 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   # ── Collabora Online (LibreOffice in browser) ───────────────────────────────
-  # Enabled when BW_COLLABORA_URL is set in the bookworm service above.
-  # Collabora makes WOPI calls to bookworm over the Docker bridge network.
+  # Optional — provides in-browser document editing for uploaded .docx/.xlsx files.
+  # Only needed if you want that feature.
   #
-  # BROWSER ACCESS: Collabora is internal-only by default (no host ports).
-  # For LAN / local dev access, uncomment the ports block below and set:
-  #   BW_COLLABORA_URL=http://<your-host-ip>:9980
-  #   BW_WOPI_BASE_URL=http://bookworm:8001   (Docker-to-Docker)
+  # To enable:
+  #   1. Uncomment the ports block below.
+  #   2. Set in .env:
+  #        BW_COLLABORA_URL=http://<your-host-ip>:9980
+  #        BW_WOPI_BASE_URL=http://bookworm:8001
   collabora:
     image: collabora/code:latest
     environment:
-      # Allow Collabora to make WOPI calls to bookworm (Docker service name)
-      # and to host.docker.internal (for local-dev BookWorm outside Docker).
       aliasgroups: 'bookworm|host\.docker\.internal'
-      # Disable internal TLS — let a reverse proxy handle it.
       DONT_GEN_SSL_CERT: "YES"
       extra_params: >-
         --o:ssl.enable=false
         --o:ssl.termination=true
         --o:storage.wopi.host[0]=bookworm
         --o:storage.wopi.host[1]=host.docker.internal
-    # Uncomment to expose Collabora to the host for browser access:
+    # Uncomment to expose Collabora to the host (required for browser access):
     # ports:
     #   - "9980:9980"
     restart: unless-stopped
@@ -89,8 +117,18 @@ services:
       - bookworm
 
 # Named volume — survives container rebuilds and image updates.
-# Docker stores it in /var/lib/docker/volumes/bookworm_bookworm_data/
-# Back it up with: docker run --rm -v bookworm_bookworm_data:/data -v $(pwd):/backup \
-#                    alpine tar czf /backup/bookworm-backup.tar.gz /data
+# All your notes, uploads, and settings live here.
+#
+# Backup your data:
+#   docker run --rm \
+#     -v bookworm_bookworm_data:/data \
+#     -v "$(pwd)":/backup \
+#     alpine tar czf /backup/bookworm-backup.tar.gz /data
+#
+# Restore:
+#   docker run --rm \
+#     -v bookworm_bookworm_data:/data \
+#     -v "$(pwd)":/backup \
+#     alpine tar xzf /backup/bookworm-backup.tar.gz -C /
 volumes:
   bookworm_data:

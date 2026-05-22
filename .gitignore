@@ -66,6 +66,9 @@ Thumbs.db
 $null
 restart.ps1
 
+# GitHub Actions local runner artifacts
+.act/
+
 # Tailwind CLI binary (Windows — download once, not committed; see rebuild_css.bat)
 tailwindcss.exe
 tailwindcss-windows-x64.exe

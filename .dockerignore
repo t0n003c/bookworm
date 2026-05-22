@@ -1,58 +1,83 @@
 # Keep the Docker image lean — none of these belong inside it.
 
-# Dev environment
+# ── Python cache ──────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
+
+# ── Dev environment ───────────────────────────────────────────────────────────
 .venv/
 venv/
 .env
 
-# Data (persisted via Docker volume at runtime, not baked into image)
+# ── Data (persisted via Docker volume at runtime, not baked into image) ───────
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 uploads/
 
-# Logs
+# ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 
-# Secrets (never bake credentials into the image)
+# ── Secrets (never bake credentials into the image) ──────────────────────────
 *.secret
 cookies.txt
 cookies*.txt
 
-# Git history (not needed at runtime)
+# ── Git history ───────────────────────────────────────────────────────────────
 .git/
 .gitignore
 
-# OS junk
+# ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+$null
 
-# All dev / test / debug scripts
+# ── Windows-only scripts (not needed in the Linux container) ─────────────────
+*.bat
+*.vbs
+restart.ps1
+_start_server.py
+
+# ── Tailwind CLI binary (Windows — Linux image uses the pre-built CSS) ────────
+tailwindcss.exe
+tailwindcss-windows-x64.exe
+tailwind.config.js
+
+# ── Developer documentation (internal notes, not needed at runtime) ───────────
+AGENTS.md
+CLAUDE.md
+PLAN.md
+PLAN_CRM_PHASE3.md
+CODEPUPPY_NOTES.md
+
+# ── Dev / debug / test / seed scripts ────────────────────────────────────────
 _check_*.py
+_check*.py
 _qa_*.py
+_qa*.py
 _migrate_*.py
 _test_*.py
+_script_*.py
 _jscheck.py
+_health_check.py
+_seed_trip_data.py
 check_*.py
 _tmp*.py
 _debug*.py
+patch_*.py
 diag*.py
 tail_log.py
 test_*.py
 template_test.py
 smoke_test.py
 
-# Temp data dumps
+# ── Temp data dumps ───────────────────────────────────────────────────────────
 openapi_tmp.json
 openapi_*.json
 *.tmp.json
 
-# Tailwind CLI binary (Windows-only, not needed in Linux Docker image)
-tailwindcss.exe
-tailwindcss-windows-x64.exe
-
-# This file itself
+# ── This file itself ──────────────────────────────────────────────────────────
 .dockerignore
