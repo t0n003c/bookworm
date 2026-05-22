@@ -474,6 +474,16 @@ var _dbSelBarTimer  = null;  // hide-debounce timer
 ═══════════════════════════════════════════════════════════════════════════ */
 
 function initDatabaseView(wsId) {
+  // Guard: if this exact db-view-root element has already been initialised (e.g.
+  // an HTMX sidebar OOB swap fired htmx:afterSettle while we are still on the
+  // same database workspace), do nothing.  A genuine content swap always brings
+  // a fresh DOM node without the sentinel attribute, so we will re-init then.
+  var _root = document.getElementById('db-view-root');
+  if (_root && _root.dataset.bwDbInit === '1') return;
+  if (_root) _root.dataset.bwDbInit = '1';
+  // Reset modal-wired flag so the new input element gets its listener.
+  _dbModalsWired = false;
+
   _dbWsId = wsId;
   // Databases have their own Add Card flow — New Note doesn't apply here.
   var btnNN = document.getElementById('btn-new-note');
@@ -8459,16 +8469,18 @@ function _dbDeleteAttr(cardId, attrId) {
 var _dbModalsWired = false;
 
 function _dbBindModals() {
-  // Close add-card modal on Enter key in the title input
+  // Guard at the very top — protects BOTH the input keydown listener and any
+  // future document-level listeners from stacking across multiple calls.
+  if (_dbModalsWired) return;
+  _dbModalsWired = true;
+
+  // Close add-card modal on Enter key in the title input.
   var inp = document.getElementById('db-new-card-title');
   if (inp) {
     inp.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); _dbSubmitAddCard(); }
     });
   }
-  // Document-level listeners are global — only wire once to avoid stacking
-  if (_dbModalsWired) return;
-  _dbModalsWired = true;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
