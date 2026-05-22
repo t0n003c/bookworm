@@ -7,6 +7,7 @@ import qrcode.image.svg
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from routers.rate_limit import check_rate_limit, record_failure, record_success
 from routers.totp_db import (
     disable_totp,
     enable_totp,
@@ -136,14 +137,19 @@ async def verify_submit(request: Request, code: str = Form(...)):
     if not user_id:
         return RedirectResponse("/login", status_code=302)
 
+    rl_key = f"{request.client.host}:2fa"
+    check_rate_limit(rl_key)
+
     status = await get_totp_status(user_id)
     if not status["totp_secret"] or not verify_totp_code(status["totp_secret"], code):
+        record_failure(rl_key)
         return templates.TemplateResponse(
             request,
             "2fa_verify.html",
             {"error": "Incorrect code — check your authenticator app and try again."},
             status_code=401,
         )
+    record_success(rl_key)
 
     # Promote pending → full session
     permanent = request.session.pop("pending_2fa_permanent", False)

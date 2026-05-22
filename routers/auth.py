@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from routers.auth_db import authenticate, create_user, user_count, get_user_by_username, get_registration_open
 from routers.totp_db import get_totp_status
 from routers.seed_uploads import seed_flower_uploads
+from routers.rate_limit import check_rate_limit, record_failure, record_success
 from database import get_db
 from security import make_expires_at
 from templates_env import templates
@@ -80,14 +81,19 @@ async def login_submit(
     password: str = Form(...),
     stay_signed_in: str = Form(default=""),
 ):
+    rl_key = f"{request.client.host}:login"
+    check_rate_limit(rl_key)
+
     user = await authenticate(username.strip(), password)
     if not user:
+        record_failure(rl_key)
         return templates.TemplateResponse(
             request,
             "login.html",
             {"error": "Invalid username or password.", "username": username},
             status_code=401,
         )
+    record_success(rl_key)
     permanent = stay_signed_in == "on"
 
     # Check 2FA — if enabled, park a pending session and redirect to verify

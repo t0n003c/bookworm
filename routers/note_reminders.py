@@ -6,7 +6,7 @@ Endpoints (all under /home prefix via main.py include):
   POST /home/note-reminders/{rid}/dismiss — mark a reminder as fired/dismissed
 """
 import logging
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from database import get_db
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/home")
 def _uid(req: Request) -> int:
     uid = req.session.get("user_id")
     if not uid:
-        raise PermissionError("not logged in")
+        raise HTTPException(status_code=401)
     return uid
 
 

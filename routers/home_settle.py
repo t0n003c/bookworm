@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from database import get_db
@@ -29,7 +29,7 @@ _DEMO_NOOP = Response(status_code=204, headers={"HX-Reswap": "none"})
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
     if not uid:
-        raise PermissionError("not logged in")
+        raise HTTPException(status_code=401)
     return int(uid)
 
 

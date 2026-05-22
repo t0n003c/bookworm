@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from routers.attachments_db import UPLOAD_DIR
@@ -74,7 +74,7 @@ _MAX_COVER_MB      = 5
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
     if not uid:
-        raise PermissionError("not logged in")
+        raise HTTPException(status_code=401)
     return int(uid)
 
 

@@ -10,7 +10,7 @@ home_page_view() in home.py.
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from routers.home_rss_db import (
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/home")
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
     if not uid:
-        raise PermissionError("not logged in")
+        raise HTTPException(status_code=401)
     return int(uid)
 
 

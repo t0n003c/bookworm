@@ -1,10 +1,13 @@
 """FastAPI router for notes (returns HTMX HTML partials)."""
 import asyncio
 import html as _html
+import ipaddress
 import re
+import socket
 import urllib.request
 from datetime import date as date_type
 from typing import Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Form, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from templates_env import templates
@@ -142,16 +145,53 @@ async def edit_note_form(request: Request, note_id: int):
 async def url_title_endpoint(url: str = Query(..., description="URL whose page title to fetch")):
     """Fetch og:title / <title> of a URL for mention pill annotations.
 
-    Runs the blocking urllib call in a thread so the event loop stays free.
+    SSRF mitigations
+    ----------------
+    1. Only http / https schemes are allowed.
+    2. The hostname is resolved and every returned IP is checked against
+       ipaddress.ip_address().is_private / is_loopback / is_link_local /
+       is_reserved.  Any private IP causes a silent empty-string return.
+    3. SSL verification is skipped because Walmart's proxy performs SSL
+       inspection with a corporate CA that Python's bundled OpenSSL does
+       not trust.  The SSRF-by-IP guard is the meaningful control here.
+
     Always returns JSON {"title": str} — empty string on any failure so
-    callers can treat it as a graceful no-op.
+    callers treat it as a graceful no-op.
     """
+
+    def _is_ssrf_safe(raw_url: str) -> bool:
+        """Return True only when the URL resolves to a routable public IP."""
+        try:
+            parsed = urlparse(raw_url)
+            if parsed.scheme not in ("http", "https"):
+                return False
+            host = parsed.hostname or ""
+            if not host:
+                return False
+            # Resolve all addresses the host maps to and reject any private one
+            for _family, _type, _proto, _canon, sockaddr in socket.getaddrinfo(host, None):
+                ip = ipaddress.ip_address(sockaddr[0])
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_multicast
+                ):
+                    return False
+            return True
+        except Exception:
+            return False
+
     def _fetch() -> str:
+        if not _is_ssrf_safe(url):
+            return ""
         try:
             import ssl
             # Walmart proxy does SSL inspection with a corporate CA that Python's
             # bundled OpenSSL doesn't trust.  Skip verification for this lightweight
             # metadata fetch (no sensitive data, read-only, title only).
+            # The SSRF-by-IP guard above is the primary security control.
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode    = ssl.CERT_NONE

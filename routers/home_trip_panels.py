@@ -12,7 +12,7 @@ import json
 import logging
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from database import get_db
@@ -39,7 +39,7 @@ def _demo_guard(request: Request):
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
     if not uid:
-        raise PermissionError("not logged in")
+        raise HTTPException(status_code=401)
     return int(uid)
 
 

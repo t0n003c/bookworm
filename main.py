@@ -158,7 +158,9 @@ app.add_middleware(_SecurityHeadersMiddleware)
 # ⚠️ Only enable this when a trusted proxy is actually in front; never on a
 #     server exposed directly to the internet without a proxy.
 if os.getenv("BW_TRUST_PROXY", "false").lower() == "true":
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+    # Trust only localhost — the only valid proxy address in this deployment.
+    # "*" would let any client spoof X-Forwarded-For / X-Forwarded-Proto.
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
 
 app.mount("/static",  StaticFiles(directory="static"),  name="static")
 # NOTE: /uploads is NOT a raw StaticFiles mount — ownership is verified
