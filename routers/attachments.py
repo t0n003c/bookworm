@@ -1,5 +1,6 @@
 """FastAPI router for note attachments (upload / delete / serve list)."""
 import mimetypes
+import os
 import uuid
 from pathlib import Path
 
@@ -14,17 +15,26 @@ from routers.attachments_db import (
     get_attachment_by_id,
     get_attachments_for_note,
 )
+from routers.sharing_db import note_belongs_to_user
 
 router = APIRouter(prefix="/notes", tags=["attachments"])
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+# Respects the same env var used by the home-uploads router.
+_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "20"))
+MAX_UPLOAD_BYTES = _MAX_MB * 1024 * 1024
 
 
 @router.post("/{note_id}/attachments", response_class=HTMLResponse)
 async def upload_attachment(request: Request, note_id: int, file: UploadFile = File(...)):
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    if not await note_belongs_to_user(note_id, uid):
+        raise HTTPException(status_code=403, detail="Not authorised")
+
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+        raise HTTPException(status_code=413, detail=f"File too large (max {_MAX_MB} MB)")
 
     original_name = file.filename or "unnamed"
     suffix = Path(original_name).suffix.lower()
@@ -50,9 +60,16 @@ async def upload_attachment(request: Request, note_id: int, file: UploadFile = F
 
 @router.delete("/attachments/{attachment_id}", response_class=HTMLResponse)
 async def delete_attachment(request: Request, attachment_id: int):
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+
     att = await get_attachment_by_id(attachment_id)
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    if not await note_belongs_to_user(att["note_id"], uid):
+        raise HTTPException(status_code=403, detail="Not authorised")
 
     note_id = att["note_id"]
     filename = await delete_attachment_record(attachment_id)

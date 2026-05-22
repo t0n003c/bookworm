@@ -19,7 +19,12 @@ from routers.notes_db import (
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
-from routers.sharing_db import get_public_link, get_shared_object_ids
+from routers.sharing_db import (
+    get_public_link,
+    get_shared_object_ids,
+    note_belongs_to_user,
+    workspace_belongs_to_user,
+)
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -33,6 +38,20 @@ async def _attach_share_flags(notes: list[dict]) -> None:
         note["has_share_link"] = note["id"] in shared
 
 
+# ── Ownership guards ────────────────────────────────────────────────────────
+
+async def _require_note_owner(note_id: int, uid: Optional[int]) -> None:
+    """Raise 403 when uid does not own note_id."""
+    if not uid or not await note_belongs_to_user(note_id, uid):
+        raise HTTPException(status_code=403, detail="Not authorised")
+
+
+async def _require_ws_owner(ws_id: Optional[int], uid: Optional[int]) -> None:
+    """Raise 403 when uid does not own ws_id (no-op when ws_id is None)."""
+    if ws_id is not None and (not uid or not await workspace_belongs_to_user(ws_id, uid)):
+        raise HTTPException(status_code=403, detail="Not authorised")
+
+
 @router.get("", response_class=HTMLResponse)
 async def list_notes(
     request: Request,
@@ -44,6 +63,7 @@ async def list_notes(
     sort_by: list[str] = Query(default=[]),
 ):
     cat_ids = [int(x) for x in category_ids.split(",") if x.strip()] if category_ids else []
+    uid = request.session.get("user_id")
 
     # Guard: never return unscoped notes (would expose all users' data).
     # Without a workspace the note list is empty and shows the welcome state.
@@ -54,6 +74,7 @@ async def list_notes(
             {"notes": [], "active_ws_id": None},
         )
 
+    await _require_ws_owner(workspace_id, uid)
     ws_ids = list(await get_descendant_ids(workspace_id))
     notes = await search_notes(
         q=q or None,
@@ -73,6 +94,8 @@ async def list_notes(
 
 @router.get("/form/new", response_class=HTMLResponse)
 async def new_note_form(request: Request, workspace_id: Optional[int] = None):
+    uid = request.session.get("user_id")
+    await _require_ws_owner(workspace_id, uid)
     categories = await get_categories_for_workspace(workspace_id)
     attr_defs = await get_all_attr_defs()
     today = date_type.today().isoformat()
@@ -94,7 +117,8 @@ async def edit_note_form(request: Request, note_id: int):
     note = await get_note_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
-    uid   = request.session.get("user_id")
+    uid = request.session.get("user_id")
+    await _require_note_owner(note_id, uid)
     ws_id = note.get("workspace_id")
     categories = await get_categories_for_workspace(ws_id)
     attr_defs  = await get_all_attr_defs()
@@ -162,9 +186,11 @@ async def url_title_endpoint(url: str = Query(..., description="URL whose page t
 
 @router.get("/{note_id}", response_class=HTMLResponse)
 async def view_note(request: Request, note_id: int):
+    uid = request.session.get("user_id")
     note = await get_note_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    await _require_note_owner(note_id, uid)
     return templates.TemplateResponse(
         request,
         "partials/note_detail.html",
@@ -179,9 +205,11 @@ async def toggle_todo_handler(
     index: int = Form(...),
 ):
     """Toggle the Nth checkbox (0-based) in a note's markdown content."""
+    uid = request.session.get("user_id")
     note = await get_note_by_id(note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    await _require_note_owner(note_id, uid)
 
     content = note.get("content") or ""
     todo_pattern = re.compile(r"(- \[)( |x)(\] )")
@@ -213,6 +241,8 @@ async def create_note_handler(
     attr_values: list[str] = Form(default=[]),
     workspace_id: Optional[int] = Form(default=None),
 ):
+    uid = request.session.get("user_id")
+    await _require_ws_owner(workspace_id, uid)
     cat_ids = [int(c) for c in category_ids if c]
     attributes = [
         {"key": k.strip(), "value": v.strip()}
@@ -259,6 +289,8 @@ async def update_note_handler(
     attr_values: list[str] = Form(default=[]),
     workspace_id: Optional[int] = Form(default=None),
 ):
+    uid = request.session.get("user_id")
+    await _require_note_owner(note_id, uid)
     cat_ids = [int(c) for c in category_ids if c]
     attributes = [
         {"key": k.strip(), "value": v.strip()}
@@ -301,6 +333,8 @@ async def delete_note_handler(
     note_id: int,
     workspace_id: Optional[int] = None,
 ):
+    uid = request.session.get("user_id")
+    await _require_note_owner(note_id, uid)
     await delete_note(note_id)
     ws_ids = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
     notes = await search_notes(workspace_ids=ws_ids)
@@ -312,41 +346,5 @@ async def delete_note_handler(
     )
 
 
-# NOTE: /url-title is registered ABOVE /{note_id} to avoid being swallowed
-# by the parameterised route. Do not move it below that route.
-async def url_title_endpoint(url: str = Query(..., description="URL whose page title to fetch")):
-    """Fetch og:title / <title> of a URL for mention pill annotations.
-
-    Runs the blocking urllib call in a thread so the event loop stays free.
-    Always returns JSON {"title": str} — empty string on any failure so
-    callers can treat it as a graceful no-op.
-    """
-    def _fetch() -> str:
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (BookWorm/1.0 mention-preview)"},
-            )
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                raw = resp.read(32_768).decode("utf-8", errors="replace")
-
-            # og:title comes in two attribute orderings; try both.
-            og = re.search(
-                r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
-                raw, re.I,
-            ) or re.search(
-                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
-                raw, re.I,
-            )
-            if og:
-                return _html.unescape(og.group(1).strip())
-
-            t = re.search(r"<title[^>]*>([^<]{1,200})</title>", raw, re.I)
-            if t:
-                return _html.unescape(t.group(1).strip())
-        except Exception:
-            pass
-        return ""
-
-    title = await asyncio.to_thread(_fetch)
-    return JSONResponse({"title": title})
+# Dead duplicate of url_title_endpoint removed — the registered version
+# lives above /{note_id} where Starlette's router finds it first.

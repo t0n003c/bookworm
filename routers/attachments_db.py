@@ -76,3 +76,35 @@ async def get_filenames_for_note(note_id: int) -> list[str]:
             "SELECT filename FROM note_attachments WHERE note_id = ?", (note_id,)
         )
         return [r[0] for r in await cur.fetchall()]
+
+
+async def get_upload_owner(filename: str) -> Optional[int]:
+    """Return the user_id who owns *filename*, or None if not found in either table.
+
+    Checks both upload stores in priority order:
+      1. page_uploads  — direct user_id column (fastest path).
+      2. note_attachments — resolved via notes → workspaces → user_id.
+    """
+    async with get_db() as db:
+        # Direct ownership via page_uploads
+        cur = await db.execute(
+            "SELECT user_id FROM page_uploads WHERE filename = ?",
+            (filename,),
+        )
+        row = await cur.fetchone()
+        if row:
+            return row[0]
+
+        # Indirect ownership via note_attachments → notes → workspaces
+        cur = await db.execute(
+            """
+            SELECT w.user_id
+            FROM note_attachments na
+            JOIN notes n ON n.id = na.note_id
+            JOIN workspaces w ON w.id = n.workspace_id
+            WHERE na.filename = ?
+            """,
+            (filename,),
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None

@@ -8,8 +8,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -84,7 +84,7 @@ from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
 from routers import note_reminders as note_reminders_router
 from routers import sharing as sharing_router
-from routers.attachments_db import UPLOAD_DIR
+from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 
 
 async def _demo_purge_loop():
@@ -160,8 +160,10 @@ app.add_middleware(_SecurityHeadersMiddleware)
 if os.getenv("BW_TRUST_PROXY", "false").lower() == "true":
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-app.mount("/static",  StaticFiles(directory="static"),          name="static")
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)),   name="uploads")
+app.mount("/static",  StaticFiles(directory="static"),  name="static")
+# NOTE: /uploads is NOT a raw StaticFiles mount — ownership is verified
+# per-request by the gated route below.  The old open mount would let any
+# logged-in user fetch another user’s file by guessing the UUID filename.
 
 app.include_router(auth_router.router)
 app.include_router(account_router.router)
@@ -189,6 +191,43 @@ app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(workspace_databases_router.router)
 app.include_router(sharing_router.router)
+
+
+# ── Ownership-gated file serving ──────────────────────────────────────────────
+# Replaces the old open StaticFiles mount so that logged-in users cannot
+# access each other’s files by guessing a UUID filename.
+
+@app.get("/uploads/{filename}", include_in_schema=False)
+async def serve_upload(request: Request, filename: str):
+    """Serve a user upload only to the file’s owner.
+
+    Auth flow:
+      1. Reject unauthenticated sessions (401).
+      2. Reject path-traversal attempts that sneak a / into the filename (400).
+      3. Look up the owner of *filename* across both upload tables.
+      4. Return 404 if the file is unknown — avoids leaking whether it exists.
+      5. Return 403 if the caller is not the owner.
+      6. Serve via FileResponse (streaming, supports Range requests).
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+
+    # Block path traversal before it touches the filesystem
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    owner_uid = await get_upload_owner(filename)
+    if owner_uid is None:
+        raise HTTPException(status_code=404)
+    if owner_uid != uid:
+        raise HTTPException(status_code=403)
+
+    disk_path = UPLOAD_DIR / filename
+    if not disk_path.exists():
+        raise HTTPException(status_code=404)
+
+    return FileResponse(path=disk_path)
 
 
 # ── PWA support routes ───────────────────────────────────────────────────────
