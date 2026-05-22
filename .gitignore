@@ -10,11 +10,13 @@ venv/
 # Eddie debug / temp scripts + scratch files (never commit these)
 # Prefixed patterns (Eddie's naming convention)
 _check_*.py
+_check*.py
 _qa_*.py
 _qa*.py
 _migrate_*.py
 _test_*.py
 _jscheck.py
+_script_*.py
 check_*.py
 _tmp*.py
 _tmp*.txt
@@ -23,6 +25,7 @@ _debug*.py
 _rss_routes.py
 _qa_*.txt
 _qa*.txt
+patch_*.py
 # Unprefixed one-off scripts that escaped in the past
 qa*.py
 diag*.py
