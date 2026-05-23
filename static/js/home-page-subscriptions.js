@@ -728,8 +728,8 @@ function _subsShowPaidPrompt(row, u) {
   paidBtn.style.cssText = 'font-size:11px;padding:2px 10px;border-radius:4px;' +
     'background:#2a8703;color:#fff;border:none;cursor:pointer;font-weight:600;';
 
-  prompt.appendChild(cancelBtn);
   prompt.appendChild(paidBtn);
+  prompt.appendChild(cancelBtn);
 
   // Make sure the row is position:relative for the absolute overlay
   row.style.position = 'relative';
