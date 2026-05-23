@@ -33,7 +33,6 @@ var _tpTouchId   = null;    // Touch.identifier for the current gesture
 var _tpStartX    = 0;
 var _tpStartY    = 0;
 var _tpPrevY     = 0;       // previous touchmove Y — delta used for scroll simulation
-var _tpLastY     = 0;       // last known Y while dragging — read by auto-scroll ticker
 var _tpCellId    = null;    // cell under the initial touch
 var _tpLpFired   = false;   // true after 500 ms long-press timer fires
 var _tpLpTimer   = null;
@@ -45,35 +44,22 @@ var _tpScrolling = false;   // true when gesture committed to simulated scroll
 var _tpGhost    = null;
 var _tpDragOver = null;   // cell id currently under ghost
 
-/* ── Auto-scroll during drag ─────────────────────────────────────────────────── */
-var _tpScrollTick = null;              // setInterval handle
-var _TP_SCROLL_ZONE = 120;            // px from viewport top/bottom that triggers scroll
-var _TP_SCROLL_MAX  = 18;             // px scrolled per tick at peak speed
+/* ── Edge-scroll during drag ────────────────────────────────────────────────────── */
+// Called inline inside _tpOnTouchMove while dragging.
+// Synchronous with the touch event — iOS cannot throttle it like setInterval.
+var _TP_SCROLL_ZONE = 120;   // px from viewport edge that activates scroll
+var _TP_SCROLL_MAX  = 18;    // px per touch event at peak speed
 
-function _tpScrollStart() {
-    if (_tpScrollTick) return;
-    _tpScrollTick = setInterval(_tpScrollFn, 16);
-}
-
-function _tpScrollStop() {
-    clearInterval(_tpScrollTick);
-    _tpScrollTick = null;
-}
-
-function _tpScrollFn() {
+function _tpEdgeScroll(clientY) {
     var el = document.getElementById('grid-scroll-area');
-    if (!el || _tpLastY <= 0) return;
-    var fromBottom = window.innerHeight - _tpLastY;
-    var fromTop    = _tpLastY;
-    var dir = 0, speed = 0;
+    if (!el) return;
+    var fromBottom = window.innerHeight - clientY;
+    var fromTop    = clientY;
     if (fromBottom < _TP_SCROLL_ZONE) {
-        dir   =  1;
-        speed = Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBottom / _TP_SCROLL_ZONE)));
+        el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBottom / _TP_SCROLL_ZONE)));
     } else if (fromTop < _TP_SCROLL_ZONE) {
-        dir   = -1;
-        speed = Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromTop / _TP_SCROLL_ZONE)));
+        el.scrollTop -= Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromTop / _TP_SCROLL_ZONE)));
     }
-    if (dir !== 0) el.scrollTop += dir * speed;
 }
 
 /* ── DOM helpers ─────────────────────────────────────────────────────────────── */
@@ -303,7 +289,6 @@ function _tpDropIndicator(target) {
 }
 
 function _tpGhostDestroy() {
-    _tpScrollStop();
     if (_tpGhost) { _tpGhost.remove(); _tpGhost = null; }
     var src = _msCellEl(_tpCellId);
     if (src) src.style.opacity = '';
@@ -321,7 +306,7 @@ function _tpStartDrag(x, y) {
 
     _tpDragging  = true;
     _tpMultiDrag = _msActive && _msSelected.size > 0;
-    _tpLastY     = y;
+    _tpPrevY     = y;
 
     // Auto-add the touched cell to selection in multi-drag mode
     if (_tpMultiDrag && !_msSelected.has(_tpCellId)) {
@@ -331,7 +316,6 @@ function _tpStartDrag(x, y) {
     var count = _tpMultiDrag ? _msSelected.size : 0;
     _tpGhost = _tpGhostCreate(srcEl, count);
     _tpGhostMove(x, y);
-    _tpScrollStart();
     if (navigator.vibrate) navigator.vibrate(15);
 }
 
@@ -348,7 +332,6 @@ function _tpOnTouchStart(e) {
     _tpStartX    = touch.clientX;
     _tpStartY    = touch.clientY;
     _tpPrevY     = touch.clientY;
-    _tpLastY     = touch.clientY;
     _tpCellId    = parseInt(cellEl.dataset.gridCellId, 10);
     _tpLpFired   = false;
     _tpDragging  = false;
@@ -377,10 +360,12 @@ function _tpOnTouchMove(e) {
     // the gesture is a simple vertical swipe (not a drag).
     e.preventDefault();
 
-    // ── Active drag: move ghost + update drop indicator + feed auto-scroll ticker ──
+    // ── Active drag: move ghost, edge-scroll, update drop indicator ──
+    // Edge scroll runs synchronously inside the touch event so iOS cannot
+    // throttle it (setInterval/rAF callbacks are blocked during touch handling).
     if (_tpDragging) {
-        _tpLastY = touch.clientY;
         _tpGhostMove(touch.clientX, touch.clientY);
+        _tpEdgeScroll(touch.clientY);
         _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
         _tpPrevY = touch.clientY;
         return;
@@ -516,7 +501,8 @@ function _tpInjectCSS() {
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
         /* touch-action:none: prevents iOS/Android claiming canvas touches as
          * native scrolls. We simulate scroll manually in _tpOnTouchMove. */
-        'body.bw-touch #grid-canvas { touch-action: none; }',
+        'body.bw-touch #grid-canvas,',
+        'body.bw-touch #grid-scroll-area { touch-action: none; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
         '  -webkit-user-select:   none;',
