@@ -370,11 +370,11 @@
          {% if pct == 100 %}text-wgreen{% elif pct >= 50 %}text-wspark-dark{% else %}text-gray-400{% endif %} flex-shrink-0">{{ done_count }}/{{ total }}</span>
   </div>
   {%- endif %}
-  <ul class="flex-1 space-y-1 overflow-y-auto" id="todo-list-{{ w.id }}" data-style="list">
+  <ul class="flex-1 space-y-1.5 sm:space-y-1 overflow-y-auto" id="todo-list-{{ w.id }}" data-style="list">
     {% for item in items %}
-    <li class="flex items-center gap-2 group/tdi rounded-lg px-1.5 py-1 hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition">
+    <li class="flex items-center gap-2 group/tdi rounded-lg px-1.5 py-2.5 sm:py-1 hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition">
       <input type="checkbox" id="todo-{{ w.id }}-{{ loop.index0 }}"
-             class="rounded border-gray-300 text-wblue focus:ring-wblue flex-shrink-0 cursor-pointer"
+             class="rounded border-gray-300 text-wblue focus:ring-wblue flex-shrink-0 cursor-pointer w-4 h-4 sm:w-auto sm:h-auto"
              {% if item.done %}checked{% endif %}
              onchange="todoToggle({{ w.id }}, {{ loop.index0 }}, this.checked)">
       <label for="todo-{{ w.id }}-{{ loop.index0 }}"
@@ -382,39 +382,39 @@
                     {% if item.done %}line-through text-gray-400 dark:text-zinc-500{% endif %}">{{ item.text }}</label>
       <button onclick="todoDelete({{ w.id }}, {{ loop.index0 }})"
               title="Remove task"
-              class="opacity-0 group-hover/tdi:opacity-100 flex-shrink-0 p-0.5 rounded
+              class="opacity-0 group-hover/tdi:opacity-100 flex-shrink-0 p-1 sm:p-0.5 rounded
                      text-gray-300 hover:text-wred transition" aria-label="Delete task">
-        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+        <svg class="w-3.5 h-3.5 sm:w-3 sm:h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </li>
     {% else %}
-    <li class="flex flex-col items-center justify-center py-4 text-center">
+    <li class="flex flex-col items-center justify-center py-6 sm:py-4 text-center">
       <span class="text-3xl mb-1">✨</span>
       <span class="text-xs text-gray-400">No tasks yet — add one below!</span>
     </li>
     {% endfor %}
   </ul>
-  <div class="flex gap-1.5 mt-2 min-w-0">
+  <div class="flex gap-1.5 mt-3 sm:mt-2 min-w-0">
     <input id="todo-input-{{ w.id }}" type="text" placeholder="Add a task…"
-           class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+           class="flex-1 min-w-0 text-sm sm:text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2.5 sm:px-2 sm:py-1.5
                   bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
                   focus:outline-none focus:ring-2 focus:ring-wblue"
            onkeydown="if(event.key==='Enter') todoAdd({{ w.id }}, this)">
     <button onclick="todoAdd({{ w.id }}, document.getElementById('todo-input-{{ w.id }}'))"
-            class="flex-shrink-0 px-2.5 py-1.5 bg-wblue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition">+</button>
+            class="flex-shrink-0 px-3 py-2.5 sm:px-2.5 sm:py-1.5 bg-wblue text-white text-sm sm:text-xs font-bold rounded-lg hover:bg-blue-700 transition min-w-[2.75rem]">+</button>
   </div>
   {% if done_count > 0 %}
   <button onclick="todoClearDone({{ w.id }})" title="Remove all completed tasks"
-          class="mt-1 text-[10px] text-gray-400 hover:text-wred transition underline self-start">
+          class="mt-2 sm:mt-1 text-xs sm:text-[10px] text-gray-400 hover:text-wred transition underline self-start">
     🗑 Clear {{ done_count }} completed
   </button>
   {% endif %}
   {% if total > 0 %}
   <button onclick="todoClearAll({{ w.id }})" title="Wipe the entire list and start fresh"
-          class="mt-0.5 text-[10px] text-gray-300 hover:text-wred dark:text-zinc-600 dark:hover:text-red-400 transition underline self-start">
-    Clear all & start fresh
+          class="mt-1 sm:mt-0.5 text-xs sm:text-[10px] text-gray-300 hover:text-wred dark:text-zinc-600 dark:hover:text-red-400 transition underline self-start">
+    Clear all &amp; start fresh
   </button>
   {% endif %}
   {% endif %}
