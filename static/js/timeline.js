@@ -723,10 +723,13 @@ window.bwTimeline = (function () {
     _overlay.id = '_bw-tl-overlay';
     // Give the overlay an immediate opaque background so the note-list grid
     // never bleeds through while the inner canvas fades in from opacity:0.
+    // z-index: 25 — must clear #ws-breadcrumb (sticky z-20) so the control
+    // buttons (−  +  ↔  date-mode) are never obscured by the breadcrumb bar.
+    // Kept below the fixed site header (z-30) and mobile sidebar (z-22/23).
     Object.assign(_overlay.style, {
       position:   'absolute',
       inset:      '0',
-      zIndex:     '10',
+      zIndex:     '25',
       background: _theme().mainBg,
     });
 

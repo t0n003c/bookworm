@@ -88,7 +88,7 @@ window._bwToast = function _bwToast(msg, type, dur) {
 // ── Navigation ───────────────────────────────────────────────────────────────
 function _showHomeCanvas() {
   console.log('[home] _showHomeCanvas start');
-  // ① Unmount the timeline overlay if active — it sits at z-index:10 inside
+  // ① Unmount the timeline overlay if active — it sits at z-index:25 inside
   //    #main-content with position:absolute+inset:0 and would completely cover
   //    the home canvas. This is the #1 cause of "nothing visible" on home pages.
   try {
