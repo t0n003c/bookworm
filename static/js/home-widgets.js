@@ -547,20 +547,35 @@ function _trashDrop(event) {
 // HTML5 DnD is not supported on touch devices, so we use Touch Events.
 // Long-press (LONG_MS) arms the drag; moving past THRESHOLD commits it.
 // Dropping over #sidebar-trash deletes; dropping over another list-item reorders.
+//
+// Android/iOS fix: touch-action:none is injected on #home-page-list so the
+// browser never claims these touches as native scroll gestures.  We simulate
+// sidebar scrolling ourselves whenever the gesture is a straight vertical swipe.
 (function _initPageTouchDnd() {
   'use strict';
-  var LONG_MS   = 300;  // ms hold before drag arms
-  var THRESHOLD = 8;    // px movement before drag is committed
+  var LONG_MS   = 300;   // ms hold before drag arms
+  var THRESHOLD = 10;    // px movement before drag is committed
 
-  var _pgId    = null;
-  var _pgName  = null;
-  var _srcLi   = null;
-  var _startX  = 0, _startY = 0;
-  var _armed   = false;   // long-press fired
-  var _active  = false;   // finger moved past THRESHOLD
-  var _timer   = null;
-  var _dropLi  = null;    // list-item the ghost is currently over
-  var _dropPos = null;    // 'before' | 'after'
+  var _pgId     = null;
+  var _pgName   = null;
+  var _srcLi    = null;
+  var _startX   = 0, _startY = 0, _prevY = 0;
+  var _armed    = false;   // long-press fired
+  var _active   = false;   // finger moved past THRESHOLD — committed to drag
+  var _scrolling = false;  // committed to simulated sidebar scroll
+  var _timer    = null;
+  var _dropLi   = null;    // list-item the ghost is currently over
+  var _dropPos  = null;    // 'before' | 'after'
+
+  // Inject touch-action:none on the list so Android's compositor never claims
+  // these touches before our handlers get a chance to preventDefault.
+  (function _injectStyle() {
+    if (document.getElementById('pg-dnd-touch-style')) return;
+    var s = document.createElement('style');
+    s.id = 'pg-dnd-touch-style';
+    s.textContent = '#home-page-list { touch-action: none; }';
+    document.head.appendChild(s);
+  }());
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function _ghost() {
@@ -630,7 +645,8 @@ function _trashDrop(event) {
     var tgt = _dropLi;
     var pos = _dropPos;
     _pgId = _pgName = _srcLi = _dropLi = _dropPos = null;
-    _armed = _active = false;
+    _armed = _active = _scrolling = false;
+    _prevY = 0;
 
     if (!pid || action === 'cancel') return;
     if (action === 'trash') { _doDeletePage(pid); return; }
@@ -658,67 +674,104 @@ function _trashDrop(event) {
     // Only block the ⋮ menu button (marked data-pg-menu), not the nav button
     if (e.target.closest('[data-pg-menu]')) return;
     var t = e.touches[0];
-    _startX = t.clientX; _startY = t.clientY;
+    _startX = t.clientX; _startY = t.clientY; _prevY = t.clientY;
     _pgId   = parseInt(li.dataset.pageId, 10);
     _srcLi  = li;
     var btn = li.querySelector('button:not([data-pg-menu])');
     _pgName = btn ? (btn.title || 'page') : 'page';
+    _armed = _active = _scrolling = false;
     // Arm drag after long-press
     _timer = setTimeout(function() {
       _armed = true;
       li.style.outline = '2px solid #0053e2';
       if (navigator.vibrate) navigator.vibrate(30);
     }, LONG_MS);
-  }, { passive: true });
+  }, { passive: true });  // passive OK — preventDefault lives in touchmove
 
   document.addEventListener('touchmove', function(e) {
     if (!_pgId) return;
+
+    // touch-action:none on #home-page-list means the browser never claims
+    // these touches, so we must always preventDefault AND simulate sidebar
+    // scroll ourselves for straight vertical swipes.
+    e.preventDefault();
+
     var t   = e.touches[0];
     var dx  = t.clientX - _startX;
     var dy  = t.clientY - _startY;
-    // If finger moves past threshold before long-press fires, cancel entirely
-    if (!_armed) {
-      if (Math.hypot(dx, dy) > THRESHOLD) { _cleanup('cancel'); }
+    var adx = Math.abs(dx);
+    var ady = Math.abs(dy);
+
+    // ── Already committed to simulated sidebar scroll ──
+    if (_scrolling) {
+      var sb = document.getElementById('sidebar');
+      if (sb) sb.scrollTop += _prevY - t.clientY;
+      _prevY = t.clientY;
       return;
     }
-    if (!_active) {
-      // First move after arm — commit to drag
+
+    // ── Already committed to drag ──
+    if (_active) {
+      var g = _ghost();
+      g.style.display = 'block';
+      g.style.left    = t.clientX + 'px';
+      g.style.top     = t.clientY + 'px';
+      g.textContent   = '\uD83D\uDCC4 ' + _pgName;
+
+      var tz = _trashZone();
+      if (_overTrash(t.clientX, t.clientY)) {
+        if (tz) tz.style.outline = '2px dashed #ea1100';
+        _indicator().style.display = 'none';
+        _dropLi = null; _dropPos = null;
+      } else {
+        if (tz) tz.style.outline = '';
+        var hit = _hitItem(t.clientX, t.clientY);
+        if (hit) {
+          _dropLi = hit.li; _dropPos = hit.pos;
+          _showIndicator(hit.li, hit.pos);
+        } else {
+          _indicator().style.display = 'none';
+          _dropLi = null; _dropPos = null;
+        }
+      }
+      _prevY = t.clientY;
+      return;
+    }
+
+    // ── Undecided: classify once movement is meaningful ──
+    var dist = Math.hypot(dx, dy);
+    if (dist < 5) { _prevY = t.clientY; return; }  // too early
+
+    if (!_armed) {
+      // Long-press hasn’t fired yet — classify by direction
+      if (ady > adx * 1.5) {
+        // Mostly vertical → sidebar scroll, cancel drag intent
+        clearTimeout(_timer); _timer = null;
+        _scrolling = true;
+        var sb2 = document.getElementById('sidebar');
+        if (sb2) sb2.scrollTop += _prevY - t.clientY;
+        _prevY = t.clientY;
+        return;
+      }
+      // Diagonal/horizontal past threshold → cancel (can’t drag without long-press)
+      if (dist > THRESHOLD) { _cleanup('cancel'); return; }
+      _prevY = t.clientY;
+      return;
+    }
+
+    // Long-press fired; finger past threshold → commit to drag
+    if (dist >= THRESHOLD) {
       _active = true;
       document.body.classList.add('dnd-active');
       _srcLi.style.opacity = '0.4';
       _srcLi.style.outline = '';
     }
-    e.preventDefault();
-
-    // Move ghost pill
-    var g = _ghost();
-    g.style.display = 'block';
-    g.style.left    = t.clientX + 'px';
-    g.style.top     = t.clientY + 'px';
-    g.textContent   = '📄 ' + _pgName;
-
-    // Highlight trash or show reorder indicator
-    var tz = _trashZone();
-    if (_overTrash(t.clientX, t.clientY)) {
-      if (tz) tz.style.outline = '2px dashed #ea1100';
-      _indicator().style.display = 'none';
-      _dropLi = null; _dropPos = null;
-    } else {
-      if (tz) tz.style.outline = '';
-      var hit = _hitItem(t.clientX, t.clientY);
-      if (hit) {
-        _dropLi = hit.li; _dropPos = hit.pos;
-        _showIndicator(hit.li, hit.pos);
-      } else {
-        _indicator().style.display = 'none';
-        _dropLi = null; _dropPos = null;
-      }
-    }
+    _prevY = t.clientY;
   }, { passive: false });
 
   document.addEventListener('touchend', function(e) {
     if (!_pgId) return;
-    if (!_active) { _cleanup('cancel'); return; }
+    if (!_active || _scrolling) { _cleanup('cancel'); return; }  // scroll or tap, not drag
     var t = e.changedTouches[0];
     if (_overTrash(t.clientX, t.clientY)) { _cleanup('trash'); }
     else if (_dropLi)                      { _cleanup('reorder'); }
