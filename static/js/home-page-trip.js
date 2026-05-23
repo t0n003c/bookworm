@@ -428,6 +428,7 @@ window.tripOpenAddSpot = function() {
   _tripRenderSpotForm({});
   document.getElementById('trip-spot-modal').classList.remove('hidden');
   tripAutoFitLabels();
+  if (typeof window.tripAttrSortWire === 'function') window.tripAttrSortWire('tsf-attrs-list');
 };
 
 window.tripOpenEditSpot = function(id) {
@@ -440,6 +441,7 @@ window.tripOpenEditSpot = function(id) {
   _tripRenderSpotForm(s);
   document.getElementById('trip-spot-modal').classList.remove('hidden');
   tripAutoFitLabels();
+  if (typeof window.tripAttrSortWire === 'function') window.tripAttrSortWire('tsf-attrs-list');
 };
 
 window.tripCloseSpotModal = function() {
@@ -836,9 +838,10 @@ function _tripSpotAttrRow(idx, key, val, inherited) {
   var wStyle = _tripAttrFieldPx !== null
     ? 'width:' + _tripAttrFieldPx + 'px'
     : 'width:' + Math.max(120, ((key || '').length + 2) * 8) + 'px';
-  return '<div class="flex items-center gap-2" id="tsf-attr-row-' + idx + '"' +
-    (inherited ? ' data-attr-inherited' : '') + '>' +
-    '<div class="flex-1 min-w-0 flex items-center">' +
+  return '<div class="flex items-center gap-2" id="tsf-attr-row-' + idx + '"'
+    + ' data-attr-row' + (inherited ? ' data-attr-inherited' : '') + '>'
+    + _TRIP_GRIP_HTML
+    + '<div class="flex-1 min-w-0 flex items-center">' +
       '<input type="text" placeholder="Field" value="' + _tripEsc(key) + '" ' +
         'data-sattr-key data-idx="' + idx + '" ' +
         'style="' + wStyle + '" ' +
@@ -929,6 +932,8 @@ window.tripSpotAddAttrRow = function() {
   div.innerHTML = _tripSpotAttrRow(idx, '', '');
   list.appendChild(div.firstChild);
   tripSyncAttrWidths();
+  // re-wire drag so newly added rows are immediately draggable
+  if (typeof window.tripAttrSortWire === 'function') window.tripAttrSortWire('tsf-attrs-list');
 };
 
 window.tripSpotRemoveAttrRow = function(idx) {
