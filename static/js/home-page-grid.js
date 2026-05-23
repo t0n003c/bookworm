@@ -95,6 +95,7 @@ function initGridPage(pageId) {
     document.addEventListener('dragover', _gridOnDragScroll);
 
     _gridLoadCells();
+    if (typeof _gridInitTouch === 'function') _gridInitTouch();
 }
 
 // Window resize handler: when using explicit px columns (fixed cols + zoom < 100%)
@@ -209,6 +210,7 @@ function _gridRenderCell(cell) {
     var editBtn = hasFile
         ? '<button onclick="event.stopPropagation();_gridEditCaption(' + cell.id + ')"'
           + ' draggable="false"'
+          + ' data-grid-pencil'
           + ' class="absolute bottom-1 left-1 z-20 opacity-0 group-hover:opacity-100'
           + ' transition-opacity w-5 h-5 flex items-center justify-center'
           + ' bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-full'
@@ -224,7 +226,7 @@ function _gridRenderCell(cell) {
          + ' data-grid-cell-id="' + cell.id + '"'
          + ' draggable="true">'
          + inner
-         + '<div class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100'
+         + '<div data-grid-hover-ctrls class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100'
          + ' transition-opacity z-10">'
          + dlBtn + expandBtn + menuBtn
          + '</div>'
