@@ -1,50 +1,46 @@
 /* home-page-grid-touch.js — Mobile touch UX for the Grid Homespace page.
  *
+ * Gesture model (redesigned)
+ * ───────────────────────────
+ *  • Tap quickly            → lightbox  (or toggle checkbox in multiselect)
+ *  • Press + move >20 px    → single-item drag reorder  (no hold needed)
+ *  • Hold 500 ms, no move   → enter multiselect  (first cell auto-selected)
+ *    ↳ Tap cell             → toggle checkbox
+ *    ↳ Drag any cell        → multi-drag: ALL selected cells move together
+ *    ↳ "Done" button        → exit multiselect
+ *    ↳ "Delete" button      → batch delete selected
+ *
  * Why Touch Events (not Pointer Events)?
- * ─────────────────────────────────────────
- * Pointer Events fire `pointercancel` the instant the browser suspects a
- * scroll gesture. By the time our 500 ms long-press timer fires, the browser
- * has already cancelled us. Touch Events give us a `{passive:false}` listener
- * on `touchmove` so we can call `e.preventDefault()` *after* the long-press
- * fires and block the scroll ourselves — without the browser taking over.
+ * The browser fires `pointercancel` the instant it decides a touch is a
+ * scroll — before our 500 ms timer even fires.  `touchmove` with
+ * `{passive:false}` lets us call e.preventDefault() after the long-press
+ * fires, blocking the browser from ever reclaiming the gesture.
  *
- * Three behaviours
- * ─────────────────
- * 1. Tap image/video  → lightbox (video was fixed: was play/pause before)
- * 2. Long-press (500 ms) → multi-select mode
- *      • Short tap on cell  → toggle checkbox
- *      • Action bar: Delete selected / Done
- * 3. In multi-select, press-and-move → touch drag reorder
- *      • Ghost clone follows finger
- *      • Blue stripe shows insert position
- *      • Lift finger → _gridReorder() called
- *
- * Self-disables on hover-capable desktops.
- *
- * Depends on globals: _gridCells, _gridPid, _gridReorder(),
- *                     _gridLoadCells(), gridLightboxOpen()
+ * Depends on globals: _gridCells, _gridPid, _gridBusy,
+ *                     _gridRender, _gridLoadCells, gridLightboxOpen
  */
 
 /* ── Constants ───────────────────────────────────────────────────────────────── */
 var _LONG_PRESS_MS  = 500;
-var _DRAG_THRESHOLD = 20;   // px — finger drift tolerance before drag starts
+var _DRAG_THRESHOLD = 20;    // px of finger movement before drag begins
 
 /* ── Multi-select state ──────────────────────────────────────────────────────── */
 var _msActive   = false;
-var _msSelected = new Set();
+var _msSelected = new Set();  // Set of selected cell IDs (integers)
 
-/* ── Gesture tracking ────────────────────────────────────────────────────────── */
-var _tpTouchId  = null;   // Touch.identifier of active touch
+/* ── Gesture state ───────────────────────────────────────────────────────────── */
+var _tpTouchId  = null;    // Touch.identifier for the current gesture
 var _tpStartX   = 0;
 var _tpStartY   = 0;
-var _tpCellId   = null;
-var _tpLpFired  = false;  // true after 500 ms long-press timer fires
+var _tpCellId   = null;    // cell under the initial touch
+var _tpLpFired  = false;   // true after 500 ms long-press timer fires
 var _tpLpTimer  = null;
-var _tpDragging = false;
+var _tpDragging = false;   // true while ghost is live
+var _tpMultiDrag = false;  // true if dragging multiple selected cells
 
-/* ── Drag ghost ──────────────────────────────────────────────────────────────── */
+/* ── Ghost ───────────────────────────────────────────────────────────────────── */
 var _tpGhost    = null;
-var _tpDragOver = null;
+var _tpDragOver = null;   // cell id currently under ghost
 
 /* ── DOM helpers ─────────────────────────────────────────────────────────────── */
 function _msCanvas()   { return document.getElementById('grid-canvas'); }
@@ -59,7 +55,7 @@ function _tpFindTouch(list) {
     return null;
 }
 
-/* ── Enter / exit multi-select ───────────────────────────────────────────────── */
+/* ── Multi-select enter / exit ───────────────────────────────────────────────── */
 function _msEnter(firstId) {
     _msActive = true;
     _msSelected.clear();
@@ -79,7 +75,7 @@ function _msExit() {
     if (bar) bar.classList.add('hidden');
 }
 
-/* ── Checkbox overlay ────────────────────────────────────────────────────────── */
+/* ── Checkbox helpers ────────────────────────────────────────────────────────── */
 function _msChkHtml(sel) {
     return sel
         ? '<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24"'
@@ -155,14 +151,76 @@ async function _msDeleteSelected() {
     await _gridLoadCells();
 }
 
-/* ── Ghost drag helpers ──────────────────────────────────────────────────────── */
-function _tpGhostCreate(srcEl) {
+/* ── Multi-item reorder ──────────────────────────────────────────────────────── */
+// Moves all selected cells to just before/after targetId, preserving their
+// relative order.  Uses the same optimistic-update + server POST pattern as
+// _gridReorder() in the main grid file.
+async function _msMoveSelected(targetId, insertBefore) {
+    if (_gridBusy) return;
+    _gridBusy = true;
+
+    var selIds   = Array.from(_msSelected);  // ordered by Set insertion = visual order
+
+    // Pull selected cells out, keeping them in their current relative order
+    var remaining = _gridCells.filter(function(c) { return !_msSelected.has(c.id); });
+    var moving    = [];
+    _gridCells.forEach(function(c) { if (_msSelected.has(c.id)) moving.push(c); });
+
+    // Find where to insert inside the remaining array
+    var idx = remaining.findIndex(function(c) { return c.id === targetId; });
+    if (idx === -1) {
+        // targetId is itself selected — insert at end
+        idx = remaining.length;
+    } else if (!insertBefore) {
+        idx += 1;
+    }
+
+    // Splice selected group in at the target position
+    var newCells = remaining.slice();
+    newCells.splice.apply(newCells, [idx, 0].concat(moving));
+
+    // Optimistic update
+    newCells.forEach(function(c, i) { c.position = i; });
+    _gridCells = newCells;
+    _gridRender();
+
+    try {
+        var r = await fetch('/home/grid/' + _gridPid + '/reorder', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ order: _gridCells.map(function(c) { return c.id; }) })
+        });
+        if (!r.ok) throw new Error('reorder ' + r.status);
+    } catch(err) {
+        console.error('[grid-touch] multi-reorder failed:', err);
+        await _gridLoadCells();
+    } finally {
+        _gridBusy = false;
+    }
+}
+
+/* ── Ghost helpers ───────────────────────────────────────────────────────────── */
+function _tpGhostCreate(srcEl, count) {
     var r = srcEl.getBoundingClientRect();
     var g = srcEl.cloneNode(true);
+    // Remove checkbox overlay from the ghost — looks cleaner
+    var chk = g.querySelector('[data-ms-check]');
+    if (chk) chk.remove();
     g.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;'
         + 'width:' + r.width + 'px;height:' + r.height + 'px;'
-        + 'opacity:.75;pointer-events:none;z-index:9999;border-radius:12px;'
-        + 'box-shadow:0 8px 32px rgba(0,0,0,.4);transform:scale(1.05);';
+        + 'opacity:.80;pointer-events:none;z-index:9999;border-radius:12px;'
+        + 'box-shadow:0 8px 32px rgba(0,0,0,.45);transform:scale(1.05);';
+    // Badge showing how many items are moving (multi-drag only)
+    if (count && count > 1) {
+        var badge = document.createElement('div');
+        badge.style.cssText = 'position:absolute;top:-8px;right:-8px;'
+            + 'background:#0053e2;color:#fff;font-size:12px;font-weight:700;'
+            + 'border-radius:999px;min-width:22px;height:22px;'
+            + 'display:flex;align-items:center;justify-content:center;'
+            + 'box-shadow:0 2px 6px rgba(0,0,0,.3);padding:0 5px;';
+        badge.textContent = count;
+        g.appendChild(badge);
+    }
     document.body.appendChild(g);
     srcEl.style.opacity = '0.3';
     return g;
@@ -175,29 +233,69 @@ function _tpGhostMove(x, y) {
     _tpGhost.style.top  = (y - r.height / 2) + 'px';
 }
 
-function _tpCellUnder(x, y) {
+// Returns { cellId, insertBefore } for the cell under (x,y)
+function _tpDropTarget(x, y) {
     if (_tpGhost) _tpGhost.style.visibility = 'hidden';
     var el = document.elementFromPoint(x, y);
     if (_tpGhost) _tpGhost.style.visibility = '';
     while (el && !el.dataset.gridCellId) el = el.parentElement;
-    return el ? parseInt(el.dataset.gridCellId, 10) : null;
+    if (!el) return { cellId: null, insertBefore: true };
+    var r = el.getBoundingClientRect();
+    return {
+        cellId:       parseInt(el.dataset.gridCellId, 10),
+        insertBefore: x < r.left + r.width / 2
+    };
+}
+
+function _tpDropIndicator(target) {
+    // Clear old indicator
+    if (_tpDragOver != null) {
+        var old = _msCellEl(_tpDragOver);
+        if (old) { old.style.boxShadow = ''; old.style.outline = ''; }
+    }
+    _tpDragOver = target ? target.cellId : null;
+    if (_tpDragOver == null) return;
+    var el = _msCellEl(_tpDragOver);
+    if (!el) return;
+    el.style.boxShadow = target.insertBefore
+        ? 'inset 4px 0 0 0 #0053e2'
+        : 'inset -4px 0 0 0 #0053e2';
 }
 
 function _tpGhostDestroy() {
     if (_tpGhost) { _tpGhost.remove(); _tpGhost = null; }
     var src = _msCellEl(_tpCellId);
     if (src) src.style.opacity = '';
-    if (_tpDragOver) {
+    if (_tpDragOver != null) {
         var over = _msCellEl(_tpDragOver);
-        if (over) over.style.boxShadow = '';
+        if (over) { over.style.boxShadow = ''; over.style.outline = ''; }
         _tpDragOver = null;
     }
 }
 
+/* ── Drag start helper ───────────────────────────────────────────────────────── */
+function _tpStartDrag(x, y) {
+    var srcEl = _msCellEl(_tpCellId);
+    if (!srcEl) return;
+
+    _tpDragging  = true;
+    _tpMultiDrag = _msActive && _msSelected.size > 0;
+
+    // Auto-add the touched cell to selection in multi-drag mode
+    if (_tpMultiDrag && !_msSelected.has(_tpCellId)) {
+        _msToggle(_tpCellId);
+    }
+
+    var count = _tpMultiDrag ? _msSelected.size : 0;
+    _tpGhost = _tpGhostCreate(srcEl, count);
+    _tpGhostMove(x, y);
+    if (navigator.vibrate) navigator.vibrate(15);
+}
+
 /* ── Touch event handlers ────────────────────────────────────────────────────── */
 function _tpOnTouchStart(e) {
-    if (_tpTouchId !== null) return;         // already tracking a touch
-    if (e.touches.length !== 1) return;      // ignore multi-touch (pinch etc.)
+    if (_tpTouchId !== null) return;     // already tracking
+    if (e.touches.length !== 1) return;  // ignore pinch / multi-touch
 
     var touch  = e.touches[0];
     var cellEl = touch.target.closest('[data-grid-cell-id]');
@@ -209,16 +307,18 @@ function _tpOnTouchStart(e) {
     _tpCellId   = parseInt(cellEl.dataset.gridCellId, 10);
     _tpLpFired  = false;
     _tpDragging = false;
+    _tpMultiDrag = false;
 
-    // Attach move/end/cancel to document so they fire even when finger leaves canvas
     document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
-    document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true });
-    document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true });
+    document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
+    document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
 
     _tpLpTimer = setTimeout(function() {
+        // Only fire long-press if NOT already dragging (drag beat the timer)
+        if (_tpDragging) return;
         _tpLpFired = true;
         if (!_msActive) _msEnter(_tpCellId);
-        // If already in multiselect, drag is triggered by movement in _tpOnTouchMove
+        // If already in multiselect: timer just sets _tpLpFired; drag starts on move
     }, _LONG_PRESS_MS);
 }
 
@@ -226,25 +326,12 @@ function _tpOnTouchMove(e) {
     var touch = _tpFindTouch(e.changedTouches) || _tpFindTouch(e.touches);
     if (!touch) return;
 
-    // ── Critical: prevent browser scroll ONCE we've committed to a gesture ──
-    // In multiselect (_msActive): always own the touch — no accidental scrolling.
-    // After long-press fires: own it so drag can proceed without pointercancel.
-    if (_tpLpFired || _tpDragging || _msActive) e.preventDefault();
+    // Prevent browser scroll once we've committed to any gesture
+    if (_tpDragging || _tpLpFired || _msActive) e.preventDefault();
 
     if (_tpDragging) {
         _tpGhostMove(touch.clientX, touch.clientY);
-        var overId = _tpCellUnder(touch.clientX, touch.clientY);
-        if (overId !== _tpDragOver) {
-            if (_tpDragOver) {
-                var old = _msCellEl(_tpDragOver);
-                if (old) old.style.boxShadow = '';
-            }
-            _tpDragOver = overId;
-            if (overId && overId !== _tpCellId) {
-                var nov = _msCellEl(overId);
-                if (nov) nov.style.boxShadow = 'inset 4px 0 0 0 #0053e2';
-            }
-        }
+        _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
         return;
     }
 
@@ -253,20 +340,14 @@ function _tpOnTouchMove(e) {
     var dist = Math.sqrt(dx * dx + dy * dy);
     if (dist <= _DRAG_THRESHOLD) return;
 
-    if (_msActive) {
-        // Movement in multiselect = start drag reorder immediately (no second long-press)
+    // ── Movement crossed threshold ──────────────────────────────────────────
+    if (_msActive || !_tpLpFired) {
+        // Start drag: single-item outside multiselect, or multi-drag inside
         clearTimeout(_tpLpTimer);
-        _tpLpFired = true;
-        var srcEl = _msCellEl(_tpCellId);
-        if (srcEl) {
-            _tpDragging = true;
-            _tpGhost = _tpGhostCreate(srcEl);
-            if (navigator.vibrate) navigator.vibrate(20);
-        }
-    } else {
-        // Not in multiselect + too much movement = user is scrolling, cancel gesture
-        _tpReset();
+        _tpLpFired = true;           // marks this as a drag, not a tap
+        _tpStartDrag(touch.clientX, touch.clientY);
     }
+    // (If we somehow get here with no msActive and lpFired=false, scroll wins — handled above)
 }
 
 function _tpOnTouchEnd(e) {
@@ -275,26 +356,35 @@ function _tpOnTouchEnd(e) {
     clearTimeout(_tpLpTimer);
 
     if (_tpDragging) {
-        var targetId = _tpDragOver;
-        var srcId    = _tpCellId;
+        var target    = _tpDropTarget(touch.clientX, touch.clientY);
+        var srcId     = _tpCellId;
+        var isMulti   = _tpMultiDrag;
         _tpGhostDestroy();
-        _tpDragging = false;
-        _tpRemoveListeners();
-        _tpTouchId = null;
-        if (targetId && targetId !== srcId) _gridReorder(srcId, targetId, true);
+        _tpDragging  = false;
+        _tpMultiDrag = false;
+        _tpCleanup();
+
+        if (target.cellId != null) {
+            if (isMulti) {
+                _msMoveSelected(target.cellId, target.insertBefore);
+            } else if (target.cellId !== srcId) {
+                _gridReorder(srcId, target.cellId, target.insertBefore);
+            }
+        }
         return;
     }
 
     var lpFired = _tpLpFired;
     var cellId  = _tpCellId;
-    _tpRemoveListeners();
-    _tpTouchId = null;
+    _tpCleanup();
 
-    if (lpFired) return;   // long-press entered multiselect — no further action
+    if (lpFired) return;  // long-press fired → multiselect entered; no further action
 
-    // Short tap in multiselect: toggle selection
-    if (_msActive && cellId != null) _msToggle(cellId);
-    // Short tap outside multiselect: let the synthetic click open lightbox normally
+    // Short tap
+    if (_msActive && cellId != null) {
+        _msToggle(cellId);  // toggle selection in multiselect
+    }
+    // Outside multiselect: let the synthetic click bubble to open lightbox
 }
 
 function _tpOnTouchCancel() { _tpReset(); }
@@ -302,16 +392,17 @@ function _tpOnTouchCancel() { _tpReset(); }
 function _tpReset() {
     clearTimeout(_tpLpTimer);
     _tpGhostDestroy();
-    _tpDragging = false;
-    _tpLpFired  = false;
-    _tpRemoveListeners();
-    _tpTouchId = null;
+    _tpDragging  = false;
+    _tpMultiDrag = false;
+    _tpLpFired   = false;
+    _tpCleanup();
 }
 
-function _tpRemoveListeners() {
+function _tpCleanup() {
     document.removeEventListener('touchmove',   _tpOnTouchMove);
     document.removeEventListener('touchend',    _tpOnTouchEnd);
     document.removeEventListener('touchcancel', _tpOnTouchCancel);
+    _tpTouchId = null;
 }
 
 /* ── Click capture: block clicks in multiselect + video → lightbox ───────────── */
@@ -321,13 +412,11 @@ function _tpClickCapture(e) {
     var cellId = parseInt(cellEl.dataset.gridCellId, 10);
 
     if (_msActive) {
-        // Selection is handled in touchend — block native click entirely
         e.stopPropagation();
         e.preventDefault();
         return;
     }
 
-    // Outside multiselect: video cells need lightbox instead of play/pause
     if (e.target.tagName === 'VIDEO' || cellEl.querySelector('video')) {
         e.stopPropagation();
         e.preventDefault();
@@ -335,30 +424,26 @@ function _tpClickCapture(e) {
     }
 }
 
-/* ── CSS injection (into <head> — survives HTMX innerHTML swaps) ─────────────── */
+/* ── CSS injection ───────────────────────────────────────────────────────────── */
 function _tpInjectCSS() {
     if (document.getElementById('bw-touch-style')) return;
     var s = document.createElement('style');
     s.id = 'bw-touch-style';
     s.textContent = [
-        /* Hide hover-only desktop controls on touch devices */
         'body.bw-touch [data-grid-hover-ctrls],',
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
-        /* Prevent iOS callout menu and text selection on cells.          */
-        /* Without this, iOS fires its own 500 ms long-press → touchcancel */
-        /* kills our gesture before our timer even fires.                  */
+        /* Prevent iOS callout + text-selection long-press (both fire touchcancel) */
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
-        '  -webkit-user-select: none;',
-        '  user-select: none;',
+        '  -webkit-user-select:   none;',
+        '  user-select:           none;',
         '}'
     ].join('\n');
     document.head.appendChild(s);
 }
 
-/* ── Entry point (called from initGridPage in home-page-grid.js) ─────────────── */
+/* ── Entry point ─────────────────────────────────────────────────────────────── */
 function _gridInitTouch() {
-    // Self-disable on true desktop (hover+fine-pointer with no touch screen)
     var hasHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
     var hasTouch = navigator.maxTouchPoints > 0;
     if (hasHover && !hasTouch) return;
@@ -369,13 +454,11 @@ function _gridInitTouch() {
     var canvas = _msCanvas();
     if (!canvas) return;
 
-    // Use removeEventListener+add to be safe against HTMX re-inits
     canvas.removeEventListener('touchstart', _tpOnTouchStart);
     canvas.addEventListener('touchstart', _tpOnTouchStart, { passive: true });
 
     canvas.removeEventListener('click', _tpClickCapture, true);
     canvas.addEventListener('click', _tpClickCapture, true);
 
-    // Suppress browser context menu on long-press (Android Chrome)
     canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); }, { passive: false });
 }
