@@ -751,9 +751,17 @@
         {%- if ru and ru != 'none' %}
         <span class="text-[10px] text-blue-400 flex-shrink-0" title="Repeating">&#x21bb;</span>
         {%- endif %}
+        <button onclick="reminderOpenModal({{ w.id }}, {{ loop.index0 }})"
+                class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5
+                       text-gray-400 hover:text-wblue transition" aria-label="Edit reminder">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0
+                     011.414 3.414L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
         <button onclick="reminderDelete({{ w.id }}, {{ loop.index0 }})"
                 class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5
-                       text-gray-400 hover:text-wred transition" aria-label="Delete">
+                       text-gray-400 hover:text-wred transition" aria-label="Delete reminder">
           <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -800,9 +808,17 @@
       {%- if ru2 and ru2 != 'none' %}
       <span class="text-[10px] text-blue-400 flex-shrink-0" title="Repeating">&#x21bb;</span>
       {%- endif %}
+      <button onclick="reminderOpenModal({{ w.id }}, {{ loop.index0 }})"
+              class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5
+                     text-gray-400 hover:text-wblue transition" aria-label="Edit reminder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0
+                   011.414 3.414L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+      </button>
       <button onclick="reminderDelete({{ w.id }}, {{ loop.index0 }})"
               class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5
-                     text-gray-400 hover:text-wred transition" aria-label="Delete">
+                     text-gray-400 hover:text-wred transition" aria-label="Delete reminder">
         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
@@ -816,63 +832,15 @@
   </ul>
   {% endif %}
 
-  {# ── Add form: date + time row / text + submit row ─────────────────── #}
-  <div class="flex flex-col gap-1 mt-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
-    <div class="flex gap-1">
-      <input id="rem-date-{{ w.id }}" type="date"
-             class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-1.5 py-1
-                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                    focus:outline-none focus:ring-2 focus:ring-wblue min-w-0"
-             data-rem-today="1">
-      <input id="rem-time-{{ w.id }}" type="time"
-             class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-1.5 py-1
-                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                    focus:outline-none focus:ring-2 focus:ring-wblue w-24 flex-shrink-0">
-    </div>
-    {# Repeat row #}
-    <div class="flex gap-1">
-      <select id="rem-repeat-{{ w.id }}"
-              onchange="(function(s){var r=document.getElementById('rem-custom-repeat-{{ w.id }}');r.classList.toggle('hidden',s.value!=='custom');})(this)"
-              class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-1.5 py-1
-                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                     focus:outline-none focus:ring-2 focus:ring-wblue">
-        <option value="none">No repeat</option>
-        <option value="day:1">Daily</option>
-        <option value="week:1">Weekly</option>
-        <option value="week:2">Every 2 weeks</option>
-        <option value="week:3">Every 3 weeks</option>
-        <option value="month:1">Monthly</option>
-        <option value="month:3">Quarterly</option>
-        <option value="year:1">Yearly</option>
-        <option value="custom">Custom…</option>
-      </select>
-    </div>
-    {# Custom repeat row — hidden until "Custom" is selected #}
-    <div id="rem-custom-repeat-{{ w.id }}" class="hidden flex gap-1">
-      <input id="rem-repeat-n-{{ w.id }}" type="number" min="1" max="365" value="1"
-             class="w-14 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-1.5 py-1
-                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                    focus:outline-none focus:ring-2 focus:ring-wblue"
-             aria-label="Every N">
-      <select id="rem-repeat-unit-{{ w.id }}"
-              class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-1.5 py-1
-                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                     focus:outline-none focus:ring-2 focus:ring-wblue">
-        <option value="day">day(s)</option>
-        <option value="week">week(s)</option>
-        <option value="month">month(s)</option>
-        <option value="year">year(s)</option>
-      </select>
-    </div>
-    <div class="flex gap-1">
-      <input id="rem-text-{{ w.id }}" type="text" placeholder="What's the reminder?"
-             class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1
-                    bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400
-                    focus:outline-none focus:ring-2 focus:ring-wblue min-w-0"
-             onkeydown="if(event.key==='Enter') reminderAdd({{ w.id }}, this)">
-      <button onclick="reminderAdd({{ w.id }}, document.getElementById('rem-text-{{ w.id }}'))"
-              class="px-3 py-1 bg-wblue text-white text-xs rounded-lg hover:bg-blue-700 transition flex-shrink-0">+</button>
-    </div>
+  {# ── Add button — opens the shared reminder modal ──────────────────── #}
+  <div class="mt-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+    <button onclick="reminderOpenModal({{ w.id }}, null)"
+            class="w-full text-xs py-1.5 rounded-lg border border-dashed
+                   border-gray-300 dark:border-zinc-600
+                   text-gray-400 dark:text-zinc-500
+                   hover:border-wblue hover:text-wblue transition">
+      + Add Reminder
+    </button>
   </div>
 {% endcall %}
 {% endmacro %}

@@ -529,30 +529,238 @@ function _sortReminders(items) {
   });
 }
 
-async function reminderAdd(wid, input) {
-  const text = input?.value?.trim();
-  const time = document.getElementById(`rem-time-${wid}`)?.value || '00:00';
-  const date = document.getElementById(`rem-date-${wid}`)?.value || '';
-  if (!text) return;
-  const repeatVal = document.getElementById(`rem-repeat-${wid}`)?.value || 'none';
-  let repeat_unit = 'none', repeat_interval = 1;
-  if (repeatVal === 'custom') {
-    repeat_unit     = document.getElementById(`rem-repeat-unit-${wid}`)?.value || 'day';
-    repeat_interval = parseInt(document.getElementById(`rem-repeat-n-${wid}`)?.value, 10) || 1;
-  } else if (repeatVal !== 'none') {
-    const [ru, riv] = repeatVal.split(':');
-    repeat_unit = ru; repeat_interval = parseInt(riv, 10) || 1;
+// ── Reminder modal (singleton) ───────────────────────────────────────────────
+// One modal is shared across all reminder widgets on the page.
+// _remModalState tracks which widget + index we're editing (null idx = add mode).
+var _remModalState = { wid: null, idx: null };
+
+function _remGetOrCreateModal() {
+  var existing = document.getElementById('bw-rem-modal');
+  if (existing) return existing;
+
+  var el = document.createElement('div');
+  el.id = 'bw-rem-modal';
+  // Full-screen overlay
+  el.className = 'fixed inset-0 z-[9500] flex items-center justify-center p-4';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'bw-rem-modal-title');
+  el.innerHTML = [
+    // Backdrop
+    '<div class="absolute inset-0 bg-black/50 dark:bg-black/70" onclick="reminderCloseModal()"></div>',
+    // Card
+    '<div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-sm',
+    '      p-5 flex flex-col gap-3 transform transition-all">',
+    '  <h2 id="bw-rem-modal-title" class="text-sm font-bold text-gray-800 dark:text-zinc-100">Add Reminder</h2>',
+    '',
+    '  <!-- What -->',
+    '  <div>',
+    '    <label class="block text-[10px] font-semibold uppercase tracking-wide',
+    '                  text-gray-400 dark:text-zinc-500 mb-1">What</label>',
+    '    <input id="bw-rem-text" type="text" placeholder="What\'s the reminder?" autocomplete="off"',
+    '           class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2',
+    '                  bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400',
+    '                  focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '  </div>',
+    '',
+    '  <!-- Date + Time row -->',
+    '  <div class="flex gap-2">',
+    '    <div class="flex-1">',
+    '      <label class="block text-[10px] font-semibold uppercase tracking-wide',
+    '                    text-gray-400 dark:text-zinc-500 mb-1">Date</label>',
+    '      <input id="bw-rem-date" type="date"',
+    '             class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-2',
+    '                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200',
+    '                    focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '    </div>',
+    '    <div>',
+    '      <label class="block text-[10px] font-semibold uppercase tracking-wide',
+    '                    text-gray-400 dark:text-zinc-500 mb-1">Time</label>',
+    '      <input id="bw-rem-time" type="time"',
+    '             class="w-28 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-2',
+    '                    bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100',
+    '                    focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '    </div>',
+    '  </div>',
+    '',
+    '  <!-- Repeat -->',
+    '  <div>',
+    '    <label class="block text-[10px] font-semibold uppercase tracking-wide',
+    '                  text-gray-400 dark:text-zinc-500 mb-1">Repeat</label>',
+    '    <select id="bw-rem-repeat"',
+    '            onchange="document.getElementById(\'bw-rem-custom\').classList.toggle(\'hidden\',this.value!==\'custom\')"',
+    '            class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-2',
+    '                   bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200',
+    '                   focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '      <option value="none">No repeat</option>',
+    '      <option value="day:1">Daily</option>',
+    '      <option value="week:1">Weekly</option>',
+    '      <option value="week:2">Every 2 weeks</option>',
+    '      <option value="week:3">Every 3 weeks</option>',
+    '      <option value="month:1">Monthly</option>',
+    '      <option value="month:3">Quarterly</option>',
+    '      <option value="year:1">Yearly</option>',
+    '      <option value="custom">Custom…</option>',
+    '    </select>',
+    '    <!-- Custom interval row -->',
+    '    <div id="bw-rem-custom" class="hidden flex gap-2 mt-2 items-center">',
+    '      <span class="text-xs text-gray-500 dark:text-zinc-400 shrink-0">Every</span>',
+    '      <input id="bw-rem-n" type="number" min="1" max="365" value="1"',
+    '             class="w-16 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5',
+    '                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200',
+    '                    focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '      <select id="bw-rem-unit"',
+    '              class="flex-1 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5',
+    '                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200',
+    '                     focus:outline-none focus:ring-2 focus:ring-wblue">',
+    '        <option value="day">day(s)</option>',
+    '        <option value="week">week(s)</option>',
+    '        <option value="month">month(s)</option>',
+    '        <option value="year">year(s)</option>',
+    '      </select>',
+    '    </div>',
+    '  </div>',
+    '',
+    '  <!-- Actions -->',
+    '  <div class="flex gap-2 justify-end pt-1">',
+    '    <button onclick="reminderCloseModal()"',
+    '            class="px-4 py-2 text-xs rounded-lg border border-gray-200 dark:border-zinc-700',
+    '                   text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">',
+    '      Cancel',
+    '    </button>',
+    '    <button id="bw-rem-save" onclick="reminderSaveModal()"',
+    '            class="px-4 py-2 text-xs font-semibold rounded-lg bg-wblue text-white',
+    '                   hover:bg-blue-700 transition">',
+    '      Save',
+    '    </button>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  // ESC closes
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') reminderCloseModal();
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+/**
+ * Open the reminder modal.
+ * @param {number} wid  Widget id
+ * @param {number|null} idx  Index into the sorted items array (null = add mode)
+ */
+function reminderOpenModal(wid, idx) {
+  var modal = _remGetOrCreateModal();
+  _remModalState = { wid: wid, idx: idx };
+
+  var today = new Date().toISOString().slice(0, 10);
+  var titleEl  = document.getElementById('bw-rem-modal-title');
+  var saveBtn  = document.getElementById('bw-rem-save');
+  var textIn   = document.getElementById('bw-rem-text');
+  var dateIn   = document.getElementById('bw-rem-date');
+  var timeIn   = document.getElementById('bw-rem-time');
+  var repSel   = document.getElementById('bw-rem-repeat');
+  var custRow  = document.getElementById('bw-rem-custom');
+  var nIn      = document.getElementById('bw-rem-n');
+  var unitSel  = document.getElementById('bw-rem-unit');
+
+  if (idx !== null && idx !== undefined) {
+    // ── Edit mode: pre-fill from existing item ──────────────────────────
+    var items = _getReminderItems(wid);
+    var item  = items[idx];
+    if (!item) return;
+    if (titleEl) titleEl.textContent = 'Edit Reminder';
+    if (saveBtn) saveBtn.textContent = 'Update';
+    if (textIn) textIn.value = item.text || '';
+    if (dateIn) dateIn.value = item.date || today;
+    if (timeIn) timeIn.value = item.time || '09:00';
+    var ru = item.repeat_unit || 'none';
+    var ri = item.repeat_interval || 1;
+    if (ru === 'none') {
+      if (repSel) repSel.value = 'none';
+    } else {
+      // Try to match a preset (e.g. "week:2")
+      var preset = ru + ':' + ri;
+      var opt = repSel ? Array.from(repSel.options).find(function(o) { return o.value === preset; }) : null;
+      if (opt) {
+        repSel.value = preset;
+      } else {
+        if (repSel) repSel.value = 'custom';
+        if (nIn)    nIn.value    = ri;
+        if (unitSel) unitSel.value = ru;
+      }
+    }
+    if (custRow) custRow.classList.toggle('hidden', (repSel ? repSel.value : 'none') !== 'custom');
+  } else {
+    // ── Add mode: reset to defaults ────────────────────────────────────
+    if (titleEl) titleEl.textContent = 'Add Reminder';
+    if (saveBtn) saveBtn.textContent = 'Save';
+    if (textIn) textIn.value  = '';
+    if (dateIn) dateIn.value  = today;
+    if (timeIn) timeIn.value  = '09:00';
+    if (repSel) repSel.value  = 'none';
+    if (nIn)    nIn.value     = '1';
+    if (unitSel) unitSel.value = 'day';
+    if (custRow) custRow.classList.add('hidden');
   }
-  const items = _getReminderItems(wid);
-  items.push({ time, date, text, repeat_unit, repeat_interval });
-  const sorted = _sortReminders(items);
+
+  modal.classList.remove('hidden');
+  // Focus text field after paint
+  requestAnimationFrame(function() { if (textIn) textIn.focus(); });
+}
+
+function reminderCloseModal() {
+  var modal = document.getElementById('bw-rem-modal');
+  if (modal) modal.classList.add('hidden');
+  _remModalState = { wid: null, idx: null };
+}
+
+async function reminderSaveModal() {
+  var wid = _remModalState.wid;
+  var idx = _remModalState.idx;  // null = add mode
+  if (wid === null) return;
+
+  var textIn  = document.getElementById('bw-rem-text');
+  var dateIn  = document.getElementById('bw-rem-date');
+  var timeIn  = document.getElementById('bw-rem-time');
+  var repSel  = document.getElementById('bw-rem-repeat');
+  var nIn     = document.getElementById('bw-rem-n');
+  var unitSel = document.getElementById('bw-rem-unit');
+
+  var text    = textIn?.value?.trim();
+  var date    = dateIn?.value || '';
+  var time    = timeIn?.value || '09:00';
+  var repVal  = repSel?.value || 'none';
+
+  if (!text) { if (textIn) textIn.focus(); return; }
+
+  var repeat_unit = 'none', repeat_interval = 1;
+  if (repVal === 'custom') {
+    repeat_unit     = unitSel?.value || 'day';
+    repeat_interval = parseInt(nIn?.value || '1', 10) || 1;
+  } else if (repVal !== 'none') {
+    var parts       = repVal.split(':');
+    repeat_unit     = parts[0];
+    repeat_interval = parseInt(parts[1], 10) || 1;
+  }
+
+  var items = _getReminderItems(wid);
+  var newItem = { time, date, text, repeat_unit, repeat_interval };
+
+  if (idx !== null && idx !== undefined) {
+    items[idx] = newItem;   // edit in place, then re-sort
+  } else {
+    items.push(newItem);    // add new
+  }
+
+  var sorted = _sortReminders(items);
   await _saveWidgetConfig(wid, { items: sorted });
-  input.value = '';
-  const ul    = document.getElementById(`reminder-list-${wid}`);
-  const style = ul?.dataset.style || 'list';
-  if (!ul) return;
   delete _reminderData[wid];
-  ul.innerHTML = _renderReminderItems(wid, sorted, style);
+  var ul    = document.getElementById('reminder-list-' + wid);
+  var style = ul?.dataset.style || 'list';
+  if (ul) ul.innerHTML = _renderReminderItems(wid, sorted, style);
+  reminderCloseModal();
 }
 
 async function reminderDelete(wid, idx) {
@@ -624,6 +832,14 @@ function _reminderListLi(wid, item, i) {
     ${dateBadge}
     <span class="text-xs text-gray-700 dark:text-zinc-300 flex-1 leading-snug min-w-0 truncate">${_esc(item.text)}</span>
     ${_remRepeatBadge(item)}
+    <button onclick="reminderOpenModal(${wid}, ${i})"
+            class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400 hover:text-wblue transition flex-shrink-0"
+            aria-label="Edit reminder">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0
+                 011.414 3.414L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+    </button>
     <button onclick="reminderDelete(${wid}, ${i})"
             class="opacity-0 group-hover/rem:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition flex-shrink-0"
             aria-label="Delete">
@@ -647,6 +863,14 @@ function _reminderAgendaLi(wid, item, i) {
     <div class="flex-1 flex items-center gap-2 px-2.5 py-2 min-w-0">
       <span class="text-xs text-gray-800 dark:text-zinc-100 flex-1 leading-snug">${_esc(item.text)}</span>
       ${_remRepeatBadge(item)}
+      <button onclick="reminderOpenModal(${wid}, ${i})"
+              class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5 text-gray-400 hover:text-wblue transition"
+              aria-label="Edit reminder">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0
+                   011.414 3.414L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+      </button>
       <button onclick="reminderDelete(${wid}, ${i})"
               class="opacity-0 group-hover/rem:opacity-100 flex-shrink-0 p-0.5 text-gray-400 hover:text-red-500 transition"
               aria-label="Delete">
