@@ -97,6 +97,8 @@ window.tripCloseLocView = function() {
 function _tripRenderLocGrid() {
   // Sync filter bar first
   if (typeof window._tripRenderLocFilterBar === 'function') window._tripRenderLocFilterBar();
+  // Exit any active multiselect before wiping innerHTML
+  if (typeof _tripMsExit === 'function' && _tripMsActive) _tripMsExit();
 
   var grid = document.getElementById('trip-locs-grid');
   if (!grid) return;
@@ -133,6 +135,16 @@ function _tripRenderLocGrid() {
     html += g.items.map(_tripRenderLocCard).join('');
   });
   grid.innerHTML = html;
+  // Wire long-press multiselect for the newly rendered cards
+  if (typeof window.tripMsWireGrid === 'function') {
+    window.tripMsWireGrid({
+      gridId:      'trip-locs-grid',
+      cardAttr:    'data-loc-id',
+      deleteUrl:   function(id) { return '/home/trip/' + _tripPid + '/locations/' + id; },
+      removeLocal: function(sel) { _tripLocations = _tripLocations.filter(function(l) { return !sel[l.id]; }); },
+      rerender:    function() { _tripRenderLocGrid(); },
+    });
+  }
 }
 
 function _tripRenderLocCard(loc) {
@@ -172,10 +184,12 @@ function _tripRenderLocCard(loc) {
             'from-blue-50 to-indigo-100 dark:from-zinc-800 dark:to-zinc-900 text-5xl ' +
             'select-none">📍</div>');
 
-  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
+  return '<div class="trip-loc-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
     'dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition ' +
-    'flex flex-col cursor-pointer group" ' +
+    'flex flex-col cursor-pointer group relative" ' +
+    'data-loc-id="' + loc.id + '" ' +
     'onclick="tripOpenLoc(' + loc.id + ')">' +
+    _TRIP_MS_CB_HTML +
     cover +
     '<div class="p-3 flex flex-col gap-1.5 flex-1">' +
       '<div class="flex items-start justify-between gap-2">' +

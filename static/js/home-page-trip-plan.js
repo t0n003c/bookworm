@@ -364,6 +364,8 @@ function _loadPlans() {
 }
 
 function _tripRenderPlanCards() {
+  // Exit any active multiselect before wiping innerHTML
+  if (typeof _tripMsExit === 'function' && _tripMsActive) _tripMsExit();
   var grid = document.getElementById('trip-plans-grid');
   if (!grid) return;
 
@@ -397,6 +399,7 @@ function _tripRenderPlanCards() {
 
   if (_planSortByVal !== 'default') {
     grid.innerHTML = visible.map(_tripRenderPlanCard).join('');
+    _tripMsWirePlanGrid();
     return;
   }
 
@@ -440,6 +443,19 @@ function _tripRenderPlanCards() {
     html += plans.map(_tripRenderPlanCard).join('');
   });
   grid.innerHTML = html;
+  _tripMsWirePlanGrid();
+}
+
+// Helper so the plan-grid config isn't duplicated across render paths
+function _tripMsWirePlanGrid() {
+  if (typeof window.tripMsWireGrid !== 'function') return;
+  window.tripMsWireGrid({
+    gridId:      'trip-plans-grid',
+    cardAttr:    'data-plan-id',
+    deleteUrl:   function(id) { return '/home/trip/' + _tripPid + '/plans/' + id; },
+    removeLocal: function(sel) { _tripPlans = _tripPlans.filter(function(p) { return !sel[p.id]; }); },
+    rerender:    function() { _tripRenderPlanCards(); },
+  });
 }
 
 // ── Status helpers ──────────────────────────────────────────────────────────
@@ -580,8 +596,10 @@ function _tripRenderPlanCard(p) {
     '</div>';
 
   return '<div class="trip-plan-card bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
-    'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all ' + cardBorder + '" ' +
+    'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all relative ' + cardBorder + '" ' +
+    'data-plan-id="' + p.id + '" ' +
     'onclick="tripOpenPlan(' + p.id + ',\'' + jsName + '\')">' +
+    (typeof _TRIP_MS_CB_HTML !== 'undefined' ? _TRIP_MS_CB_HTML : '') +
     cover +
     '<div class="p-4">' +
       '<div class="flex items-start justify-between gap-2">' +

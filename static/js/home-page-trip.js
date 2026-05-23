@@ -209,6 +209,8 @@ function _tripLoadSpots(locId) { window._tripLoadSpots(locId); }
 
 // ── Research: spot card grid (groups from _tripApplySpotOps) ────────────────
 function _tripRenderResearch() {
+  // Exit any active multiselect before wiping innerHTML
+  if (typeof _tripMsExit === 'function' && _tripMsActive) _tripMsExit();
   var grid = document.getElementById('trip-spots-grid');
   if (!grid) return;
   var groups = (typeof _tripApplySpotOps === 'function')
@@ -237,6 +239,16 @@ function _tripRenderResearch() {
     html += g.items.map(_tripRenderSpotCard).join('');
   });
   grid.innerHTML = html;
+  // Wire long-press multiselect for the newly rendered cards
+  if (typeof window.tripMsWireGrid === 'function') {
+    window.tripMsWireGrid({
+      gridId:      'trip-spots-grid',
+      cardAttr:    'data-spot-id',
+      deleteUrl:   function(id) { return '/home/trip/' + _tripPid + '/spots/' + id; },
+      removeLocal: function(sel) { _tripSpots = _tripSpots.filter(function(s) { return !sel[s.id]; }); },
+      rerender:    function() { _tripRenderResearch(); },
+    });
+  }
 };
 
 function _tripRenderSpotCard(s) {
@@ -313,11 +325,13 @@ function _tripRenderSpotCard(s) {
 
   return '<div class="trip-spot-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 ' +
     'dark:border-zinc-800 overflow-hidden shadow-sm hover:shadow-md transition ' +
-    'flex flex-col group cursor-pointer" ' +
+    'flex flex-col group cursor-pointer relative" ' +
+    'data-spot-id="' + s.id + '" ' +
     'onclick="tripOpenEditSpot(' + s.id + ')" ' +
     'draggable="true" ' +
     'ondragstart="tripDragSpotStart(event,' + s.id + ')" ' +
     'ondragend="tripDragSpotEnd(event)">' +
+    _TRIP_MS_CB_HTML +
     cover +
     '<div class="trip-spot-body p-3 flex flex-col gap-1.5 flex-1">' +
       '<div class="flex items-start justify-between gap-1">' +
