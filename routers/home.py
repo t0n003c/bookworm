@@ -456,8 +456,12 @@ def _parse_yt_html(html_text: str) -> dict | None:
     YouTube's RSS endpoint is blocked by Walmart's corporate proxy (McAfee SSL
     inspection IP is rate-limited by YouTube).  The channel *page* loads fine though,
     and YouTube embeds the full video list inside a `var ytInitialData = {...};` script
-    tag.  We BFS-walk that JSON to collect up to 20 videoRenderer objects and return
+    tag.  We BFS-walk that JSON to collect up to 20 video items and return
     them in the same dict shape that _parse_rss() produces.
+
+    Handles two YouTube renderer formats:
+      - Legacy:  videoRenderer / gridVideoRenderer  (2021 and earlier)
+      - Modern:  richItemRenderer → content → lockupViewModel  (2024+)
 
     Returns None when ytInitialData is not present or contains no videos.
     """
@@ -485,7 +489,107 @@ def _parse_yt_html(html_text: str) -> dict | None:
     except (AttributeError, KeyError):
         pass
 
-    # ── BFS: collect videoRenderer nodes ─────────────────────────────────────
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _safe_get(obj: dict, *keys, default=''):
+        """Chained dict.get with a fallback."""
+        for k in keys:
+            if not isinstance(obj, dict):
+                return default
+            obj = obj.get(k, {})
+        return obj if isinstance(obj, str) and obj else default
+
+    def _item_from_legacy(vr: dict) -> dict | None:
+        """Build an item dict from the old videoRenderer / gridVideoRenderer."""
+        vid = vr.get('videoId', '')
+        if not vid:
+            return None
+        t_obj = vr.get('title', {})
+        title = (
+            t_obj.get('simpleText')
+            or ((t_obj.get('runs') or [{}])[0]).get('text', '')
+        )
+        ds   = vr.get('descriptionSnippet') or {}
+        desc = (
+            ds.get('simpleText')
+            or ((ds.get('runs') or [{}])[0]).get('text', '')
+            or (vr.get('viewCountText') or {}).get('simpleText', '')
+        )
+        pub  = (vr.get('publishedTimeText') or {}).get('simpleTe', '')
+        return {
+            'title':       title,
+            'link':        f'https://www.youtube.com/watch?v={vid}',
+            'description': desc,
+            'pub_date':    pub,
+            'thumbnail':   f'https://img.youtube.com/vi/{vid}/mqdefault.jpg',
+            'categories':  [],
+        }
+
+    def _item_from_lockup(lvm: dict) -> dict | None:
+        """Build an item dict from the modern lockupViewModel (YouTube 2024+).
+
+        Path map (verified against live ytInitialData 2025-05):
+          videoId:  rendererContext.commandContext.onTap
+                    .innertubeCommand.watchEndpoint.videoId
+          title:    metadata.lockupMetadataViewModel.title.content
+          pub_date: metadata.lockupMetadataViewModel.metadata
+                    .contentMetadataViewModel.metadataRows[0].metadataParts[-1]
+                    .text.content
+          views:    same row, metadataParts[0].accessibilityLabel
+          thumb:    contentImage.thumbnailViewModel.image.sources[0].url
+        """
+        # video ID — prefer the watch endpoint; fall back to contentId
+        vid = _safe_get(
+            lvm,
+            'rendererContext', 'commandContext', 'onTap',
+            'innertubeCommand', 'watchEndpoint', 'videoId',
+        ) or lvm.get('contentId', '')
+        if not vid:
+            # Last resort: extract from thumbnail URL
+            try:
+                src = lvm['contentImage']['thumbnailViewModel']['image']['sources'][0]['url']
+                m2  = re.search(r'/vi/([A-Za-z0-9_-]{11})/', src)
+                vid = m2.group(1) if m2 else ''
+            except (KeyError, IndexError, AttributeError):
+                pass
+        if not vid:
+            return None
+
+        lmv   = (lvm.get('metadata') or {}).get('lockupMetadataViewModel') or {}
+        title = _safe_get(lmv, 'title', 'content') or vid
+
+        # Published date + view count from metadataRows
+        pub   = ''
+        desc  = ''
+        try:
+            rows  = lmv['metadata']['contentMetadataViewModel']['metadataRows']
+            parts = rows[0]['metadataParts']
+            # Last part is typically the relative time ("6d ago", "2 months ago")
+            pub  = parts[-1].get('text', {}).get('content', '')
+            # First part is view count — use the accessibilityLabel for human text
+            desc = parts[0].get('accessibilityLabel', '') or \
+                   parts[0].get('text', {}).get('content', '')
+        except (KeyError, IndexError, TypeError):
+            pass
+
+        # Thumbnail: use first source URL, or construct from videoId
+        thumb = f'https://img.youtube.com/vi/{vid}/mqdefault.jpg'
+        try:
+            thumb = lvm['contentImage']['thumbnailViewModel']['image']['sources'][0]['url']
+            # Strip query params so the URL stays clean
+            thumb = thumb.split('?')[0]
+        except (KeyError, IndexError, TypeError):
+            pass
+
+        return {
+            'title':       title,
+            'link':        f'https://www.youtube.com/watch?v={vid}',
+            'description': desc,
+            'pub_date':    pub,
+            'thumbnail':   thumb,
+            'categories':  [],
+        }
+
+    # ── BFS: collect video items ──────────────────────────────────────────────
     items: list[dict] = []
     seen:  set[str]   = set()
     queue: deque      = deque([data])
@@ -493,33 +597,22 @@ def _parse_yt_html(html_text: str) -> dict | None:
     while queue and len(items) < 20:
         node = queue.popleft()
         if isinstance(node, dict):
-            # YouTube uses 'videoRenderer' on search/home pages,
-            # 'gridVideoRenderer' on channel tabs (Videos, Home grid)
+            # Modern format: richItemRenderer → content → lockupViewModel
+            rir = node.get('richItemRenderer')
+            if isinstance(rir, dict):
+                lvm = rir.get('content', {}).get('lockupViewModel')
+                if isinstance(lvm, dict):
+                    item = _item_from_lockup(lvm)
+                    if item and item['link'] not in seen:
+                        seen.add(item['link'])
+                        items.append(item)
+            # Legacy format: videoRenderer / gridVideoRenderer
             vr = node.get('videoRenderer') or node.get('gridVideoRenderer')
             if isinstance(vr, dict):
-                vid = vr.get('videoId', '')
-                if vid and vid not in seen:
-                    seen.add(vid)
-                    t_obj  = vr.get('title', {})
-                    title  = (
-                        t_obj.get('simpleText')
-                        or ((t_obj.get('runs') or [{}])[0]).get('text', '')
-                    )
-                    ds    = vr.get('descriptionSnippet') or {}
-                    desc  = (
-                        ds.get('simpleText')
-                        or ((ds.get('runs') or [{}])[0]).get('text', '')
-                        or (vr.get('viewCountText') or {}).get('simpleText', '')
-                    )
-                    pub   = (vr.get('publishedTimeText') or {}).get('simpleText', '')
-                    items.append({
-                        'title':       title,
-                        'link':        f'https://www.youtube.com/watch?v={vid}',
-                        'description': desc,
-                        'pub_date':    pub,
-                        'thumbnail':   f'https://img.youtube.com/vi/{vid}/mqdefault.jpg',
-                        'categories':  [],
-                    })
+                item = _item_from_legacy(vr)
+                if item and item['link'] not in seen:
+                    seen.add(item['link'])
+                    items.append(item)
             for v in node.values():
                 if isinstance(v, (dict, list)):
                     queue.append(v)
