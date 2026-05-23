@@ -104,6 +104,9 @@ def _advance_date(from_date: datetime.date, cycle: int, frequency: int) -> datet
 
 
 
+_CYCLE_LABELS = {1: "Daily", 2: "Weekly", 3: "Monthly", 4: "Yearly"}
+
+
 def _enrich(row: dict) -> dict:
     """Attach computed fields to a raw subscription row."""
     cycle = row.get("cycle", 3)
