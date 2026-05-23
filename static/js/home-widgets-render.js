@@ -21,49 +21,31 @@ async function _loadWeather(el) {
     + '<span>Loading weather…</span></div>';
 
   try {
-    // ── Step 1: Geocode the location name → lat/lon ──────────────────────
-    // Calling open-meteo directly from the browser; the corporate proxy +
-    // Windows auth handles tunnelling transparently (unlike server-side Python).
-    const geoUrl = 'https://geocoding-api.open-meteo.com/v1/search?'
-      + new URLSearchParams({ name: loc, count: '1', language: 'en', format: 'json' });
-    const geoRes = await fetch(geoUrl);
-    if (!geoRes.ok) throw new Error(`Geocoding HTTP ${geoRes.status}`);
-    const geo = await geoRes.json();
-    if (!geo.results?.length) {
+    // Route through the server-side proxy (/home/weather) so the request
+    // works on any network — not just corporate networks where the browser
+    // can reach open-meteo.com directly via the Windows auth proxy.
+    const r = await fetch(`/home/weather?${new URLSearchParams({ loc, unit })}`);
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+    const data = await r.json();
+    if (data.error === 'location_not_found') {
       el.textContent = '⚠️ Location not found';
       return;
     }
 
-    const r        = geo.results[0];
-    const lat      = r.latitude;
-    const lon      = r.longitude;
-    const name     = r.name     || loc;
-    const admin1   = r.admin1  || '';
-    const tempUnit = unit.toUpperCase() === 'F' ? 'fahrenheit' : 'celsius';
-
-    // ── Step 2: Fetch current + 4-day forecast ───────────────────────────
-    const wxUrl = `https://api.open-meteo.com/v1/forecast`
-      + `?latitude=${lat}&longitude=${lon}`
-      + `&current=temperature_2m,weathercode,windspeed_10m,relativehumidity_2m`
-      + `&daily=temperature_2m_max,temperature_2m_min,weathercode`
-      + `&temperature_unit=${tempUnit}&wind_speed_unit=mph`
-      + `&forecast_days=4&timezone=auto`;
-    const wxRes = await fetch(wxUrl);
-    if (!wxRes.ok) throw new Error(`Weather API HTTP ${wxRes.status}`);
-    const wx = await wxRes.json();
-
-    const data = { name, admin1, unit: unit.toUpperCase(), current: wx.current ?? {}, daily: wx.daily ?? {} };
-    const { current: cur, daily: days } = data;
+    const { name, admin1, unit: u, current: cur, daily: days } = data;
     const temp = Math.round(cur.temperature_2m);
     const code = cur.weathercode;
-    const icon = _wmoIcon[code] || '\uD83C\uDF21\uFE0F';
+    const icon = _wmoIcon[code] || '🌡️';
     const desc = _wmoDesc[code] || 'Unknown';
 
     if (style === 'minimal') {
       el.innerHTML = `<div class="flex items-center gap-3">
         <span class="text-4xl">${icon}</span>
         <div>
-          <p class="text-2xl font-bold tabular-nums">${temp}°${unit}</p>
+          <p class="text-2xl font-bold tabular-nums">${temp}°${u}</p>
           <p class="text-xs text-gray-400">${name}</p>
         </div></div>`;
       return;
@@ -82,7 +64,7 @@ async function _loadWeather(el) {
       el.innerHTML = `<div class="flex items-center gap-3 mb-2">
         <span class="text-3xl">${icon}</span>
         <div>
-          <p class="text-xl font-bold tabular-nums">${temp}°${unit}
+          <p class="text-xl font-bold tabular-nums">${temp}°${u}
             <span class="text-sm font-normal text-gray-500">${desc}</span></p>
           <p class="text-xs text-gray-400">${name}, ${admin1}</p>
         </div></div>${dayRows}`;
@@ -92,7 +74,7 @@ async function _loadWeather(el) {
     el.innerHTML = `<div class="flex items-center gap-4 mb-3">
       <span class="text-5xl">${icon}</span>
       <div>
-        <p class="text-3xl font-bold tabular-nums">${temp}°${unit}</p>
+        <p class="text-3xl font-bold tabular-nums">${temp}°${u}</p>
         <p class="text-sm text-gray-500">${desc}</p>
         <p class="text-xs text-gray-400">${name}, ${admin1}</p>
       </div>

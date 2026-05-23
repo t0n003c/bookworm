@@ -237,19 +237,26 @@
   </div>
 {% endcall %}
 
-{# ── Digital (default) ────────────────────────────────────────────────────── #}
+{# ── Digital (default) ────────────────────────────────────────────── #}
 {% else %}
 {% call card(w) %}
   {{ widget_header(w, 'Clock', '🕐', true) }}
-  <div class="flex-1 flex flex-col items-center justify-center gap-1 select-none">
+  {# bw-clock-wrap enables container-type:inline-size (see bw-content.css)   #}
+  {# so the clamp() cqi values below scale to the card width, not viewport.  #}
+  <div class="bw-clock-wrap flex-1 flex flex-col items-center justify-center gap-1 select-none">
     <span id="clock-date-{{ w.id }}"
           class="text-xs text-gray-400 dark:text-zinc-500
                  {{ 'hidden' if not w.config.get('show_date', true) }}"></span>
     <span id="clock-{{ w.id }}" data-tz="{{ tz }}" data-format="{{ fmt }}"
-          class="text-4xl font-bold text-wblue dark:text-blue-400
+          style="font-size:clamp(1.1rem,13cqi,2.25rem);"
+          class="font-bold text-wblue dark:text-blue-400
                  tabular-nums tracking-tight leading-none">
-      <span id="clock-time-{{ w.id }}"></span><!--
-   --><span id="clock-ampm-{{ w.id }}" class="text-2xl font-normal opacity-60 ml-1"></span>
+      {# clock-hm: HH:MM   clock-sec: :SS (hidden via @container when card is narrow) #}
+      <span id="clock-hm-{{ w.id }}"></span><!--
+   --><span id="clock-sec-{{ w.id }}" class="clock-sec"></span><!--
+   --><span id="clock-ampm-{{ w.id }}"
+             style="font-size:clamp(0.65rem,7cqi,1.25rem);"
+             class="font-normal opacity-60 ml-1"></span>
     </span>
     <span id="clock-tz-{{ w.id }}"
           class="text-[10px] text-gray-300 dark:text-zinc-600

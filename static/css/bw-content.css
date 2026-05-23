@@ -356,3 +356,14 @@ span[data-bw-ti]::before {
   height: 100%; background: #0053e2;
   border-radius: 9999px; transition: width .25s;
 }
+
+/* ── Digital clock: fluid sizing via CSS Container Queries ─────────────────── */
+/* .bw-clock-wrap has container-type:inline-size so clamp() cqi values are  */
+/* relative to the widget card width, not the viewport.                       */
+.bw-clock-wrap { container-type: inline-size; }
+
+/* Hide the :SS segment when the card is narrower than ~155 px.               */
+/* Prevents overflow in 3-column mobile layouts (each col ≈117 px on Pixel). */
+@container (max-width: 154px) {
+  .clock-sec { display: none; }
+}

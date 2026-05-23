@@ -29,7 +29,11 @@ function _startClock(el) {
   const fmt    = el.dataset.format  || '12h';
   const pad    = n => String(n).padStart(2, '0');
 
-  const timeEl  = document.getElementById(`clock-time-${rawId}`);
+  // Digital clock uses clock-hm-{id} + clock-sec-{id}.
+  // Minimal clock still uses a single clock-time-{id} span.
+  const hmEl    = document.getElementById(`clock-hm-${rawId}`);
+  const secEl   = document.getElementById(`clock-sec-${rawId}`);
+  const timeEl  = document.getElementById(`clock-time-${rawId}`);   // minimal only
   const ampmEl  = document.getElementById(`clock-ampm-${rawId}`);
   const dateEl  = document.getElementById(`clock-date-${rawId}`);
   const greetEl = document.getElementById(`clock-greet-${rawId}`);
@@ -48,10 +52,14 @@ function _startClock(el) {
 
     if (fmt === '12h') {
       const h12 = h24 % 12 || 12;
-      if (timeEl) timeEl.textContent = `${pad(h12)}:${pad(m)}:${pad(s)} `;
+      if (hmEl)   hmEl.textContent  = `${pad(h12)}:${pad(m)}`;
+      if (secEl)  secEl.textContent = `:${pad(s)}`;
+      if (timeEl) timeEl.textContent = `${pad(h12)}:${pad(m)}:${pad(s)} `; // minimal
       if (ampmEl) ampmEl.textContent = h24 < 12 ? 'AM' : 'PM';
     } else {
-      if (timeEl) timeEl.textContent = `${pad(h24)}:${pad(m)}:${pad(s)}`;
+      if (hmEl)   hmEl.textContent  = `${pad(h24)}:${pad(m)}`;
+      if (secEl)  secEl.textContent = `:${pad(s)}`;
+      if (timeEl) timeEl.textContent = `${pad(h24)}:${pad(m)}:${pad(s)}`; // minimal
       if (ampmEl) ampmEl.textContent = '';
     }
 
