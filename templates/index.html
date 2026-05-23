@@ -911,7 +911,7 @@
   <main class="flex-1 main-scroll bg-gray-50 dark:bg-zinc-950 px-3 md:px-6 py-6" id="main-content" aria-label="Note list">
 
     <!-- workspace breadcrumb (only visible for sub-workspaces) -->
-    <div id="ws-breadcrumb">
+    <div id="ws-breadcrumb" class="sticky top-0 z-20 bg-gray-50 dark:bg-zinc-950">
       {% include "partials/workspace_breadcrumb.html" %}
     </div>
 
@@ -2112,6 +2112,9 @@
       if (_noteGrp) _noteGrp.classList.remove('hidden');
       var _dbGrp = document.getElementById('top-db-view-toggle');
       if (_dbGrp) _dbGrp.classList.add('hidden');
+      // Reset the DB header's dynamic sticky offset (set by initDatabaseView)
+      var _dbHdr = document.getElementById('db-header-bar');
+      if (_dbHdr) _dbHdr.style.top = '';
     }
   });
 

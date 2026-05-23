@@ -494,8 +494,18 @@ function initDatabaseView(wsId) {
   var _dbGrp = document.getElementById('top-db-view-toggle');
   if (_dbGrp) _dbGrp.classList.remove('hidden');
   // Tighten breadcrumb bottom margin so it doesn't gap-stack with the DB header.
+  // Then after layout, measure its rendered height and offset the DB header's
+  // sticky top so both bars stack cleanly without overlapping.
   var crumbNav = document.querySelector('#ws-breadcrumb nav');
   if (crumbNav) { crumbNav._bwOldMb = crumbNav.className; crumbNav.classList.remove('mb-5'); crumbNav.classList.add('mb-1'); }
+  requestAnimationFrame(function() {
+    var crumbEl  = document.getElementById('ws-breadcrumb');
+    var headerEl = document.getElementById('db-header-bar');
+    if (headerEl) {
+      var crumbH = crumbEl ? crumbEl.offsetHeight : 0;
+      headerEl.style.top = crumbH ? crumbH + 'px' : '';
+    }
+  });
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
   _dbFilterGroups = [];
