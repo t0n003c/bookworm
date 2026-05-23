@@ -193,6 +193,24 @@
         .sidebar-scroll { max-height: calc(100dvh - 4rem); }
         .main-scroll    { height: calc(100dvh - 4rem); }
         .panel-scroll   { height: calc(100dvh - 4rem); }
+        /*
+         * Home canvas bottom safe zone
+         * ─────────────────────────────────────────────────────────
+         * DevTools mobile emulation does not replicate the Android system
+         * navigation / gesture bar (16-48 px depending on device & OS version).
+         * On a real Pixel, Chrome’s viewport can extend behind that bar, so
+         * the last row of widgets gets clipped even though scroll looks fine in
+         * DevTools.
+         *
+         * The canvas only has p-2 (8 px) bottom padding, and main has pb-6
+         * (24 px) — together just 32 px, which isn’t enough to clear a
+         * 40-48 px gesture bar.
+         *
+         * Solution: push the canvas bottom padding to 4.5 rem (72 px) on
+         * mobile.  That plus main’s 24 px gives 96 px of total clearance —
+         * enough for any current Android navigation style.
+         */
+        #home-canvas { padding-bottom: 4.5rem !important; }
       }
     }
     /* Widget cards: isolate layout so scroll doesn't trigger full-page reflow */
