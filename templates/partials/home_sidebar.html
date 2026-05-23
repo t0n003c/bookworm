@@ -29,6 +29,22 @@
       data-page-type="{{ pg.get('page_type', 'dashboard') or 'dashboard' }}"
       draggable="true"
       ondragstart="_pgDragStart(event, {{ pg.id }})">
+
+    <!-- drag handle — touch only, shown via body.bw-touch CSS, left of name -->
+    <button type="button"
+      class="pg-dnd-handle flex-shrink-0 items-center justify-center w-5 h-7 rounded
+             cursor-grab text-gray-300 dark:text-zinc-600
+             active:text-gray-500 dark:active:text-zinc-400"
+      aria-label="Drag to reorder"
+      tabindex="-1"
+      data-pg-drag>
+      <svg class="w-3 h-4 pointer-events-none" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">
+        <circle cx="2" cy="2"  r="1.2"/><circle cx="6" cy="2"  r="1.2"/>
+        <circle cx="2" cy="7"  r="1.2"/><circle cx="6" cy="7"  r="1.2"/>
+        <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
+      </svg>
+    </button>
+
     <button type="button"
       onclick="openHomePage({{ pg.id }})"
       onmouseenter="if(typeof prefetchHomePage==='function') prefetchHomePage({{ pg.id }})"
@@ -53,22 +69,7 @@
       {% endif %}
     </button>
 
-    <!-- drag handle — touch only, shown via body.bw-touch CSS -->
-    <button type="button"
-      class="pg-dnd-handle flex-shrink-0 items-center justify-center w-6 h-7 rounded
-             cursor-grab text-gray-300 dark:text-zinc-600
-             active:text-gray-500 dark:active:text-zinc-400"
-      aria-label="Drag to reorder"
-      tabindex="-1"
-      data-pg-drag>
-      <svg class="w-3 h-4 pointer-events-none" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">
-        <circle cx="2" cy="2"  r="1.2"/><circle cx="6" cy="2"  r="1.2"/>
-        <circle cx="2" cy="7"  r="1.2"/><circle cx="6" cy="7"  r="1.2"/>
-        <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
-      </svg>
-    </button>
 
-    <!-- ⋮ row menu (Rename / Layout / Duplicate / Delete) -->
     {% set _pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
     <button type="button"
       data-pg-menu

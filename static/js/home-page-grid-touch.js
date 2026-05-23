@@ -88,6 +88,8 @@ function _msEnter(firstId) {
     _msUpdateBar();
     var bar = _msBar();
     if (bar) bar.classList.remove('hidden');
+    var enterBtn = document.getElementById('grid-ms-enter-btn');
+    if (enterBtn) enterBtn.classList.add('hidden');
     if (navigator.vibrate) navigator.vibrate(40);
 }
 
@@ -97,6 +99,8 @@ function _msExit() {
     _msRemoveCheckboxes();
     var bar = _msBar();
     if (bar) bar.classList.add('hidden');
+    var enterBtn = document.getElementById('grid-ms-enter-btn');
+    if (enterBtn) enterBtn.classList.remove('hidden');
 }
 
 /* ── Checkbox helpers ────────────────────────────────────────────────────────── */
@@ -519,6 +523,8 @@ function _tpInjectCSS() {
          * cell touches as native scrolls.  #grid-scroll-area intentionally
          * keeps default touch-action so empty-space touches still scroll. */
         'body.bw-touch #grid-canvas { touch-action: none; }',
+        /* Select button: only shown on touch */ 
+        'body.bw-touch .grid-ms-enter { display: flex; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
         '  -webkit-user-select:   none;',
