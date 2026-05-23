@@ -8,6 +8,7 @@ All DB access via get_db() — never raw aiosqlite.connect().
 """
 from __future__ import annotations
 
+import calendar
 import datetime
 
 from database import get_db
@@ -74,7 +75,33 @@ def _days_until(next_payment_date: str | None) -> int | None:
         return None
 
 
-_CYCLE_LABELS = {1: "Daily", 2: "Weekly", 3: "Monthly", 4: "Yearly"}
+def _advance_date(from_date: datetime.date, cycle: int, frequency: int) -> datetime.date:
+    """Return the next billing date after from_date given cycle+frequency.
+
+    cycle:  1=daily  2=weekly  3=monthly  4=yearly
+    frequency: billing repeats every N cycles (e.g. freq=3,cycle=3 → every 3 months)
+    """
+    freq = max(1, frequency)
+    if cycle == 1:   # daily
+        return from_date + datetime.timedelta(days=freq)
+    if cycle == 2:   # weekly
+        return from_date + datetime.timedelta(weeks=freq)
+    if cycle == 3:   # monthly — month-safe arithmetic
+        month = from_date.month - 1 + freq
+        year  = from_date.year + month // 12
+        month = month % 12 + 1
+        # Clamp day to last valid day of the target month (e.g. Jan 31 → Feb 28)
+        day   = min(from_date.day, calendar.monthrange(year, month)[1])
+        return datetime.date(year, month, day)
+    if cycle == 4:   # yearly
+        year = from_date.year + freq
+        day  = min(from_date.day, calendar.monthrange(year, from_date.month)[1])
+        return datetime.date(year, from_date.month, day)
+    # Fallback: treat as monthly
+    return _advance_date(from_date, 3, freq)
+
+
+
 
 
 def _enrich(row: dict) -> dict:
@@ -202,24 +229,50 @@ async def delete_subscription(sub_id: int, page_id: int, user_id: int) -> bool:
 
 
 async def clear_subscription(sub_id: int, page_id: int, user_id: int) -> bool:
-    """Mark a renewal as paid by setting cleared_date = next_payment_date.
+    """Mark a renewal as paid and auto-advance next_payment_date one billing cycle.
 
-    The subscription disappears from Upcoming Renewals until next_payment_date
-    advances to a future billing cycle (cleared_date < next_payment_date again).
+    Sets cleared_date = old next_payment_date, then advances next_payment_date
+    by the subscription's cycle + frequency so it reappears automatically in
+    Upcoming Renewals at the correct future date.
     Returns True when the row was found and updated.
     """
     async with get_db() as db:
+        # 1. Fetch the row (ownership-guarded)
         cur = await db.execute(
             """
-            UPDATE subscriptions
-               SET cleared_date = next_payment_date
-             WHERE id = ? AND page_id = ?
-               AND page_id IN (SELECT id FROM home_pages WHERE user_id = ?)
+            SELECT s.next_payment_date, s.cycle, s.frequency
+              FROM subscriptions s
+              JOIN home_pages hp ON hp.id = s.page_id
+             WHERE s.id = ? AND s.page_id = ? AND hp.user_id = ?
             """,
             (sub_id, page_id, user_id),
         )
+        row = await cur.fetchone()
+        if not row:
+            return False
+
+        npd_str, cycle, frequency = row[0], row[1] or 3, row[2] or 1
+
+        # 2. Parse current due date (fall back to today if unset)
+        try:
+            current_due = datetime.date.fromisoformat(npd_str) if npd_str else datetime.date.today()
+        except ValueError:
+            current_due = datetime.date.today()
+
+        next_due = _advance_date(current_due, cycle, frequency)
+
+        # 3. Write: cleared_date ← old due date, next_payment_date ← new due date
+        await db.execute(
+            """
+            UPDATE subscriptions
+               SET cleared_date      = ?,
+                   next_payment_date = ?
+             WHERE id = ? AND page_id = ?
+            """,
+            (current_due.isoformat(), next_due.isoformat(), sub_id, page_id),
+        )
         await db.commit()
-        return cur.rowcount == 1
+        return True
 
 
 async def get_summary_data(page_id: int, user_id: int) -> dict:

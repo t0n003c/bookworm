@@ -765,10 +765,13 @@ function _subsClearRenewal(row, u) {
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
   }).then(function(r) {
     if (!r.ok) console.warn('[subs] clear failed', r.status);
-    // Refresh summary silently so totals stay accurate
+    // Refresh summary + re-render upcoming so the auto-advanced date appears
     return fetch('/home/subscriptions/' + _subsPid + '/summary')
       .then(function(r2) { return r2.json(); })
-      .then(function(data) { _subsSummary = data; });
+      .then(function(data) {
+        _subsSummary = data;
+        _subsRenderUpcoming();
+      });
   }).catch(function(err) {
     console.error('[subs] clear error', err);
   });
