@@ -2,13 +2,9 @@
    Photo/video grid workspace.
    JS:  static/js/home-page-grid.js (loaded via base.html static_v tag)
    Data attrs on #grid-page-root drive JS init (page_id + initial grid_cols).
+   Touch CSS: injected into <head> by home-page-grid-touch.js _tpInjectCSS()
+              so it survives HTMX innerHTML swaps.
 #}
-
-{# Touch device: hide per-cell hover controls; they're surfaced in the lightbox instead #}
-<style>
-  body.bw-touch [data-grid-hover-ctrls],
-  body.bw-touch [data-grid-pencil] { display: none !important; }
-</style>
 
 <div id="grid-page-root"
      class="h-full flex flex-col min-h-0 overflow-hidden"
