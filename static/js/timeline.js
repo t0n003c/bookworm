@@ -39,6 +39,7 @@ window.bwTimeline = (function () {
   let _overlay         = null;
   let _dragCleanup     = null;
   let _keyCleanup      = null;   // keyboard shortcut teardown
+  let _pinching        = false;  // true while two-finger pinch-zoom is active
   let _wormCleanup     = null;   // bookworm RAF loop teardown
   let _tlDateMode      = 'created'; // 'created' | 'updated'
 
@@ -293,6 +294,16 @@ window.bwTimeline = (function () {
     // pointermove on outer — also fires for bubbled moves from card children
     outer.addEventListener('pointermove', e => {
       if (!e.isPrimary) return;
+      // Yield to two-finger pinch: reset drag state so the next single-finger
+      // move after pinch-end restarts from the current position (no jump).
+      if (_pinching) {
+        dragging = false; axis = null;
+        startX = e.clientX; startY = e.clientY;
+        startLeft = parseFloat(getRail().style.left) || 0;
+        const _vsP = getVScroll();
+        startST = _vsP ? _vsP.scrollTop : 0;
+        return;
+      }
       // Short-circuit if no button is physically held — prevents lazy-capture
       // from re-activating the drag after pointerup (stale startX/Y issue).
       if (!dragging && e.buttons === 0) return;
@@ -560,6 +571,59 @@ window.bwTimeline = (function () {
     const cleanupDrag = _attachDrag(
       outer, () => vScroll, getRail, onAllMove, _isMob ? MOB_VPAD * 2 : 0);
     outer._cleanup    = cleanupDrag;
+
+    // ── Pinch-to-zoom (two-finger gesture on touch screens) ─────────────────
+    // Uses Pointer Events so it co-exists cleanly with the existing drag system.
+    // When a second pointer lands we enter pinch mode (_pinching = true);
+    // _attachDrag's pointermove yields and keeps resetting startX/Y so that
+    // the first drag after the pinch ends starts from the correct position.
+    const _pinchPtrs = new Map(); // pointerId → { x, y }
+    let   _lastPinchDist = 0;
+
+    function _pinchDist() {
+      const pts = [..._pinchPtrs.values()];
+      const dx  = pts[1].x - pts[0].x;
+      const dy  = pts[1].y - pts[0].y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    function _pinchMidX() {
+      const pts = [..._pinchPtrs.values()];
+      return ((pts[0].x + pts[1].x) / 2) - outer.getBoundingClientRect().left;
+    }
+
+    outer.addEventListener('pointerdown', e => {
+      _pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (_pinchPtrs.size === 2) {
+        // Cancel any momentum animation so it doesn't fight the pinch
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+        _pinching       = true;
+        _lastPinchDist  = _pinchDist();
+      }
+    });
+
+    outer.addEventListener('pointermove', e => {
+      if (!_pinchPtrs.has(e.pointerId)) return;
+      _pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (!_pinching || _pinchPtrs.size < 2) return;
+
+      const dist = _pinchDist();
+      if (_lastPinchDist > 0 && Math.abs(dist - _lastPinchDist) > 0.5) {
+        const factor = dist / _lastPinchDist;
+        _doZoom(outer, notes, t, getRail, setRail, factor, _pinchMidX());
+        onAllMove();
+      }
+      _lastPinchDist = dist;
+    });
+
+    function _pinchEnd(e) {
+      _pinchPtrs.delete(e.pointerId);
+      if (_pinchPtrs.size < 2) {
+        _pinching      = false;
+        _lastPinchDist = 0;
+      }
+    }
+    outer.addEventListener('pointerup',     _pinchEnd);
+    outer.addEventListener('pointercancel', _pinchEnd);
 
     // ── Wheel zoom ──────────────────────────────────
     outer.addEventListener('wheel', e => {
