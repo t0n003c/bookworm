@@ -589,7 +589,15 @@ window.bwTimeline = (function () {
         alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 1px 4px rgba(0,0,0,.12)', flexShrink: '0',
       });
-      btn.addEventListener('pointerdown', e => e.stopPropagation());
+      // Stop ALL pointer events from bubbling to outer so the drag system
+      // never sees button taps as drag gestures.
+      // pointerdown alone isn’t enough on touch — micro finger-movement during
+      // a tap sends pointermove to outer’s lazy-capture, which sets dragging=true;
+      // the subsequent pointerup then triggers endDrag + decay(), overriding any
+      // scrollTop we set in the click handler (the autofit bug on real devices).
+      btn.addEventListener('pointerdown',  e => e.stopPropagation());
+      btn.addEventListener('pointermove',  e => e.stopPropagation());
+      btn.addEventListener('pointerup',    e => e.stopPropagation());
       btn.addEventListener('click', e => { e.stopPropagation(); onClick(); });
       return btn;
     }
@@ -603,6 +611,10 @@ window.bwTimeline = (function () {
       onAllMove();
     }));
     bar.appendChild(makeBtn('&#8596;', 'Fit all notes in view', () => {
+      // Cancel any in-flight momentum animation before repositioning.
+      // On mobile, a tap can leave a decay() RAF running that would
+      // overwrite the scrollTop we set below (autofit pushed-up bug).
+      if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
       _doAutofit(outer, notes, t, getRail, setRail);
       if (vScroll) vScroll.scrollTop = MOB_VPAD;  // reset vertical to spine-centre
       onAllMove();
@@ -627,7 +639,9 @@ window.bwTimeline = (function () {
       transition: 'background .15s, color .15s, border-color .15s',
     });
     _syncDateBtn();
-    dateBtn.addEventListener('pointerdown', e => e.stopPropagation());
+    dateBtn.addEventListener('pointerdown',  e => e.stopPropagation());
+    dateBtn.addEventListener('pointermove',   e => e.stopPropagation());
+    dateBtn.addEventListener('pointerup',     e => e.stopPropagation());
     dateBtn.addEventListener('click', e => {
       e.stopPropagation();
       _tlDateMode = _tlDateMode === 'created' ? 'updated' : 'created';
