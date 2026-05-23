@@ -592,8 +592,8 @@ function rssOpenItem(idx) {
 }
 
 function _showPreview(it) {
-  const panel = document.getElementById('rss-preview-panel');
-  if (!panel) return;                         // page navigated away
+  const isMob = _isMobileRss();
+
   const safe = (it.desc || '')
     .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<(script|iframe|object|embed|form)(\s[^>]*)?\/?>/gi, '')
@@ -617,7 +617,8 @@ function _showPreview(it) {
         <span class="font-medium">${_esc(it._source)}</span>
       </span>`
     : '';
-  panel.innerHTML = `
+
+  const articleBody = `
     <div class="max-w-2xl mx-auto px-6 py-6">
       <div class="flex items-center gap-2 flex-wrap mb-4">
         ${sourceChip}
@@ -630,7 +631,7 @@ function _showPreview(it) {
            class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-zinc-300
                   leading-relaxed mb-5 [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2
                   [&_a]:text-[#0053e2] [&_a:hover]:underline">
-        ${safe || '<p class="text-gray-400 italic">No preview in feed — load the full article below.</p>'}
+        ${safe || '<p class="text-gray-400 italic">No preview in feed \u2014 load the full article below.</p>'}
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         ${it.link ? `<a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
@@ -644,6 +645,37 @@ function _showPreview(it) {
           📖 Load Full Article</button>` : ''}
       </div>
     </div>`;
+
+  // ── Mobile: route through the app’s openPanel() so the article honours the
+  // user’s view-mode setting (side panel → fullscreen, center, or fullscreen).
+  // A ‹ Back chevron lets the user dismiss without hunting for a close button.
+  if (isMob) {
+    const dp = document.getElementById('detail-panel');
+    if (!dp) return;
+    const backBtn =
+      `<div class="flex items-center gap-2 px-4 pt-4 pb-2
+                  border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
+        <button onclick="if(typeof closePanel==='function') closePanel();"
+          class="flex items-center gap-1.5 text-sm font-medium
+                 text-gray-500 dark:text-zinc-400
+                 hover:text-gray-800 dark:hover:text-zinc-100 transition"
+          aria-label="Close article">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+               viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+          </svg>
+          Back
+        </button>
+      </div>`;
+    dp.innerHTML = backBtn + articleBody;
+    if (typeof openPanel === 'function') openPanel();
+    return;
+  }
+
+  // ── Desktop: write directly into the RSS page’s own right-column panel.
+  const panel = document.getElementById('rss-preview-panel');
+  if (!panel) return;       // page navigated away
+  panel.innerHTML = articleBody;
 }
 
 async function _rssLoadFullArticle(url) {
