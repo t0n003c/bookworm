@@ -307,6 +307,9 @@ function _subsRenderList() {
   var el = document.getElementById('subs-list');
   if (!el) return;
 
+  // Exit multiselect whenever the list is re-rendered (filter / sort change)
+  if (typeof _subsMsExit === 'function') _subsMsExit();
+
   var filtered = _subsApplySort(_subsApplyFilters(_subsData));
 
   if (filtered.length === 0) {
@@ -325,6 +328,9 @@ function _subsRenderList() {
   }).join('');
   el.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));' +
     'gap:10px;padding:12px;align-content:start;';
+
+  // Wire multiselect long-press after every render
+  if (typeof _subsMsWire === 'function') _subsMsWire();
 }
 
 // ── Favicon helper ────────────────────────────────────────────────────────────
@@ -449,7 +455,10 @@ function _subsCardHtml(s) {
     'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800 ' +
     'shadow-sm overflow-hidden transition hover:shadow-md hover:-translate-y-0.5 ' +
     (inactive ? 'opacity-50 ' : '') + '" ' +
+    'data-sub-id="' + s.id + '" ' +
     'style="border-top:3px solid ' + color + ';">' +
+    // Circular checkbox overlay (hidden until multiselect mode activates)
+    '<div class="subs-ms-cb" aria-hidden="true"><span class="subs-ms-cb-tick">✓</span></div>' +
 
     // Card body
     '<div class="flex flex-col gap-2 p-3">' +
