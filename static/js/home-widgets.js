@@ -576,6 +576,14 @@ function _trashDrop(event) {
       '  -webkit-user-select: none; user-select: none; }',
       'body.bw-touch #home-page-list [data-page-id] {',
       '  -webkit-user-select: none; user-select: none; }',
+      /* Ghost element: needs position:fixed so left/top actually move it.
+         Without this the div sits in document flow and appears invisible. */
+      '#dnd-ghost {',
+      '  position: fixed !important; pointer-events: none; z-index: 9999;',
+      '  padding: 4px 10px; border-radius: 8px; font-size: 14px;',
+      '  background: rgba(255,255,255,0.96); border: 1.5px solid #e5e7eb;',
+      '  box-shadow: 0 8px 32px rgba(0,0,0,0.25); white-space: nowrap;',
+      '  transform: translate(-50%, -50%); }',
     ].join('\n');
     document.head.appendChild(s);
   }());

@@ -32,13 +32,12 @@ var _msSelected = new Set();  // Set of selected cell IDs (integers)
 var _tpTouchId   = null;    // Touch.identifier for the current gesture
 var _tpStartX    = 0;
 var _tpStartY    = 0;
-var _tpPrevY     = 0;       // previous touchmove Y — delta used for scroll simulation
+var _tpPrevY     = 0;
 var _tpCellId    = null;    // cell under the initial touch
 var _tpLpFired   = false;   // true after 500 ms long-press timer fires
 var _tpLpTimer   = null;
 var _tpDragging  = false;   // true while ghost is live
 var _tpMultiDrag = false;   // true if dragging multiple selected cells
-var _tpScrolling = false;   // true when gesture committed to simulated scroll
 
 /* ── Ghost ───────────────────────────────────────────────────────────────────── */
 var _tpGhost    = null;
@@ -335,18 +334,8 @@ function _tpOnTouchStart(e) {
     var touch  = e.touches[0];
     var cellEl = touch.target.closest('[data-grid-cell-id]');
 
-    // No cell under the finger: the canvas still has touch-action:none so the
-    // browser won't scroll natively.  Register a lightweight scroll-only path
-    // so the user can still scroll the grid by touching empty space.
-    if (!cellEl) {
-        _tpTouchId   = touch.identifier;
-        _tpPrevY     = touch.clientY;
-        _tpScrolling = true;  // scroll-only mode: no cell, just scroll the grid
-        document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
-        document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
-        document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
-        return;
-    }
+    // No cell under the finger → let native scroll handle it, nothing to do.
+    if (!cellEl) return;
 
     _tpTouchId   = touch.identifier;
     _tpStartX    = touch.clientX;
@@ -356,7 +345,6 @@ function _tpOnTouchStart(e) {
     _tpLpFired   = false;
     _tpDragging  = false;
     _tpMultiDrag = false;
-    _tpScrolling = false;
 
     document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
     document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
@@ -375,26 +363,17 @@ function _tpOnTouchMove(e) {
     var touch = _tpFindTouch(e.changedTouches) || _tpFindTouch(e.touches);
     if (!touch) return;
 
-    // touch-action:none means the browser NEVER claims this touch as a scroll,
-    // so we must always preventDefault AND simulate scrolling ourselves when
-    // the gesture is a simple vertical swipe (not a drag).
-    e.preventDefault();
-
-    // ── Active drag: move ghost, edge-scroll, update drop indicator ──
-    // Edge scroll runs synchronously inside the touch event so iOS cannot
-    // throttle it (setInterval/rAF callbacks are blocked during touch handling).
+    // ── Active drag: take full control, prevent native scroll ──────────────
+    // Only preventDefault when we've committed to a drag.  This way native
+    // scroll works for every other gesture (vertical swipes, multiselect taps).
+    // Without touch-action:none on the canvas, calling preventDefault() here
+    // is the first point the browser hands scroll control back to JS, so
+    // scrollTop writes on grid-scroll-area actually render on real Android.
     if (_tpDragging) {
+        e.preventDefault();
         _tpGhostMove(touch.clientX, touch.clientY);
         _tpEdgeScroll(touch.clientY);
         _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
-        _tpPrevY = touch.clientY;
-        return;
-    }
-
-    // ── Committed to simulated scroll: apply delta, keep long-press cancelled ──
-    if (_tpScrolling) {
-        var scrollEl = document.getElementById('grid-scroll-area');
-        if (scrollEl) scrollEl.scrollTop += _tpPrevY - touch.clientY;
         _tpPrevY = touch.clientY;
         return;
     }
@@ -403,24 +382,17 @@ function _tpOnTouchMove(e) {
     var absDy = Math.abs(touch.clientY - _tpStartY);
     var dist  = Math.sqrt(absDx * absDx + absDy * absDy);
 
-    if (dist < 5) {
-        // Finger barely moved — too early to classify, keep waiting
-        _tpPrevY = touch.clientY;
-        return;
-    }
+    if (dist < 5) return;  // too early to classify, keep waiting
 
     if (!_msActive && !_tpLpFired) {
-        // Outside multiselect: classify by direction
-        //   Mostly vertical  →  user wants to scroll (simulate it)
-        //   Any other angle  →  user wants to drag-reorder
+        // Outside multiselect: classify by direction.
+        //   Clearly vertical  →  let native scroll take over (detach and bail)
+        //   Any other angle   →  drag-reorder intent, fall through to threshold
         if (absDy > absDx * 1.5) {
-            // Vertical scroll intent—lock into scroll mode and cancel long-press
             clearTimeout(_tpLpTimer);
-            _tpScrolling = true;
-            var scrollEl = document.getElementById('grid-scroll-area');
-            if (scrollEl) scrollEl.scrollTop += _tpPrevY - touch.clientY;
-            _tpPrevY = touch.clientY;
-            return;
+            _tpCleanup();
+            _tpTouchId = null;
+            return;  // no preventDefault → browser owns the gesture now
         }
     }
 
@@ -429,6 +401,7 @@ function _tpOnTouchMove(e) {
         clearTimeout(_tpLpTimer);
         _tpLpFired = true;
         _tpStartDrag(touch.clientX, touch.clientY);
+        e.preventDefault();  // stop any in-progress native scroll
     }
 
     _tpPrevY = touch.clientY;
@@ -460,11 +433,9 @@ function _tpOnTouchEnd(e) {
 
     var lpFired    = _tpLpFired;
     var cellId     = _tpCellId;
-    var wasScrolling = _tpScrolling;
     _tpCleanup();
 
-    if (wasScrolling) return;  // pure scroll gesture — no tap action
-    if (lpFired)      return;  // long-press fired → multiselect entered; no further action
+    if (lpFired) return;  // long-press fired (multiselect entered) or drag committed
 
     // Short tap
     if (_msActive && cellId != null) {
@@ -481,7 +452,6 @@ function _tpReset() {
     _tpDragging  = false;
     _tpMultiDrag = false;
     _tpLpFired   = false;
-    _tpScrolling = false;
     _tpCleanup();
 }
 
@@ -522,11 +492,10 @@ function _tpInjectCSS() {
     s.textContent = [
         'body.bw-touch [data-grid-hover-ctrls],',
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
-        /* touch-action:none only on the canvas: prevents iOS/Android claiming
-         * cell touches as native scrolls.  #grid-scroll-area intentionally
-         * keeps default touch-action so empty-space touches still scroll. */
-        'body.bw-touch #grid-canvas { touch-action: none; }',
-        /* Select button: only shown on touch */ 
+        /* No touch-action:none on canvas — native scroll must work freely.
+         * We only call preventDefault() inside _tpOnTouchMove once _tpDragging
+         * is true; that's when the browser hands scroll control to JS and
+         * scrollTop writes actually render on real Android. */
         'body.bw-touch .grid-ms-enter { display: flex; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
