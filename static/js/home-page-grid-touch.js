@@ -204,17 +204,9 @@ function _tpGhostDestroy() {
 /* ── Document-level move/up/cancel (attached per-gesture) ────────────────────── */
 function _tpMove(e) {
     if (e.pointerId !== _tpId) return;
-    var dx   = e.clientX - _tpStartX;
-    var dy   = e.clientY - _tpStartY;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (!_tpLpFired && dist > _DRAG_THRESHOLD) {
-        // Too much movement — user is scrolling, not pressing
-        _tpReset();
-        return;
-    }
 
     if (_tpDragging) {
+        // Ghost is live — track finger and update drop indicator
         e.preventDefault();
         _tpGhostMove(e.clientX, e.clientY);
         var overId = _tpCellUnder(e.clientX, e.clientY);
@@ -229,6 +221,29 @@ function _tpMove(e) {
                 if (nov) nov.style.boxShadow = 'inset 4px 0 0 0 #0053e2';
             }
         }
+        return;
+    }
+
+    var dx   = e.clientX - _tpStartX;
+    var dy   = e.clientY - _tpStartY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= _DRAG_THRESHOLD) return;  // still within hold zone — do nothing
+
+    if (_msActive) {
+        // ── Multiselect is on: movement past threshold = start drag immediately ──
+        // No second long-press needed — any press-and-move reorders.
+        clearTimeout(_tpLpTimer);
+        _tpLpFired = true;  // prevents _tpUp from treating this as a tap
+        var srcEl = _msCellEl(_tpCellId);
+        if (srcEl) {
+            _tpDragging = true;
+            _tpGhost = _tpGhostCreate(srcEl);
+            if (navigator.vibrate) navigator.vibrate(20);
+        }
+    } else {
+        // ── Not in multiselect: movement means scroll — cancel the long-press ──
+        _tpReset();
     }
 }
 
@@ -303,17 +318,10 @@ function _tpDown(e) {
 
     _tpLpTimer = setTimeout(function() {
         _tpLpFired = true;
-        if (!_msActive) {
-            _msEnter(_tpCellId);
-        } else {
-            // Already in multiselect: second long-press starts drag-reorder
-            var srcEl = _msCellEl(_tpCellId);
-            if (srcEl) {
-                _tpDragging = true;
-                _tpGhost = _tpGhostCreate(srcEl);
-                if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
-            }
-        }
+        // Enter multiselect on the first long-press.
+        // If already in multiselect the user is doing a stationary long-press;
+        // do nothing here — drag-reorder is started by _tpMove once they move.
+        if (!_msActive) _msEnter(_tpCellId);
     }, _LONG_PRESS_MS);
 }
 
