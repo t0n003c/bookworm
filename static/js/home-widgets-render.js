@@ -654,7 +654,8 @@ function reminderOpenModal(wid, idx) {
   var modal = _remGetOrCreateModal();
   _remModalState = { wid: wid, idx: idx };
 
-  var today = new Date().toISOString().slice(0, 10);
+  var _n = new Date();
+  var today = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
   var titleEl  = document.getElementById('bw-rem-modal-title');
   var saveBtn  = document.getElementById('bw-rem-save');
   var textIn   = document.getElementById('bw-rem-text');
@@ -1053,13 +1054,19 @@ function _showReminderToast(text, durationMs = 8000) {
 }
 
 /** True when today is a valid firing date for this (potentially repeating) reminder. */
-function _isReminderOccurrence(item) {
+function _isReminderOccurrence(item, todayISO) {
   const unit = item.repeat_unit || 'none';
-  if (unit === 'none') return true;      // one-shot: fires daily at that time (existing behaviour)
-  if (!item.date)      return true;      // no origin → treat as daily
+  // One-shot reminder: only fires on its own date (or any day if no date set).
+  // Bug fix: was unconditionally returning true, causing one-shot reminders
+  // to fire every day instead of just once on the scheduled date.
+  if (unit === 'none') {
+    if (!item.date) return true;          // no date set → fire every day at that time
+    return item.date === todayISO;        // ← only fire on the actual reminder date
+  }
+  if (!item.date) return true;            // repeating with no origin → fire daily
   const now    = new Date(); now.setHours(0, 0, 0, 0);
   const origin = new Date(item.date + 'T00:00:00'); origin.setHours(0, 0, 0, 0);
-  if (now < origin) return false;        // before start date
+  if (now < origin) return false;         // before start date
   const iv = item.repeat_interval || 1;
   if (unit === 'day') {
     return Math.round((now - origin) / 86400000) % iv === 0;
@@ -1082,14 +1089,17 @@ function _isReminderOccurrence(item) {
 
 function _checkReminderNotifications() {
   const now   = new Date();
-  const today = now.toISOString().slice(0, 10);
+  // Use LOCAL date (not UTC via toISOString) so reminders fire at the right
+  // wall-clock time in every timezone.  toISOString() would shift date by up
+  // to ±14 hours and cause reminders to appear a day early or late.
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const hhmm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   document.querySelectorAll('[id^="reminder-list-"]').forEach(ul => {
     const wid   = ul.id.replace('reminder-list-', '');
     const items = _getReminderItems(wid);
     items.forEach(item => {
       const key = `${wid}-${today}-${item.time}`;
-      if (item.time === hhmm && !_notifFired[key] && _isReminderOccurrence(item)) {
+      if (item.time === hhmm && !_notifFired[key] && _isReminderOccurrence(item, today)) {
         _notifFired[key] = true;
         // BookWorm-styled in-page toast
         _showReminderToast(item.text);
@@ -1103,18 +1113,36 @@ function _checkReminderNotifications() {
   });
 }
 
+// Guard: ensures the 30-second check loop is only started once even if
+// _initReminderNotifications is called again after an HTMX navigation.
+var _remPollingStarted = false;
+
 function reminderEnableNotifications(widgetId) {
   if (!('Notification' in window)) return;
   Notification.requestPermission().then(perm => {
     if (perm === 'granted') {
       document.querySelectorAll('.rem-notif-btn').forEach(b => b.remove());
-      setInterval(_checkReminderNotifications, 30_000);
+      // Polling was already started unconditionally in _initReminderNotifications;
+      // just fire one immediate check so the user sees the effect right away.
       _checkReminderNotifications();
     }
   });
 }
 
 function _initReminderNotifications() {
+  // Always start the toast polling loop — it must run regardless of whether
+  // the user has granted browser notification permission.
+  // Bug: was gated on Notification.permission === 'granted', so in Docker
+  // (HTTP, permission never auto-granted) the loop never started and
+  // in-page toasts never fired even though toasts don't need permission at all.
+  if (!_remPollingStarted) {
+    _remPollingStarted = true;
+    setInterval(_checkReminderNotifications, 30_000);
+    _checkReminderNotifications(); // immediate first check
+  }
+
+  // Separately: inject the bell-icon button to request browser notification
+  // permission.  This is purely additive — toasts already work without it.
   if (!('Notification' in window)) return;
   document.querySelectorAll('[id^="reminder-list-"]').forEach(ul => {
     const wid = ul.id.replace('reminder-list-', '');
@@ -1138,10 +1166,7 @@ function _initReminderNotifications() {
       hdr.prepend(btn);
     }
   });
-  if (Notification.permission === 'granted') {
-    setInterval(_checkReminderNotifications, 30_000);
-    _checkReminderNotifications();
-  }
+}
 }
 
 // ── Todo helpers ─────────────────────────────────────────────────────────────────────
