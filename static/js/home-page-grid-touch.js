@@ -238,6 +238,10 @@ function _tpGhostCreate(srcEl, count) {
     // Remove checkbox overlay from the ghost — looks cleaner
     var chk = g.querySelector('[data-ms-check]');
     if (chk) chk.remove();
+    // Critical: strip the cell-id attribute so elementFromPoint in _tpDropTarget
+    // never mistakes the ghost for a valid drop target (would make overId === srcId
+    // permanently, suppressing the drop indicator and the reorder call).
+    g.removeAttribute('data-grid-cell-id');
     g.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;'
         + 'width:' + r.width + 'px;height:' + r.height + 'px;'
         + 'opacity:.80;pointer-events:none;z-index:9999;border-radius:12px;'
@@ -267,9 +271,11 @@ function _tpGhostMove(x, y) {
 
 // Returns { cellId, insertBefore } for the cell under (x,y)
 function _tpDropTarget(x, y) {
-    if (_tpGhost) _tpGhost.style.visibility = 'hidden';
+    // display:none is the only reliable way to exclude an element from
+    // elementFromPoint on iOS Safari — visibility:hidden is NOT sufficient.
+    if (_tpGhost) _tpGhost.style.display = 'none';
     var el = document.elementFromPoint(x, y);
-    if (_tpGhost) _tpGhost.style.visibility = '';
+    if (_tpGhost) _tpGhost.style.display = '';
     while (el && !el.dataset.gridCellId) el = el.parentElement;
     if (!el) return { cellId: null, insertBefore: true };
     var r = el.getBoundingClientRect();
@@ -378,12 +384,14 @@ function _tpOnTouchMove(e) {
 
     // ── Movement crossed threshold ──────────────────────────────────────────
     if (_msActive || !_tpLpFired) {
-        // Start drag: single-item outside multiselect, or multi-drag inside
+        // Prevent browser scroll on this exact event — the check at the top of
+        // this function already evaluated before _tpDragging was set to true, so
+        // we must call it explicitly here for the threshold-crossing event.
+        e.preventDefault();
         clearTimeout(_tpLpTimer);
         _tpLpFired = true;           // marks this as a drag, not a tap
         _tpStartDrag(touch.clientX, touch.clientY);
     }
-    // (If we somehow get here with no msActive and lpFired=false, scroll wins — handled above)
 }
 
 function _tpOnTouchEnd(e) {
