@@ -32,12 +32,14 @@ var _msSelected = new Set();  // Set of selected cell IDs (integers)
 var _tpTouchId   = null;    // Touch.identifier for the current gesture
 var _tpStartX    = 0;
 var _tpStartY    = 0;
-var _tpLastY     = 0;       // updated every touchmove — used by scroll ticker
+var _tpPrevY     = 0;       // previous touchmove Y — delta used for scroll simulation
+var _tpLastY     = 0;       // last known Y while dragging — read by auto-scroll ticker
 var _tpCellId    = null;    // cell under the initial touch
 var _tpLpFired   = false;   // true after 500 ms long-press timer fires
 var _tpLpTimer   = null;
 var _tpDragging  = false;   // true while ghost is live
 var _tpMultiDrag = false;   // true if dragging multiple selected cells
+var _tpScrolling = false;   // true when gesture committed to simulated scroll
 
 /* ── Ghost ───────────────────────────────────────────────────────────────────── */
 var _tpGhost    = null;
@@ -342,13 +344,16 @@ function _tpOnTouchStart(e) {
     var cellEl = touch.target.closest('[data-grid-cell-id]');
     if (!cellEl) return;
 
-    _tpTouchId  = touch.identifier;
-    _tpStartX   = touch.clientX;
-    _tpStartY   = touch.clientY;
-    _tpCellId   = parseInt(cellEl.dataset.gridCellId, 10);
-    _tpLpFired  = false;
-    _tpDragging = false;
+    _tpTouchId   = touch.identifier;
+    _tpStartX    = touch.clientX;
+    _tpStartY    = touch.clientY;
+    _tpPrevY     = touch.clientY;
+    _tpLastY     = touch.clientY;
+    _tpCellId    = parseInt(cellEl.dataset.gridCellId, 10);
+    _tpLpFired   = false;
+    _tpDragging  = false;
     _tpMultiDrag = false;
+    _tpScrolling = false;
 
     document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
     document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
@@ -367,31 +372,61 @@ function _tpOnTouchMove(e) {
     var touch = _tpFindTouch(e.changedTouches) || _tpFindTouch(e.touches);
     if (!touch) return;
 
-    // Prevent browser scroll once we've committed to any gesture
-    if (_tpDragging || _tpLpFired || _msActive) e.preventDefault();
+    // touch-action:none means the browser NEVER claims this touch as a scroll,
+    // so we must always preventDefault AND simulate scrolling ourselves when
+    // the gesture is a simple vertical swipe (not a drag).
+    e.preventDefault();
 
+    // ── Active drag: move ghost + update drop indicator + feed auto-scroll ticker ──
     if (_tpDragging) {
-        _tpLastY = touch.clientY;   // keep scroll ticker up to date
+        _tpLastY = touch.clientY;
         _tpGhostMove(touch.clientX, touch.clientY);
         _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
+        _tpPrevY = touch.clientY;
         return;
     }
 
-    var dx   = touch.clientX - _tpStartX;
-    var dy   = touch.clientY - _tpStartY;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= _DRAG_THRESHOLD) return;
+    // ── Committed to simulated scroll: apply delta, keep long-press cancelled ──
+    if (_tpScrolling) {
+        var scrollEl = document.getElementById('grid-scroll-area');
+        if (scrollEl) scrollEl.scrollTop += _tpPrevY - touch.clientY;
+        _tpPrevY = touch.clientY;
+        return;
+    }
 
-    // ── Movement crossed threshold ──────────────────────────────────────────
-    if (_msActive || !_tpLpFired) {
-        // Prevent browser scroll on this exact event — the check at the top of
-        // this function already evaluated before _tpDragging was set to true, so
-        // we must call it explicitly here for the threshold-crossing event.
-        e.preventDefault();
+    var absDx = Math.abs(touch.clientX - _tpStartX);
+    var absDy = Math.abs(touch.clientY - _tpStartY);
+    var dist  = Math.sqrt(absDx * absDx + absDy * absDy);
+
+    if (dist < 5) {
+        // Finger barely moved — too early to classify, keep waiting
+        _tpPrevY = touch.clientY;
+        return;
+    }
+
+    if (!_msActive && !_tpLpFired) {
+        // Outside multiselect: classify by direction
+        //   Mostly vertical  →  user wants to scroll (simulate it)
+        //   Any other angle  →  user wants to drag-reorder
+        if (absDy > absDx * 1.5) {
+            // Vertical scroll intent—lock into scroll mode and cancel long-press
+            clearTimeout(_tpLpTimer);
+            _tpScrolling = true;
+            var scrollEl = document.getElementById('grid-scroll-area');
+            if (scrollEl) scrollEl.scrollTop += _tpPrevY - touch.clientY;
+            _tpPrevY = touch.clientY;
+            return;
+        }
+    }
+
+    // ── Past drag threshold: commit to drag ──
+    if (dist >= _DRAG_THRESHOLD) {
         clearTimeout(_tpLpTimer);
-        _tpLpFired = true;           // marks this as a drag, not a tap
+        _tpLpFired = true;
         _tpStartDrag(touch.clientX, touch.clientY);
     }
+
+    _tpPrevY = touch.clientY;
 }
 
 function _tpOnTouchEnd(e) {
@@ -418,11 +453,13 @@ function _tpOnTouchEnd(e) {
         return;
     }
 
-    var lpFired = _tpLpFired;
-    var cellId  = _tpCellId;
+    var lpFired    = _tpLpFired;
+    var cellId     = _tpCellId;
+    var wasScrolling = _tpScrolling;
     _tpCleanup();
 
-    if (lpFired) return;  // long-press fired → multiselect entered; no further action
+    if (wasScrolling) return;  // pure scroll gesture — no tap action
+    if (lpFired)      return;  // long-press fired → multiselect entered; no further action
 
     // Short tap
     if (_msActive && cellId != null) {
@@ -439,6 +476,7 @@ function _tpReset() {
     _tpDragging  = false;
     _tpMultiDrag = false;
     _tpLpFired   = false;
+    _tpScrolling = false;
     _tpCleanup();
 }
 
@@ -476,7 +514,9 @@ function _tpInjectCSS() {
     s.textContent = [
         'body.bw-touch [data-grid-hover-ctrls],',
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
-        /* Prevent iOS callout + text-selection long-press (both fire touchcancel) */
+        /* touch-action:none: prevents iOS/Android claiming canvas touches as
+         * native scrolls. We simulate scroll manually in _tpOnTouchMove. */
+        'body.bw-touch #grid-canvas { touch-action: none; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
         '  -webkit-user-select:   none;',
