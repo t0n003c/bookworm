@@ -8289,23 +8289,20 @@ function _dbAttrClearDropIndicator() {
 }
 
 // ── Attr-row touch drag-to-reorder (mobile) ──────────────────────────────────
-// HTML5 drag API never fires on touch.  The grips are also opacity:0
-// and rely on mouseenter, which doesn't exist on touch — so we fix both.
-
-// Inject CSS once: make grips always-visible on coarse-pointer (touch) devices.
-(function _injectAttrGripTouchStyle() {
-  if (document.getElementById('db-attr-grip-touch-style')) return;
-  var s = document.createElement('style');
-  s.id  = 'db-attr-grip-touch-style';
-  s.textContent = '@media (pointer: coarse) { .db-attr-grip { opacity: 1 !important; } }';
-  document.head.appendChild(s);
-}());
+// HTML5 drag API never fires on touch.  The grips start at opacity:0
+// (inline style) and only appear on mouseenter — also dead on touch.
 
 function _dbAttachAttrDragTouch(cardId) {
   var grips = document.querySelectorAll(
     '.db-attr-row[data-card-id="' + cardId + '"] .db-attr-grip'
   );
   if (!grips.length) return;
+
+  // Force grips visible on touch devices, overriding the inline opacity:0.
+  // setProperty with 'important' beats inline styles without !important.
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    grips.forEach(function(g) { g.style.setProperty('opacity', '1', 'important'); });
+  }
 
   var _touchRow    = null;  // row being dragged
   var _touchOverRow = null; // drop-target row
