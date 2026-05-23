@@ -829,31 +829,68 @@ function _dbUpdateViewButtons() {
   var btn       = document.getElementById('db-view-toggle-btn');
   var iconBoard = document.getElementById('db-icon-board');
   var iconGrid  = document.getElementById('db-icon-grid');
+  var tlBtn     = document.getElementById('db-tl-btn');
   var isBoard   = (_dbCurrentView === 'board');
+  var isTl      = (_dbCurrentView === 'timeline');
 
-  // Icon swap: show the icon for what you'll switch TO
+  // Grid/Board icon: show the icon for what you’ll switch TO
   if (iconBoard) iconBoard.classList.toggle('hidden', isBoard);
   if (iconGrid)  iconGrid.classList.toggle('hidden',  !isBoard);
 
-  // Button pressed state (lit up when board is active)
+  // Grid/Board button: lit when board is active (timeline uses its own btn)
   if (btn) {
     btn.classList.toggle('bg-white/30',   isBoard);
     btn.classList.toggle('ring-2',        isBoard);
     btn.classList.toggle('ring-white/60', isBoard);
-    btn.title       = isBoard ? 'Switch to grid view' : 'Switch to board view';
+    btn.title = isBoard ? 'Switch to grid view' : 'Switch to board view';
     btn.setAttribute('aria-label',  btn.title);
     btn.setAttribute('aria-pressed', isBoard ? 'true' : 'false');
   }
+
+  // Timeline button: lit when timeline is active
+  if (tlBtn) {
+    tlBtn.classList.toggle('bg-white/30',   isTl);
+    tlBtn.classList.toggle('ring-2',        isTl);
+    tlBtn.classList.toggle('ring-white/60', isTl);
+    tlBtn.title = isTl ? 'Return to database view' : 'Timeline view';
+    tlBtn.setAttribute('aria-label',  tlBtn.title);
+    tlBtn.setAttribute('aria-pressed', isTl ? 'true' : 'false');
+  }
 }
 
-// Public: cycle between views. Called from the single toggle button.
+// Public: cycle between grid and board (timeline has its own dedicated toggle).
 window.dbToggleView = function() {
+  // If timeline is active, pressing grid/board exits timeline first.
+  if (_dbCurrentView === 'timeline') { window.dbTimelineToggle(); return; }
   window.dbSetView(_dbCurrentView === 'grid' ? 'board' : 'grid');
+};
+
+// Public: mount / unmount the timeline overlay for DB view.
+// Remembers the prior grid/board view so toggling off restores it cleanly.
+var _dbPreTimelineView = 'grid';   // last non-timeline view
+window.dbTimelineToggle = function() {
+  var _tl = typeof bwTimeline !== 'undefined' && bwTimeline;
+  if (!_tl) return;
+  if (_dbCurrentView === 'timeline') {
+    // Exit timeline — unmount overlay, restore previous grid/board view
+    _tl.unmount();
+    _dbCurrentView = _dbPreTimelineView;
+    _dbUpdateViewButtons();
+  } else {
+    // Enter timeline
+    _dbPreTimelineView = _dbCurrentView;   // remember grid or board
+    _dbCurrentView = 'timeline';
+    _dbUpdateViewButtons();
+    _tl.mount();
+  }
 };
 
 // Public: switch view and re-render. Called from HTML onclick.
 window.dbSetView = function(viewId) {
   if (_dbCurrentView === viewId) return;
+  // If timeline is currently active, unmount it before switching to grid/board.
+  var _tl = typeof bwTimeline !== 'undefined' && bwTimeline;
+  if (_dbCurrentView === 'timeline' && _tl && _tl.isMounted()) _tl.unmount();
   _dbCurrentView = viewId;
   _dbSaveFilterSort();
   _dbUpdateViewButtons();
