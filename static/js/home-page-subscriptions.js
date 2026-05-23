@@ -668,6 +668,112 @@ function _subsRenderBar() {
 
 // ── Upcoming renewals ──────────────────────────────────────────────────────────
 
+// Long-press state for the upcoming renewals list
+var _subsLpTimer  = null;
+var _subsLpTarget = null;
+var _subsLpStartX = 0;
+var _subsLpStartY = 0;
+
+function _subsUpcomingWireRow(row, u) {
+  // Long-press: 500 ms hold reveals a "Mark as Paid" dismiss button.
+  row.addEventListener('pointerdown', function(e) {
+    _subsLpStartX = e.clientX;
+    _subsLpStartY = e.clientY;
+    _subsLpTarget = row;
+    _subsLpTimer  = setTimeout(function() {
+      _subsShowPaidPrompt(row, u);
+    }, 500);
+  });
+  function _cancelLp() {
+    if (_subsLpTimer) { clearTimeout(_subsLpTimer); _subsLpTimer = null; }
+  }
+  row.addEventListener('pointermove', function(e) {
+    if (Math.abs(e.clientX - _subsLpStartX) > 8 ||
+        Math.abs(e.clientY - _subsLpStartY) > 8) _cancelLp();
+  });
+  row.addEventListener('pointerup',     _cancelLp);
+  row.addEventListener('pointercancel', _cancelLp);
+}
+
+function _subsShowPaidPrompt(row, u) {
+  // Prevent duplicate prompts
+  if (row.querySelector('.subs-paid-prompt')) return;
+
+  // Dim the row text so the action stands out
+  row.style.opacity = '0.7';
+
+  var prompt = document.createElement('div');
+  prompt.className = 'subs-paid-prompt';
+  prompt.style.cssText = [
+    'position:absolute;inset:0;display:flex;align-items:center;',
+    'justify-content:flex-end;padding-right:6px;gap:6px;',
+    'background:linear-gradient(90deg,transparent 0%,',
+    'rgba(255,255,255,.92) 35%);',
+    'dark-bg:transparent;border-radius:inherit;z-index:2;',
+  ].join('');
+
+  // Apply dark-mode gradient via class instead of inline
+  if (document.documentElement.classList.contains('dark')) {
+    prompt.style.background =
+      'linear-gradient(90deg,transparent 0%,rgba(24,24,27,.94) 35%)';
+  }
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'font-size:11px;padding:2px 8px;border-radius:4px;' +
+    'border:1px solid #d1d5db;color:#6b7280;background:#fff;cursor:pointer;';
+
+  var paidBtn = document.createElement('button');
+  paidBtn.textContent = '✓ Paid';
+  paidBtn.style.cssText = 'font-size:11px;padding:2px 10px;border-radius:4px;' +
+    'background:#2a8703;color:#fff;border:none;cursor:pointer;font-weight:600;';
+
+  prompt.appendChild(cancelBtn);
+  prompt.appendChild(paidBtn);
+
+  // Make sure the row is position:relative for the absolute overlay
+  row.style.position = 'relative';
+  row.appendChild(prompt);
+
+  cancelBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    row.style.opacity = '';
+    prompt.remove();
+  });
+
+  paidBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    _subsClearRenewal(row, u);
+  });
+}
+
+function _subsClearRenewal(row, u) {
+  // Optimistically fade + shrink the row out, then call the API
+  row.style.transition = 'opacity .3s, max-height .35s, padding .35s';
+  row.style.maxHeight   = row.offsetHeight + 'px';
+  row.style.overflow    = 'hidden';
+  requestAnimationFrame(function() {
+    row.style.opacity   = '0';
+    row.style.maxHeight = '0';
+    row.style.padding   = '0';
+  });
+
+  setTimeout(function() { row.remove(); }, 380);
+
+  fetch('/home/subscriptions/' + _subsPid + '/items/' + u.id + '/clear', {
+    method: 'PATCH',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  }).then(function(r) {
+    if (!r.ok) console.warn('[subs] clear failed', r.status);
+    // Refresh summary silently so totals stay accurate
+    return fetch('/home/subscriptions/' + _subsPid + '/summary')
+      .then(function(r2) { return r2.json(); })
+      .then(function(data) { _subsSummary = data; });
+  }).catch(function(err) {
+    console.error('[subs] clear error', err);
+  });
+}
+
 function _subsRenderUpcoming() {
   var el = document.getElementById('subs-upcoming');
   if (!el) return;
@@ -680,7 +786,7 @@ function _subsRenderUpcoming() {
     var d = u.days_until;
     var dLabel = d === null ? '—' : d < 0 ? 'Overdue' : d === 0 ? 'Today' : 'In ' + d + ' days';
     var dColor = (d !== null && d <= 7) ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-zinc-400';
-    return '<div class="flex items-center gap-3 py-2 border-b border-gray-50 dark:border-zinc-800">' +
+    return '<div class="flex items-center gap-3 py-2 border-b border-gray-50 dark:border-zinc-800 select-none" data-sub-id="' + u.id + '">' +
       '<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:' + _subsEsc(u.color||'#0053e2') + '"></span>' +
       '<span class="text-sm text-gray-800 dark:text-zinc-100 flex-1 truncate">' + _subsEsc(u.name) + '</span>' +
       '<span class="text-xs text-gray-400 dark:text-zinc-500 whitespace-nowrap">' +
@@ -693,8 +799,17 @@ function _subsRenderUpcoming() {
   el.innerHTML = '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-100 ' +
     'dark:border-zinc-800 shadow-sm p-4">' +
     '<p class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2">⏰ Upcoming Renewals</p>' +
+    '<p class="text-[10px] text-gray-400 dark:text-zinc-600 mb-3 -mt-1">' +
+    'Hold an item to mark it as paid</p>' +
     rows +
     '</div>';
+
+  // Wire long-press on every rendered row
+  var container = el.firstElementChild;
+  upcoming.forEach(function(u) {
+    var row = container.querySelector('[data-sub-id="' + u.id + '"]');
+    if (row) _subsUpcomingWireRow(row, u);
+  });
 }
 
 // ── Add / Edit modal ───────────────────────────────────────────────────────────

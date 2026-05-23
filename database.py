@@ -434,6 +434,16 @@ async def init_db() -> None:
         except Exception:
             pass  # column already exists
 
+        # cleared_date: set to next_payment_date when user marks renewal as paid.
+        # A subscription is hidden from Upcoming Renewals while
+        # cleared_date >= next_payment_date (auto-reappears next billing cycle).
+        try:
+            await db.execute(
+                "ALTER TABLE subscriptions ADD COLUMN cleared_date TEXT"
+            )
+        except Exception:
+            pass  # column already exists
+
         # ── rss_page_feeds: add source_widget_id column (migration) ───────────
         # Tracks which RSS widget originally synced this feed.
         # NULL = manually added feed.  ON DELETE SET NULL means widget deletion

@@ -201,6 +201,27 @@ async def delete_subscription(sub_id: int, page_id: int, user_id: int) -> bool:
         return cur.rowcount == 1
 
 
+async def clear_subscription(sub_id: int, page_id: int, user_id: int) -> bool:
+    """Mark a renewal as paid by setting cleared_date = next_payment_date.
+
+    The subscription disappears from Upcoming Renewals until next_payment_date
+    advances to a future billing cycle (cleared_date < next_payment_date again).
+    Returns True when the row was found and updated.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            UPDATE subscriptions
+               SET cleared_date = next_payment_date
+             WHERE id = ? AND page_id = ?
+               AND page_id IN (SELECT id FROM home_pages WHERE user_id = ?)
+            """,
+            (sub_id, page_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
 async def get_summary_data(page_id: int, user_id: int) -> dict:
     """Compute analytics summary for the subscriptions page.
 
@@ -240,10 +261,17 @@ async def get_summary_data(page_id: int, user_id: int) -> dict:
         for k, v in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
     ]
 
-    # Upcoming: subs with a date set, sorted by date, first 5
+    # Upcoming: active subs with a date set, sorted by date, first 5.
+    # Exclude any sub where cleared_date >= next_payment_date — the user
+    # already marked it as paid this billing cycle.  It will reappear
+    # automatically once next_payment_date advances to the next cycle.
     with_dates = [
         r for r in rows
         if r.get("next_payment_date") and r.get("active")
+        and not (
+            r.get("cleared_date")
+            and r["cleared_date"] >= r["next_payment_date"]
+        )
     ]
     with_dates.sort(key=lambda r: r["next_payment_date"])
     upcoming = [

@@ -14,6 +14,7 @@ from database import get_db
 from routers.home_db import get_home_page
 from routers.home_subscriptions_db import (
     add_subscription,
+    clear_subscription,
     delete_subscription,
     get_subscriptions,
     get_summary_data,
@@ -190,6 +191,30 @@ async def delete_subscription_endpoint(
     if not page:
         return JSONResponse({"error": "page not found"}, status_code=404)
     ok = await delete_subscription(sub_id, page_id, uid)
+    if not ok:
+        return JSONResponse({"error": "not found or no permission"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# ── Clear (mark renewal as paid) ───────────────────────────────────────────────
+
+@router.patch("/subscriptions/{page_id}/items/{sub_id}/clear")
+async def clear_subscription_endpoint(
+    request: Request,
+    page_id: int,
+    sub_id:  int,
+):
+    """Set cleared_date = next_payment_date so this renewal is hidden from
+    Upcoming Renewals until the subscription advances to its next billing cycle.
+    """
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return JSONResponse({"error": "not logged in"}, status_code=401)
+    page = await _get_subs_page(page_id, uid)
+    if not page:
+        return JSONResponse({"error": "page not found"}, status_code=404)
+    ok = await clear_subscription(sub_id, page_id, uid)
     if not ok:
         return JSONResponse({"error": "not found or no permission"}, status_code=404)
     return JSONResponse({"ok": True})
