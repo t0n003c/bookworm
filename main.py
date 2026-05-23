@@ -282,13 +282,16 @@ async def serve_trip_cover(request: Request, filename: str):
     return FileResponse(path=path)
 
 
-@app.get("/uploads/{filename}", include_in_schema=False)
+@app.get("/uploads/{filename:path}", include_in_schema=False)
 async def serve_upload(request: Request, filename: str):
-    """Serve a user upload only to the file’s owner.
+    """Serve a user upload only to the file's owner.
+
+    The :path modifier lets this route match nested filenames such as
+    db-attr-files/{uuid}.png that are stored with a subdirectory prefix.
 
     Auth flow:
       1. Reject unauthenticated sessions (401).
-      2. Reject path-traversal attempts that sneak a / into the filename (400).
+      2. Block path-traversal sequences ('..' or leading separators).
       3. Look up the owner of *filename* across both upload tables.
       4. Return 404 if the file is unknown — avoids leaking whether it exists.
       5. Return 403 if the caller is not the owner.
@@ -298,8 +301,9 @@ async def serve_upload(request: Request, filename: str):
     if not uid:
         raise HTTPException(status_code=401)
 
-    # Block path traversal before it touches the filesystem
-    if "/" in filename or "\\" in filename or ".." in filename:
+    # Block path traversal — '..' anywhere in the path is never legitimate.
+    # Leading separators are also rejected so an attacker can't escape UPLOAD_DIR.
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\") or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     owner_uid = await get_upload_owner(filename)
@@ -503,5 +507,4 @@ async def index(request: Request, ws: Optional[int] = None):
     # always be fetched fresh so a new login never sees a previous user's data.
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return response
-
 
