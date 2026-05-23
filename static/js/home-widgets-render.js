@@ -14,6 +14,8 @@ async function _loadWeather(el) {
   const loc   = el.dataset.loc  || 'Dallas, TX';
   const unit  = el.dataset.unit || 'F';
   const style = el.dataset.style || 'full';
+  const lat   = el.dataset.lat;
+  const lon   = el.dataset.lon;
 
   // Show spinner while loading
   el.innerHTML = '<div class="flex items-center gap-2 text-gray-400 text-xs">'
@@ -21,10 +23,11 @@ async function _loadWeather(el) {
     + '<span>Loading weather…</span></div>';
 
   try {
-    // Route through the server-side proxy (/home/weather) so the request
-    // works on any network — not just corporate networks where the browser
-    // can reach open-meteo.com directly via the Windows auth proxy.
-    const r = await fetch(`/home/weather?${new URLSearchParams({ loc, unit })}`);
+    // If we have pre-resolved coords, pass them directly and skip geocoding.
+    // Otherwise fall back to location name (server will geocode + try fallbacks).
+    const params = { loc, unit };
+    if (lat && lon) { params.lat = lat; params.lon = lon; }
+    const r = await fetch(`/home/weather?${new URLSearchParams(params)}`);
     if (!r.ok) {
       const body = await r.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${r.status}`);

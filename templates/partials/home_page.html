@@ -286,9 +286,12 @@
 {% macro render_weather(w) %}
 {% set loc = w.config.get('location','Dallas, TX') %}
 {% set unit = w.config.get('unit','F') %}
+{% set lat = w.config.get('lat', '') %}
+{% set lon = w.config.get('lon', '') %}
 {% call card(w) %}
-  {{ widget_header(w, 'Weather', '🌤️') }}
+  {{ widget_header(w, 'Weather', '\U0001f324️') }}
   <div id="weather-{{ w.id }}" data-loc="{{ loc }}" data-unit="{{ unit }}"
+       data-lat="{{ lat }}" data-lon="{{ lon }}"
        data-style="{{ w.style }}"
        class="weather-widget text-gray-700 dark:text-zinc-300 text-sm">
     <span class="text-xs text-gray-400 animate-pulse">Fetching weather…</span>

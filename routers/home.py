@@ -132,24 +132,78 @@ async def home_sidebar(request: Request):
 # Fetches geocoding + weather from open-meteo server-side so browser
 # same-origin policy doesn't apply (and BW_HTTP_PROXY is respected).
 
+_GEO_BASE = "https://geocoding-api.open-meteo.com/v1/search"
+_WX_BASE  = "https://api.open-meteo.com/v1/forecast"
+
+
+def _geo_url(name: str, count: int = 1) -> str:
+    return _GEO_BASE + "?" + urllib.parse.urlencode(
+        {"name": name, "count": count, "language": "en", "format": "json"}
+    )
+
+
+async def _geocode(loc: str) -> dict | None:
+    """Try the full string; if nothing comes back, retry with just the city part.
+
+    Handles inputs like 'Dallas, TX' or 'Bentonville, AR' where the Open-Meteo
+    geocoder doesn't parse US state abbreviations and may return 0 results.
+    """
+    geo = await _fetch_json_async(_geo_url(loc))
+    if geo.get("results"):
+        return geo["results"][0]
+    # Fallback: strip everything after the first comma
+    city_only = loc.split(",")[0].strip()
+    if city_only and city_only.lower() != loc.lower():
+        geo2 = await _fetch_json_async(_geo_url(city_only))
+        if geo2.get("results"):
+            return geo2["results"][0]
+    return None
+
+
+@router.get("/weather-search")
+async def weather_search(q: str = Query("", min_length=1)):
+    """Autocomplete endpoint — returns up to 5 geocoding matches for the query.
+
+    Used by the location-search config field so users can pick a verified
+    location instead of typing a freeform string that the geocoder might reject.
+    """
+    try:
+        geo = await _fetch_json_async(_geo_url(q.strip(), count=5))
+        results = [
+            {
+                "name":   r.get("name", ""),
+                "admin1": r.get("admin1", ""),
+                "country": r.get("country", ""),
+                "lat":    r["latitude"],
+                "lon":    r["longitude"],
+            }
+            for r in (geo.get("results") or [])
+        ]
+        return JSONResponse({"results": results})
+    except urllib.error.URLError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @router.get("/weather")
 async def weather_proxy(
-    loc:  str = Query("Dallas, TX"),
-    unit: str = Query("F"),
+    loc:  str   = Query("Dallas, TX"),
+    unit: str   = Query("F"),
+    lat:  float | None = Query(None),
+    lon:  float | None = Query(None),
 ):
     try:
-        geo_url = (
-            "https://geocoding-api.open-meteo.com/v1/search?"
-            + urllib.parse.urlencode({"name": loc, "count": 1, "language": "en", "format": "json"})
-        )
-        geo = await _fetch_json_async(geo_url)
-        if not geo.get("results"):
-            return JSONResponse({"error": "location_not_found"}, status_code=404)
-
-        r        = geo["results"][0]
-        lat, lon = r["latitude"], r["longitude"]
-        name     = r.get("name", loc)
-        admin1   = r.get("admin1", "")
+        # If caller already has coordinates (picked from autocomplete), skip geocoding.
+        if lat is not None and lon is not None:
+            name, admin1 = loc, ""
+        else:
+            r = await _geocode(loc)
+            if not r:
+                return JSONResponse({"error": "location_not_found"}, status_code=404)
+            lat, lon = r["latitude"], r["longitude"]
+            name     = r.get("name", loc)
+            admin1   = r.get("admin1", "")
         temp_unit = "fahrenheit" if unit.upper() == "F" else "celsius"
 
         wx_url = (

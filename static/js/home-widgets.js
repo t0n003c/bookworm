@@ -1048,8 +1048,8 @@ const WIDGET_CONFIG_FIELDS = {
     },
   ],
   weather: () => [
-    { id: 'cf-loc',  label: 'Location (city, state)', type: 'text',
-      placeholder: 'Dallas, TX', name: 'location' },
+    { id: 'cf-loc',  label: 'Location', type: 'location-search', name: 'location',
+      placeholder: 'Search city…' },
     { id: 'cf-unit', label: 'Temperature unit', type: 'select',
       options: [['F','°F Fahrenheit'],['C','°C Celsius']], name: 'unit' },
   ],
@@ -1325,6 +1325,77 @@ function aw_refreshConfig(wtype, style) {
     if (f.type === 'feeds-list') {
       // _rssFeedsEditorHtml is defined in home-widget-rss.js (loaded before interaction)
       return `<div>${lbl}${_rssFeedsEditorHtml(f.id, [], f.name)}</div>`;
+    }
+    if (f.type === 'location-search') {
+      // Autocomplete location picker — queries /home/weather-search as the user types.
+      // Stores three values: location (display name), lat, lon — all as hidden
+      // [data-name] inputs so _collectConfig picks them up automatically.
+      var lsId  = f.id;
+      var lsTxt = lsId + '-txt';
+      var lsLat = lsId + '-lat';
+      var lsLon = lsId + '-lon';
+      var lsDrp = lsId + '-drp';
+      var lsTmr = null;
+      setTimeout(function () {
+        var inp = document.getElementById(lsTxt);
+        var drp = document.getElementById(lsDrp);
+        if (!inp || !drp) return;
+        inp.addEventListener('input', function () {
+          clearTimeout(lsTmr);
+          var q = inp.value.trim();
+          drp.innerHTML = '';
+          drp.classList.add('hidden');
+          if (q.length < 2) return;
+          lsTmr = setTimeout(function () {
+            fetch('/home/weather-search?' + new URLSearchParams({ q: q }), { credentials: 'same-origin' })
+              .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+              .then(function (data) {
+                var items = data.results || [];
+                if (!items.length) {
+                  drp.innerHTML = '<li class="px-3 py-2 text-xs text-gray-400">No results</li>';
+                  drp.classList.remove('hidden');
+                  return;
+                }
+                drp.innerHTML = items.map(function (it, i) {
+                  var label = it.name + (it.admin1 ? ', ' + it.admin1 : '') + (it.country ? ' — ' + it.country : '');
+                  return '<li data-i="' + i + '" class="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50'
+                    + ' dark:hover:bg-wblue/10 text-gray-800 dark:text-zinc-100">' + label + '</li>';
+                }).join('');
+                drp.classList.remove('hidden');
+                drp.querySelectorAll('li').forEach(function (li) {
+                  li.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    var it = items[parseInt(li.dataset.i, 10)];
+                    var display = it.name + (it.admin1 ? ', ' + it.admin1 : '');
+                    inp.value = display;
+                    document.getElementById(lsId).value  = display;
+                    document.getElementById(lsLat).value = it.lat;
+                    document.getElementById(lsLon).value = it.lon;
+                    drp.classList.add('hidden');
+                  });
+                });
+              }).catch(function () {
+                drp.classList.add('hidden');
+              });
+          }, 280);
+        });
+        inp.addEventListener('blur', function () {
+          setTimeout(function () { drp.classList.add('hidden'); }, 150);
+        });
+      }, 50);
+      return '<div>' + lbl
+        + '<div class="relative">'
+        + '<input id="' + lsTxt + '" type="text" placeholder="' + (f.placeholder || 'Search city…') + '" autocomplete="off"'
+        + ' class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2'
+        + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+        + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+        + '<ul id="' + lsDrp + '" class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-zinc-800'
+        + ' border border-gray-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-48 overflow-y-auto"></ul>'
+        + '</div>'
+        + '<input type="hidden" id="' + lsId  + '" data-name="' + f.name + '" value="">'
+        + '<input type="hidden" id="' + lsLat + '" data-name="lat" value="">'
+        + '<input type="hidden" id="' + lsLon + '" data-name="lon" value="">'
+        + '</div>';
     }
     if (f.type === 'select-crm-pages') {
       // populated async after the div is inserted
