@@ -155,6 +155,96 @@ ifconfig   # macOS / Linux
 
 If it doesn't connect, allow inbound TCP on port 8001 in your OS firewall.
 
+### Public access via Cloudflare Tunnel + Nginx Proxy Manager (recommended for home servers)
+
+This is the sweet spot for a local Docker deployment: Cloudflare Tunnel handles the secure
+inbound connection (no port-forwarding, no exposed ports), and Nginx Proxy Manager (NPM) routes
+traffic to BookWorm and any other services you run.
+
+```
+Internet → Cloudflare → cloudflared → NPM (port 80/443) → BookWorm (port 8001)
+```
+
+**Step 1 — Add BookWorm to NPM's Docker network**
+
+NPM and BookWorm need to be on the same Docker network so NPM can reach BookWorm by
+service name. In your `docker-compose.yml`, add an `external` network that matches
+NPM's network (typically named `npm_default` or `nginx-proxy-manager_default` — check
+with `docker network ls`):
+
+```yaml
+# Add to the bookworm service:
+services:
+  bookworm:
+    # ... existing config ...
+    networks:
+      - default        # BookWorm's own compose network
+      - npm_network    # shared with NPM
+
+networks:
+  npm_network:
+    external: true
+    name: nginx-proxy-manager_default   # ← match your actual NPM network name
+```
+
+Then `docker compose up -d` to reconnect BookWorm to the shared network.
+
+**Step 2 — Add a Proxy Host in NPM**
+
+In the NPM web UI (`http://<your-server-ip>:81`):
+
+| Field | Value |
+|---|---|
+| Domain Name | `notes.yourdomain.com` |
+| Scheme | `http` |
+| Forward Hostname / IP | `bookworm` (Docker service name) or your server's LAN IP |
+| Forward Port | `8001` |
+| Cache Assets | off |
+| Block Common Exploits | on |
+
+Under **SSL** tab: Request a Let's Encrypt certificate, enable **Force SSL** and **HTTP/2**.
+
+Under **Advanced** tab, add these custom headers so BookWorm gets the real client IP and knows it's on HTTPS:
+
+```nginx
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header Host              $host;
+```
+
+**Step 3 — Point Cloudflare Tunnel at NPM**
+
+In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/) → Networks → Tunnels:
+- Create a tunnel (or use an existing one)
+- Add a **Public Hostname**:
+  - Subdomain: `notes` | Domain: `yourdomain.com`
+  - Service: `http://localhost:80` (or `http://<server-ip>:80` if cloudflared runs elsewhere)
+
+Cloudflare terminates HTTPS externally; traffic from Cloudflare to NPM is plain HTTP on your LAN,
+which is fine — it never leaves your server.
+
+**Step 4 — Update BookWorm's `.env`**
+
+```env
+BW_HTTPS=true
+BW_TRUST_PROXY=true
+BW_SECRET_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
+```
+
+Then restart: `docker compose up -d`
+
+> **Why both flags?**  
+> `BW_HTTPS=true` → session cookies get the `Secure` flag (required for HTTPS).  \W_TRUST_PROXY=true` → BookWorm reads NPM's `X-Forwarded-Proto: https` header so it
+> knows the connection is actually HTTPS (NPM → BookWorm is plain HTTP internally).  
+> Without both, logins will break — sessions won't persist over HTTPS.
+
+**Step 5 — Visit your domain and install the PWA**
+
+Open `https://notes.yourdomain.com` on your Pixel. Within a few seconds the
+**"Install BookWorm"** banner will slide up from the bottom. Tap **Install app** and it'll
+land on your home screen like a native app 🎉
+
 ### Public access via Cloudflare Tunnel (free, no open ports)
 
 ```bash

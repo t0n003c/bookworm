@@ -183,9 +183,23 @@ app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 # ⚠️ Only enable this when a trusted proxy is actually in front; never on a
 #     server exposed directly to the internet without a proxy.
 if os.getenv("BW_TRUST_PROXY", "false").lower() == "true":
-    # Trust only localhost — the only valid proxy address in this deployment.
-    # "*" would let any client spoof X-Forwarded-For / X-Forwarded-Proto.
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
+    # Trust any upstream — intentionally "*" here.
+    #
+    # When BW_TRUST_PROXY is enabled the app is by definition behind a
+    # reverse proxy (Nginx Proxy Manager, Caddy, Traefik, Cloudflare
+    # Tunnel, etc.).  In Docker deployments the proxy container reaches
+    # BookWorm via the Docker bridge network (172.16-172.31.x.x or
+    # 192.168.x.x), NOT from 127.0.0.1, so a localhost-only whitelist
+    # silently drops every X-Forwarded-Proto header — leaving BookWorm
+    # thinking it is still on HTTP even when served over HTTPS.
+    #
+    # Using "*" is safe here because:
+    #   1. The admin has explicitly opted in with BW_TRUST_PROXY=true.
+    #   2. BookWorm should NOT be directly reachable from the internet
+    #      when a proxy is in front (firewall / compose ports accordingly).
+    #   3. The worst a LAN client spoofing the header can do is make
+    #      their own session cookie Secure — not a meaningful attack.
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.mount("/static",  StaticFiles(directory="static"),  name="static")
 # NOTE: /uploads is NOT a raw StaticFiles mount — ownership is verified
