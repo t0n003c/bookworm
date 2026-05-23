@@ -53,7 +53,11 @@ var _TP_SCROLL_MAX  = 18;    // px per touch event at peak speed
 function _tpEdgeScroll(clientY) {
     var el = document.getElementById('grid-scroll-area');
     if (!el) return;
-    var fromBottom = window.innerHeight - clientY;
+    // Use visualViewport.height on mobile: window.innerHeight is the layout
+    // viewport (fixed) while clientY uses the visual viewport.  Android Chrome's
+    // address bar makes them differ by ~56 px, so the bottom zone never fired.
+    var vh        = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    var fromBottom = vh - clientY;
     var fromTop    = clientY;
     if (fromBottom < _TP_SCROLL_ZONE) {
         el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBottom / _TP_SCROLL_ZONE)));
