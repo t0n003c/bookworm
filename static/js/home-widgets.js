@@ -543,7 +543,90 @@ function _trashDrop(event) {
   _doDeletePage(pageId);
 }
 
-// ── Home-page restore / permanent-delete ────────────────────────────────────
+// ── Touch drag-to-trash for homespace pages (mobile) ────────────────────────
+// HTML5 drag-and-drop is not supported on touch devices, so we layer
+// touch events on top.  The same #dnd-ghost pill the workspace DnD uses
+// provides the visual feedback.
+(function _initPageTouchDnd() {
+  'use strict';
+  var THRESHOLD = 12; // px before we commit to a drag
+  var _pgId   = null; // page-id being dragged
+  var _pgName = null;
+  var _startX = 0, _startY = 0;
+  var _active = false;
+
+  function _ghost() {
+    var g = document.getElementById('dnd-ghost');
+    if (!g) { g = document.createElement('div'); g.id = 'dnd-ghost'; document.body.appendChild(g); }
+    return g;
+  }
+  function _trashZone() { return document.getElementById('sidebar-trash'); }
+
+  function _overTrash(x, y) {
+    var zone = _trashZone();
+    if (!zone) return false;
+    var r = zone.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function _cleanup(overTrash) {
+    var g = _ghost(); g.style.display = 'none';
+    var zone = _trashZone();
+    if (zone) zone.style.outline = '';
+    document.body.classList.remove('dnd-active');
+    var li = _pgId && document.querySelector('#home-page-list [data-page-id="' + _pgId + '"]');
+    if (li) li.style.opacity = '';
+    var pid = _pgId;
+    _pgId = _pgName = null; _active = false;
+    if (overTrash && pid) _doDeletePage(pid);
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    var li = e.target.closest('#home-page-list [data-page-id]');
+    if (!li) return;
+    // Don't steal taps on the ⋮ menu button
+    if (e.target.closest('button')) return;
+    var t = e.touches[0];
+    _startX = t.clientX; _startY = t.clientY;
+    _pgId   = parseInt(li.dataset.pageId, 10);
+    var btn = li.querySelector('button');
+    _pgName = btn ? (btn.title || 'page') : 'page';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!_pgId) return;
+    var t = e.touches[0];
+    if (!_active) {
+      if (Math.hypot(t.clientX - _startX, t.clientY - _startY) < THRESHOLD) return;
+      _active = true;
+      document.body.classList.add('dnd-active');
+      var li = document.querySelector('#home-page-list [data-page-id="' + _pgId + '"]');
+      if (li) li.style.opacity = '0.4';
+    }
+    e.preventDefault();
+    var g = _ghost();
+    g.style.display = 'block';
+    g.style.left = t.clientX + 'px';
+    g.style.top  = t.clientY + 'px';
+    g.textContent = _pgName;
+    var zone = _trashZone();
+    if (zone) zone.style.outline = _overTrash(t.clientX, t.clientY)
+      ? '2px dashed #ea1100' : '';
+  }, { passive: false });
+
+  document.addEventListener('touchend', function(e) {
+    if (!_pgId) return;
+    var t = e.changedTouches[0];
+    var drop = _active && _overTrash(t.clientX, t.clientY);
+    _cleanup(drop);
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', function() {
+    if (_pgId) _cleanup(false);
+  }, { passive: true });
+}());
+
+// ── Home-page restore / permanent-delete ────────────────────────────────
 
 function _restoreHpPage(pageId) {
   _post('/home/pages/' + pageId + '/restore')

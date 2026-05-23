@@ -3715,6 +3715,94 @@
 
   /* Escape cancels a drag in progress */
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancel(); });
+
+  /* ─────────────────────────────────────────────────────
+     TOUCH SUPPORT — mirrors the mouse handlers above so
+     mobile users can drag workspaces to reorder / trash.
+     touchstart = mousedown  |  touchmove = mousemove  |  touchend = mouseup
+  ───────────────────────────────────────────────────── */
+  document.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.dnd-handle');
+    if (!handle) return;
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+    const t = e.touches[0];
+    _startX = t.clientX; _startY = t.clientY;
+    _label  = handle.dataset.dndLabel || 'workspace';
+    _handleEl = handle;
+    if (handle.dataset.dndWsId !== undefined) {
+      _wsId = +handle.dataset.dndWsId; _trashId = null;
+      _dimEl = handle.closest('.ws-tree-node');
+    } else {
+      _trashId = +handle.dataset.dndTrashId; _wsId = null;
+      _dimEl = handle.closest('[data-dnd-trash-item]');
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!_wsId && !_trashId) return;
+    const t = e.touches[0];
+    if (!_active) {
+      if (Math.hypot(t.clientX - _startX, t.clientY - _startY) < THRESHOLD) return;
+      _active = true;
+      document.body.classList.add('dnd-active');
+      if (_dimEl) _dimEl.classList.add('dnd-dragging');
+    }
+    e.preventDefault(); // stop page scroll while dragging
+    moveGhost(t.clientX, t.clientY);
+    const { zone, el } = targetAt(t.clientX, t.clientY);
+    if      (zone === 'before') setOver(el, 'dnd-over-before');
+    else if (zone === 'after')  setOver(el, 'dnd-over-after');
+    else if (zone === 'ws')     setOver(el, 'dnd-over-ws');
+    else if (zone === 'trash')  setOver(el, 'dnd-over-trash');
+    else if (zone === 'root')   setOver(el, 'dnd-over-root');
+    else                        clearOver();
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (!_wsId && !_trashId) return;
+    const t   = e.changedTouches[0];
+    const ws  = _wsId, trash = _trashId, didDrag = _active;
+    const hEl = _handleEl;
+    const { zone, el } = targetAt(t.clientX, t.clientY);
+    cancel();
+    if (!didDrag) {
+      // Tap on handle — open row context menu same as mouse click
+      if (ws && hEl && hEl.dataset.dndWsId) {
+        const synEvt = { currentTarget: hEl, stopPropagation: function() {} };
+        _wsRowMenuOpen(
+          synEvt,
+          +hEl.dataset.dndWsId,
+          hEl.dataset.dndWsName   || '',
+          hEl.dataset.dndWsEmoji  || '📁',
+          hEl.dataset.dndWsParent || null,
+          hEl.dataset.dndWsType   || 'workspace'
+        );
+      }
+      return;
+    }
+    const aid = getActiveWsId();
+    const tid = el ? +el.dataset.dndDropWsId : null;
+    if (ws && zone === 'trash') {
+      htmx.ajax('POST', `/workspaces/${ws}/delete`,
+        { target: '#note-list', swap: 'innerHTML', values: { active_ws_id: aid } });
+    } else if (ws && zone === 'root') {
+      htmx.ajax('POST', `/workspaces/${ws}/reparent`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: '', active_ws_id: aid } });
+    } else if (ws && (zone === 'before' || zone === 'after')) {
+      if (tid !== ws) htmx.ajax('POST', `/workspaces/${ws}/reorder`,
+        { target: '#note-list', swap: 'innerHTML',
+          values: { relative_to_id: String(tid), position: zone, active_ws_id: aid } });
+    } else if (ws && zone === 'ws') {
+      if (tid !== ws) htmx.ajax('POST', `/workspaces/${ws}/reparent`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: String(tid), active_ws_id: aid } });
+    } else if (trash && (zone === 'ws' || zone === 'before' || zone === 'after')) {
+      htmx.ajax('POST', `/workspaces/${trash}/restore`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: String(tid), active_ws_id: aid } });
+    } else if (trash && zone === 'root') {
+      htmx.ajax('POST', `/workspaces/${trash}/restore`,
+        { target: '#note-list', swap: 'innerHTML', values: { new_parent_id: '', active_ws_id: aid } });
+    }
+  }, { passive: true });
 })();
 </script>
 
