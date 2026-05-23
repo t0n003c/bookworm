@@ -1,6 +1,7 @@
 """BookWorm — Team Note Taking App (FastAPI + HTMX + Tailwind + SQLite)."""
 import asyncio
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Optional
@@ -102,6 +103,7 @@ from routers.demo import purge_old_demo_users
 from routers import note_reminders as note_reminders_router
 from routers import sharing as sharing_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
+from database import get_db
 
 
 async def _demo_purge_loop():
@@ -220,7 +222,73 @@ app.include_router(sharing_router.router)
 
 # ── Ownership-gated file serving ──────────────────────────────────────────────
 # Replaces the old open StaticFiles mount so that logged-in users cannot
-# access each other’s files by guessing a UUID filename.
+# access each other's files by guessing a UUID filename.
+#
+# Subdirectory routes MUST come before the generic /uploads/{filename} route
+# so FastAPI matches them first (its router is first-match, not best-match).
+
+@app.get("/uploads/crm-pics/{filename}", include_in_schema=False)
+async def serve_crm_pic(request: Request, filename: str):
+    """Serve a CRM profile-picture to the page owner.
+
+    Filename pattern: c{page_id}_{contact_id}.{ext}
+    Ownership: caller must own the crm_pages row for that page_id.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400)
+    try:
+        page_id = int(filename.lstrip("c").split("_")[0])
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400)
+    async with get_db() as db:
+        row = await db.execute_fetchone(
+            "SELECT id FROM crm_pages WHERE id=? AND user_id=?", (page_id, uid)
+        )
+    if not row:
+        raise HTTPException(status_code=403)
+    path = UPLOAD_DIR / "crm-pics" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(path=path)
+
+
+@app.get("/uploads/trip-covers/{filename}", include_in_schema=False)
+async def serve_trip_cover(request: Request, filename: str):
+    """Serve a trip cover image (loc / spot / plan) to the page owner.
+
+    Filename patterns:
+      loc{page_id}_{loc_id}.{ext}
+      spot{page_id}_{spot_id}.{ext}
+      plan{page_id}_{plan_id}.{ext}
+    Ownership: caller must own the trip_pages row for that page_id.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400)
+    try:
+        # Strip the alpha prefix (loc / spot / plan) then grab first numeric segment
+        m = re.match(r'^[a-z]+(\d+)_', filename)
+        if not m:
+            raise ValueError
+        page_id = int(m.group(1))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400)
+    async with get_db() as db:
+        row = await db.execute_fetchone(
+            "SELECT id FROM trip_pages WHERE id=? AND user_id=?", (page_id, uid)
+        )
+    if not row:
+        raise HTTPException(status_code=403)
+    path = UPLOAD_DIR / "trip-covers" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(path=path)
+
 
 @app.get("/uploads/{filename}", include_in_schema=False)
 async def serve_upload(request: Request, filename: str):
@@ -443,6 +511,5 @@ async def index(request: Request, ws: Optional[int] = None):
     # always be fetched fresh so a new login never sees a previous user's data.
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return response
-
 
 
