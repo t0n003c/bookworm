@@ -4,8 +4,6 @@ import json
 import logging
 import os
 import re
-import subprocess
-import tempfile
 import traceback
 import urllib.error
 import urllib.parse
@@ -14,6 +12,8 @@ import xml.etree.ElementTree as ET
 from asyncio import get_running_loop
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+
+import httpx
 
 log = logging.getLogger(__name__)
 
@@ -310,82 +310,54 @@ _RSS_UA = (
 # deployed behind a corporate proxy that intercepts outbound HTTPS.
 _PROXY: str = os.getenv("BW_HTTP_PROXY", "")
 
-# Friendly messages for known curl exit codes (CURLE_* constants)
-_CURL_EXIT_MSGS: dict[int, str] = {
-    6:  'Could not resolve the feed domain — check the URL.',
-    7:  'Could not connect to the feed server.',
-    28: 'The feed server timed out — try again later.',
-    35: 'SSL/TLS handshake failed with the feed server.',
-    52: 'Feed server returned an empty response.',
-}
+def _httpx_fetch(url: str, extra_headers: dict | None = None,
+                 timeout: int = 15) -> tuple[bytes, str]:
+    """Fetch *url* via httpx (respects BW_HTTP_PROXY if set).
 
-
-def _curl_fetch(url: str, extra_headers: list | None = None,
-               timeout: int = 15) -> tuple[bytes, str]:
-    """Low-level: run curl with NTLM proxy auth.
     Returns (body_bytes, raw_content_type_header).
-    Raises urllib.error.URLError / HTTPError on failure."""
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix='.curl_body')
-    os.close(tmp_fd)                # release fd so curl can write
+    Raises urllib.error.HTTPError / URLError on failure so all callers stay
+    unchanged — they already catch those exception types.
+    """
+    headers   = {"User-Agent": _RSS_UA, **(extra_headers or {})}
+    proxy_url = _PROXY or None
     try:
-        cmd = ['curl', '-s', '-L']
-        if _PROXY:
-            # Kerberos/NTLM via SSPI — no password needed when running on
-            # a domain-joined machine behind a corporate proxy.
-            cmd += ['--proxy', _PROXY, '--proxy-negotiate', '-u', ':']
-        cmd += ['-A', _RSS_UA,
-            '--max-time', str(timeout),
-            '-o', tmp_path,
-            '-w', '%{content_type}\n%{http_code}',
-        ]
-        for h in (extra_headers or []):
-            cmd += ['-H', h]
-        cmd.append(url)
-
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout + 10,
-        )
-
-        if result.returncode not in (0, 23):   # 23 = write error (e.g. piped away)
-            parts_err = result.stdout.strip().splitlines()
-            http_code = parts_err[1].strip() if len(parts_err) > 1 else ''
-            if result.returncode == 56 and http_code in ('000', ''):
-                # Proxy CONNECT tunnel closed — usually a corporate proxy block.
-                proxy_hint = f' (via {_PROXY})' if _PROXY else ''
-                raise urllib.error.URLError(
-                    f'Connection blocked{proxy_hint}. '
-                    'Check the URL or your network/proxy settings.'
-                )
-            msg = _CURL_EXIT_MSGS.get(result.returncode) or (
-                result.stderr.strip() or f'Network error (curl code {result.returncode})'
-            )
-            raise urllib.error.URLError(msg)
-
-        parts = result.stdout.strip().splitlines()
-        ct    = parts[0] if parts else ''
-        code  = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-
-        if code >= 400:
-            raise urllib.error.HTTPError(url, code, f'HTTP {code}', {}, None)
-
-        with open(tmp_path, 'rb') as f:
-            return f.read(), ct
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        with httpx.Client(
+            proxy=proxy_url,
+            follow_redirects=True,
+            timeout=timeout,
+            headers=headers,
+        ) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            ct = resp.headers.get("content-type", "")
+            return resp.content, ct
+    except httpx.HTTPStatusError as exc:
+        raise urllib.error.HTTPError(
+            url, exc.response.status_code, str(exc), {}, None
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise urllib.error.URLError(
+            "The feed server timed out — try again later."
+        ) from exc
+    except httpx.ConnectError as exc:
+        raise urllib.error.URLError(
+            f"Could not connect to the feed server: {exc}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise urllib.error.URLError(str(exc)) from exc
 
 
-def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple:
+def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple[str, str]:
     """Fetch URL (optionally via BW_HTTP_PROXY). Returns (text, content_type_header).
 
     send_rss_accept=True  → adds Accept: application/rss+xml… header (initial fetch).
     send_rss_accept=False → plain fetch, no Accept header (autodiscovered feed URLs;
                             some servers e.g. YouTube RSS return 5xx with that header).
     """
-    extra = ['Accept: application/rss+xml, application/atom+xml, text/xml, */*'] if send_rss_accept else []
-    body, ct = _curl_fetch(url, extra_headers=extra, timeout=15)
+    extra: dict[str, str] = {}
+    if send_rss_accept:
+        extra["Accept"] = "application/rss+xml, application/atom+xml, text/xml, */*"
+    body, ct = _httpx_fetch(url, extra_headers=extra, timeout=15)
     # Parse charset out of e.g. "text/xml; charset=utf-8"
     charset  = 'utf-8'
     ct_lower = ct.lower()
@@ -397,7 +369,7 @@ def _fetch_raw(url: str, send_rss_accept: bool = True) -> tuple:
 
 def _fetch_bytes(url: str) -> tuple[bytes, str]:
     """Fetch binary content (optionally via BW_HTTP_PROXY). Returns (raw_bytes, content_type)."""
-    body, ct = _curl_fetch(url, timeout=10)
+    body, ct = _httpx_fetch(url, timeout=10)
     return body, ct.split(';')[0].strip() or 'application/octet-stream'
 
 
