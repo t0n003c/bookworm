@@ -553,8 +553,9 @@ function _trashDrop(event) {
 // sidebar scrolling ourselves whenever the gesture is a straight vertical swipe.
 (function _initPageTouchDnd() {
   'use strict';
-  var LONG_MS   = 300;   // ms hold before drag arms
-  var THRESHOLD = 10;    // px movement before drag is committed
+  var LONG_MS    = 500;   // ms hold before drag arms (500ms = standard long-press on Android/iOS)
+  var THRESHOLD  = 10;   // px movement to commit drag once armed
+  var ARM_JITTER = 20;   // px tolerated while arming -- real phones tremble; 5px was too tight
 
   var _pgId     = null;
   var _pgName   = null;
@@ -740,26 +741,25 @@ function _trashDrop(event) {
 
     // ── Undecided: classify once movement is meaningful ──
     var dist = Math.hypot(dx, dy);
-    if (dist < 5) { _prevY = t.clientY; return; }  // too early
+    if (dist < ARM_JITTER) { _prevY = t.clientY; return; }  // within jitter, keep waiting
 
     if (!_armed) {
-      // Long-press hasn’t fired yet — classify by direction
+      // Beyond jitter before long-press fired -- classify and commit
       if (ady > adx * 1.5) {
-        // Mostly vertical → sidebar scroll, cancel drag intent
+        // Clearly vertical: sidebar scroll
         clearTimeout(_timer); _timer = null;
         _scrolling = true;
         var sb2 = document.getElementById('sidebar');
         if (sb2) sb2.scrollTop += _prevY - t.clientY;
         _prevY = t.clientY;
-        return;
+      } else {
+        // Horizontal/diagonal before arm: cancel so tap still navigates
+        _cleanup('cancel');
       }
-      // Diagonal/horizontal past threshold → cancel (can’t drag without long-press)
-      if (dist > THRESHOLD) { _cleanup('cancel'); return; }
-      _prevY = t.clientY;
       return;
     }
 
-    // Long-press fired; finger past threshold → commit to drag
+    // Long-press fired; finger past threshold: commit to drag
     if (dist >= THRESHOLD) {
       _active = true;
       document.body.classList.add('dnd-active');
