@@ -3,6 +3,7 @@ import html.parser
 import json
 import logging
 import os
+import platform as _platform
 import re
 import traceback
 import urllib.error
@@ -304,11 +305,53 @@ _RSS_UA = (
 )
 
 
-# Optional outbound HTTP proxy — e.g. "http://proxy.example.com:8080".
-# Leave unset for direct internet access (the default).
-# Set BW_HTTP_PROXY in your .env or docker-compose.yml when BookWorm is
-# deployed behind a corporate proxy that intercepts outbound HTTPS.
-_PROXY: str = os.getenv("BW_HTTP_PROXY", "")
+# Optional outbound HTTP proxy — auto-detected from the environment.
+# Override at any time by setting BW_HTTP_PROXY in .env or docker-compose.yml.
+#
+# Detection order:
+#   1. BW_HTTP_PROXY env var  (explicit operator override)
+#   2. HTTPS_PROXY / HTTP_PROXY env vars  (Docker / CI)
+#   3. Windows registry AutoConfigURL PAC file  (corporate WPAD / Walmart network)
+#   4. '' → direct connections (Linux without proxy env vars)
+def _detect_proxy() -> str:
+    """Return the best proxy URL string for outbound HTTP/S, or ''."""
+    # Priority 1 + 2: environment variables
+    for var in ("BW_HTTP_PROXY", "HTTPS_PROXY", "HTTP_PROXY"):
+        val = os.getenv(var, "").strip()
+        if val:
+            return val
+
+    # Priority 3: Windows-only — PAC/WPAD via the registry
+    if _platform.system() != "Windows":
+        return ""
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r'Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+        ) as key:
+            pac_url, _ = winreg.QueryValueEx(key, "AutoConfigURL")
+    except Exception:
+        return ""
+
+    if not pac_url:
+        return ""
+
+    try:
+        req = urllib.request.Request(pac_url, headers={"User-Agent": "BookWorm/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            pac_text = resp.read(65536).decode("utf-8", errors="replace")
+        # Extract first PROXY directive — the primary corporate proxy.
+        m = re.search(r'\bPROXY\s+([a-zA-Z0-9._-]+:\d+)', pac_text, re.IGNORECASE)
+        if m:
+            return f"http://{m.group(1)}"
+    except Exception:
+        pass
+
+    return ""
+
+
+_PROXY: str = _detect_proxy()
 
 def _httpx_fetch(url: str, extra_headers: dict | None = None,
                  timeout: int = 15) -> tuple[bytes, str]:
