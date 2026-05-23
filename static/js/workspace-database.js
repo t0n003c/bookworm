@@ -465,9 +465,13 @@ function _dbOptColorStyle(colorId) {
   return { bg: dk ? def.darkBg : def.bg, text: dk ? def.darkText : def.text };
 }
 
-/* ── selection toolbar state ─────────────────────────────────────────────── */
+/* ── selection toolbar state ─────────────────────────────────────────────────────── */
 var _dbSelBar       = null;  // floating toolbar DOM element
 var _dbSelBarTimer  = null;  // hide-debounce timer
+
+/* ── card multi-select state ─────────────────────────────────────────────────── */
+var _dbMsActive   = false;   // multiselect mode on/off
+var _dbMsSelected = {};      // cardId (string) → true
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ENTRY POINT
@@ -530,6 +534,7 @@ function initDatabaseView(wsId) {
   _dbBindModals();
   _dbInitStyles();
   _dbSelToolbarInit();
+  _dbMsWireGrid();
   // Deep-link: ?open_card=N opens the card detail panel on page load.
   var _ocParam = new URLSearchParams(window.location.search).get('open_card');
   if (_ocParam) {
@@ -583,6 +588,8 @@ window._dbSetSize = function(step) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 function _dbRenderGrid() {
+  // Exit multiselect before blowing away innerHTML so state is consistent.
+  if (_dbMsActive) _dbMsExit();
   var grid    = document.getElementById('db-card-grid');
   var empty   = document.getElementById('db-empty-state');
   var noMatch = document.getElementById('db-no-matches');
@@ -2403,8 +2410,12 @@ function _dbCardHtml(card) {
 
   return (
     '<div class="db-card bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700'
-    + ' shadow-sm overflow-hidden flex flex-col group/card" data-card-id="' + card.id + '"'
+    + ' shadow-sm overflow-hidden flex flex-col group/card relative" data-card-id="' + card.id + '"'
     + (cardStyle ? ' style="' + cardStyle + '"' : '') + '>'
+    + '<div class="db-ms-cb" aria-hidden="true">'
+    + '<svg class="db-ms-cb-tick w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
+    + '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+    + '</div>'
     + cover
     + '<div class="p-3 flex flex-col flex-1 gap-2">'    + '<div class="flex items-start gap-2">'
     + '<div class="flex-1 min-w-0 flex items-start gap-1.5">'
@@ -2862,6 +2873,17 @@ function _dbInitStyles() {
   var s = document.createElement('style');
   s.id = 'db-note-styles';
   s.textContent = [
+    /* ── Card multi-select ──────────────────────────────────── */
+    '.db-ms-cb{position:absolute;top:8px;left:8px;z-index:2;width:20px;height:20px;',
+    'border-radius:50%;border:2px solid #d1d5db;background:#fff;display:none;',
+    'align-items:center;justify-content:center;pointer-events:none;transition:border-color .15s,background .15s;}',
+    '.dark .db-ms-cb{background:#27272a;border-color:#52525b;}',
+    '#db-card-grid.db-ms .db-card{cursor:pointer;user-select:none;}',
+    '#db-card-grid.db-ms .db-ms-cb{display:flex;}',
+    '#db-card-grid.db-ms .db-card.db-ms-sel{outline:2px solid #7c3aed;outline-offset:1px;}',
+    '#db-card-grid.db-ms .db-card.db-ms-sel .db-ms-cb{background:#7c3aed;border-color:#7c3aed;}',
+    '.db-ms-cb-tick{display:none;color:#fff;}',
+    '.db-ms-sel .db-ms-cb-tick{display:block;}',
     /* Heading hierarchy inside the card note area */
     '[data-db-note] h1{font-size:2em;font-weight:800;line-height:1.2;margin:.7em 0 .3em}',
     '[data-db-note] h2{font-size:1.5em;font-weight:700;line-height:1.25;margin:.6em 0 .25em}',
@@ -8645,4 +8667,201 @@ function _dbToast(msg, isError) {
   } else {
     console.warn('[DB]', msg);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD MULTI-SELECT
+   Long-press (500 ms) any grid card → enters multiselect mode.
+   In multiselect mode clicks toggle selection; toolbar shows count + Delete.
+   Exit via Cancel button or Escape key.
+═══════════════════════════════════════════════════════════════════════════ */
+
+var _dbMsToolbar    = null;
+var _dbMsLongTimer  = null;
+var _dbMsStartX     = 0;
+var _dbMsStartY     = 0;
+var _dbMsGridWired  = false;   // prevent duplicate listeners after re-render
+
+/* ── Enter multiselect, optionally pre-selecting one card ────────────────── */
+function _dbMsEnter(firstCardId) {
+  _dbMsActive   = true;
+  _dbMsSelected = {};
+  var grid = document.getElementById('db-card-grid');
+  if (grid) grid.classList.add('db-ms');
+  if (firstCardId != null) _dbMsToggleCard(String(firstCardId), true);
+  _dbMsShowToolbar();
+  // Escape to exit
+  document.addEventListener('keydown', _dbMsEscKey);
+}
+
+/* ── Exit multiselect cleanly ─────────────────────────────────────────────── */
+function _dbMsExit() {
+  _dbMsActive   = false;
+  _dbMsSelected = {};
+  var grid = document.getElementById('db-card-grid');
+  if (grid) {
+    grid.classList.remove('db-ms');
+    grid.querySelectorAll('.db-card.db-ms-sel').forEach(function(el) {
+      el.classList.remove('db-ms-sel');
+    });
+  }
+  if (_dbMsToolbar) { _dbMsToolbar.remove(); _dbMsToolbar = null; }
+  document.removeEventListener('keydown', _dbMsEscKey);
+}
+
+function _dbMsEscKey(e) {
+  if (e.key === 'Escape') _dbMsExit();
+}
+
+/* ── Toggle a single card selected/deselected ─────────────────────────────── */
+function _dbMsToggleCard(cardId, forceOn) {
+  var el = document.querySelector('#db-card-grid [data-card-id="' + cardId + '"]');
+  var isOn = forceOn !== undefined ? forceOn : !_dbMsSelected[cardId];
+  if (isOn) {
+    _dbMsSelected[cardId] = true;
+    if (el) el.classList.add('db-ms-sel');
+  } else {
+    delete _dbMsSelected[cardId];
+    if (el) el.classList.remove('db-ms-sel');
+  }
+  _dbMsUpdateToolbar();
+}
+
+/* ── Floating bottom toolbar ──────────══════════════════════════════════════ */
+function _dbMsShowToolbar() {
+  if (_dbMsToolbar) return;
+  var dark = document.documentElement.classList.contains('dark');
+  var bar  = document.createElement('div');
+  bar.id   = 'db-ms-toolbar';
+  Object.assign(bar.style, {
+    position:      'fixed',
+    bottom:        '24px',
+    left:          '50%',
+    transform:     'translateX(-50%)',
+    zIndex:        '9999',
+    display:       'flex',
+    alignItems:    'center',
+    gap:           '10px',
+    padding:       '10px 18px',
+    borderRadius:  '999px',
+    background:    dark ? '#18181b' : '#ffffff',
+    border:        '1px solid ' + (dark ? '#3f3f46' : '#e5e7eb'),
+    boxShadow:     '0 8px 32px rgba(0,0,0,.22)',
+    fontSize:      '14px',
+    fontWeight:    '500',
+    color:         dark ? '#f4f4f5' : '#111827',
+    whiteSpace:    'nowrap',
+  });
+
+  var countEl = document.createElement('span');
+  countEl.id  = 'db-ms-count';
+  countEl.textContent = '0 selected';
+
+  var sep = document.createElement('div');
+  Object.assign(sep.style, { width: '1px', height: '20px', background: dark ? '#3f3f46' : '#e5e7eb' });
+
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = '🗑️ Delete selected';
+  Object.assign(delBtn.style, {
+    padding: '5px 14px', borderRadius: '999px', border: 'none',
+    background: '#ea1100', color: '#fff', fontWeight: '600',
+    fontSize: '13px', cursor: 'pointer',
+  });
+  delBtn.addEventListener('click', _dbMsDeleteSelected);
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancel';
+  Object.assign(cancelBtn.style, {
+    padding: '5px 14px', borderRadius: '999px', border: '1px solid ' + (dark ? '#52525b' : '#d1d5db'),
+    background: 'transparent', color: dark ? '#a1a1aa' : '#6b7280',
+    fontSize: '13px', cursor: 'pointer',
+  });
+  cancelBtn.addEventListener('click', _dbMsExit);
+
+  bar.appendChild(countEl);
+  bar.appendChild(sep);
+  bar.appendChild(delBtn);
+  bar.appendChild(cancelBtn);
+  document.body.appendChild(bar);
+  _dbMsToolbar = bar;
+  _dbMsUpdateToolbar();
+}
+
+function _dbMsUpdateToolbar() {
+  var n = Object.keys(_dbMsSelected).length;
+  var countEl = document.getElementById('db-ms-count');
+  if (countEl) countEl.textContent = n + (n === 1 ? ' card selected' : ' cards selected');
+}
+
+/* ── Delete all selected cards ─────────────────────────────────────────────── */
+function _dbMsDeleteSelected() {
+  var ids = Object.keys(_dbMsSelected).map(Number);
+  if (!ids.length) { _dbMsExit(); return; }
+  var n = ids.length;
+  if (!confirm('Delete ' + n + (n === 1 ? ' card' : ' cards') + '? This cannot be undone.')) return;
+
+  // Fire all deletes in parallel, remove from local list, re-render
+  Promise.all(ids.map(function(id) {
+    return fetch('/workspaces/' + _dbWsId + '/db/cards/' + id, { method: 'DELETE' })
+      .then(function(r) { if (!r.ok) throw new Error(id); });
+  })).then(function() {
+    _dbCards = _dbCards.filter(function(c) { return !_dbMsSelected[String(c.id)]; });
+    _dbMsExit();
+    _dbRenderGrid();
+    _dbMsWireGrid();  // re-attach listeners after re-render
+    _dbToast('Deleted ' + n + (n === 1 ? ' card.' : ' cards.'), false);
+  }).catch(function(e) {
+    _dbToast('Some cards could not be deleted: ' + e.message, true);
+    _dbMsExit();
+    _dbRenderGrid();
+    _dbMsWireGrid();
+  });
+}
+
+/* ── Wire long-press + click delegation on the card grid ─────────────────── */
+function _dbMsWireGrid() {
+  var grid = document.getElementById('db-card-grid');
+  if (!grid || grid._dbMsWired) return;
+  grid._dbMsWired = true;
+
+  // ── Long-press detection ─────────────────────────────────────────────
+  grid.addEventListener('pointerdown', function(e) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;  // left only for mouse
+    var card = e.target.closest('.db-card');
+    if (!card) return;
+    _dbMsStartX = e.clientX;
+    _dbMsStartY = e.clientY;
+    _dbMsLongTimer = setTimeout(function() {
+      _dbMsLongTimer = null;
+      var id = card.dataset.cardId;
+      if (!_dbMsActive) {
+        _dbMsEnter(id);
+      } else {
+        _dbMsToggleCard(id);
+      }
+    }, 500);
+  });
+
+  function _cancelLong() {
+    if (_dbMsLongTimer) { clearTimeout(_dbMsLongTimer); _dbMsLongTimer = null; }
+  }
+  grid.addEventListener('pointermove', function(e) {
+    if (!_dbMsLongTimer) return;
+    var dx = e.clientX - _dbMsStartX;
+    var dy = e.clientY - _dbMsStartY;
+    if (dx * dx + dy * dy > 64) _cancelLong();  // > 8px
+  });
+  grid.addEventListener('pointerup',     _cancelLong);
+  grid.addEventListener('pointercancel', _cancelLong);
+
+  // ── Click: toggle selection in MS mode, else normal behaviour ─────────
+  grid.addEventListener('click', function(e) {
+    if (!_dbMsActive) return;
+    var card = e.target.closest('.db-card');
+    if (!card) return;
+    e.stopPropagation();
+    _dbMsToggleCard(card.dataset.cardId);
+  }, true);  // capture so we beat the open-detail button's own handler
 }
