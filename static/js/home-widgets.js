@@ -568,10 +568,11 @@ function _trashDrop(event) {
     if (document.getElementById('pg-dnd-touch-style')) return;
     var s = document.createElement('style');
     s.id = 'pg-dnd-touch-style';
-    // .pg-dnd-handle: hidden on desktop, shown + touch-action:none on touch
+    // .pg-dnd-handle: flex always; touch-action:none + always-visible on touch
     s.textContent = [
-      '.pg-dnd-handle { display: none; }',
-      'body.bw-touch .pg-dnd-handle { display: flex; touch-action: none;',
+      '.pg-dnd-handle { display: flex; opacity: 0; cursor: grab; }',
+      '.group\/hpg:hover .pg-dnd-handle { opacity: 1; }',
+      'body.bw-touch .pg-dnd-handle { opacity: 1; touch-action: none;',
       '  -webkit-user-select: none; user-select: none; }',
       'body.bw-touch #home-page-list [data-page-id] {',
       '  -webkit-user-select: none; user-select: none; }',

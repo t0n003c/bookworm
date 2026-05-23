@@ -492,7 +492,7 @@ function _tpCleanup() {
     _tpTouchId = null;
 }
 
-/* ── Click capture: block clicks in multiselect + video → lightbox ───────────── */
+/* ── Click capture: block clicks in multiselect; open lightbox for media cells ── */
 function _tpClickCapture(e) {
     var cellEl = e.target.closest('[data-grid-cell-id]');
     if (!cellEl) return;
@@ -504,7 +504,10 @@ function _tpClickCapture(e) {
         return;
     }
 
-    if (e.target.tagName === 'VIDEO' || cellEl.querySelector('video')) {
+    // On touch devices img/video have pointer-events:none so clicks land on the
+    // cell container.  Route them to the lightbox the same way desktop does.
+    var hasMedia = cellEl.querySelector('img, video');
+    if (hasMedia) {
         e.stopPropagation();
         e.preventDefault();
         gridLightboxOpen(cellId);
@@ -526,6 +529,16 @@ function _tpInjectCSS() {
         /* Select button: only shown on touch */ 
         'body.bw-touch .grid-ms-enter { display: flex; }',
         'body.bw-touch [data-grid-cell-id] {',
+        '  -webkit-touch-callout: none;',
+        '  -webkit-user-select:   none;',
+        '  user-select:           none;',
+        '}',
+        /* img/video inside cells: pointer-events:none so Android never fires
+         * the native "save image" long-press that sends touchcancel to our handler.
+         * Taps still bubble from the cell container to open the lightbox. */
+        'body.bw-touch [data-grid-cell-id] img,',
+        'body.bw-touch [data-grid-cell-id] video {',
+        '  pointer-events:        none;',
         '  -webkit-touch-callout: none;',
         '  -webkit-user-select:   none;',
         '  user-select:           none;',
