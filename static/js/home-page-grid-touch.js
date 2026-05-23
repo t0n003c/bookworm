@@ -326,7 +326,19 @@ function _tpOnTouchStart(e) {
 
     var touch  = e.touches[0];
     var cellEl = touch.target.closest('[data-grid-cell-id]');
-    if (!cellEl) return;
+
+    // No cell under the finger: the canvas still has touch-action:none so the
+    // browser won't scroll natively.  Register a lightweight scroll-only path
+    // so the user can still scroll the grid by touching empty space.
+    if (!cellEl) {
+        _tpTouchId   = touch.identifier;
+        _tpPrevY     = touch.clientY;
+        _tpScrolling = true;  // scroll-only mode: no cell, just scroll the grid
+        document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
+        document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
+        document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
+        return;
+    }
 
     _tpTouchId   = touch.identifier;
     _tpStartX    = touch.clientX;
@@ -499,10 +511,10 @@ function _tpInjectCSS() {
     s.textContent = [
         'body.bw-touch [data-grid-hover-ctrls],',
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
-        /* touch-action:none: prevents iOS/Android claiming canvas touches as
-         * native scrolls. We simulate scroll manually in _tpOnTouchMove. */
-        'body.bw-touch #grid-canvas,',
-        'body.bw-touch #grid-scroll-area { touch-action: none; }',
+        /* touch-action:none only on the canvas: prevents iOS/Android claiming
+         * cell touches as native scrolls.  #grid-scroll-area intentionally
+         * keeps default touch-action so empty-space touches still scroll. */
+        'body.bw-touch #grid-canvas { touch-action: none; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
         '  -webkit-user-select:   none;',
