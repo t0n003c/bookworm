@@ -36,14 +36,16 @@ var _TRIP_GRIP_SVG = (
 );
 
 /* ── HTML injected as the first child of every attr row ──────────────────── */
-// -ml-4 pulls the grip into the pl-4 wrapper padding zone so the key
-// input that follows stays aligned with the detail-row label column.
+// Geometry via inline style so it works without a CSS rebuild:
+//   margin-left: -1rem  pulls the grip into the pl-4 padding zone
+//   width: 1rem         fills exactly that zone → key input stays at 16px
 var _TRIP_GRIP_HTML = (
-  '<div class="trip-attr-grip flex-shrink-0 -ml-4 w-4 h-7 flex items-center justify-center ' +
+  '<div class="trip-attr-grip flex-shrink-0 h-7 flex items-center justify-center ' +
   'rounded cursor-grab active:cursor-grabbing select-none ' +
   'text-gray-300 dark:text-zinc-600 ' +
   'hover:text-gray-500 dark:hover:text-zinc-400 ' +
   'hover:bg-gray-100 dark:hover:bg-zinc-800 transition" ' +
+  'style="margin-left:-1rem;width:1rem" ' +
   'title="Drag to reorder" aria-label="Drag to reorder">' +
   _TRIP_GRIP_SVG +
   '</div>'
