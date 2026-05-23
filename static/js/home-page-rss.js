@@ -668,6 +668,71 @@ function _rssCloseSheet() {
   }, 300);
 }
 
+// ── Centre-card overlay (mobile “center” mode) ────────────────────────────
+// Compact floating dialog — visually distinct from both the bottom sheet
+// (panel mode) and the full-viewport reader (fullscreen mode).
+function _rssOpenCenter(html) {
+  _rssCloseCenter(); // clean up any stale one
+  const isDark = document.documentElement.classList.contains('dark');
+
+  const bd = document.createElement('div');
+  bd.id = 'rss-mob-center-bd';
+  Object.assign(bd.style, {
+    position:'fixed', inset:'0', zIndex:'38',
+    background:'rgba(0,0,0,0.5)', backdropFilter:'blur(3px)',
+    opacity:'0', transition:'opacity 0.2s',
+  });
+  bd.addEventListener('click', _rssCloseCenter);
+  document.body.appendChild(bd);
+
+  const card = document.createElement('div');
+  card.id = 'rss-mob-center-card';
+  Object.assign(card.style, {
+    position:'fixed',
+    // Centre both axes
+    top:'50%', left:'50%',
+    transform:'translate(-50%,-46%)',   // starts slightly high; animates to centre
+    zIndex:'39',
+    width:'min(400px, 88vw)',
+    maxHeight:'65vh',
+    overflowY:'auto',
+    borderRadius:'1rem',
+    boxShadow:'0 20px 60px rgba(0,0,0,0.28)',
+    background: isDark ? '#18181b' : '#ffffff',
+    opacity:'0',
+    transition:'opacity 0.2s, transform 0.22s cubic-bezier(0.34,1.1,0.64,1)',
+  });
+
+  const closeRow =
+    `<div style="display:flex;justify-content:flex-end;padding:10px 12px 0">
+       <button onclick="_rssCloseCenter()"
+         style="padding:3px 10px;font-size:13px;font-weight:600;border-radius:8px;
+                border:1px solid rgba(128,128,128,.25);cursor:pointer;
+                background:transparent;color:inherit" aria-label="Close">
+         ✕
+       </button>
+     </div>`;
+  card.innerHTML = closeRow + html;
+  document.body.appendChild(card);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    bd.style.opacity   = '1';
+    card.style.opacity = '1';
+    card.style.transform = 'translate(-50%,-50%)';
+  });
+}
+
+function _rssCloseCenter() {
+  const card = document.getElementById('rss-mob-center-card');
+  const bd   = document.getElementById('rss-mob-center-bd');
+  if (!card) return;
+  card.style.opacity   = '0';
+  card.style.transform = 'translate(-50%,-46%)';
+  if (bd) bd.style.opacity = '0';
+  setTimeout(() => { card.remove(); if (bd) bd.remove(); }, 220);
+}
+
 function _showPreview(it) {
   const isMob = _isMobileRss();
 
@@ -727,12 +792,18 @@ function _showPreview(it) {
     const mode = localStorage.getItem('bw-view-mode') || 'panel';
 
     if (mode === 'panel') {
-      // ─ Slide-up bottom sheet — visually distinct from fullscreen
+      // ─ Slide-up bottom sheet — 85vh, full width, rounded top corners
       _rssOpenSheet(articleBody);
       return;
     }
 
-    // ─ center or fullscreen — use the app’s openPanel() system
+    if (mode === 'center') {
+      // ─ Compact floating card — clearly smaller than both sheet and fullscreen
+      _rssOpenCenter(articleBody);
+      return;
+    }
+
+    // ─ fullscreen — use the app’s openPanel() system (full viewport + ‹ Back)
     const dp = document.getElementById('detail-panel');
     if (!dp) return;
     const backBtn =
