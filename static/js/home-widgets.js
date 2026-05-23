@@ -964,7 +964,8 @@ function _hpgMenuOpen(event, id, name, emoji, type) {
     });
   }
   items.push(
-    { sep: true, label: 'Delete', icon: _IC_HPG_DEL, danger: true,
+    { sep: true },  // divider before destructive action
+    { label: 'Delete', icon: _IC_HPG_DEL, danger: true,
       action: function() { deleteHomePage(id, name); } }
   );
   _bwRowMenu(event, items);

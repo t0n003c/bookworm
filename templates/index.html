@@ -1995,7 +1995,8 @@
       });
     }
     items.push(
-      { sep: true, label: 'Delete', icon: _IC_WS_DEL, danger: true,
+      { sep: true },  // divider before destructive action
+      { label: 'Delete', icon: _IC_WS_DEL, danger: true,
         action: function() { openDeleteWsModal(id, name, emoji); } }
     );
     if (typeof _bwRowMenu === 'function') {
