@@ -169,6 +169,32 @@
                      overscroll-behavior-y: contain; }
     .panel-scroll  { height: calc(100vh - 4rem); overflow-y: auto;
                      overscroll-behavior-y: contain; }
+    /*
+     * ── Mobile dynamic-viewport fix ────────────────────────────────────────
+     * On real Android/iOS devices 100vh = the *large* viewport (URL bar
+     * hidden).  When the URL bar is visible the actual visible area is
+     * shorter, so the document body becomes scrollable.  That extra body
+     * scroll context breaks sticky positioning — the breadcrumb scrolls up
+     * behind the fixed header even though it looks fine in DevTools emulation
+     * (which treats 100vh == 100dvh).
+     *
+     * 100dvh = the *dynamic* viewport — always matches the current visible
+     * area.  This keeps the scroll context strictly inside <main>/<aside>
+     * so sticky elements always position relative to the correct ancestor.
+     *
+     * The h-screen (100vh) wrapper class on the flex shell is overridden with
+     * the same dvh value for the same reason.
+     *
+     * @supports guard: old browsers that don't know dvh keep the 100vh path.
+     */
+    @supports (height: 1dvh) {
+      @media (max-width: 767px) {
+        .bw-app-shell   { height: 100dvh !important; }
+        .sidebar-scroll { max-height: calc(100dvh - 4rem); }
+        .main-scroll    { height: calc(100dvh - 4rem); }
+        .panel-scroll   { height: calc(100dvh - 4rem); }
+      }
+    }
     /* Widget cards: isolate layout so scroll doesn't trigger full-page reflow */
     .hw-card { contain: layout style; }
     /* Stack carousel: child cards must fill the slide and shed their own visual
