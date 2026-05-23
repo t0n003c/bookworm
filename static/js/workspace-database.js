@@ -6082,6 +6082,7 @@ function _dbRenderDetailPanel(card) {
   _dbAttachNoteTools(noteEl);
   /* Attach drag-and-drop for attr row reordering */
   _dbAttachAttrDrag(card.id);
+  _dbAttachAttrDragTouch(card.id);   // touch equivalent (mobile)
   /* Load the public-share badge asynchronously (non-blocking) */
   if (typeof shareLoadCardBadge === 'function') shareLoadCardBadge(card.id);
 }
@@ -8284,6 +8285,100 @@ function _dbAttrClearDropIndicator() {
   document.querySelectorAll('.db-attr-row').forEach(function(r) {
     r.style.borderTop    = '';
     r.style.borderBottom = '';
+  });
+}
+
+// ── Attr-row touch drag-to-reorder (mobile) ──────────────────────────────────
+// HTML5 drag API never fires on touch.  The grips are also opacity:0
+// and rely on mouseenter, which doesn't exist on touch — so we fix both.
+
+// Inject CSS once: make grips always-visible on coarse-pointer (touch) devices.
+(function _injectAttrGripTouchStyle() {
+  if (document.getElementById('db-attr-grip-touch-style')) return;
+  var s = document.createElement('style');
+  s.id  = 'db-attr-grip-touch-style';
+  s.textContent = '@media (pointer: coarse) { .db-attr-grip { opacity: 1 !important; } }';
+  document.head.appendChild(s);
+}());
+
+function _dbAttachAttrDragTouch(cardId) {
+  var grips = document.querySelectorAll(
+    '.db-attr-row[data-card-id="' + cardId + '"] .db-attr-grip'
+  );
+  if (!grips.length) return;
+
+  var _touchRow    = null;  // row being dragged
+  var _touchOverRow = null; // drop-target row
+  var _touchPos    = null;  // 'before' | 'after'
+  var _startX      = 0;
+  var _startY      = 0;
+  var _active      = false;
+  var THRESHOLD    = 8;     // px before drag commits
+
+  function _finish() {
+    if (_touchRow) _touchRow.style.opacity = '';
+    _dbAttrClearDropIndicator();
+    if (_active && _touchOverRow && _touchRow && _touchOverRow !== _touchRow) {
+      var parent = _touchOverRow.parentNode;
+      if (_touchPos === 'before') {
+        parent.insertBefore(_touchRow, _touchOverRow);
+      } else {
+        parent.insertBefore(_touchRow, _touchOverRow.nextSibling);
+      }
+      var rows = document.querySelectorAll('.db-attr-row[data-card-id="' + cardId + '"]');
+      var ids  = [];
+      rows.forEach(function(r) { ids.push(parseInt(r.getAttribute('data-attr-id'), 10)); });
+      _dbAttrSaveOrder(cardId, ids);
+    }
+    _touchRow = _touchOverRow = _touchPos = null;
+    _active   = false;
+  }
+
+  grips.forEach(function(grip) {
+    grip.addEventListener('touchstart', function(e) {
+      var row = e.currentTarget.closest('.db-attr-row');
+      if (!row) return;
+      var t    = e.touches[0];
+      _startX  = t.clientX;
+      _startY  = t.clientY;
+      _touchRow = row;
+      _active   = false;
+      _dbDragAttrCardId = cardId;
+    }, { passive: true });
+
+    grip.addEventListener('touchmove', function(e) {
+      if (!_touchRow) return;
+      var t = e.touches[0];
+      if (!_active) {
+        if (Math.hypot(t.clientX - _startX, t.clientY - _startY) < THRESHOLD) return;
+        _active = true;
+        _touchRow.style.opacity = '0.4';
+      }
+      e.preventDefault();   // stop page scroll while dragging
+      // Find which row is under the finger
+      _touchRow.style.display = 'none';  // hide source row so elementFromPoint skips it
+      var el = document.elementFromPoint(t.clientX, t.clientY);
+      _touchRow.style.display = '';
+      var targetRow = el && el.closest('.db-attr-row[data-card-id="' + cardId + '"]');
+      if (targetRow && targetRow !== _touchRow) {
+        var rect = targetRow.getBoundingClientRect();
+        var pos  = t.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        if (targetRow !== _touchOverRow || pos !== _touchPos) {
+          _dbAttrClearDropIndicator();
+          targetRow.style.borderTop    = pos === 'before' ? '2px solid #0053e2' : '';
+          targetRow.style.borderBottom = pos === 'after'  ? '2px solid #0053e2' : '';
+          _touchOverRow = targetRow;
+          _touchPos     = pos;
+        }
+      } else if (!targetRow) {
+        _dbAttrClearDropIndicator();
+        _touchOverRow = null;
+        _touchPos     = null;
+      }
+    }, { passive: false });
+
+    grip.addEventListener('touchend',    _finish, { passive: true });
+    grip.addEventListener('touchcancel', _finish, { passive: true });
   });
 }
 
