@@ -591,6 +591,83 @@ function rssOpenItem(idx) {
   _showPreview(it);
 }
 
+// ── Bottom-sheet (mobile “panel” / side-panel mode) ───────────────────────────
+function _rssSheet() {
+  let el = document.getElementById('rss-mob-sheet');
+  if (el) return el;
+  // Backdrop
+  const bd = document.createElement('div');
+  bd.id = 'rss-mob-sheet-bd';
+  Object.assign(bd.style, {
+    position:'fixed', inset:'0', zIndex:'38',
+    background:'rgba(0,0,0,0.45)', backdropFilter:'blur(2px)',
+    transition:'opacity 0.25s',
+  });
+  bd.addEventListener('click', _rssCloseSheet);
+  document.body.appendChild(bd);
+  // Sheet
+  el = document.createElement('div');
+  el.id = 'rss-mob-sheet';
+  Object.assign(el.style, {
+    position:'fixed', left:'0', right:'0', bottom:'0',
+    height:'85vh', zIndex:'39',
+    background:'var(--rss-sheet-bg, #fff)',
+    borderRadius:'1rem 1rem 0 0',
+    boxShadow:'0 -4px 32px rgba(0,0,0,0.18)',
+    display:'flex', flexDirection:'column',
+    transform:'translateY(100%)',
+    transition:'transform 0.28s cubic-bezier(0.32,0.72,0,1)',
+    overflow:'hidden',
+  });
+  // Respect dark mode
+  if (document.documentElement.classList.contains('dark')) {
+    el.style.background = '#18181b';
+  }
+  document.body.appendChild(el);
+  return el;
+}
+
+function _rssOpenSheet(html) {
+  const sh = _rssSheet();
+  const bd = document.getElementById('rss-mob-sheet-bd');
+  sh.innerHTML =
+    // Drag handle + close row
+    `<div class="flex flex-col flex-shrink-0">
+       <div style="display:flex;justify-content:center;padding:10px 0 4px">
+         <div style="width:40px;height:4px;border-radius:2px;
+                     background:rgba(128,128,128,.35)"></div>
+       </div>
+       <div style="display:flex;justify-content:flex-end;padding:0 12px 6px">
+         <button onclick="_rssCloseSheet()"
+           style="padding:4px 10px;font-size:13px;font-weight:600;border-radius:8px;
+                  border:1px solid rgba(128,128,128,.25);cursor:pointer;
+                  background:transparent;color:inherit" aria-label="Close">
+           ✕
+         </button>
+       </div>
+     </div>
+     <div style="flex:1;overflow-y:auto">` + html + `</div>`;
+  // Animate in
+  bd.style.opacity = '0';
+  sh.style.transform = 'translateY(100%)';
+  requestAnimationFrame(() => {
+    bd.style.opacity = '1';
+    sh.style.transform = 'translateY(0)';
+  });
+}
+
+function _rssCloseSheet() {
+  const sh = document.getElementById('rss-mob-sheet');
+  const bd = document.getElementById('rss-mob-sheet-bd');
+  if (!sh) return;
+  sh.style.transform = 'translateY(100%)';
+  if (bd) bd.style.opacity = '0';
+  setTimeout(() => {
+    sh.remove();
+    if (bd) bd.remove();
+  }, 300);
+}
+
 function _showPreview(it) {
   const isMob = _isMobileRss();
 
@@ -631,7 +708,7 @@ function _showPreview(it) {
            class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-zinc-300
                   leading-relaxed mb-5 [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2
                   [&_a]:text-[#0053e2] [&_a:hover]:underline">
-        ${safe || '<p class="text-gray-400 italic">No preview in feed \u2014 load the full article below.</p>'}
+        ${safe || '<p class="text-gray-400 italic">No preview in feed — load the full article below.</p>'}
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         ${it.link ? `<a href="${_esc(it.link)}" target="_blank" rel="noopener noreferrer"
@@ -646,10 +723,16 @@ function _showPreview(it) {
       </div>
     </div>`;
 
-  // ── Mobile: route through the app’s openPanel() so the article honours the
-  // user’s view-mode setting (side panel → fullscreen, center, or fullscreen).
-  // A ‹ Back chevron lets the user dismiss without hunting for a close button.
   if (isMob) {
+    const mode = localStorage.getItem('bw-view-mode') || 'panel';
+
+    if (mode === 'panel') {
+      // ─ Slide-up bottom sheet — visually distinct from fullscreen
+      _rssOpenSheet(articleBody);
+      return;
+    }
+
+    // ─ center or fullscreen — use the app’s openPanel() system
     const dp = document.getElementById('detail-panel');
     if (!dp) return;
     const backBtn =
@@ -672,9 +755,9 @@ function _showPreview(it) {
     return;
   }
 
-  // ── Desktop: write directly into the RSS page’s own right-column panel.
+  // ─ Desktop: write into the RSS page’s own right-column panel
   const panel = document.getElementById('rss-preview-panel');
-  if (!panel) return;       // page navigated away
+  if (!panel) return;    // page navigated away
   panel.innerHTML = articleBody;
 }
 

@@ -96,8 +96,10 @@
       </div>
     </div>
 
-    {# ── Articles panel (middle) ─────────────────────────────────────────── #}
-    <div class="w-72 flex-shrink-0 border-r border-gray-200 dark:border-zinc-800
+    {# ── Articles panel (middle) ───────────────────────────────────── #}
+    {# On mobile: flex-1 so the list fills the full width (right panel is hidden). #}
+    {# On desktop: fixed w-72 with a divider border on the right.                 #}
+    <div class="flex-1 md:flex-none md:w-72 border-r border-gray-200 dark:border-zinc-800
                 flex flex-col bg-white dark:bg-zinc-900">
 
       <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-100
@@ -159,8 +161,9 @@
       </div>
     </div>
 
-    {# ── Preview panel (right) ───────────────────────────────────────────── #}
-    <div class="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+    {# ── Preview panel (right) ─────────────────────────────────── #}
+    {# Hidden on mobile — articles open via a sheet/panel overlay instead.     #}
+    <div class="hidden md:block flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
       <div id="rss-preview-panel" class="h-full flex items-center justify-center p-8">
         <div class="text-center select-none max-w-xs">
           <div class="text-6xl mb-4">📰</div>
