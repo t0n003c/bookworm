@@ -103,7 +103,7 @@ from routers.demo import purge_old_demo_users
 from routers import note_reminders as note_reminders_router
 from routers import sharing as sharing_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
-from database import get_db
+from routers.home_db import get_home_page
 
 
 async def _demo_purge_loop():
@@ -232,7 +232,7 @@ async def serve_crm_pic(request: Request, filename: str):
     """Serve a CRM profile-picture to the page owner.
 
     Filename pattern: c{page_id}_{contact_id}.{ext}
-    Ownership: caller must own the crm_pages row for that page_id.
+    Ownership: caller must own the home_pages row for that page_id.
     """
     uid = request.session.get("user_id")
     if not uid:
@@ -243,11 +243,7 @@ async def serve_crm_pic(request: Request, filename: str):
         page_id = int(filename.lstrip("c").split("_")[0])
     except (ValueError, IndexError):
         raise HTTPException(status_code=400)
-    async with get_db() as db:
-        row = await db.execute_fetchone(
-            "SELECT id FROM crm_pages WHERE id=? AND user_id=?", (page_id, uid)
-        )
-    if not row:
+    if not await get_home_page(page_id, uid):
         raise HTTPException(status_code=403)
     path = UPLOAD_DIR / "crm-pics" / filename
     if not path.exists():
@@ -263,7 +259,7 @@ async def serve_trip_cover(request: Request, filename: str):
       loc{page_id}_{loc_id}.{ext}
       spot{page_id}_{spot_id}.{ext}
       plan{page_id}_{plan_id}.{ext}
-    Ownership: caller must own the trip_pages row for that page_id.
+    Ownership: caller must own the home_pages row for that page_id.
     """
     uid = request.session.get("user_id")
     if not uid:
@@ -278,11 +274,7 @@ async def serve_trip_cover(request: Request, filename: str):
         page_id = int(m.group(1))
     except (ValueError, AttributeError):
         raise HTTPException(status_code=400)
-    async with get_db() as db:
-        row = await db.execute_fetchone(
-            "SELECT id FROM trip_pages WHERE id=? AND user_id=?", (page_id, uid)
-        )
-    if not row:
+    if not await get_home_page(page_id, uid):
         raise HTTPException(status_code=403)
     path = UPLOAD_DIR / "trip-covers" / filename
     if not path.exists():
