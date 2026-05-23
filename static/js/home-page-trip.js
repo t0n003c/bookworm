@@ -838,7 +838,7 @@ function _tripSpotAttrRow(idx, key, val, inherited) {
   var wStyle = _tripAttrFieldPx !== null
     ? 'width:' + _tripAttrFieldPx + 'px'
     : 'width:' + Math.max(120, ((key || '').length + 2) * 8) + 'px';
-  return '<div class="flex items-center gap-2" id="tsf-attr-row-' + idx + '"'
+  return '<div class="flex items-center" id="tsf-attr-row-' + idx + '"'
     + ' data-attr-row' + (inherited ? ' data-attr-inherited' : '') + '>'
     + _TRIP_GRIP_HTML
     + '<div class="flex-1 min-w-0 flex items-center">' +
@@ -859,7 +859,7 @@ function _tripSpotAttrRow(idx, key, val, inherited) {
         'data-sattr-val data-idx="' + idx + '" class="flex-1 min-w-0 ' + valCls + '">' +
     '</div>' +
     '<button type="button" onclick="tripSpotRemoveAttrRow(' + idx + ')" ' +
-      'class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg ' +
+      'class="flex-shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded-lg ' +
              'text-gray-300 hover:text-red-500 hover:bg-red-50 ' +
              'dark:hover:bg-red-900/20 transition text-lg">×</button>' +
   '</div>';

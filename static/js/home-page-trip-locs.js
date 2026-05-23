@@ -399,7 +399,7 @@ function _tripLocAttrRow(idx, key, val) {
   var wStyle   = _tripLocAttrFieldPx !== null
     ? 'width:' + _tripLocAttrFieldPx + 'px'
     : 'width:' + Math.max(120, ((key || '').length + 2) * 8) + 'px';
-  return '<div class="flex items-center gap-2" id="tlf-attr-row-' + idx + '" data-attr-row>'
+  return '<div class="flex items-center" id="tlf-attr-row-' + idx + '" data-attr-row>'
     + _TRIP_GRIP_HTML
     + '<div class="flex-1 min-w-0 flex items-center">' +
       '<input type="text" placeholder="Field" value="' + _tripEsc(key) + '" ' +
@@ -420,7 +420,7 @@ function _tripLocAttrRow(idx, key, val) {
         'class="flex-1 min-w-0 ' + valCls + '">' +
     '</div>' +
     '<button type="button" onclick="tripLocRemoveAttrRow(' + idx + ')" ' +
-      'class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg ' +
+      'class="flex-shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded-lg ' +
              'text-gray-300 hover:text-red-500 hover:bg-red-50 ' +
              'dark:hover:bg-red-900/20 transition text-lg">×</button>' +
   '</div>';
