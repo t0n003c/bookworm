@@ -123,6 +123,40 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── Caddy HTTPS reverse proxy (optional) ─────────────────────────────────
+  # Uncomment this service to get automatic HTTPS via Let's Encrypt.
+  # Required for PWA installation on mobile (browsers block the install
+  # prompt on plain HTTP — localhost is the only exception).
+  #
+  # To enable:
+  #   1. Point your domain's A record at this server's public IP.
+  #   2. Uncomment the caddy service AND the caddy volume below.
+  #   3. Set CADDY_DOMAIN in your .env:  CADDY_DOMAIN=notes.example.com
+  #   4. docker compose up -d
+  #   5. Visit https://notes.example.com — Caddy auto-issues a free TLS cert.
+  #   6. Set BW_HTTPS=true and BW_TRUST_PROXY=true in your .env so session
+  #      cookies are flagged Secure and X-Forwarded-Proto is trusted.
+  #
+  # For a LOCAL network without a public domain, consider Cloudflare Tunnel:
+  #   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+  # It gives you a real HTTPS subdomain for free, no port-forwarding needed.
+  #
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #     - "443:443/udp"   # HTTP/3
+  #   environment:
+  #     CADDY_DOMAIN: ${CADDY_DOMAIN:-localhost}
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - bookworm
+
   # ── Collabora Online (LibreOffice in browser) ───────────────────────────────
   # Optional — provides in-browser document editing for uploaded .docx/.xlsx files.
   # Only needed if you want that feature.
@@ -169,3 +203,5 @@ services:
 #     alpine tar xzf /backup/bookworm-backup.tar.gz -C /
 volumes:
   bookworm_data:
+  # caddy_data:    # uncomment when caddy service is enabled
+  # caddy_config:  # uncomment when caddy service is enabled

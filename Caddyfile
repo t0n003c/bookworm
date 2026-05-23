@@ -1,0 +1,60 @@
+# BookWorm — Caddy reverse proxy
+#
+# Caddy automatically obtains and renews a free TLS certificate from
+# Let's Encrypt so BookWorm is served over HTTPS — a hard requirement
+# for PWA installation on mobile browsers.
+#
+# USAGE
+# ─────
+# 1. Set CADDY_DOMAIN in your .env file:
+#      CADDY_DOMAIN=notes.example.com
+#
+# 2. Uncomment the caddy service + volumes in docker-compose.yml.
+#
+# 3. docker compose up -d
+#    Caddy will handle the ACME challenge automatically on port 80,
+#    then serve traffic on port 443.
+#
+# 4. Set in your .env so session cookies and proxy headers work:
+#      BW_HTTPS=true
+#      BW_TRUST_PROXY=true
+#
+# LOCAL NETWORK (no public domain)
+# ─────────────────────────────────
+# If you don't have a public domain, use Cloudflare Tunnel instead:
+#   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+# That gives you a real HTTPS subdomain for free with no port-forwarding.
+# You won't need Caddy in that case — just set BW_HTTPS=true and
+# BW_TRUST_PROXY=true once the Tunnel is configured.
+
+{env.CADDY_DOMAIN} {
+    # Reverse-proxy all traffic to the BookWorm container.
+    # The service name "bookworm" resolves via Docker's internal DNS.
+    reverse_proxy bookworm:8001
+
+    # Compress responses for faster page loads.
+    encode gzip
+
+    # Security headers — safe defaults for a self-hosted team app.
+    header {
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # Stop MIME-type sniffing
+        X-Content-Type-Options "nosniff"
+        # Enforce HTTPS for future visits
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # Remove the Caddy server banner
+        -Server
+    }
+
+    # Send real client IP to BookWorm (needed for rate limiting / logging).
+    # Works because BW_TRUST_PROXY=true tells the app to read X-Forwarded-For.
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Real-IP {remote_host}
+
+    # Caddy logging — comment out if you prefer silence.
+    log {
+        output stderr
+        level  ERROR
+    }
+}

@@ -871,6 +871,31 @@
       </div>
     </div>
 
+    {# HTTPS required — shown when page is served over plain HTTP on a non-localhost host #}
+    <div id="bw-pwa-https" hidden>
+      <div class="bw-pwa-row">
+        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+             class="bw-pwa-appicon" alt="BookWorm app icon">
+        <div class="bw-pwa-text">
+          <p class="bw-pwa-title">HTTPS required to install</p>
+          <p class="bw-pwa-desc">
+            Browsers only allow PWA installation over a secure connection.
+            Add a domain + SSL (e.g. Caddy or Cloudflare Tunnel) to enable
+            &ldquo;Install app&rdquo; on mobile &amp; desktop.
+          </p>
+        </div>
+        <button class="bw-pwa-x" id="bw-pwa-https-dismiss" aria-label="Dismiss">&times;</button>
+      </div>
+      <div class="bw-pwa-actions">
+        <button class="bw-pwa-btn bw-pwa-btn--sec" id="bw-pwa-https-later">Got it</button>
+        <a href="https://github.com/t0n003c/bookworm#https--pwa"
+           target="_blank" rel="noopener"
+           class="bw-pwa-btn bw-pwa-btn--pri" style="text-decoration:none">
+          Setup guide ↗
+        </a>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1154,6 +1179,27 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
   function _initInstallBanner() {
     if (_isInstalled() || _wasDismissed()) return;
     _wireBannerButtons();
+
+    // Chrome requires HTTPS (or localhost) to fire beforeinstallprompt.
+    // If we're on plain HTTP over a non-localhost host, the event will
+    // never fire and the user would see nothing.  Surface a clear message
+    // explaining what's needed instead of silent failure.
+    var isSecure = window.isSecureContext;
+    var isLocal  = ['localhost', '127.0.0.1', '::1'].indexOf(location.hostname) !== -1;
+    if (!isSecure && !isLocal) {
+      var httpsEl = document.getElementById('bw-pwa-https');
+      var stdEl   = document.getElementById('bw-pwa-std');
+      var iosEl   = document.getElementById('bw-pwa-ios');
+      if (httpsEl) httpsEl.hidden = false;
+      if (stdEl)   stdEl.hidden   = true;
+      if (iosEl)   iosEl.hidden   = true;
+      ['bw-pwa-https-later', 'bw-pwa-https-dismiss'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('click', function () { _setDismissed(); _hideBanner(); });
+      });
+      setTimeout(function () { _showBanner('https'); }, 3000);
+      return;
+    }
 
     if (_isIos()) {
       setTimeout(function () { _showBanner('ios'); }, 4000);

@@ -177,12 +177,46 @@ cloudflared tunnel run --url http://localhost:8001 bookworm
 
 ### Reverse proxy (nginx / Caddy / Traefik)
 
+<a name="https--pwa"></a>
+
+> **HTTPS is required for PWA installation.**  
+> Browsers only allow the "Install app" prompt over a secure connection (HTTPS).  
+> `localhost` is the only exception — any other host over plain HTTP will silently skip the prompt.
+
 Set `BW_HTTPS=true` and `BW_TRUST_PROXY=true` in `.env`, then point your proxy at `localhost:8001`.
 
-**Caddy example** (auto-HTTPS):
-```
-your.domain.com {
-    reverse_proxy localhost:8001
+**Option A — Caddy (easiest, auto-HTTPS via Let’s Encrypt)**
+
+A `Caddyfile` is included in the repo. To enable it:
+
+1. Add your domain to `.env`:
+   ```
+   CADDY_DOMAIN=notes.example.com
+   BW_HTTPS=true
+   BW_TRUST_PROXY=true
+   ```
+2. Uncomment the `caddy` service and the two `caddy_*` volumes in `docker-compose.yml`.
+3. `docker compose up -d`
+
+Caddy will auto-issue a free TLS certificate and renew it. The install banner on mobile will then offer to add BookWorm to the home screen.
+
+**Option B — Cloudflare Tunnel (local network, no public IP needed)**
+
+See the [Cloudflare Tunnel](#-network-access) section above — this gives you a real HTTPS subdomain with no port-forwarding or certificates to manage.
+
+**Option C — nginx / Traefik**
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name notes.example.com;
+    # ... ssl_certificate / ssl_certificate_key ...
+    location / {
+        proxy_pass         http://localhost:8001;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_set_header   X-Real-IP $remote_addr;
+    }
 }
 ```
 
