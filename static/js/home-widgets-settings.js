@@ -759,8 +759,89 @@ async function saveAndCloseWidgetSettings() {
       if (typeof rssSyncFeeds === 'function') rssSyncFeeds(fieldId);
     });
     await saveWidgetSettings(Number(widgetId));
+    // note_link: patch the rendered card immediately so items appear without refresh
+    const wtype = _cardEl(Number(widgetId))?.dataset.widgetType;
+    if (wtype === 'note_link') _nlRefreshWidgetCard(Number(widgetId));
   }
   closeWidgetSettings();
+}
+
+/**
+ * Patch the rendered note-link card in-place after saving settings.
+ * Rebuilds the item list, manage button, and empty CTA visibility
+ * directly from _nlItems so a page reload is never needed.
+ */
+function _nlRefreshWidgetCard(widgetId) {
+  var listEl   = document.getElementById('nl-list-'   + widgetId);
+  var manageEl = document.getElementById('nl-manage-' + widgetId);
+  var emptyEl  = document.getElementById('nl-empty-'  + widgetId);
+  if (!listEl) return; // card not in DOM (stack child not visible, etc.)
+
+  var cfg      = _getCardConfig(widgetId);
+  var openMode = cfg.open_mode || 'popup';
+  var items    = _nlItems; // still set from the editor session
+  var hasItems = items.length > 0;
+
+  // ── Rebuild item buttons ──────────────────────────────────────────
+  var dbIcon = '<svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="currentColor" stroke-width="1.75" aria-hidden="true">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M3 10h18M3 6h18M3 14h18M3 18h18"/></svg>';
+  var docIcon = '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none"'
+    + ' stroke="currentColor" stroke-width="1.75" aria-hidden="true">'
+    + '<path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586'
+    + 'a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+  var arrowIcon = '<svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-300 dark:text-zinc-600'
+    + ' group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400'
+    + ' group-hover/nli:translate-x-0.5 transition"'
+    + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"'
+    + ' aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round"'
+    + ' d="M9 5l7 7-7 7"/></svg>';
+
+  var innerHtml = items.map(function(item) {
+    var isWs = item.type === 'workspace';
+    var isDb = isWs && item.ws_type === 'database';
+    var label = _esc(isWs ? (item.name || 'Workspace') : (item.title || 'Note'));
+    var iconHtml = isWs
+      ? (item.emoji
+          ? '<span class="text-sm leading-none flex-shrink-0 text-gray-400 dark:text-zinc-500'
+            + ' group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition"'
+            + ' aria-hidden="true">' + _esc(item.emoji) + '</span>'
+          : '<span class="flex-shrink-0 text-gray-400 dark:text-zinc-500'
+            + ' group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">' + dbIcon + '</span>')
+      : '<span class="flex-shrink-0 text-gray-300 dark:text-zinc-600'
+        + ' group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">' + docIcon + '</span>';
+    var dbBadge = isDb
+      ? '<span class="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wide'
+        + ' px-1 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40'
+        + ' text-purple-600 dark:text-purple-300">DB</span>'
+      : '';
+    var clickAttr = isWs
+      ? 'onclick="wsSingleClick(' + item.id + ')"'
+      + ' aria-label="Open workspace ' + _escAttr(item.name || 'Workspace') + '"'
+      : 'onclick="openNotePreview(' + widgetId + ',' + item.id + ',\'' + openMode + '\')"'
+      + ' aria-label="Open note ' + _escAttr(item.title || 'Note') + '"';
+    var trailingIcon = isWs ? '' : arrowIcon;
+    return '<button type="button" ' + clickAttr
+      + ' class="flex items-center gap-2 w-full text-left group/nli'
+      + ' px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800/70 transition">'
+      + iconHtml
+      + '<span class="flex-1 min-w-0 text-sm font-medium truncate'
+      + ' text-gray-700 dark:text-zinc-300'
+      + ' group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">'
+      + label + '</span>'
+      + dbBadge
+      + trailingIcon
+      + '</button>';
+  }).join('');
+
+  listEl.innerHTML = innerHtml;
+
+  // ── Toggle visibility of the three regions ──────────────────────────
+  listEl.classList.toggle('hidden', !hasItems);
+  if (manageEl) manageEl.classList.toggle('hidden', !hasItems);
+  if (emptyEl)  emptyEl.classList.toggle('hidden',  hasItems);
 }
 
 // ── saveClockSetting — live-preview + persist for clock widgets ────────────

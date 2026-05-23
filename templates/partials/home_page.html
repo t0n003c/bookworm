@@ -455,11 +455,12 @@
 {% endset %}
 {#- Always-visible 'Add / manage links' button -#}
 {% set _manage_btn %}
-<button type="button"
+<button id="nl-manage-{{ w.id }}" type="button"
         onclick="openWidgetSettings({{ w.id }}, 'Note Links', '🔗')"
         class="mt-1.5 flex items-center gap-1 text-[11px]
                text-gray-400 dark:text-zinc-500
-               hover:text-wblue dark:hover:text-blue-400 transition">
+               hover:text-wblue dark:hover:text-blue-400 transition
+               {% if not _items %}hidden{% endif %}">
   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor"
        stroke-width="2.5" aria-hidden="true">
     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
@@ -469,7 +470,7 @@
 {% endset %}
 {#- Empty-state CTA -#}
 {% set _empty_cta %}
-<button type="button"
+<button id="nl-empty-{{ w.id }}" type="button"
         onclick="openWidgetSettings({{ w.id }}, 'Note Links', '🔗')"
         class="flex-1 flex flex-col items-center justify-center gap-2 w-full
                rounded-xl border-2 border-dashed
@@ -477,7 +478,8 @@
                text-gray-400 dark:text-zinc-500
                hover:border-wblue hover:text-wblue
                dark:hover:border-blue-500 dark:hover:text-blue-400
-               transition py-4">
+               transition py-4
+               {% if _items %}hidden{% endif %}">
   <svg class="w-7 h-7 opacity-50" viewBox="0 0 24 24" fill="none"
        stroke="currentColor" stroke-width="1.5" aria-hidden="true">
     <path stroke-linecap="round" stroke-linejoin="round"
@@ -491,7 +493,8 @@
 {% endset %}
 {#- Shared scrollable item list — used by both style branches -#}
 {% set _item_list %}
-<div class="flex-1 min-h-0 overflow-y-auto -mx-1.5 px-1.5 space-y-0.5">
+<div id="nl-list-{{ w.id }}" class="flex-1 min-h-0 overflow-y-auto -mx-1.5 px-1.5 space-y-0.5
+                                    {% if not _items %}hidden{% endif %}">
   {% for item in _items %}
   {% if item.get('type') == 'workspace' %}
   <button type="button" onclick="wsSingleClick({{ item.get('id') }})"
@@ -546,19 +549,17 @@
 </div>
 {% endset %}
 
-{# ── minimal style ─────────────────────────────────────────────────── #}
+{# ── minimal style ─────────────────────────────────────────────────────────────── #}
 {% if w.style == 'minimal' %}
 {% call card(w) %}
   {{ widget_header(w, 'Note Links', '🔗') }}
-  {% if _items %}{{ _item_list }}{{ _manage_btn }}
-  {% else %}{{ _empty_cta }}{% endif %}
+  {{ _item_list }}{{ _manage_btn }}{{ _empty_cta }}
 {% endcall %}
-{# ── card style ────────────────────────────────────────────────────── #}
+{# ── card style ────────────────────────────────────────────────────────────────── #}
 {% else %}
 {% call card(w) %}
   {{ widget_header(w, 'Note Links', '🔗') }}
-  {% if _items %}{{ _item_list }}{{ _manage_btn }}
-  {% else %}{{ _empty_cta }}{% endif %}
+  {{ _item_list }}{{ _manage_btn }}{{ _empty_cta }}
 {% endcall %}
 {% endif %}
 {% endmacro %}
