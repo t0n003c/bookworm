@@ -525,7 +525,7 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         +       '<path stroke-linecap="round" stroke-linejoin="round"'
         +             ' d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>'
         +     '</svg>'
-        +     '<span class="flex-1 text-xs font-semibold text-teal-700 dark:text-teal-400">Add a workspace</span>'
+        +     '<span class="flex-1 text-xs font-semibold text-teal-700 dark:text-teal-400">Add workspace / database</span>'
         +     '<svg id="nl-ws-chev"'
         +         ' class="w-3 h-3 flex-shrink-0 text-teal-500/50 dark:text-teal-400/50 transition-transform duration-150"'
         +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
@@ -940,10 +940,11 @@ function _nlRefreshNotePicker(filterText) {
       groups[wid].forEach(function(n) {
         var t = n.title || 'Untitled';
         var s = (n.content || '').replace(/<[^>]*>/g, '').slice(0, 80);
+        // _escAttr converts " → &quot; so the onclick attr doesn't close early
         html += '<div class="flex items-center gap-1.5 px-4 py-1 cursor-pointer'
           +           ' hover:bg-blue-50 dark:hover:bg-blue-900/20'
           +           ' text-gray-700 dark:text-zinc-200 group/note"'
-          +     ' onclick="_nlPickNoteById(_nlCurrentWidgetId,' + n.id + ',' + JSON.stringify(t) + ',' + JSON.stringify(s) + ')"'
+          +     ' onclick="_nlPickNoteById(_nlCurrentWidgetId,' + n.id + ',' + _escAttr(JSON.stringify(t)) + ',' + _escAttr(JSON.stringify(s)) + ')"'
           +     ' title="Click to add">'
           +   '<span class="flex-shrink-0 text-gray-300 dark:text-zinc-600">📄</span>'
           +   '<span class="flex-1 min-w-0 truncate">' + _esc(t) + '</span>'
@@ -956,10 +957,11 @@ function _nlRefreshNotePicker(filterText) {
     filtered.forEach(function(n) {
       var t = n.title || 'Untitled';
       var s = (n.content || '').replace(/<[^>]*>/g, '').slice(0, 80);
+      // _escAttr converts " → &quot; so the onclick attr doesn't close early
       html += '<div class="flex items-center gap-1.5 px-2 py-1 cursor-pointer'
         +           ' hover:bg-blue-50 dark:hover:bg-blue-900/20'
         +           ' text-gray-700 dark:text-zinc-200 group/note"'
-        +     ' onclick="_nlPickNoteById(_nlCurrentWidgetId,' + n.id + ',' + JSON.stringify(t) + ',' + JSON.stringify(s) + ')"'
+        +     ' onclick="_nlPickNoteById(_nlCurrentWidgetId,' + n.id + ',' + _escAttr(JSON.stringify(t)) + ',' + _escAttr(JSON.stringify(s)) + ')"'
         +     ' title="Click to add">'
         +   '<span class="flex-shrink-0 text-gray-300">📄</span>'
         +   '<span class="flex-1 min-w-0 truncate">' + _esc(t) + '</span>'
@@ -1013,8 +1015,9 @@ function _nlCurrentNoteFilter() {
   return el ? el.value : '';
 }
 
-/** Populate the workspace list — hierarchical tree, collapsible parents,
- *  hidden workspaces excluded, already-added excluded, filtered by search text. */
+/** Populate the workspace list — databases section first, then hierarchical
+ *  workspace tree.  Hidden workspaces excluded, already-added excluded,
+ *  filtered by search text. */
 function _nlRefreshWsPicker(filterText) {
   var list = document.getElementById('nl-ws-list');
   if (!list || !_nlWsCache) return;
@@ -1027,66 +1030,106 @@ function _nlRefreshWsPicker(filterText) {
   var available = _nlWsCache.filter(function(w) {
     return !hiddenIds.has(w.id) && !addedIds.has(w.id);
   });
-  // When searching: flat list of matching workspaces
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+  function _sectionHdr(label, colorCls) {
+    return '<div class="px-2 pt-2 pb-0.5 text-[9px] font-bold uppercase tracking-widest '
+      + colorCls + '">' + label + '</div>';
+  }
+
+  // ── Search path: flat list, databases first ───────────────────────────
   if (q) {
-    var matched = available.filter(function(w) { return (w.name || '').toLowerCase().indexOf(q) !== -1; });
+    var matched = available.filter(function(w) {
+      return (w.name || '').toLowerCase().indexOf(q) !== -1;
+    });
     if (!matched.length) {
       list.innerHTML = '<p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">No matches.</p>';
       return;
     }
-    list.innerHTML = matched.map(function(w) { return _nlWsRowHtml(w, 'pl-2'); }).join('');
+    var dbs = matched.filter(function(w) { return w.ws_type === 'database'; });
+    var wss = matched.filter(function(w) { return w.ws_type !== 'database'; });
+    var html = '';
+    if (dbs.length) {
+      html += _sectionHdr('Databases', 'text-purple-400 dark:text-purple-400');
+      html += dbs.map(function(w) { return _nlWsRowHtml(w, 'pl-2'); }).join('');
+    }
+    if (wss.length) {
+      if (dbs.length) html += '<div class="my-1 border-t border-gray-100 dark:border-zinc-700"></div>';
+      html += _sectionHdr('Workspaces', 'text-gray-400 dark:text-zinc-500');
+      html += wss.map(function(w) { return _nlWsRowHtml(w, 'pl-2'); }).join('');
+    }
+    list.innerHTML = html;
     return;
   }
-  // Normal: hierarchical tree
+
+  // ── Normal path: databases section first, then hierarchical tree ──────
   if (!available.length) {
     list.innerHTML = '<p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">No workspaces available.</p>';
     return;
   }
-  var availIds = new Set(available.map(function(w) { return w.id; }));
-  var children = {};
-  var roots = [];
-  available.forEach(function(w) {
-    var pid = w.parent_id;
-    if (pid && availIds.has(pid)) {
-      if (!children[pid]) children[pid] = [];
-      children[pid].push(w);
-    } else {
-      roots.push(w);
-    }
-  });
+
+  // Separate databases (always flat — they don’t nest) from regular workspaces
+  var databases  = available.filter(function(w) { return w.ws_type === 'database'; });
+  var regulars   = available.filter(function(w) { return w.ws_type !== 'database'; });
+  var regularIds = new Set(regulars.map(function(w) { return w.id; }));
+
   var html = '';
-  roots.forEach(function(w) {
-    var kids = children[w.id] || [];
-    if (kids.length) {
-      var collapsed = !_nlWsGroupExpanded.has(w.id);
-      html += '<div>'
-        // row: [chevron] [clickable workspace name]
-        + '<div class="flex items-center gap-0.5 group/wsrow">'
-        +   '<button type="button" onclick="_nlToggleWsGroup(' + w.id + ')"'
-        +     ' class="flex-shrink-0 w-6 h-6 flex items-center justify-center'
-        +             ' text-gray-300 dark:text-zinc-600'
-        +             ' hover:text-gray-600 dark:hover:text-zinc-300 transition"'
-        +     ' title="Expand/collapse children" aria-label="Toggle children">'
-        +     '<svg id="nl-wg-chev-' + w.id + '"'
-        +         ' class="w-2.5 h-2.5 transition-transform duration-150 ' + (collapsed ? '' : 'rotate-90') + '"'
-        +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
-        +       '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>'
-        +     '</svg>'
-        +   '</button>'
-        +   _nlWsClickableHtml(w, 'flex-1')
-        + '</div>'
-        // children
-        + '<div id="nl-wg-' + w.id + '"' + (collapsed ? ' class="hidden"' : '') + '>'
-        + kids.map(function(k) { return '<div class="pl-5">' + _nlWsRowHtml(k, '') + '</div>'; }).join('')
-        + '</div></div>';
-    } else {
-      html += '<div class="flex items-center gap-0.5">'
-        + '<span class="flex-shrink-0 w-6"></span>'
-        + _nlWsClickableHtml(w, 'flex-1')
-        + '</div>';
-    }
-  });
-  list.innerHTML = html;
+
+  // Databases section
+  if (databases.length) {
+    html += _sectionHdr('Databases', 'text-purple-400 dark:text-purple-400');
+    databases.forEach(function(w) {
+      html += _nlWsRowHtml(w, 'pl-2');
+    });
+  }
+
+  // Workspaces section (hierarchical)
+  if (regulars.length) {
+    if (databases.length) html += '<div class="my-1 border-t border-gray-100 dark:border-zinc-700"></div>';
+    html += _sectionHdr('Workspaces', 'text-gray-400 dark:text-zinc-500');
+    var children = {};
+    var roots = [];
+    regulars.forEach(function(w) {
+      var pid = w.parent_id;
+      if (pid && regularIds.has(pid)) {
+        if (!children[pid]) children[pid] = [];
+        children[pid].push(w);
+      } else {
+        roots.push(w);
+      }
+    });
+    roots.forEach(function(w) {
+      var kids = children[w.id] || [];
+      if (kids.length) {
+        var collapsed = !_nlWsGroupExpanded.has(w.id);
+        html += '<div>'
+          + '<div class="flex items-center gap-0.5 group/wsrow">'
+          +   '<button type="button" onclick="_nlToggleWsGroup(' + w.id + ')"'
+          +     ' class="flex-shrink-0 w-6 h-6 flex items-center justify-center'
+          +             ' text-gray-300 dark:text-zinc-600'
+          +             ' hover:text-gray-600 dark:hover:text-zinc-300 transition"'
+          +     ' title="Expand/collapse children" aria-label="Toggle children">'
+          +     '<svg id="nl-wg-chev-' + w.id + '"'
+          +         ' class="w-2.5 h-2.5 transition-transform duration-150 ' + (collapsed ? '' : 'rotate-90') + '"'
+          +         ' fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">'
+          +       '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>'
+          +     '</svg>'
+          +   '</button>'
+          +   _nlWsClickableHtml(w, 'flex-1')
+          + '</div>'
+          + '<div id="nl-wg-' + w.id + '"' + (collapsed ? ' class="hidden"' : '') + '>'
+          + kids.map(function(k) { return '<div class="pl-5">' + _nlWsRowHtml(k, '') + '</div>'; }).join('')
+          + '</div></div>';
+      } else {
+        html += '<div class="flex items-center gap-0.5">'
+          + '<span class="flex-shrink-0 w-6"></span>'
+          + _nlWsClickableHtml(w, 'flex-1')
+          + '</div>';
+      }
+    });
+  }
+
+  list.innerHTML = html || '<p class="px-2 py-2 text-xs text-gray-400 dark:text-zinc-500 italic">No workspaces available.</p>';
 }
 
 /** Toggle a workspace parent-group collapsed/expanded (DOM-only, no re-render). */
