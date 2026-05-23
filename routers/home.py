@@ -25,7 +25,7 @@ from routers.home_db import (
     add_widget, create_home_page, create_stack_widget, delete_home_page,
     delete_widget, duplicate_home_page, empty_home_page_trash, get_home_page,
     get_home_pages, get_trashed_home_pages, get_widget_by_id, get_widgets,
-    permanent_delete_home_page, restore_home_page, reorder_widgets,
+    permanent_delete_home_page, restore_home_page, reorder_home_pages, reorder_widgets,
     rename_home_page, stack_add_child, unstack_widget, update_page_config,
     update_widget_config, update_widget_style,
 )
@@ -905,6 +905,17 @@ async def permanent_delete_page(request: Request, page_id: int):
         request, "partials/sidebar_trash.html",
         {"trashed_workspaces": trashed_wss, "trashed_home_pages": trashed_home_pages},
     )
+
+
+@router.post("/pages/reorder")
+async def reorder_pages_route(request: Request):
+    """Persist a new sidebar order sent by the touch drag-and-drop handler."""
+    uid  = _uid(request)
+    body = await request.json()
+    ids  = [int(i) for i in body.get("ids", [])]
+    if ids:
+        await reorder_home_pages(uid, ids)
+    return Response(status_code=204)
 
 
 @router.post("/pages/create", response_class=HTMLResponse)

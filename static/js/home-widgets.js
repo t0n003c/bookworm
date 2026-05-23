@@ -543,24 +543,47 @@ function _trashDrop(event) {
   _doDeletePage(pageId);
 }
 
-// ── Touch drag-to-trash for homespace pages (mobile) ────────────────────────
-// HTML5 drag-and-drop is not supported on touch devices, so we layer
-// touch events on top.  The same #dnd-ghost pill the workspace DnD uses
-// provides the visual feedback.
+// ── Touch drag-to-trash + reorder for homespace pages (mobile) ───────────────
+// HTML5 DnD is not supported on touch devices, so we use Touch Events.
+// Long-press (LONG_MS) arms the drag; moving past THRESHOLD commits it.
+// Dropping over #sidebar-trash deletes; dropping over another list-item reorders.
 (function _initPageTouchDnd() {
   'use strict';
-  var THRESHOLD = 12; // px before we commit to a drag
-  var _pgId   = null; // page-id being dragged
-  var _pgName = null;
-  var _startX = 0, _startY = 0;
-  var _active = false;
+  var LONG_MS   = 300;  // ms hold before drag arms
+  var THRESHOLD = 8;    // px movement before drag is committed
 
+  var _pgId    = null;
+  var _pgName  = null;
+  var _srcLi   = null;
+  var _startX  = 0, _startY = 0;
+  var _armed   = false;   // long-press fired
+  var _active  = false;   // finger moved past THRESHOLD
+  var _timer   = null;
+  var _dropLi  = null;    // list-item the ghost is currently over
+  var _dropPos = null;    // 'before' | 'after'
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function _ghost() {
     var g = document.getElementById('dnd-ghost');
     if (!g) { g = document.createElement('div'); g.id = 'dnd-ghost'; document.body.appendChild(g); }
     return g;
   }
-  function _trashZone() { return document.getElementById('sidebar-trash'); }
+
+  function _indicator() {
+    var el = document.getElementById('pg-dnd-indicator');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'pg-dnd-indicator';
+      Object.assign(el.style, {
+        position: 'fixed', height: '2px', background: '#0053e2',
+        borderRadius: '2px', pointerEvents: 'none', display: 'none', zIndex: '9999',
+      });
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function _trashZone()  { return document.getElementById('sidebar-trash'); }
 
   function _overTrash(x, y) {
     var zone = _trashZone();
@@ -569,60 +592,141 @@ function _trashDrop(event) {
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   }
 
-  function _cleanup(overTrash) {
-    var g = _ghost(); g.style.display = 'none';
-    var zone = _trashZone();
-    if (zone) zone.style.outline = '';
-    document.body.classList.remove('dnd-active');
-    var li = _pgId && document.querySelector('#home-page-list [data-page-id="' + _pgId + '"]');
-    if (li) li.style.opacity = '';
-    var pid = _pgId;
-    _pgId = _pgName = null; _active = false;
-    if (overTrash && pid) _doDeletePage(pid);
+  // Return { li, pos } for the list item under (x, y), or null.
+  function _hitItem(x, y) {
+    // Hide ghost + indicator so elementFromPoint sees through them
+    var g = _ghost(); var ind = _indicator();
+    var gd = g.style.display; var id_ = ind.style.display;
+    g.style.display = 'none'; ind.style.display = 'none';
+    var el = document.elementFromPoint(x, y);
+    g.style.display = gd; ind.style.display = id_;
+    if (!el) return null;
+    var li = el.closest('#home-page-list [data-page-id]');
+    if (!li || li === _srcLi) return null;
+    var r   = li.getBoundingClientRect();
+    var pos = (y < r.top + r.height / 2) ? 'before' : 'after';
+    return { li: li, pos: pos };
   }
 
+  function _showIndicator(li, pos) {
+    var ind = _indicator();
+    var r   = li.getBoundingClientRect();
+    ind.style.top     = (pos === 'before' ? r.top - 1 : r.bottom - 1) + 'px';
+    ind.style.left    = r.left + 'px';
+    ind.style.width   = r.width + 'px';
+    ind.style.display = 'block';
+  }
+
+  function _cleanup(action) {
+    if (_timer) { clearTimeout(_timer); _timer = null; }
+    var g   = _ghost();     g.style.display = 'none';
+    var ind = _indicator(); ind.style.display = 'none';
+    var tz  = _trashZone(); if (tz) tz.style.outline = '';
+    document.body.classList.remove('dnd-active');
+    if (_srcLi) { _srcLi.style.opacity = ''; _srcLi.style.outline = ''; }
+
+    var pid = _pgId;
+    var src = _srcLi;
+    var tgt = _dropLi;
+    var pos = _dropPos;
+    _pgId = _pgName = _srcLi = _dropLi = _dropPos = null;
+    _armed = _active = false;
+
+    if (!pid || action === 'cancel') return;
+    if (action === 'trash') { _doDeletePage(pid); return; }
+    if (action === 'reorder' && tgt) {
+      // Move DOM immediately for instant feedback
+      var ul = src.parentNode;
+      if (pos === 'before') ul.insertBefore(src, tgt);
+      else ul.insertBefore(src, tgt.nextSibling);
+      // Persist new order
+      var ids = Array.from(ul.querySelectorAll('[data-page-id]'))
+                     .map(function(n) { return n.dataset.pageId; });
+      fetch('/home/pages/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ ids: ids }),
+      }).catch(function(err) { console.warn('[pg-dnd] reorder failed', err); });
+    }
+  }
+
+  // ── Touch event handlers ──────────────────────────────────────────────────
   document.addEventListener('touchstart', function(e) {
     var li = e.target.closest('#home-page-list [data-page-id]');
     if (!li) return;
-    // Don't steal taps on the ⋮ menu button
-    if (e.target.closest('button')) return;
+    // Only block the ⋮ menu button (marked data-pg-menu), not the nav button
+    if (e.target.closest('[data-pg-menu]')) return;
     var t = e.touches[0];
     _startX = t.clientX; _startY = t.clientY;
     _pgId   = parseInt(li.dataset.pageId, 10);
-    var btn = li.querySelector('button');
+    _srcLi  = li;
+    var btn = li.querySelector('button:not([data-pg-menu])');
     _pgName = btn ? (btn.title || 'page') : 'page';
+    // Arm drag after long-press
+    _timer = setTimeout(function() {
+      _armed = true;
+      li.style.outline = '2px solid #0053e2';
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, LONG_MS);
   }, { passive: true });
 
   document.addEventListener('touchmove', function(e) {
     if (!_pgId) return;
-    var t = e.touches[0];
+    var t   = e.touches[0];
+    var dx  = t.clientX - _startX;
+    var dy  = t.clientY - _startY;
+    // If finger moves past threshold before long-press fires, cancel entirely
+    if (!_armed) {
+      if (Math.hypot(dx, dy) > THRESHOLD) { _cleanup('cancel'); }
+      return;
+    }
     if (!_active) {
-      if (Math.hypot(t.clientX - _startX, t.clientY - _startY) < THRESHOLD) return;
+      // First move after arm — commit to drag
       _active = true;
       document.body.classList.add('dnd-active');
-      var li = document.querySelector('#home-page-list [data-page-id="' + _pgId + '"]');
-      if (li) li.style.opacity = '0.4';
+      _srcLi.style.opacity = '0.4';
+      _srcLi.style.outline = '';
     }
     e.preventDefault();
+
+    // Move ghost pill
     var g = _ghost();
     g.style.display = 'block';
-    g.style.left = t.clientX + 'px';
-    g.style.top  = t.clientY + 'px';
-    g.textContent = _pgName;
-    var zone = _trashZone();
-    if (zone) zone.style.outline = _overTrash(t.clientX, t.clientY)
-      ? '2px dashed #ea1100' : '';
+    g.style.left    = t.clientX + 'px';
+    g.style.top     = t.clientY + 'px';
+    g.textContent   = '📄 ' + _pgName;
+
+    // Highlight trash or show reorder indicator
+    var tz = _trashZone();
+    if (_overTrash(t.clientX, t.clientY)) {
+      if (tz) tz.style.outline = '2px dashed #ea1100';
+      _indicator().style.display = 'none';
+      _dropLi = null; _dropPos = null;
+    } else {
+      if (tz) tz.style.outline = '';
+      var hit = _hitItem(t.clientX, t.clientY);
+      if (hit) {
+        _dropLi = hit.li; _dropPos = hit.pos;
+        _showIndicator(hit.li, hit.pos);
+      } else {
+        _indicator().style.display = 'none';
+        _dropLi = null; _dropPos = null;
+      }
+    }
   }, { passive: false });
 
   document.addEventListener('touchend', function(e) {
     if (!_pgId) return;
+    if (!_active) { _cleanup('cancel'); return; }
     var t = e.changedTouches[0];
-    var drop = _active && _overTrash(t.clientX, t.clientY);
-    _cleanup(drop);
+    if (_overTrash(t.clientX, t.clientY)) { _cleanup('trash'); }
+    else if (_dropLi)                      { _cleanup('reorder'); }
+    else                                   { _cleanup('cancel'); }
   }, { passive: true });
 
   document.addEventListener('touchcancel', function() {
-    if (_pgId) _cleanup(false);
+    if (_pgId) _cleanup('cancel');
   }, { passive: true });
 }());
 
