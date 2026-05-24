@@ -3559,6 +3559,9 @@
   let _startX  = 0;
   let _startY  = 0;
   let _active  = false;  // true once threshold crossed
+  let _armed   = false;  // long-press timer fired — next move commits drag (name-btn path)
+  let _lpTimer = null;   // setTimeout id for 400 ms name-button arm
+  let _fromNameBtn = false; // gesture started on the workspace name button
 
   const getActiveWsId = () =>
     document.getElementById('active-workspace')?.value || '';
@@ -3630,8 +3633,9 @@
     clearOver();
     ghost().style.display = 'none';
     if (_dimEl) _dimEl.classList.remove('dnd-dragging');
+    clearTimeout(_lpTimer); _lpTimer = null;
     _wsId = _trashId = _dimEl = _handleEl = null;
-    _active = false;
+    _active = false; _armed = false; _fromNameBtn = false;
   }
 
   /* ── MOUSEDOWN — arm the drag ── */
@@ -3737,32 +3741,87 @@
      TOUCH SUPPORT — mirrors the mouse handlers above so
      mobile users can drag workspaces to reorder / trash.
      touchstart = mousedown  |  touchmove = mousemove  |  touchend = mouseup
+
+     Two trigger paths:
+       1. .dnd-handle touch  → arm immediately (same as mouse).
+       2. Name button touch  → 400 ms long-press arms the drag;
+          quick taps still fire wsSingleClick() natively.
   ───────────────────────────────────────────────────── */
   document.addEventListener('touchstart', (e) => {
-    const handle = e.target.closest('.dnd-handle');
-    if (!handle) return;
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+    const handle  = e.target.closest('.dnd-handle');
+    // Name button = the main row button with data-ws-id (not sub-buttons)
+    const nameBtn = !handle &&
+      e.target.closest('.ws-tree-node button[data-ws-id]');
+    if (!handle && !nameBtn) return;
+    if (e.target.tagName === 'BUTTON' && !handle && !nameBtn) return;
+    if (e.touches.length !== 1) return;  // ignore multi-touch
+
     const t = e.touches[0];
     _startX = t.clientX; _startY = t.clientY;
-    _label  = handle.dataset.dndLabel || 'workspace';
-    _handleEl = handle;
-    if (handle.dataset.dndWsId !== undefined) {
-      _wsId = +handle.dataset.dndWsId; _trashId = null;
-      _dimEl = handle.closest('.ws-tree-node');
+    _fromNameBtn = !handle;
+
+    if (handle) {
+      // Grip handle: block compositor immediately, arm drag state now.
+      e.preventDefault();
+      _label    = handle.dataset.dndLabel || 'workspace';
+      _handleEl = handle;
+      if (handle.dataset.dndWsId !== undefined) {
+        _wsId = +handle.dataset.dndWsId; _trashId = null;
+        _dimEl = handle.closest('.ws-tree-node');
+      } else {
+        _trashId = +handle.dataset.dndTrashId; _wsId = null;
+        _dimEl = handle.closest('[data-dnd-trash-item]');
+      }
     } else {
-      _trashId = +handle.dataset.dndTrashId; _wsId = null;
-      _dimEl = handle.closest('[data-dnd-trash-item]');
+      // Name button: 400 ms long-press arms the drag.
+      // Do NOT preventDefault here — quick taps must fire wsSingleClick().
+      const wsId = +nameBtn.dataset.wsId;
+      const node = nameBtn.closest('.ws-tree-node');
+      // Find the associated dnd-handle to grab label/emoji data
+      const h = node ? node.querySelector('.dnd-handle[data-dnd-ws-id]') : null;
+      _lpTimer = setTimeout(() => {
+        if (_active || !node) return;
+        _wsId     = wsId;
+        _trashId  = null;
+        _dimEl    = node;
+        _handleEl = h || nameBtn;
+        _label    = h ? (h.dataset.dndLabel || 'workspace') : (nameBtn.textContent.trim() || 'workspace');
+        _armed    = true;
+        node.classList.add('dnd-dragging');
+        if (navigator.vibrate) navigator.vibrate(30);
+      }, 400);
     }
-  }, { passive: true });
+  }, { passive: false });
 
   document.addEventListener('touchmove', (e) => {
-    if (!_wsId && !_trashId) return;
     const t = e.touches[0];
+    const dx = t.clientX - _startX;
+    const dy = t.clientY - _startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (_fromNameBtn && !_armed) {
+      // Pre-arm: apply slop zone to hold compositor during the 400 ms window.
+      const SLOP = 12;
+      if (dist < SLOP) { e.preventDefault(); return; }
+      // Past slop before arm — classify gesture direction.
+      if (Math.abs(dy) > Math.abs(dx) * 1.5) {
+        // Clear vertical swipe: abort and let sidebar scroll natively.
+        clearTimeout(_lpTimer); _lpTimer = null;
+        _wsId = _trashId = _dimEl = _handleEl = null;
+        _active = false; _armed = false; _fromNameBtn = false;
+        return;  // no preventDefault → compositor scrolls
+      }
+      // Horizontal/diagonal: treat as drag intent; fall through to commit.
+      e.preventDefault();
+    }
+
+    if (!_wsId && !_trashId) return;  // nothing armed yet
     if (!_active) {
-      if (Math.hypot(t.clientX - _startX, t.clientY - _startY) < THRESHOLD) return;
+      if (dist < THRESHOLD) { e.preventDefault(); return; }
       _active = true;
       document.body.classList.add('dnd-active');
       if (_dimEl) _dimEl.classList.add('dnd-dragging');
+      if (_fromNameBtn && navigator.vibrate) navigator.vibrate(30);
     }
     e.preventDefault(); // stop page scroll while dragging
     moveGhost(t.clientX, t.clientY);

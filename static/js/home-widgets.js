@@ -553,15 +553,18 @@ function _trashDrop(event) {
   'use strict';
   var THRESHOLD = 10;  // px from touch-start before drag is committed
 
-  var _pgId   = null;
-  var _pgName  = null;
-  var _pgEmoji = null;
-  var _pgType  = null;
-  var _srcLi   = null;
-  var _startX = 0, _startY = 0;
-  var _active = false;   // committed to drag
-  var _dropLi = null;
-  var _dropPos = null;
+  var _pgId      = null;
+  var _pgName    = null;
+  var _pgEmoji   = null;
+  var _pgType    = null;
+  var _srcLi     = null;
+  var _startX    = 0, _startY = 0;
+  var _active    = false;  // committed to drag
+  var _armed     = false;  // long-press timer fired — next move commits drag
+  var _fromHandle = false; // touch started on the grip handle (vs name button)
+  var _armTimer  = null;   // setTimeout id for the 400 ms name-button arm
+  var _dropLi    = null;
+  var _dropPos   = null;
 
   // Show handles only on real touch devices (body.bw-touch is set by
   // _gridInitTouch; we also set it here so sidebar-only pages work).
@@ -656,8 +659,9 @@ function _trashDrop(event) {
     var src = _srcLi;
     var tgt = _dropLi;
     var pos = _dropPos;
+    clearTimeout(_armTimer); _armTimer = null;
     _pgId = _pgName = _pgEmoji = _pgType = _srcLi = _dropLi = _dropPos = null;
-    _active = false;
+    _active = false; _armed = false; _fromHandle = false;
 
     if (!pid || action === 'cancel') return;
     if (action === 'trash') { _doDeletePage(pid); return; }
@@ -678,63 +682,106 @@ function _trashDrop(event) {
     }
   }
 
-  // -- Touch event handlers (per-gesture, attached/detached on handle touch) --
+  // -- Touch event handlers (per-gesture, attached/detached on handle/name touch) --
   function _onMove(e) {
-    var t = e.touches[0];
-    e.preventDefault();
-    var dx = t.clientX - _startX;
-    var dy = t.clientY - _startY;
-    if (!_active) {
-      if (Math.hypot(dx, dy) < THRESHOLD) return;
+    var t   = e.touches[0];
+    var dx  = t.clientX - _startX;
+    var dy  = t.clientY - _startY;
+    var dist = Math.hypot(dx, dy);
+
+    if (_active) {
+      // Already dragging — keep full control.
+      e.preventDefault();
+      var g = _ghost();
+      g.style.display = 'block';
+      g.style.left    = t.clientX + 'px';
+      g.style.top     = t.clientY + 'px';
+      g.textContent   = '\uD83D\uDCC4 ' + _pgName;
+      // Edge-scroll sidebar while dragging near top/bottom
+      var sb  = document.getElementById('sidebar');
+      var vh  = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+      if (sb) {
+        var fromTop = t.clientY;
+        var fromBot = vh - t.clientY;
+        var ZONE = 80;
+        if (fromTop < ZONE) sb.scrollTop -= Math.max(2, Math.round(12 * (1 - fromTop / ZONE)));
+        else if (fromBot < ZONE) sb.scrollTop += Math.max(2, Math.round(12 * (1 - fromBot / ZONE)));
+      }
+      var tz = _trashZone();
+      if (_overTrash(t.clientX, t.clientY)) {
+        if (tz) tz.style.outline = '2px dashed #ea1100';
+        _indicator().style.display = 'none';
+        _dropLi = null; _dropPos = null;
+      } else {
+        if (tz) tz.style.outline = '';
+        var hit = _hitItem(t.clientX, t.clientY);
+        if (hit) { _dropLi = hit.li; _dropPos = hit.pos; _showIndicator(hit.li, hit.pos); }
+        else { _indicator().style.display = 'none'; _dropLi = null; _dropPos = null; }
+      }
+      return;
+    }
+
+    if (_fromHandle) {
+      // Handle path: block compositor immediately, commit once past threshold.
+      e.preventDefault();
+      if (dist < THRESHOLD) return;
       _active = true;
       document.body.classList.add('dnd-active');
       _srcLi.style.opacity = '0.4';
       if (navigator.vibrate) navigator.vibrate(30);
+      return;
     }
-    var g = _ghost();
-    g.style.display = 'block';
-    g.style.left    = t.clientX + 'px';
-    g.style.top     = t.clientY + 'px';
-    g.textContent   = '\uD83D\uDCC4 ' + _pgName;
-    // Edge-scroll sidebar while dragging near top/bottom
-    var sb  = document.getElementById('sidebar');
-    var vh  = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-    if (sb) {
-      var fromTop = t.clientY;
-      var fromBot = vh - t.clientY;
-      var ZONE = 80;
-      if (fromTop < ZONE) sb.scrollTop -= Math.max(2, Math.round(12 * (1 - fromTop / ZONE)));
-      else if (fromBot < ZONE) sb.scrollTop += Math.max(2, Math.round(12 * (1 - fromBot / ZONE)));
+
+    // Name-button long-press path: classify gesture before committing.
+    var SLOP = 12;  // px — generous for real finger drift
+    if (!_armed) {
+      if (dist < SLOP) {
+        e.preventDefault();  // hold compositor off while timer runs
+        return;
+      }
+      // Past slop before arm: classify direction.
+      if (Math.abs(dy) > Math.abs(dx) * 1.5) {
+        // Clear vertical swipe → release to native scroll, abort gesture.
+        _detach();
+        _pgId = _pgName = _pgEmoji = _pgType = _srcLi = null;
+        _active = false; _armed = false; _fromHandle = false;
+        return;  // no preventDefault → sidebar scrolls natively
+      }
+      // Diagonal/horizontal movement past slop: treat as drag intent.
+      e.preventDefault();
     }
-    var tz = _trashZone();
-    if (_overTrash(t.clientX, t.clientY)) {
-      if (tz) tz.style.outline = '2px dashed #ea1100';
-      _indicator().style.display = 'none';
-      _dropLi = null; _dropPos = null;
-    } else {
-      if (tz) tz.style.outline = '';
-      var hit = _hitItem(t.clientX, t.clientY);
-      if (hit) { _dropLi = hit.li; _dropPos = hit.pos; _showIndicator(hit.li, hit.pos); }
-      else { _indicator().style.display = 'none'; _dropLi = null; _dropPos = null; }
-    }
+
+    // Armed (timer fired) or committed horizontal: commit drag on threshold.
+    e.preventDefault();
+    if (dist < THRESHOLD) return;
+    clearTimeout(_armTimer); _armTimer = null;
+    _active = true;
+    document.body.classList.add('dnd-active');
+    _srcLi.style.opacity = '0.4';
+    if (!_armed && navigator.vibrate) navigator.vibrate(30);  // vibrate if not already done
   }
 
   function _onEnd(e) {
     _detach();
     if (!_active) {
-      // Tap on the handle (no drag committed): open the page options menu.
-      // We can't rely on a synthetic click here because touchstart calls
-      // preventDefault(), so we trigger the menu manually with a fake event
-      // anchored to the handle span so _bwRowMenu positions correctly.
-      var handleEl = _srcLi ? _srcLi.querySelector('[data-pg-drag]') : null;
+      // Save state BEFORE _cleanup() nullifies it.
+      var wasHandle = _fromHandle;
+      var savedLi   = _srcLi;
+      var savedId   = _pgId;
+      var savedName = _pgName;
+      var savedEmoji= _pgEmoji;
+      var savedType = _pgType;
       _cleanup('cancel');
-      if (handleEl && typeof _hpgMenuOpen === 'function') {
-        var fakeEvt = {
-          currentTarget: handleEl,
-          stopPropagation: function() {},
-        };
-        _hpgMenuOpen(fakeEvt, _pgId, _pgName, _pgEmoji, _pgType);
+
+      if (wasHandle && savedLi && typeof _hpgMenuOpen === 'function') {
+        // Tap on grip handle: open options menu anchored to the handle span.
+        var handleEl = savedLi.querySelector('[data-pg-drag]');
+        if (handleEl) {
+          var fakeEvt = { currentTarget: handleEl, stopPropagation: function() {} };
+          _hpgMenuOpen(fakeEvt, savedId, savedName, savedEmoji, savedType);
+        }
       }
+      // Name-button tap with no drag: let the synthetic click fire openHomePage.
       return;
     }
     var t = e.changedTouches[0];
@@ -746,35 +793,53 @@ function _trashDrop(event) {
   function _onCancel() { _detach(); _cleanup('cancel'); }
 
   function _detach() {
+    clearTimeout(_armTimer); _armTimer = null;
     document.removeEventListener('touchmove',   _onMove,   { passive: false });
     document.removeEventListener('touchend',    _onEnd,    { passive: true  });
     document.removeEventListener('touchcancel', _onCancel, { passive: true  });
   }
 
-  // Arm drag immediately on handle touch -- no long-press timer needed.
-  // MUST be { passive: false } so we can call e.preventDefault() here.
-  // A passive touchstart is an irrevocable promise to Android's compositor
-  // that JS will not block scrolling -- by the time _onMove fires, the
-  // compositor has already committed the scroll.  Calling preventDefault()
-  // in touchstart is the ONLY reliable way to prevent that on real hardware.
-  // We only prevent when the touch is on a drag handle, so native sidebar
-  // scroll still works for all other touches (we return early without calling
-  // preventDefault() for those).
+  // Listen for touches on BOTH the grip handle AND the page name button.
+  // Handle:      preventDefault() immediately — compositor blocked at once.
+  // Name button: no immediate preventDefault — 400 ms long-press arms the drag.
+  //              During the hold, slop-zone logic in _onMove calls preventDefault()
+  //              within the first 12 px to keep the compositor from scrolling.
   document.addEventListener('touchstart', function(e) {
-    if (!e.target.closest('[data-pg-drag]')) return;
-    var li = e.target.closest('#home-page-list [data-page-id]');
+    var handle  = e.target.closest('[data-pg-drag]');
+    // Name button = any button in the page list that isn't the menu button
+    var nameBtn = !handle &&
+      e.target.closest('#home-page-list [data-page-id] button:not([data-pg-menu])');
+    if (!handle && !nameBtn) return;
+
+    var li = (handle || nameBtn).closest('#home-page-list [data-page-id]');
     if (!li) return;
-    // Block the compositor scroll pipeline before it starts.
-    e.preventDefault();
+    if (e.touches.length !== 1) return;  // ignore multi-touch
+
     var t = e.touches[0];
     _startX = t.clientX;  _startY = t.clientY;
     _pgId    = parseInt(li.dataset.pageId, 10);
     _srcLi   = li;
-    _pgEmoji = li.dataset.pageEmoji  || '📄';
+    _pgEmoji = li.dataset.pageEmoji  || '\uD83D\uDCC4';
     _pgType  = li.dataset.pageType   || 'dashboard';
     var btn  = li.querySelector('button:not([data-pg-menu]):not([data-pg-drag])');
     _pgName  = btn ? (btn.title || 'page') : 'page';
-    _active = false;  _dropLi = null;  _dropPos = null;
+    _active  = false;  _armed = false;  _dropLi = null;  _dropPos = null;
+    _fromHandle = !!handle;
+
+    if (handle) {
+      // Grip handle: block the compositor immediately.
+      e.preventDefault();
+    } else {
+      // Name button: start 400 ms long-press arm timer.
+      // We do NOT call preventDefault() here — quick taps must still navigate.
+      _armTimer = setTimeout(function() {
+        if (_active || !_srcLi) return;
+        _armed = true;
+        _srcLi.style.opacity = '0.4';
+        if (navigator.vibrate) navigator.vibrate(30);
+      }, 400);
+    }
+
     document.addEventListener('touchmove',   _onMove,   { passive: false });
     document.addEventListener('touchend',    _onEnd,    { passive: true  });
     document.addEventListener('touchcancel', _onCancel, { passive: true  });
