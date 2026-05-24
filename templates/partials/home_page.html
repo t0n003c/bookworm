@@ -1698,7 +1698,7 @@
 {%- set synced_panid = cfg.get('synced_panel_id', 0) | int -%}
 {% call card(w) %}
   {{ widget_header(w, 'Settle Up', '💰') }}
-  <div class="settle-up-widget flex-1 min-h-0 overflow-y-auto"
+  <div class="settle-up-widget flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
        id="settle-up-{{ w.id }}"
        data-widget-id="{{ w.id }}"
        data-page-id="{{ w.page_id }}"

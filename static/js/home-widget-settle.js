@@ -289,9 +289,11 @@ function _suExpenseFormHtml(wid) {
     + 'bg-gray-50 dark:bg-zinc-800/60 space-y-2">'
     + '<p class="text-xs font-semibold text-gray-600 dark:text-zinc-300">' + title + '</p>'
     + '<input id="su-exp-desc-' + wid + '" type="text" placeholder="Description" value="' + descVal + '"'
+    + ' style="max-width:100%"'
     + ' class="w-full text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue">'
     + '<input id="su-exp-amt-' + wid + '" type="number" min="0" step="0.01" placeholder="Amount" value="' + amtVal + '"'
+    + ' style="max-width:100%"'
     + ' class="w-full text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue">'
     + '<div><label class="block text-[10px] font-semibold text-gray-400 dark:text-zinc-500 mb-1">Paid by</label>'
@@ -405,9 +407,10 @@ function _suSettlementCalc(people, expenses) {
 function _suShowAddPerson(wid) {
   var container = document.getElementById('su-add-person-' + wid);
   if (!container) return;
-  container.innerHTML = '<div class="flex items-center gap-1 mt-1 min-w-0 overflow-hidden">'
+  container.innerHTML = '<div class="flex items-center gap-1 mt-1" style="min-width:0;overflow:hidden">'
     + '<input id="su-new-person-' + wid + '" type="text" placeholder="Name" maxlength="80"'
-    + ' class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
+    + ' style="min-width:0;width:0;flex:1 1 0%"'
+    + ' class="text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue"'
     + ' onkeydown="if(event.key===\'Enter\')_suCommitPerson(\'' + wid + '\');'
     + ' if(event.key===\'Escape\')_suCancelAddPerson(\'' + wid + '\');">'
