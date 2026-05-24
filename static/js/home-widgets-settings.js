@@ -229,6 +229,14 @@ async function _saveWidgetFullConfig(widgetId, config) {
         ? _subsWgtGradient(config.bg_color)
         : config.bg_color;
     }
+
+    // Buds: re-render immediately so no_card_bg (and any future config fields)
+    // take effect without a page reload.
+    const budsEl = card.querySelector('.bw-buds-widget');
+    if (budsEl) {
+      const bwid = budsEl.dataset.widgetId;
+      if (bwid && typeof _budsRender === 'function') _budsRender(bwid);
+    }
   }
 
   const pid = Number(sessionStorage.getItem('bw-hp'));

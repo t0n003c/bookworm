@@ -104,7 +104,12 @@ function _budsRender(wid) {
   var el  = _budsRoot(wid); if (!el) return;
   var st  = _budsState[wid] || {buds:[]};
   var cfg = {};
-  try { cfg = JSON.parse(el.dataset.config || '{}'); } catch(e) {}
+  try {
+    // Prefer the card's data-widget-config (kept live by saveWidgetSettings)
+    // over data-config (page-load snapshot, never updated after a settings save).
+    var _budCard = el.closest ? el.closest('.hw-card') : null;
+    cfg = JSON.parse((_budCard ? _budCard.dataset.widgetConfig : null) || el.dataset.config || '{}');
+  } catch(e) {}
   var compact = (el.dataset.style === 'compact');
 
   if (!st.buds.length) {
