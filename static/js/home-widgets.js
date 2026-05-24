@@ -553,9 +553,11 @@ function _trashDrop(event) {
   'use strict';
   var THRESHOLD = 10;  // px from touch-start before drag is committed
 
-  var _pgId  = null;
-  var _pgName = null;
-  var _srcLi = null;
+  var _pgId   = null;
+  var _pgName  = null;
+  var _pgEmoji = null;
+  var _pgType  = null;
+  var _srcLi   = null;
   var _startX = 0, _startY = 0;
   var _active = false;   // committed to drag
   var _dropLi = null;
@@ -654,7 +656,7 @@ function _trashDrop(event) {
     var src = _srcLi;
     var tgt = _dropLi;
     var pos = _dropPos;
-    _pgId = _pgName = _srcLi = _dropLi = _dropPos = null;
+    _pgId = _pgName = _pgEmoji = _pgType = _srcLi = _dropLi = _dropPos = null;
     _active = false;
 
     if (!pid || action === 'cancel') return;
@@ -719,7 +721,22 @@ function _trashDrop(event) {
 
   function _onEnd(e) {
     _detach();
-    if (!_active) { _cleanup('cancel'); return; }
+    if (!_active) {
+      // Tap on the handle (no drag committed): open the page options menu.
+      // We can't rely on a synthetic click here because touchstart calls
+      // preventDefault(), so we trigger the menu manually with a fake event
+      // anchored to the handle span so _bwRowMenu positions correctly.
+      var handleEl = _srcLi ? _srcLi.querySelector('[data-pg-drag]') : null;
+      _cleanup('cancel');
+      if (handleEl && typeof _hpgMenuOpen === 'function') {
+        var fakeEvt = {
+          currentTarget: handleEl,
+          stopPropagation: function() {},
+        };
+        _hpgMenuOpen(fakeEvt, _pgId, _pgName, _pgEmoji, _pgType);
+      }
+      return;
+    }
     var t = e.changedTouches[0];
     if (_overTrash(t.clientX, t.clientY)) _cleanup('trash');
     else if (_dropLi)                      _cleanup('reorder');
@@ -751,10 +768,12 @@ function _trashDrop(event) {
     e.preventDefault();
     var t = e.touches[0];
     _startX = t.clientX;  _startY = t.clientY;
-    _pgId   = parseInt(li.dataset.pageId, 10);
-    _srcLi  = li;
-    var btn = li.querySelector('button:not([data-pg-menu]):not([data-pg-drag])');
-    _pgName = btn ? (btn.title || 'page') : 'page';
+    _pgId    = parseInt(li.dataset.pageId, 10);
+    _srcLi   = li;
+    _pgEmoji = li.dataset.pageEmoji  || '📄';
+    _pgType  = li.dataset.pageType   || 'dashboard';
+    var btn  = li.querySelector('button:not([data-pg-menu]):not([data-pg-drag])');
+    _pgName  = btn ? (btn.title || 'page') : 'page';
     _active = false;  _dropLi = null;  _dropPos = null;
     document.addEventListener('touchmove',   _onMove,   { passive: false });
     document.addEventListener('touchend',    _onEnd,    { passive: true  });

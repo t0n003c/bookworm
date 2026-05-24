@@ -24,21 +24,27 @@
 <ul class="space-y-0.5" role="list" id="home-page-list">
   {% for pg in pages %}
   {% set is_active = (pg.id == active_pg) %}
+  {% set _pg_type_li = pg.get('page_type', 'dashboard') or 'dashboard' %}
   <li class="flex items-center gap-0.5 group/hpg"
       data-page-id="{{ pg.id }}"
-      data-page-type="{{ pg.get('page_type', 'dashboard') or 'dashboard' }}"
+      data-page-type="{{ _pg_type_li }}"
+      data-page-emoji="{{ pg.emoji }}"
       draggable="true"
       ondragstart="_pgDragStart(event, {{ pg.id }})">
 
-    <!-- drag handle: span so it doesn't absorb mousedown + block parent HTML5 drag.
-         opacity-0/group-hover on desktop; always-on + touch-action:none on mobile. -->
+    <!-- drag handle: drag to reorder; click/tap to open Rename/Duplicate/Delete menu.
+         opacity-0/group-hover on desktop; always-on + touch-action:none on mobile.
+         onclick fires on desktop; touch tap is handled in the IIFE _onEnd. -->
     <span
       class="pg-dnd-handle flex-shrink-0 items-center justify-center w-5 h-7 rounded
              text-gray-300 dark:text-zinc-600
              hover:text-gray-500 dark:hover:text-zinc-400 transition-opacity"
-      aria-label="Drag to reorder"
-      role="img"
-      data-pg-drag>
+      aria-label="Drag to reorder; click for options"
+      role="button"
+      tabindex="0"
+      data-pg-drag
+      onclick="event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, {{ pg.name | tojson }}, {{ pg.emoji | tojson }}, '{{ _pg_type_li }}')"
+      onkeydown="if(event.key==='Enter'||event.key===' '){ event.preventDefault(); event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, {{ pg.name | tojson }}, {{ pg.emoji | tojson }}, '{{ _pg_type_li }}'); }">
       <svg class="w-3 h-4 pointer-events-none" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">
         <circle cx="2" cy="2"  r="1.2"/><circle cx="6" cy="2"  r="1.2"/>
         <circle cx="2" cy="7"  r="1.2"/><circle cx="6" cy="7"  r="1.2"/>
