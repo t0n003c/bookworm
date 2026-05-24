@@ -734,11 +734,21 @@ function _trashDrop(event) {
     document.removeEventListener('touchcancel', _onCancel, { passive: true  });
   }
 
-  // Arm drag immediately on handle touch -- no long-press timer needed
+  // Arm drag immediately on handle touch -- no long-press timer needed.
+  // MUST be { passive: false } so we can call e.preventDefault() here.
+  // A passive touchstart is an irrevocable promise to Android's compositor
+  // that JS will not block scrolling -- by the time _onMove fires, the
+  // compositor has already committed the scroll.  Calling preventDefault()
+  // in touchstart is the ONLY reliable way to prevent that on real hardware.
+  // We only prevent when the touch is on a drag handle, so native sidebar
+  // scroll still works for all other touches (we return early without calling
+  // preventDefault() for those).
   document.addEventListener('touchstart', function(e) {
     if (!e.target.closest('[data-pg-drag]')) return;
     var li = e.target.closest('#home-page-list [data-page-id]');
     if (!li) return;
+    // Block the compositor scroll pipeline before it starts.
+    e.preventDefault();
     var t = e.touches[0];
     _startX = t.clientX;  _startY = t.clientY;
     _pgId   = parseInt(li.dataset.pageId, 10);
@@ -749,7 +759,7 @@ function _trashDrop(event) {
     document.addEventListener('touchmove',   _onMove,   { passive: false });
     document.addEventListener('touchend',    _onEnd,    { passive: true  });
     document.addEventListener('touchcancel', _onCancel, { passive: true  });
-  }, { passive: true });
+  }, { passive: false });
 }());
 
 
