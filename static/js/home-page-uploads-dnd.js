@@ -177,20 +177,32 @@ function _dndSelBadgeUpdate() {
     return;
   }
 
-  // Create container once; rebuild inner HTML every call so action buttons stay fresh
+  // Bottom action bar — flex-wrap so it gracefully grows on narrow screens
   if (!badge) {
     badge = document.createElement('div');
-    badge.id = 'upl-sel-badge';
-    badge.className =
-      'fixed bottom-6 left-1/2 -translate-x-1/2 z-40 ' +
-      'flex items-center gap-2 ' +
-      'bg-[#0053e2] text-white text-xs font-semibold ' +
-      'px-4 py-2 rounded-full shadow-lg ' +
-      'select-none pointer-events-auto';
+    badge.id        = 'upl-sel-badge';
+    badge.setAttribute('role', 'toolbar');
+    badge.setAttribute('aria-label', 'Bulk file actions');
+    badge.style.cssText = [
+      'position:fixed;bottom:0;left:0;right:0;z-index:50;',
+      'display:flex;align-items:center;flex-wrap:wrap;gap:6px;',
+      'padding:10px 16px 10px;',
+      'background:#0053e2;color:#fff;',
+      'box-shadow:0 -2px 16px rgba(0,83,226,0.25);',
+      'font-size:12px;font-weight:600;font-family:inherit;',
+      'user-select:none;pointer-events:auto;',
+    ].join('');
     document.body.appendChild(badge);
   }
 
-  // Dynamic catalog-remove button (only when a catalog is active)
+  var BTN = 'display:inline-flex;align-items:center;gap:4px;' +
+            'background:rgba(255,255,255,0.18);border:none;color:#fff;' +
+            'font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;' +
+            'padding:5px 10px;border-radius:999px;transition:background 0.15s;';
+  var BTN_RED = BTN.replace('rgba(255,255,255,0.18)', 'rgba(234,17,0,0.75)');
+
+  // Remove-from-catalog: shown when a catalog filter is active (all visible
+  // files are guaranteed to be members of that catalog).
   var catBtn = '';
   if (typeof _uplCatActive !== 'undefined' && _uplCatActive !== null) {
     var catName = '';
@@ -199,41 +211,240 @@ function _dndSelBadgeUpdate() {
         if (_uplCatData[i].id === _uplCatActive) { catName = _uplCatData[i].name; break; }
       }
     }
-    var label = catName
-      ? '\u2212 Remove from \u201c' + _uplEsc(catName) + '\u201d'
-      : '\u2212 Remove from catalog';
-    catBtn =
-      '<button onclick="_uplCatBulkRemove()" ' +
-        'class="flex items-center gap-1 bg-white/20 hover:bg-white/30 ' +
-              'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium">' +
-        label +
-      '</button>';
+    var rmLabel = catName
+      ? '\u2212 ' + _uplEsc(catName.length > 18 ? catName.slice(0, 16) + '\u2026' : catName)
+      : '\u2212 Catalog';
+    catBtn = '<button onclick="_uplCatBulkRemove()" style="' + BTN_RED + '" ' +
+             'title="Remove selected files from this catalog">' + rmLabel + '</button>';
   }
 
   badge.innerHTML =
-    '<span>' + count + ' file' + (count === 1 ? '' : 's') + ' selected</span>' +
+    '<span style="flex:1 1 auto;white-space:nowrap;">' +
+      count + ' file' + (count === 1 ? '' : 's') + ' selected' +
+    '</span>' +
+    '<button onclick="_dndBulkFolderPicker()" style="' + BTN + '" ' +
+    '  title="Move selected files to a folder">' +
+    '  \uD83D\uDCC1 Move' +
+    '</button>' +
+    '<button onclick="_dndBulkCatalogPicker()" style="' + BTN + '" ' +
+    '  title="Add selected files to a catalog">' +
+    '  + Catalog' +
+    '</button>' +
     catBtn +
-    '<button onclick="_uplBulkTagPanel()" ' +
-      'class="flex items-center gap-1 bg-white/20 hover:bg-white/30 ' +
-            'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium" ' +
-      'title="Add / remove tags on selected files">' +
-      '\uD83C\uDFF7\uFE0F Tags' +
+    '<button onclick="_uplBulkTagPanel()" style="' + BTN + '" ' +
+    '  title="Add / remove tags on selected files">' +
+    '  \uD83C\uDFF7\uFE0F Tags' +
     '</button>' +
-    '<button onclick="_uplBulkDeleteSelected()" ' +
-      'class="flex items-center gap-1 bg-red-500/80 hover:bg-red-500 ' +
-            'rounded-full px-2.5 py-0.5 transition text-[11px] font-medium" ' +
-      'title="Delete all selected files">' +
-      '\uD83D\uDDD1\uFE0F Delete' +
+    '<button onclick="_uplBulkDeleteSelected()" style="' + BTN_RED + '" ' +
+    '  title="Delete all selected files">' +
+    '  \uD83D\uDDD1\uFE0F Delete' +
     '</button>' +
-    '<button onclick="_dndSelClear()" ' +
-      'class="ml-1 opacity-70 hover:opacity-100 transition" ' +
-      'aria-label="Clear selection">' +
-      '<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">' +
-        '<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>' +
-      '</svg>' +
+    '<button onclick="_dndSelClear()" style="' + BTN + 'opacity:0.7;" ' +
+    '  aria-label="Clear selection">' +
+    '  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">' +
+    '    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>' +
+    '  </svg>' +
     '</button>';
 
-  badge.classList.remove('hidden');
+  badge.style.display = 'flex';
+}
+
+// ── Bulk: folder picker sheet ─────────────────────────────────────────────────
+function _dndBulkFolderPicker() {
+  if (!Object.keys(_dndSelected).length) return;
+  _dndPickerSheet(
+    '\uD83D\uDCC1 Move ' + Object.keys(_dndSelected).length + ' file(s) to folder',
+    _dndFolderPickerItems(),
+    function(value) {
+      // value is folderId (number) or 'null' for Unfiled
+      var fid = value === 'null' ? null : +value;
+      _dndBulkMoveToFolder(fid);
+    }
+  );
+}
+
+function _dndFolderPickerItems() {
+  var items = [{ value: 'null', label: '\uD83D\uDCC2 Unfiled (no folder)', depth: 0 }];
+  if (typeof _uplFldData === 'undefined' || !_uplFldData.length) return items;
+
+  var byParent = { '__root__': [] };
+  _uplFldData.forEach(function(f) {
+    var k = (f.parent_id === null || f.parent_id === undefined) ? '__root__' : String(f.parent_id);
+    if (!byParent[k]) byParent[k] = [];
+    byParent[k].push(f);
+  });
+
+  function walk(pKey, depth) {
+    var kids = (byParent[pKey] || []).slice().sort(function(a, b) {
+      return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name);
+    });
+    kids.forEach(function(f) {
+      items.push({ value: String(f.id), label: '\uD83D\uDCC1 ' + f.name, depth: depth });
+      walk(String(f.id), depth + 1);
+    });
+  }
+  walk('__root__', 1);
+  return items;
+}
+
+function _dndBulkMoveToFolder(folderId) {
+  var keys = Object.keys(_dndSelected);
+  var noteCount = 0;
+  var pageIds   = [];
+  keys.forEach(function(k) {
+    var item = _dndSelected[k];
+    if (item.src === 'note') { noteCount++; return; }
+    pageIds.push(item.id);
+  });
+  if (noteCount && typeof _uplShowToast === 'function')
+    _uplShowToast(noteCount + ' note attachment(s) skipped \u2014 cannot assign to folders.', true);
+  if (!pageIds.length) return;
+
+  pageIds.forEach(function(id) { _dndAssignFileToFolder(id, folderId); });
+  _dndSelClear();
+  var dest = folderId === null ? 'Unfiled' : (function() {
+    var f = (typeof _uplFldData !== 'undefined') && _uplFldData.find(function(x) { return x.id === folderId; });
+    return f ? f.name : 'folder';
+  }());
+  if (typeof _uplShowToast === 'function')
+    _uplShowToast('\u2713 ' + pageIds.length + ' file(s) moved to ' + dest + '.', false);
+  setTimeout(function() { if (typeof _uplFetch === 'function') _uplFetch(1); }, 300);
+}
+
+// ── Bulk: catalog picker sheet ────────────────────────────────────────────────
+function _dndBulkCatalogPicker() {
+  if (!Object.keys(_dndSelected).length) return;
+  var cats = (typeof _uplCatData !== 'undefined') ? _uplCatData : [];
+  if (!cats.length) {
+    if (typeof _uplShowToast === 'function') _uplShowToast('No catalogs yet. Create one in the sidebar.', true);
+    return;
+  }
+  _dndPickerSheet(
+    '+ Add ' + Object.keys(_dndSelected).length + ' file(s) to catalog',
+    _dndCatalogPickerItems(cats),
+    function(value) { _dndFileDropOnCatalog(+value); }
+  );
+}
+
+function _dndCatalogPickerItems(cats) {
+  var byParent = { '__root__': [] };
+  cats.forEach(function(c) {
+    var k = (c.parent_id === null || c.parent_id === undefined) ? '__root__' : String(c.parent_id);
+    if (!byParent[k]) byParent[k] = [];
+    byParent[k].push(c);
+  });
+  var items = [];
+  function walk(pKey, depth) {
+    var kids = (byParent[pKey] || []).slice().sort(function(a, b) {
+      return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name);
+    });
+    kids.forEach(function(c) {
+      items.push({ value: String(c.id), label: '\uD83D\uDDC2\uFE0F ' + c.name, depth: depth });
+      walk(String(c.id), depth + 1);
+    });
+  }
+  walk('__root__', 0);
+  return items;
+}
+
+// ── Shared bottom-sheet picker ────────────────────────────────────────────────
+// title    — header string
+// items    — [{value, label, depth}]
+// onPick   — callback(value)
+function _dndPickerSheet(title, items, onPick) {
+  // Remove any existing picker
+  var old = document.getElementById('dnd-picker-sheet');
+  if (old) old.remove();
+
+  var isDark = document.documentElement.classList.contains('dark');
+  var bg     = isDark ? '#18181b' : '#fff';
+  var border = isDark ? '#3f3f46' : '#e5e7eb';
+  var txt    = isDark ? '#f4f4f5' : '#111827';
+  var sub    = isDark ? '#a1a1aa' : '#6b7280';
+  var hover  = isDark ? '#27272a' : '#f3f4f6';
+
+  // Backdrop
+  var backdrop = document.createElement('div');
+  backdrop.id = 'dnd-picker-sheet';
+  backdrop.style.cssText = [
+    'position:fixed;inset:0;z-index:60;',
+    'background:rgba(0,0,0,0.4);',
+    'display:flex;align-items:flex-end;',
+  ].join('');
+
+  // Sheet panel
+  var panel = document.createElement('div');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', title);
+  panel.style.cssText = [
+    'width:100%;max-height:65vh;overflow-y:auto;',
+    'background:' + bg + ';',
+    'border-top:1px solid ' + border + ';',
+    'border-radius:16px 16px 0 0;',
+    'padding:0 0 env(safe-area-inset-bottom,0);',
+    'box-shadow:0 -4px 24px rgba(0,0,0,0.15);',
+  ].join('');
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = [
+    'display:flex;align-items:center;justify-content:space-between;',
+    'padding:14px 16px 10px;border-bottom:1px solid ' + border + ';',
+    'position:sticky;top:0;background:' + bg + ';z-index:1;',
+  ].join('');
+  hdr.innerHTML =
+    '<span style="font-size:13px;font-weight:700;color:' + txt + ';">' + title + '</span>' +
+    '<button id="dnd-picker-close" aria-label="Close" ' +
+      'style="background:none;border:none;cursor:pointer;color:' + sub + ';font-size:18px;padding:2px 4px;">\u00D7</button>';
+
+  // List
+  var list = document.createElement('ul');
+  list.setAttribute('role', 'listbox');
+  list.style.cssText = 'list-style:none;margin:0;padding:6px 0;';
+
+  items.forEach(function(item) {
+    var li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.setAttribute('tabindex', '0');
+    li.style.cssText = [
+      'display:flex;align-items:center;gap:8px;',
+      'padding:10px 16px 10px ' + (16 + item.depth * 20) + 'px;',
+      'cursor:pointer;color:' + txt + ';font-size:13px;',
+      'border-bottom:1px solid ' + border + ';',
+    ].join('');
+    li.textContent = item.label;
+    function pick() {
+      backdrop.remove();
+      onPick(item.value);
+    }
+    li.addEventListener('click', pick);
+    li.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+    });
+    li.addEventListener('mouseover',  function() { li.style.background = hover; });
+    li.addEventListener('mouseleave', function() { li.style.background = ''; });
+    list.appendChild(li);
+  });
+
+  panel.appendChild(hdr);
+  panel.appendChild(list);
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+
+  // Close handlers
+  var closeBtn = hdr.querySelector('#dnd-picker-close');
+  closeBtn.addEventListener('click', function() { backdrop.remove(); });
+  backdrop.addEventListener('click', function(e) {
+    if (e.target === backdrop) backdrop.remove();
+  });
+  document.addEventListener('keydown', function _esc(e) {
+    if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', _esc); }
+  });
+
+  // Focus first option for keyboard users
+  var first = list.querySelector('[role="option"]');
+  if (first) setTimeout(function() { first.focus(); }, 50);
 }
 
 // ── Lasso (rubber-band) selection ─────────────────────────────────────────────
