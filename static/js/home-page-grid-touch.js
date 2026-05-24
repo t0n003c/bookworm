@@ -55,18 +55,35 @@ var _TP_SCROLL_ZONE  = 120;   // px from viewport edge that activates scroll
 var _TP_SCROLL_MAX   = 24;    // px per interval tick at peak speed (~60 fps)
 var _tpEdgeScrollInt = null;  // setInterval handle
 
+// Walk up from #grid-canvas to find the element that actually scrolls.
+// #grid-scroll-area has overflow-y:auto but its parent (#detail-panel) has
+// no height, so h-full on grid-page-root resolves to 0 and grid-scroll-area
+// never clips its content.  The real scroll container is the first ancestor
+// that has both overflow:auto/scroll AND scrollable content.
+function _tpScrollEl() {
+    var el = document.getElementById('grid-canvas');
+    while (el && el !== document.documentElement) {
+        el = el.parentElement;
+        if (!el) break;
+        var oy = window.getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+            return el;
+        }
+    }
+    return document.scrollingElement || document.documentElement;
+}
+
 function _tpEdgeScrollStart() {
     if (_tpEdgeScrollInt) return;
     _tpEdgeScrollInt = setInterval(function() {
-        var el = document.getElementById('grid-scroll-area');
-        if (!el) return;
-        var vh        = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-        var fromBot   = vh - _tpLastY;
-        var fromTop   = _tpLastY;
-        if (fromBot < _TP_SCROLL_ZONE) {
-            el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBot / _TP_SCROLL_ZONE)));
-        } else if (fromTop < _TP_SCROLL_ZONE) {
-            el.scrollTop -= Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromTop / _TP_SCROLL_ZONE)));
+        var el  = _tpScrollEl();
+        var vh  = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        var bot = vh - _tpLastY;
+        var top = _tpLastY;
+        if (bot < _TP_SCROLL_ZONE) {
+            el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - bot / _TP_SCROLL_ZONE)));
+        } else if (top < _TP_SCROLL_ZONE) {
+            el.scrollTop -= Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - top / _TP_SCROLL_ZONE)));
         }
     }, 16);
 }
