@@ -253,6 +253,7 @@ function _uplRender() {
   }
   _uplRenderPager();
   if (typeof _uplDocAfterRender === 'function') _uplDocAfterRender();
+  if (typeof _uplTsInit === 'function') _uplTsInit();
 }
 
 // ── Single file card ──────────────────────────────────────────────────────────────────
