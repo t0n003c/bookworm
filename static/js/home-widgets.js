@@ -684,81 +684,75 @@ function _trashDrop(event) {
 
   // -- Touch event handlers (per-gesture, attached/detached on handle/name touch) --
   function _onMove(e) {
-    var t   = e.touches[0];
-    var dx  = t.clientX - _startX;
-    var dy  = t.clientY - _startY;
+    var t    = e.touches[0];
+    var dx   = t.clientX - _startX;
+    var dy   = t.clientY - _startY;
     var dist = Math.hypot(dx, dy);
 
-    if (_active) {
-      // Already dragging — keep full control.
-      e.preventDefault();
-      var g = _ghost();
-      g.style.display = 'block';
-      g.style.left    = t.clientX + 'px';
-      g.style.top     = t.clientY + 'px';
-      g.textContent   = '\uD83D\uDCC4 ' + _pgName;
-      // Edge-scroll sidebar while dragging near top/bottom
-      var sb  = document.getElementById('sidebar');
-      var vh  = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-      if (sb) {
-        var fromTop = t.clientY;
-        var fromBot = vh - t.clientY;
-        var ZONE = 80;
-        if (fromTop < ZONE) sb.scrollTop -= Math.max(2, Math.round(12 * (1 - fromTop / ZONE)));
-        else if (fromBot < ZONE) sb.scrollTop += Math.max(2, Math.round(12 * (1 - fromBot / ZONE)));
-      }
-      var tz = _trashZone();
-      if (_overTrash(t.clientX, t.clientY)) {
-        if (tz) tz.style.outline = '2px dashed #ea1100';
-        _indicator().style.display = 'none';
-        _dropLi = null; _dropPos = null;
+    // ── Pre-commit: classify gesture and decide whether to activate ────────
+    if (!_active) {
+      if (_fromHandle) {
+        // Handle: block compositor immediately; commit once past threshold.
+        e.preventDefault();
+        if (dist < THRESHOLD) return;
       } else {
-        if (tz) tz.style.outline = '';
-        var hit = _hitItem(t.clientX, t.clientY);
-        if (hit) { _dropLi = hit.li; _dropPos = hit.pos; _showIndicator(hit.li, hit.pos); }
-        else { _indicator().style.display = 'none'; _dropLi = null; _dropPos = null; }
+        // Name-button: slop zone + direction classification.
+        var SLOP = 12;  // px — generous for real finger drift
+        if (!_armed) {
+          if (dist < SLOP) { e.preventDefault(); return; }
+          // Past slop before arm — classify direction.
+          if (Math.abs(dy) > Math.abs(dx) * 1.5) {
+            // Clear vertical swipe → abort and release to native scroll.
+            _detach();
+            _pgId = _pgName = _pgEmoji = _pgType = _srcLi = null;
+            _active = false; _armed = false; _fromHandle = false;
+            return;  // no preventDefault → sidebar scrolls natively
+          }
+        }
+        // Armed (timer fired) OR horizontal past slop: proceed to commit.
+        e.preventDefault();
+        if (dist < THRESHOLD) return;
       }
-      return;
-    }
 
-    if (_fromHandle) {
-      // Handle path: block compositor immediately, commit once past threshold.
-      e.preventDefault();
-      if (dist < THRESHOLD) return;
+      // ── Commit ────────────────────────────────────────────────────────
+      clearTimeout(_armTimer); _armTimer = null;
       _active = true;
       document.body.classList.add('dnd-active');
       _srcLi.style.opacity = '0.4';
-      if (navigator.vibrate) navigator.vibrate(30);
-      return;
+      // Vibrate on commit only if the arm timer hasn't already done it.
+      if (!_armed && navigator.vibrate) navigator.vibrate(30);
+      // ↓ Fall through — show ghost on this same event, not the next one.
     }
 
-    // Name-button long-press path: classify gesture before committing.
-    var SLOP = 12;  // px — generous for real finger drift
-    if (!_armed) {
-      if (dist < SLOP) {
-        e.preventDefault();  // hold compositor off while timer runs
-        return;
-      }
-      // Past slop before arm: classify direction.
-      if (Math.abs(dy) > Math.abs(dx) * 1.5) {
-        // Clear vertical swipe → release to native scroll, abort gesture.
-        _detach();
-        _pgId = _pgName = _pgEmoji = _pgType = _srcLi = null;
-        _active = false; _armed = false; _fromHandle = false;
-        return;  // no preventDefault → sidebar scrolls natively
-      }
-      // Diagonal/horizontal movement past slop: treat as drag intent.
-      e.preventDefault();
-    }
-
-    // Armed (timer fired) or committed horizontal: commit drag on threshold.
+    // ── Active: update ghost position + edge-scroll + drop indicator ──────
     e.preventDefault();
-    if (dist < THRESHOLD) return;
-    clearTimeout(_armTimer); _armTimer = null;
-    _active = true;
-    document.body.classList.add('dnd-active');
-    _srcLi.style.opacity = '0.4';
-    if (!_armed && navigator.vibrate) navigator.vibrate(30);  // vibrate if not already done
+    var g = _ghost();
+    g.style.display = 'block';
+    g.style.left    = t.clientX + 'px';
+    g.style.top     = t.clientY + 'px';
+    g.textContent   = '\uD83D\uDCC4 ' + _pgName;
+
+    var sb = document.getElementById('sidebar');
+    var vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    if (sb) {
+      var fromTop = t.clientY;
+      var fromBot = vh - t.clientY;
+      var ZONE = 80;
+      if (fromTop < ZONE) sb.scrollTop -= Math.max(2, Math.round(12 * (1 - fromTop / ZONE)));
+      else if (fromBot < ZONE) sb.scrollTop += Math.max(2, Math.round(12 * (1 - fromBot / ZONE)));
+    }
+
+    var tz = _trashZone();
+    if (_overTrash(t.clientX, t.clientY)) {
+      if (tz) tz.style.outline = '2px dashed #ea1100';
+      _indicator().style.display = 'none';
+      _dropLi = null; _dropPos = null;
+    } else {
+      if (tz) tz.style.outline = '';
+      var hit = _hitItem(t.clientX, t.clientY);
+      if (hit) { _dropLi = hit.li; _dropPos = hit.pos; _showIndicator(hit.li, hit.pos); }
+      else { _indicator().style.display = 'none'; _dropLi = null; _dropPos = null; }
+    }
   }
 
   function _onEnd(e) {
