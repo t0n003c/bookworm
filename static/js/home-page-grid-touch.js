@@ -29,17 +29,19 @@ var _msActive   = false;
 var _msSelected = new Set();  // Set of selected cell IDs (integers)
 
 /* ── Gesture state ──────────────────────────────────────────────────────── */
-var _tpTouchId   = null;    // Touch.identifier for the current gesture
-var _tpStartX    = 0;
-var _tpStartY    = 0;
-var _tpCellId    = null;    // cell under the initial touch
-var _tpLpFired   = false;   // true after 500 ms long-press (multiselect) timer fires
-var _tpLpTimer   = null;
-var _tpArmed     = false;   // true after 200 ms arm timer: drag is now intent
-var _tpArmTimer  = null;
-var _tpDragging  = false;   // true while ghost is live
-var _tpMultiDrag = false;   // true if dragging multiple selected cells
-var _tpLastY     = 0;       // last clientY seen, used by edge-scroll interval
+var _tpTouchId      = null;   // Touch.identifier for the current gesture
+var _tpStartX       = 0;
+var _tpStartY       = 0;
+var _tpCellId       = null;   // cell under the initial touch
+var _tpLpFired      = false;  // true after 500 ms long-press (multiselect) timer fires
+var _tpLpTimer      = null;
+var _tpArmed        = false;  // true after 200 ms arm timer: drag is now intent
+var _tpArmTimer     = null;
+var _tpDragging     = false;  // true while ghost is live
+var _tpMultiDrag    = false;  // true if dragging multiple selected cells
+var _tpLastY        = 0;      // last clientY seen, used by edge-scroll interval
+var _tpSuppressClick = false; // block the synthetic click that follows touchend
+var _tpScrollCache  = null;   // cached scroll container found by _tpScrollEl()
 
 /* ── Ghost ──────────────────────────────────────────────────────────────────────── */
 var _tpGhost    = null;
@@ -56,21 +58,22 @@ var _TP_SCROLL_MAX   = 24;    // px per interval tick at peak speed (~60 fps)
 var _tpEdgeScrollInt = null;  // setInterval handle
 
 // Walk up from #grid-canvas to find the element that actually scrolls.
-// #grid-scroll-area has overflow-y:auto but its parent (#detail-panel) has
-// no height, so h-full on grid-page-root resolves to 0 and grid-scroll-area
-// never clips its content.  The real scroll container is the first ancestor
-// that has both overflow:auto/scroll AND scrollable content.
+// Result is cached in _tpScrollCache for the duration of a drag so we
+// never call getComputedStyle() inside the 16 ms interval callback.
 function _tpScrollEl() {
+    if (_tpScrollCache) return _tpScrollCache;
     var el = document.getElementById('grid-canvas');
     while (el && el !== document.documentElement) {
         el = el.parentElement;
         if (!el) break;
         var oy = window.getComputedStyle(el).overflowY;
         if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+            _tpScrollCache = el;
             return el;
         }
     }
-    return document.scrollingElement || document.documentElement;
+    _tpScrollCache = document.scrollingElement || document.documentElement;
+    return _tpScrollCache;
 }
 
 function _tpEdgeScrollStart() {
@@ -341,8 +344,8 @@ function _tpStartDrag(x, y) {
 
     _tpDragging  = true;
     _tpMultiDrag = _msActive && _msSelected.size > 0;
+    _tpScrollEl();  // warm the cache now — before the 16 ms interval starts
 
-    // Auto-add the touched cell to selection in multi-drag mode
     if (_tpMultiDrag && !_msSelected.has(_tpCellId)) {
         _msToggle(_tpCellId);
     }
@@ -371,23 +374,18 @@ function _tpOnTouchStart(e) {
     _tpArmed     = false;
     _tpDragging  = false;
     _tpMultiDrag = false;
-
-    // Block the compositor scroll pipeline RIGHT NOW, before it starts.
-    // With { passive: false } on the canvas touchstart listener, Chrome waits
-    // for this call before deciding whether to handle the gesture on the GPU
-    // thread.  Calling it here (not in touchmove) is the only reliable way to
-    // prevent compositor scrolling on all Android Chrome versions.
-    // Side-effect: synthetic click never fires — we open the lightbox manually
-    // in _tpOnTouchEnd for quick taps.
-    e.preventDefault();
+    // Note: do NOT call e.preventDefault() here.
+    // Keeping touchstart passive lets the compositor start its scroll pipeline,
+    // but our non-passive touchmove listener can still call preventDefault() to
+    // stop it — as long as we do so on the first touchmove that moves past the
+    // slop threshold.  This way vertical swipes get native scroll and only
+    // drag gestures get handed to JS.
 
     document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
     document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
     document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
 
-    // Arm timer (200 ms): holding still this long signals drag intent.
-    // Once armed, any movement starts the drag and calls preventDefault(),
-    // blocking native scroll before the compositor can claim it.
+    // Arm timer (200 ms): holding still signals drag intent.
     _tpArmTimer = setTimeout(function() {
         if (_tpDragging) return;
         _tpArmed = true;
@@ -404,17 +402,22 @@ function _tpOnTouchStart(e) {
     }, _LONG_PRESS_MS);
 }
 
+// Pre-arm slop: how far a finger must travel before we classify the gesture.
+// 12 px handles real-device drift (skin deformation, OS touch-smoothing).
+// Must be < _DRAG_THRESHOLD (20 px) so they don't overlap.
+var _TP_SLOP = 12;
+
 function _tpOnTouchMove(e) {
     var touch = _tpFindTouch(e.changedTouches) || _tpFindTouch(e.touches);
     if (!touch) return;
 
-    _tpLastY = touch.clientY;  // always keep this fresh for the edge-scroll interval
+    _tpLastY = touch.clientY;  // keep fresh for edge-scroll interval
 
-    // ── Active drag: keep control, update ghost + interval edge-scroll ──
+    // ── Active drag ──
     if (_tpDragging) {
         e.preventDefault();
         _tpGhostMove(touch.clientX, touch.clientY);
-        _tpEdgeScrollStart();   // starts/keeps the interval running
+        _tpEdgeScrollStart();
         _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
         return;
     }
@@ -423,36 +426,42 @@ function _tpOnTouchMove(e) {
     var absDy = Math.abs(touch.clientY - _tpStartY);
     var dist  = Math.sqrt(absDx * absDx + absDy * absDy);
 
-    // ── Armed (held 200 ms): any movement now commits drag ──
-    // preventDefault here stops the browser from starting compositor scroll.
-    // Because the user held still for 200 ms, the compositor has NOT started
-    // scrolling yet, so preventDefault in this first-move event is effective.
+    // ── Armed or long-press: commit drag on any movement past 5 px ──
     if (_tpArmed || _tpLpFired) {
+        e.preventDefault();  // keep compositor locked while we wait for threshold
         if (dist >= 5) {
-            e.preventDefault();
             clearTimeout(_tpLpTimer);
             clearTimeout(_tpArmTimer);
-            _tpLpFired = true;  // reuse to suppress lightbox on touchend
+            _tpLpFired = true;  // suppress lightbox/click on touchend
             _tpStartDrag(touch.clientX, touch.clientY);
         }
-        return;  // don't release until armed threshold crossed
+        return;
     }
 
-    // ── Pre-arm: classify quickly or wait ──
-    if (dist < 8) return;  // in the browser's slop zone — hold tight
+    // ── Pre-arm slop zone: gesture unclassified ──
+    // Calling preventDefault() here on every move within the slop zone tells
+    // Chrome's compositor "not yet decided" — it won't commit to a scroll
+    // frame.  This is effective as long as the listener is non-passive and
+    // fires before the compositor's 2-frame commit window.
+    if (dist < _TP_SLOP) {
+        e.preventDefault();  // hold the compositor off while we wait
+        return;
+    }
 
-    // Clear vertical swipe before arm fires: release to native scroll
+    // ── Past slop: classify the gesture ──
+    // Vertical: stop preventing → compositor takes over natively
     if (absDy > absDx * 1.5) {
         clearTimeout(_tpArmTimer);
         clearTimeout(_tpLpTimer);
         _tpCleanup();
         _tpTouchId = null;
-        return;  // no preventDefault → browser scrolls natively
+        // no preventDefault → browser handles this as a native scroll
+        return;
     }
 
-    // Horizontal / diagonal drag before arm fires: commit immediately
+    // Horizontal / diagonal before arm: prevent and commit drag once past threshold
+    e.preventDefault();
     if (dist >= _DRAG_THRESHOLD) {
-        e.preventDefault();
         clearTimeout(_tpArmTimer);
         clearTimeout(_tpLpTimer);
         _tpLpFired = true;
@@ -471,9 +480,11 @@ function _tpOnTouchEnd(e) {
         var srcId     = _tpCellId;
         var isMulti   = _tpMultiDrag;
         _tpGhostDestroy();
-        _tpDragging  = false;
-        _tpMultiDrag = false;
+        _tpDragging    = false;
+        _tpMultiDrag   = false;
+        _tpScrollCache = null;
         _tpCleanup();
+        _tpSuppressNextClick();
 
         if (target.cellId != null) {
             if (isMulti) {
@@ -495,16 +506,26 @@ function _tpOnTouchEnd(e) {
     _tpArmed    = false;
     _tpCleanup();
 
-    if (lpFired || armed) return;  // long-press / arm-cancel: no lightbox
-
-    // Short tap
-    if (_msActive && cellId != null) {
-        _msToggle(cellId);  // toggle selection in multiselect
+    if (lpFired || armed) {
+        _tpSuppressNextClick();  // arm lift / long-press: no lightbox
         return;
     }
-    // Open lightbox directly: preventDefault() in touchstart killed the
-    // synthetic click, so we can't rely on _tpClickCapture to route it.
-    if (cellId != null) gridLightboxOpen(cellId);
+
+    // Short tap in multiselect: handle here and suppress synthetic click
+    if (_msActive && cellId != null) {
+        _msToggle(cellId);
+        _tpSuppressNextClick();
+        return;
+    }
+    // Normal short tap: let the synthetic click propagate → _tpClickCapture
+    // will call gridLightboxOpen.  No need to do it here.
+}
+
+function _tpSuppressNextClick() {
+    _tpSuppressClick = true;
+    // Synthetic click fires 100–300 ms after touchend on Android.
+    // Clear the flag after 600 ms so future taps aren’t affected.
+    setTimeout(function() { _tpSuppressClick = false; }, 600);
 }
 
 function _tpOnTouchCancel() { _tpReset(); }
@@ -514,10 +535,11 @@ function _tpReset() {
     clearTimeout(_tpArmTimer);
     _tpEdgeScrollStop();
     _tpGhostDestroy();
-    _tpDragging  = false;
-    _tpMultiDrag = false;
-    _tpLpFired   = false;
-    _tpArmed     = false;
+    _tpDragging    = false;
+    _tpMultiDrag   = false;
+    _tpLpFired     = false;
+    _tpArmed       = false;
+    _tpScrollCache = null;  // invalidate cache for next gesture
     // Restore arm-dimming if ghost wasn't created
     var src = _msCellEl(_tpCellId);
     if (src) src.style.opacity = '';
@@ -531,20 +553,27 @@ function _tpCleanup() {
     _tpTouchId = null;
 }
 
-/* ── Click capture: block clicks in multiselect; open lightbox for media cells ── */
+/* ── Click capture: block post-drag/arm clicks; open lightbox for quick taps ── */
 function _tpClickCapture(e) {
+    // Suppress synthetic clicks that follow arm lifts, long-presses, or drags
+    if (_tpSuppressClick) {
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+    }
+
     var cellEl = e.target.closest('[data-grid-cell-id]');
     if (!cellEl) return;
     var cellId = parseInt(cellEl.dataset.gridCellId, 10);
 
+    // Multiselect toggles are handled in touchend; block the click here
     if (_msActive) {
         e.stopPropagation();
         e.preventDefault();
         return;
     }
 
-    // On touch devices img/video have pointer-events:none so clicks land on the
-    // cell container.  Route them to the lightbox the same way desktop does.
+    // Normal quick tap: route to lightbox
     var hasMedia = cellEl.querySelector('img, video');
     if (hasMedia) {
         e.stopPropagation();
@@ -598,7 +627,7 @@ function _gridInitTouch() {
     if (!canvas) return;
 
     canvas.removeEventListener('touchstart', _tpOnTouchStart);
-    canvas.addEventListener('touchstart', _tpOnTouchStart, { passive: false });
+    canvas.addEventListener('touchstart', _tpOnTouchStart, { passive: true });
 
     canvas.removeEventListener('click', _tpClickCapture, true);
     canvas.addEventListener('click', _tpClickCapture, true);
