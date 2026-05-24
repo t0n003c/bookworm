@@ -28,41 +28,51 @@ var _DRAG_THRESHOLD = 20;    // px of finger movement before drag begins
 var _msActive   = false;
 var _msSelected = new Set();  // Set of selected cell IDs (integers)
 
-/* ── Gesture state ───────────────────────────────────────────────────────────── */
+/* ── Gesture state ──────────────────────────────────────────────────────── */
 var _tpTouchId   = null;    // Touch.identifier for the current gesture
 var _tpStartX    = 0;
 var _tpStartY    = 0;
-var _tpPrevY     = 0;
 var _tpCellId    = null;    // cell under the initial touch
-var _tpLpFired   = false;   // true after 500 ms long-press timer fires
+var _tpLpFired   = false;   // true after 500 ms long-press (multiselect) timer fires
 var _tpLpTimer   = null;
+var _tpArmed     = false;   // true after 200 ms arm timer: drag is now intent
+var _tpArmTimer  = null;
 var _tpDragging  = false;   // true while ghost is live
 var _tpMultiDrag = false;   // true if dragging multiple selected cells
+var _tpLastY     = 0;       // last clientY seen, used by edge-scroll interval
 
-/* ── Ghost ───────────────────────────────────────────────────────────────────── */
+/* ── Ghost ──────────────────────────────────────────────────────────────────────── */
 var _tpGhost    = null;
 var _tpDragOver = null;   // cell id currently under ghost
 
-/* ── Edge-scroll during drag ────────────────────────────────────────────────────── */
-// Called inline inside _tpOnTouchMove while dragging.
-// Synchronous with the touch event — iOS cannot throttle it like setInterval.
-var _TP_SCROLL_ZONE = 120;   // px from viewport edge that activates scroll
-var _TP_SCROLL_MAX  = 18;    // px per touch event at peak speed
+/* ── Edge-scroll during drag ───────────────────────────────────────────────────── */
+// setInterval runs BETWEEN touch events — this is what actually renders on
+// real Android Chrome. Writing scrollTop synchronously inside touchmove fires
+// during compositor scheduling and the visual update is deferred until after
+// the gesture ends.  The interval fires on the next JS task, which the
+// compositor picks up at the next vsync.
+var _TP_SCROLL_ZONE  = 120;   // px from viewport edge that activates scroll
+var _TP_SCROLL_MAX   = 24;    // px per interval tick at peak speed (~60 fps)
+var _tpEdgeScrollInt = null;  // setInterval handle
 
-function _tpEdgeScroll(clientY) {
-    var el = document.getElementById('grid-scroll-area');
-    if (!el) return;
-    // Use visualViewport.height on mobile: window.innerHeight is the layout
-    // viewport (fixed) while clientY uses the visual viewport.  Android Chrome's
-    // address bar makes them differ by ~56 px, so the bottom zone never fired.
-    var vh        = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-    var fromBottom = vh - clientY;
-    var fromTop    = clientY;
-    if (fromBottom < _TP_SCROLL_ZONE) {
-        el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBottom / _TP_SCROLL_ZONE)));
-    } else if (fromTop < _TP_SCROLL_ZONE) {
-        el.scrollTop -= Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromTop / _TP_SCROLL_ZONE)));
-    }
+function _tpEdgeScrollStart() {
+    if (_tpEdgeScrollInt) return;
+    _tpEdgeScrollInt = setInterval(function() {
+        var el = document.getElementById('grid-scroll-area');
+        if (!el) return;
+        var vh        = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        var fromBot   = vh - _tpLastY;
+        var fromTop   = _tpLastY;
+        if (fromBot < _TP_SCROLL_ZONE) {
+            el.scrollTop += Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromBot / _TP_SCROLL_ZONE)));
+        } else if (fromTop < _TP_SCROLL_ZONE) {
+            el.scrollTop -= Math.max(2, Math.round(_TP_SCROLL_MAX * (1 - fromTop / _TP_SCROLL_ZONE)));
+        }
+    }, 16);
+}
+
+function _tpEdgeScrollStop() {
+    if (_tpEdgeScrollInt) { clearInterval(_tpEdgeScrollInt); _tpEdgeScrollInt = null; }
 }
 
 /* ── DOM helpers ─────────────────────────────────────────────────────────────── */
@@ -296,6 +306,7 @@ function _tpDropIndicator(target) {
 }
 
 function _tpGhostDestroy() {
+    _tpEdgeScrollStop();
     if (_tpGhost) { _tpGhost.remove(); _tpGhost = null; }
     var src = _msCellEl(_tpCellId);
     if (src) src.style.opacity = '';
@@ -306,14 +317,13 @@ function _tpGhostDestroy() {
     }
 }
 
-/* ── Drag start helper ───────────────────────────────────────────────────────── */
+/* ── Drag start helper ──────────────────────────────────────────────────────────────── */
 function _tpStartDrag(x, y) {
     var srcEl = _msCellEl(_tpCellId);
     if (!srcEl) return;
 
     _tpDragging  = true;
     _tpMultiDrag = _msActive && _msSelected.size > 0;
-    _tpPrevY     = y;
 
     // Auto-add the touched cell to selection in multi-drag mode
     if (_tpMultiDrag && !_msSelected.has(_tpCellId)) {
@@ -333,16 +343,15 @@ function _tpOnTouchStart(e) {
 
     var touch  = e.touches[0];
     var cellEl = touch.target.closest('[data-grid-cell-id]');
-
-    // No cell under the finger → let native scroll handle it, nothing to do.
-    if (!cellEl) return;
+    if (!cellEl) return;  // no cell → native scroll handles it
 
     _tpTouchId   = touch.identifier;
     _tpStartX    = touch.clientX;
     _tpStartY    = touch.clientY;
-    _tpPrevY     = touch.clientY;
+    _tpLastY     = touch.clientY;
     _tpCellId    = parseInt(cellEl.dataset.gridCellId, 10);
     _tpLpFired   = false;
+    _tpArmed     = false;
     _tpDragging  = false;
     _tpMultiDrag = false;
 
@@ -350,12 +359,22 @@ function _tpOnTouchStart(e) {
     document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
     document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
 
+    // Arm timer (200 ms): holding still this long signals drag intent.
+    // Once armed, any movement starts the drag and calls preventDefault(),
+    // blocking native scroll before the compositor can claim it.
+    _tpArmTimer = setTimeout(function() {
+        if (_tpDragging) return;
+        _tpArmed = true;
+        var el = _msCellEl(_tpCellId);
+        if (el) el.style.opacity = '0.65';  // visual cue: ready to drag
+        if (navigator.vibrate) navigator.vibrate(15);
+    }, 200);
+
+    // Long-press timer (500 ms): enter multiselect
     _tpLpTimer = setTimeout(function() {
-        // Only fire long-press if NOT already dragging (drag beat the timer)
         if (_tpDragging) return;
         _tpLpFired = true;
         if (!_msActive) _msEnter(_tpCellId);
-        // If already in multiselect: timer just sets _tpLpFired; drag starts on move
     }, _LONG_PRESS_MS);
 }
 
@@ -363,18 +382,14 @@ function _tpOnTouchMove(e) {
     var touch = _tpFindTouch(e.changedTouches) || _tpFindTouch(e.touches);
     if (!touch) return;
 
-    // ── Active drag: take full control, prevent native scroll ──────────────
-    // Only preventDefault when we've committed to a drag.  This way native
-    // scroll works for every other gesture (vertical swipes, multiselect taps).
-    // Without touch-action:none on the canvas, calling preventDefault() here
-    // is the first point the browser hands scroll control back to JS, so
-    // scrollTop writes on grid-scroll-area actually render on real Android.
+    _tpLastY = touch.clientY;  // always keep this fresh for the edge-scroll interval
+
+    // ── Active drag: keep control, update ghost + interval edge-scroll ──
     if (_tpDragging) {
         e.preventDefault();
         _tpGhostMove(touch.clientX, touch.clientY);
-        _tpEdgeScroll(touch.clientY);
+        _tpEdgeScrollStart();   // starts/keeps the interval running
         _tpDropIndicator(_tpDropTarget(touch.clientX, touch.clientY));
-        _tpPrevY = touch.clientY;
         return;
     }
 
@@ -382,35 +397,48 @@ function _tpOnTouchMove(e) {
     var absDy = Math.abs(touch.clientY - _tpStartY);
     var dist  = Math.sqrt(absDx * absDx + absDy * absDy);
 
-    if (dist < 5) return;  // too early to classify, keep waiting
-
-    if (!_msActive && !_tpLpFired) {
-        // Outside multiselect: classify by direction.
-        //   Clearly vertical  →  let native scroll take over (detach and bail)
-        //   Any other angle   →  drag-reorder intent, fall through to threshold
-        if (absDy > absDx * 1.5) {
+    // ── Armed (held 200 ms): any movement now commits drag ──
+    // preventDefault here stops the browser from starting compositor scroll.
+    // Because the user held still for 200 ms, the compositor has NOT started
+    // scrolling yet, so preventDefault in this first-move event is effective.
+    if (_tpArmed || _tpLpFired) {
+        if (dist >= 5) {
+            e.preventDefault();
             clearTimeout(_tpLpTimer);
-            _tpCleanup();
-            _tpTouchId = null;
-            return;  // no preventDefault → browser owns the gesture now
+            clearTimeout(_tpArmTimer);
+            _tpLpFired = true;  // reuse to suppress lightbox on touchend
+            _tpStartDrag(touch.clientX, touch.clientY);
         }
+        return;  // don't release until armed threshold crossed
     }
 
-    // ── Past drag threshold: commit to drag ──
+    // ── Pre-arm: classify quickly or wait ──
+    if (dist < 8) return;  // in the browser's slop zone — hold tight
+
+    // Clear vertical swipe before arm fires: release to native scroll
+    if (absDy > absDx * 1.5) {
+        clearTimeout(_tpArmTimer);
+        clearTimeout(_tpLpTimer);
+        _tpCleanup();
+        _tpTouchId = null;
+        return;  // no preventDefault → browser scrolls natively
+    }
+
+    // Horizontal / diagonal drag before arm fires: commit immediately
     if (dist >= _DRAG_THRESHOLD) {
+        e.preventDefault();
+        clearTimeout(_tpArmTimer);
         clearTimeout(_tpLpTimer);
         _tpLpFired = true;
         _tpStartDrag(touch.clientX, touch.clientY);
-        e.preventDefault();  // stop any in-progress native scroll
     }
-
-    _tpPrevY = touch.clientY;
 }
 
 function _tpOnTouchEnd(e) {
     var touch = _tpFindTouch(e.changedTouches);
     if (!touch) return;
     clearTimeout(_tpLpTimer);
+    clearTimeout(_tpArmTimer);
 
     if (_tpDragging) {
         var target    = _tpDropTarget(touch.clientX, touch.clientY);
@@ -431,27 +459,39 @@ function _tpOnTouchEnd(e) {
         return;
     }
 
-    var lpFired    = _tpLpFired;
-    var cellId     = _tpCellId;
+    // Restore arm-dim if drag never started
+    var src = _msCellEl(_tpCellId);
+    if (src) src.style.opacity = '';
+
+    var lpFired = _tpLpFired;
+    var armed   = _tpArmed;
+    var cellId  = _tpCellId;
+    _tpArmed    = false;
     _tpCleanup();
 
-    if (lpFired) return;  // long-press fired (multiselect entered) or drag committed
+    if (lpFired || armed) return;  // long-press / arm-cancel: no lightbox
 
     // Short tap
     if (_msActive && cellId != null) {
         _msToggle(cellId);  // toggle selection in multiselect
     }
-    // Outside multiselect: let the synthetic click bubble to open lightbox
+    // Outside multiselect: synthetic click opens lightbox via _tpClickCapture
 }
 
 function _tpOnTouchCancel() { _tpReset(); }
 
 function _tpReset() {
     clearTimeout(_tpLpTimer);
+    clearTimeout(_tpArmTimer);
+    _tpEdgeScrollStop();
     _tpGhostDestroy();
     _tpDragging  = false;
     _tpMultiDrag = false;
     _tpLpFired   = false;
+    _tpArmed     = false;
+    // Restore arm-dimming if ghost wasn't created
+    var src = _msCellEl(_tpCellId);
+    if (src) src.style.opacity = '';
     _tpCleanup();
 }
 
