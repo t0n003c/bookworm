@@ -147,8 +147,8 @@ function _uplDocInjectSelectBtn() {
   btn.className = 'ml-auto px-2.5 py-1 text-[11px] rounded-lg border border-gray-300 dark:border-zinc-600 '
     + 'text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition';
   btn.innerHTML = _uplDocSelectMode
-    ? '\u2612<span class="hidden sm:inline"> Done</span>'
-    : '\u2610<span class="hidden sm:inline"> Select</span>';
+    ? '\u2612<span class="upl-rsp-label"> Done</span>'
+    : '\u2610<span class="upl-rsp-label"> Select</span>';
   btn.onclick = _uplDocToggleSelectMode;
   bar.appendChild(btn);
 }
@@ -190,8 +190,8 @@ function _uplDocToggleSelectMode() {
   _uplDocAfterRender();
   var btn = document.getElementById('upl-doc-select-btn');
   if (btn) btn.innerHTML = _uplDocSelectMode
-    ? '\u2612<span class="hidden sm:inline"> Done</span>'
-    : '\u2610<span class="hidden sm:inline"> Select</span>';
+    ? '\u2612<span class="upl-rsp-label"> Done</span>'
+    : '\u2610<span class="upl-rsp-label"> Select</span>';
 }
 
 function _uplDocUpdateCardRing(card, selected) {

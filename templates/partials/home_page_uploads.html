@@ -138,6 +138,9 @@
 /* light mode overrides — toolbar + find bar lighten slightly */
 :not(.dark) .bw-txt-toolbar{background:#2d2d2d;border-color:#3e3e3e}
 :not(.dark) .bw-txt-findbar{background:#2d2d2d;border-color:#3e3e3e}
+/* Responsive toolbar labels: hide on mobile, show on sm+ (640px) */
+.upl-rsp-label{display:none}
+@media(min-width:640px){.upl-rsp-label{display:inline}}
 </style>
 <div id="uploads-page-root" data-page-id="{{ page.id }}"
      data-collabora-enabled="{{ collabora_enabled | tojson | safe }}"

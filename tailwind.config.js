@@ -25,5 +25,12 @@ module.exports = {
     },
   },
 
+  // Safelist: classes injected via JS innerHTML at runtime that the scanner
+  // cannot always detect through escaped-quote string literals.
+  safelist: [
+    'hidden',
+    'sm:inline',
+  ],
+
   plugins: [],
 };
