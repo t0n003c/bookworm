@@ -355,6 +355,15 @@ function _tpOnTouchStart(e) {
     _tpDragging  = false;
     _tpMultiDrag = false;
 
+    // Block the compositor scroll pipeline RIGHT NOW, before it starts.
+    // With { passive: false } on the canvas touchstart listener, Chrome waits
+    // for this call before deciding whether to handle the gesture on the GPU
+    // thread.  Calling it here (not in touchmove) is the only reliable way to
+    // prevent compositor scrolling on all Android Chrome versions.
+    // Side-effect: synthetic click never fires — we open the lightbox manually
+    // in _tpOnTouchEnd for quick taps.
+    e.preventDefault();
+
     document.addEventListener('touchmove',   _tpOnTouchMove,   { passive: false });
     document.addEventListener('touchend',    _tpOnTouchEnd,    { passive: true  });
     document.addEventListener('touchcancel', _tpOnTouchCancel, { passive: true  });
@@ -474,8 +483,11 @@ function _tpOnTouchEnd(e) {
     // Short tap
     if (_msActive && cellId != null) {
         _msToggle(cellId);  // toggle selection in multiselect
+        return;
     }
-    // Outside multiselect: synthetic click opens lightbox via _tpClickCapture
+    // Open lightbox directly: preventDefault() in touchstart killed the
+    // synthetic click, so we can't rely on _tpClickCapture to route it.
+    if (cellId != null) gridLightboxOpen(cellId);
 }
 
 function _tpOnTouchCancel() { _tpReset(); }
@@ -532,10 +544,10 @@ function _tpInjectCSS() {
     s.textContent = [
         'body.bw-touch [data-grid-hover-ctrls],',
         'body.bw-touch [data-grid-pencil] { display:none !important; }',
-        /* No touch-action:none on canvas — native scroll must work freely.
-         * We only call preventDefault() inside _tpOnTouchMove once _tpDragging
-         * is true; that's when the browser hands scroll control to JS and
-         * scrollTop writes actually render on real Android. */
+        /* Canvas touchstart is non-passive; preventDefault() is called there
+         * for every cell touch, so the compositor never starts a scroll
+         * pipeline for those gestures.  Native scroll on empty canvas space
+         * (non-cell touches) is unaffected. */
         'body.bw-touch .grid-ms-enter { display: flex; }',
         'body.bw-touch [data-grid-cell-id] {',
         '  -webkit-touch-callout: none;',
@@ -569,7 +581,7 @@ function _gridInitTouch() {
     if (!canvas) return;
 
     canvas.removeEventListener('touchstart', _tpOnTouchStart);
-    canvas.addEventListener('touchstart', _tpOnTouchStart, { passive: true });
+    canvas.addEventListener('touchstart', _tpOnTouchStart, { passive: false });
 
     canvas.removeEventListener('click', _tpClickCapture, true);
     canvas.addEventListener('click', _tpClickCapture, true);
