@@ -84,6 +84,18 @@
     /* 9. Action row: WCAG 2.5.5 touch targets (44 px min) */
     .trip-spot-actions button,
     .trip-spot-actions a    { min-height: 2.75rem; display: flex; align-items: center; }
+
+    /* 10. Plan-tab breadcrumb toolbar: stick below the trip topbar so it
+           stays visible while scrolling through day cards. */
+    #trip-plan-toolbar {
+      position: sticky;
+      /* Fall back to 2.75 rem if JS hasn't measured the real topbar height yet. */
+      top: var(--bw-trip-topbar-h, 2.75rem);
+      z-index: 29;
+      /* Explicit bg so day cards don't bleed through when scrolling. */
+      background: #f9fafb;
+    }
+    .dark #trip-plan-toolbar { background: #09090b; }
   }
 </style>
 

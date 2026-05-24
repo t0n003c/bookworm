@@ -658,6 +658,16 @@ window.tripClosePlan = function() {
 function _tripRenderDaysToolbar() {
   var tb = document.getElementById('trip-plan-toolbar');
   if (!tb) return;
+
+  // Keep the breadcrumb row pinned below the trip topbar on mobile.
+  // Measure the real topbar height each time so it's accurate even after
+  // font-size / zoom changes, then store it as a CSS custom property.
+  var topbar = document.getElementById('trip-topbar');
+  if (topbar) {
+    document.documentElement.style.setProperty(
+      '--bw-trip-topbar-h', topbar.getBoundingClientRect().height + 'px'
+    );
+  }
   var isEdit   = _tripPlanMode === 'edit';
   var modeLbl  = isEdit ? '👁️ View' : '✏️ Edit';
   var modeCls  = isEdit
