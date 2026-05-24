@@ -285,17 +285,15 @@ function _suExpenseFormHtml(wid) {
   }).join('');
 
   var title = editIdx >= 0 ? 'Edit expense' : 'Add expense';
-  return '<div class="mx-3 mb-3 p-3 rounded-xl border border-gray-200 dark:border-zinc-700 '
+  return '<div class="mx-2 mb-3 p-2 rounded-xl border border-gray-200 dark:border-zinc-700 '
     + 'bg-gray-50 dark:bg-zinc-800/60 space-y-2">'
     + '<p class="text-xs font-semibold text-gray-600 dark:text-zinc-300">' + title + '</p>'
-    + '<div class="flex gap-2">'
     + '<input id="su-exp-desc-' + wid + '" type="text" placeholder="Description" value="' + descVal + '"'
-    + ' class="flex-1 text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
+    + ' class="w-full text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue">'
-    + '<input id="su-exp-amt-' + wid + '" type="number" min="0" step="0.01" placeholder="0.00" value="' + amtVal + '"'
-    + ' class="w-24 text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
+    + '<input id="su-exp-amt-' + wid + '" type="number" min="0" step="0.01" placeholder="Amount" value="' + amtVal + '"'
+    + ' class="w-full text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue">'
-    + '</div>'
     + '<div><label class="block text-[10px] font-semibold text-gray-400 dark:text-zinc-500 mb-1">Paid by</label>'
     + '<select id="su-exp-paidby-' + wid + '"'
     + ' class="w-full text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1.5'
@@ -407,16 +405,16 @@ function _suSettlementCalc(people, expenses) {
 function _suShowAddPerson(wid) {
   var container = document.getElementById('su-add-person-' + wid);
   if (!container) return;
-  container.innerHTML = '<div class="flex items-center gap-1 mt-1">'
+  container.innerHTML = '<div class="flex items-center gap-1 mt-1 min-w-0 overflow-hidden">'
     + '<input id="su-new-person-' + wid + '" type="text" placeholder="Name" maxlength="80"'
-    + ' class="flex-1 text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
+    + ' class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
     + ' bg-white dark:bg-zinc-700 text-gray-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-wblue"'
     + ' onkeydown="if(event.key===\'Enter\')_suCommitPerson(\'' + wid + '\');'
     + ' if(event.key===\'Escape\')_suCancelAddPerson(\'' + wid + '\');">'
     + '<button onclick="_suCommitPerson(\'' + wid + '\')" '
-    + 'class="text-xs px-2 py-1 bg-wblue text-white rounded-lg hover:bg-blue-700 transition">Add</button>'
+    + 'class="flex-shrink-0 text-xs px-2 py-1 bg-wblue text-white rounded-lg hover:bg-blue-700 transition">Add</button>'
     + '<button onclick="_suCancelAddPerson(\'' + wid + '\')" '
-    + 'class="text-xs px-2 py-1 text-gray-400 hover:text-gray-600 transition">✕</button>'
+    + 'class="flex-shrink-0 text-xs px-1.5 py-1 text-gray-400 hover:text-gray-600 transition">✕</button>'
     + '</div>';
   var inp = document.getElementById('su-new-person-' + wid);
   if (inp) { inp.focus(); }
