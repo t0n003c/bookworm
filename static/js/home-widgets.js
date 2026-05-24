@@ -1265,10 +1265,12 @@ const WIDGET_CONFIG_FIELDS = {
       name: 'upload_ids' },
   ],
   subscriptions_summary: () => [
-    { id: 'cf-subs-pid', label: 'Subscriptions page', type: 'select-subs-pages',
+    { id: 'cf-subs-pid',   label: 'Subscriptions page',      type: 'select-subs-pages',
       name: 'page_id' },
-    { id: 'cf-subs-bg', label: 'Widget background color', type: 'color',
+    { id: 'cf-subs-bg',    label: 'Background color',         type: 'color',
       name: 'bg_color', default: '#1a2b3c' },
+    { id: 'cf-subs-nobg',  label: 'Transparent background (no fill)',  type: 'checkbox',
+      name: 'no_bg' },
   ],
   settle_up: () => [
     { id: 'cf-su-currency', label: 'Currency', type: 'select', name: 'currency',

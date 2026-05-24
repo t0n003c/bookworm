@@ -1581,13 +1581,46 @@ function _subsWgtRender(el, list, summary) {
   // Cache data for chart rendering
   _subsWgtData[wid] = { list: list, summary: summary, chart: null };
 
-  // ── Glassmorphism dark skin ──────────────────────────────────────────────
+  // ── Config + theme palette ───────────────────────────────────────────────
   var _card = el.closest ? el.closest('.hw-card') : null;
   var _cfg  = {};
   try { _cfg = JSON.parse(_card ? _card.dataset.widgetConfig || '{}' : '{}'); } catch(e) {}
+  var noBg  = !!_cfg.no_bg;
   var bgHex = _cfg.bg_color || '#1a2b3c';
-  el.style.background   = _subsWgtGradient(bgHex);
-  el.style.borderRadius = '10px';
+  var dark  = document.documentElement.classList.contains('dark');
+
+  // c = color tokens — dark-on-transparent or light-on-gradient
+  var c = noBg ? {
+    hero:       dark ? '#f1f5f9'               : '#111827',
+    heroLabel:  dark ? 'rgba(148,163,184,0.8)' : 'rgba(75,85,99,0.8)',
+    name:       dark ? '#e2e8f0'               : '#1f2937',
+    amount:     dark ? 'rgba(148,163,184,0.9)' : 'rgba(75,85,99,0.85)',
+    empty:      dark ? 'rgba(148,163,184,0.5)' : 'rgba(107,114,128,0.6)',
+    overflow:   dark ? 'rgba(148,163,184,0.4)' : 'rgba(107,114,128,0.5)',
+    footer:     dark ? 'rgba(148,163,184,0.6)' : 'rgba(75,85,99,0.7)',
+    link:       dark ? 'rgba(147,197,253,0.9)' : '#0053e2',
+    border:     dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+    dotOn:      dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.65)',
+    dotOff:     dark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
+    rowBg:      'transparent',
+  } : {
+    hero:       '#f1f5f9',
+    heroLabel:  'rgba(148,163,184,0.7)',
+    name:       '#e2e8f0',
+    amount:     'rgba(148,163,184,0.85)',
+    empty:      'rgba(148,163,184,0.5)',
+    overflow:   'rgba(148,163,184,0.45)',
+    footer:     'rgba(148,163,184,0.6)',
+    link:       'rgba(147,197,253,0.85)',
+    border:     'rgba(255,255,255,0.07)',
+    dotOn:      'rgba(255,255,255,0.95)',
+    dotOff:     'rgba(255,255,255,0.22)',
+    rowBg:      'rgba(255,255,255,0.04)',
+  };
+
+  // Apply (or clear) background
+  el.style.background   = noBg ? 'transparent' : _subsWgtGradient(bgHex);
+  el.style.borderRadius = noBg ? '' : '10px';
   el.style.overflow     = 'hidden';
 
   var activeRows = (list || []).filter(function(s) { return s.active; });
@@ -1598,8 +1631,8 @@ function _subsWgtRender(el, list, summary) {
   var heroHtml =
     '<div style="text-align:center;padding:5px 0 7px;">'
     + '<p style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;'
-      + 'color:rgba(148,163,184,0.7);margin:0 0 2px;">Monthly</p>'
-    + '<p style="font-size:22px;font-weight:800;line-height:1;color:#f1f5f9;'
+      + 'color:' + c.heroLabel + ';margin:0 0 2px;">Monthly</p>'
+    + '<p style="font-size:22px;font-weight:800;line-height:1;color:' + c.hero + ';'
       + 'letter-spacing:-0.5px;margin:0;">'
       + _subsWgtFmtMoney(summary.monthly_total)
     + '</p>'
@@ -1624,20 +1657,20 @@ function _subsWgtRender(el, list, summary) {
     return '<div style="display:flex;align-items:center;gap:7px;padding:3px 4px 3px 6px;'
       + 'border-left:3px solid ' + _subsWgtEsc(color) + ';'
       + 'border-radius:0 4px 4px 0;margin-bottom:3px;min-width:0;'
-      + 'background:rgba(255,255,255,0.04);">'
+      + 'background:' + c.rowBg + ';">'
       + iconHtml
       + '<span style="font-size:11px;font-weight:600;flex:1;white-space:nowrap;'
-        + 'overflow:hidden;text-overflow:ellipsis;color:#e2e8f0;">'
+        + 'overflow:hidden;text-overflow:ellipsis;color:' + c.name + ';">'
         + _subsWgtEsc(s.name) + '</span>'
-      + '<span style="font-size:10px;color:rgba(148,163,184,0.85);white-space:nowrap;padding-left:4px;">'
+      + '<span style="font-size:10px;color:' + c.amount + ';white-space:nowrap;padding-left:4px;">'
         + _subsWgtEsc(s.currency) + '\u00a0' + (s.amount || 0).toFixed(2)
       + '</span>'
     + '</div>';
   }).join('')
-  : '<p style="font-size:11px;color:rgba(148,163,184,0.5);text-align:center;padding:10px 0;">No active subscriptions.</p>';
+  : '<p style="font-size:11px;color:' + c.empty + ';text-align:center;padding:10px 0;">No active subscriptions.</p>';
 
   var overflowHtml = overflow > 0
-    ? '<p style="font-size:9px;color:rgba(148,163,184,0.45);text-align:right;margin-top:2px;">+ '
+    ? '<p style="font-size:9px;color:' + c.overflow + ';text-align:right;margin-top:2px;">+ '
       + overflow + ' more</p>' : '';
 
   var slide0 = '<div class="subs-sw-slide" '
@@ -1659,17 +1692,17 @@ function _subsWgtRender(el, list, summary) {
   var dotsHtml = [0, 1].map(function(i) {
     return '<span class="subs-sw-dot" onclick="_subsWgtGoTo(' + wid + ',' + i + ')" '
       + 'style="display:inline-block;width:6px;height:6px;border-radius:50%;cursor:pointer;'
-      + 'background:' + (i === savedSlide ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.22)') + ';"></span>';
+      + 'background:' + (i === savedSlide ? c.dotOn : c.dotOff) + ';"></span>';
   }).join('');
 
-  var footer = '<div style="flex-shrink:0;padding:6px 2px 2px;border-top:1px solid rgba(255,255,255,0.07);">'
+  var footer = '<div style="flex-shrink:0;padding:6px 2px 2px;border-top:1px solid ' + c.border + ';">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-      + '<span style="font-size:10px;color:rgba(148,163,184,0.6);">'
+      + '<span style="font-size:10px;color:' + c.footer + ';">'
         + _subsWgtFmtMoney(summary.yearly_total) + '/yr'
       + '</span>'
       + '<span style="display:flex;gap:5px;align-items:center;">' + dotsHtml + '</span>'
       + '<button onclick="openHomePage(' + pid + ')" '
-        + 'style="font-size:10px;color:rgba(147,197,253,0.85);background:none;border:none;cursor:pointer;'
+        + 'style="font-size:10px;color:' + c.link + ';background:none;border:none;cursor:pointer;'
         + 'padding:0;text-decoration:underline;text-underline-offset:2px;">'
         + 'Open \u2192</button>'
     + '</div>'

@@ -553,6 +553,18 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
       _nlRefreshNotePicker();
       _nlLoadWorkspaces(widgetId);
       return; // early-out
+    } else if (f.type === 'checkbox') {
+      // Inline checkbox — the label wraps both elements so the full row is clickable
+      wrap.innerHTML =
+        `<label class="flex items-center gap-2 cursor-pointer select-none py-0.5">
+          <input id="${f.id}" type="checkbox" data-cfg-key="${f.name}"
+                 class="w-3.5 h-3.5 rounded accent-wblue cursor-pointer"
+                 ${curVal ? 'checked' : ''}
+                 onchange="${saveFn}">
+          <span class="text-xs text-gray-700 dark:text-zinc-300">${f.label}</span>
+        </label>`;
+      body.appendChild(wrap);
+      return;
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
