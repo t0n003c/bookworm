@@ -208,8 +208,18 @@ function _uplCatToggleCollapse(id) {
 
 /** Toggle a catalog's hidden/dimmed state in the sidebar. */
 function _uplCatToggleHidden(id) {
-  if (_uplCatHidden[id]) { delete _uplCatHidden[id]; }
-  else                   { _uplCatHidden[id] = true; }
+  if (_uplCatHidden[id]) {
+    delete _uplCatHidden[id];
+  } else {
+    _uplCatHidden[id] = true;
+    // Mirror folder behaviour: auto-enable manage-mode so the catalog dims
+    // instead of vanishing.  Keeps the ⋮ → Unhide path reachable without the eye button.
+    if (typeof _uplFldHideMode !== 'undefined' && !_uplFldHideMode) {
+      _uplFldHideMode = true;
+      if (typeof _uplFolderUpdateHideModeBtn === 'function') _uplFolderUpdateHideModeBtn();
+      if (typeof _uplFolderRender === 'function') _uplFolderRender();
+    }
+  }
   _uplCatSaveHidden(_uplCatPid);
   _uplCatalogRender();
 }

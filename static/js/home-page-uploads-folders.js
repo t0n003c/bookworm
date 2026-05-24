@@ -118,6 +118,9 @@ function _uplFolderToggleHidden(folderId) {
     delete _uplFldHidden[folderId];
   } else {
     _uplFldHidden[folderId] = true;
+    // Auto-enable manage-mode so the item dims instead of vanishing entirely.
+    // The user can then click ⋮ → Unhide without hunting for the eye button.
+    if (!_uplFldHideMode) { _uplFldHideMode = true; _uplFolderUpdateHideModeBtn(); }
   }
   _uplFldSaveHidden(_uplFldPid);
   _uplFolderRender();
@@ -534,17 +537,13 @@ function _uplRowMenuOpen(event, type, id) {
   if (type === 'folder') {
     html += _uplRowMenuBtn(ICON_PLUS,  'New sub-folder', '_uplRowMenuClose();_uplFolderOpenCreate(_uplRowMenuCtx.id)');
     html += _uplRowMenuBtn(ICON_PEN,   'Rename',         '_uplRowMenuClose();_uplFolderOpenRename(_uplRowMenuCtx.id,_uplRowMenuCtx.name)');
-    if (_uplFldHideMode) {
-      html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplFolderToggleHidden(_uplRowMenuCtx.id)');
-    }
+    html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplFolderToggleHidden(_uplRowMenuCtx.id)');
     html += '<div class="border-t border-gray-100 dark:border-zinc-800 my-1"></div>';
     html += _uplRowMenuBtn(ICON_TRASH, 'Move to Trash',  '_uplRowMenuClose();_uplFolderOpenDelete(_uplRowMenuCtx.id,_uplRowMenuCtx.name)', 'text-red-500 dark:text-red-400');
   } else {
     html += _uplRowMenuBtn(ICON_PLUS,  'New sub-catalog', '_uplRowMenuClose();_uplCatalogOpenModal(\'create\',_uplRowMenuCtx.id,null)');
     html += _uplRowMenuBtn(ICON_PEN,   'Rename',          '_uplRowMenuClose();_uplCatalogOpenModal(\'rename\',_uplRowMenuCtx.id,null)');
-    if (typeof _uplFldHideMode !== 'undefined' && _uplFldHideMode) {
-      html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplCatToggleHidden(_uplRowMenuCtx.id)');
-    }
+    html += _uplRowMenuBtn(ICON_HIDE, isHidden ? 'Unhide' : 'Hide', '_uplRowMenuClose();_uplCatToggleHidden(_uplRowMenuCtx.id)');
     html += '<div class="border-t border-gray-100 dark:border-zinc-800 my-1"></div>';
     html += _uplRowMenuBtn(ICON_TRASH, 'Move to Trash',   '_uplRowMenuClose();_uplCatalogConfirmDelete(_uplRowMenuCtx.id)', 'text-red-500 dark:text-red-400');
   }
