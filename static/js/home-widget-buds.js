@@ -187,9 +187,7 @@ function _budsRender(wid) {
       + '<div class="flex flex-col items-center gap-1 flex-shrink-0">'
       + waterBtn
       + fertilizeBtn
-      + '  <button title="Edit / delete"'
-      + ' onclick="_budsMenuToggle(\''+wid+'\','+b.id+',event)"'
-      + ' class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-700 hover:text-gray-600 transition">\u22EE</button>'
+
       + '</div>'
       + '</div>';
   }).join('');
