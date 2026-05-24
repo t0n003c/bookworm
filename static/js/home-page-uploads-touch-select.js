@@ -27,18 +27,20 @@
  */
 
 // ── State ─────────────────────────────────────────────────────────────────────
-var _uplTsActive       = false;  // multiselect mode on/off
-var _uplTsHoldTimer    = null;   // arms multiselect at _UTD_TS_HOLD_MS
-var _uplTsHapticTimer  = null;   // fires haptic at _UTD_TS_HAPTIC_MS
-var _uplTsSuppressNext = false;  // eat the synthetic click right after long-press
-var _uplTsStartX       = 0;
-var _uplTsStartY       = 0;
-var _uplTsDocBound     = false;  // doc-level cancel listeners are attached
+var _uplTsActive        = false; // multiselect mode on/off
+var _uplTsHoldTimer     = null;  // arms multiselect at _UTD_TS_HOLD_MS
+var _uplTsHapticTimer   = null;  // fires haptic at _UTD_TS_HAPTIC_MS
+var _uplTsSuppressKey   = null;  // file-key of the long-pressed card to suppress
+var _uplTsSuppressUntil = 0;     // epoch ms after which suppress expires
+var _uplTsStartX        = 0;
+var _uplTsStartY        = 0;
+var _uplTsDocBound      = false; // doc-level cancel listeners are attached
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
-var _UTD_TS_HOLD_MS   = 400;   // hold before multiselect activates
-var _UTD_TS_HAPTIC_MS = 270;   // haptic fires 130 ms before activation
-var _UTD_TS_CANCEL_PX = 8;     // finger drift (px) that aborts the hold
+var _UTD_TS_HOLD_MS     = 400;  // hold before multiselect activates
+var _UTD_TS_HAPTIC_MS   = 270;  // haptic fires 130 ms before activation
+var _UTD_TS_CANCEL_PX   = 8;    // finger drift (px) that aborts the hold
+var _UTD_TS_SUPPRESS_MS = 700;  // window to suppress synthetic click on the long-pressed card
 
 // ── Hook _dndSelClear to also exit touch-select mode ─────────────────────────
 // Wrapped once (sentinel guard survives HTMX re-injection).
@@ -47,8 +49,9 @@ if (!window._uplTsSelClearWrapped) {
   var _uplTs_origClear = _dndSelClear;
   _dndSelClear = function() {
     _uplTs_origClear.apply(this, arguments);
-    _uplTsActive       = false;
-    _uplTsSuppressNext = false;
+    _uplTsActive        = false;
+    _uplTsSuppressKey   = null;
+    _uplTsSuppressUntil = 0;
   };
 }
 
@@ -91,9 +94,14 @@ function _uplTsOnTouchStart(e) {
 
   // Stage 2: activate multiselect
   _uplTsHoldTimer = setTimeout(function() {
-    _uplTsHoldTimer    = null;
-    _uplTsActive       = true;
-    _uplTsSuppressNext = true;  // eat the click fired on the upcoming touchend
+    _uplTsHoldTimer = null;
+    _uplTsActive    = true;
+
+    // Suppress only the synthetic click that fires on THIS card after lift.
+    // Using key+timestamp instead of a plain boolean so taps on OTHER cards
+    // are never accidentally swallowed.
+    _uplTsSuppressKey   = src + ':' + id;
+    _uplTsSuppressUntil = Date.now() + _UTD_TS_SUPPRESS_MS;
 
     if (typeof _dndSelToggle === 'function') {
       _dndSelToggle(src, id, folderId);
@@ -145,15 +153,7 @@ function _uplTsAbort() {
 // ── Capture-phase click interceptor — always live on #uploads-main ────────────
 // Fires BEFORE the card's inline onclick, letting us redirect or suppress it.
 function _uplTsOnClick(e) {
-  // Eat the single synthetic click that fires right after a long-press lifts
-  if (_uplTsSuppressNext) {
-    _uplTsSuppressNext = false;
-    e.stopPropagation();
-    e.preventDefault();
-    return;
-  }
-
-  if (!_uplTsActive) return;
+  if (!_uplTsActive && !_uplTsSuppressKey) return;
 
   // Find the file card the tap landed on
   var card = null;
@@ -163,21 +163,39 @@ function _uplTsOnClick(e) {
     if (cur.dataset && cur.dataset.uplFileKey) { card = cur; break; }
     cur = cur.parentElement;
   }
-  if (!card) return;
 
-  e.stopPropagation();
-  e.preventDefault();
+  // Click landed outside a card — clear any pending suppress and bail
+  if (!card) { _uplTsSuppressKey = null; return; }
 
+  var key      = card.getAttribute('data-upl-src') + ':' + card.getAttribute('data-upl-id');
   var src      = card.getAttribute('data-upl-src');
   var id       = +(card.getAttribute('data-upl-id'));
   var rawFid   = card.getAttribute('data-upl-folder-id');
   var folderId = rawFid ? +rawFid : null;
 
+  // Suppress only the synthetic click on the EXACT card that triggered the
+  // long-press, within the time window.  Any other card proceeds immediately.
+  if (_uplTsSuppressKey === key && Date.now() < _uplTsSuppressUntil) {
+    _uplTsSuppressKey   = null;
+    _uplTsSuppressUntil = 0;
+    e.stopPropagation();
+    e.preventDefault();
+    return;
+  }
+  // Clear stale suppress state on any card tap
+  _uplTsSuppressKey   = null;
+  _uplTsSuppressUntil = 0;
+
+  if (!_uplTsActive) return;
+
+  e.stopPropagation();
+  e.preventDefault();
+
   if (typeof _dndSelToggle === 'function') {
     _dndSelToggle(src, id, folderId);
   }
 
-  // Auto-exit if the user just deselected the last card
+  // Auto-exit when the last card is deselected
   if (typeof _dndSelected !== 'undefined' &&
       Object.keys(_dndSelected).length === 0) {
     _uplTsActive = false;
