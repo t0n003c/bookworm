@@ -158,10 +158,25 @@ window._tripRenderFilterBar = function() {
   rightHtml += '</div>';
 
   bar.innerHTML = leftHtml + rightHtml;
+
+  // Keep CSS vars fresh for mobile sticky positioning.
+  // Both vars are consumed by the @media (max-width:767px) rules in
+  // home_page_trip.html — harmless on desktop (sticky isn't applied there).
+  var _topbarEl = document.getElementById('trip-topbar');
+  if (_topbarEl) {
+    document.documentElement.style.setProperty(
+      '--bw-trip-topbar-h', _topbarEl.getBoundingClientRect().height + 'px'
+    );
+  }
+  // getBoundingClientRect() forces a synchronous layout so the height
+  // reflects the just-written innerHTML immediately.
+  document.documentElement.style.setProperty(
+    '--bw-trip-filter-bar-h', bar.getBoundingClientRect().height + 'px'
+  );
 };
 function _tripRenderFilterBar() { window._tripRenderFilterBar(); }
 
-// ── Sort / Group / Filter panel (Spots) ──────────────────────────────────────
+// ── Sort / Group / Filter panel (Spots) ────────────────────────────────────────────
 function _spotSfgPanelHtml(spots, attrKeys, sortOpts, groupOpts) {
   var hasActive = _tripSortBy !== 'default' || _tripGroupBy !== 'none' || _tripFilterKey !== '';
 
