@@ -1254,6 +1254,8 @@ const WIDGET_CONFIG_FIELDS = {
       placeholder: 'My Buds', name: 'custom_name' },
     { id: 'cf-buds-crm', label: 'Show health badges on CRM page (optional)',
       type: 'select-crm-pages', name: 'linked_crm_page_id' },
+    { id: 'cf-buds-nobg', label: 'No card background (full style)',
+      type: 'checkbox', name: 'no_card_bg' },
   ],
   upload_preview: () => [
     // upload-picker is handled specially in aw_refreshConfig / _buildFieldsForType.

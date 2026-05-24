@@ -164,12 +164,15 @@ function _budsRender(wid) {
     }
 
     // ── Full: spacious card with species, HP number, plan badge, all actions ──
+    var noBg    = !!cfg.no_card_bg;
+    var cardCls = noBg
+      ? 'flex items-center gap-3 py-2 px-1'
+      : 'flex items-center gap-3 rounded-xl border border-gray-100 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 p-3 shadow-sm';
     var planLabel = hasPlan
       ? ('<span class="text-xs text-blue-600 dark:text-blue-400">📅 '+_esc(b.pending_plan.planned_date)+'</span>')
       : '';
     var speciesName = _BUDS_NAMES[b.flower_species] || b.flower_species;
-    return '<div class="flex items-center gap-3 rounded-xl border border-gray-100'
-      + ' dark:border-zinc-700 bg-white dark:bg-zinc-800/60 p-3 shadow-sm">'
+    return '<div class="'+cardCls+'">'
       + '<img src="'+img+'" class="w-16 h-16 object-contain flex-shrink-0 cursor-pointer bud-sway"'
       + '     style="animation-delay:'+swayDelay+'"'
       + '     onclick="_budsDetailOpen(\''+wid+'\','+b.id+')" alt="'+_esc(b.name)+'">'
