@@ -146,7 +146,9 @@ function _uplDocInjectSelectBtn() {
   btn.id = 'upl-doc-select-btn';
   btn.className = 'ml-auto px-2.5 py-1 text-[11px] rounded-lg border border-gray-300 dark:border-zinc-600 '
     + 'text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition';
-  btn.textContent = _uplDocSelectMode ? '\u2612 Done' : '\u2610 Select';
+  btn.innerHTML = _uplDocSelectMode
+    ? '\u2612<span class="hidden sm:inline"> Done</span>'
+    : '\u2610<span class="hidden sm:inline"> Select</span>';
   btn.onclick = _uplDocToggleSelectMode;
   bar.appendChild(btn);
 }
@@ -187,7 +189,9 @@ function _uplDocToggleSelectMode() {
   // re-render just the select state (avoid full fetch)
   _uplDocAfterRender();
   var btn = document.getElementById('upl-doc-select-btn');
-  if (btn) btn.textContent = _uplDocSelectMode ? '\u2612 Done' : '\u2610 Select';
+  if (btn) btn.innerHTML = _uplDocSelectMode
+    ? '\u2612<span class="hidden sm:inline"> Done</span>'
+    : '\u2610<span class="hidden sm:inline"> Select</span>';
 }
 
 function _uplDocUpdateCardRing(card, selected) {

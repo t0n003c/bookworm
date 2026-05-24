@@ -180,7 +180,7 @@ function _uplRenderFilterTabs() {
                class="flex-shrink-0 text-xs px-2.5 py-1 rounded-full border transition
                       ${_uplGrouped
                         ? 'bg-gray-800 text-white border-gray-800 dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-gray-500'}">&#9783; Group</button>`;
+                        : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-gray-500'}">&#9783;<span class="hidden sm:inline"> Group</span></button>`;
 
   if (stats) {
     const { total, page, pages } = _uplMeta;
