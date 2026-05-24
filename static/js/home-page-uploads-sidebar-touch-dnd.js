@@ -42,6 +42,7 @@ var _utdGhost      = null;   // floating pill element
 var _utdHoverEl    = null;   // currently highlighted target row
 var _utdDropIntent = null;   // 'before' | 'inside' | 'after'
 var _utdHoverType  = null;   // 'folder' | 'catalog' of the highlighted row
+var _utdOnZone     = false;  // true when finger is over #upl-delete-zone
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 var _UTD_HOLD_MS   = 400;    // hold duration before drag activates
@@ -102,6 +103,21 @@ function _utdClearIndicators() {
   _utdHoverEl    = null;
   _utdDropIntent = null;
   _utdHoverType  = null;
+}
+
+// ── Delete-zone hover ─────────────────────────────────────────────────────────
+// Check whether screen coordinates (x, y) land inside #upl-delete-zone and
+// update its visual state.  Returns true when the finger is over the zone.
+function _utdCheckDeleteZone(x, y) {
+  var zone = document.getElementById('upl-delete-zone');
+  if (!zone) return false;
+  var r = zone.getBoundingClientRect();
+  var over = (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+  if (over !== _utdOnZone) {
+    _utdOnZone = over;
+    if (typeof _uplDzSetActive === 'function') _uplDzSetActive(over);
+  }
+  return over;
 }
 
 // ── Hit-test ──────────────────────────────────────────────────────────────────
@@ -199,6 +215,14 @@ function _utdOnDocMove(e) {
   // Resolve what's under the finger
   var row = _utdRowAtPoint(x, y);
 
+  // ── Delete-zone check (pinned below the scroll area) ────────────────────────
+  // _utdCheckDeleteZone handles lighting up / resetting the zone and updates
+  // _utdOnZone.  If the finger is over the zone we skip row targeting entirely.
+  if (_utdCheckDeleteZone(x, y)) {
+    _utdClearIndicators();
+    return;
+  }
+
   if (!row) { _utdClearIndicators(); return; }
 
   var rowType = row.hasAttribute('data-fld-id') ? 'folder' : 'catalog';
@@ -240,16 +264,33 @@ function _utdOnDocMove(e) {
 function _utdOnDocEnd() {
   if (!_utdDragging) { _utdCleanup(); return; }
 
-  // Capture move state BEFORE cleanup resets it
-  var dragId    = _utdDragId;
-  var dragType  = _utdDragType;
-  var targetEl  = _utdHoverEl;
+  // Capture all state BEFORE cleanup resets it
+  var dragId     = _utdDragId;
+  var dragType   = _utdDragType;
+  var dragName   = _utdDragName;
+  var onZone     = _utdOnZone;
+  var targetEl   = _utdHoverEl;
   var targetType = _utdHoverType;
-  var intent    = _utdDropIntent;
+  var intent     = _utdDropIntent;
 
   _utdCleanup();
 
-  if (!targetEl || !intent || dragId === null) return;
+  if (dragId === null) return;
+
+  // ── Drop on the delete zone ───────────────────────────────────────────────
+  if (onZone) {
+    if (dragType === 'folder') {
+      if (typeof _uplFolderOpenDelete === 'function')
+        _uplFolderOpenDelete(dragId, dragName);
+    } else {
+      if (typeof _uplCatalogConfirmDelete === 'function')
+        _uplCatalogConfirmDelete(dragId);
+    }
+    return;
+  }
+
+  // ── Drop on a sibling / parent row ───────────────────────────────────────
+  if (!targetEl || !intent) return;
 
   var targetId = +(targetEl.getAttribute(targetType === 'folder' ? 'data-fld-id' : 'data-cat-id'));
   if (dragType !== targetType || targetId === dragId) return;
@@ -305,12 +346,16 @@ function _utdCleanup() {
   document.removeEventListener('touchend',    _utdOnDocEnd);
   document.removeEventListener('touchcancel', _utdOnDocCancel);
 
+  // Always reset the delete zone highlight on cleanup
+  if (_utdOnZone && typeof _uplDzSetActive === 'function') _uplDzSetActive(false);
+
   _utdDragging  = false;
   _utdDragType  = null;
   _utdDragId    = null;
   _utdDragName  = '';
   _utdStartX    = 0;
   _utdStartY    = 0;
+  _utdOnZone    = false;
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
