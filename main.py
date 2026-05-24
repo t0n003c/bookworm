@@ -23,18 +23,32 @@ from security import load_secret_key
 
 # ── Security response headers ─────────────────────────────────────────────────
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Inject standard security headers on every response."""
+    """Inject standard security headers on every response.
+
+    When BW_HTTPS=true the Strict-Transport-Security (HSTS) header is also
+    added so browsers automatically upgrade future HTTP visits to HTTPS.
+    max-age=63072000 = 2 years, matching the recommended minimum for HSTS
+    preload eligibility.
+    """
     _HEADERS = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options":        "SAMEORIGIN",
         "Referrer-Policy":        "strict-origin-when-cross-origin",
         "Permissions-Policy":     "camera=(), microphone=(), geolocation=()",
     }
+    # Evaluated once at class definition time — same lifetime as the process.
+    _HSTS: str = (
+        "max-age=63072000; includeSubDomains"
+        if os.getenv("BW_HTTPS", "false").lower() == "true"
+        else ""
+    )
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
         for k, v in self._HEADERS.items():
             response.headers.setdefault(k, v)
+        if self._HSTS:
+            response.headers.setdefault("Strict-Transport-Security", self._HSTS)
         return response
 
 
@@ -163,6 +177,12 @@ app.add_middleware(
     # the app is behind a TLS-terminating proxy (nginx, Caddy, Traefik, etc.).
     # Leave false only for plain-HTTP local-network / development use.
     https_only=os.getenv("BW_HTTPS", "false").lower() == "true",
+    # SameSite=Lax: cookies are sent on same-site requests and top-level
+    # navigations, but not on cross-site subrequests (iframes, AJAX from
+    # foreign origins).  Lax is the right default for a web app behind a
+    # reverse proxy — explicit here so a Starlette upgrade can't silently
+    # change it.
+    same_site="lax",
     max_age=86_400 * 30,  # 30-day cookie TTL; per-session expiry enforced in middleware
 )
 # Outermost — runs last on responses, so it stamps headers on everything.

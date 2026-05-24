@@ -406,6 +406,15 @@ def _detect_proxy() -> str:
 
 
 _PROXY: str = _detect_proxy()
+# Visible in `docker compose logs bookworm` — makes it obvious if an unexpected
+# system/Docker proxy is routing outbound RSS, weather, and image requests.
+if _PROXY:
+    # Mask any credentials (http://user:pass@host:port → http://***@host:port)
+    import re as _re
+    _proxy_display = _re.sub(r'(https?://)([^@]+@)', r'\1***@', _PROXY)
+    log.info("Outbound HTTP proxy in use: %s", _proxy_display)
+else:
+    log.info("Outbound HTTP proxy: none (direct connections)")
 
 def _httpx_fetch(url: str, extra_headers: dict | None = None,
                  timeout: int = 15) -> tuple[bytes, str]:
