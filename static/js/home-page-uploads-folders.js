@@ -222,6 +222,8 @@ function _uplFolderRender() {
     '</div>';
 
   tree.innerHTML = html;
+  // Re-attach the touch DnD listener after every render (idempotent).
+  if (typeof _utdInit === 'function') _utdInit();
 }
 
 function _buildFolderTreeHtml(parentKey, depth, byParent) {

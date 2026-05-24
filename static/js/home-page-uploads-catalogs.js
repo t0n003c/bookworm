@@ -120,6 +120,8 @@ function _uplCatalogRender() {
   }
 
   tree.innerHTML = html;
+  // Re-attach the touch DnD listener after every render (idempotent).
+  if (typeof _utdInit === 'function') _utdInit();
 }
 
 function _buildCatalogTreeHtml(parentKey, depth, byParent) {
