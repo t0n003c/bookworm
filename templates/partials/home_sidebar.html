@@ -76,25 +76,6 @@
       {% endif %}
     </button>
 
-
-    {% set _pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
-    <button type="button"
-      data-pg-menu
-      onclick="event.stopPropagation(); _hpgMenuOpen(event, {{ pg.id }}, {{ pg.name | tojson }}, {{ pg.emoji | tojson }}, '{{ _pg_type }}')"
-      title="More actions"
-      aria-label="More actions for {{ pg.name }}"
-      aria-haspopup="menu"
-      aria-expanded="false"
-      class="flex-shrink-0 p-1 rounded-lg text-gray-400
-             hover:text-gray-700 dark:hover:text-zinc-300
-             hover:bg-gray-100 dark:hover:bg-zinc-800
-             opacity-40 hover:opacity-100 focus:opacity-100 transition">
-      <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="5" r="1.5"/>
-        <circle cx="12" cy="12" r="1.5"/>
-        <circle cx="12" cy="19" r="1.5"/>
-      </svg>
-    </button>
   </li>
   {% endfor %}
 </ul>

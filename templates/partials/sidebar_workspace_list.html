@@ -283,25 +283,7 @@
           </svg>
         </button>
 
-        {# ⋮ row menu (Add sub / Duplicate / Edit / Delete) #}
-        <button
-          type="button"
-          onclick="event.stopPropagation();typeof _wsRowMenuOpen==='function'&&_wsRowMenuOpen(event,{{ node.id }},{{ node.name | tojson }},{{ node.emoji | tojson }},{{ node.parent_id | tojson }},{{ node.ws_type | tojson }})"
-          title="More actions"
-          aria-label="More actions for {{ node.name }}"
-          aria-haspopup="menu"
-          aria-expanded="false"
-          class="flex-shrink-0 p-1.5 rounded-lg text-gray-400
-                 hover:text-gray-700 dark:hover:text-zinc-300
-                 hover:bg-gray-100 dark:hover:bg-zinc-800
-                 opacity-40 hover:opacity-100 focus:opacity-100 transition"
-        >
-          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="5" r="1.5"/>
-            <circle cx="12" cy="12" r="1.5"/>
-            <circle cx="12" cy="19" r="1.5"/>
-          </svg>
-        </button>
+
       </div>
 
       {# children — hidden until expanded #}
