@@ -31,8 +31,9 @@
  */
 
 // ── State ─────────────────────────────────────────────────────────────────────
-var _utdHoldTimer  = null;   // setTimeout handle during long-press
-var _utdDragging   = false;  // true once the 400 ms hold fires
+var _utdHoldTimer   = null;   // setTimeout handle — arms drag at _UTD_HOLD_MS
+var _utdHapticTimer = null;   // setTimeout handle — fires haptic at _UTD_HAPTIC_MS
+var _utdDragging    = false;  // true once the 400 ms hold fires
 var _utdDragType   = null;   // 'folder' | 'catalog'
 var _utdDragId     = null;   // numeric id of the item being dragged
 var _utdDragName   = '';     // display text used on the ghost pill
@@ -44,9 +45,16 @@ var _utdDropIntent = null;   // 'before' | 'inside' | 'after'
 var _utdHoverType  = null;   // 'folder' | 'catalog' of the highlighted row
 var _utdOnZone     = false;  // true when finger is over #upl-delete-zone
 
-// ── Tuning constants ──────────────────────────────────────────────────────────
-var _UTD_HOLD_MS   = 400;    // hold duration before drag activates
-var _UTD_CANCEL_PX = 8;      // movement in px that aborts the hold
+// ── Tuning constants ───────────────────────────────────────────────────────────────
+var _UTD_HOLD_MS   = 400;  // drag arms at this point (ghost appears)
+var _UTD_HAPTIC_MS = 270;  // haptic fires here — 100 ms BEFORE drag arms
+                           // Reason: vibrate() on Android can briefly trigger
+                           // a touchcancel that kills the drag if it fires at
+                           // the exact same moment as ghost creation.  Firing
+                           // the buzz early acts as a "get ready" cue and
+                           // ensures the motor is already done when the drag
+                           // activates, so the two never race.
+var _UTD_CANCEL_PX = 8;   // movement in px that aborts the hold
 
 // ── Ghost pill ────────────────────────────────────────────────────────────────
 function _utdGhostCreate(name) {
@@ -171,7 +179,15 @@ function _utdOnTouchStart(e) {
   _utdStartX = e.touches[0].clientX;
   _utdStartY = e.touches[0].clientY;
 
-  // Arm the hold timer — fires after _UTD_HOLD_MS if finger hasn't moved
+  // Stage 1 — haptic preview (fires _UTD_HAPTIC_MS before drag arms).
+  // Buzz here so the vibration motor is already done when the ghost appears
+  // and cannot race with or cancel the drag activation.
+  _utdHapticTimer = setTimeout(function() {
+    _utdHapticTimer = null;
+    if (navigator.vibrate) navigator.vibrate(32);
+  }, _UTD_HAPTIC_MS);
+
+  // Stage 2 — arm the drag (ghost appears, move tracking goes live).
   _utdHoldTimer = setTimeout(function() {
     _utdHoldTimer = null;
     _utdDragging  = true;
@@ -180,7 +196,6 @@ function _utdOnTouchStart(e) {
     _utdDragName  = name;
     _utdGhostCreate(name);
     _utdGhostMove(_utdStartX, _utdStartY);
-    if (navigator.vibrate) navigator.vibrate(40);
   }, _UTD_HOLD_MS);
 
   // Register document-level handlers immediately so we can cancel the hold
@@ -337,7 +352,9 @@ function _utdCommitCatalog(draggedId, targetId, intent) {
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 function _utdCleanup() {
   clearTimeout(_utdHoldTimer);
-  _utdHoldTimer = null;
+  clearTimeout(_utdHapticTimer);
+  _utdHoldTimer   = null;
+  _utdHapticTimer = null;
 
   _utdClearIndicators();
   _utdGhostRemove();
