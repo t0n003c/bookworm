@@ -417,6 +417,24 @@ async def pwa_manifest():
             },
         ],
         "screenshots": [],
+        "shortcuts": [
+            {
+                "name": "New Note",
+                "short_name": "New Note",
+                "description": "Jump straight into creating a new note",
+                "url": "/#bw=new-note",
+                "icons": [{"src": "/static/img/icons/icon-192.png",
+                            "sizes": "192x192", "type": "image/png"}],
+            },
+            {
+                "name": "My Files",
+                "short_name": "My Files",
+                "description": "Open your uploads & files",
+                "url": "/#bw=uploads",
+                "icons": [{"src": "/static/img/icons/icon-192.png",
+                            "sizes": "192x192", "type": "image/png"}],
+            },
+        ],
     }
     return JSONResponse(
         content=manifest,

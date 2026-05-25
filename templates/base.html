@@ -875,6 +875,24 @@
       </div>
     </div>
 
+    {# Mac desktop Safari — File → Add to Dock (macOS Sonoma 14+) #}
+    <div id="bw-pwa-safari" hidden>
+      <div class="bw-pwa-row">
+        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+             class="bw-pwa-appicon" alt="BookWorm app icon">
+        <div class="bw-pwa-text">
+          <p class="bw-pwa-title">Install BookWorm on Mac</p>
+          <p class="bw-pwa-desc">
+            In Safari&rsquo;s menu bar choose
+            <strong>File &rarr; Add to Dock</strong>
+            for instant launch &amp; offline access.
+            <em style="font-size:.78rem;opacity:.75">(macOS Sonoma 14+ required)</em>
+          </p>
+        </div>
+        <button class="bw-pwa-x" id="bw-pwa-safari-dismiss" aria-label="Dismiss">&times;</button>
+      </div>
+    </div>
+
     {# HTTPS required — shown when page is served over plain HTTP on a non-localhost host #}
     <div id="bw-pwa-https" hidden>
       <div class="bw-pwa-row">
@@ -1130,10 +1148,19 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
 
+  /* True for Safari on Mac desktop (not Chrome/Edge/Firefox on Mac, not iOS) */
+  function _isSafariDesktop() {
+    var ua = navigator.userAgent || '';
+    return /Safari/.test(ua)
+        && !/Chrome|Chromium|Edg|OPR|Firefox/.test(ua)
+        && !_isIos();
+  }
+
   function _showBanner(mode) {
     var banner = document.getElementById('bw-pwa-banner');
     var std    = document.getElementById('bw-pwa-std');
     var ios    = document.getElementById('bw-pwa-ios');
+    var safari = document.getElementById('bw-pwa-safari');
     if (!banner) return;
     banner.hidden = false;
     /* rAF pair to trigger the CSS slide-up transition */
@@ -1142,12 +1169,19 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
         banner.classList.add('bw-pwa-banner--show');
       });
     });
+    /* Show exactly one sub-panel, hide the rest */
     if (mode === 'ios') {
-      if (std) std.hidden = true;
-      if (ios) ios.hidden = false;
+      if (std)    std.hidden    = true;
+      if (safari) safari.hidden = true;
+      if (ios)    ios.hidden    = false;
+    } else if (mode === 'safari') {
+      if (std)    std.hidden    = true;
+      if (ios)    ios.hidden    = true;
+      if (safari) safari.hidden = false;
     } else {
-      if (ios) ios.hidden = true;
-      if (std) std.hidden = false;
+      if (ios)    ios.hidden    = true;
+      if (safari) safari.hidden = true;
+      if (std)    std.hidden    = false;
     }
   }
 
@@ -1174,7 +1208,7 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
         }
       });
     }
-    ['bw-pwa-later', 'bw-pwa-dismiss', 'bw-pwa-ios-dismiss'].forEach(function (id) {
+    ['bw-pwa-later', 'bw-pwa-dismiss', 'bw-pwa-ios-dismiss', 'bw-pwa-safari-dismiss'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.addEventListener('click', _dismiss);
     });
@@ -1207,6 +1241,11 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
 
     if (_isIos()) {
       setTimeout(function () { _showBanner('ios'); }, 4000);
+      return;
+    }
+
+    if (_isSafariDesktop()) {
+      setTimeout(function () { _showBanner('safari'); }, 4000);
       return;
     }
 
@@ -1245,6 +1284,52 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
         });
     });
   }
+
+  /* ────────────────────────────────────────────────────────────────
+     SHORTCUT ACTION HANDLER
+     Reads #bw=<action> from the URL hash (set by manifest shortcuts).
+     Uses hash instead of query-string so it survives the server's
+     /?ws=N redirect — browsers never send hashes to the server.
+  ──────────────────────────────────────────────────────────────── */
+  (function () {
+    var hash   = window.location.hash || '';
+    var match  = hash.match(/[#&]bw=([^&]*)/);
+    if (!match) return;
+    var action = match[1];
+
+    /* Strip the bw= token from the hash without a page reload */
+    var cleanHash = hash.replace(/[#&]?bw=[^&]*/, '').replace(/^&/, '#');
+    history.replaceState(null, '', window.location.pathname
+      + window.location.search
+      + (cleanHash || ''));
+
+    /* Poll until the app is ready, then fire the action.
+       Max 10 s — gives HTMX time to load the workspace. */
+    var MAX = 10000, TICK = 250, elapsed = 0;
+    var timer = setInterval(function () {
+      elapsed += TICK;
+      if (elapsed > MAX) { clearInterval(timer); return; }
+
+      if (action === 'new-note') {
+        /* Wait for the New Note button to be visible & labelled correctly
+           (it swaps to "Add Widget" when a HomeSpace page is active). */
+        var btn = document.getElementById('btn-new-note');
+        if (btn && btn.offsetParent !== null
+            && btn.textContent.trim().indexOf('New') !== -1) {
+          clearInterval(timer);
+          btn.click();
+        }
+
+      } else if (action === 'uploads') {
+        /* Find any Uploads home page in the sidebar and open it. */
+        var el = document.querySelector('[data-page-type="uploads"]');
+        if (el && typeof openHomePage === 'function') {
+          clearInterval(timer);
+          openHomePage(parseInt(el.dataset.pageId, 10));
+        }
+      }
+    }, TICK);
+  })();
 
   _initInstallBanner();
 
