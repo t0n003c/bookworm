@@ -233,7 +233,7 @@ _jinja_env.filters["evt_prepare_items"]  = _evt_prepare_items
 _jinja_env.filters["local_time"]         = _local_time
 _jinja_env.filters["local_date"]         = _local_date
 
-_jinja_env.globals["static_v"] = _static_version()  # updated 2026-04-12 (CRM Phase 2 pipeline)
+_jinja_env.globals["static_v"] = _static_version()  # updated 2026-05-13 (bulk-tag panel SyntaxError fix)
 _jinja_env.globals["bw_max_upload_mb"] = int(os.getenv("BW_MAX_UPLOAD_MB", "200"))
 
 # ── Expose as Jinja2Templates so all routers can call TemplateResponse ────────
