@@ -50,6 +50,7 @@ async function initUploadsPage(pid) {
     if (e.key !== 'Escape') return;
     _uplCloseModal();
     _uplCancelDelete();
+    if (_uplCurrentDetail) _uplCloseDetail();
   });
 
   // Load tags once upfront so filter pills are ready immediately
@@ -413,19 +414,102 @@ function _uplToggleGrouped() {
   _uplRender();
 }
 
-// ── Detail panel ─────────────────────────────────────────────────────────────
+// ── Detail panel — view-mode-aware (mirrors notes openPanel / closePanel) ──────
+
 function _uplOpenDetail(src, id) {
   const f = _uplFiles.find(x => x.src === src && x.id === id);
   if (!f) return;
   _uplCurrentDetail = f;
   _uplRenderDetail(f);
-  const panel = document.getElementById('uploads-detail-panel');
-  if (panel) panel.classList.remove('translate-x-full');
+  _uplShowDetailPanel();
 }
+
+function _uplRemoveDetailBackdrop() {
+  var bd = document.getElementById('_upl-detail-backdrop');
+  if (bd) bd.remove();
+}
+
+function _uplShowDetailPanel() {
+  const panel = document.getElementById('uploads-detail-panel');
+  if (!panel) return;
+
+  const mode   = localStorage.getItem('bw-view-mode') || 'panel';
+  const isDark = document.documentElement.classList.contains('dark');
+
+  panel.removeAttribute('style');
+  panel.classList.remove('hidden');
+  _uplRemoveDetailBackdrop();
+
+  // All modes: panel is a column flex-container so header stays fixed and
+  // the content div (flex:1) fills the rest without double-scrollbar issues.
+  panel.style.display        = 'flex';
+  panel.style.flexDirection  = 'column';
+  panel.style.overflow       = 'hidden';
+
+  if (mode === 'fullscreen') {
+    // ── Full-screen: fills the entire viewport ──
+    Object.assign(panel.style, {
+      position: 'fixed', inset: '0', zIndex: '40',
+    });
+
+  } else if (mode === 'center') {
+    // ── Center: floating card, blurred backdrop catches click-outside ──
+    const bd = document.createElement('div');
+    bd.id = '_upl-detail-backdrop';
+    bd.setAttribute('aria-hidden', 'true');
+    bd.style.cssText =
+      'position:fixed;inset:0;z-index:38;background:rgba(0,0,0,0.45);' +
+      'backdrop-filter:blur(2px);cursor:pointer;';
+    bd.addEventListener('click', _uplCloseDetail);
+    document.body.appendChild(bd);
+
+    Object.assign(panel.style, {
+      position:     'fixed',
+      top:          '50%',
+      left:         '50%',
+      transform:    'translate(-50%, -50%)',
+      zIndex:       '39',
+      width:        'min(36rem, 95vw)',
+      maxHeight:    '90vh',
+      borderRadius: '1rem',
+      boxShadow:    '0 24px 64px rgba(0,0,0,0.28)',
+      background:   isDark ? '#18181b' : '#ffffff',
+    });
+
+  } else {
+    // ── Side panel (default) ──
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      Object.assign(panel.style, {
+        position: 'fixed', inset: '0', zIndex: '40',
+      });
+    } else {
+      Object.assign(panel.style, {
+        position:   'fixed',
+        top:        '0', bottom: '0', right: '0',
+        width:      '22rem',
+        zIndex:     '40',
+        borderLeft: isDark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+        boxShadow:  '-4px 0 24px rgba(0,0,0,0.10)',
+      });
+    }
+    // Transparent backdrop — sits below the panel (z:40) and catches clicks outside.
+    const bd = document.createElement('div');
+    bd.id = '_upl-detail-backdrop';
+    bd.setAttribute('aria-hidden', 'true');
+    bd.style.cssText = 'position:fixed;inset:0;z-index:39;background:transparent;';
+    bd.addEventListener('click', _uplCloseDetail);
+    document.body.appendChild(bd);
+  }
+}
+
 function _uplCloseDetail() {
   _uplCurrentDetail = null;
+  _uplRemoveDetailBackdrop();
   const panel = document.getElementById('uploads-detail-panel');
-  if (panel) panel.classList.add('translate-x-full');
+  if (!panel) return;
+  panel.removeAttribute('style');
+  panel.classList.add('hidden');
 }
 
 // Switch to wsId, wait for the note-list HTMX swap to finish, then open noteId
@@ -677,16 +761,15 @@ function _uplRenderDetail(f) {
         + '</div>';
     }
 
-    el.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:calc(100% - 3rem);padding:0';
+    el.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:0';
     el.innerHTML = zone1
       + '<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:1rem">'
       + metaBlock
       + '</div>';
   } else {
-    // ── Single-zone layout (image / video / audio / PDF / DOCX / unknown) ─────
-    // Outer container scrolls the whole thing — no inner scroll box conflicts.
-    // Restore height; clear any flex state left from a prior text-file open.
-    el.style.cssText = 'height:calc(100% - 3rem)';
+    // ── Single-zone layout (image / video / audio / unknown) ──
+    // flex:1 fills the parent column; overflow-y:auto handles scroll.
+    el.style.cssText = 'flex:1;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:1rem';
     el.innerHTML = (preview || '') + metaBlock;
   }
 
