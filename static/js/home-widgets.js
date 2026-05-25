@@ -566,16 +566,22 @@ function _trashDrop(event) {
   var _dropLi    = null;
   var _dropPos   = null;
 
-  // Show handles only on real touch devices (body.bw-touch is set by
-  // _gridInitTouch; we also set it here so sidebar-only pages work).
-  // Use (hover:none)+(pointer:coarse) instead of maxTouchPoints>0 — Windows
-  // laptops report maxTouchPoints>0 via Precision Touchpad / Ink APIs even
-  // without a real touchscreen, which wrongly forces handles always-visible
-  // and breaks native draggable via the user-select:none side-effect.
+  // Detect real touch devices and set body.bw-touch so handles are always visible.
+  // Three-pronged because no single check is reliable:
+  //   (1) Media query  — correct on real mobile; NOT updated by Chrome DevTools emulator.
+  //   (2) maxTouchPoints > 1 — catches DevTools emulator (reports 5) and real devices;
+  //       uses > 1 (not > 0) to exclude Windows Precision Touchpad (reports 0 or 1)
+  //       which was causing false positives (always-visible handles + broken draggable).
+  //   (3) One-time touchstart listener — foolproof dynamic fallback for hybrid devices
+  //       or any edge case missed by the static checks above.
   (function _injectStyle() {
-    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches ||
+        navigator.maxTouchPoints > 1) {
       document.body.classList.add('bw-touch');
     }
+    document.addEventListener('touchstart', function () {
+      document.body.classList.add('bw-touch');
+    }, { passive: true, once: true });
     if (document.getElementById('pg-dnd-touch-style')) return;
     var s = document.createElement('style');
     s.id = 'pg-dnd-touch-style';
