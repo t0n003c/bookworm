@@ -438,6 +438,48 @@ async def get_all_user_tags(user_id: int) -> list:
         return [r["tag"] for r in await cur.fetchall()]
 
 
+async def get_union_tags_for_files(
+    refs: list[dict], user_id: int
+) -> dict:
+    """Return union of tags for a batch of files, split into regular tags
+    and grid page IDs.  Always reads live from the DB — no local-state issues.
+
+    refs: [{"src": "page"|"note", "id": int}, ...]
+    returns: {"tags": [sorted str list], "grid_pids": [sorted int list]}
+    """
+    if not refs:
+        return {"tags": [], "grid_pids": []}
+
+    # Build a (upload_src = ? AND upload_id = ?) OR ... clause
+    or_clause = " OR ".join(
+        "(upload_src = ? AND upload_id = ?)" for _ in refs
+    )
+    params: list = [user_id]
+    for r in refs:
+        params.extend([r["src"], r["id"]])
+
+    async with get_db() as db:
+        cur = await db.execute(
+            f"SELECT DISTINCT tag FROM page_upload_tags "
+            f"WHERE user_id = ? AND ({or_clause}) ORDER BY tag",
+            params,
+        )
+        rows = await cur.fetchall()
+
+    tags: list[str] = []
+    grid_pids: list[int] = []
+    for row in rows:
+        t = row["tag"]
+        if t.startswith("grid:"):
+            try:
+                grid_pids.append(int(t.split(":", 1)[1]))
+            except (IndexError, ValueError):
+                pass
+        else:
+            tags.append(t)
+    return {"tags": sorted(set(tags)), "grid_pids": sorted(set(grid_pids))}
+
+
 async def remove_upload_from_card_attr(upload_id: int, user_id: int) -> None:
     """When a page_uploads row that is linked to a card attr is deleted,
     patch the attr_value JSON to remove the matching entry.

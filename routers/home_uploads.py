@@ -27,6 +27,7 @@ from routers.uploads_db import (
     get_note_attachment_owned,
     get_page_upload_owned,
     get_page_uploads_by_ids,
+    get_union_tags_for_files,
     remove_upload_from_card_attr,
     get_tags_for_file,
     get_uploads_page,
@@ -538,6 +539,22 @@ async def remove_file_tag(
 
 
 # ── Bulk operations ───────────────────────────────────────────────────────────────
+
+@router.post("/{page_id}/files/bulk/tags")
+async def get_bulk_file_tags(request: Request, page_id: int, body: BulkDeleteBody):
+    """Return the live union of tags for every selected file.
+
+    Always reads from the DB so the panel is never fooled by stale JS state.
+    Response: {tags: [str, ...], grid_pids: [int, ...]}
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    await _require_uploads_page(page_id, uid)
+    refs = [{"src": r.src, "id": r.id} for r in body.ids]
+    result = await get_union_tags_for_files(refs, uid)
+    return JSONResponse(result)
+
 
 @router.post("/{page_id}/files/bulk/tag-add")
 async def bulk_add_tag(request: Request, page_id: int, body: BulkTagBody):
