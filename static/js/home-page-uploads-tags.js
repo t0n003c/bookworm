@@ -270,7 +270,7 @@ function _uplBulkGetUnionTags() {
 
 // Toggle the floating bulk-tag panel.
 // Fetches LIVE tag data from the server so stale JS state can never hide tags.
-function _uplBulkTagPanel() {
+function _uplBulkTagPanel(anchor) {
   console.log('[BookWorm] _uplBulkTagPanel v3 – dynamic positioning build');
   const existing = document.getElementById('upl-bulk-tag-panel');
   if (existing) { existing.remove(); return; }   // second click = close
@@ -278,21 +278,44 @@ function _uplBulkTagPanel() {
   const count = Object.keys(_dndSelected).length;
   if (!count) return;
 
-  // ── Position panel just above the badge bar (never overlap it) ─────────
-  var badgeEl  = document.getElementById('upl-sel-badge');
-  var badgeH   = badgeEl ? badgeEl.getBoundingClientRect().height : 60;
-  var bottomPx = Math.round(badgeH) + 12;   // 12px breathing gap
-
-  // ── Build panel shell immediately with loading skeleton ────────────────
+  // ── Build panel shell ───────────────────────────────────────────────────
   const panel = document.createElement('div');
   panel.id        = 'upl-bulk-tag-panel';
-  panel.className =
-    'fixed left-1/2 -translate-x-1/2 z-50 w-80 ' +
-    'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
-    'rounded-2xl shadow-2xl p-4 select-none ' +
-    'flex flex-col';
-  panel.style.bottom  = bottomPx + 'px';
-  panel.style.maxHeight = 'calc(100dvh - ' + (bottomPx + 16) + 'px)';
+
+  // Desktop popover: anchor near the button (same logic as folder/catalog pickers).
+  // Mobile / no anchor: float just above the badge bar, horizontally centred.
+  var usePopover = anchor && window.innerWidth >= 640;
+  if (usePopover) {
+    var PANEL_W    = 320;   // matches w-80
+    var gap        = 8;
+    var left       = Math.round(anchor.left + anchor.width / 2 - PANEL_W / 2);
+    left           = Math.max(gap, Math.min(left, window.innerWidth - PANEL_W - gap));
+    var spaceAbove = anchor.top - gap;
+    var maxH       = Math.min(spaceAbove > 220 ? spaceAbove - gap : window.innerHeight - anchor.bottom - gap, 480);
+    panel.className =
+      'fixed z-50 w-80 ' +
+      'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+      'rounded-2xl shadow-2xl p-4 select-none flex flex-col';
+    panel.style.left      = left + 'px';
+    panel.style.maxHeight = maxH + 'px';
+    if (spaceAbove > 220) {
+      panel.style.bottom = (window.innerHeight - anchor.top + gap) + 'px';
+    } else {
+      panel.style.top = (anchor.bottom + gap) + 'px';
+    }
+  } else {
+    // Original mobile layout: centred, above the badge bar
+    var badgeEl  = document.getElementById('upl-sel-badge');
+    var badgeH   = badgeEl ? badgeEl.getBoundingClientRect().height : 60;
+    var bottomPx = Math.round(badgeH) + 12;
+    panel.className =
+      'fixed left-1/2 -translate-x-1/2 z-50 w-80 ' +
+      'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 ' +
+      'rounded-2xl shadow-2xl p-4 select-none ' +
+      'flex flex-col';
+    panel.style.bottom    = bottomPx + 'px';
+    panel.style.maxHeight = 'calc(100dvh - ' + (bottomPx + 16) + 'px)';
+  }
 
   // Datalist for tag autocomplete (all user tags minus grid: ones)
   const allOpts = (_uplAllTags || [])

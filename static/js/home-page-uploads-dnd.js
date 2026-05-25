@@ -359,7 +359,7 @@ function _dndSelBadgeUpdate() {
     badge.appendChild(_mkBtn(rmLabel, _uplCatBulkRemove, true));
   }
 
-  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags', function() { if (typeof _uplBulkTagPanel === 'function') _uplBulkTagPanel(); }));
+  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags', function(anchor) { if (typeof _uplBulkTagPanel === 'function') _uplBulkTagPanel(anchor); }));
 
   // ── Merge buttons (page-src files only, all same compatible type, ≥2) ────
   // Resolves mime types from _uplFiles at call-time — no need to store them in
