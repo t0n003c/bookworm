@@ -124,9 +124,10 @@ async function _uplDocStudioInit(f) {
 
 function _uplDocAfterRender() {
   _uplDocInjectSelectBtn();
-  if (_uplDocSelectMode) {
-    _uplDocInjectCheckboxes();
-    _uplDocRenderToolbar();
+  // If check mode is active (either from Select button or hold-to-select),
+  // refresh the checkbox overlays so newly rendered cards get them too.
+  if (typeof _uplCheckMode !== 'undefined' && _uplCheckMode) {
+    if (typeof _uplCheckInjectBoxes === 'function') _uplCheckInjectBoxes();
   }
 }
 
@@ -174,27 +175,15 @@ function _uplDocInjectCheckboxes() {
 // ── Multi-select ──────────────────────────────────────────────────────────────
 
 function _uplDocToggleSelectMode() {
-  _uplDocSelectMode = !_uplDocSelectMode;
-  if (!_uplDocSelectMode) {
-    _uplDocSelected = {};
-    // Remove all checkbox elements from the card grid
-    document.querySelectorAll('.upl-doc-cb').forEach(function(cb) { cb.remove(); });
-    // Clear all selection rings
-    document.querySelectorAll('[data-upl-id][data-upl-src]').forEach(function(c) {
-      _uplDocUpdateCardRing(c, false);
-    });
-    var tb = document.getElementById('upl-doc-toolbar');
-    if (tb) tb.remove();
-    // Close the tag panel if still open
-    var tp = document.getElementById('upl-doc-tag-panel');
-    if (tp) tp.remove();
+  // Delegate entirely to the unified check-mode system (defined in home-page-uploads-dnd.js)
+  // so the toolbar Select button and click-and-hold both share the same badge bar.
+  if (typeof _uplCheckMode !== 'undefined' && _uplCheckMode) {
+    _dndSelClear();   // also calls _uplCheckModeExit() internally
+  } else {
+    if (typeof _uplCheckModeEnter === 'function') _uplCheckModeEnter();
   }
-  // re-render just the select state (avoid full fetch)
-  _uplDocAfterRender();
-  var btn = document.getElementById('upl-doc-select-btn');
-  if (btn) btn.innerHTML = _uplDocSelectMode
-    ? '\u2612<span class="upl-rsp-label"> Done</span>'
-    : '\u2610<span class="upl-rsp-label"> Select</span>';
+  // Keep the old doc-select mode flag in sync for any legacy code that still reads it
+  _uplDocSelectMode = typeof _uplCheckMode !== 'undefined' ? _uplCheckMode : false;
 }
 
 // ── Tag panel for docs multi-select toolbar ───────────────────────────────────

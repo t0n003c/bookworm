@@ -353,7 +353,7 @@ function _uplCard(f) {
          draggable="true"
          ondragstart="_dndOnFileDragStart(event,'${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'})"
          ondragend="_dndOnFileDragEnd(event)"
-         onclick="if(event.ctrlKey||event.metaKey){event.stopPropagation();_dndSelToggle('${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'});return;}if(_uplDocSelectMode&&'${f.src}'==='page'){_uplDocToggleItem('${_uplJsStr(f.src)}',${f.id})}else{_uplOpenDetail('${_uplJsStr(f.src)}',${f.id})}">
+         onclick="if(event.ctrlKey||event.metaKey){event.stopPropagation();_dndSelToggle('${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'});return;}if(typeof _uplCheckMode!=='undefined'&&_uplCheckMode){event.stopPropagation();_dndSelToggle('${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'});return;}if(_uplDocSelectMode&&'${f.src}'==='page'){_uplDocToggleItem('${_uplJsStr(f.src)}',${f.id})}else{_uplOpenDetail('${_uplJsStr(f.src)}',${f.id})}">
       <div class="overflow-hidden">${thumb}</div>
       <div class="p-2.5">
         <p class="text-xs font-semibold text-gray-800 dark:text-zinc-100

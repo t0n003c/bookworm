@@ -31,13 +31,80 @@ var _dndDragFileFolderId  = null;
 var _dndListenersAttached = false;  // prevent double-binding across SPA nav
 var _dndRafId             = null;   // requestAnimationFrame throttle id
 
-// ── Init (idempotent) ─────────────────────────────────────────────────────────
+// ── Check-mode state ("Select" button + mouse hold-to-select) ────────────────
+// When true, clicking a file card toggles its selection instead of opening it.
+var _uplCheckMode         = false;
+
+// Hold-to-select (laptop mouse, mirrors touch long-press)
+var _uplHoldTimer         = null;
+var _uplHoldCard          = null;   // {src, id, folderId, key} of the pressed card
+var _uplHoldStartX        = 0;
+var _uplHoldStartY        = 0;
+var _uplHoldSuppressKey   = null;   // file-key whose post-hold click we must swallow
+var _uplHoldSuppressUntil = 0;      // epoch-ms after which suppress expires
+var _UTD_HOLD_MS          = 500;    // ms to hold before multiselect activates
+var _UTD_HOLD_CANCEL_PX   = 6;      // cursor drift (px) that aborts the hold
+
+// ── Check-mode helpers ────────────────────────────────────────────────────────
+function _uplCheckModeEnter() {
+  if (_uplCheckMode) return;
+  _uplCheckMode = true;
+  var btn = document.getElementById('upl-doc-select-btn');
+  if (btn) btn.innerHTML = '\u2612<span class="upl-rsp-label"> Done</span>';
+  // Inject checkboxes on ALL visible cards so users see the mode is active
+  _uplCheckInjectBoxes();
+}
+
+function _uplCheckModeExit() {
+  if (!_uplCheckMode) return;
+  _uplCheckMode = false;
+  var btn = document.getElementById('upl-doc-select-btn');
+  if (btn) btn.innerHTML = '\u2610<span class="upl-rsp-label"> Select</span>';
+  document.querySelectorAll('.upl-chk-overlay').forEach(function(el) { el.remove(); });
+}
+
+// Inject a small ☐/☑ overlay in the top-left corner of every file card.
+// Idempotent — safe to call on re-render.
+function _uplCheckInjectBoxes() {
+  document.querySelectorAll('[data-upl-file-key]').forEach(function(card) {
+    if (card.querySelector('.upl-chk-overlay')) return; // already has one
+    var key = card.dataset.uplFileKey;
+    var ov  = document.createElement('span');
+    ov.className  = 'upl-chk-overlay';
+    ov.title      = 'Click to select';
+    var isSelected = !!_dndSelected[key];
+    ov.textContent = isSelected ? '\u2611' : '\u2610';
+    ov.style.cssText = [
+      'position:absolute;top:6px;left:6px;z-index:10;',
+      'font-size:16px;line-height:1;pointer-events:none;',
+      isSelected
+        ? 'color:#0053e2;text-shadow:0 0 3px #fff;'
+        : 'color:#555;text-shadow:0 0 3px #fff;',
+    ].join('');
+    card.style.position = 'relative';
+    card.prepend(ov);
+  });
+}
+
+// ── Init (idempotent) ──────────────────────────────────────────────────────────────
 function _dndInit() {
   if (_dndListenersAttached) return;
   _dndListenersAttached = true;
   document.addEventListener('mousedown', _dndMouseDown);
   document.addEventListener('mousemove', _dndMouseMove);
   document.addEventListener('mouseup',   _dndMouseUp);
+  // Capture-phase listener: suppress the click that fires after a hold-to-select
+  document.addEventListener('click', function(e) {
+    if (!_uplHoldSuppressKey) return;
+    if (Date.now() > _uplHoldSuppressUntil) { _uplHoldSuppressKey = null; return; }
+    var card = e.target.closest ? e.target.closest('[data-upl-file-key]') : null;
+    if (card && card.dataset.uplFileKey === _uplHoldSuppressKey) {
+      _uplHoldSuppressKey   = null;
+      _uplHoldSuppressUntil = 0;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true /* capture */);
 }
 
 // ── Reset (called on uploads page re-entry) ───────────────────────────────────
@@ -55,6 +122,13 @@ function _dndReset() {
 
 // ── File drag events (attached via ondragstart on card elements) ──────────────
 function _dndOnFileDragStart(event, src, id, folderId) {
+  // Drag started — cancel any pending hold-to-select timer
+  if (_uplHoldTimer) {
+    clearTimeout(_uplHoldTimer);
+    _uplHoldTimer = null;
+    _uplHoldCard  = null;
+  }
+
   _dndDragFileSrc      = src;
   _dndDragFileId       = id;
   _dndDragFileFolderId = folderId;
@@ -155,11 +229,21 @@ function _dndSelToggle(src, id, folderId) {
       card.style.boxShadow  = '0 0 0 4px rgba(0,83,226,0.15)';
     }
   }
+  // Refresh the ☐/☑ overlay on this specific card if check mode is on
+  if (_uplCheckMode && card) {
+    var ov = card.querySelector('.upl-chk-overlay');
+    if (ov) {
+      var sel = !!_dndSelected[key];
+      ov.textContent = sel ? '\u2611' : '\u2610';
+      ov.style.color = sel ? '#0053e2' : '#555';
+    }
+  }
   _dndSelBadgeUpdate();
 }
 
 function _dndSelClear() {
   _dndSelected = {};
+  _uplCheckModeExit();  // exit check mode whenever selection is cleared
   var _btp = document.getElementById('upl-bulk-tag-panel');
   if (_btp) _btp.remove();
   var _bdm = document.getElementById('upl-bulk-del-modal');
@@ -262,8 +346,8 @@ function _dndSelBadgeUpdate() {
     badge.appendChild(_mkBtn(rmLabel, _uplCatBulkRemove, true));
   }
 
+  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags',   function() { if (typeof _uplBulkTagPanel       === 'function') _uplBulkTagPanel(); }));
   badge.appendChild(_mkBtn('\uD83D\uDDD1\uFE0F Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
-  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags',   function() { if (typeof _uplBulkTagPanel     === 'function') _uplBulkTagPanel(); }));
 
   // Close button — icon-only, slightly subtler
   var closeBtn = document.createElement('button');
@@ -305,8 +389,35 @@ function _dndMouseDown(event) {
 
   var target = event.target;
 
-  // Clicking a card: Ctrl+click handled by card onclick — just track for deselect
-  if (target.closest('[data-upl-file-key]')) return;
+  // Clicking a card: start hold-to-select timer (Ctrl+click handled by card onclick)
+  var card = target.closest ? target.closest('[data-upl-file-key]') : null;
+  if (card) {
+    // Don't arm hold on modifier keys or interactive elements inside the card
+    if (event.ctrlKey || event.metaKey) return;
+    if (target.closest('button') || target.closest('a')) return;
+
+    _uplHoldStartX = event.clientX;
+    _uplHoldStartY = event.clientY;
+    _uplHoldCard   = {
+      key:      card.dataset.uplFileKey,
+      src:      card.dataset.uplSrc,
+      id:       parseInt(card.dataset.uplId, 10),
+      folderId: card.dataset.uplFolderId ? parseInt(card.dataset.uplFolderId, 10) : null,
+    };
+    _uplHoldTimer = setTimeout(function() {
+      _uplHoldTimer = null;
+      var hc = _uplHoldCard;
+      _uplHoldCard  = null;
+      if (!hc) return;
+      if (navigator.vibrate) navigator.vibrate(28);  // subtle haptic on supported laptops
+      _uplCheckModeEnter();
+      _dndSelToggle(hc.src, hc.id, hc.folderId);
+      // Suppress the click that fires when the mouse button is released
+      _uplHoldSuppressKey   = hc.key;
+      _uplHoldSuppressUntil = Date.now() + 800;
+    }, _UTD_HOLD_MS);
+    return;
+  }
 
   // Clicking modal / sidebar / toolbar: ignore
   if (target.closest('#upl-folder-modal') || target.closest('#sidebar') ||
@@ -341,6 +452,17 @@ function _dndMouseDown(event) {
 }
 
 function _dndMouseMove(event) {
+  // Cancel hold-to-select if cursor drifts too far
+  if (_uplHoldTimer && _uplHoldCard) {
+    var dx = event.clientX - _uplHoldStartX;
+    var dy = event.clientY - _uplHoldStartY;
+    if (Math.abs(dx) > _UTD_HOLD_CANCEL_PX || Math.abs(dy) > _UTD_HOLD_CANCEL_PX) {
+      clearTimeout(_uplHoldTimer);
+      _uplHoldTimer = null;
+      _uplHoldCard  = null;
+    }
+  }
+
   if (!_dndLassoActive || !_dndLassoEl) return;
 
   // Throttle to animation frames
@@ -390,6 +512,13 @@ function _dndMouseMove(event) {
 }
 
 function _dndMouseUp(event) {
+  // Cancel hold-to-select if button released before timer fires
+  if (_uplHoldTimer) {
+    clearTimeout(_uplHoldTimer);
+    _uplHoldTimer = null;
+    _uplHoldCard  = null;
+  }
+
   if (!_dndLassoActive) return;
   _dndLassoActive = false;
   if (_dndLassoEl) _dndLassoEl.style.display = 'none';
