@@ -391,18 +391,17 @@ async function _uplBulkLoadPanelTags() {
         );
       });
 
-      // Grid connections as green pills — show raw tag (grid:XX) with × to remove + ↗ to navigate
+      // Grid connections as green info-only pills — show raw tag (grid:XX) + ↗ to navigate.
+      // No × remove button: the connection is managed from the Grid page (and backfill
+      // would re-add the tag on next load anyway as long as the cell exists).
       (data.grid_pids || []).forEach(function(pid) {
         var openFn = typeof openHomePage === 'function'
           ? 'openHomePage(' + pid + ')'
           : 'window.location.assign(\'/home/pages/' + pid + '\')';
         allTagPills.push(
-          '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
+          '<span title="Grid connection \u2014 manage from the Grid page"'
+          + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
           + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
-          + '<button data-bulk-tag="grid:' + pid + '"'
-          + ' onclick="_uplBulkRemoveTag(this.dataset.bulkTag)"'
-          + ' title="Disconnect from grid page ' + pid + ' for all selected files"'
-          + ' class="hover:text-red-600 transition leading-none font-bold">&times;</button>'
           + 'grid:' + pid
           + '<button onclick="' + openFn + '"'
           + ' title="Open grid page ' + pid + '"'

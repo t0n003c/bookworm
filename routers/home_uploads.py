@@ -532,6 +532,8 @@ async def remove_file_tag(
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401)
+    if tag.startswith("grid:"):
+        raise HTTPException(status_code=400, detail="Grid connections are managed from the Grid page.")
     await _require_uploads_page(page_id, uid)
     _valid_src(src)
     tags = await remove_tag_from_file(src, upload_id, uid, tag.strip().lower())
@@ -572,12 +574,18 @@ async def bulk_add_tag(request: Request, page_id: int, body: BulkTagBody):
 
 @router.post("/{page_id}/files/bulk/tag-remove")
 async def bulk_remove_tag(request: Request, page_id: int, body: BulkTagBody):
-    """Remove a tag from every selected file."""
+    """Remove a tag from every selected file.
+
+    Grid-connection tags (grid:XX) are rejected — they are controlled by the
+    backfill mechanism and must be managed from the Grid page instead.
+    """
     if guard := _demo_guard(request):
         return guard
     uid = request.session.get("user_id")
     if not uid:
         raise HTTPException(status_code=401)
+    if body.tag.startswith("grid:"):
+        raise HTTPException(status_code=400, detail="Grid connections are managed from the Grid page.")
     await _require_uploads_page(page_id, uid)
     for ref in body.ids:
         await remove_tag_from_file(_valid_src(ref.src), ref.id, uid, body.tag)
