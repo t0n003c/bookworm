@@ -132,13 +132,46 @@ async def update_grid_cell(
         await db.commit()
 
 
-async def delete_grid_cell(cell_id: int, page_id: int) -> None:
-    """DELETE WHERE id=? AND page_id=? — page_id guard prevents cross-page ops."""
+async def get_grid_cell(cell_id: int, page_id: int) -> dict | None:
+    """Return a single cell dict, or None if not found / wrong page."""
     async with get_db() as db:
+        cur = await db.execute(
+            "SELECT * FROM home_grid_cells WHERE id=? AND page_id=?",
+            (cell_id, page_id),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def delete_grid_cell(cell_id: int, page_id: int, user_id: int) -> None:
+    """Remove cell AND strip its grid:{page_id} tag from the upload file.
+
+    Deleting a cell never deletes the upload itself — it only disconnects it
+    from this grid.  If the upload has other grid connections they remain intact.
+    """
+    async with get_db() as db:
+        # Grab the upload_id before we delete the row
+        cur = await db.execute(
+            "SELECT upload_id FROM home_grid_cells WHERE id=? AND page_id=?",
+            (cell_id, page_id),
+        )
+        row = await cur.fetchone()
+        upload_id = row["upload_id"] if row else None
+
         await db.execute(
             "DELETE FROM home_grid_cells WHERE id=? AND page_id=?",
             (cell_id, page_id),
         )
+
+        # Strip the connection tag so the upload becomes standalone (or keeps
+        # other grid connections if it has them)
+        if upload_id:
+            await db.execute(
+                "DELETE FROM page_upload_tags "
+                "WHERE upload_src='page' AND upload_id=? AND user_id=? AND tag=?",
+                (upload_id, user_id, f"grid:{page_id}"),
+            )
+
         await db.commit()
 
 

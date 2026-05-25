@@ -15,6 +15,7 @@ from routers.home_db import get_home_page
 from routers.home_grid_db import (
     add_grid_cell,
     delete_grid_cell,
+    get_grid_cell,
     get_grid_cells,
     reorder_grid_cells,
     swap_grid_cells,
@@ -115,7 +116,7 @@ async def remove_cell(request: Request, page_id: int, cell_id: int):
     uid = _uid(request)
     if not await _get_grid_page(page_id, uid):
         return JSONResponse({"error": "not found"}, 404)
-    await delete_grid_cell(cell_id, page_id)
+    await delete_grid_cell(cell_id, page_id, uid)
     return JSONResponse(None, status_code=204)
 
 
@@ -145,6 +146,27 @@ async def swap_cells(request: Request, page_id: int):
     b = int(body.get("b", 0))
     if a and b and a != b:
         await swap_grid_cells(page_id, a, b)
+    return JSONResponse({"ok": True})
+
+
+# ── Disconnect an upload from a grid page (upload detail panel action) ──────────
+
+@router.delete("/grid/{page_id}/disconnect/{upload_id}")
+async def disconnect_upload(request: Request, page_id: int, upload_id: int):
+    """Remove the grid:{page_id} tag from an upload without deleting either.
+
+    Called from the Upload page's file-detail panel when the user clicks
+    'Disconnect from grid'. The upload stays on the Uploads page; only the
+    grid connection is severed.
+    """
+    uid = _uid(request)
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM page_upload_tags "
+            "WHERE upload_src='page' AND upload_id=? AND user_id=? AND tag=?",
+            (upload_id, uid, f"grid:{page_id}"),
+        )
+        await db.commit()
     return JSONResponse({"ok": True})
 
 

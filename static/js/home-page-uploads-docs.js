@@ -208,17 +208,24 @@ function _uplDocTagPanel() {
   var sel      = Object.values(_uplDocSelected);
   var count    = sel.length;
 
-  // Union of non-system tags across all selected files
-  var unionTags = (function() {
-    var s = new Set();
-    sel.forEach(function(item) {
-      var f = (_uplFiles || []).find(function(x) { return x.src === item.src && x.id === item.id; });
-      if (f && Array.isArray(f.tags)) f.tags.forEach(function(t) { if (!t.startsWith('grid:')) s.add(t); });
+  // Gather union of regular tags AND grid connection tags separately
+  var unionTags = new Set();
+  var gridPids  = new Set();  // numeric page IDs connected to >=1 selected file
+  sel.forEach(function(item) {
+    var f = (_uplFiles || []).find(function(x) { return x.src === item.src && x.id === item.id; });
+    if (!f || !Array.isArray(f.tags)) return;
+    f.tags.forEach(function(t) {
+      if (t.startsWith('grid:')) {
+        var pid = parseInt(t.split(':')[1], 10);
+        if (!isNaN(pid)) gridPids.add(pid);
+      } else {
+        unionTags.add(t);
+      }
     });
-    return Array.from(s).sort();
-  })();
+  });
+  unionTags = Array.from(unionTags).sort();
 
-  var availOpts = (_uplAllTags || []).filter(function(t) { return !unionTags.includes(t); })
+  var availOpts = (_uplAllTags || []).filter(function(t) { return !unionTags.includes(t) && !t.startsWith('grid:'); })
                                      .map(function(t) { return '<option value="' + _uplEsc(t) + '">'; }).join('');
 
   var pillsHtml = unionTags.length
@@ -231,6 +238,21 @@ function _uplDocTagPanel() {
           + _uplEsc(t) + ' &times;</button>';
       }).join('')
     : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files yet</span>';
+
+  // Grid connections block (async resolves names after mount)
+  var gridBlock = '';
+  if (gridPids.size) {
+    var gridPillsHtml = Array.from(gridPids).map(function(pid) {
+      return '<span id="upl-doc-tag-grid-' + pid + '"'
+        + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
+        + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
+        + '&#128248; Grid #' + pid + '</span>';
+    }).join('');
+    gridBlock = '<p class="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 mt-3 mb-1">Grid connections</p>'
+      + '<div class="flex flex-wrap gap-1">' + gridPillsHtml + '</div>'
+      + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 italic">'
+      + 'To disconnect, open the file\'s detail panel on the Uploads page.</p>';
+  }
 
   var panel = document.createElement('div');
   panel.id  = 'upl-doc-tag-panel';
@@ -245,8 +267,9 @@ function _uplDocTagPanel() {
     + ' class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition text-lg leading-none">&times;</button>'
     + '</div>'
     + '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Current tags (click to remove)</p>'
-    + '<div class="flex flex-wrap gap-1 mb-4">' + pillsHtml + '</div>'
-    + '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Add tag to all</p>'
+    + '<div class="flex flex-wrap gap-1 mb-1">' + pillsHtml + '</div>'
+    + gridBlock
+    + '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mt-3 mb-1">Add tag to all</p>'
     + '<div class="flex gap-1">'
     + '<input id="upl-doc-tag-input" list="upl-doc-tag-opts"'
     + ' placeholder="Type or choose tag\u2026"'
@@ -262,6 +285,19 @@ function _uplDocTagPanel() {
   document.body.appendChild(panel);
   var inp = document.getElementById('upl-doc-tag-input');
   if (inp) inp.focus();
+
+  // Async: resolve grid page names and replace placeholder badges
+  if (gridPids.size) {
+    Array.from(gridPids).forEach(async function(pid) {
+      try {
+        var r = await fetch('/home/pages/' + pid + '/meta');
+        if (!r.ok) return;
+        var m = await r.json();
+        var badge = document.getElementById('upl-doc-tag-grid-' + pid);
+        if (badge) badge.innerHTML = '&#128248;\u00a0' + _uplEsc((m.emoji || '') + '\u00a0' + (m.name || ('Grid #' + pid)));
+      } catch(_) { /* keep placeholder */ }
+    });
+  }
 }
 
 async function _uplDocTagAdd() {

@@ -587,6 +587,13 @@ function _uplRenderDetail(f) {
                  hover:bg-red-50 dark:hover:bg-red-900/20 transition">\uD83D\uDDD1\uFE0F Delete file</button></div>`;
 
   // ── Meta + actions block (shared by all file types) ───────────────────────
+  // Grid connections are rendered async into #upl-grid-connections after mount.
+  var gridTags = (f.tags || []).filter(function(t) { return t.startsWith('grid:'); });
+  var gridConnSlot = gridTags.length
+    ? '<div id="upl-grid-connections" class="mt-3"><p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-2">&#128248; Grid Connections</p>'
+      + '<p class="text-[10px] text-gray-400 italic">Loading…</p></div>'
+    : '';
+
   var metaBlock = `
     <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
     <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFmtSize(f.size)} &middot; ${_uplEsc(mt)} &middot; ${_uplFmtDate(f.created_at)}</p>
@@ -596,6 +603,7 @@ function _uplRenderDetail(f) {
     <div class="mt-4"><p class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">Tags</p>
       <div id="upl-tags-area"></div></div>
     ${f.src === 'page' ? '<div id="upl-detail-catalogs" class="mt-3"></div>' : ''}
+    ${gridConnSlot}
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(156,163,175,0.2)">
       ${srcSection}
     </div>
@@ -687,8 +695,68 @@ function _uplRenderDetail(f) {
   if (typeof _uplRenderDetailCatalogs === 'function' && f.src === 'page') {
     _uplRenderDetailCatalogs(f);
   }
+  // Async: render grid connections panel if the file has any grid: tags
+  if (f.src === 'page' && (f.tags || []).some(function(t) { return t.startsWith('grid:'); })) {
+    _uplRenderGridConnections(f);
+  }
 }
 
+// ── Grid connections section in file detail panel ────────────────────────────────
+// Renders async so page names are fetched without blocking the detail paint.
+async function _uplRenderGridConnections(f) {
+  var slot = document.getElementById('upl-grid-connections');
+  if (!slot) return;
+
+  var gridTags = (f.tags || []).filter(function(t) { return t.startsWith('grid:'); });
+  if (!gridTags.length) { slot.remove(); return; }
+
+  // Fetch page names for each connection in parallel
+  var pages = await Promise.all(gridTags.map(async function(tag) {
+    var pid = parseInt(tag.split(':')[1], 10);
+    try {
+      var r = await fetch('/home/pages/' + pid + '/meta');
+      if (!r.ok) return { pid: pid, name: 'Grid page #' + pid, emoji: '\uD83D\uDDBC\uFE0F' };
+      var m = await r.json();
+      return { pid: pid, name: m.name || ('Grid page #' + pid), emoji: m.emoji || '\uD83D\uDDBC\uFE0F' };
+    } catch(_) {
+      return { pid: pid, name: 'Grid page #' + pid, emoji: '\uD83D\uDDBC\uFE0F' };
+    }
+  }));
+
+  slot.innerHTML =
+    '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-2">'
+    + '&#128248; Grid Connections</p>'
+    + pages.map(function(p) {
+        return '<div class="flex items-center justify-between gap-2 mb-1.5">'
+          + '<button onclick="window.location.href=\'/home/pages/' + p.pid + '\'"
+                  class="flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded-lg\n'
+          + '                 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300\n'
+          + '                 text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
+          + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>'
+          + '<button onclick="_uplGridDisconnect(' + f.id + ',' + p.pid + ')"'
+          + ' title="Disconnect from this grid (file stays in Uploads)"'
+          + ' class="px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600\n'
+          + '         text-gray-500 dark:text-zinc-400 hover:border-red-300 hover:text-red-500 transition">'
+          + 'Disconnect</button>'
+          + '</div>';
+      }).join('');
+}
+
+async function _uplGridDisconnect(uploadId, gridPageId) {
+  try {
+    var r = await fetch('/home/grid/' + gridPageId + '/disconnect/' + uploadId, {method: 'DELETE'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _uplShowToast('Disconnected from grid page.');
+    // Refresh the detail panel for the current file
+    var refreshed = (_uplFiles || []).find(function(x) { return x.id === uploadId; });
+    if (refreshed) {
+      // Strip the tag optimistically so re-render shows updated state
+      refreshed.tags = (refreshed.tags || []).filter(function(t) { return t !== 'grid:' + gridPageId; });
+      _uplRenderDetail(refreshed);
+    }
+    await _uplFetch(_uplPage);
+  } catch(e) { _uplShowToast('Failed to disconnect.'); }
+}
 
 function _uplDocCsvCard(f, fUrl) {
   var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';

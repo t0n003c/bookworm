@@ -24,9 +24,10 @@
 var _LONG_PRESS_MS  = 500;
 var _DRAG_THRESHOLD = 20;    // px of finger movement before drag begins
 
-/* ── Multi-select state ──────────────────────────────────────────────────────── */
-var _msActive   = false;
-var _msSelected = new Set();  // Set of selected cell IDs (integers)
+/* ── Multi-select state ──────────────────────────────────────────────────── */
+var _msActive         = false;
+var _msSelected       = new Set();  // Set of selected cell IDs (integers)
+var _msCellClickHandler = null;     // stored so we can remove it on exit
 
 /* ── Gesture state ──────────────────────────────────────────────────────── */
 var _tpTouchId      = null;   // Touch.identifier for the current gesture
@@ -108,28 +109,67 @@ function _tpFindTouch(list) {
     return null;
 }
 
-/* ── Multi-select enter / exit ───────────────────────────────────────────────── */
+/* ── Multi-select enter / exit ─────────────────────────────────────────────── */
 function _msEnter(firstId) {
     _msActive = true;
     _msSelected.clear();
     if (firstId != null) _msSelected.add(firstId);
     _msRebuildCheckboxes();
     _msUpdateBar();
+
+    // ─ Disable drag on cells so desktop clicks register cleanly ─
+    document.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
+        el.setAttribute('draggable', 'false');
+        el.style.cursor = 'pointer';
+    });
+
+    // ─ Event delegation in CAPTURE phase so we intercept before inline onclicks ─
+    var canvas = _msCanvas();
+    if (canvas) {
+        _msCellClickHandler = function(e) {
+            var cell = e.target.closest('[data-grid-cell-id]');
+            if (!cell) return;
+            e.stopPropagation();  // prevent lightbox inline onclick
+            e.preventDefault();
+            var id = parseInt(cell.dataset.gridCellId, 10);
+            if (!isNaN(id)) _msToggle(id);
+        };
+        canvas.addEventListener('click', _msCellClickHandler, true);
+    }
+
     var bar = _msBar();
     if (bar) bar.classList.remove('hidden');
     var enterBtn = document.getElementById('grid-ms-enter-btn');
     if (enterBtn) enterBtn.classList.add('hidden');
+    var doneBtn  = document.getElementById('grid-ms-done-btn');
+    if (doneBtn)  doneBtn.classList.remove('hidden');
     if (navigator.vibrate) navigator.vibrate(40);
 }
 
 function _msExit() {
+    // ─ Remove delegated listener ─
+    var canvas = _msCanvas();
+    if (canvas && _msCellClickHandler) {
+        canvas.removeEventListener('click', _msCellClickHandler, true);
+        _msCellClickHandler = null;
+    }
+
     _msActive = false;
     _msSelected.clear();
     _msRemoveCheckboxes();
+
+    // ─ Re-enable drag on cells ─
+    document.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
+        el.setAttribute('draggable', 'true');
+        el.style.cursor = '';
+    });
+
     var bar = _msBar();
     if (bar) bar.classList.add('hidden');
     var enterBtn = document.getElementById('grid-ms-enter-btn');
     if (enterBtn) enterBtn.classList.remove('hidden');
+    var doneBtn  = document.getElementById('grid-ms-done-btn');
+    if (doneBtn)  doneBtn.classList.add('hidden');
 }
 
 /* ── Checkbox helpers ────────────────────────────────────────────────────────── */
