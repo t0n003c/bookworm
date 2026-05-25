@@ -296,6 +296,7 @@ function _uplCard(f) {
   if (group === 'image') {
     thumb = `<img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
              loading="lazy"
+             style="-webkit-touch-callout:none"
              class="w-full h-32 object-cover bg-gray-100 dark:bg-zinc-800"
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
            + `<div class="w-full h-32 hidden items-center justify-center text-4xl
@@ -308,8 +309,9 @@ function _uplCard(f) {
     const vType = _uplEsc(f.mime_type);
     thumb = `<div class="relative w-full h-32 bg-gray-900 dark:bg-zinc-950 overflow-hidden">`
            + `<video preload="metadata" muted playsinline
+                    style="-webkit-touch-callout:none"
                     class="w-full h-full object-cover"
-                    onerror="this.parentElement.querySelector('.upl-vid-fallback').style.display='flex';this.remove()">
+                    onerror="this.parentElement.querySelector('.upl-vid-fallback').style.display='flex';this.remove()">`
                 <source src="${vSrc}#t=0.5" type="${vType}">
               </video>`
            + `<div class="upl-vid-fallback absolute inset-0 hidden items-center justify-center">`

@@ -202,7 +202,7 @@ function _uplTsOnClick(e) {
   }
 }
 
-// ── Init — idempotent, called after every grid render ─────────────────────────
+// ── Init — idempotent, called after every grid render ———————————————————
 function _uplTsInit() {
   var main = document.getElementById('uploads-main');
   if (!main) return;
@@ -212,7 +212,17 @@ function _uplTsInit() {
 
   main.removeEventListener('click', _uplTsOnClick, true);
   main.addEventListener('click', _uplTsOnClick, true);
+
+  // Suppress Chrome Android’s native long-press image context menu
+  // (“Copy image / Download image / Share image / Open in Chrome”) while
+  // the user is in the file grid. The detail pane is outside #uploads-main
+  // so the native menu still works there (user said that’s fine).
+  main.removeEventListener('contextmenu', _uplTsNoCtxMenu);
+  main.addEventListener('contextmenu', _uplTsNoCtxMenu);
 }
+
+// Prevent the native browser context menu inside the file grid.
+function _uplTsNoCtxMenu(e) { e.preventDefault(); }
 
 // Boot
 if (document.readyState === 'loading') {
