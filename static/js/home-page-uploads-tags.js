@@ -20,7 +20,11 @@ function _uplRenderTags(src, id, tags) {
   const el = document.getElementById('upl-tags-area');
   if (!el) return;
 
-  const pills = tags.map(t => `
+  // grid:XX entries are connection metadata — already shown in the Grid
+  // Connections section below. Exclude them here so Tags = user-defined only.
+  const userTags = tags.filter(t => !t.startsWith('grid:'));
+
+  const pills = userTags.map(t => `
     <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full
                  bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300">
       ${_uplEsc(t)}
@@ -29,8 +33,9 @@ function _uplRenderTags(src, id, tags) {
     </span>`).join('');
 
   const listId = `upl-tags-list-${id}`;
-  const opts   = _uplAllTags.filter(t => !tags.includes(t))
-                             .map(t => `<option value="${_uplEsc(t)}">`).join('');
+  const opts   = _uplAllTags
+    .filter(t => !userTags.includes(t) && !t.startsWith('grid:'))
+    .map(t => `<option value="${_uplEsc(t)}">`).join('');
 
   el.innerHTML = `
     <div class="flex flex-wrap gap-1 mb-2">${pills ||
@@ -370,51 +375,64 @@ async function _uplBulkLoadPanelTags() {
 
     if (!document.getElementById('upl-bulk-tag-panel')) return; // panel closed
 
-    // ── Render regular tag pills ──
-    // ── Build unified tag pill list (regular tags + grid connections together) ──
+    // Remove any existing grid block from a previous load
     var oldGrid = panel.querySelector('#upl-bulk-grid-block');
     if (oldGrid) oldGrid.remove();
 
+    // ── Regular (user-defined) tags as yellow × pills ────────────────────────────────
     if (tagsEl) {
-      var allTagPills = [];
-
-      // Regular tags as yellow pills
-      (data.tags || []).forEach(function(t) {
-        allTagPills.push(
-          '<button data-bulk-tag="' + _uplEsc(t) + '"'
+      var tagPills = (data.tags || []).map(function(t) {
+        return '<button data-bulk-tag="' + _uplEsc(t) + '"'
           + ' onclick="_uplBulkRemoveTag(this.dataset.bulkTag)"'
           + ' title="Remove from all selected"'
           + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full cursor-pointer'
           + ' bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300'
           + ' hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-700 transition">'
-          + _uplEsc(t) + ' &times;</button>'
-        );
+          + _uplEsc(t) + ' &times;</button>';
       });
 
-      // Grid connections as green info-only pills — show raw tag (grid:XX) + ↗ to navigate.
-      // No × remove button: the connection is managed from the Grid page (and backfill
-      // would re-add the tag on next load anyway as long as the cell exists).
-      (data.grid_pids || []).forEach(function(pid) {
+      tagsEl.innerHTML = tagPills.length
+        ? tagPills.join('')
+        : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files</span>';
+    }
+
+    // ── Grid connections as a separate sub-section (not in the tags area) ───────
+    // Grid:XX are connection metadata, not user-defined tags.
+    // Each connection gets its own ↗ open + × disconnect button.
+    if ((data.grid_pids || []).length) {
+      var gridBlock = document.createElement('div');
+      gridBlock.id = 'upl-bulk-grid-block';
+      gridBlock.className = 'mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800';
+
+      var gridRows = (data.grid_pids || []).map(function(pid) {
         var openFn = typeof openHomePage === 'function'
           ? 'openHomePage(' + pid + ')'
           : 'window.location.assign(\'/home/pages/' + pid + '\')';
-        allTagPills.push(
-          '<span title="Grid connection \u2014 manage from the Grid page"'
-          + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
-          + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
-          + 'grid:' + pid
+        // For bulk: disconnect ONLY the files in the selection that share this grid pid.
+        // We call _uplBulkGridDisconnect(pid) which iterates selected files.
+        return '<div class="flex items-center gap-1 mb-1">'
           + '<button onclick="' + openFn + '"'
-          + ' title="Open grid page ' + pid + '"'
-          + ' class="undline hover:text-green-600 transition">&nearr;</button>'
-          + '</span>'
-        );
-      });
+          + ' class="flex-1 text-left px-2 py-1.5 rounded-lg text-xs'
+          + ' bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+          + ' hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
+          + '&#128248; grid:' + pid + ' \u2192</button>'
+          + '<button onclick="_uplBulkGridDisconnect(' + pid + ')"'
+          + ' title="Disconnect selected files from this grid"'
+          + ' class="flex-shrink-0 px-2 py-1.5 rounded-lg text-xs'
+        + ' border border-red-200 dark:border-red-900'
+          + ' text-red-500 dark:text-red-400'
+          + ' hover:bg-red-50 dark:hover:bg-red-950/40 transition">&#10006;</button>'
+          + '</div>';
+      }).join('');
 
-      tagsEl.innerHTML = allTagPills.length
-        ? allTagPills.join('')
-        : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files</span>';
+      gridBlock.innerHTML =
+        '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">'
+        + '&#128248; Grid connections</p>'
+        + gridRows;
 
-      // (No async name resolution — grid pills show the raw tag value, e.g. grid:79)
+      // Insert before the footer delete button
+      var foot = panel.querySelector('.mt-3.pt-3.border-t.border-gray-100');
+      panel.insertBefore(gridBlock, foot || null);
     }
 
     // Update datalist to exclude already-applied tags
@@ -488,6 +506,40 @@ async function _uplBulkRemoveTag(tag) {
     // Refresh the panel in-place via server fetch (no full panel rebuild needed)
     await _uplBulkLoadPanelTags();
     _uplShowToast('Tag \u201c' + _uplEsc(tag) + '\u201d removed from all selected files.');
+  } catch (e) { _uplShowToast('Error: ' + e, true); }
+}
+
+// Disconnect selected files from a grid page.
+// Only acts on selected files that actually have that grid connection.
+async function _uplBulkGridDisconnect(pageId) {
+  const tagKey = 'grid:' + pageId;
+  // Only disconnect files that are actually connected to this grid
+  const ids = _uplBulkGetSelIds().filter(function(ref) {
+    var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+    return f && Array.isArray(f.tags) && f.tags.includes(tagKey);
+  });
+  if (!ids.length) return;
+  try {
+    await Promise.all(ids.map(function(ref) {
+      // Only page-src files can have grid connections
+      if (ref.src !== 'page') return Promise.resolve();
+      return fetch('/home/grid/' + pageId + '/disconnect/' + ref.id, { method: 'DELETE' });
+    }));
+    // Update local state
+    ids.forEach(function(ref) {
+      var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+      if (f && Array.isArray(f.tags)) f.tags = f.tags.filter(function(t) { return t !== tagKey; });
+      var sel = _dndSelected[ref.src + ':' + ref.id];
+      if (sel && Array.isArray(sel.tags)) sel.tags = sel.tags.filter(function(t) { return t !== tagKey; });
+      var card = document.querySelector('[data-upl-file-key="' + ref.src + ':' + ref.id + '"]');
+      if (card) {
+        var cur = (card.dataset.uplTags || '').split(',').filter(function(t) { return t && t !== tagKey; });
+        card.dataset.uplTags = cur.join(',');
+      }
+    });
+    _uplRender();
+    await _uplBulkLoadPanelTags();
+    _uplShowToast(ids.length + ' file' + (ids.length === 1 ? '' : 's') + ' disconnected from grid.');
   } catch (e) { _uplShowToast('Error: ' + e, true); }
 }
 

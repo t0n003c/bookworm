@@ -153,14 +153,20 @@ async def swap_cells(request: Request, page_id: int):
 
 @router.delete("/grid/{page_id}/disconnect/{upload_id}")
 async def disconnect_upload(request: Request, page_id: int, upload_id: int):
-    """Remove the grid:{page_id} tag from an upload without deleting either.
+    """Sever this upload's grid connection: delete the cell row AND the tag.
 
-    Called from the Upload page's file-detail panel when the user clicks
-    'Disconnect from grid'. The upload stays on the Uploads page; only the
-    grid connection is severed.
+    Both must be removed so the backfill (INSERT OR IGNORE from home_grid_cells)
+    cannot restore the tag on the next page load.  Neither the upload file nor
+    the grid page itself is deleted.
     """
     uid = _uid(request)
     async with get_db() as db:
+        # Remove the cell — this is what prevents backfill from re-adding the tag.
+        await db.execute(
+            "DELETE FROM home_grid_cells WHERE page_id=? AND upload_id=?",
+            (page_id, upload_id),
+        )
+        # Strip the tag too (may already be gone; harmless if it isn't).
         await db.execute(
             "DELETE FROM page_upload_tags "
             "WHERE upload_src='page' AND upload_id=? AND user_id=? AND tag=?",

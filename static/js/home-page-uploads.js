@@ -728,17 +728,47 @@ async function _uplRenderGridConnections(f) {
     // Open the grid page using the SPA router (avoids bare-HTML fragment response)
     var openFn = 'typeof openHomePage===\'function\'?openHomePage(' + p.pid + '):window.location.assign(\'/home/pages/' + p.pid + '\')';
     var gotoBtn = '<button onclick="' + openFn + '"'
-      + ' class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg w-full'
+      + ' class="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
       + ' bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
       + ' text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
       + '&#128248;\u00a0' + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>';
-    return '<div class="mb-1.5">' + gotoBtn + '</div>';
+    var discBtn = '<button'
+      + ' onclick="_uplGridDisconnect(' + f.id + ',' + p.pid + ')"'
+      + ' title="Disconnect from ' + _uplEsc(p.name) + '"'
+      + ' class="flex-shrink-0 px-2 py-1.5 rounded-lg text-xs'
+      + ' border border-red-200 dark:border-red-900'
+      + ' text-red-500 dark:text-red-400'
+      + ' hover:bg-red-50 dark:hover:bg-red-950/40 transition"'
+      + '>&#10006;</button>';
+    return '<div class="flex items-center gap-1 mb-1.5">' + gotoBtn + discBtn + '</div>';
   }).join('');
 
   slot.innerHTML =
     '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">'
     + '&#128248; Grid Connections</p>'
     + rows;
+}
+
+// ── Disconnect an upload from a grid page (called from Grid Connections panel) ─
+async function _uplGridDisconnect(uploadId, pageId) {
+  try {
+    const r = await fetch('/home/grid/' + pageId + '/disconnect/' + uploadId, { method: 'DELETE' });
+    if (!r.ok) { _uplShowToast('Could not disconnect from grid.', true); return; }
+    // Remove the grid:XX tag from the in-memory file record so the UI updates
+    // immediately without needing a full re-fetch.
+    const tagKey = 'grid:' + pageId;
+    const f = _uplFiles.find(function(x) { return x.src === 'page' && x.id === uploadId; });
+    if (f && Array.isArray(f.tags)) f.tags = f.tags.filter(function(t) { return t !== tagKey; });
+    // Re-render detail panel and cards
+    if (_uplCurrentDetail && _uplCurrentDetail.id === uploadId) {
+      _uplCurrentDetail = f || _uplCurrentDetail;
+      _uplRenderDetail(_uplCurrentDetail);
+    }
+    _uplRender();
+    _uplShowToast('Disconnected from grid.');
+  } catch (e) {
+    _uplShowToast('Could not disconnect: ' + e.message, true);
+  }
 }
 
 
