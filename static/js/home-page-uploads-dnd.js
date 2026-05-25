@@ -57,10 +57,16 @@ function _uplCheckModeEnter() {
 
 function _uplCheckModeExit() {
   if (!_uplCheckMode) return;
-  _uplCheckMode = false;
+  _uplCheckMode     = false;
+  // Keep legacy flag in sync — prevents stale _uplDocSelectMode from
+  // re-routing card clicks to _uplDocToggleItem after check-mode exits.
+  if (typeof _uplDocSelectMode !== 'undefined') _uplDocSelectMode = false;
   var btn = document.getElementById('upl-doc-select-btn');
   if (btn) btn.innerHTML = '\u2610<span class="upl-rsp-label"> Select</span>';
   document.querySelectorAll('.upl-chk-overlay').forEach(function(el) { el.remove(); });
+  // Nuke any leftover old-style doc-select toolbar / tag panel from the DOM.
+  var tb = document.getElementById('upl-doc-toolbar');   if (tb) tb.remove();
+  var tp = document.getElementById('upl-doc-tag-panel'); if (tp) tp.remove();
 }
 
 // Inject a small ☐/☑ overlay in the top-left corner of every file card.
