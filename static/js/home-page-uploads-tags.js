@@ -289,21 +289,26 @@ function _uplBulkTagPanel() {
       }).join('')
     : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files yet</span>';
 
-  // Grid connections block — info-only, navigate to open the page
+  // Grid connections block — removable pills (× removes the tag) + navigate button
   var gridBlock = '';
   if (gridPids.size) {
     var gridPillsHtml = Array.from(gridPids).map(function(pid) {
       return '<span id="upl-bulk-grid-' + pid + '"'
         + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
         + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
-        + '&#128248; Grid #' + pid + '</span>';
+        + '<button onclick="_uplBulkRemoveTag(\'grid:' + pid + '\')"'
+        + ' title="Remove grid connection from all selected files"'
+        + ' class="hover:text-red-600 transition leading-none">&times;</button>'
+        + '&#128248; Grid #' + pid
+        + '<button onclick="typeof openHomePage===\'function\'?openHomePage(' + pid + '):window.location.assign(\'/home/pages/' + pid + '\')"'
+        + ' title="Open this grid page"'
+        + ' class="underline hover:text-green-600 transition">&nearr;</button>'
+        + '</span>';
     }).join('');
     gridBlock =
-      '<p class="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 mt-3 mb-1">Grid connections</p>'
-      + '<div class="flex flex-wrap gap-1 mb-1">' + gridPillsHtml + '</div>'
-      + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic">'
-      + 'To remove a grid connection, open the file detail and click \u201cOpen Grid\u201d, '
-      + 'then delete the cell from the grid page.</p>';
+      '<p class="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 mt-3 mb-1">'
+      + 'Grid connections <span class="normal-case font-normal text-gray-400">(&#215; to remove &nbsp;&middot;&nbsp; &nearr; to open)</span></p>'
+      + '<div class="flex flex-wrap gap-1 mb-1" id="upl-bulk-grid-pills">' + gridPillsHtml + '</div>';
   }
 
   const panel = document.createElement('div');
@@ -346,7 +351,16 @@ function _uplBulkTagPanel() {
         if (!r.ok) return;
         var m = await r.json();
         var badge = document.getElementById('upl-bulk-grid-' + pid);
-        if (badge) badge.innerHTML = '&#128248;\u00a0' + _uplEsc((m.emoji || '') + '\u00a0' + (m.name || ('Grid #' + pid)));
+        if (!badge) return;
+        // Update the text node between the two buttons
+        // Structure: <span> [×btn] [text] [↗btn] </span>
+        // Find the text node and replace it
+        var label = (m.emoji || '\uD83D\uDDBC\uFE0F') + '\u00a0' + (m.name || ('Grid #' + pid));
+        // Rebuild the span's middle content safely
+        badge.childNodes.forEach(function(n) {
+          if (n.nodeType === Node.TEXT_NODE) n.textContent = '\uD83D\uDDBC\uFE0F\u00a0' + label;
+        });
+        badge.querySelector('[title="Open this grid page"]').title = 'Open \u201c' + label + '\u201d';
       } catch(_) { /* keep placeholder */ }
     });
   }

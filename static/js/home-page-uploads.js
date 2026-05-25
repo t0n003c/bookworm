@@ -724,23 +724,48 @@ async function _uplRenderGridConnections(f) {
   }));
 
   var rows = pages.map(function(p) {
-    var gotoBtn = '<button onclick="window.location.href=\'/home/pages/' + p.pid + '\'"'
+    // Open the grid page using the SPA router (avoids bare-HTML response)
+    var openFn = 'typeof openHomePage===\'function\'?openHomePage(' + p.pid + '):window.location.assign(\'/home/pages/' + p.pid + '\')';
+    var gotoBtn = '<button onclick="' + openFn + '"'
       + ' class="flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
       + ' bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
       + ' text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
-      + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>';
-    return '<div class="flex items-center gap-2 mb-1.5">' + gotoBtn + '</div>';
+      + '&#128248;\u00a0' + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>';
+    var removeBtn = '<button onclick="_uplDetailGridRemove(' + f.id + ',\'' + ('grid:' + p.pid) + '\')"'
+      + ' title="Remove this grid connection (file stays in Uploads)"'
+      + ' class="px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-700'
+      + ' text-gray-400 dark:text-zinc-500 hover:border-red-300 hover:text-red-500 transition"'
+      + '>\u00d7</button>';
+    return '<div class="flex items-center gap-2 mb-1.5">' + gotoBtn + removeBtn + '</div>';
   }).join('');
 
   slot.innerHTML =
-    '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-2">'
+    '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">'
     + '&#128248; Grid Connections</p>'
     + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic mb-2">'
-    + 'To remove a connection, open the grid page and delete the cell there.</p>'
+    + '\u2197 opens the grid &middot; \u00d7 removes the connection only</p>'
     + rows;
 }
 
 
+
+// Remove a single grid connection tag from the detail-panel file
+async function _uplDetailGridRemove(uploadId, tag) {
+  try {
+    var r = await fetch(
+      '/home/uploads/' + _uplPid + '/files/page/' + uploadId + '/tags/' + encodeURIComponent(tag),
+      { method: 'DELETE' }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _uplShowToast('Grid connection removed.');
+    var f = (_uplFiles || []).find(function(x) { return x.id === uploadId && x.src === 'page'; });
+    if (f) {
+      f.tags = (f.tags || []).filter(function(t) { return t !== tag; });
+      _uplRenderDetail(f);
+    }
+    await _uplFetch(_uplPage);
+  } catch(e) { _uplShowToast('Failed to remove connection.'); }
+}
 
 function _uplDocCsvCard(f, fUrl) {
   var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';

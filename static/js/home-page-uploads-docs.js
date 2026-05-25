@@ -243,15 +243,17 @@ function _uplDocTagPanel() {
   var gridBlock = '';
   if (gridPids.size) {
     var gridPillsHtml = Array.from(gridPids).map(function(pid) {
+      var openFn = 'typeof openHomePage===\'function\'?openHomePage(' + pid + '):window.location.assign(\'/home/pages/' + pid + '\')'
       return '<span id="upl-doc-tag-grid-' + pid + '"'
         + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
         + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
-        + '&#128248; Grid #' + pid + '</span>';
+        + '&#128248; Grid #' + pid
+        + '<button onclick="' + openFn + '" title="Open grid page"'
+        + ' class="underline hover:text-green-600 transition">&nearr;</button>'
+        + '</span>';
     }).join('');
-    gridBlock = '<p class="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 mt-3 mb-1">Grid connections</p>'
-      + '<div class="flex flex-wrap gap-1">' + gridPillsHtml + '</div>'
-      + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1 italic">'
-      + 'To disconnect, open the file\'s detail panel on the Uploads page.</p>';
+    gridBlock = '<p class="text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 mt-3 mb-1">Grid connections (&nearr; opens page)</p>'
+      + '<div class="flex flex-wrap gap-1">' + gridPillsHtml + '</div>';
   }
 
   var panel = document.createElement('div');
