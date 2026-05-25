@@ -568,8 +568,14 @@ function _trashDrop(event) {
 
   // Show handles only on real touch devices (body.bw-touch is set by
   // _gridInitTouch; we also set it here so sidebar-only pages work).
+  // Use (hover:none)+(pointer:coarse) instead of maxTouchPoints>0 — Windows
+  // laptops report maxTouchPoints>0 via Precision Touchpad / Ink APIs even
+  // without a real touchscreen, which wrongly forces handles always-visible
+  // and breaks native draggable via the user-select:none side-effect.
   (function _injectStyle() {
-    if (navigator.maxTouchPoints > 0) document.body.classList.add('bw-touch');
+    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+      document.body.classList.add('bw-touch');
+    }
     if (document.getElementById('pg-dnd-touch-style')) return;
     var s = document.createElement('style');
     s.id = 'pg-dnd-touch-style';
