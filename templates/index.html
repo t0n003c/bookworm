@@ -2189,11 +2189,18 @@
     const topOff = document.getElementById('demo-banner') ? '6.5rem' : '4rem';
     // Apply fixed positioning FIRST so the sidebar leaves the flex row before
     // we remove the width classes — avoids a brief reflow of main content.
+    // Include transition:none so the sidebar’s 'transition-all duration-300'
+    // Tailwind class doesn’t animate the width from 0→18rem (that 300ms was
+    // the “bit of delay” the user felt when tapping the sidebar icon to open).
     sb.style.cssText = [
       'position:fixed', 'top:' + topOff, 'left:0', 'bottom:0',
-      'width:18rem', 'z-index:23', 'overflow-y:auto'
+      'width:18rem', 'z-index:23', 'overflow-y:auto',
+      'transition:none'
     ].join(';');
     sb.classList.remove('w-0', 'w-72'); // safe: already out of flex flow
+    // Re-enable transition after the browser has painted the open state so
+    // any future CSS transitions on the sidebar work normally.
+    requestAnimationFrame(function() { sb.style.transition = ''; });
     const bd = document.createElement('div');
     bd.id = '_sb-mobile-backdrop';
     bd.setAttribute('aria-hidden', 'true');
