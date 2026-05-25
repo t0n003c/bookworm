@@ -723,23 +723,24 @@ async function _uplRenderGridConnections(f) {
     }
   }));
 
+  var rows = pages.map(function(p) {
+    var gotoBtn = '<button onclick="window.location.href=\'/home/pages/' + p.pid + '\'"'
+      + ' class="flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded-lg'
+      + ' bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+      + ' text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
+      + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>';
+    var discBtn = '<button onclick="_uplGridDisconnect(' + f.id + ',' + p.pid + ')"'
+      + ' title="Disconnect from this grid (file stays in Uploads)"'
+      + ' class="px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600'
+      + ' text-gray-500 dark:text-zinc-400 hover:border-red-300 hover:text-red-500 transition">'
+      + 'Disconnect</button>';
+    return '<div class="flex items-center justify-between gap-2 mb-1.5">' + gotoBtn + discBtn + '</div>';
+  }).join('');
+
   slot.innerHTML =
     '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-2">'
     + '&#128248; Grid Connections</p>'
-    + pages.map(function(p) {
-        return '<div class="flex items-center justify-between gap-2 mb-1.5">'
-          + '<button onclick="window.location.href=\'/home/pages/' + p.pid + '\'"
-                  class="flex-1 text-left flex items-center gap-1.5 px-2 py-1.5 rounded-lg\n'
-          + '                 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300\n'
-          + '                 text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
-          + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>'
-          + '<button onclick="_uplGridDisconnect(' + f.id + ',' + p.pid + ')"'
-          + ' title="Disconnect from this grid (file stays in Uploads)"'
-          + ' class="px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600\n'
-          + '         text-gray-500 dark:text-zinc-400 hover:border-red-300 hover:text-red-500 transition">'
-          + 'Disconnect</button>'
-          + '</div>';
-      }).join('');
+    + rows;
 }
 
 async function _uplGridDisconnect(uploadId, gridPageId) {
