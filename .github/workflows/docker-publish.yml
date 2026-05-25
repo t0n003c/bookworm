@@ -39,9 +39,11 @@ jobs:
 
       # Extract metadata (tags, labels) from Git ref and GitHub events.
       # Produces:
-      #   latest          — for every push to main
-      #   sha-<short-sha> — for traceability
-      #   <semver>        — when a release tag is pushed (v1.2.3 → 1.2.3)
+      #   latest   — for every push to main
+      #   <semver> — when a release tag is pushed (v1.2.3 → 1.2.3)
+      #
+      # Deliberately NO sha- tag: those accumulate untagged entries in GHCR
+      # with every push and are not useful for a small team app.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -49,7 +51,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
@@ -75,3 +76,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64   # amd64 (servers) + arm64 (Raspberry Pi 4+)
+          # Disable provenance attestations — they appear as extra untagged
+          # entries in GHCR (one per platform) with no benefit for a team app.
+          provenance: false
+          sbom: false
