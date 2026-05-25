@@ -187,7 +187,7 @@ function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
   panel.setAttribute('aria-modal', 'true');
   panel.setAttribute('aria-label', title);
   panel.style.cssText =
-    'width:100%;max-height:65vh;overflow-y:auto;' +
+    'width:100%;max-width:480px;margin:0 auto;max-height:65vh;overflow-y:auto;'  +
     'background:' + bg + ';' +
     'backdrop-filter:blur(16px) saturate(150%);' +
     '-webkit-backdrop-filter:blur(16px) saturate(150%);' +
