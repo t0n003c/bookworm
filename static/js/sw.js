@@ -9,7 +9,7 @@
  * Cache names are versioned so stale caches are purged on activate.
  */
 
-const CACHE_NAME  = 'bw-shell-v2';
+const CACHE_NAME  = 'bw-shell-v3';
 const OFFLINE_URL = '/offline';
 
 /* App-shell assets to pre-cache on install */

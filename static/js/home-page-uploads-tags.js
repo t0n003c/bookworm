@@ -266,6 +266,7 @@ function _uplBulkGetUnionTags() {
 // Toggle the floating bulk-tag panel.
 // Fetches LIVE tag data from the server so stale JS state can never hide tags.
 function _uplBulkTagPanel() {
+  console.log('[BookWorm] _uplBulkTagPanel v3 – dynamic positioning build');
   const existing = document.getElementById('upl-bulk-tag-panel');
   if (existing) { existing.remove(); return; }   // second click = close
 
