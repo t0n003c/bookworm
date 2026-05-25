@@ -582,7 +582,7 @@ function _trashDrop(event) {
     // .pg-dnd-handle: flex always; touch-action:none + always-visible on touch
     s.textContent = [
       '.pg-dnd-handle { display: flex; opacity: 0; cursor: grab; }',
-      '.group\/hpg:hover .pg-dnd-handle { opacity: 1; }',
+      '#home-page-list li:hover .pg-dnd-handle { opacity: 1; }',
       'body.bw-touch .pg-dnd-handle { opacity: 1; touch-action: none;',
       '  -webkit-user-select: none; user-select: none; }',
       'body.bw-touch #home-page-list [data-page-id] {',
@@ -847,7 +847,119 @@ function _trashDrop(event) {
 }());
 
 
+// ── Home-page mouse drag-to-reorder (desktop) ───────────────────────────────
+// The touch IIFE above handles mobile. This IIFE adds mouse drag reordering
+// via the HTML5 dragstart/dragover/drop events on the page list.
+// Drag-to-trash uses the native draggable on <li> and the existing
+// _trashDragOver / _trashDrop handlers — we leave those untouched.
+(function _initPageMouseDnd() {
+  'use strict';
 
+  var _dragId  = null;  // pageId being dragged
+  var _dragLi  = null;  // source <li>
+
+  /* ─ indicator line ─ reuse the same element as the touch IIFE ──────── */
+  function _indicator() {
+    var el = document.getElementById('pg-dnd-indicator');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'pg-dnd-indicator';
+      Object.assign(el.style, {
+        position: 'fixed', height: '2px', background: '#0053e2',
+        borderRadius: '2px', pointerEvents: 'none',
+        display: 'none', zIndex: '9999',
+      });
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function _showIndicator(li, pos) {
+    var ind = _indicator();
+    var r   = li.getBoundingClientRect();
+    ind.style.top     = (pos === 'before' ? r.top - 1 : r.bottom - 1) + 'px';
+    ind.style.left    = r.left + 'px';
+    ind.style.width   = r.width + 'px';
+    ind.style.display = 'block';
+  }
+
+  function _hideIndicator() {
+    var el = document.getElementById('pg-dnd-indicator');
+    if (el) el.style.display = 'none';
+  }
+
+  /* ─ dragstart: fired on the <li draggable> ────────────────────────── */
+  document.addEventListener('dragstart', function (e) {
+    var li = e.target.closest('#home-page-list [data-page-id]');
+    if (!li) return;
+    _dragId = parseInt(li.dataset.pageId, 10);
+    _dragLi = li;
+    li.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-bw-page', String(_dragId));
+  });
+
+  /* ─ dragover: show the drop indicator line ─────────────────────── */
+  document.addEventListener('dragover', function (e) {
+    if (_dragId === null) return;
+    var li = e.target.closest('#home-page-list [data-page-id]');
+    if (!li || li === _dragLi) { _hideIndicator(); return; }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var r   = li.getBoundingClientRect();
+    var pos = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
+    _showIndicator(li, pos);
+  });
+
+  /* ─ dragleave: hide indicator when leaving the list area ───────────── */
+  document.addEventListener('dragleave', function (e) {
+    if (_dragId === null) return;
+    var list = document.getElementById('home-page-list');
+    if (!list) return;
+    // relatedTarget null = left the window; otherwise check if still inside list
+    if (!e.relatedTarget || !list.contains(e.relatedTarget)) _hideIndicator();
+  });
+
+  /* ─ drop: reorder DOM + persist ────────────────────────────── */
+  document.addEventListener('drop', function (e) {
+    if (_dragId === null) return;
+    var tgtLi = e.target.closest('#home-page-list [data-page-id]');
+    if (!tgtLi || tgtLi === _dragLi) { _reset(); return; }
+    // Only handle page reorder drops — let trash handler take trash drops
+    if (Array.from(e.dataTransfer.types).indexOf('application/x-bw-page') === -1) {
+      _reset(); return;
+    }
+    e.preventDefault();
+    var r   = tgtLi.getBoundingClientRect();
+    var pos = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
+    var ul  = _dragLi.parentNode;
+    if (pos === 'before') ul.insertBefore(_dragLi, tgtLi);
+    else                  ul.insertBefore(_dragLi, tgtLi.nextSibling);
+    var ids = Array.from(ul.querySelectorAll('[data-page-id]'))
+                   .map(function (n) { return n.dataset.pageId; });
+    fetch('/home/pages/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ ids: ids }),
+    }).catch(function (err) { console.warn('[pg-dnd] mouse reorder failed', err); });
+    _reset();
+  });
+
+  /* ─ dragend: always clean up (fires even if drop was outside) ─────── */
+  document.addEventListener('dragend', function (e) {
+    var li = e.target.closest('#home-page-list [data-page-id]');
+    if (li) li.style.opacity = '';
+    _reset();
+  });
+
+  function _reset() {
+    if (_dragLi) _dragLi.style.opacity = '';
+    _dragId = null;
+    _dragLi = null;
+    _hideIndicator();
+  }
+}());
 
 
 // ── Home-page restore / permanent-delete ────────────────────────────────
