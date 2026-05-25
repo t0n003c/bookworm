@@ -14,12 +14,38 @@
 // ── Folder picker ─────────────────────────────────────────────────────────────
 function _dndBulkFolderPicker() {
   if (!Object.keys(_dndSelected).length) return;
+
+  // Work out which folder(s) the selected files currently live in.
+  // folderId is stored on each _dndSelected entry — zero extra network calls.
+  var folderIds = {};
+  Object.values(_dndSelected).forEach(function(item) {
+    var fid = item.folderId == null ? 'null' : String(item.folderId);
+    folderIds[fid] = true;
+  });
+  var uniqueIds   = Object.keys(folderIds);
+  var currentVals = uniqueIds; // pass to picker so rows get checkmarks
+
+  // Build human-readable subtitle for the sheet header
+  var subtitle = '';
+  if (uniqueIds.length === 1) {
+    var fid = uniqueIds[0];
+    if (fid === 'null') {
+      subtitle = 'Currently: Unfiled';
+    } else {
+      var fd = typeof _uplFldData !== 'undefined' &&
+               _uplFldData.find(function(f) { return String(f.id) === fid; });
+      subtitle = 'Currently: ' + (fd ? fd.name : 'a folder');
+    }
+  } else {
+    subtitle = 'Currently in ' + uniqueIds.length + ' different folders';
+  }
+
   _dndPickerSheet(
     'Move ' + Object.keys(_dndSelected).length + ' file(s) to folder',
     _dndFolderPickerItems(),
-    function(value) {
-      _dndBulkMoveToFolder(value === 'null' ? null : +value);
-    }
+    function(value) { _dndBulkMoveToFolder(value === 'null' ? null : +value); },
+    subtitle,
+    currentVals
   );
 }
 
@@ -83,10 +109,26 @@ function _dndBulkCatalogPicker() {
       _uplShowToast('No catalogs yet. Create one in the sidebar.', true);
     return;
   }
+
+  // Show whichever catalog is currently being browsed as the "current" hint.
+  // Catalog membership is many-to-many so we use the active filter as the
+  // best available single-source signal without extra network calls.
+  var subtitle    = '';
+  var currentVals = [];
+  if (typeof _uplCatActive !== 'undefined' && _uplCatActive !== null) {
+    var activeCat = cats.find(function(c) { return c.id === _uplCatActive; });
+    if (activeCat) {
+      subtitle    = 'Currently browsing: ' + activeCat.name;
+      currentVals = [String(_uplCatActive)];
+    }
+  }
+
   _dndPickerSheet(
     'Add ' + Object.keys(_dndSelected).length + ' file(s) to catalog',
     _dndCatalogPickerItems(cats),
-    function(value) { _dndFileDropOnCatalog(+value); }
+    function(value) { _dndFileDropOnCatalog(+value); },
+    subtitle,
+    currentVals
   );
 }
 
@@ -113,10 +155,15 @@ function _dndCatalogPickerItems(cats) {
 }
 
 // ── Shared bottom-sheet picker ────────────────────────────────────────────────
-// title   — header string shown at the top of the sheet
-// items   — [{value, label, depth}]  depth drives left indentation
-// onPick  — callback(value) fired when the user picks a row
-function _dndPickerSheet(title, items, onPick) {
+// title        — header string shown at the top of the sheet
+// items        — [{value, label, depth}]  depth drives left indentation
+// onPick       — callback(value) fired when the user picks a row
+// subtitle     — (optional) small grey line shown below the title
+// currentVals  — (optional) string[] of values already selected; those rows
+//                get a ✓ checkmark and a subtle highlight so users see where
+//                the files currently live before picking a destination.
+function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
+  currentVals = currentVals || [];
   var old = document.getElementById('dnd-picker-sheet');
   if (old) old.remove();
 
@@ -156,21 +203,33 @@ function _dndPickerSheet(title, items, onPick) {
     'padding:14px 16px 10px;border-bottom:1px solid ' + border + ';' +
     'position:sticky;top:0;background:' + bg + ';z-index:1;';
 
-  var titleEl = document.createElement('span');
-  titleEl.style.cssText = 'font-size:13px;font-weight:600;color:' + txt + ';';
+  // Title + optional subtitle sit inside a flex-1 wrapper so closeBtn stays right
+  var titleWrapper = document.createElement('div');
+  titleWrapper.style.cssText = 'flex:1;min-width:0;';
+
+  var titleEl = document.createElement('p');
+  titleEl.style.cssText = 'margin:0;font-size:13px;font-weight:600;color:' + txt + ';';
   titleEl.textContent   = title;
+  titleWrapper.appendChild(titleEl);
+
+  if (subtitle) {
+    var subEl = document.createElement('p');
+    subEl.style.cssText = 'margin:2px 0 0;font-size:10px;color:' + sub + ';';
+    subEl.textContent   = subtitle;
+    titleWrapper.appendChild(subEl);
+  }
 
   var closeBtn = document.createElement('button');
   closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.style.cssText =
     'background:none;border:none;cursor:pointer;color:' + sub + ';' +
-    'font-size:20px;line-height:1;padding:2px 4px;touch-action:manipulation;';
+    'font-size:20px;line-height:1;padding:2px 4px;touch-action:manipulation;flex-shrink:0;';
   closeBtn.textContent = '\u00D7';
   function closeSheet() { backdrop.remove(); }
   closeBtn.addEventListener('click',    closeSheet);
   closeBtn.addEventListener('touchend', function(e) { e.preventDefault(); closeSheet(); }, { passive: false });
 
-  hdr.appendChild(titleEl);
+  hdr.appendChild(titleWrapper);
   hdr.appendChild(closeBtn);
 
   // ── List ──────────────────────────────────────────────────────────────────
@@ -179,6 +238,7 @@ function _dndPickerSheet(title, items, onPick) {
   list.style.cssText = 'list-style:none;margin:0;padding:6px 0;';
 
   items.forEach(function(item) {
+    var isCurrent = currentVals.indexOf(item.value) !== -1;
     var li = document.createElement('li');
     li.setAttribute('role', 'option');
     li.setAttribute('tabindex', '0');
@@ -187,8 +247,21 @@ function _dndPickerSheet(title, items, onPick) {
       'cursor:pointer;color:' + txt + ';font-size:13px;' +
       'border-bottom:1px solid ' + border + ';' +
       'touch-action:manipulation;-webkit-tap-highlight-color:transparent;' +
-      'transition:background 0.1s;';
-    li.textContent = item.label;
+      'transition:background 0.1s;' +
+      (isCurrent ? 'background:' + (isDark ? 'rgba(0,83,226,0.15)' : 'rgba(0,83,226,0.06)') + ';' : '');
+
+    // Label + optional checkmark
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = item.label;
+    li.appendChild(labelSpan);
+    if (isCurrent) {
+      var check = document.createElement('span');
+      check.textContent   = '\u2713';
+      check.style.cssText = 'margin-left:auto;padding-left:10px;color:#0053e2;font-weight:700;flex-shrink:0;';
+      li.style.display    = 'flex';
+      li.style.alignItems = 'center';
+      li.appendChild(check);
+    }
 
     function pick() { backdrop.remove(); onPick(item.value); }
     li.addEventListener('click',    function(e) { e.stopPropagation(); pick(); });
@@ -196,8 +269,9 @@ function _dndPickerSheet(title, items, onPick) {
     li.addEventListener('keydown',  function(e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
     });
+    var baseBg = isCurrent ? (isDark ? 'rgba(0,83,226,0.15)' : 'rgba(0,83,226,0.06)') : '';
     li.addEventListener('mouseover',  function() { li.style.background = hover; });
-    li.addEventListener('mouseleave', function() { li.style.background = ''; });
+    li.addEventListener('mouseleave', function() { li.style.background = baseBg; });
     list.appendChild(li);
   });
 

@@ -335,8 +335,8 @@ function _dndSelBadgeUpdate() {
     return b;
   }
 
-  badge.appendChild(_mkBtn('Move to folder', _dndBulkFolderPicker));
-  badge.appendChild(_mkBtn('Add to catalog', _dndBulkCatalogPicker));
+  badge.appendChild(_mkBtn('Folder',  _dndBulkFolderPicker));
+  badge.appendChild(_mkBtn('Catalog', _dndBulkCatalogPicker));
 
   // Remove-from-catalog: only when a catalog filter is active
   if (typeof _uplCatActive !== 'undefined' && _uplCatActive !== null) {
