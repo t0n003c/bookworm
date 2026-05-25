@@ -567,19 +567,28 @@ function _trashDrop(event) {
   var _dropPos   = null;
 
   // Detect real touch devices and set body.bw-touch so handles are always visible.
-  // Two checks — maxTouchPoints is NOT used: Windows laptops report varying values
-  // (0, 1, or more) depending on drivers/hardware, making it unreliable.
-  //   (1) Media query (hover:none)+(pointer:coarse) — real mobile devices.
-  //       NOT updated by Chrome DevTools emulator, but that is handled by (2).
-  //   (2) One-time touchstart listener — fires on first emulator click or real
-  //       touch; never fires from a laptop mouse. Foolproof dynamic fallback.
-  //       In the emulator CSS :hover still works before this fires, so handles
-  //       are visible on hover until the first tap locks them always-on.
+  // No single static check is reliable across real mobile, DevTools emulator, and
+  // Windows laptops (which may report maxTouchPoints > 0 via Precision Touchpad).
+  //
+  //   (1) CSS media query (hover:none)+(pointer:coarse)
+  //       Reliable on real phones/tablets. NOT updated by Chrome DevTools emulator.
+  //
+  //   (2) sessionStorage flag 'bw-touch'
+  //       Set by the touchstart listener below on first interaction.
+  //       Persists across hard-refreshes and HTMX navigations within the same tab,
+  //       so after the very first emulator click handles are always-visible on every
+  //       subsequent load — no per-load gap. Resets when the tab is closed.
+  //
+  //   (3) One-time touchstart listener
+  //       Fires on first emulator click or real touch; never fires from a laptop
+  //       mouse. Sets bw-touch immediately AND saves the sessionStorage flag.
   (function _injectStyle() {
-    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches ||
+        sessionStorage.getItem('bw-touch') === '1') {
       document.body.classList.add('bw-touch');
     }
     document.addEventListener('touchstart', function () {
+      sessionStorage.setItem('bw-touch', '1');
       document.body.classList.add('bw-touch');
     }, { passive: true, once: true });
     if (document.getElementById('pg-dnd-touch-style')) return;
