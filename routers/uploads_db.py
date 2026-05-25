@@ -303,6 +303,8 @@ async def create_page_upload(
 async def delete_page_upload(upload_id: int, user_id: int) -> Optional[str]:
     """Delete the page_uploads row owned by user_id.
 
+    Also removes any grid cells that reference this upload, so the grid page
+    does not show a blank / broken cell after the file is gone.
     Returns the stored filename for disk cleanup, or None if not found/not owned.
     """
     async with get_db() as db:
@@ -313,6 +315,11 @@ async def delete_page_upload(upload_id: int, user_id: int) -> Optional[str]:
         row = await cur.fetchone()
         if not row:
             return None
+        # Remove grid cells that pin this file (prevents blank cells on grid pages)
+        await db.execute(
+            "DELETE FROM home_grid_cells WHERE upload_id = ?",
+            (upload_id,),
+        )
         await db.execute(
             "DELETE FROM page_upload_tags WHERE upload_src = 'page' AND upload_id = ?",
             (upload_id,),

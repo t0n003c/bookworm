@@ -379,13 +379,17 @@ async function _uplBulkAddTag() {
       body: JSON.stringify({ ids, tag }),
     });
     if (!r.ok) { _uplShowToast('Failed to add tag.', true); return; }
-    // Optimistically update _uplFiles AND _dndSelected so panel + cards reflect change immediately
+    // Update _uplFiles, _dndSelected snapshot, and card data-upl-tags attribute
     ids.forEach(function(ref) {
       var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
       if (f) { f.tags = f.tags || []; if (!f.tags.includes(tag)) f.tags.push(tag); }
-      // Also update the snapshotted tags on the selection entry
       var sel = _dndSelected[ref.src + ':' + ref.id];
       if (sel) { sel.tags = sel.tags || []; if (!sel.tags.includes(tag)) sel.tags.push(tag); }
+      var card = document.querySelector('[data-upl-file-key="' + ref.src + ':' + ref.id + '"]');
+      if (card) {
+        var cur = (card.dataset.uplTags || '').split(',').filter(Boolean);
+        if (!cur.includes(tag)) { cur.push(tag); card.dataset.uplTags = cur.join(','); }
+      }
     });
     await _uplLoadAllTags();
     _uplRender();
@@ -408,9 +412,13 @@ async function _uplBulkRemoveTag(tag) {
     ids.forEach(function(ref) {
       var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
       if (f && Array.isArray(f.tags)) f.tags = f.tags.filter(function(t) { return t !== tag; });
-      // Also strip from snapshotted selection tags
       var sel = _dndSelected[ref.src + ':' + ref.id];
       if (sel && Array.isArray(sel.tags)) sel.tags = sel.tags.filter(function(t) { return t !== tag; });
+      var card = document.querySelector('[data-upl-file-key="' + ref.src + ':' + ref.id + '"]');
+      if (card) {
+        var cur = (card.dataset.uplTags || '').split(',').filter(function(t) { return t && t !== tag; });
+        card.dataset.uplTags = cur.join(',');
+      }
     });
     await _uplLoadAllTags();
     _uplRender();

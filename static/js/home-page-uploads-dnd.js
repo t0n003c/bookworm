@@ -146,11 +146,10 @@ function _dndSelToggle(src, id, folderId) {
     delete _dndSelected[key];
     if (card) { card.style.outline = ''; card.style.boxShadow = ''; }
   } else {
-    // Snapshot tags NOW — the file is on-screen so it's definitely in _uplFiles.
-    var f = (typeof _uplFiles !== 'undefined' && Array.isArray(_uplFiles))
-      ? _uplFiles.find(function(x) { return x.src === src && x.id === id; })
-      : null;
-    _dndSelected[key] = { src: src, id: id, folderId: folderId, tags: f ? (f.tags || []).slice() : [] };
+    // Read tags from the card's own data attribute — always in sync with what's rendered.
+    var rawTags = card ? (card.dataset.uplTags || '') : '';
+    var tags = rawTags ? rawTags.split(',').filter(Boolean) : [];
+    _dndSelected[key] = { src: src, id: id, folderId: folderId, tags: tags };
     if (card) {
       card.style.outline    = '2px solid #0053e2';
       card.style.boxShadow  = '0 0 0 4px rgba(0,83,226,0.15)';
@@ -375,10 +374,9 @@ function _dndMouseMove(event) {
       var fid  = card.dataset.uplFolderId ? parseInt(card.dataset.uplFolderId, 10) : null;
 
       if (hits && !_dndSelected[key]) {
-        var lf = (typeof _uplFiles !== 'undefined' && Array.isArray(_uplFiles))
-          ? _uplFiles.find(function(x) { return x.src === src && x.id === id; })
-          : null;
-        _dndSelected[key] = { src: src, id: id, folderId: fid, tags: lf ? (lf.tags || []).slice() : [] };
+        var rawTags = card.dataset.uplTags || '';
+        var ltags   = rawTags ? rawTags.split(',').filter(Boolean) : [];
+        _dndSelected[key] = { src: src, id: id, folderId: fid, tags: ltags };
         card.style.outline   = '2px solid #0053e2';
         card.style.boxShadow = '0 0 0 4px rgba(0,83,226,0.15)';
       } else if (!hits && _dndSelected[key]) {

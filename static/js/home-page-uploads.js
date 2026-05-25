@@ -349,6 +349,7 @@ function _uplCard(f) {
          data-upl-id="${f.id}" data-upl-src="${f.src}"
          data-upl-file-key="${f.src}:${f.id}"
          data-upl-folder-id="${f.folder_id != null ? f.folder_id : ''}"
+         data-upl-tags="${_uplEsc((f.tags || []).join(','))}"
          draggable="true"
          ondragstart="_dndOnFileDragStart(event,'${f.src}',${f.id},${f.folder_id != null ? f.folder_id : 'null'})"
          ondragend="_dndOnFileDragEnd(event)"
