@@ -897,11 +897,12 @@
     }
 
     // Restore saved tab on page load.
-    // 'home' was merged into 'workspaces' in an older release — migrate stale pref.
-    // 'folders' is fine to restore directly: switchSidebarTab hides the other
-    // panels immediately; _uplFolderEnterUploadsPage un-hides its tab button later.
+    // On the welcome state (no ?ws= in URL) always show the Workspaces tab
+    // so the user sees their workspace list the moment they expand the sidebar.
+    // Only restore the saved tab when landing directly into a workspace.
     (function initSidebarTab() {
-      var raw   = localStorage.getItem('bw-sidebar-tab') || 'workspaces';
+      var hasWs = new URLSearchParams(window.location.search).has('ws');
+      var raw   = hasWs ? (localStorage.getItem('bw-sidebar-tab') || 'workspaces') : 'workspaces';
       var saved = (raw === 'home') ? 'workspaces' : raw;
       switchSidebarTab(saved);
     })();
