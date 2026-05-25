@@ -161,7 +161,7 @@ async def lifespan(app: FastAPI):
             pass
 
 
-from templates_env import templates  # shared instance with all custom filters
+from templates_env import templates, static_v  # shared instance with all custom filters
 
 app = FastAPI(title="BookWorm", lifespan=lifespan)
 
@@ -360,12 +360,23 @@ _SW_PATH = os.path.join(os.path.dirname(__file__), "static", "js", "sw.js")
 
 @app.get("/sw.js", include_in_schema=False)
 async def service_worker():
-    """Serve the service worker at root scope so it controls all pages."""
+    """Serve the service worker at root scope so it controls all pages.
+
+    Injects the current static_v into CACHE_NAME so the SW cache is
+    automatically invalidated on every server restart / new deployment.
+    No more manually bumping bw-shell-vN.
+    """
     try:
         with open(_SW_PATH, "r", encoding="utf-8") as f:
             body = f.read()
     except FileNotFoundError:
         return Response(status_code=404)
+    # Replace the hard-coded cache name with the startup-time version so
+    # any deployment that restarts the server also busts the PWA cache.
+    body = body.replace(
+        "const CACHE_NAME  = 'bw-shell-v3';",
+        f"const CACHE_NAME  = 'bw-shell-{static_v}';",
+    )
     return Response(
         content=body,
         media_type="application/javascript",
