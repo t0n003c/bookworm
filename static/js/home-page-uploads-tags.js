@@ -391,20 +391,19 @@ async function _uplBulkLoadPanelTags() {
         );
       });
 
-      // Grid connections as green pills with × to remove + ↗ to navigate
+      // Grid connections as green pills — show raw tag (grid:XX) with × to remove + ↗ to navigate
       (data.grid_pids || []).forEach(function(pid) {
         var openFn = typeof openHomePage === 'function'
           ? 'openHomePage(' + pid + ')'
           : 'window.location.assign(\'/home/pages/' + pid + '\')';
         allTagPills.push(
           '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full'
-          + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300"'
-          + ' id="upl-bulk-grid-' + pid + '">'
+          + ' bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">'
           + '<button data-bulk-tag="grid:' + pid + '"'
           + ' onclick="_uplBulkRemoveTag(this.dataset.bulkTag)"'
           + ' title="Disconnect from grid page ' + pid + ' for all selected files"'
           + ' class="hover:text-red-600 transition leading-none font-bold">&times;</button>'
-          + '\uD83D\uDDBC\uFE0F Grid #' + pid
+          + 'grid:' + pid
           + '<button onclick="' + openFn + '"'
           + ' title="Open grid page ' + pid + '"'
           + ' class="undline hover:text-green-600 transition">&nearr;</button>'
@@ -416,25 +415,7 @@ async function _uplBulkLoadPanelTags() {
         ? allTagPills.join('')
         : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files</span>';
 
-      // Async: replace "Grid #79" labels with real page names
-      (data.grid_pids || []).forEach(function(pid) {
-        (async function() {
-          try {
-            var mr = await fetch('/home/pages/' + pid + '/meta');
-            if (!mr.ok) return;
-            var m  = await mr.json();
-            var badge = document.getElementById('upl-bulk-grid-' + pid);
-            if (!badge) return;
-            var label = (m.emoji ? m.emoji + '\u00a0' : '') + (m.name || ('Grid #' + pid));
-            // Update the text node between the two buttons
-            badge.childNodes.forEach(function(n) {
-              if (n.nodeType === Node.TEXT_NODE) n.textContent = '\u00a0' + label + '\u00a0';
-            });
-            var openBtn = badge.querySelector('[title^="Open grid page"]');
-            if (openBtn) openBtn.title = 'Open \u201c' + label + '\u201d';
-          } catch (_) { /* keep placeholder label */ }
-        })();
-      });
+      // (No async name resolution — grid pills show the raw tag value, e.g. grid:79)
     }
 
     // Update datalist to exclude already-applied tags
