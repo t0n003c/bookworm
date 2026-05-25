@@ -2185,13 +2185,15 @@
 
   function _mobileSidebarOpen() {
     const sb = document.getElementById('sidebar');
-    sb.classList.remove('w-0', 'w-72');
     // Offset below demo banner (6.5rem) or standard nav (4rem)
     const topOff = document.getElementById('demo-banner') ? '6.5rem' : '4rem';
+    // Apply fixed positioning FIRST so the sidebar leaves the flex row before
+    // we remove the width classes — avoids a brief reflow of main content.
     sb.style.cssText = [
       'position:fixed', 'top:' + topOff, 'left:0', 'bottom:0',
       'width:18rem', 'z-index:23', 'overflow-y:auto'
     ].join(';');
+    sb.classList.remove('w-0', 'w-72'); // safe: already out of flex flow
     const bd = document.createElement('div');
     bd.id = '_sb-mobile-backdrop';
     bd.setAttribute('aria-hidden', 'true');
@@ -2211,21 +2213,26 @@
     const bd = document.getElementById('_sb-mobile-backdrop');
     if (bd) bd.remove();
 
-    // 2. Snap the sidebar closed without animation.
-    //    When the sidebar was open as a fixed overlay it was outside the flex
-    //    flow. Clearing cssText drops it back IN to the flex row at its
-    //    natural w-72 width. With transition-all still active that triggers a
-    //    300 ms shrink animation that squishes #main-content to ~87 px on a
-    //    phone — the "darkened / not active" feeling the user sees. Suppress
-    //    the transition for this one frame so the collapse is instant, then
-    //    restore it so future open/close animations still work smoothly.
+    // 2. Snap the sidebar shut without causing a reflow of main content.
+    //
+    //    Old approach: clear cssText first → sidebar jumps back into the flex
+    //    row at w-72 → browser must reflow all of #main-content to squeeze it
+    //    → on pages with many DOM nodes (e.g. Uploads grid) this is slow.
+    //
+    //    Fix: while still position:fixed (outside flex flow), set width:0 so
+    //    the sidebar is invisible and zero-width. THEN drop it back into the
+    //    flex row — at that point it’s already collapsed so the reflow costs
+    //    nothing (zero-width flex item changes nothing in the layout).
     sb.style.transition = 'none';
-    sb.style.cssText    = '';
-    sb.style.transition = 'none';  // cssText reset clears the previous line
-    sb.classList.remove('w-72');
-    sb.classList.add('w-0');
-    // Re-enable transition after the browser has painted the collapsed state.
+    sb.style.width      = '0';
+    // One rAF: browser paints the 0-width fixed sidebar (invisible, instant).
     requestAnimationFrame(function() {
+      // Now safe to return to flex flow — it’s already at width 0.
+      sb.style.cssText = '';
+      sb.style.transition = 'none';
+      sb.classList.remove('w-72');
+      sb.classList.add('w-0');
+      // Second rAF: re-enable transitions for the next open/close.
       requestAnimationFrame(function() {
         sb.style.transition = '';
       });
