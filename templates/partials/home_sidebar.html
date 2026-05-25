@@ -25,7 +25,7 @@
   {% for pg in pages %}
   {% set is_active = (pg.id == active_pg) %}
   {% set _pg_type_li = pg.get('page_type', 'dashboard') or 'dashboard' %}
-  <li class="flex items-center gap-0.5 group/hpg"
+  <li class="flex items-center gap-2 group/hpg"
       data-page-id="{{ pg.id }}"
       data-page-type="{{ _pg_type_li }}"
       data-page-emoji="{{ pg.emoji }}"
