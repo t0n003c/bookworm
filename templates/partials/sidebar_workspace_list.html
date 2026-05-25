@@ -80,33 +80,31 @@
    ════════════════════════════════ #}
 <section aria-label="All workspaces">
   <div class="px-1 mb-1.5 flex items-center gap-1">
-    <p class="text-[10px] font-bold uppercase tracking-widest
-              text-gray-400 dark:text-zinc-500 select-none flex items-center gap-1 flex-1">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24"
-           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
-      </svg>
-      General
-    </p>
-    {# Toggle-all: collapses when any are expanded, expands when all collapsed.
+    {# Label doubles as collapse toggle — matches Workspace + Homespace section pattern.
+       Toggle-all: collapses when any are expanded, expands when all collapsed.
        Icon mirrors individual chevrons — rotate-90 = expanded, bare = collapsed. #}
     <button
       id="ws-toggle-all-btn"
       type="button"
       onclick="typeof wsToggleAll==='function'&&wsToggleAll()"
-      title="Collapse all workspaces"
-      aria-label="Collapse all workspaces"
-      class="p-1 rounded text-gray-300 dark:text-zinc-600
-             hover:text-gray-600 dark:hover:text-zinc-300
-             hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+      title="Collapse / expand all workspaces"
+      aria-label="Collapse / expand all workspaces"
+      class="flex-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
+             text-gray-400 dark:text-zinc-500 select-none
+             hover:text-gray-500 dark:hover:text-zinc-400 transition text-left rounded"
     >
       <svg id="ws-toggle-all-icon"
-           class="w-3 h-3 transition-transform duration-150"
+           class="w-3 h-3 flex-shrink-0 transition-transform duration-150"
            fill="none" viewBox="0 0 24 24" stroke="currentColor"
            stroke-width="2.5" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
       </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+      </svg>
+      General
     </button>
     {# Add root-level workspace #}
     <button
