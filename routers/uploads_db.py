@@ -429,10 +429,27 @@ async def get_page_uploads_by_ids(ids: list, user_id: int) -> list:
 
 
 async def get_all_user_tags(user_id: int) -> list:
-    """Return all distinct tags this user has applied across all files."""
+    """Return all distinct user-defined tags for files that still exist.
+
+    Excludes:
+    - grid:XX entries (connection metadata, shown via Grid Connections UI)
+    - tags whose source file has been deleted (prevents ghost filter pills)
+    """
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT DISTINCT tag FROM page_upload_tags WHERE user_id = ? ORDER BY tag",
+            """
+            SELECT DISTINCT t.tag
+            FROM page_upload_tags t
+            WHERE t.user_id = ?
+              AND t.tag NOT LIKE 'grid:%'
+              AND (
+                    (t.upload_src = 'page'
+                     AND EXISTS (SELECT 1 FROM page_uploads pu WHERE pu.id = t.upload_id))
+                 OR (t.upload_src = 'note'
+                     AND EXISTS (SELECT 1 FROM note_attachments na WHERE na.id = t.upload_id))
+              )
+            ORDER BY t.tag
+            """,
             (user_id,),
         )
         return [r["tag"] for r in await cur.fetchall()]

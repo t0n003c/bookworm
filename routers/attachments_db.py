@@ -56,7 +56,11 @@ async def get_attachment_by_id(attachment_id: int) -> Optional[dict]:
 
 
 async def delete_attachment_record(attachment_id: int) -> Optional[str]:
-    """Delete DB row; return stored filename for disk cleanup, or None if not found."""
+    """Delete DB row; return stored filename for disk cleanup, or None if not found.
+
+    Also removes any page_upload_tags rows for this attachment so tag filter
+    pills don't show ghost tags after the file is gone.
+    """
     async with get_db() as db:
         cur = await db.execute(
             "SELECT filename FROM note_attachments WHERE id = ?", (attachment_id,)
@@ -65,6 +69,11 @@ async def delete_attachment_record(attachment_id: int) -> Optional[str]:
         if not row:
             return None
         await db.execute("DELETE FROM note_attachments WHERE id = ?", (attachment_id,))
+        # Clean up any tags applied to this attachment — no FK cascade covers this.
+        await db.execute(
+            "DELETE FROM page_upload_tags WHERE upload_src = 'note' AND upload_id = ?",
+            (attachment_id,),
+        )
         await db.commit()
         return row[0]
 

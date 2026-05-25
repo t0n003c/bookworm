@@ -1239,6 +1239,32 @@ async def init_db() -> None:
             "ON bud_fertilize_plans(bud_id, user_id, completed_at, planned_date)"
         )
 
+        # ── One-shot cleanup: purge orphaned page_upload_tags ─────────────────────
+        # Before attachments_db.delete_attachment_record was fixed to cascade
+        # into page_upload_tags, deleting a note attachment left orphaned tag
+        # rows behind.  Clean them up once so ghost filter pills go away.
+        await db.execute(
+            """
+            DELETE FROM page_upload_tags
+            WHERE upload_src = 'note'
+              AND NOT EXISTS (
+                    SELECT 1 FROM note_attachments na
+                    WHERE na.id = page_upload_tags.upload_id
+              )
+            """
+        )
+        # Also purge page-src tags whose file no longer exists.
+        await db.execute(
+            """
+            DELETE FROM page_upload_tags
+            WHERE upload_src = 'page'
+              AND NOT EXISTS (
+                    SELECT 1 FROM page_uploads pu
+                    WHERE pu.id = page_upload_tags.upload_id
+              )
+            """
+        )
+
         await db.commit()
 
 @asynccontextmanager

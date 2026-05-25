@@ -162,10 +162,12 @@ function _uplRenderFilterTabs() {
     }).join('');
 
   // Group tag pills (from _uplAllTags loaded separately)
+  // grid:XX entries are connection metadata — never show them as filter pills.
+  const userTags = _uplAllTags.filter(t => !t.startsWith('grid:'));
   let tagPills = '';
-  if (_uplAllTags.length) {
+  if (userTags.length) {
     tagPills = '<span class="w-px h-4 bg-gray-200 dark:bg-zinc-700 mx-1 self-center"></span>'
-      + _uplAllTags.map(tag => {
+      + userTags.map(tag => {
           const on = (_uplTagFilter === tag);
           return `<button class="${base} ${on ? tagActive : tagIdle}"
                           onclick="_uplSetTagFilter('${_uplJsStr(tag)}')"
