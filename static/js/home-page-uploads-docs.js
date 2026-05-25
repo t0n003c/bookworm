@@ -142,15 +142,10 @@ function _uplDocInjectSelectBtn() {
   var actionsZone = document.getElementById('upl-filter-actions');
   if (!actionsZone) return;  // filter bar not yet rendered
 
-  var hasDocs = _uplFiles.some(function(f) {
-    return f.src === 'page' && (
-      f.mime_type === 'application/pdf' ||
-      f.mime_type.startsWith('text/') ||
-      f.mime_type === _DOCX_MIME ||
-      (f.mime_type === 'application/octet-stream' && _uplIsTextExt(f))
-    );
-  });
-  if (!hasDocs) return;
+  // Show Select whenever there are any files at all — multiselect works
+  // for images, videos, and docs alike. The old hasDocs guard was too
+  // restrictive and hid the button entirely when only images were present.
+  if (!_uplFiles.length) return;
 
   var btn = document.createElement('button');
   btn.id = 'upl-doc-select-btn';
