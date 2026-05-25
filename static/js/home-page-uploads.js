@@ -176,14 +176,40 @@ function _uplRenderFilterTabs() {
         }).join('');
   }
 
-  tabs.innerHTML = mimeTabs + tagPills
-    + '<span class="flex-1"></span>'
-    + `<button onclick="_uplToggleGrouped()"
-               title="Group by type"
-               class="flex-shrink-0 text-xs px-2.5 py-1 rounded-full border transition
-                      ${_uplGrouped
-                        ? 'bg-gray-800 text-white border-gray-800 dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-gray-500'}">&#9783;<span class="upl-rsp-label"> Group</span></button>`;
+  // Split the bar into two zones so Group + Select are always visible:
+  //   Left  — scrollable pills (MIME tabs + tag filters, overflow-x:auto)
+  //   Right  — pinned actions zone (Group button; Select injected after)
+  // This means filter pills can scroll on mobile without pushing the
+  // action buttons off-screen, which was the root cause of the missing
+  // Group / Select buttons on real phones.
+  var isDark      = document.documentElement.classList.contains('dark');
+  var dividerClr  = isDark ? '#27272a' : '#f3f4f6'; // zinc-800 / gray-100
+  var groupBtnCls = _uplGrouped
+    ? 'bg-gray-800 text-white border-gray-800 dark:bg-zinc-200 dark:text-zinc-900'
+    : 'border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400 hover:border-gray-500';
+
+  // Override the Tailwind overflow-x-auto + px-4 py-2 on the container
+  tabs.style.overflowX = 'hidden';
+  tabs.style.padding   = '0';
+
+  tabs.innerHTML =
+    // ── Scrollable pills zone ────────────────────────────────────────────
+    '<div style="display:flex;flex:1;align-items:center;gap:4px;' +
+    'overflow-x:auto;min-width:0;padding:8px 4px 8px 16px;">'
+    + mimeTabs + tagPills
+    + '</div>'
+    // ── Pinned actions zone ──────────────────────────────────────────────
+    // Select button injected here by _uplDocInjectSelectBtn() after render
+    + '<div id="upl-filter-actions" style="display:flex;flex-shrink:0;' +
+    'align-items:center;gap:6px;padding:8px 16px 8px 8px;' +
+    'border-left:1px solid ' + dividerClr + ';">' +
+    `<button onclick="_uplToggleGrouped()" title="Group by type"
+             class="flex-shrink-0 text-xs px-2.5 py-1 rounded-full border transition
+                    ${groupBtnCls}">&#9783;<span class="upl-rsp-label"> Group</span></button>` +
+    '</div>';
+
+  // Re-inject the Select button into the pinned actions zone after rebuilding
+  if (typeof _uplDocInjectSelectBtn === 'function') _uplDocInjectSelectBtn();
 
   if (stats) {
     const { total, page, pages } = _uplMeta;

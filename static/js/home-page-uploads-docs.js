@@ -132,11 +132,16 @@ function _uplDocAfterRender() {
 }
 
 function _uplDocInjectSelectBtn() {
-  // Target the TOP BAR (not the filter-tabs row) so the button is always
-  // visible on real phones where the filter-tab row overflows horizontally
-  // and scrolls, pushing anything at the end off-screen.
-  var uploadBtn = document.getElementById('uploads-upload-btn');
-  if (!uploadBtn || document.getElementById('upl-doc-select-btn')) return;
+  // Remove any stale copy first (may have been injected into the top bar
+  // by a previous version, or into the actions zone on re-render).
+  var stale = document.getElementById('upl-doc-select-btn');
+  if (stale) stale.remove();
+
+  // Target the PINNED ACTIONS ZONE so the button stays visible on real
+  // phones even when the filter-pill zone scrolls horizontally.
+  var actionsZone = document.getElementById('upl-filter-actions');
+  if (!actionsZone) return;  // filter bar not yet rendered
+
   var hasDocs = _uplFiles.some(function(f) {
     return f.src === 'page' && (
       f.mime_type === 'application/pdf' ||
@@ -146,16 +151,19 @@ function _uplDocInjectSelectBtn() {
     );
   });
   if (!hasDocs) return;
+
   var btn = document.createElement('button');
   btn.id = 'upl-doc-select-btn';
-  btn.className = 'px-2.5 py-1.5 text-[11px] rounded-lg border border-gray-300 dark:border-zinc-600 '
-    + 'text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition flex-shrink-0';
+  btn.className = 'flex-shrink-0 px-2.5 py-1 text-[11px] rounded-full border '
+    + 'border-gray-300 dark:border-zinc-600 '
+    + 'text-gray-600 dark:text-zinc-300 '
+    + 'hover:border-[#0053e2] hover:text-[#0053e2] transition';
   btn.innerHTML = _uplDocSelectMode
     ? '\u2612<span class="upl-rsp-label"> Done</span>'
     : '\u2610<span class="upl-rsp-label"> Select</span>';
   btn.onclick = _uplDocToggleSelectMode;
-  // Insert immediately before the Upload button so both sit on the right
-  uploadBtn.parentNode.insertBefore(btn, uploadBtn);
+  // Prepend before the Group button so order is: [Select] [Group]
+  actionsZone.insertBefore(btn, actionsZone.firstChild);
 }
 
 function _uplDocInjectCheckboxes() {
