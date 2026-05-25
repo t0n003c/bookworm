@@ -352,8 +352,7 @@ function _dndSelBadgeUpdate() {
     badge.appendChild(_mkBtn(rmLabel, _uplCatBulkRemove, true));
   }
 
-  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags',   function() { if (typeof _uplBulkTagPanel       === 'function') _uplBulkTagPanel(); }));
-  badge.appendChild(_mkBtn('\uD83D\uDDD1\uFE0F Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
+  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags', function() { if (typeof _uplBulkTagPanel === 'function') _uplBulkTagPanel(); }));
 
   // ── Merge buttons (page-src files only, all same compatible type, ≥2) ────
   // Resolves mime types from _uplFiles at call-time — no need to store them in
@@ -381,6 +380,8 @@ function _dndSelBadgeUpdate() {
     if (_mbAllText)
       badge.appendChild(_mkBtn('Join Text',  function() { if (typeof _uplDocOpenCombineModal === 'function') _uplDocOpenCombineModal('text'); }));
   }
+
+  badge.appendChild(_mkBtn('\uD83D\uDDD1\uFE0F Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
 
   // Close button — icon-only, slightly subtler
   var closeBtn = document.createElement('button');
