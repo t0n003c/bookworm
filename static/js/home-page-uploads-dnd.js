@@ -262,8 +262,8 @@ function _dndSelBadgeUpdate() {
     badge.appendChild(_mkBtn(rmLabel, _uplCatBulkRemove, true));
   }
 
-  badge.appendChild(_mkBtn('Tags',   function() { if (typeof _uplBulkTagPanel     === 'function') _uplBulkTagPanel(); }));
-  badge.appendChild(_mkBtn('Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
+  badge.appendChild(_mkBtn('\uD83D\uDDD1\uFE0F Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
+  badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags',   function() { if (typeof _uplBulkTagPanel     === 'function') _uplBulkTagPanel(); }));
 
   // Close button — icon-only, slightly subtler
   var closeBtn = document.createElement('button');
