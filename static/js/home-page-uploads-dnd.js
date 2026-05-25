@@ -355,6 +355,33 @@ function _dndSelBadgeUpdate() {
   badge.appendChild(_mkBtn('\uD83C\uDFF7\uFE0F Tags',   function() { if (typeof _uplBulkTagPanel       === 'function') _uplBulkTagPanel(); }));
   badge.appendChild(_mkBtn('\uD83D\uDDD1\uFE0F Delete', function() { if (typeof _uplBulkDeleteSelected === 'function') _uplBulkDeleteSelected(); }, true));
 
+  // ── Merge buttons (page-src files only, all same compatible type, ≥2) ────
+  // Resolves mime types from _uplFiles at call-time — no need to store them in
+  // _dndSelected, which keeps the toggle function lean.
+  var _mbVals = Object.values(_dndSelected);
+  if (_mbVals.length >= 2 && _mbVals.every(function(x) { return x.src === 'page'; })) {
+    var _mbFiles  = typeof _uplFiles !== 'undefined' ? _uplFiles : [];
+    var _mbDocx   = typeof _DOCX_MIME !== 'undefined' ? _DOCX_MIME
+      : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    var _mbSel = _mbVals.map(function(x) {
+      return _mbFiles.find(function(fx) { return fx.src === x.src && fx.id === x.id; }) || { mime_type: '' };
+    });
+    var _mbAllPdf  = _mbSel.every(function(f) { return f.mime_type === 'application/pdf'; });
+    var _mbAllDocx = _mbSel.every(function(f) { return f.mime_type === _mbDocx; });
+    var _mbAllText = _mbSel.every(function(f) {
+      var m = f.mime_type;
+      return m.startsWith('text/') || m === 'application/json' ||
+             (m === 'application/octet-stream' &&
+              typeof _uplIsTextExt === 'function' && _uplIsTextExt(f));
+    });
+    if (_mbAllPdf)
+      badge.appendChild(_mkBtn('Merge PDFs', function() { if (typeof _uplDocOpenCombineModal === 'function') _uplDocOpenCombineModal('pdf');  }));
+    if (_mbAllDocx)
+      badge.appendChild(_mkBtn('Merge DOCX', function() { if (typeof _uplDocOpenCombineModal === 'function') _uplDocOpenCombineModal('docx'); }));
+    if (_mbAllText)
+      badge.appendChild(_mkBtn('Join Text',  function() { if (typeof _uplDocOpenCombineModal === 'function') _uplDocOpenCombineModal('text'); }));
+  }
+
   // Close button — icon-only, slightly subtler
   var closeBtn = document.createElement('button');
   closeBtn.type = 'button';

@@ -576,7 +576,9 @@ async function _uplDocConvert(src, id, toFmt) {
 // ── Combine (multi-select workflow) ──────────────────────────────────────────
 
 function _uplDocOpenCombineModal(combineType) {
-  var sel = Object.values(_uplDocSelected);
+  // Use the unified _dndSelected state (works for both click-hold and Select button).
+  var sel = Object.values(typeof _dndSelected !== 'undefined' ? _dndSelected : {})
+                  .filter(function(x) { return x.src === 'page'; });
   if (sel.length < 2) { _uplShowToast('Select at least 2 files to combine'); return; }
   var label = combineType === 'pdf' ? 'PDF merge' : combineType === 'docx' ? 'DOCX merge' : 'text join';
   var desc  = document.getElementById('upl-combine-desc');
@@ -596,7 +598,10 @@ async function _uplDocDoCombine() {
   var modal = document.getElementById('upl-combine-modal');
   var type  = modal ? modal.dataset.combineType : 'pdf';
   var name  = (document.getElementById('upl-combine-name') || {}).value || '';
-  var ids   = Object.values(_uplDocSelected).map(function(x) { return x.id; });
+  // Read IDs from unified _dndSelected (page-src files only).
+  var ids = Object.values(typeof _dndSelected !== 'undefined' ? _dndSelected : {})
+                  .filter(function(x) { return x.src === 'page'; })
+                  .map(function(x) { return x.id; });
   if (ids.length < 2) return;
   _uplDocBusy = true;
   var btn = document.getElementById('upl-combine-confirm-btn');
@@ -610,7 +615,7 @@ async function _uplDocDoCombine() {
     if (!r.ok) { var err = await r.json(); throw new Error(err.detail || r.status); }
     var data = await r.json();
     _uplDocCloseCombineModal();
-    _uplDocToggleSelectMode();   // exit select mode + clear selection
+    _dndSelClear();             // exit check-mode + clear selection
     await _uplFetch(_uplMeta.page || 1);
     _uplShowToast(`Combined \u2192 ${_uplEsc(data.file.original_name)}`);
   } catch(e) {
