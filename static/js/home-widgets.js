@@ -567,16 +567,16 @@ function _trashDrop(event) {
   var _dropPos   = null;
 
   // Detect real touch devices and set body.bw-touch so handles are always visible.
-  // Three-pronged because no single check is reliable:
-  //   (1) Media query  — correct on real mobile; NOT updated by Chrome DevTools emulator.
-  //   (2) maxTouchPoints > 1 — catches DevTools emulator (reports 5) and real devices;
-  //       uses > 1 (not > 0) to exclude Windows Precision Touchpad (reports 0 or 1)
-  //       which was causing false positives (always-visible handles + broken draggable).
-  //   (3) One-time touchstart listener — foolproof dynamic fallback for hybrid devices
-  //       or any edge case missed by the static checks above.
+  // Two checks — maxTouchPoints is NOT used: Windows laptops report varying values
+  // (0, 1, or more) depending on drivers/hardware, making it unreliable.
+  //   (1) Media query (hover:none)+(pointer:coarse) — real mobile devices.
+  //       NOT updated by Chrome DevTools emulator, but that is handled by (2).
+  //   (2) One-time touchstart listener — fires on first emulator click or real
+  //       touch; never fires from a laptop mouse. Foolproof dynamic fallback.
+  //       In the emulator CSS :hover still works before this fires, so handles
+  //       are visible on hover until the first tap locks them always-on.
   (function _injectStyle() {
-    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches ||
-        navigator.maxTouchPoints > 1) {
+    if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
       document.body.classList.add('bw-touch');
     }
     document.addEventListener('touchstart', function () {
