@@ -12,7 +12,7 @@
  */
 
 // ── Folder picker ─────────────────────────────────────────────────────────────
-function _dndBulkFolderPicker() {
+function _dndBulkFolderPicker(anchor) {
   if (!Object.keys(_dndSelected).length) return;
 
   // Work out which folder(s) the selected files currently live in.
@@ -45,7 +45,8 @@ function _dndBulkFolderPicker() {
     _dndFolderPickerItems(),
     function(value) { _dndBulkMoveToFolder(value === 'null' ? null : +value); },
     subtitle,
-    currentVals
+    currentVals,
+    anchor
   );
 }
 
@@ -101,7 +102,7 @@ function _dndBulkMoveToFolder(folderId) {
 }
 
 // ── Catalog picker ────────────────────────────────────────────────────────────
-function _dndBulkCatalogPicker() {
+function _dndBulkCatalogPicker(anchor) {
   if (!Object.keys(_dndSelected).length) return;
   var cats = (typeof _uplCatData !== 'undefined') ? _uplCatData : [];
   if (!cats.length) {
@@ -128,7 +129,8 @@ function _dndBulkCatalogPicker() {
     _dndCatalogPickerItems(cats),
     function(value) { _dndFileDropOnCatalog(+value); },
     subtitle,
-    currentVals
+    currentVals,
+    anchor
   );
 }
 
@@ -160,12 +162,19 @@ function _dndCatalogPickerItems(cats) {
 // onPick       — callback(value) fired when the user picks a row
 // subtitle     — (optional) small grey line shown below the title
 // currentVals  — (optional) string[] of values already selected; those rows
-//                get a ✓ checkmark and a subtle highlight so users see where
-//                the files currently live before picking a destination.
-function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
+//                get a ✓ checkmark and a subtle highlight
+// anchor       — (optional) DOMRect of the triggering button; when present
+//                AND viewport >= 640px the panel floats near the button
+//                instead of sliding up as a bottom sheet
+function _dndPickerSheet(title, items, onPick, subtitle, currentVals, anchor) {
   currentVals = currentVals || [];
+  // Desktop popover: anchor supplied + wide-enough viewport + not a touch-only device
+  var PANEL_W   = 360;
+  var usePopover = anchor && window.innerWidth >= 640;
   var old = document.getElementById('dnd-picker-sheet');
   if (old) old.remove();
+  var oldPanel = document.getElementById('dnd-picker-panel');
+  if (oldPanel) oldPanel.remove();
 
   var isDark = document.documentElement.classList.contains('dark');
   var bg     = isDark ? 'rgba(16,17,22,0.97)' : 'rgba(255,255,255,0.97)';
@@ -174,27 +183,62 @@ function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
   var sub    = isDark ? 'rgba(255,255,255,0.35)' : '#9ca3af';
   var hover  = isDark ? 'rgba(255,255,255,0.05)' : '#f9fafb';
 
-  // ── Backdrop ─────────────────────────────────────────────────────────────
+  // ── Backdrop ────────────────────────────────────────────────────────────────
   var backdrop = document.createElement('div');
   backdrop.id = 'dnd-picker-sheet';
-  backdrop.style.cssText =
-    'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.45);' +
-    'display:flex;align-items:flex-end;';
+  // Popover: transparent backdrop, panel positioned near button.
+  // Sheet   : dark scrim, panel aligned to bottom edge.
+  backdrop.style.cssText = usePopover
+    ? 'position:fixed;inset:0;z-index:60;'
+    : 'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,0.45);display:flex;align-items:flex-end;';
 
-  // ── Sheet panel ───────────────────────────────────────────────────────────
+  // ── Sheet panel ────────────────────────────────────────────────────────────────
   var panel = document.createElement('div');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
   panel.setAttribute('aria-label', title);
-  panel.style.cssText =
-    'width:100%;max-width:480px;margin:0 auto;max-height:65vh;overflow-y:auto;'  +
-    'background:' + bg + ';' +
-    'backdrop-filter:blur(16px) saturate(150%);' +
-    '-webkit-backdrop-filter:blur(16px) saturate(150%);' +
-    'border-top:1px solid ' + border + ';' +
-    'border-radius:16px 16px 0 0;' +
-    'padding-bottom:env(safe-area-inset-bottom,0);' +
-    'box-shadow:0 -8px 40px rgba(0,0,0,0.2);';
+  panel.id = 'dnd-picker-panel';
+
+  if (usePopover) {
+    // Position: appear above the button, horizontally centred on it,
+    // clamped so it never overflows the viewport.
+    var gap    = 8;
+    var left   = Math.round(anchor.left + anchor.width / 2 - PANEL_W / 2);
+    left       = Math.max(gap, Math.min(left, window.innerWidth - PANEL_W - gap));
+    // Prefer opening above; if not enough room above, open below.
+    var spaceAbove = anchor.top - gap;
+    var maxH       = Math.min(spaceAbove > 220 ? spaceAbove - gap : window.innerHeight - anchor.bottom - gap, 420);
+    var topVal     = spaceAbove > 220
+      ? ''    // will use bottom positioning
+      : (anchor.bottom + gap) + 'px';
+    var bottomVal  = spaceAbove > 220
+      ? (window.innerHeight - anchor.top + gap) + 'px'
+      : '';
+
+    panel.style.cssText =
+      'position:fixed;' +
+      'left:' + left + 'px;' +
+      (bottomVal ? 'bottom:' + bottomVal + ';' : 'top:' + topVal + ';') +
+      'width:' + PANEL_W + 'px;' +
+      'max-height:' + maxH + 'px;overflow-y:auto;' +
+      'background:' + bg + ';' +
+      'backdrop-filter:blur(16px) saturate(150%);' +
+      '-webkit-backdrop-filter:blur(16px) saturate(150%);' +
+      'border:1px solid ' + border + ';' +
+      'border-radius:12px;' +
+      'box-shadow:0 8px 32px rgba(0,0,0,0.22);' +
+      'z-index:61;';
+  } else {
+    panel.style.cssText =
+      'width:100%;max-width:480px;margin:0 auto;max-height:65vh;overflow-y:auto;'  +
+      'background:' + bg + ';' +
+      'backdrop-filter:blur(16px) saturate(150%);' +
+      '-webkit-backdrop-filter:blur(16px) saturate(150%);' +
+      'border-top:1px solid ' + border + ';' +
+      'border-radius:16px 16px 0 0;' +
+      'padding-bottom:env(safe-area-inset-bottom,0);' +
+      'box-shadow:0 -8px 40px rgba(0,0,0,0.2);';
+  }
 
   // ── Header ────────────────────────────────────────────────────────────────
   var hdr = document.createElement('div');
@@ -225,7 +269,7 @@ function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
     'background:none;border:none;cursor:pointer;color:' + sub + ';' +
     'font-size:20px;line-height:1;padding:2px 4px;touch-action:manipulation;flex-shrink:0;';
   closeBtn.textContent = '\u00D7';
-  function closeSheet() { backdrop.remove(); }
+  function closeSheet() { backdrop.remove(); panel.remove(); }
   closeBtn.addEventListener('click',    closeSheet);
   closeBtn.addEventListener('touchend', function(e) { e.preventDefault(); closeSheet(); }, { passive: false });
 
@@ -263,7 +307,8 @@ function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
       li.appendChild(check);
     }
 
-    function pick() { backdrop.remove(); onPick(item.value); }
+  // close() on pick
+    function pick() { closeSheet(); onPick(item.value); }
     li.addEventListener('click',    function(e) { e.stopPropagation(); pick(); });
     li.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); pick(); }, { passive: false });
     li.addEventListener('keydown',  function(e) {
@@ -277,14 +322,21 @@ function _dndPickerSheet(title, items, onPick, subtitle, currentVals) {
 
   panel.appendChild(hdr);
   panel.appendChild(list);
-  backdrop.appendChild(panel);
-  document.body.appendChild(backdrop);
 
-  backdrop.addEventListener('click', function(e) {
-    if (e.target === backdrop) backdrop.remove();
-  });
+  // ── Mount ───────────────────────────────────────────────────────────────────
+  // Popover: panel is position:fixed itself, backdrop is transparent click-catcher.
+  // Sheet  : panel is a flex child of the dark scrim backdrop.
+  if (usePopover) {
+    document.body.appendChild(backdrop);
+    document.body.appendChild(panel);
+  } else {
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+  }
+
+  backdrop.addEventListener('click', function() { closeSheet(); });
   document.addEventListener('keydown', function _esc(e) {
-    if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', _esc); }
+    if (e.key === 'Escape') { closeSheet(); document.removeEventListener('keydown', _esc); }
   });
 
   // Focus first item for keyboard / screen-reader users

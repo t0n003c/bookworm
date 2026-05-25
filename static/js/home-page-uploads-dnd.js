@@ -323,7 +323,14 @@ function _dndSelBadgeUpdate() {
       'transition:background 0.15s,opacity 0.15s;',
     ].join('');
     b.textContent = label;
-    function fire(e) { e.preventDefault(); e.stopPropagation(); action(); }
+    function fire(e) {
+      e.preventDefault(); e.stopPropagation();
+      // Pass button rect so pickers can open near the click on desktop.
+      // touchend has no reliable clientX, so rect is null — pickers fall back
+      // to the standard bottom-sheet layout in that case.
+      var rect = e.type === 'click' ? e.currentTarget.getBoundingClientRect() : null;
+      action(rect);
+    }
     b.addEventListener('click',    fire);
     b.addEventListener('touchend', fire, { passive: false });
     b.addEventListener('mouseover',  function() {
