@@ -10,10 +10,11 @@ function gridAddMedia() {
     gridOpenMediaPicker(null);
 }
 
-/* ── Direct upload from picker ────────────────────────────────────────────── */
-async function gridUploadFiles(input) {
-    var files = Array.from(input.files || []);
-    if (!files.length) return;
+/* ── Direct upload from picker ────────────────────────────────────────── */
+// Core upload logic — accepts a plain FileList so both the file-input
+// change handler and the drag-and-drop handler can call the same code.
+async function _gridUploadFileList(files) {
+    if (!files || !files.length) return;
     if (!_gridPickerPageId) {
         alert('Select an Uploads page first so we know where to save the file.');
         return;
@@ -21,8 +22,7 @@ async function gridUploadFiles(input) {
     var status = document.getElementById('grid-upload-status');
     if (status) { status.textContent = 'Uploading…'; status.classList.remove('hidden'); }
 
-    var ok = 0; var failed = 0;
-    var lastErr = '';
+    var ok = 0; var failed = 0; var lastErr = '';
     for (var i = 0; i < files.length; i++) {
         var fd = new FormData();
         fd.append('file', files[i]);
@@ -30,34 +30,23 @@ async function gridUploadFiles(input) {
             var r = await fetch('/home/uploads/' + _gridPickerPageId + '/upload',
                                 {method: 'POST', body: fd});
             if (!r.ok) {
-                // Surface the server's detail message so the user knows WHY it failed
-                try {
-                    var errBody = await r.json();
-                    lastErr = errBody.detail || ('HTTP ' + r.status);
-                } catch(_) {
-                    lastErr = 'HTTP ' + r.status;
-                }
+                try { var eb = await r.json(); lastErr = eb.detail || ('HTTP ' + r.status); }
+                catch(_) { lastErr = 'HTTP ' + r.status; }
                 failed++;
                 continue;
             }
             var data = await r.json();
-            var uploadId = data.upload_id;
             await fetch('/home/uploads/' + _gridPickerPageId
-                        + '/files/page/' + uploadId + '/tags',
+                        + '/files/page/' + data.upload_id + '/tags',
                         {method: 'POST',
                          headers: {'Content-Type': 'application/json'},
                          body: JSON.stringify({tag: 'grid:' + _gridPid})});
             ok++;
-        } catch(e) {
-            console.error('[grid] upload error:', e);
-            failed++;
-        }
+        } catch(e) { console.error('[grid] upload error:', e); failed++; }
     }
 
-    input.value = '';
     if (status) {
         if (failed && ok === 0) {
-            // All failed — show the actual reason
             status.textContent = '\u274c Upload failed: ' + (lastErr || 'unknown error');
             status.classList.remove('hidden');
             setTimeout(function() { status.classList.add('hidden'); }, 7000);
@@ -70,6 +59,27 @@ async function gridUploadFiles(input) {
         }
     }
     await _gridMediaFetch();
+}
+
+/* Triggered by the file-input onChange. */
+async function gridUploadFiles(input) {
+    await _gridUploadFileList(input.files);
+    input.value = '';
+}
+
+/* Triggered by a file(s) being dropped onto the upload zone. */
+async function gridUploadDrop(event) {
+    var dt    = event.dataTransfer;
+    var files = dt && dt.files;
+    if (files && files.length) {
+        // Filter to images and videos only (mirrors the input accept attribute)
+        var accepted = Array.from(files).filter(function(f) {
+            return f.type.startsWith('image/') || f.type.startsWith('video/');
+        });
+        if (!accepted.length) return;
+        // Fake a FileList-like iterable for _gridUploadFileList
+        await _gridUploadFileList(accepted);
+    }
 }
 
 /* ── Cell context menu ─────────────────────────────────────────────────────── */

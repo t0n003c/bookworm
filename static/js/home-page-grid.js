@@ -242,7 +242,7 @@ function _gridRenderCellInner(cell) {
              + ' class="w-full h-full object-cover cursor-pointer" loading="lazy"'
              + ' alt="' + _gridEsc(cell.caption || '') + '"'
              + ' draggable="false"'
-             + ' onclick="gridLightboxOpen(' + cell.id + ')">';
+             + ' onclick="if(typeof _msActive!==\'undefined\'&&_msActive){_msToggle(' + cell.id + ')}else{gridLightboxOpen(' + cell.id + ')}">';
     }
     if (cell.cell_type === 'video' && cell.file_url) {
         // data-hover-preview flags this for _gridBindHover

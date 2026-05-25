@@ -185,6 +185,9 @@ function _uplDocToggleSelectMode() {
     });
     var tb = document.getElementById('upl-doc-toolbar');
     if (tb) tb.remove();
+    // Close the tag panel if still open
+    var tp = document.getElementById('upl-doc-tag-panel');
+    if (tp) tp.remove();
   }
   // re-render just the select state (avoid full fetch)
   _uplDocAfterRender();
@@ -192,6 +195,114 @@ function _uplDocToggleSelectMode() {
   if (btn) btn.innerHTML = _uplDocSelectMode
     ? '\u2612<span class="upl-rsp-label"> Done</span>'
     : '\u2610<span class="upl-rsp-label"> Select</span>';
+}
+
+// ── Tag panel for docs multi-select toolbar ───────────────────────────────────
+// Standalone panel: reads from _uplDocSelected (not _dndSelected) so it stays
+// fully independent from the lasso-DND selection on the main grid.
+function _uplDocTagPanel() {
+  // Toggle: second click closes
+  var existing = document.getElementById('upl-doc-tag-panel');
+  if (existing) { existing.remove(); return; }
+
+  var sel      = Object.values(_uplDocSelected);
+  var count    = sel.length;
+
+  // Union of non-system tags across all selected files
+  var unionTags = (function() {
+    var s = new Set();
+    sel.forEach(function(item) {
+      var f = (_uplFiles || []).find(function(x) { return x.src === item.src && x.id === item.id; });
+      if (f && Array.isArray(f.tags)) f.tags.forEach(function(t) { if (!t.startsWith('grid:')) s.add(t); });
+    });
+    return Array.from(s).sort();
+  })();
+
+  var availOpts = (_uplAllTags || []).filter(function(t) { return !unionTags.includes(t); })
+                                     .map(function(t) { return '<option value="' + _uplEsc(t) + '">'; }).join('');
+
+  var pillsHtml = unionTags.length
+    ? unionTags.map(function(t) {
+        return '<button onclick="_uplDocTagRemove(\'' + _uplJsStr(t) + '\')"'
+          + ' title="Remove from selected files"'
+          + ' class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full cursor-pointer'
+          + ' bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300'
+          + ' hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-700 transition">'
+          + _uplEsc(t) + ' &times;</button>';
+      }).join('')
+    : '<span class="text-[10px] text-gray-400 dark:text-zinc-500">No tags on selected files yet</span>';
+
+  var panel = document.createElement('div');
+  panel.id  = 'upl-doc-tag-panel';
+  panel.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-80 '
+    + 'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 '
+    + 'rounded-2xl shadow-2xl p-4 select-none';
+  panel.innerHTML =
+    '<div class="flex items-center justify-between mb-3">'
+    + '<span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">'
+    + '&#127991;&#65039; Tags &mdash; ' + count + ' file' + (count === 1 ? '' : 's') + '</span>'
+    + '<button onclick="document.getElementById(\'upl-doc-tag-panel\').remove()"'
+    + ' class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition text-lg leading-none">&times;</button>'
+    + '</div>'
+    + '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Current tags (click to remove)</p>'
+    + '<div class="flex flex-wrap gap-1 mb-4">' + pillsHtml + '</div>'
+    + '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-1">Add tag to all</p>'
+    + '<div class="flex gap-1">'
+    + '<input id="upl-doc-tag-input" list="upl-doc-tag-opts"'
+    + ' placeholder="Type or choose tag\u2026"'
+    + ' class="flex-1 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5'
+    + ' text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+    + ' focus:outline-none focus:ring-1 focus:ring-[#0053e2]"'
+    + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();_uplDocTagAdd()}" />'
+    + '<datalist id="upl-doc-tag-opts">' + availOpts + '</datalist>'
+    + '<button onclick="_uplDocTagAdd()"'
+    + ' class="px-3 py-1.5 text-xs rounded-lg bg-[#0053e2] text-white hover:bg-[#003eb3] transition font-medium">+ Add</button>'
+    + '</div>';
+
+  document.body.appendChild(panel);
+  var inp = document.getElementById('upl-doc-tag-input');
+  if (inp) inp.focus();
+}
+
+async function _uplDocTagAdd() {
+  var inp = document.getElementById('upl-doc-tag-input');
+  var tag = inp ? inp.value.trim() : '';
+  if (!tag) return;
+  var ids = Object.values(_uplDocSelected).map(function(x) { return x.id; });
+  try {
+    await Promise.all(ids.map(function(id) {
+      return fetch('/home/uploads/' + _uplPid + '/files/page/' + id + '/tags', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tag: tag}),
+      });
+    }));
+    _uplShowToast('Tag "' + _uplEsc(tag) + '" added to ' + ids.length + ' file' + (ids.length === 1 ? '' : 's') + '.');
+    if (inp) inp.value = '';
+    if (typeof _uplFetch === 'function') await _uplFetch(_uplPage);
+    if (typeof _uplFetchTags === 'function') await _uplFetchTags();
+    // Reopen the panel so the new tag appears
+    var p = document.getElementById('upl-doc-tag-panel');
+    if (p) p.remove();
+    _uplDocTagPanel();
+  } catch(e) { _uplShowToast('Failed to add tag.'); }
+}
+
+async function _uplDocTagRemove(tag) {
+  var ids = Object.values(_uplDocSelected).map(function(x) { return x.id; });
+  try {
+    await Promise.all(ids.map(function(id) {
+      return fetch('/home/uploads/' + _uplPid + '/files/page/' + id + '/tags/' + encodeURIComponent(tag), {
+        method: 'DELETE',
+      });
+    }));
+    _uplShowToast('Tag "' + _uplEsc(tag) + '" removed from selected files.');
+    if (typeof _uplFetch === 'function') await _uplFetch(_uplPage);
+    if (typeof _uplFetchTags === 'function') await _uplFetchTags();
+    var p = document.getElementById('upl-doc-tag-panel');
+    if (p) p.remove();
+    _uplDocTagPanel();
+  } catch(e) { _uplShowToast('Failed to remove tag.'); }
 }
 
 function _uplDocUpdateCardRing(card, selected) {
@@ -244,7 +355,15 @@ function _uplDocRenderToolbar() {
   });
   var btnCls  = 'px-3 py-1.5 text-[11px] rounded-lg transition font-medium ';
   var onCls   = btnCls + 'bg-[#0053e2] text-white hover:bg-[#003eb3]';
-  var offCls  = btnCls + 'bg-gray-100 dark:bg-zinc-800 text-gray-400 cursor-not-allowed';
+  var tagCls  = btnCls + 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                       + ' border border-yellow-300 dark:border-yellow-700 hover:bg-yellow-100';
+
+  // Only show merge/join buttons when ALL selected files are the matching type.
+  // Grayed-out disabled buttons are confusing when you selected images — just hide them.
+  var mergeBtns = '';
+  if (allPdf)  mergeBtns += `<button onclick="_uplDocOpenCombineModal('pdf')"  class="${onCls}">Merge PDFs</button>`;
+  if (allDocx) mergeBtns += `<button onclick="_uplDocOpenCombineModal('docx')" class="${onCls}">Merge DOCX</button>`;
+  if (allText) mergeBtns += `<button onclick="_uplDocOpenCombineModal('text')" class="${onCls}">Join Text</button>`;
 
   var tb = document.createElement('div');
   tb.id = 'upl-doc-toolbar';
@@ -252,15 +371,8 @@ function _uplDocRenderToolbar() {
     + 'border border-gray-200 dark:border-zinc-700 shadow-lg flex items-center gap-2 flex-wrap';
   tb.innerHTML = `<span class="text-[11px] text-gray-600 dark:text-zinc-300 font-medium mr-1">
       \uD83D\uDCC4 ${count} file${count > 1 ? 's' : ''} selected</span>
-    <button onclick="_uplDocOpenCombineModal('pdf')" ${allPdf ? '' : 'disabled'}
-      class="${allPdf ? onCls : offCls}" title="${allPdf ? '' : 'Select only PDFs to merge'}">
-      Merge PDFs</button>
-    <button onclick="_uplDocOpenCombineModal('docx')" ${allDocx ? '' : 'disabled'}
-      class="${allDocx ? onCls : offCls}" title="${allDocx ? '' : 'Select only DOCX files to merge'}">
-      Merge DOCX</button>
-    <button onclick="_uplDocOpenCombineModal('text')" ${allText ? '' : 'disabled'}
-      class="${allText ? onCls : offCls}" title="${allText ? '' : 'Select only text files to join'}">
-      Join Text</button>
+    ${mergeBtns}
+    <button onclick="_uplDocTagPanel()" class="${tagCls}">\uD83C\uDFF7\uFE0F Tags</button>
     <button onclick="_uplDocToggleSelectMode()"
       class="${btnCls} border border-gray-300 dark:border-zinc-600 text-gray-500 dark:text-zinc-400
              hover:text-[#ea1100] hover:border-[#ea1100]">\u2715 Clear</button>`;

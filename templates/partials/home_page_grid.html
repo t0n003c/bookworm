@@ -97,10 +97,10 @@
       <span aria-hidden="true">🖼️</span> Add
     </button>
 
-    {# Select button — touch only; calls _msEnter() to begin multiselect #}
+    {# Select button — enters multiselect mode (touch: long-press also works) #}
     <button id="grid-ms-enter-btn"
             onclick="_msEnter(null)"
-            class="grid-ms-enter hidden items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg
+            class="grid-ms-enter flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg
                    border border-gray-300 dark:border-zinc-600
                    text-gray-700 dark:text-zinc-200
                    hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors
@@ -171,15 +171,18 @@
       {% endif %}
     </div>
 
-    {# Direct upload zone #}
-    <div class="px-5 py-2.5 border-b border-gray-100 dark:border-zinc-800 shrink-0">
-      <label for="grid-upload-input"
+    {# Direct upload zone — click OR drag-and-drop #}
+    <div class="px-5 py-2.5 border-b border-gray-100 dark:border-zinc-800 shrink-0"
+         ondragover="event.preventDefault();document.getElementById('grid-upload-drop').classList.add('border-[#0053e2]','text-[#0053e2]')"
+         ondragleave="document.getElementById('grid-upload-drop').classList.remove('border-[#0053e2]','text-[#0053e2]')"
+         ondrop="event.preventDefault();document.getElementById('grid-upload-drop').classList.remove('border-[#0053e2]','text-[#0053e2]');gridUploadDrop(event)">
+      <label id="grid-upload-drop" for="grid-upload-input"
              class="flex items-center justify-center gap-2 w-full py-2 rounded-lg border-2
                     border-dashed border-gray-300 dark:border-zinc-600
                     text-xs text-gray-500 dark:text-gray-400
                     cursor-pointer hover:border-[#0053e2] hover:text-[#0053e2]
                     transition-colors select-none">
-        <span aria-hidden="true">&#128193;</span> Upload from computer
+        <span aria-hidden="true">&#128193;</span> Upload from computer or drag &amp; drop here
         <input id="grid-upload-input" type="file" multiple
                accept="image/*,video/*" class="hidden"
                onchange="gridUploadFiles(this)">
