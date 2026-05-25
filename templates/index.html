@@ -2165,9 +2165,11 @@
   }
 
   /* ---- Sidebar open/close — mobile overlay + desktop push ---- */
-  let sidebarOpen = window.innerWidth >= 768; // collapsed by default on mobile
+  // Sidebar open/close — persisted in localStorage, collapsed by default.
+  // Saves the user's preference on every toggle so it survives page reloads.
+  let sidebarOpen = localStorage.getItem('bw-sidebar-open') === 'true';
 
-  // Collapse immediately if mobile — runs before first paint, no flash
+  // Apply before first paint to prevent flash
   (function _sbInit() {
     const sb  = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-toggle');
@@ -2236,6 +2238,7 @@
     const sb  = document.getElementById('sidebar');
     const btn = document.getElementById('sidebar-toggle');
     sidebarOpen = !sidebarOpen;
+    localStorage.setItem('bw-sidebar-open', String(sidebarOpen));
     if (_isMobile()) {
       if (sidebarOpen) {
         _mobileSidebarOpen();

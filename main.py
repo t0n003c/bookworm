@@ -473,11 +473,9 @@ async def index(request: Request, ws: Optional[int] = None):
     # ── resolve active workspace ──────────────────────────────────────────
     if ws is None:
         # Find *this* user's first workspace — never fall back to ws=1.
-        first_ws = await get_first_workspace_id(user_id)
-        if first_ws is not None:
-            return RedirectResponse(url=f"/?ws={first_ws}")
-        # User has no workspaces yet → fall through with active_ws_id=None
-        #  which triggers the welcome/empty state in note_list.html.
+        # Always show the welcome page on initial load — the user picks
+        # a workspace from the sidebar. No auto-redirect to first_ws.
+        pass  # fall through with active_ws_id=None → welcome state
 
     # ── guard: ensure the requested workspace belongs to this user ────────
     all_workspaces = await get_all_workspaces(user_id)
