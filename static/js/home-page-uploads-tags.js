@@ -249,10 +249,9 @@ function _uplBulkGetSelIds() {
 function _uplBulkGetUnionTags() {
   const union    = new Set();
   const gridPids = new Set();
+  // Tags are snapshotted onto _dndSelected at selection time — no _uplFiles lookup needed.
   Object.values(_dndSelected).forEach(function(item) {
-    const f = _uplFiles.find(function(x) { return x.src === item.src && x.id === item.id; });
-    if (!f || !Array.isArray(f.tags)) return;
-    f.tags.forEach(function(t) {
+    (item.tags || []).forEach(function(t) {
       if (t.startsWith('grid:')) {
         var pid = parseInt(t.split(':')[1], 10);
         if (!isNaN(pid)) gridPids.add(pid);
@@ -380,10 +379,13 @@ async function _uplBulkAddTag() {
       body: JSON.stringify({ ids, tag }),
     });
     if (!r.ok) { _uplShowToast('Failed to add tag.', true); return; }
-    // Optimistically update _uplFiles so panel + cards reflect change immediately
+    // Optimistically update _uplFiles AND _dndSelected so panel + cards reflect change immediately
     ids.forEach(function(ref) {
-      const f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+      var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
       if (f) { f.tags = f.tags || []; if (!f.tags.includes(tag)) f.tags.push(tag); }
+      // Also update the snapshotted tags on the selection entry
+      var sel = _dndSelected[ref.src + ':' + ref.id];
+      if (sel) { sel.tags = sel.tags || []; if (!sel.tags.includes(tag)) sel.tags.push(tag); }
     });
     await _uplLoadAllTags();
     _uplRender();
@@ -404,8 +406,11 @@ async function _uplBulkRemoveTag(tag) {
     });
     if (!r.ok) { _uplShowToast('Failed to remove tag.', true); return; }
     ids.forEach(function(ref) {
-      const f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
+      var f = _uplFiles.find(function(x) { return x.src === ref.src && x.id === ref.id; });
       if (f && Array.isArray(f.tags)) f.tags = f.tags.filter(function(t) { return t !== tag; });
+      // Also strip from snapshotted selection tags
+      var sel = _dndSelected[ref.src + ':' + ref.id];
+      if (sel && Array.isArray(sel.tags)) sel.tags = sel.tags.filter(function(t) { return t !== tag; });
     });
     await _uplLoadAllTags();
     _uplRender();
