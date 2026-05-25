@@ -56,7 +56,7 @@
       onclick="openHomePage({{ pg.id }})"
       onmouseenter="if(typeof prefetchHomePage==='function') prefetchHomePage({{ pg.id }})"
       title="{{ pg.name }}"
-      class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition
+      class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition
         {% if is_active %}
           bg-wblue/10 dark:bg-wblue/20 text-wblue font-semibold
         {% else %}
