@@ -729,35 +729,18 @@ async function _uplRenderGridConnections(f) {
       + ' bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
       + ' text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/40 transition">'
       + _uplEsc(p.emoji) + '\u00a0' + _uplEsc(p.name) + ' \u2192</button>';
-    var discBtn = '<button onclick="_uplGridDisconnect(' + f.id + ',' + p.pid + ')"'
-      + ' title="Disconnect from this grid (file stays in Uploads)"'
-      + ' class="px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-zinc-600'
-      + ' text-gray-500 dark:text-zinc-400 hover:border-red-300 hover:text-red-500 transition">'
-      + 'Disconnect</button>';
-    return '<div class="flex items-center justify-between gap-2 mb-1.5">' + gotoBtn + discBtn + '</div>';
+    return '<div class="flex items-center gap-2 mb-1.5">' + gotoBtn + '</div>';
   }).join('');
 
   slot.innerHTML =
     '<p class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 mb-2">'
     + '&#128248; Grid Connections</p>'
+    + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 italic mb-2">'
+    + 'To remove a connection, open the grid page and delete the cell there.</p>'
     + rows;
 }
 
-async function _uplGridDisconnect(uploadId, gridPageId) {
-  try {
-    var r = await fetch('/home/grid/' + gridPageId + '/disconnect/' + uploadId, {method: 'DELETE'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    _uplShowToast('Disconnected from grid page.');
-    // Refresh the detail panel for the current file
-    var refreshed = (_uplFiles || []).find(function(x) { return x.id === uploadId; });
-    if (refreshed) {
-      // Strip the tag optimistically so re-render shows updated state
-      refreshed.tags = (refreshed.tags || []).filter(function(t) { return t !== 'grid:' + gridPageId; });
-      _uplRenderDetail(refreshed);
-    }
-    await _uplFetch(_uplPage);
-  } catch(e) { _uplShowToast('Failed to disconnect.'); }
-}
+
 
 function _uplDocCsvCard(f, fUrl) {
   var icon  = f.mime_type === _DOCX_MIME ? '\uD83D\uDCC4' : '\uD83D\uDCCA';
