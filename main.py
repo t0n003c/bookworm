@@ -116,17 +116,14 @@ from routers import demo as demo_router
 from routers.demo import purge_old_demo_users
 from routers import note_reminders as note_reminders_router
 from routers import sharing as sharing_router
+from routers import push as push_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 from routers.home_db import get_home_page
 
 
 async def _demo_purge_loop():
-    """Background task: purge stale demo users every 30 minutes.
-
-    This is the safety net for demos whose users never triggered /demo/end
-    (e.g. session expired, page refreshed without beacon firing, etc.).
-    """
-    _INTERVAL = 30 * 60  # 30 minutes
+    """Background task: purge stale demo users every 30 minutes."""
+    _INTERVAL = 30 * 60
     while True:
         await asyncio.sleep(_INTERVAL)
         try:
@@ -135,6 +132,54 @@ async def _demo_purge_loop():
                 log.info("Background purge: removed %d stale demo user(s)", n)
         except Exception:
             log.exception("Background purge failed")
+
+
+async def _reminder_push_loop():
+    """Background task: fire Web Push for note reminders every 60 seconds.
+
+    Checks for unfired note_reminders where reminder_date=today and
+    reminder_time <= now, dispatches a push to every registered device for
+    that user, then marks the reminders fired so they don’t repeat.
+    """
+    import os
+    if not os.getenv("BW_VAPID_PRIVATE_KEY"):
+        log.info("[push] BW_VAPID_PRIVATE_KEY not set — reminder push disabled")
+        return
+    from routers.push_db import get_due_reminders_with_subs, mark_reminders_fired, send_push, delete_subscription
+    _INTERVAL = 60  # seconds
+    while True:
+        await asyncio.sleep(_INTERVAL)
+        try:
+            due = await get_due_reminders_with_subs()
+            if not due:
+                continue
+            fired_ids: set[int] = set()
+            stale_eps: set[str] = set()
+            for row in due:
+                sub_info = {
+                    "endpoint": row["endpoint"],
+                    "keys":     {"p256dh": row["p256dh"], "auth": row["auth"]},
+                }
+                body = row["message"] or row["label"]
+                payload = {
+                    "title":   "📚 BookWorm Reminder",
+                    "body":    body,
+                    "icon":    "/static/img/icons/icon-192.png",
+                    "badge":   "/static/img/icons/icon-192.png",
+                    "tag":     f"bw-rem-{row['reminder_id']}",
+                    "data":    {"note_id": row["note_id"]},
+                }
+                result = await send_push(sub_info, payload)
+                fired_ids.add(row["reminder_id"])
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+            await mark_reminders_fired(list(fired_ids))
+            for ep in stale_eps:
+                await delete_subscription(ep)
+            if fired_ids:
+                log.info("[push] fired %d reminder(s)", len(fired_ids))
+        except Exception:
+            log.exception("[push] reminder loop error")
 
 
 @asynccontextmanager
@@ -150,15 +195,17 @@ async def lifespan(app: FastAPI):
     await purge_expired_trash()   # clean up any trash older than 30 days on boot
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
     await purge_old_demo_users()  # clean up stale demo accounts on boot
-    purge_task = asyncio.create_task(_demo_purge_loop())
+    purge_task  = asyncio.create_task(_demo_purge_loop())
+    push_task   = asyncio.create_task(_reminder_push_loop())
     try:
         yield
     finally:
-        purge_task.cancel()
-        try:
-            await purge_task
-        except asyncio.CancelledError:
-            pass
+        for t in (purge_task, push_task):
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
 
 
 from templates_env import templates, static_v  # shared instance with all custom filters
@@ -252,6 +299,7 @@ app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(workspace_databases_router.router)
 app.include_router(sharing_router.router)
+app.include_router(push_router.router)
 
 
 # ── Ownership-gated file serving ──────────────────────────────────────────────

@@ -1151,7 +1151,22 @@ async def init_db() -> None:
                 "ALTER TABLE note_reminders ADD COLUMN message TEXT NOT NULL DEFAULT ''"
             )
 
-        # ── public_share_links — shareable tokens for notes and DB cards ─────────
+        # ── push_subscriptions — Web Push (PushSubscription from browser) ────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint   TEXT    NOT NULL UNIQUE,
+                p256dh     TEXT    NOT NULL,
+                auth       TEXT    NOT NULL,
+                user_agent TEXT    NOT NULL DEFAULT '',
+                created_at DATETIME         DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_push_subs_user
+                ON push_subscriptions(user_id)
+        """)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS public_share_links (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,

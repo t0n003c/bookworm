@@ -13,6 +13,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="BookWorm">
   <meta name="mobile-web-app-capable" content="yes">
+  {% if bw_vapid_public_key %}
+  <meta name="bw-vapid-key" content="{{ bw_vapid_public_key }}">
+  {% endif %}
   <!-- Apply saved theme before render to avoid flash -->
   <script>
     (function () {
@@ -766,6 +769,7 @@
 <script src="/static/js/bw-block-menu.js?v={{ static_v }}" defer></script>
 <script src="/static/js/workspace-database.js?v={{ static_v }}" defer></script>
 <script src="/static/js/sharing.js?v={{ static_v }}" defer></script>
+<script src="/static/js/bw-push.js?v={{ static_v }}" defer></script>
 
 {# ── Reminder toast container — position:fixed, lives outside home-content
    so toasts appear even when the user is in workspace view. #}

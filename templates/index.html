@@ -268,6 +268,18 @@
         </button>
         <!-- Divider -->
         <hr class="my-3 border-gray-200 dark:border-zinc-700"/>
+        <!-- Push Notifications -->
+        <button
+          id="bw-push-btn"
+          onclick="bwPushToggle()"
+          data-active="0"
+          aria-pressed="false"
+          class="w-full flex items-center gap-2.5 text-sm text-gray-700 dark:text-zinc-300 hover:text-wblue dark:hover:text-blue-400 transition py-1 focus:outline-none"
+          aria-label="Toggle push notifications"
+        >
+          <span class="text-base" aria-hidden="true" data-push-icon>&#x1F515;</span>
+          <span data-push-label>Notifications Off</span>
+        </button>
         <!-- Account -->
         <button
           onclick="showAccountModal(); document.getElementById('settings-menu').classList.add('hidden');"

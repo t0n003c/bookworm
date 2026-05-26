@@ -60,7 +60,47 @@ function _isDynamic(url) {
       || p.startsWith('/wopi/');
 }
 
-/* ── Fetch ──────────────────────────────────────────────────────────────── */
+/* ── Push notifications ─────────────────────────────────────────────────────── */
+self.addEventListener('push', event => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = { title: '📚 BookWorm', body: event.data ? event.data.text() : '' };
+  }
+
+  const title   = data.title  || '📚 BookWorm';
+  const options = {
+    body:    data.body   || '',
+    icon:    data.icon   || '/static/img/icons/icon-192.png',
+    badge:   data.badge  || '/static/img/icons/icon-192.png',
+    tag:     data.tag    || 'bw-push',
+    data:    data.data   || {},
+    vibrate: [200, 100, 200],
+    requireInteraction: false,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const noteId = event.notification.data && event.notification.data.note_id;
+  const url    = noteId ? `/?note=${noteId}` : '/';
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then(clients => {
+        // Focus an existing window if one is open.
+        const existing = clients.find(c => c.url.includes(self.location.origin));
+        if (existing) return existing.focus();
+        return self.clients.openWindow(url);
+      })
+  );
+});
+
+/* ── Fetch ──────────────────────────────────────────────────────────────────────────── */
 self.addEventListener('fetch', event => {
   const { request } = event;
 
