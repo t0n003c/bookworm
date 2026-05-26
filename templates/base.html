@@ -133,18 +133,18 @@
   </style>
   <link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">
   <link rel="stylesheet" href="/static/css/bw-content.css?v={{ static_v }}">
-  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-  <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
-  <script src="https://unpkg.com/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
+  <script src="/static/vendor/htmx.min.js?v={{ static_v }}" defer></script>
+  <script src="/static/vendor/marked.min.js?v={{ static_v }}" defer></script>
+  <script src="/static/vendor/purify.min.js?v={{ static_v }}" defer></script>
+  <script src="/static/vendor/turndown.js?v={{ static_v }}" defer></script>
+  <script src="/static/vendor/turndown-plugin-gfm.js?v={{ static_v }}" defer></script>
   <!-- Highlight.js — vendored locally so Walmart proxy never blocks it.
        Re-vendor: run _dl_hljs2.py to refresh static/vendor/*.                -->
   <link id="hljs-light" rel="stylesheet" disabled
     href="/static/vendor/hljs-github.min.css?v={{ static_v }}">
   <link id="hljs-dark" rel="stylesheet"
     href="/static/vendor/hljs-github-dark-dimmed.min.css?v={{ static_v }}">
-  <script src="/static/vendor/highlight.min.js?v={{ static_v }}"></script>
+  <script src="/static/vendor/highlight.min.js?v={{ static_v }}" defer></script>
   <script>
     // Sync highlight.js theme with app dark / light mode
     (function () {
