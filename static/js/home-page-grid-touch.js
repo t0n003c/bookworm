@@ -349,18 +349,11 @@ function _tpDropTarget(x, y) {
 }
 
 function _tpDropIndicator(target) {
-    // Clear old indicator
-    if (_tpDragOver != null) {
-        var old = _msCellEl(_tpDragOver);
-        if (old) { old.style.boxShadow = ''; old.style.outline = ''; }
-    }
     _tpDragOver = target ? target.cellId : null;
-    if (_tpDragOver == null) return;
+    if (_tpDragOver == null) { _gridHideDropLine(); return; }
     var el = _msCellEl(_tpDragOver);
-    if (!el) return;
-    el.style.boxShadow = target.insertBefore
-        ? 'inset 4px 0 0 0 #0053e2'
-        : 'inset -4px 0 0 0 #0053e2';
+    if (!el) { _gridHideDropLine(); return; }
+    _gridShowDropLine(el, target.insertBefore);
 }
 
 function _tpGhostDestroy() {
@@ -368,11 +361,8 @@ function _tpGhostDestroy() {
     if (_tpGhost) { _tpGhost.remove(); _tpGhost = null; }
     var src = _msCellEl(_tpCellId);
     if (src) src.style.opacity = '';
-    if (_tpDragOver != null) {
-        var over = _msCellEl(_tpDragOver);
-        if (over) { over.style.boxShadow = ''; over.style.outline = ''; }
-        _tpDragOver = null;
-    }
+    _gridHideDropLine();
+    _tpDragOver = null;
 }
 
 /* ── Drag start helper ──────────────────────────────────────────────────────────────── */

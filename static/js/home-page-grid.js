@@ -48,6 +48,7 @@ var _gridDragOverEl   = null;   // DOM element currently under the drag cursor
 var _gridDropBefore   = true;   // true = insert before target, false = insert after
 var _gridScrollTick   = null;   // setInterval handle — runs from dragstart to dragend
 var _gridLastCursorY  = -1;     // last clientY seen from any dragover event
+var _gridDropLineEl   = null;   // singleton blue drop-line indicator element
 
 /* ── Entry point ───────────────────────────────────────────────────────── */
 function initGridPage(pageId) {
@@ -313,22 +314,62 @@ function _gridScrollTick_fn() {
 // On drop, removes the dragged cell from its current slot and inserts it
 // before or after the target, then PATCHes the server with the new order.
 
+// ── Drop-line indicator (shared with touch path) ────────────────────────────
+// A fixed-position blue vertical bar that sits in the gap between cells,
+// replacing the old inset box-shadow that was hidden by image content.
+function _gridGetDropLine() {
+    if (_gridDropLineEl) return _gridDropLineEl;
+    var el = document.createElement('div');
+    el.id = 'grid-drop-line';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = [
+        'position:fixed;pointer-events:none;z-index:9998;',
+        'width:3px;background:#0053e2;border-radius:2px;',
+        'transform:translateX(-50%);display:none;'
+    ].join('');
+    var capT = document.createElement('div');
+    capT.style.cssText = [
+        'position:absolute;top:-4px;left:50%;transform:translateX(-50%);',
+        'width:9px;height:9px;border-radius:50%;background:#0053e2;'
+    ].join('');
+    var capB = document.createElement('div');
+    capB.style.cssText = [
+        'position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);',
+        'width:9px;height:9px;border-radius:50%;background:#0053e2;'
+    ].join('');
+    el.appendChild(capT);
+    el.appendChild(capB);
+    document.body.appendChild(el);
+    _gridDropLineEl = el;
+    return el;
+}
+
+function _gridShowDropLine(cellEl, before) {
+    var line = _gridGetDropLine();
+    var r    = cellEl.getBoundingClientRect();
+    var half = (_gridGap || 8) / 2;
+    var x    = before ? r.left - half : r.right + half;
+    x = Math.max(2, Math.min(window.innerWidth - 2, x));
+    line.style.left    = x + 'px';
+    line.style.top     = r.top + 'px';
+    line.style.height  = r.height + 'px';
+    line.style.display = '';
+}
+
+function _gridHideDropLine() {
+    if (_gridDropLineEl) _gridDropLineEl.style.display = 'none';
+}
+
 function _gridClearDropIndicator() {
-    if (_gridDragOverEl) {
-        _gridDragOverEl.style.boxShadow = '';
-        _gridDragOverEl.style.borderRadius = '';
-        _gridDragOverEl = null;
-    }
+    _gridHideDropLine();
+    _gridDragOverEl = null;
 }
 
 function _gridSetDropIndicator(el, before) {
     if (_gridDragOverEl && _gridDragOverEl !== el) _gridClearDropIndicator();
     _gridDragOverEl = el;
     _gridDropBefore = before;
-    // Thick blue inset stripe on the insert edge; right side when inserting after.
-    el.style.boxShadow = before
-        ? 'inset 4px 0 0 0 #0053e2'
-        : 'inset -4px 0 0 0 #0053e2';
+    _gridShowDropLine(el, before);
 }
 
 function _gridBindDrag(el) {
