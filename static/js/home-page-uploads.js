@@ -311,7 +311,7 @@ function _uplCard(f) {
            + `<video preload="metadata" muted playsinline
                     style="-webkit-touch-callout:none"
                     class="w-full h-full object-cover"
-                    onerror="this.parentElement.querySelector('.upl-vid-fallback').style.display='flex';this.remove()">`
+                    onerror="this.parentElement.querySelector('.upl-vid-fallback').style.display='flex';this.remove()">
                 <source src="${vSrc}#t=0.5" type="${vType}">
               </video>`
            + `<div class="upl-vid-fallback absolute inset-0 hidden items-center justify-center">`
