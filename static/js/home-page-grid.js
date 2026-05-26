@@ -239,7 +239,7 @@ function _gridRenderCellInner(cell) {
     if (cell.cell_type === 'image' && cell.file_url) {
         // Click opens lightbox; draggable=false prevents ghost drag from img itself
         return '<img src="' + _gridEsc(cell.file_url) + '"'
-             + ' class="w-full h-full object-cover cursor-pointer" loading="lazy"'
+             + ' class="w-full h-full object-cover cursor-pointer" loading="lazy" decoding="async"'
              + ' alt="' + _gridEsc(cell.caption || '') + '"'
              + ' draggable="false"'
              + ' onclick="if(typeof _msActive!==\'undefined\'&&_msActive){_msToggle(' + cell.id + ')}else{gridLightboxOpen(' + cell.id + ')}">';

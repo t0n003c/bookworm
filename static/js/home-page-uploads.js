@@ -20,6 +20,7 @@ let _uplDelPending    = null;   // uploadId waiting for delete confirmation
 let _uplRmAttPending  = null;   // note-attachment id waiting for remove confirmation
 var _uplCacheBust     = {};     // fileId → timestamp; cache-busts embed after sign
 var _uplWidgetUsageMap = {};    // fileId → [{widget_id, widget_name, page_id, page_name, page_emoji}]
+var _uplEscHandler    = null;   // ESC keydown ref — stored so we can remove before re-adding
 var _DOCX_MIME     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -45,25 +46,24 @@ async function initUploadsPage(pid) {
     });
   }
 
-  // ESC closes whichever overlay is open
-  document.addEventListener('keydown', (e) => {
+  // ESC closes whichever overlay is open.
+  // Remove any previous listener before re-adding so navigation doesn't accumulate copies.
+  if (_uplEscHandler) document.removeEventListener('keydown', _uplEscHandler);
+  _uplEscHandler = function(e) {
     if (e.key !== 'Escape') return;
     _uplCloseModal();
     _uplCancelDelete();
     if (_uplCurrentDetail) _uplCloseDetail();
-  });
+  };
+  document.addEventListener('keydown', _uplEscHandler);
 
   // Load tags once upfront so filter pills are ready immediately
   _uplLoadAllTags();
   // Backfill grid: tags for ALL grid pages this user owns, so the "📸 Grid" badge
   // appears on files that were added before per-file tagging was introduced.
-  // Awaited (not fire-and-forget) so tags are in DB before _uplFetch renders the list.
-  try {
-    var _bfr = await fetch('/home/grid/backfill-all-tags', {method: 'POST'});
-    if (!_bfr.ok) console.warn('[uploads] backfill-all-tags returned', _bfr.status);
-  } catch (_bfe) {
-    console.warn('[uploads] backfill-all-tags failed:', _bfe);
-  }
+  // Fire-and-forget (not awaited) — idempotent; no need to block the initial render.
+  fetch('/home/grid/backfill-all-tags', {method: 'POST'})
+    .catch(function(_bfe) { console.warn('[uploads] backfill-all-tags failed:', _bfe); });
   await _uplFetch(1);
 }
 
@@ -295,7 +295,7 @@ function _uplCard(f) {
   var thumb;
   if (group === 'image') {
     thumb = `<img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
-             loading="lazy"
+             loading="lazy" decoding="async"
              style="-webkit-touch-callout:none"
              class="w-full h-32 object-cover bg-gray-100 dark:bg-zinc-800"
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`

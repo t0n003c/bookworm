@@ -26,6 +26,7 @@
     id="sidebar-toggle"
     onclick="toggleSidebar()"
     class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50 flex-shrink-0"
+    style="touch-action:manipulation"
     aria-label="Toggle sidebar"
     aria-expanded="true"
     aria-controls="sidebar"
@@ -3852,8 +3853,15 @@
     else                        clearOver();
   }, { passive: false });
 
+  // touchcancel: fire-and-forget cleanup (system interruptions, scroll capture, etc.)
+  document.addEventListener('touchcancel', () => cancel(), { passive: true });
+
   document.addEventListener('touchend', (e) => {
-    if (!_wsId && !_trashId) return;
+    // Always kill the long-press timer on touchend regardless of drag state.
+    // Without this, a quick tap on a name button arms _wsId 400ms later and
+    // the NEXT touchend triggers the row-menu popup out of thin air.
+    clearTimeout(_lpTimer); _lpTimer = null;
+    if (!_wsId && !_trashId) { _fromNameBtn = false; return; }
     const t   = e.changedTouches[0];
     const ws  = _wsId, trash = _trashId, didDrag = _active;
     const hEl = _handleEl;
