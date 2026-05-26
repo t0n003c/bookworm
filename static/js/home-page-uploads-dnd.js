@@ -92,12 +92,16 @@ function _uplCheckInjectBoxes() {
   });
 }
 
-// ── Init (idempotent) ──────────────────────────────────────────────────────────────
+// ── Init (idempotent) ──────────────────────────────────────────────────────
 function _dndInit() {
   if (_dndListenersAttached) return;
   _dndListenersAttached = true;
   document.addEventListener('mousedown', _dndMouseDown);
-  document.addEventListener('mousemove', _dndMouseMove);
+  // mousemove is NOT registered here permanently.
+  // Android Chrome synthesises a mouse event from every scroll touch, so a
+  // permanent document mousemove listener fires on every swipe on the uploads
+  // page — even when no lasso or hold is in progress.  Instead we attach it
+  // dynamically on mousedown and tear it down on mouseup.
   document.addEventListener('mouseup',   _dndMouseUp);
   // Capture-phase listener: suppress the click that fires after a hold-to-select
   document.addEventListener('click', function(e) {
@@ -423,6 +427,9 @@ function _dndIsInsideUploadsGrid(target) {
 }
 
 function _dndMouseDown(event) {
+  // Attach mousemove only for the duration of this press; removed in _dndMouseUp.
+  // Keeps the listener off the hot path for touch-scroll events on mobile.
+  document.addEventListener('mousemove', _dndMouseMove);
   // Only left-button
   if (event.button !== 0) return;
   // Only when on an uploads page
@@ -553,6 +560,7 @@ function _dndMouseMove(event) {
 }
 
 function _dndMouseUp(event) {
+  document.removeEventListener('mousemove', _dndMouseMove);
   // Cancel hold-to-select if button released before timer fires
   if (_uplHoldTimer) {
     clearTimeout(_uplHoldTimer);

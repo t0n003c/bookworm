@@ -477,12 +477,13 @@ function _tpOnTouchMove(e) {
     }
 
     // ── Pre-arm slop zone: gesture unclassified ──
-    // Calling preventDefault() here on every move within the slop zone tells
-    // Chrome's compositor "not yet decided" — it won't commit to a scroll
-    // frame.  This is effective as long as the listener is non-passive and
-    // fires before the compositor's 2-frame commit window.
+    // Do NOT call preventDefault() here.  Chrome ≥92 decides whether a touch
+    // is a scroll within its first 2 animation frames (~33ms) — long before our
+    // 200ms arm timer fires.  Blocking the compositor in the slop zone was
+    // causing every grid scroll to stutter while the browser waited for JS,
+    // with zero benefit: by the time the arm timer fires the browser has already
+    // committed to a scroll frame and ignores any subsequent preventDefault().
     if (dist < _TP_SLOP) {
-        e.preventDefault();  // hold the compositor off while we wait
         return;
     }
 

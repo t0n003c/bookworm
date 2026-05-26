@@ -5,6 +5,19 @@
 #}
 {# ── Document Viewer styles (injected once; scoped to bw- classes) #}
 <style>
+/* ── File card rendering performance ──────────────────────────────────────────
+   content-visibility:auto tells the browser to skip layout + paint for cards
+   that are outside the viewport.  contain-intrinsic-size gives the browser a
+   placeholder height so the scrollbar stays accurate while off-screen cards
+   are skipped.  Card height: 128px thumb + ~90px meta = ~220px.
+   This is the single biggest scroll-smoothness win on long file lists.
+   contain:layout style prevents card-level style changes from triggering
+   a full-page reflow — mirrors the .hw-card rule in base.html. */
+[data-upl-file-key] {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 220px;
+  contain: layout style;
+}
 /* ── Read-only doc viewer ── */
 .bw-doc-viewer h1,.bw-doc-viewer h2{font-size:1.4em;font-weight:700;margin:.9em 0 .4em}
 .bw-doc-viewer h3,.bw-doc-viewer h4{font-size:1.15em;font-weight:600;margin:.8em 0 .35em}
