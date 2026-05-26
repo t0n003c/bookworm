@@ -75,8 +75,36 @@ function _uplTsOnTouchStart(e) {
   }
   if (!card) return;
 
-  // In active multiselect, taps are handled by the capture click listener.
-  if (_uplTsActive) return;
+  // In active multiselect: toggle on touchend for instant ring — no waiting
+  // for the browser to synthesise a click event (50–300 ms delay on mobile).
+  // A non-passive touchend lets us call preventDefault() to suppress the
+  // click that would follow, preventing a double-toggle.
+  if (_uplTsActive) {
+    var _msSrc      = card.getAttribute('data-upl-src');
+    var _msId       = +(card.getAttribute('data-upl-id'));
+    var _msRawFid   = card.getAttribute('data-upl-folder-id');
+    var _msFolderId = _msRawFid ? +_msRawFid : null;
+    _uplTsStartX = e.touches[0].clientX;
+    _uplTsStartY = e.touches[0].clientY;
+    // One-shot: removed immediately after it fires (or on cancel).
+    function _uplTsMsEnd(te) {
+      document.removeEventListener('touchend',    _uplTsMsEnd);
+      document.removeEventListener('touchcancel', _uplTsMsEnd);
+      if (te.type === 'touchcancel') return;
+      var touch = te.changedTouches[0];
+      if (!touch) return;
+      var dx = touch.clientX - _uplTsStartX;
+      var dy = touch.clientY - _uplTsStartY;
+      if (Math.abs(dx) > _UTD_TS_CANCEL_PX || Math.abs(dy) > _UTD_TS_CANCEL_PX) return;
+      te.preventDefault();   // suppress the synthetic click — no double-toggle
+      if (typeof _dndSelToggle === 'function') _dndSelToggle(_msSrc, _msId, _msFolderId);
+      if (typeof _dndSelected !== 'undefined' &&
+          Object.keys(_dndSelected).length === 0) _uplTsActive = false;
+    }
+    document.addEventListener('touchend',    _uplTsMsEnd, { passive: false });
+    document.addEventListener('touchcancel', _uplTsMsEnd, { passive: false });
+    return;
+  }
 
   var src      = card.getAttribute('data-upl-src');
   var id       = +(card.getAttribute('data-upl-id'));
