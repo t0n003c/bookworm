@@ -1460,4 +1460,3 @@ async function selectPageLayout(cols) {
     { config_json: JSON.stringify({ [colKey]: cols }) });
   if (typeof invalidateHomePageCache === 'function') invalidateHomePageCache(pageId);
 }
-}
