@@ -3,7 +3,11 @@
      _gridCells, _gridPid, _gridPickerPageId, _gridPickerCell,
      _gridPickerPage, _gridPickerTotal, _gridEditCellId, _gridPendingDelId,
      _gridLoadCells(), _gridEsc()
-   ────────────────────────────────────────────────────────────────────────── */
+   ──────────────────────────────────────────────────────────────────────────── */
+
+// Basket of uploadId → mimeType for multi-add mode.
+// Cleared when the picker opens or closes.
+var _gridPickerSelected = {};
 
 /* ── Add media from toolbar (no pre-existing cell) ─────────────────────────── */
 function gridAddMedia() {
@@ -191,8 +195,16 @@ async function _gridConfirmDelete() {
 
 /* ── Media picker ───────────────────────────────────────────────────────────── */
 function gridOpenMediaPicker(cellId) {
-    _gridPickerCell = cellId;
-    _gridPickerPage = 1;
+    _gridPickerCell     = cellId;
+    _gridPickerSelected = {};
+    _gridPickerPage     = 1;
+    // Title reflects mode
+    var title = document.getElementById('grid-media-modal-title');
+    if (title) title.textContent = cellId ? 'Replace media' : 'Add photos \u0026 videos';
+    // Add-bar only appears in add-mode
+    var bar = document.getElementById('grid-media-add-bar');
+    if (bar) bar.classList.toggle('hidden', cellId !== null);
+    _gridPickerUpdateBar();
     document.getElementById('grid-media-modal').classList.remove('hidden');
     if (_gridPickerPageId) {
         _gridMediaFetch();
@@ -203,7 +215,8 @@ function gridOpenMediaPicker(cellId) {
 }
 
 function gridCloseMediaPicker() {
-    _gridPickerCell = null;
+    _gridPickerCell     = null;
+    _gridPickerSelected = {};
     document.getElementById('grid-media-modal').classList.add('hidden');
     document.getElementById('grid-media-files').innerHTML = '';
 }
@@ -257,82 +270,163 @@ function _gridRenderMediaFiles(files) {
         el.innerHTML = '<p class="text-sm text-gray-400 p-4">No photos or videos on this page.</p>';
         return;
     }
-    var inGrid = {};
+    var inGrid    = {};
     _gridCells.forEach(function(c) { if (c.upload_id) inGrid[c.upload_id] = true; });
+    var isAddMode = (_gridPickerCell === null);
 
     el.innerHTML = '<div class="grid grid-cols-4 gap-2 p-3">'
         + media.map(function(f) {
             var furl    = '/uploads/' + _gridEsc(f.filename);
             var isImg   = f.mime_type.startsWith('image/');
+            var isVid   = f.mime_type.startsWith('video/');
             var already = inGrid[f.id] || false;
-            var overlay = already
-                ? '<div class="absolute inset-0 bg-[#0053e2]/30 flex items-center justify-center'
-                  + ' pointer-events-none" aria-hidden="true">'
-                  + '<span class="bg-[#0053e2] text-white text-xs font-bold rounded-full'
-                  + ' w-6 h-6 flex items-center justify-center">&#10003;</span></div>'
+            var isSel   = !!_gridPickerSelected[f.id];
+            var label   = _gridEsc(f.original_name || f.filename);
+
+            // Thumbnail: real video frame via #t=0.5 seek, or image
+            var thumb = isImg
+                ? '<img src="' + furl + '" class="w-full h-full object-cover"'
+                  + ' loading="lazy" decoding="async" alt="">'
+                : '<video src="' + furl + '#t=0.5" preload="metadata" muted playsinline'
+                  + ' class="w-full h-full object-cover pointer-events-none"'
+                  + ' aria-hidden="true"></video>'
+                  + '<div class="absolute inset-0 flex items-center justify-center pointer-events-none">'
+                  + '<div class="bg-black/50 rounded-full w-8 h-8 flex items-center justify-center">'
+                  + '<svg class="w-3.5 h-3.5 fill-white ml-0.5" viewBox="0 0 16 16">'
+                  + '<path d="M4 3l10 5-10 5V3z"/></svg></div></div>';
+
+            // “Already in grid” badge — small, corner-pinned, informational only
+            var alreadyBadge = already
+                ? '<div class="absolute top-1 right-1 bg-[#0053e2] text-white leading-tight'
+                  + ' text-[9px] font-bold rounded-full px-1.5 py-0.5 pointer-events-none z-20">In grid</div>'
                 : '';
-            var label = _gridEsc(f.original_name || f.filename)
-                      + (already ? ' (already in grid)' : '');
+
+            // Selection overlay — only in add-mode
+            var selOverlay = (isAddMode && isSel)
+                ? '<div data-sel-ov class="absolute inset-0 bg-[#0053e2]/25 flex items-center'
+                  + ' justify-center pointer-events-none z-10">'
+                  + '<div class="bg-[#0053e2] rounded-full w-6 h-6 flex items-center justify-center shadow">'
+                  + '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"'
+                  + ' stroke="white" stroke-width="3.5">'
+                  + '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>'
+                  + '</svg></div></div>'
+                : '';
+
+            var clickFn = isAddMode
+                ? '_gridPickerToggle(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')'
+                : 'gridPickMedia(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')';
+
+            var ringCls = (isAddMode && isSel) ? ' ring-2 ring-[#0053e2]' : '';
+
             return '<button'
+                 + ' data-picker-id="' + f.id + '"'
                  + ' class="relative aspect-square rounded-lg overflow-hidden bg-gray-100'
                  + ' dark:bg-zinc-800 hover:ring-2 hover:ring-[#0053e2] focus:outline-none'
-                 + ' focus:ring-2 focus:ring-[#0053e2] transition-all"'
-                 + ' onclick="gridPickMedia(' + f.id + ',\'' + _gridEsc(f.mime_type) + '\')"'
-                 + ' aria-label="Select ' + label + '">'
-                 + (isImg
-                    ? '<img src="' + furl + '" class="w-full h-full object-cover" loading="lazy" alt="">'
-                    : '<div class="w-full h-full flex items-center justify-center text-3xl"'
-                      + ' aria-hidden="true">&#127916;</div>')
-                 + overlay
+                 + ' focus:ring-2 focus:ring-[#0053e2] transition-all' + ringCls + '"'
+                 + ' onclick="' + clickFn + '"'
+                 + ' aria-label="' + (isAddMode ? 'Select ' : 'Use ') + label + '"'
+                 + (isAddMode ? ' aria-pressed="' + isSel + '"' : '') + '>'
+                 + thumb + selOverlay + alreadyBadge
                  + '</button>';
-          }).join('')
+        }).join('')
         + '</div>';
 }
 
-async function gridPickMedia(uploadId, mimeType) {
-    var cellType = mimeType.startsWith('video/') ? 'video' : 'image';
-    try {
-        if (_gridPickerCell) {
-            var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
-            });
-            if (!r.ok) throw new Error('patch ' + r.status);
-        } else {
-            var alreadyIn = _gridCells.some(function(c) { return c.upload_id === uploadId; });
-            if (alreadyIn) {
-                var warnEl = document.getElementById('grid-media-files');
-                var old = warnEl.querySelector('.grid-dupe-warn');
-                if (old) old.remove();
-                warnEl.insertAdjacentHTML('afterbegin',
-                    '<p class="grid-dupe-warn text-xs text-amber-600 dark:text-amber-400'
-                    + ' px-3 pt-3 pb-1 select-none">'
-                    + '&#9888;&#xFE0F; That photo is already in the grid. '
-                    + 'Pick a different one, or click an existing grid cell to replace it.</p>');
-                return;
-            }
+// Toggle a file in/out of the selection basket and update the button visually.
+function _gridPickerToggle(uploadId, mimeType) {
+    if (_gridPickerSelected[uploadId]) {
+        delete _gridPickerSelected[uploadId];
+    } else {
+        _gridPickerSelected[uploadId] = mimeType;
+    }
+    var isSel = !!_gridPickerSelected[uploadId];
+    var btn   = document.querySelector('[data-picker-id="' + uploadId + '"]');
+    if (btn) {
+        btn.setAttribute('aria-pressed', isSel);
+        btn.classList.toggle('ring-2',         isSel);
+        btn.classList.toggle('ring-[#0053e2]', isSel);
+        var old = btn.querySelector('[data-sel-ov]');
+        if (old) old.remove();
+        if (isSel) {
+            btn.insertAdjacentHTML('beforeend',
+                '<div data-sel-ov class="absolute inset-0 bg-[#0053e2]/25 flex items-center'
+                + ' justify-center pointer-events-none z-10">'
+                + '<div class="bg-[#0053e2] rounded-full w-6 h-6 flex items-center justify-center shadow">'
+                + '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"'
+                + ' stroke="white" stroke-width="3.5">'
+                + '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>'
+                + '</svg></div></div>');
+        }
+    }
+    _gridPickerUpdateBar();
+}
+
+// Refresh the "X selected / Add to grid" bar count and button state.
+function _gridPickerUpdateBar() {
+    var n   = Object.keys(_gridPickerSelected).length;
+    var btn = document.getElementById('grid-media-add-btn');
+    var lbl = document.getElementById('grid-media-sel-count');
+    if (lbl) lbl.textContent = n === 0 ? 'None selected' : n + '\u00a0selected';
+    if (btn) btn.disabled = (n === 0);
+}
+
+// Add all selected items to the grid then close.
+async function _gridPickerAddSelected() {
+    var ids = Object.keys(_gridPickerSelected);
+    if (!ids.length) return;
+    var addBtn = document.getElementById('grid-media-add-btn');
+    if (addBtn) addBtn.disabled = true;
+    for (var i = 0; i < ids.length; i++) {
+        var uid  = parseInt(ids[i], 10);
+        var mime = _gridPickerSelected[uid];
+        try {
             var r = await fetch('/home/grid/' + _gridPid + '/cells', {
-                method: 'POST',
+                method:  'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    cell_type: cellType,
-                    upload_id: uploadId,
-                    aspect: '1:1',
-                    caption: ''
+                body:    JSON.stringify({
+                    cell_type: mime.startsWith('video/') ? 'video' : 'image',
+                    upload_id: uid,
+                    aspect:    '1:1',
+                    caption:   ''
                 })
             });
             if (!r.ok) throw new Error('create ' + r.status);
-        }
+            if (_gridPickerPageId) {
+                fetch('/home/uploads/' + _gridPickerPageId
+                      + '/files/page/' + uid + '/tags',
+                      { method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({tag: 'grid:' + _gridPid}) })
+                    .catch(function(e) { console.warn('[grid] tag failed:', e); });
+            }
+        } catch(e) { console.error('[grid] add failed:', e); }
+    }
+    gridCloseMediaPicker();
+    await _gridLoadCells();
+}
+
+// Called only in replace-mode (_gridPickerCell is set).
+// Add-mode uses _gridPickerToggle + _gridPickerAddSelected instead.
+async function gridPickMedia(uploadId, mimeType) {
+    if (!_gridPickerCell) return;  // guard: shouldn't happen
+    var cellType = mimeType.startsWith('video/') ? 'video' : 'image';
+    try {
+        var r = await fetch('/home/grid/' + _gridPid + '/cells/' + _gridPickerCell, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upload_id: uploadId, cell_type: cellType})
+        });
+        if (!r.ok) throw new Error('patch ' + r.status);
         if (_gridPickerPageId) {
             fetch('/home/uploads/' + _gridPickerPageId
                   + '/files/page/' + uploadId + '/tags',
-                  {method: 'POST',
-                   headers: {'Content-Type': 'application/json'},
-                   body: JSON.stringify({tag: 'grid:' + _gridPid})
-                  }).catch(function(e) { console.warn('[grid] tag failed:', e); });
+                  { method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag: 'grid:' + _gridPid}) })
+                .catch(function(e) { console.warn('[grid] tag failed:', e); });
         }
         gridCloseMediaPicker();
         await _gridLoadCells();
     } catch(e) { console.error('[grid] pick media failed:', e); }
+}
 }
