@@ -429,4 +429,3 @@ async function gridPickMedia(uploadId, mimeType) {
         await _gridLoadCells();
     } catch(e) { console.error('[grid] pick media failed:', e); }
 }
-}
