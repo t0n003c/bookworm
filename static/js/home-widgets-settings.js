@@ -18,7 +18,12 @@ function _widgetGrid(widgetId) {
 }
 
 function _pageColCount(widgetId) {
-  return parseInt(_widgetGrid(widgetId)?.dataset.colCount || '3', 10);
+  var grid    = _widgetGrid(widgetId);
+  var isMobile = window.innerWidth < 640;
+  if (isMobile && grid?.dataset.mobileColCount) {
+    return parseInt(grid.dataset.mobileColCount, 10);
+  }
+  return parseInt(grid?.dataset.colCount || '3', 10);
 }
 
 // ── Size Picker ───────────────────────────────────────────────────────────────
@@ -27,10 +32,14 @@ function _pageColCount(widgetId) {
  * the settings modal body.
  */
 function _buildSizePicker(widgetId, body) {
+  const isMobile  = window.innerWidth < 640;
   const card      = _cardEl(widgetId);
   // Legacy dividers stored '__ALL__' — treat that as full-width (= maxCols)
   const maxCols   = _pageColCount(widgetId);
-  const rawCol    = card?.dataset.colSpan;
+  // On phones use the mobile col span if available, else fall back to desktop.
+  const rawCol    = (isMobile && card?.dataset.mobileColSpan)
+                    ? card.dataset.mobileColSpan
+                    : card?.dataset.colSpan;
   const curCol    = (rawCol === '__ALL__' || !rawCol)
                     ? maxCols
                     : (parseInt(rawCol, 10) || 1);
@@ -106,13 +115,21 @@ async function _selectSize(widgetId, col, row) {
     const maxCols = _pageColCount(widgetId);
     card.style.gridColumn = (col >= maxCols) ? '1 / -1' : `span ${col}`;
     card.style.gridRow    = `span ${row}`;
-    card.dataset.colSpan  = col;
+    // Update the right data attribute depending on the current viewport.
+    const isMob = window.innerWidth < 640;
+    if (isMob) {
+      card.dataset.mobileColSpan = col;
+    } else {
+      card.dataset.colSpan = col;
+    }
     card.dataset.rowSpan  = row;
   }
 
-  // Persist — merge into existing config
-  const existing = _getCardConfig(widgetId);
-  await _saveWidgetFullConfig(widgetId, { ...existing, col_span: col, row_span: row });
+  // Persist — merge into existing config, writing to the right key.
+  const existing  = _getCardConfig(widgetId);
+  const isMob2    = window.innerWidth < 640;
+  const spanKey   = isMob2 ? 'mobile_col_span' : 'col_span';
+  await _saveWidgetFullConfig(widgetId, { ...existing, [spanKey]: col, row_span: row });
 }
 
 function _getCardConfig(widgetId) {
@@ -897,8 +914,9 @@ async function saveClockSetting(widgetId, key, value) {
 
   // Preserve col_span / row_span from existing card config
   const existing = _getCardConfig(widgetId);
-  if (existing.col_span) config.col_span = existing.col_span;
-  if (existing.row_span) config.row_span = existing.row_span;
+  if (existing.col_span)        config.col_span        = existing.col_span;
+  if (existing.mobile_col_span) config.mobile_col_span = existing.mobile_col_span;
+  if (existing.row_span)        config.row_span        = existing.row_span;
 
   await _saveWidgetFullConfig(widgetId, config);
 }
@@ -1355,9 +1373,16 @@ function openPageLayout(pageId) {
   if (!modal) return;
   modal.dataset.pageId = pageId;
 
-  // Read current col count from the widget grid
-  const grid = document.querySelector(`[data-page-id="${pageId}"] [data-col-count]`);
-  const cur  = parseInt(grid?.dataset.colCount || '3', 10);
+  // Read current col count from the widget grid, respecting current breakpoint.
+  const grid     = document.querySelector(`[data-page-id="${pageId}"] [data-col-count]`);
+  const isMobile = window.innerWidth < 640;
+  const cur      = isMobile && grid?.dataset.mobileColCount
+    ? parseInt(grid.dataset.mobileColCount, 10)
+    : parseInt(grid?.dataset.colCount || '3', 10);
+
+  // Update device badge so the user knows which layout they're editing.
+  const badge = document.getElementById('pg-layout-device-badge');
+  if (badge) badge.textContent = isMobile ? '\uD83D\uDCF1 Mobile' : '\uD83D\uDDA5\uFE0F Desktop';
 
   // How many columns are actually allowed at the current viewport width?
   // Reuse the same cap logic as the grid renderer (DRY).
@@ -1395,24 +1420,25 @@ function openPageLayout(pageId) {
 function closePageLayout() {
   document.getElementById('pg-layout-modal')?.classList.add('hidden');
 }
-
 async function selectPageLayout(cols) {
   const modal  = document.getElementById('pg-layout-modal');
   const pageId = modal?.dataset.pageId;
   if (!pageId) return;
 
-  // Update UI immediately
+  const isMobile = window.innerWidth < 640;
+
+  // Update the right data attribute immediately so _applyWidgetGridColCap
+  // reads it correctly and col spans clamp to the right number of columns.
   const grid = document.querySelector(`[data-page-id="${pageId}"] [data-col-count]`);
   if (grid) {
-    grid.dataset.colCount = cols;
-    // Reuse _applyWidgetGridColCap so the grid template AND every widget card’s
-    // col-span are recalculated together for the new column count.
-    // Calling it directly (not just updating gridTemplateColumns inline) is what
-    // keeps cards from staying locked to '1 / -1' after a 1-column selection.
+    if (isMobile) {
+      grid.dataset.mobileColCount = cols;
+    } else {
+      grid.dataset.colCount = cols;
+    }
     if (typeof window._applyWidgetGridColCap === 'function') {
       window._applyWidgetGridColCap();
     } else {
-      // Fallback: at least update the grid template columns
       var eff = (typeof window._wpEffCols === 'function') ? window._wpEffCols(cols) : cols;
       grid.style.gridTemplateColumns = `repeat(${eff}, minmax(0, 1fr))`;
     }
@@ -1428,8 +1454,10 @@ async function selectPageLayout(cols) {
     btn.classList.toggle('dark:border-zinc-700', !active);
   });
 
-  // Persist to backend
+  // Persist to the correct config key for this breakpoint.
+  const colKey = isMobile ? 'mobile_col_count' : 'col_count';
   await _post(`/home/pages/${pageId}/update-config`,
-    { config_json: JSON.stringify({ col_count: cols }) });
+    { config_json: JSON.stringify({ [colKey]: cols }) });
   if (typeof invalidateHomePageCache === 'function') invalidateHomePageCache(pageId);
+}
 }

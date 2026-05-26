@@ -244,6 +244,91 @@ async def get_widgets(page_id: int) -> list[dict]:
     return top_level
 
 
+# ── Mobile-layout helpers (Option A: mobile order in page config_json) ───────
+
+async def _append_mobile_order(db, page_id: int, widget_id: int) -> None:
+    """Append widget_id to mobile_widget_order in page config if that key exists.
+
+    Called inside an open transaction — does NOT commit.
+    If mobile_widget_order hasn't been initialised yet (user never reordered
+    on mobile) we leave it absent so the desktop sort_order is used as-is.
+    """
+    cur = await db.execute(
+        "SELECT config_json FROM home_pages WHERE id=?", (page_id,)
+    )
+    row = await cur.fetchone()
+    if not row:
+        return
+    try:
+        cfg = json.loads(row["config_json"] or "{}")
+    except Exception:
+        return
+    order = cfg.get("mobile_widget_order")
+    if not isinstance(order, list):
+        return  # not yet initialised — skip
+    if widget_id not in order:
+        cfg["mobile_widget_order"] = order + [widget_id]
+        await db.execute(
+            "UPDATE home_pages SET config_json=? WHERE id=?",
+            (json.dumps(cfg), page_id),
+        )
+
+
+async def _prune_mobile_order(db, page_id: int, widget_id: int) -> None:
+    """Remove widget_id from mobile_widget_order in page config.
+
+    Called inside an open transaction — does NOT commit.
+    """
+    cur = await db.execute(
+        "SELECT config_json FROM home_pages WHERE id=?", (page_id,)
+    )
+    row = await cur.fetchone()
+    if not row:
+        return
+    try:
+        cfg = json.loads(row["config_json"] or "{}")
+    except Exception:
+        return
+    order = cfg.get("mobile_widget_order")
+    if not isinstance(order, list) or widget_id not in order:
+        return
+    cfg["mobile_widget_order"] = [x for x in order if x != widget_id]
+    await db.execute(
+        "UPDATE home_pages SET config_json=? WHERE id=?",
+        (json.dumps(cfg), page_id),
+    )
+
+
+async def reorder_widgets_mobile(
+    page_id: int, user_id: int, ordered_ids: list[int]
+) -> None:
+    """Persist a mobile-specific widget order into home_pages.config_json.
+
+    This is the first time mobile_widget_order is written for a page,
+    so future add_widget / delete_widget calls will maintain it automatically.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT config_json FROM home_pages WHERE id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return
+        try:
+            cfg = json.loads(row["config_json"] or "{}")
+        except Exception:
+            cfg = {}
+        cfg["mobile_widget_order"] = ordered_ids
+        await db.execute(
+            "UPDATE home_pages SET config_json=? WHERE id=? AND user_id=?",
+            (json.dumps(cfg), page_id, user_id),
+        )
+        await db.commit()
+
+
+# ── Widget CRUD ───────────────────────────────────────────────────────────────
+
 async def add_widget(
     page_id: int, widget_type: str, style: str, config: dict
 ) -> int:
@@ -259,8 +344,11 @@ async def add_widget(
             " VALUES(?,?,?,?,?)",
             (page_id, widget_type, style, json.dumps(config), sort),
         )
+        new_id = cur.lastrowid
+        # Keep mobile_widget_order in sync (only if it exists for this page).
+        await _append_mobile_order(db, page_id, new_id)
         await db.commit()
-        return cur.lastrowid
+        return new_id
 
 
 async def update_widget_config(widget_id: int, config: dict) -> None:
@@ -305,14 +393,19 @@ async def reorder_home_pages(user_id: int, ordered_ids: list[int]) -> None:
 async def delete_widget(widget_id: int) -> None:
     """Delete a widget.  If it was the last child of a stack, auto-delete the stack too."""
     async with get_db() as db:
-        # Check if this widget belongs to a stack before deleting it
+        # Fetch group_id AND page_id before deleting so we can clean up mobile order.
         cur = await db.execute(
-            "SELECT group_id FROM home_widgets WHERE id=?", (widget_id,)
+            "SELECT group_id, page_id FROM home_widgets WHERE id=?", (widget_id,)
         )
         row = await cur.fetchone()
         parent_stack_id = row["group_id"] if row else None
+        widget_page_id  = row["page_id"]  if row else None
 
         await db.execute("DELETE FROM home_widgets WHERE id=?", (widget_id,))
+
+        # Remove from mobile_widget_order if it was tracked there.
+        if widget_page_id:
+            await _prune_mobile_order(db, widget_page_id, widget_id)
 
         # Auto-delete parent stack if it now has no children remaining
         if parent_stack_id:

@@ -26,6 +26,7 @@ from routers.home_db import (
     delete_widget, duplicate_home_page, empty_home_page_trash, get_home_page,
     get_home_pages, get_trashed_home_pages, get_widget_by_id, get_widgets,
     permanent_delete_home_page, restore_home_page, reorder_home_pages, reorder_widgets,
+    reorder_widgets_mobile,
     rename_home_page, stack_add_child, unstack_widget, update_page_config,
     update_widget_config, update_widget_style,
 )
@@ -1399,4 +1400,27 @@ async def reorder_widgets_handler(
     except ValueError:
         return HTMLResponse(_ERR.format("Bad order."), 400)
     await reorder_widgets(page_id, ids)
+    return HTMLResponse("", 204)
+
+
+@router.post("/pages/{page_id}/widgets/reorder-mobile", response_class=HTMLResponse)
+async def reorder_widgets_mobile_handler(
+    request: Request,
+    page_id: int,
+    order: str = Form(...),   # comma-separated widget IDs
+):
+    """Persist a mobile-specific widget order (stored in page config_json).
+
+    The desktop sort_order on home_widgets is untouched so the desktop
+    layout is completely independent.
+    """
+    uid  = _uid(request)
+    page = await get_home_page(page_id, uid)
+    if not page:
+        return HTMLResponse(_ERR.format("Forbidden."), 403)
+    try:
+        ids = [int(x) for x in order.split(",") if x.strip()]
+    except ValueError:
+        return HTMLResponse(_ERR.format("Bad order."), 400)
+    await reorder_widgets_mobile(page_id, uid, ids)
     return HTMLResponse("", 204)

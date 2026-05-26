@@ -66,7 +66,8 @@
 
 {% macro card(w, extra_cls="") %}
 {%- set _wcfg    = w.get('config', {}) -%}
-{%- set col_span = _wcfg.get('col_span', 1) -%}
+{%- set col_span        = _wcfg.get('col_span', 1) -%}
+{%- set mobile_col_span = _wcfg.get('mobile_col_span', col_span) -%}
 {%- set row_span = _wcfg.get('row_span', 1) -%}
 {%- set _shell   = '' if _wcfg.get('card_bg') == '0'
                    else 'bg-white dark:bg-zinc-900 shadow-sm border border-gray-200
@@ -77,6 +78,7 @@
      data-widget-type="{{ w.widget_type }}"
      data-widget-style="{{ w.style }}"
      data-col-span="{{ col_span }}"
+     data-mobile-col-span="{{ mobile_col_span }}"
      data-row-span="{{ row_span }}"
      data-widget-config='{{ _wcfg | tojson | e }}'
      style="grid-column: span {{ col_span }}; grid-row: span {{ row_span }}; min-height: 7.5rem;"
@@ -97,7 +99,8 @@
     needed by the drag-and-drop + settings systems. -#}
 {% macro bare_card(w, extra_cls="") %}
 {%- set _wcfg = w.get('config', {}) -%}
-{%- set col_span = _wcfg.get('col_span', 1) -%}
+{%- set col_span        = _wcfg.get('col_span', 1) -%}
+{%- set mobile_col_span = _wcfg.get('mobile_col_span', col_span) -%}
 {%- set row_span = _wcfg.get('row_span', 1) -%}
 <div id="hw-card-{{ w.id }}"
      class="hw-card group/wcard relative flex flex-col {{ extra_cls }}"
@@ -105,6 +108,7 @@
      data-widget-type="{{ w.widget_type }}"
      data-widget-style="{{ w.style }}"
      data-col-span="{{ col_span }}"
+     data-mobile-col-span="{{ mobile_col_span }}"
      data-row-span="{{ row_span }}"
      data-widget-config='{{ _wcfg | tojson | e }}'
      style="grid-column: span {{ col_span }}; grid-row: span {{ row_span }};"
@@ -1554,8 +1558,9 @@
 {%- set s = w.style | default('thin') -%}
 {%- set cfg = w.get('config', {}) -%}
 {#- Default: span all columns of the grid. Users can shrink via the settings size picker. -#}
-{%- set _pgcols = page.get('config', {}).get('col_count', 3) -%}
-{%- set col_span = cfg.get('col_span', _pgcols) -%}
+{%- set _pgcols         = page.get('config', {}).get('col_count', 3) -%}
+{%- set col_span        = cfg.get('col_span', _pgcols) -%}
+{%- set mobile_col_span = cfg.get('mobile_col_span', col_span) -%}
 {%- set row_span = cfg.get('row_span', 1) -%}
 {%- set _full = (col_span | int) >= _pgcols -%}
 <div id="hw-card-{{ w.id }}"
@@ -1564,6 +1569,7 @@
      data-widget-type="divider"
      data-widget-style="{{ s }}"
      data-col-span="{{ col_span }}"
+     data-mobile-col-span="{{ mobile_col_span }}"
      data-row-span="{{ row_span }}"
      data-widget-config='{{ cfg | tojson | e }}'
      style="{% if _full %}grid-column: 1 / -1;{% else %}grid-column: span {{ col_span }};{% endif %} grid-row: span {{ row_span }}; padding-top: 0.6rem; padding-bottom: 0.6rem;"
@@ -1921,10 +1927,14 @@
   {% else %}
   <div class="grid gap-2 sm:gap-3"
        id="widget-grid-{{ page.id }}"
-       {%- set _pgcfg = page.get('config', {}) -%}
-       data-col-count="{{ _pgcfg.get('col_count', 3) }}"
+       {%- set _pgcfg    = page.get('config', {}) -%}
+       {%- set _dsk_cols = _pgcfg.get('col_count', 3) -%}
+       {%- set _mob_cols = _pgcfg.get('mobile_col_count', [_dsk_cols, 3] | min) -%}
+       data-col-count="{{ _dsk_cols }}"
+       data-mobile-col-count="{{ _mob_cols }}"
+       data-mobile-order="{{ _pgcfg.get('mobile_widget_order', []) | tojson | e }}"
        data-stack-mode="{{ 'true' if _pgcfg.get('stack_mode') else 'false' }}"
-       style="grid-template-columns: repeat({{ _pgcfg.get('col_count', 3) }}, minmax(0, 1fr)); grid-auto-rows: auto;">
+       style="grid-template-columns: repeat({{ _dsk_cols }}, minmax(0, 1fr)); grid-auto-rows: auto;">
     {% for w in widgets %}
       {% if w.widget_type == 'clock' %}       {{ render_clock(w) }}
       {% elif w.widget_type == 'weather' %}   {{ render_weather(w) }}

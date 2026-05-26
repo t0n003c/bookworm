@@ -1928,22 +1928,57 @@ window._wpEffCols = function(saved) {
 // Exposed as window._applyWidgetGridColCap so home-widgets-settings.js can
 // call it after a layout picker selection (selectPageLayout).
 function _applyWidgetGridColCap() {
+  var isMobile = window.innerWidth < 640;
   document.querySelectorAll('[data-col-count]').forEach(function(grid) {
-    var saved = parseInt(grid.dataset.colCount || '3', 10);
-    var eff   = window._wpEffCols(saved);
+    // On phones, prefer the mobile-specific column count if the user has set one.
+    var saved = (isMobile && grid.dataset.mobileColCount)
+      ? parseInt(grid.dataset.mobileColCount, 10)
+      : parseInt(grid.dataset.colCount || '3', 10);
+    var eff = window._wpEffCols(saved);
     grid.style.gridTemplateColumns = 'repeat(' + eff + ', minmax(0, 1fr))';
 
-    // Cap every widget card’s col-span to the effective column count so no
-    // single card accidentally creates implicit extra columns.
+    // Cap every widget card’s col-span; on phones prefer the mobile variant.
     grid.querySelectorAll('[data-col-span]').forEach(function(card) {
-      var span    = parseInt(card.dataset.colSpan || '1', 10);
+      var span = (isMobile && card.dataset.mobileColSpan)
+        ? parseInt(card.dataset.mobileColSpan, 10)
+        : parseInt(card.dataset.colSpan || '1', 10);
       var effSpan = Math.min(span, eff);
-      // Preserve full-width spans as 1/-1 shorthand; use numbered span otherwise.
       card.style.gridColumn = (effSpan >= eff) ? '1 / -1' : 'span ' + effSpan;
     });
   });
 }
 window._applyWidgetGridColCap = _applyWidgetGridColCap;
+
+/**
+ * _applyMobileWidgetOrder — reorder the widget cards in the DOM to match the
+ * saved mobile_widget_order from the page config.  Only runs on phones
+ * (< 640 px).  Any widget ID not in the list is appended at the end so
+ * newly-added widgets always show up rather than disappearing.
+ */
+function _applyMobileWidgetOrder() {
+  if (window.innerWidth >= 640) return;
+  document.querySelectorAll('[data-mobile-order]').forEach(function(grid) {
+    var order;
+    try { order = JSON.parse(grid.dataset.mobileOrder || '[]'); }
+    catch (_) { return; }
+    if (!Array.isArray(order) || order.length === 0) return;
+
+    var cards = Array.from(grid.querySelectorAll(':scope > .hw-card'));
+    var byId  = {};
+    cards.forEach(function(c) {
+      byId[parseInt(c.dataset.widgetId, 10)] = c;
+    });
+
+    // Build ordered list: listed IDs first, then any unlisted (new widgets).
+    var sorted = [];
+    order.forEach(function(id) {
+      if (byId[id]) { sorted.push(byId[id]); delete byId[id]; }
+    });
+    Object.values(byId).forEach(function(c) { sorted.push(c); });
+    sorted.forEach(function(c) { grid.appendChild(c); });
+  });
+}
+window._applyMobileWidgetOrder = _applyMobileWidgetOrder;
 
 function _setTopActionNewNote() {
   const area = document.getElementById('top-action-area');
@@ -2233,7 +2268,20 @@ function _initDnD(grid, pageId) {
     if (si < ti) target.after(_dragSrc); else target.before(_dragSrc);
     const order = [...grid.querySelectorAll(':scope > .hw-card')]
       .map(c => c.dataset.widgetId).join(',');
-    await _post(`/home/pages/${pageId}/widgets/reorder`, { order });
+    // On phones save to the mobile-order endpoint so the desktop layout
+    // stays completely independent.  Sync data-mobile-order immediately
+    // so _applyMobileWidgetOrder stays consistent without a canvas reload.
+    var _isMob = window.innerWidth < 640;
+    var _reorderUrl = _isMob
+      ? `/home/pages/${pageId}/widgets/reorder-mobile`
+      : `/home/pages/${pageId}/widgets/reorder`;
+    await _post(_reorderUrl, { order });
+    if (_isMob) {
+      var _rg = document.getElementById('widget-grid-' + pageId);
+      if (_rg) _rg.dataset.mobileOrder = JSON.stringify(
+        order.split(',').map(function(s) { return parseInt(s, 10); })
+      );
+    }
     invalidateHomePageCache(pageId);
   });
 }
@@ -2382,8 +2430,10 @@ function initHomeWidgets() {
     const grid   = canvas.querySelector('[id^="widget-grid-"]');
     if (grid) _initDnD(grid, pageId);
     // Clamp columns to the mobile / tablet cap immediately after rendering
-    // so a 5-col desktop setting doesn’t squish widgets on a phone.
+    // so a 5-col desktop setting doesn't squish widgets on a phone.
     _applyWidgetGridColCap();
+    // Apply saved mobile widget order if we're on a phone.
+    _applyMobileWidgetOrder();
   }
   // Text widgets — render markdown and attach editor
   if (typeof initTextWidgets === 'function') initTextWidgets();
@@ -2419,7 +2469,10 @@ document.addEventListener('DOMContentLoaded', () => {
   var _colCapTimer;
   window.addEventListener('resize', function() {
     clearTimeout(_colCapTimer);
-    _colCapTimer = setTimeout(_applyWidgetGridColCap, 150);
+    _colCapTimer = setTimeout(function() {
+      _applyWidgetGridColCap();
+      _applyMobileWidgetOrder();
+    }, 150);
   });
 
   // ── Restore HomeSpace page across browser F5 refresh ─────────────────────────
