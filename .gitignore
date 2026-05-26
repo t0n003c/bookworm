@@ -13,7 +13,6 @@ venv/
 # that should never appear on a public repo.
 AGENTS.md
 CLAUDE.md
-CODEPUPPY_NOTES.md
 PLAN.md
 PLAN_CRM_PHASE3.md
 
