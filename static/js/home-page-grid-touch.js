@@ -596,10 +596,9 @@ function _tpCleanup() {
 /* ── Click capture: block post-drag/arm clicks; open lightbox for quick taps ── */
 function _tpClickCapture(e) {
     // Suppress synthetic clicks that follow arm lifts, long-presses, or drags.
-    // stopImmediatePropagation (not just stopPropagation) is required here:
-    // _msCellClickHandler is registered on the SAME element (canvas) in the
-    // SAME phase (capture) and stopPropagation() does NOT block same-element
-    // listeners — only stopImmediatePropagation() does.
+    // stopImmediatePropagation (not stopPropagation) is required: _msCellClickHandler
+    // sits on the SAME element (canvas) in the SAME capture phase, and
+    // stopPropagation() would not prevent it from firing.
     if (_tpSuppressClick) {
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -610,11 +609,16 @@ function _tpClickCapture(e) {
     if (!cellEl) return;
     var cellId = parseInt(cellEl.dataset.gridCellId, 10);
 
-    // Multiselect toggles are handled in touchend; block the click here so
-    // _msCellClickHandler (also on canvas, capture) doesn’t double-toggle.
+    // Multiselect: handle the toggle HERE and block _msCellClickHandler
+    // (same capture-phase listener on the same canvas) to avoid double-toggle.
+    // This path is hit for MOUSE clicks on touch-capable devices (trackpad Mac,
+    // touchscreen laptops) where _tpOnTouchEnd never fired for this click.
+    // Pure non-touch desktops never register _tpClickCapture at all, so
+    // _msCellClickHandler handles those clicks exclusively.
     if (_msActive) {
         e.stopImmediatePropagation();
         e.preventDefault();
+        if (!isNaN(cellId)) _msToggle(cellId);
         return;
     }
 
