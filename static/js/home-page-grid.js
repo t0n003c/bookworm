@@ -335,13 +335,46 @@ function _gridBindDrag(el) {
     el.addEventListener('dragstart', function(e) {
         _gridDragId = parseInt(el.dataset.gridCellId, 10);
         e.dataTransfer.effectAllowed = 'move';
-        // Defer opacity so the drag ghost captures the normal appearance.
-        setTimeout(function() { el.classList.add('opacity-40'); }, 0);
+
+        // Multiselect drag: auto-include the dragged cell, dim all selected.
+        if (typeof _msActive !== 'undefined' && _msActive) {
+            if (!_msSelected.has(_gridDragId)) _msToggle(_gridDragId);
+            // Custom drag image: clone + count badge
+            var badge = document.createElement('div');
+            badge.style.cssText = 'position:fixed;top:-200px;left:-200px;'
+                + 'border-radius:12px;overflow:hidden;pointer-events:none;';
+            var clone = el.cloneNode(true);
+            clone.style.cssText = 'width:' + el.offsetWidth + 'px;height:' + el.offsetHeight + 'px;';
+            var dot = document.createElement('div');
+            dot.style.cssText = 'position:absolute;top:-8px;right:-8px;'
+                + 'background:#0053e2;color:#fff;font-size:12px;font-weight:700;'
+                + 'border-radius:999px;min-width:22px;height:22px;'
+                + 'display:flex;align-items:center;justify-content:center;padding:0 5px;'
+                + 'box-shadow:0 2px 6px rgba(0,0,0,.35);';
+            dot.textContent = _msSelected.size;
+            badge.appendChild(clone);
+            badge.appendChild(dot);
+            document.body.appendChild(badge);
+            e.dataTransfer.setDragImage(badge, el.offsetWidth / 2, el.offsetHeight / 2);
+            setTimeout(function() { badge.remove(); }, 0);
+            setTimeout(function() {
+                document.querySelectorAll('[data-grid-cell-id]').forEach(function(c) {
+                    if (_msSelected.has(parseInt(c.dataset.gridCellId, 10))) {
+                        c.classList.add('opacity-40');
+                    }
+                });
+            }, 0);
+        } else {
+            setTimeout(function() { el.classList.add('opacity-40'); }, 0);
+        }
         _gridScrollStart();
     });
 
     el.addEventListener('dragend', function() {
-        el.classList.remove('opacity-40');
+        // Restore all cells (covers both single and multi drag)
+        document.querySelectorAll('[data-grid-cell-id]').forEach(function(c) {
+            c.classList.remove('opacity-40');
+        });
         _gridClearDropIndicator();
         _gridScrollStop();
         _gridDragId = null;
@@ -352,15 +385,16 @@ function _gridBindDrag(el) {
         e.dataTransfer.dropEffect = 'move';
         if (!_gridDragId) return;
         var targetId = parseInt(el.dataset.gridCellId, 10);
-        if (targetId === _gridDragId) return;  // hovering own cell — no indicator
-        // Left half of cell = insert before; right half = insert after.
+        // Skip indicator when hovering the dragged cell itself, or (in multiselect)
+        // any other cell that is part of the moving group.
+        if (targetId === _gridDragId) return;
+        if (typeof _msActive !== 'undefined' && _msActive && _msSelected.has(targetId)) return;
         var rect   = el.getBoundingClientRect();
         var before = (e.clientX - rect.left) < rect.width / 2;
         _gridSetDropIndicator(el, before);
     });
 
     el.addEventListener('dragleave', function(e) {
-        // Only clear when truly leaving this cell (not entering a child element).
         if (el.contains(e.relatedTarget)) return;
         if (_gridDragOverEl === el) _gridClearDropIndicator();
     });
@@ -370,7 +404,11 @@ function _gridBindDrag(el) {
         var targetId = parseInt(el.dataset.gridCellId, 10);
         var before   = _gridDropBefore;
         _gridClearDropIndicator();
-        if (_gridDragId && targetId && _gridDragId !== targetId) {
+        if (!_gridDragId || !targetId || _gridDragId === targetId) return;
+        // Multiselect: move the whole selection; single: move one cell.
+        if (typeof _msActive !== 'undefined' && _msActive) {
+            _msMoveSelected(targetId, before);
+        } else {
             _gridReorder(_gridDragId, targetId, before);
         }
     });

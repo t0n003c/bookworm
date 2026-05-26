@@ -117,9 +117,8 @@ function _msEnter(firstId) {
     _msRebuildCheckboxes();
     _msUpdateBar();
 
-    // ─ Disable drag on cells so desktop clicks register cleanly ─
+    // ─ Cursor hint only — draggable stays true so HTML5 drag-to-reorder works ─
     document.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
-        el.setAttribute('draggable', 'false');
         el.style.cursor = 'pointer';
     });
 
@@ -158,9 +157,8 @@ function _msExit() {
     _msSelected.clear();
     _msRemoveCheckboxes();
 
-    // ─ Re-enable drag on cells ─
+    // ─ Restore cursor ─
     document.querySelectorAll('[data-grid-cell-id]').forEach(function(el) {
-        el.setAttribute('draggable', 'true');
         el.style.cursor = '';
     });
 
