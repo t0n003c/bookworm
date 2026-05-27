@@ -2077,13 +2077,22 @@ async function _checkNoteReminders() {
          _showReminderToast renders \n as <br>, and supplies its own 🔔 icon. */
       const toastText = bodyText ? `${titleText}\n${bodyText}` : titleText;
 
-      /* ── Browser notification ── */
+      /* ── Browser notification ──
+         Route through the SW when available so it works on mobile too
+         (bare new Notification() throws "Illegal constructor" on Android). */
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        try {
-          new Notification('\ud83d\udcd6 BookWorm Reminder', {
-            body: bodyText ? titleText + '\n' + bodyText : titleText,
-          });
-        } catch (_) {}
+        const notifTitle = '\uD83D\uDCDA BookWorm Reminder';
+        const notifOpts  = {
+          body: bodyText ? titleText + '\n' + bodyText : titleText,
+          icon: '/static/favicon.ico',
+        };
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready
+            .then(reg => reg.showNotification(notifTitle, notifOpts))
+            .catch(() => { try { new Notification(notifTitle, notifOpts); } catch (_) {} });
+        } else {
+          try { new Notification(notifTitle, notifOpts); } catch (_) {}
+        }
       }
 
       /* ── In-app toast ── */

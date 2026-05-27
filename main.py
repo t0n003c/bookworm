@@ -169,18 +169,23 @@ async def _reminder_push_loop():
                     "keys":     {"p256dh": row["p256dh"], "auth": row["auth"]},
                 }
                 body = row["message"] or row["label"]
+                note_id = row["note_id"]
                 payload = {
-                    "title":   "📚 BookWorm Reminder",
+                    "title":   "\U0001f4da BookWorm Reminder",
                     "body":    body,
                     "icon":    "/static/img/icons/icon-192.png",
                     "badge":   "/static/img/icons/icon-192.png",
                     "tag":     f"bw-rem-{row['reminder_id']}",
-                    "data":    {"note_id": row["note_id"]},
+                    # url lets the SW click handler deep-link to the right note
+                    "data":    {"note_id": note_id,
+                                "url": f"/?note={note_id}" if note_id else "/"},
                 }
                 result = await send_push(sub_info, payload)
-                fired_ids.add(row["reminder_id"])
                 if result is None:
-                    stale_eps.add(row["endpoint"])
+                    stale_eps.add(row["endpoint"])  # dead sub — remove it
+                elif result:                         # True = delivered OK
+                    fired_ids.add(row["reminder_id"])
+                # False = transient error — leave fired=0 so it retries next cycle
             await mark_reminders_fired(list(fired_ids))
             for ep in stale_eps:
                 await delete_subscription(ep)
@@ -636,7 +641,7 @@ async def _widget_notif_loop():
                     "icon":  "/static/img/icons/icon-192.png",
                     "badge": "/static/img/icons/icon-192.png",
                     "tag":   f"bw-crm-rem-{row['reminder_id']}",
-                    "data":  {"page_id": row["page_id"]},
+                    "data":  {"page_id": row["page_id"], "url": "/"},
                 }
                 result = await send_push(sub, payload)
                 if result is None:

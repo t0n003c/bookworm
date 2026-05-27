@@ -85,8 +85,12 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const noteId = event.notification.data && event.notification.data.note_id;
-  const url    = noteId ? `/?note=${noteId}` : '/';
+  const d      = event.notification.data || {};
+  // Prefer an explicit url hint baked into the notification payload.
+  // Fall back to note deep-link, then plain home.
+  const noteId = d.note_id;
+  const url    = d.url
+               || (noteId ? `/?note=${noteId}` : '/');
 
   event.waitUntil(
     self.clients
@@ -94,7 +98,12 @@ self.addEventListener('notificationclick', event => {
       .then(clients => {
         // Focus an existing window if one is open.
         const existing = clients.find(c => c.url.includes(self.location.origin));
-        if (existing) return existing.focus();
+        if (existing) {
+          existing.focus();
+          // Ask the page to navigate if it needs to go somewhere specific
+          if (url && url !== '/') existing.navigate(url).catch(() => {});
+          return;
+        }
         return self.clients.openWindow(url);
       })
   );
