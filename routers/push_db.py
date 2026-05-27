@@ -5,6 +5,7 @@ send_push() is a thin async wrapper around pywebpush's synchronous webpush()
 call, run in a thread pool so it never blocks the uvicorn event loop.
 """
 import asyncio
+import datetime
 import json
 import logging
 import os
@@ -236,3 +237,111 @@ def _send_push_sync(subscription_info: dict, payload: dict) -> bool | None:
 async def send_push(subscription_info: dict, payload: dict) -> bool | None:
     """Async wrapper around _send_push_sync."""
     return await asyncio.to_thread(_send_push_sync, subscription_info, payload)
+
+
+# ── widget_notif_sent dedup helpers ───────────────────────────────────────────────
+
+async def has_widget_notif_sent(key: str) -> bool:
+    """Return True if this notification key has already been sent."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT 1 FROM widget_notif_sent WHERE key=?", (key,)
+        )
+        return bool(await cur.fetchone())
+
+
+async def mark_widget_notifs_sent(keys: list[str]) -> None:
+    """Record a batch of notification keys as sent."""
+    if not keys:
+        return
+    async with get_db() as db:
+        await db.executemany(
+            "INSERT OR IGNORE INTO widget_notif_sent (key) VALUES (?)",
+            [(k,) for k in keys],
+        )
+        await db.commit()
+
+
+async def cleanup_old_widget_notifs(days: int = 60) -> None:
+    """Prune dedup records older than *days* to keep the table lean."""
+    cutoff = (datetime.datetime.utcnow() -
+              datetime.timedelta(days=days)).isoformat()
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM widget_notif_sent WHERE sent_at < ?", (cutoff,)
+        )
+        await db.commit()
+
+
+# ── Countdown widget notification queries ──────────────────────────────────────
+
+async def get_countdown_widgets_with_subs() -> list[dict]:
+    """Return countdown widgets that have notify_on_day=true in config_json,
+    joined with push subscriptions for the owning user.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT hw.id, hp.user_id, hw.config_json,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   home_widgets hw
+            JOIN   home_pages   hp ON hp.id = hw.page_id
+            JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
+            WHERE  hw.widget_type = 'countdown'
+            """
+        )
+        rows = await cur.fetchall()
+    result = []
+    for r in rows:
+        try:
+            cfg = json.loads(r[2] or "{}")
+        except Exception:
+            cfg = {}
+        if not cfg.get("notify_on_day"):
+            continue
+        result.append({
+            "widget_id":   r[0],
+            "user_id":     r[1],
+            "label":       cfg.get("label", "Countdown"),
+            "target_date": cfg.get("target_date", ""),
+            "endpoint":    r[3],
+            "p256dh":      r[4],
+            "auth":        r[5],
+        })
+    return result
+
+
+# ── Event widget notification queries ───────────────────────────────────────────
+
+async def get_event_widgets_with_subs() -> list[dict]:
+    """Return event widgets joined with push subscriptions."""
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT hw.id, hp.user_id, hw.config_json,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   home_widgets hw
+            JOIN   home_pages   hp ON hp.id = hw.page_id
+            JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
+            WHERE  hw.widget_type = 'event'
+            """
+        )
+        rows = await cur.fetchall()
+    result = []
+    for r in rows:
+        try:
+            cfg   = json.loads(r[2] or "{}")
+            items = cfg.get("items", [])
+        except Exception:
+            items = []
+        if not items:
+            continue
+        result.append({
+            "widget_id": r[0],
+            "user_id":   r[1],
+            "items":     items,
+            "endpoint":  r[3],
+            "p256dh":    r[4],
+            "auth":      r[5],
+        })
+    return result

@@ -370,6 +370,153 @@ async def _bud_notif_loop():
             log.exception("[bud-push] loop error")
 
 
+def _evt_next_occurrence(target_date_iso: str, repeat_unit: str,
+                          repeat_interval: int) -> "datetime.date | None":
+    """Python equivalent of the JS _evtNext() helper.
+
+    Returns the next occurrence of a recurring event on or after today,
+    or None if target_date_iso is unparseable.
+    """
+    import datetime, calendar as _cal
+    try:
+        t = datetime.date.fromisoformat(target_date_iso)
+    except (ValueError, TypeError):
+        return None
+    today = datetime.date.today()
+    if repeat_unit == "none" or not repeat_unit:
+        return t
+    if t >= today:
+        return t
+    iv = max(1, int(repeat_interval or 1))
+    n = t
+    while n < today:
+        if repeat_unit == "day":
+            n += datetime.timedelta(days=iv)
+        elif repeat_unit == "week":
+            n += datetime.timedelta(weeks=iv)
+        elif repeat_unit == "month":
+            month = n.month + iv
+            year  = n.year + (month - 1) // 12
+            month = (month - 1) % 12 + 1
+            day   = min(n.day, _cal.monthrange(year, month)[1])
+            n     = n.replace(year=year, month=month, day=day)
+        elif repeat_unit == "year":
+            try:
+                n = n.replace(year=n.year + iv)
+            except ValueError:  # Feb 29 on non-leap year
+                n = n.replace(year=n.year + iv, day=28)
+    return n
+
+
+async def _widget_notif_loop():
+    """Background task: push notifications for Countdown and Event widgets.
+
+    Countdown — fires at 9am on target_date when notify_on_day=True.
+    Events    — fires N days before the next occurrence per the item's lead_days.
+    Both use widget_notif_sent for dedup (won't fire twice for the same key).
+    """
+    import os, datetime
+    if not os.getenv("BW_VAPID_PRIVATE_KEY"):
+        log.info("[widget-push] BW_VAPID_PRIVATE_KEY not set — widget push disabled")
+        return
+    from routers.push_db import (
+        send_push, delete_subscription,
+        get_countdown_widgets_with_subs, get_event_widgets_with_subs,
+        has_widget_notif_sent, mark_widget_notifs_sent, cleanup_old_widget_notifs,
+    )
+    _INTERVAL = 60
+    while True:
+        await asyncio.sleep(_INTERVAL)
+        try:
+            now   = datetime.datetime.now()
+            today = datetime.date.today()
+            stale_eps: set[str] = set()
+            sent_keys: list[str] = []
+
+            # ── Countdown: fire at 9am on the target date ──────────────────────
+            if now.hour >= 9:
+                for row in await get_countdown_widgets_with_subs():
+                    if not row["target_date"]:
+                        continue
+                    try:
+                        td = datetime.date.fromisoformat(row["target_date"])
+                    except ValueError:
+                        continue
+                    if td != today:
+                        continue
+                    key = f"countdown:{row['widget_id']}:{row['target_date']}"
+                    if await has_widget_notif_sent(key):
+                        continue
+                    sub = {"endpoint": row["endpoint"],
+                           "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                    payload = {
+                        "title": "\uD83C\uDF89 It's the day!",
+                        "body":  f"{row['label']} is today!",
+                        "icon":  "/static/img/icons/icon-192.png",
+                        "badge": "/static/img/icons/icon-192.png",
+                        "tag":   f"bw-countdown-{row['widget_id']}",
+                    }
+                    result = await send_push(sub, payload)
+                    if result is None:
+                        stale_eps.add(row["endpoint"])
+                    elif result:
+                        sent_keys.append(key)
+
+            # ── Events: fire N days before next occurrence ──────────────────────
+            for row in await get_event_widgets_with_subs():
+                for item in row["items"]:
+                    lead_days = item.get("lead_days") or []
+                    if not lead_days:
+                        continue
+                    nxt = _evt_next_occurrence(
+                        item.get("target_date", ""),
+                        item.get("repeat_unit", "none"),
+                        item.get("repeat_interval", 1),
+                    )
+                    if nxt is None:
+                        continue
+                    nxt_iso = nxt.isoformat()
+                    item_id = item.get("id", "")
+                    for ld in lead_days:
+                        try:
+                            fire_date = nxt - datetime.timedelta(days=int(ld))
+                        except (TypeError, ValueError):
+                            continue
+                        if fire_date != today:
+                            continue
+                        key = f"event:{row['widget_id']}:{item_id}:{nxt_iso}:{ld}"
+                        if await has_widget_notif_sent(key):
+                            continue
+                        days_label = "Today!" if ld == 0 else (
+                            "Tomorrow" if ld == 1 else f"In {ld} days"
+                        )
+                        sub = {"endpoint": row["endpoint"],
+                               "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                        payload = {
+                            "title": "\uD83D\uDCC5 Upcoming event",
+                            "body":  f"{item.get('text', 'Event')} — {days_label}",
+                            "icon":  "/static/img/icons/icon-192.png",
+                            "badge": "/static/img/icons/icon-192.png",
+                            "tag":   f"bw-event-{row['widget_id']}-{item_id}-{ld}",
+                        }
+                        result = await send_push(sub, payload)
+                        if result is None:
+                            stale_eps.add(row["endpoint"])
+                        elif result:
+                            sent_keys.append(key)
+
+            # ── Housekeeping ─────────────────────────────────────────────────
+            await mark_widget_notifs_sent(sent_keys)
+            for ep in stale_eps:
+                await delete_subscription(ep)
+            if now.hour == 3 and now.minute < 2:   # cleanup once a night
+                await cleanup_old_widget_notifs()
+            if sent_keys:
+                log.info("[widget-push] fired %d notification(s)", len(sent_keys))
+        except Exception:
+            log.exception("[widget-push] loop error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
@@ -383,14 +530,15 @@ async def lifespan(app: FastAPI):
     await purge_expired_trash()   # clean up any trash older than 30 days on boot
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
     await purge_old_demo_users()  # clean up stale demo accounts on boot
-    purge_task  = asyncio.create_task(_demo_purge_loop())
-    push_task   = asyncio.create_task(_reminder_push_loop())
-    rss_task    = asyncio.create_task(_rss_notif_loop())
-    bud_task    = asyncio.create_task(_bud_notif_loop())
+    purge_task   = asyncio.create_task(_demo_purge_loop())
+    push_task    = asyncio.create_task(_reminder_push_loop())
+    rss_task     = asyncio.create_task(_rss_notif_loop())
+    bud_task     = asyncio.create_task(_bud_notif_loop())
+    widget_task  = asyncio.create_task(_widget_notif_loop())
     try:
         yield
     finally:
-        for t in (purge_task, push_task, rss_task, bud_task):
+        for t in (purge_task, push_task, rss_task, bud_task, widget_task):
             t.cancel()
             try:
                 await t

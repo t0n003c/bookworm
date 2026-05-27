@@ -1197,6 +1197,17 @@ async def init_db() -> None:
             "ON rss_notif_seen(feed_url)"
         )
 
+        # ── widget_notif_sent: dedup guard for countdown + event push alerts ─────
+        # key format:
+        #   countdown:{widget_id}:{target_date}
+        #   event:{widget_id}:{item_id}:{occurrence_iso}:{lead_days}
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS widget_notif_sent (
+                key      TEXT    NOT NULL PRIMARY KEY,
+                sent_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS public_share_links (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
