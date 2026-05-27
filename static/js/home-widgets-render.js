@@ -1090,6 +1090,28 @@ function _isReminderOccurrence(item, todayISO) {
   return false;
 }
 
+/**
+ * Cross-platform browser notification.
+ * - Desktop Chrome/Firefox/Edge: supports `new Notification()` directly.
+ * - Android Chrome + all mobile browsers: `new Notification()` throws
+ *   "Illegal constructor" — must use SW.showNotification() instead.
+ * - Falls back silently if SW is not available and new Notification() also fails.
+ */
+function _showBrowserNotif(title, body) {
+  var opts = { body: body, icon: '/static/favicon.ico' };
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    // Mobile path — delegate to the registered service worker
+    navigator.serviceWorker.ready
+      .then(function(reg) { reg.showNotification(title, opts); })
+      .catch(function() {
+        try { new Notification(title, opts); } catch (_) {}
+      });
+  } else {
+    // Desktop fallback
+    try { new Notification(title, opts); } catch (_) {}
+  }
+}
+
 function _checkReminderNotifications() {
   const now   = new Date();
   // Use LOCAL date (not UTC via toISOString) so reminders fire at the right
@@ -1110,7 +1132,7 @@ function _checkReminderNotifications() {
         _remLogMissed(item.text, item.time);
         // also try browser notification if permission already granted
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
-          new Notification('🔔 Reminder', { body: item.text, icon: '/static/favicon.ico' });
+          _showBrowserNotif('\uD83D\uDD14 Reminder', item.text);
       }
     });
   });
