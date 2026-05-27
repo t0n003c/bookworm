@@ -1241,13 +1241,13 @@ async def get_due_trip_reminders() -> list[dict]:
                    tdb.content,
                    td.day_label,
                    td.day_date,
-                   tp.name        AS trip_name,
+                   tp.plan_name   AS trip_name,
                    hp.user_id,
                    ps.endpoint, ps.p256dh, ps.auth
             FROM   trip_day_blocks tdb
             JOIN   trip_days       td  ON td.id      = tdb.day_id
-            JOIN   trip_plans      tp  ON tp.id      = td.plan_id
-            JOIN   home_pages      hp  ON hp.id      = tp.page_id
+            LEFT JOIN trip_plans   tp  ON tp.id      = td.plan_id
+            JOIN   home_pages      hp  ON hp.id      = COALESCE(tp.page_id, td.page_id)
             JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
             WHERE  tdb.block_type = 'reminder'
               AND  tdb.reminder_at IS NOT NULL
@@ -1296,7 +1296,7 @@ async def get_due_panel_reminders() -> list[dict]:
                    tpp.user_id,
                    tpp.content,
                    tpp.title    AS panel_title,
-                   tp.name      AS trip_name,
+                   tp.plan_name  AS trip_name,
                    ps.endpoint, ps.p256dh, ps.auth
             FROM   trip_plan_panels tpp
             JOIN   trip_plans  tp  ON tp.id      = tpp.plan_id
