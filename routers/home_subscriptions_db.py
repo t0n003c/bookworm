@@ -351,3 +351,58 @@ async def get_summary_data(page_id: int, user_id: int) -> dict:
         "by_category":   by_category,
         "upcoming":      upcoming,
     }
+
+
+# ── Push notification helper ───────────────────────────────────────────────────────
+
+async def get_due_subscription_reminders() -> list[dict]:
+    """Return active subscriptions whose reminder window opens today.
+
+    Conditions:
+      - active = 1
+      - reminder_days > 0
+      - next_payment_date is set
+      - 0 ≤ days_until_due ≤ reminder_days  (due today or within reminder window)
+      - not already cleared for this billing cycle
+        (cleared_date IS NULL OR cleared_date < next_payment_date)
+
+    Joined with push_subscriptions so the caller has everything needed to
+    send the push and record the dedup key.
+
+    Dedup key format: "sub:{id}:{next_payment_date}" — one push per billing
+    cycle.  The key changes automatically when next_payment_date advances.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT s.id, s.name, s.reminder_days,
+                   s.next_payment_date, s.amount, s.currency,
+                   hp.user_id,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   subscriptions s
+            JOIN   home_pages hp ON hp.id = s.page_id
+            JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
+            WHERE  s.active = 1
+              AND  s.reminder_days > 0
+              AND  s.next_payment_date IS NOT NULL
+              AND  julianday(s.next_payment_date) - julianday('now') BETWEEN 0 AND s.reminder_days
+              AND  (s.cleared_date IS NULL OR s.cleared_date < s.next_payment_date)
+            """
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "sub_id":            r[0],
+            "name":              r[1],
+            "reminder_days":     r[2],
+            "next_payment_date": r[3],
+            "amount":            r[4],
+            "currency":          r[5],
+            "user_id":           r[6],
+            "endpoint":          r[7],
+            "p256dh":            r[8],
+            "auth":              r[9],
+            "dedup_key":         f"sub:{r[0]}:{r[3]}",
+        }
+        for r in rows
+    ]
