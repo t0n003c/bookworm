@@ -22,7 +22,7 @@ from routers.home_db import get_home_page
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
-_PANEL_TYPES  = frozenset({"documents", "packing", "budget", "emergency", "notes", "settle", "people"})
+_PANEL_TYPES  = frozenset({"documents", "packing", "budget", "emergency", "notes", "settle", "people", "reminder"})
 _DEMO_NOOP    = Response(status_code=204, headers={"HX-Reswap": "none"})
 _MAX_DOC_MB   = 20
 
@@ -300,5 +300,6 @@ def _default_content(panel_type: str) -> dict:
         "notes":     {"text": ""},
         "settle":    {"currency": "USD", "people": [], "expenses": []},
         "people":    {"members": [], "linked_settle_id": None},
+        "reminder":  {"items": []},
     }
     return defaults.get(panel_type, {})

@@ -1274,3 +1274,62 @@ async def get_due_trip_reminders() -> list[dict]:
             "dedup_key":  f"trip_block:{r['block_id']}:{r['reminder_at']}",
         })
     return result
+
+
+async def get_due_panel_reminders() -> list[dict]:
+    """Return trip resource Reminder card items whose remind_at has arrived.
+
+    Iterates all trip_plan_panels of type 'reminder', parses their content
+    JSON in Python (avoids SQLite JSON_EXTRACT), and filters items whose
+    remind_at (local 'YYYY-MM-DDTHH:MM') <= now.
+
+    Returns one row per (item, push_subscription) pair.
+    Dedup key: 'trip_panel_remind:{panel_id}:{item_id}:{remind_at}'
+    """
+    import datetime as _dt
+    now_str = _dt.datetime.now().strftime("%Y-%m-%dT%H:%M")
+
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT tpp.id        AS panel_id,
+                   tpp.user_id,
+                   tpp.content,
+                   tpp.title    AS panel_title,
+                   tp.name      AS trip_name,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   trip_plan_panels tpp
+            JOIN   trip_plans  tp  ON tp.id      = tpp.plan_id
+            JOIN   push_subscriptions ps ON ps.user_id = tpp.user_id
+            WHERE  tpp.panel_type = 'reminder'
+            """
+        )
+        rows = await cur.fetchall()
+
+    result = []
+    for r in rows:
+        try:
+            data = _json.loads(r["content"] or "{}")
+        except Exception:
+            data = {}
+        for item in data.get("items", []):
+            remind_at = (item.get("remind_at") or "").strip()
+            if not remind_at:
+                continue
+            if remind_at > now_str:   # not yet
+                continue
+            item_id = item.get("id") or str(remind_at)  # fallback if missing
+            result.append({
+                "panel_id":    r["panel_id"],
+                "panel_title": r["panel_title"] or "Reminders",
+                "trip_name":   r["trip_name"] or "",
+                "item_id":     item_id,
+                "title":       item.get("title") or "Trip reminder",
+                "remind_at":   remind_at,
+                "user_id":     r["user_id"],
+                "endpoint":    r["endpoint"],
+                "p256dh":      r["p256dh"],
+                "auth":        r["auth"],
+                "dedup_key":   f"trip_panel_remind:{r['panel_id']}:{item_id}:{remind_at}",
+            })
+    return result

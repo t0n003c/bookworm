@@ -11,7 +11,8 @@
  *   tppSave*Item, tppSaveNotes, tppSaveBudgetTotal,
  *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppSaveBudgetGroupLink,
  *   tppBudgetSettleChanged, tppBudgetPeopleChanged, tppBudgetPersonPpChanged,
- *   tppUnlinkBudget
+ *   tppUnlinkBudget,
+ *   tppSaveReminderItem, tppDeleteReminderItem
  */
 
 var _TPP_TYPES = {
@@ -22,6 +23,7 @@ var _TPP_TYPES = {
   notes:     { icon: '📝', label: 'Trip Notes',   desc: 'Free-form scratchpad' },
   settle:    { icon: '🤝', label: 'Settle Up',    desc: 'Split costs & settle debts' },
   people:    { icon: '👥', label: 'People',        desc: 'Trip members, contacts & balances' },
+  reminder:  { icon: '🔔', label: 'Reminders',    desc: 'Push notifications for the trip' },
 };
 
 var _tppModalMode    = 'add';   // 'add' | 'edit'
@@ -290,6 +292,7 @@ function _tppBody(p, data, isEdit) {
   if (p.panel_type === 'emergency') return _tppEmerg(p, data, isEdit);
   if (p.panel_type === 'notes')     return _tppNotes(p, data, isEdit);
   if (p.panel_type === 'settle')    return _tppSettle(p, data, isEdit);
+  if (p.panel_type === 'reminder')  return _tppReminder(p, data, isEdit);
   if (p.panel_type === 'people') {
     try {
       return typeof window._tppPeople === 'function'
@@ -1041,7 +1044,88 @@ function _tppNotes(p, data, isEdit) {
   '</div>';
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+// ── Reminders ────────────────────────────────────────────────────────────────────────────
+
+function _tppRandId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function _tppFmtRemindAt(ra) {
+  if (!ra) return '';
+  try {
+    var d = new Date(ra);
+    return d.toLocaleString([], { month: 'short', day: 'numeric',
+                                   hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return ra; }
+}
+
+function _tppReminder(p, data, isEdit) {
+  var items = data.items || [];
+  var nowStr = new Date().toISOString().slice(0, 16);  // 'YYYY-MM-DDTHH:MM'
+
+  var rows = items.map(function(item, idx) {
+    var past    = item.remind_at && item.remind_at <= nowStr;
+    var icon    = past ? '✅' : '🔔';
+    var timeStr = _tppFmtRemindAt(item.remind_at);
+    var badge   = timeStr
+      ? (past
+          ? '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full ' +
+              'bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-zinc-500">' + _tripEsc(timeStr) + '</span>'
+          : '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full ' +
+              'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">' + _tripEsc(timeStr) + '</span>')
+      : '';
+    var del = isEdit
+      ? '<button onclick="tppDeleteReminderItem(' + p.id + ',\'' + _tripEsc(item.id || '') + '\')" ' +
+          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1" title="Delete">✕</button>'
+      : '';
+    return '<div class="flex items-start gap-2 px-3 py-2 border-b ' +
+             'border-gray-50 dark:border-zinc-800 last:border-0">' +
+      '<span class="text-sm flex-shrink-0 mt-0.5">' + icon + '</span>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
+          _tripEsc(item.title || 'Reminder') + '</p>' +
+        (badge ? '<div class="mt-0.5">' + badge + '</div>' : '') +
+      '</div>' + del +
+    '</div>';
+  }).join('');
+
+  // ── Add form (edit mode only) ──
+  var form = isEdit
+    ? '<div id="tpp-reminder-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
+        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
+        '<input id="tpp-remind-title-' + p.id + '" type="text" ' +
+          'placeholder="What to remind (e.g. Confirm hotel)" maxlength="120" ' +
+          'class="' + _tppInputCls() + '" />' +
+        '<div class="flex gap-1.5">' +
+          '<input id="tpp-remind-date-' + p.id + '" type="date" ' +
+            'class="flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
+            'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+            'px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40" />' +
+          '<input id="tpp-remind-time-' + p.id + '" type="time" ' +
+            'class="flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
+            'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+            'px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40" />' +
+        '</div>' +
+        '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
+          '🔔 Sends a push notification at the chosen date &amp; time.' +
+        '</p>' +
+        _tppFormBtns(
+          'tppSaveReminderItem(' + p.id + ')',
+          'tppHideForm(' + p.id + ',\'reminder\')'
+        ) +
+      '</div>'
+    : '';
+
+  var footer = isEdit
+    ? _tppAddBtn('tppShowForm(' + p.id + ',\'reminder\')', '＋ Add Reminder')
+    : '';
+
+  return '<div class="flex-1 overflow-y-auto">' +
+    (rows || _tppEmpty('No reminders yet — add one to get push notifications.')) +
+  '</div>' + form + footer;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────────────────
 
 function _tppEmpty(msg) {
   return '<p class="text-xs text-gray-400 dark:text-zinc-500 text-center py-6 italic">' +
@@ -1471,6 +1555,40 @@ window.tppSaveEmergItem = function(panelId) {
   var d = _tppParse(p.content);
   if (!d.items) d.items = [];
   d.items.push({ key: key, value: val });
+  _tppSave(panelId, d);
+};
+
+// ── Reminder CRUD ───────────────────────────────────────────────────────────
+
+window.tppSaveReminderItem = function(panelId) {
+  var titleEl = document.getElementById('tpp-remind-title-' + panelId);
+  var dateEl  = document.getElementById('tpp-remind-date-'  + panelId);
+  var timeEl  = document.getElementById('tpp-remind-time-'  + panelId);
+  var title   = (titleEl ? titleEl.value : '').trim();
+  var date    = dateEl ? dateEl.value : '';
+  var time    = timeEl ? timeEl.value : '';
+  if (!title)       { _tripShowToast('Reminder title is required', true); return; }
+  if (!date)        { _tripShowToast('Date is required', true);           return; }
+  if (!time)        { _tripShowToast('Time is required', true);           return; }
+  var remindAt = date + 'T' + time;   // 'YYYY-MM-DDTHH:MM'
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.items) d.items = [];
+  d.items.push({ id: _tppRandId(), title: title, remind_at: remindAt });
+  // sort by remind_at so card reads chronologically
+  d.items.sort(function(a, b) { return (a.remind_at || '') < (b.remind_at || '') ? -1 : 1; });
+  _tppSave(panelId, d, function() {
+    window.tppHideForm(panelId, 'reminder');
+    if (titleEl) titleEl.value = '';
+    if (dateEl)  dateEl.value  = '';
+    if (timeEl)  timeEl.value  = '';
+  });
+};
+
+window.tppDeleteReminderItem = function(panelId, itemId) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  d.items = (d.items || []).filter(function(it) { return it.id !== itemId; });
   _tppSave(panelId, d);
 };
 

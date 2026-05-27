@@ -425,7 +425,7 @@ async def _widget_notif_loop():
         has_widget_notif_sent, mark_widget_notifs_sent, cleanup_old_widget_notifs,
     )
     from routers.home_subscriptions_db import get_due_subscription_reminders
-    from routers.home_trip_db import get_due_trip_reminders
+    from routers.home_trip_db import get_due_trip_reminders, get_due_panel_reminders
     _INTERVAL = 60
     while True:
         await asyncio.sleep(_INTERVAL)
@@ -550,6 +550,27 @@ async def _widget_notif_loop():
                     "icon":  "/static/img/icons/icon-192.png",
                     "badge": "/static/img/icons/icon-192.png",
                     "tag":   f"bw-trip-{row['block_id']}",
+                }
+                result = await send_push(sub, payload)
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+                elif result:
+                    sent_keys.append(key)
+
+            # ── Trip resource Reminder card items ─────────────────────────────────
+            for row in await get_due_panel_reminders():
+                key = row["dedup_key"]
+                if await has_widget_notif_sent(key):
+                    continue
+                ctx = row["trip_name"] or row["panel_title"]
+                sub = {"endpoint": row["endpoint"],
+                       "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                payload = {
+                    "title": "🔔 Trip reminder",
+                    "body":  row["title"] + (f" ({ctx})" if ctx else ""),
+                    "icon":  "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/icon-192.png",
+                    "tag":   f"bw-panel-remind-{row['panel_id']}-{row['item_id']}",
                 }
                 result = await send_push(sub, payload)
                 if result is None:
