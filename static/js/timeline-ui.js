@@ -283,13 +283,26 @@ window._bwTLUi = (function () {
     });
 
     const inner = document.createElement('span');
-    inner.textContent = '\uD83D\uDC1B';  // \uD83D\uDC1B caterpillar
     const _isMobile = window.innerWidth < 768;
+    // Apple's emoji renderer makes 🐛 hyper-realistic on iOS & macOS.
+    // Use our friendly SVG mascot instead on any Apple device.
+    const _isApple  = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+    if (_isApple) {
+      const _sz = _isMobile ? '26px' : '42px';
+      const _img = document.createElement('img');
+      _img.src           = '/static/favicon.svg';
+      _img.alt           = '';
+      _img.style.cssText = `width:${_sz};height:${_sz};display:block;`;
+      inner.appendChild(_img);
+    } else {
+      inner.textContent = '\uD83D\uDC1B';  // 🐛 caterpillar emoji
+    }
     Object.assign(inner.style, {
-      fontSize:        _isMobile ? '26px' : '42px',  // smaller on narrow screens
+      fontSize:        _isMobile ? '26px' : '42px',
       display:         'inline-block',
       animation:       '_bwIdle 2.6s ease-in-out infinite',
       transformOrigin: 'bottom center',
+      lineHeight:      '1',
     });
     wrap.appendChild(inner);
 

@@ -74,7 +74,7 @@
                      focus:ring-offset-2 focus:ring-offset-[#080c1a]
                      transition-all active:scale-95"
               aria-label="Try BookWorm without an account">
-        <span class="text-sm leading-none sm:text-base" aria-hidden="true">🐛</span>
+        <span id="worm-btn" class="text-sm leading-none sm:text-base" aria-hidden="true">🐛</span>
         <span class="hidden xs:inline sm:inline">Try Demo</span>
         <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-70
                     group-hover:translate-x-0.5 transition-transform"
@@ -258,6 +258,29 @@
     (function () {
       const worm  = document.getElementById('worm');
       const track = document.getElementById('worm-track');
+
+      /* Apple's emoji font renders 🐛 hyper-realistically on iOS & macOS.
+         Swap in our friendly SVG mascot instead on any Apple device.    */
+      if (/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)) {
+        worm.textContent = '';
+        const _wImg = document.createElement('img');
+        _wImg.src           = '/static/favicon.svg';
+        _wImg.alt           = '';
+        _wImg.style.cssText = 'width:32px;height:32px;display:block;';
+        worm.appendChild(_wImg);
+
+        /* also swap the small demo-button worm */
+        const _wb = document.getElementById('worm-btn');
+        if (_wb) {
+          _wb.textContent = '';
+          const _bImg = document.createElement('img');
+          _bImg.src           = '/static/favicon.svg';
+          _bImg.alt           = '';
+          _bImg.style.cssText = 'width:1em;height:1em;display:inline-block;vertical-align:middle;';
+          _wb.appendChild(_bImg);
+        }
+      }
+
       let x    = 0;
       let dir  = 1;      // 1 = right, -1 = left
       let tick = 0;

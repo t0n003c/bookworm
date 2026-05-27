@@ -244,6 +244,16 @@
     (function () {
       const worm  = document.getElementById('worm');
       const track = document.getElementById('worm-track');
+
+      if (/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)) {
+        worm.textContent = '';
+        const _wImg = document.createElement('img');
+        _wImg.src           = '/static/favicon.svg';
+        _wImg.alt           = '';
+        _wImg.style.cssText = 'width:32px;height:32px;display:block;';
+        worm.appendChild(_wImg);
+      }
+
       let x    = 0;
       let dir  = 1;
       let tick = 0;
