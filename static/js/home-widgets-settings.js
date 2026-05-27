@@ -594,6 +594,17 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
         </label>`;
       body.appendChild(wrap);
       return;
+    } else if (f.type === 'time' || f.type === 'date') {
+      // Native date / time pickers — same styling as text, just typed differently
+      const hint = f.hint
+        ? `<p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-0.5">${f.hint}</p>`
+        : '';
+      input = `<input id="${f.id}" type="${f.type}" data-cfg-key="${f.name}"
+                value="${_escAttr(curVal || (f.type === 'time' ? '09:00' : ''))}"
+                class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                       focus:outline-none focus:ring-2 focus:ring-wblue"
+                onchange="${saveFn}">${hint}`;
     } else {
       input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
                 placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"

@@ -285,6 +285,8 @@ function _budsFertilizeOpen(wid, budId) {
   // Pre-tick the reminder checkbox from the saved plan state
   var remCb = document.getElementById('bfm-visit-reminder');
   if (remCb) remCb.checked = plan ? !!(plan.visit_reminder_enabled) : false;
+  var remTimeEl = document.getElementById('bfm-reminder-time');
+  if (remTimeEl) remTimeEl.value = (plan && plan.visit_reminder_time) ? plan.visit_reminder_time : '09:00';
   modal.classList.remove('hidden');
 }
 
@@ -293,12 +295,15 @@ function _budsFertilizeSubmit() {
   var wid    = modal.dataset.wid, budId = modal.dataset.budId;
   var date   = document.getElementById('bfm-plan-date').value;
   var note   = document.getElementById('bfm-plan-note').value;
-  var remCb  = document.getElementById('bfm-visit-reminder');
-  var remind = remCb && remCb.checked ? 1 : 0;
+  var remCb   = document.getElementById('bfm-visit-reminder');
+  var remTime  = document.getElementById('bfm-reminder-time');
+  var remind   = remCb && remCb.checked ? 1 : 0;
+  var rTime    = (remTime && remTime.value) ? remTime.value : '09:00';
   var fd     = new FormData();
   fd.append('planned_date', date);
   fd.append('note', note);
   fd.append('visit_reminder_enabled', remind);
+  fd.append('visit_reminder_time', rTime);
   fetch('/home/buds/'+wid+'/'+budId+'/fertilize-plan',
     {method:'POST', credentials:'same-origin', body:fd})
   .then(function(r) { return r.ok ? r.json() : null; })
@@ -687,10 +692,17 @@ function _budsInjectModals() {
     + ' class="w-full text-sm border border-gray-200 dark:border-zinc-600 rounded-lg px-3 py-2 mb-3'
     + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
     + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
-    + '<label class="flex items-center gap-2 mb-4 cursor-pointer select-none">'
+    + '<label class="flex items-center gap-2 mb-1 cursor-pointer select-none">'
     + '<input id="bfm-visit-reminder" type="checkbox" class="w-4 h-4 rounded accent-wblue">'
-    + '<span class="text-xs text-gray-600 dark:text-zinc-300">🔔 Remind me on visit day (push at 9am)</span>'
+    + '<span class="text-xs text-gray-600 dark:text-zinc-300">🔔 Remind me on visit day</span>'
     + '</label>'
+    + '<div id="bfm-time-row" class="flex items-center gap-2 mb-4 pl-6">'
+    + '<label class="text-xs text-gray-500 dark:text-zinc-400 whitespace-nowrap">at</label>'
+    + '<input id="bfm-reminder-time" type="time" value="09:00"'
+    + ' class="text-sm border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
+    + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+    + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+    + '</div>'
     + '<div class="flex flex-col gap-2">'
     + '<button id="bfm-complete-btn" type="button" onclick="_budsFertilizeComplete()"'
     + ' class="w-full px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg'

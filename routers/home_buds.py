@@ -138,15 +138,17 @@ async def buds_water(widget_id: int, bud_id: int, request: Request):
 @router.post("/{widget_id}/{bud_id}/fertilize-plan")
 async def buds_fertilize_plan(
     widget_id: int, bud_id: int, request: Request,
-    planned_date:          str = Form(""),
-    note:                  str = Form(""),
+    planned_date:           str = Form(""),
+    note:                   str = Form(""),
     visit_reminder_enabled: int = Form(0),
+    visit_reminder_time:    str = Form("09:00"),
 ):
     uid = _uid(request)
     await _require_bud_widget(widget_id, uid)
     plan = await create_fertilize_plan(
         bud_id, uid, planned_date, note,
         visit_reminder_enabled=bool(visit_reminder_enabled),
+        visit_reminder_time=visit_reminder_time.strip() or "09:00",
     )
     return JSONResponse({"plan": plan})
 

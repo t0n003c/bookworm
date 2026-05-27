@@ -435,34 +435,36 @@ async def _widget_notif_loop():
             stale_eps: set[str] = set()
             sent_keys: list[str] = []
 
-            # ── Countdown: fire at 9am on the target date ──────────────────────
-            if now.hour >= 9:
-                for row in await get_countdown_widgets_with_subs():
-                    if not row["target_date"]:
-                        continue
-                    try:
-                        td = datetime.date.fromisoformat(row["target_date"])
-                    except ValueError:
-                        continue
-                    if td != today:
-                        continue
-                    key = f"countdown:{row['widget_id']}:{row['target_date']}"
-                    if await has_widget_notif_sent(key):
-                        continue
-                    sub = {"endpoint": row["endpoint"],
-                           "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
-                    payload = {
-                        "title": "\uD83C\uDF89 It's the day!",
-                        "body":  f"{row['label']} is today!",
-                        "icon":  "/static/img/icons/icon-192.png",
-                        "badge": "/static/img/icons/icon-192.png",
-                        "tag":   f"bw-countdown-{row['widget_id']}",
-                    }
-                    result = await send_push(sub, payload)
-                    if result is None:
-                        stale_eps.add(row["endpoint"])
-                    elif result:
-                        sent_keys.append(key)
+            # ── Countdown: fire at the user-chosen time on target_date ──────────────
+            now_hhmm = now.strftime("%H:%M")
+            for row in await get_countdown_widgets_with_subs():
+                if not row["target_date"]:
+                    continue
+                try:
+                    td = datetime.date.fromisoformat(row["target_date"])
+                except ValueError:
+                    continue
+                if td != today:
+                    continue
+                if now_hhmm < row["notify_time"]:
+                    continue  # not yet
+                key = f"countdown:{row['widget_id']}:{row['target_date']}"
+                if await has_widget_notif_sent(key):
+                    continue
+                sub = {"endpoint": row["endpoint"],
+                       "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                payload = {
+                    "title": "\uD83C\uDF89 It's the day!",
+                    "body":  f"{row['label']} is today!",
+                    "icon":  "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/icon-192.png",
+                    "tag":   f"bw-countdown-{row['widget_id']}",
+                }
+                result = await send_push(sub, payload)
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+                elif result:
+                    sent_keys.append(key)
 
             # ── Events: fire N days before next occurrence ──────────────────────
             for row in await get_event_widgets_with_subs():

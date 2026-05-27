@@ -304,6 +304,7 @@ async def get_countdown_widgets_with_subs() -> list[dict]:
             "user_id":     r[1],
             "label":       cfg.get("label", "Countdown"),
             "target_date": cfg.get("target_date", ""),
+            "notify_time": (cfg.get("notify_time") or "09:00").strip() or "09:00",
             "endpoint":    r[3],
             "p256dh":      r[4],
             "auth":        r[5],

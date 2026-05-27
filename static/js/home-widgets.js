@@ -1317,7 +1317,9 @@ const WIDGET_CONFIG_FIELDS = {
   countdown: () => [
     { id: 'cf-label',  label: 'Event name',  type: 'text', placeholder: 'Launch Day!', name: 'label' },
     { id: 'cf-date',   label: 'Target date', type: 'date', name: 'target_date' },
-    { id: 'cf-notify', label: 'Push notification on the day (fires at 9am)', type: 'checkbox', name: 'notify_on_day' },
+    { id: 'cf-notify', label: 'Push notification on the day', type: 'checkbox', name: 'notify_on_day' },
+    { id: 'cf-ntime',  label: 'Notification time', type: 'time', name: 'notify_time',
+      placeholder: '09:00', hint: 'What time to send the push (default 9:00 AM)' },
   ],
   reminder: () => [],
   event:    () => [],

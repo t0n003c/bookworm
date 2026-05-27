@@ -241,8 +241,10 @@ async def water_bud(bud_id: int, user_id: int) -> dict:
 async def create_fertilize_plan(
     bud_id: int, user_id: int, planned_date: str, note: str = "",
     visit_reminder_enabled: bool = False,
+    visit_reminder_time: str = "09:00",
 ) -> dict:
     """Create (or replace) a pending fertilize plan."""
+    _time = (visit_reminder_time or "09:00").strip() or "09:00"
     # cancel any existing pending plan first
     async with get_db() as db:
         await db.execute(
@@ -252,11 +254,12 @@ async def create_fertilize_plan(
         )
         cur = await db.execute(
             "INSERT INTO bud_fertilize_plans "
-            "(bud_id, user_id, planned_date, note, visit_reminder_enabled) "
-            "VALUES (?,?,?,?,?)",
+            "(bud_id, user_id, planned_date, note, visit_reminder_enabled, visit_reminder_time) "
+            "VALUES (?,?,?,?,?,?)",
             (bud_id, user_id, planned_date,
              note.strip() if note else None,
-             1 if visit_reminder_enabled else 0),
+             1 if visit_reminder_enabled else 0,
+             _time),
         )
         await db.commit()
         plan_id = cur.lastrowid
@@ -462,24 +465,24 @@ async def mark_contact_reminder_sent(bud_ids: list[int]) -> None:
 
 
 async def get_due_bud_visit_reminders() -> list[dict]:
-    """Return pending visit plans that are due for a reminder today at 9am+.
+    """Return pending visit plans that are due for a reminder right now.
 
     Conditions:
       - visit_reminder_enabled = 1
       - planned_date = today
       - completed_at IS NULL
-      - visit_reminder_sent != today
-      - current hour >= 9
+      - visit_reminder_sent != today  (dedup: once per day)
+      - current HH:MM >= visit_reminder_time  (fires at or after the chosen time)
     Joined with push_subscriptions and buds for the notification payload.
     """
     now   = datetime.datetime.now()
-    if now.hour < 9:
-        return []
+    hhmm  = now.strftime("%H:%M")
     today = now.strftime("%Y-%m-%d")
     async with get_db() as db:
         cur = await db.execute(
             """
-            SELECT bfp.id, bfp.bud_id, bfp.user_id, bfp.planned_date, bfp.note,
+            SELECT bfp.id, bfp.bud_id, bfp.user_id, bfp.planned_date,
+                   bfp.note, bfp.visit_reminder_time,
                    b.name,
                    ps.endpoint, ps.p256dh, ps.auth
             FROM   bud_fertilize_plans bfp
@@ -490,8 +493,9 @@ async def get_due_bud_visit_reminders() -> list[dict]:
               AND  bfp.completed_at IS NULL
               AND  (bfp.visit_reminder_sent IS NULL
                    OR bfp.visit_reminder_sent != ?)
+              AND  ? >= COALESCE(bfp.visit_reminder_time, '09:00')
             """,
-            (today, today),
+            (today, today, hhmm),
         )
         rows = await cur.fetchall()
     return [
@@ -501,10 +505,11 @@ async def get_due_bud_visit_reminders() -> list[dict]:
             "user_id":      r[2],
             "planned_date": r[3],
             "note":         r[4],
-            "bud_name":     r[5],
-            "endpoint":     r[6],
-            "p256dh":       r[7],
-            "auth":         r[8],
+            "reminder_time": r[5] or "09:00",
+            "bud_name":     r[6],
+            "endpoint":     r[7],
+            "p256dh":       r[8],
+            "auth":         r[9],
         }
         for r in rows
     ]

@@ -1318,9 +1318,11 @@ async def init_db() -> None:
         # ── bud_fertilize_plans: visit reminder fields (additive migration) ────────
         # visit_reminder_enabled — 1 = push reminder at 9am on planned_date
         # visit_reminder_sent    — DATE sent (dedup guard)
+        # visit_reminder_time    — HH:MM when push fires (default '09:00')
         for _col, _defn in [
             ("visit_reminder_enabled", "INTEGER NOT NULL DEFAULT 0"),
             ("visit_reminder_sent",    "DATE"),
+            ("visit_reminder_time",    "TEXT NOT NULL DEFAULT '09:00'"),
         ]:
             _plan_cols = [r[1] for r in (await (await db.execute("PRAGMA table_info(bud_fertilize_plans)")).fetchall())]
             if _col not in _plan_cols:
