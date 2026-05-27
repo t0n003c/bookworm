@@ -88,6 +88,14 @@ services:
       # harmless (idempotent deletes) but keep WORKERS ≤ 4 with SQLite.
       WORKERS: ${WORKERS:-1}
 
+      # ── Web Push notifications (optional) ──────────────────────────────────
+      # Generate a VAPID key pair once with:  python gen_vapid_keys.py
+      # Then paste the output into your .env file.
+      # Leave all three empty to disable push notifications entirely.
+      BW_VAPID_PRIVATE_KEY: ${BW_VAPID_PRIVATE_KEY:-}
+      BW_VAPID_PUBLIC_KEY: ${BW_VAPID_PUBLIC_KEY:-}
+      BW_VAPID_SUBJECT: ${BW_VAPID_SUBJECT:-mailto:admin@localhost}
+
       # ── Outbound HTTP proxy (optional) ──────────────────────────────────
       # Set when BookWorm is behind a corporate proxy that intercepts
       # outbound HTTP/HTTPS (affects RSS, weather, image proxy, link previews).
