@@ -7,6 +7,14 @@ from datetime import date
 from typing import Optional
 import logging
 
+# Load .env BEFORE any os.getenv() calls elsewhere in the module graph.
+# override=False means real environment variables always win (safe for Docker).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=False)
+except ImportError:
+    pass  # python-dotenv not installed — env vars must be set by the OS / Docker
+
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
