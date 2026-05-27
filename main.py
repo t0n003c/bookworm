@@ -408,12 +408,47 @@ def _evt_next_occurrence(target_date_iso: str, repeat_unit: str,
     return n
 
 
-async def _widget_notif_loop():
-    """Background task: push notifications for Countdown and Event widgets.
+def _rem_is_occurrence(item: dict, today_str: str) -> bool:
+    """Return True if *today_str* (YYYY-MM-DD) is a valid firing day for
+    a home Reminder widget item.
 
-    Countdown — fires at 9am on target_date when notify_on_day=True.
-    Events    — fires N days before the next occurrence per the item's lead_days.
-    Both use widget_notif_sent for dedup (won't fire twice for the same key).
+    Mirrors the JS ``_isReminderOccurrence`` logic in home-widgets-render.js.
+    Non-recurring items fire exactly on their date.  Recurring items fire on
+    every Nth day/week/month/year on or after the origin date.
+    """
+    import datetime
+    unit   = item.get("repeat_unit") or "none"
+    origin = item.get("date") or ""
+    if not origin:
+        return False
+    try:
+        t = datetime.date.fromisoformat(origin)
+        d = datetime.date.fromisoformat(today_str)
+    except (ValueError, TypeError):
+        return False
+    if unit == "none":
+        return t == d
+    if d < t:
+        return False          # before start date
+    iv = max(1, int(item.get("repeat_interval") or 1))
+    if unit == "day":
+        return (d - t).days % iv == 0
+    if unit == "week":
+        return (d - t).days % (iv * 7) == 0
+    if unit == "month":
+        months = (d.year - t.year) * 12 + (d.month - t.month)
+        return d.day == t.day and months % iv == 0
+    if unit == "year":
+        return d.month == t.month and d.day == t.day and (d.year - t.year) % iv == 0
+    return False
+
+
+async def _widget_notif_loop():
+    """Background task: push notifications for Countdown, Event, Subscription,
+    Trip, CRM contact reminder, and home Reminder widget items.
+
+    All channels share the widget_notif_sent dedup table so each alert fires
+    at most once per dedup key per user device.
     """
     import os, datetime
     if not os.getenv("BW_VAPID_PRIVATE_KEY"):
@@ -422,8 +457,10 @@ async def _widget_notif_loop():
     from routers.push_db import (
         send_push, delete_subscription,
         get_countdown_widgets_with_subs, get_event_widgets_with_subs,
+        get_due_crm_reminders_with_subs, get_reminder_widgets_with_subs,
         has_widget_notif_sent, mark_widget_notifs_sent, cleanup_old_widget_notifs,
     )
+    from routers.home_crm_db import advance_crm_reminder
     from routers.home_subscriptions_db import get_due_subscription_reminders
     from routers.home_trip_db import get_due_trip_reminders, get_due_panel_reminders
     _INTERVAL = 60
@@ -578,7 +615,74 @@ async def _widget_notif_loop():
                 elif result:
                     sent_keys.append(key)
 
-            # ── Housekeeping ─────────────────────────────────────────────────
+            # ── CRM contact reminders ───────────────────────────────────────
+            # Parallel to the existing client-side poll but works even when
+            # the tab is closed.  Recurring reminders are advanced to their
+            # next date so they re-queue automatically.
+            to_advance_recurring: list[tuple[int, int]] = []  # (reminder_id, user_id)
+            for row in await get_due_crm_reminders_with_subs():
+                key = row["dedup_key"]
+                if await has_widget_notif_sent(key):
+                    continue
+                contact  = row["contact_name"] or "Contact"
+                body     = row["label"]
+                if row["message"]:
+                    body += f" \u2014 {row['message']}"
+                sub = {"endpoint": row["endpoint"],
+                       "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                payload = {
+                    "title": f"\U0001f514 CRM \u2014 {contact}",
+                    "body":  body,
+                    "icon":  "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/icon-192.png",
+                    "tag":   f"bw-crm-rem-{row['reminder_id']}",
+                    "data":  {"page_id": row["page_id"]},
+                }
+                result = await send_push(sub, payload)
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+                else:
+                    sent_keys.append(key)
+                    if row["recurrence"] != "none":
+                        to_advance_recurring.append(
+                            (row["reminder_id"], row["user_id"])
+                        )
+            for rem_id, uid in to_advance_recurring:
+                await advance_crm_reminder(rem_id, uid)
+
+            # ── Home Reminder widget items ─────────────────────────────────
+            # Items live in home_widgets.config_json, not a DB table, so we
+            # parse them server-side and use _rem_is_occurrence() to check
+            # whether today is a valid firing day for recurring items.
+            today_str = today.isoformat()
+            for row in await get_reminder_widgets_with_subs():
+                for item in row["items"]:
+                    item_time = (item.get("time") or "").strip()
+                    if not item_time or item_time > now_hhmm:
+                        continue  # not yet
+                    if not _rem_is_occurrence(item, today_str):
+                        continue  # wrong day
+                    # Stable key: widget + date + time + text hash
+                    text_hash = abs(hash(item.get("text", "") + item_time)) % 0xFFFFFF
+                    key = f"hwrem:{row['widget_id']}:{today_str}:{item_time}:{text_hash}"
+                    if await has_widget_notif_sent(key):
+                        continue
+                    sub = {"endpoint": row["endpoint"],
+                           "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                    payload = {
+                        "title": "\U0001f514 Reminder",
+                        "body":  (item.get("text") or "You have a reminder").strip()[:200],
+                        "icon":  "/static/img/icons/icon-192.png",
+                        "badge": "/static/img/icons/icon-192.png",
+                        "tag":   f"bw-hwrem-{row['widget_id']}-{item_time}",
+                    }
+                    result = await send_push(sub, payload)
+                    if result is None:
+                        stale_eps.add(row["endpoint"])
+                    elif result:
+                        sent_keys.append(key)
+
+            # ── Housekeeping ──────────────────────────────────────────────────
             await mark_widget_notifs_sent(sent_keys)
             for ep in stale_eps:
                 await delete_subscription(ep)
@@ -1027,4 +1131,3 @@ async def index(request: Request, ws: Optional[int] = None):
     # always be fetched fresh so a new login never sees a previous user's data.
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return response
-

@@ -346,3 +346,93 @@ async def get_event_widgets_with_subs() -> list[dict]:
             "auth":      r[5],
         })
     return result
+
+
+# ── CRM contact-reminder notification queries ──────────────────────────────────
+
+async def get_due_crm_reminders_with_subs() -> list[dict]:
+    """Return crm_contact_reminders due now, joined with push subscriptions.
+
+    Selects rows where reminder_date = today AND reminder_time <= current HH:MM,
+    joined through the user_id so we get the push endpoint for each device.
+
+    Dedup key format: ``crm_rem:{reminder_id}:{reminder_date}`` — stored in
+    widget_notif_sent.  The date component means the key automatically becomes
+    stale after recurring reminders are advanced to a new date.
+    """
+    now      = datetime.datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT r.id, r.user_id, r.contact_id, r.label, r.message,
+                   r.recurrence, c.name AS contact_name, c.page_id,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   crm_contact_reminders r
+            JOIN   crm_contacts c         ON c.id  = r.contact_id
+            JOIN   push_subscriptions ps  ON ps.user_id = r.user_id
+            WHERE  r.reminder_date = ?
+              AND  r.reminder_time <= ?
+            """,
+            (date_str, time_str),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "reminder_id":   r[0],
+            "user_id":       r[1],
+            "contact_id":    r[2],
+            "label":         r[3],
+            "message":       r[4],
+            "recurrence":    r[5] or "none",
+            "contact_name":  r[6],
+            "page_id":       r[7],
+            "endpoint":      r[8],
+            "p256dh":        r[9],
+            "auth":          r[10],
+            "dedup_key":     f"crm_rem:{r[0]}:{date_str}",
+        }
+        for r in rows
+    ]
+
+
+# ── Home Reminder widget notification queries ──────────────────────────────────
+
+async def get_reminder_widgets_with_subs() -> list[dict]:
+    """Return all reminder widgets with push subscriptions for the owning user.
+
+    Config items are parsed from config_json so the background loop can
+    check each item's date/time/recurrence without a second DB round-trip.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT hw.id, hp.user_id, hw.config_json,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   home_widgets hw
+            JOIN   home_pages   hp ON hp.id = hw.page_id
+            JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
+            WHERE  hw.widget_type = 'reminder'
+              AND  hp.deleted_at IS NULL
+            """
+        )
+        rows = await cur.fetchall()
+    result = []
+    for r in rows:
+        try:
+            cfg   = json.loads(r[2] or "{}")
+            items = cfg.get("items", [])
+        except Exception:
+            items = []
+        if not items:
+            continue
+        result.append({
+            "widget_id": r[0],
+            "user_id":   r[1],
+            "items":     items,
+            "endpoint":  r[3],
+            "p256dh":    r[4],
+            "auth":      r[5],
+        })
+    return result
