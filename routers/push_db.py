@@ -119,7 +119,91 @@ async def mark_reminders_fired(reminder_ids: list[int]) -> None:
         await db.commit()
 
 
-# ── Push sending ──────────────────────────────────────────────────────────────
+# ── RSS per-feed notification helpers ──────────────────────────────────────────
+
+async def toggle_rss_feed_notif(user_id: int, feed_url: str) -> bool:
+    """Toggle notification opt-in for *feed_url*. Returns new enabled state."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id FROM rss_feed_notifs WHERE user_id=? AND feed_url=?",
+            (user_id, feed_url),
+        )
+        existing = await cur.fetchone()
+        if existing:
+            await db.execute(
+                "DELETE FROM rss_feed_notifs WHERE user_id=? AND feed_url=?",
+                (user_id, feed_url),
+            )
+            await db.commit()
+            return False
+        await db.execute(
+            "INSERT OR IGNORE INTO rss_feed_notifs (user_id, feed_url) VALUES (?,?)",
+            (user_id, feed_url),
+        )
+        await db.commit()
+        return True
+
+
+async def get_rss_notif_enabled_urls(user_id: int, urls: list[str]) -> set[str]:
+    """Return the subset of *urls* that the user has opted into notifications for."""
+    if not urls:
+        return set()
+    placeholders = ",".join("?" * len(urls))
+    async with get_db() as db:
+        cur = await db.execute(
+            f"SELECT feed_url FROM rss_feed_notifs "
+            f"WHERE user_id=? AND feed_url IN ({placeholders})",
+            (user_id, *urls),
+        )
+        rows = await cur.fetchall()
+    return {r[0] for r in rows}
+
+
+async def get_all_notif_feeds_with_subs() -> list[dict]:
+    """Return every (feed_url, endpoint, p256dh, auth) row for the background loop.
+
+    Joins rss_feed_notifs with push_subscriptions so we only get feeds that
+    have at least one user with both a notification opt-in AND a push subscription.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT rfn.feed_url, ps.endpoint, ps.p256dh, ps.auth
+            FROM   rss_feed_notifs rfn
+            JOIN   push_subscriptions ps ON ps.user_id = rfn.user_id
+            """
+        )
+        rows = await cur.fetchall()
+    return [
+        {"feed_url": r[0], "endpoint": r[1], "p256dh": r[2], "auth": r[3]}
+        for r in rows
+    ]
+
+
+async def get_rss_seen_guids(feed_url: str) -> set[str]:
+    """Return all item GUIDs we have already sent a notification for."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT item_guid FROM rss_notif_seen WHERE feed_url=?",
+            (feed_url,),
+        )
+        rows = await cur.fetchall()
+    return {r[0] for r in rows}
+
+
+async def mark_rss_items_seen(feed_url: str, guids: list[str]) -> None:
+    """Record item GUIDs as seen so they are not re-pushed next cycle."""
+    if not guids:
+        return
+    async with get_db() as db:
+        await db.executemany(
+            "INSERT OR IGNORE INTO rss_notif_seen (feed_url, item_guid) VALUES (?,?)",
+            [(feed_url, g) for g in guids],
+        )
+        await db.commit()
+
+
+# ── Push sending ───────────────────────────────────────────────────────────────
 
 def _send_push_sync(subscription_info: dict, payload: dict) -> bool | None:
     """Synchronous webpush call — always run via asyncio.to_thread().

@@ -168,4 +168,17 @@
   } else {
     window.bwPushInit();
   }
+
+  /**
+   * Ensure this device has a push subscription saved to the server.
+   * Called by RSS / reminder per-feed bell toggles before opting in.
+   * No-op if the device is already subscribed.
+   */
+  window.bwEnsurePushSubscribed = async function () {
+    var existing = await _getExistingSub();
+    if (existing) return true;   // already subscribed
+    var sub = await _subscribe();
+    if (!sub) return false;
+    return _saveToServer(sub);
+  };
 })();

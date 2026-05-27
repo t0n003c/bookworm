@@ -9,15 +9,19 @@
      POST /home/rss-reader/{pid}/read
      GET  /home/rss?url=...            proxy → RSS/Atom JSON
      GET  /home/rss/article?url=...    full-article extractor
+     POST /push/rss-notif/toggle       toggle per-feed push notification
+     GET  /push/rss-notif/status       check enabled feed URLs
 */
 'use strict';
 
-// ── Module state ──────────────────────────────────────────────────────────────
+// ── Module state ───────────────────────────────────────────────────────────────
 let _pid         = 0;
 let _feeds       = [];        // [{id,url,label,color,category,sort_order}]
 let _selFeed     = null;      // selected feed id, or null = All
 let _selCategory = null;      // selected category string, or null
 let _selItemCat  = null;      // selected article-level topic tag, or null
+// Set of feed URLs the user has opted into push notifications for.
+let _rssNotifUrls = new Set();
 let _rawItems    = [];        // fetched items before filter/sort
 let _items       = [];        // currently displayed items
 let _sortMode    = 'newest';  // 'newest' | 'oldest' | 'title_az' | 'title_za' | 'feed'
@@ -184,6 +188,8 @@ function _renderFeedList() {
   // Flat list — categories are filtered via the top cat bar, not sidebar folders
   list.innerHTML = _feeds.map(f => _feedRow(f)).join('');
   _renderTopCatBar();
+  // Refresh bell states for the newly rendered rows
+  _rssLoadNotifStatus();
 }
 
 // ── Top category filter bar (full-width strip below page title bar) ────────────
@@ -253,6 +259,16 @@ function _feedRow(f) {
         <button onclick="rssEditFeed(${f.id})" title="Edit feed"
                 class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-blue-500
                        transition text-xs px-0.5 flex-shrink-0" aria-label="Edit feed">✎</button>
+        <button onclick="rssToggleFeedNotif(event,'${_esc(f.url)}')"
+                title="Toggle push notifications for this feed"
+                data-rss-notif-url="${_esc(f.url)}"
+                class="opacity-0 group-hover:opacity-100 transition text-xs px-0.5 flex-shrink-0
+                       text-gray-300 hover:text-amber-500
+                       ${_rssNotifUrls.has(f.url) ? 'text-amber-400 !opacity-100' : ''}"
+                aria-label="Notification toggle"
+                aria-pressed="${_rssNotifUrls.has(f.url)}">
+          ${_rssNotifUrls.has(f.url) ? '🔔' : '🔕'}
+        </button>
         <button onclick="rssDeleteFeed(event,${f.id})" title="Remove feed"
                 class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500
                        transition text-xs px-1 flex-shrink-0" aria-label="Remove feed">✕</button>
@@ -893,6 +909,84 @@ function _initAddForm() {
       errEl.classList.remove('hidden');
     } finally { btn.disabled = false; btn.textContent = '+ Add Feed'; }
   });
+}
+
+// ── Per-feed push notification helpers ──────────────────────────────────────────────
+
+/** Return true if push is configured on this server (VAPID key in meta tag). */
+function _rssPushAvailable() {
+  const key = document.querySelector('meta[name="bw-vapid-key"]')?.content || '';
+  return key.length > 0;
+}
+
+/**
+ * Load notification status for all current feeds from the server and update
+ * the bell buttons accordingly.  Called after _renderFeedList().
+ */
+async function _rssLoadNotifStatus() {
+  if (!_rssPushAvailable() || !_feeds.length) return;
+  try {
+    const params = new URLSearchParams();
+    _feeds.forEach(f => params.append('url', f.url));
+    const r = await fetch('/push/rss-notif/status?' + params, { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const data = await r.json();
+    _rssNotifUrls = new Set(data.enabled || []);
+    // Update every bell button in the rendered list without a full re-render
+    document.querySelectorAll('[data-rss-notif-url]').forEach(btn => {
+      const url = btn.dataset.rssNotifUrl;
+      const on  = _rssNotifUrls.has(url);
+      btn.textContent  = on ? '\uD83D\uDD14' : '\uD83D\uDD15';
+      btn.title        = on ? 'Notifications ON — click to turn off' : 'Turn on notifications for this feed';
+      btn.setAttribute('aria-pressed', String(on));
+      btn.classList.toggle('text-amber-400', on);
+      btn.classList.toggle('!opacity-100', on);
+      btn.classList.toggle('text-gray-300', !on);
+    });
+  } catch { /* non-critical */ }
+}
+
+/**
+ * Toggle push notification opt-in for a single RSS feed.
+ * Requests browser permission and subscribes if not yet done.
+ */
+async function rssToggleFeedNotif(event, feedUrl) {
+  event.stopPropagation();
+  if (!_rssPushAvailable()) return;
+
+  // Ensure browser permission is granted and a push subscription exists
+  if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return;
+  }
+  // Subscribe the device if not already subscribed (reuses bw-push.js helper if loaded)
+  if (typeof bwEnsurePushSubscribed === 'function') {
+    await bwEnsurePushSubscribed();
+  }
+
+  try {
+    const r = await fetch('/push/rss-notif/toggle', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: feedUrl }),
+    });
+    if (!r.ok) return;
+    const data    = await r.json();
+    const enabled = data.enabled === true;
+    if (enabled) _rssNotifUrls.add(feedUrl);
+    else         _rssNotifUrls.delete(feedUrl);
+
+    // Update every matching bell button (same URL could appear multiple times)
+    document.querySelectorAll(`[data-rss-notif-url="${CSS.escape(feedUrl)}"]`).forEach(btn => {
+      btn.textContent  = enabled ? '\uD83D\uDD14' : '\uD83D\uDD15';
+      btn.title        = enabled ? 'Notifications ON — click to turn off' : 'Turn on notifications for this feed';
+      btn.setAttribute('aria-pressed', String(enabled));
+      btn.classList.toggle('text-amber-400', enabled);
+      btn.classList.toggle('!opacity-100', enabled);
+      btn.classList.toggle('text-gray-300', !enabled);
+    });
+  } catch { /* non-critical */ }
 }
 
 async function rssDeleteFeed(e, feedId) {

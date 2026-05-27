@@ -1,10 +1,12 @@
 """push.py — Web Push API endpoints.
 
 Routes (all public-path, no /home prefix):
-  GET  /push/public-key          — returns VAPID public key for the client
-  POST /push/subscribe           — save a PushSubscription for the current user
-  POST /push/unsubscribe         — remove a PushSubscription by endpoint
-  POST /push/test                — send a test notification to the current user
+  GET  /push/public-key              — returns VAPID public key for the client
+  POST /push/subscribe               — save a PushSubscription for the current user
+  POST /push/unsubscribe             — remove a PushSubscription by endpoint
+  POST /push/test                    — send a test notification to the current user
+  POST /push/rss-notif/toggle        — toggle per-feed notification opt-in
+  GET  /push/rss-notif/status        — check which feed URLs have notifications on
 """
 import logging
 import os
@@ -18,6 +20,8 @@ from routers.push_db import (
     has_subscription,
     save_subscription,
     send_push,
+    toggle_rss_feed_notif,
+    get_rss_notif_enabled_urls,
 )
 
 log = logging.getLogger(__name__)
@@ -136,4 +140,51 @@ async def push_test(request: Request):
         raise
     except Exception:
         log.exception("push_test")
+        return JSONResponse({"error": "server error"}, status_code=500)
+
+
+# ── RSS per-feed notification opt-in ──────────────────────────────────────────────
+
+@router.post("/rss-notif/toggle")
+async def rss_notif_toggle(request: Request):
+    """Toggle push notification opt-in for a single RSS feed URL.
+
+    Body JSON: {"url": "https://..."}
+    Returns:   {"enabled": true|false}
+    """
+    try:
+        uid  = _uid(request)
+        body = await request.json()
+        url  = str(body.get("url", "")).strip()
+        if not url:
+            return JSONResponse({"error": "missing url"}, status_code=400)
+        if not _VAPID_PUBLIC_KEY:
+            return JSONResponse({"error": "push not configured"}, status_code=503)
+        enabled = await toggle_rss_feed_notif(uid, url)
+        return JSONResponse({"enabled": enabled})
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("rss_notif_toggle")
+        return JSONResponse({"error": "server error"}, status_code=500)
+
+
+@router.get("/rss-notif/status")
+async def rss_notif_status(request: Request):
+    """Return which of the requested URLs have notifications enabled.
+
+    Query params: ?url=https://...&url=https://...
+    Returns: {"enabled": ["https://...", ...]}
+    """
+    try:
+        uid  = _uid(request)
+        urls = request.query_params.getlist("url")
+        if not urls or not _VAPID_PUBLIC_KEY:
+            return JSONResponse({"enabled": []})
+        enabled = await get_rss_notif_enabled_urls(uid, urls)
+        return JSONResponse({"enabled": list(enabled)})
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("rss_notif_status")
         return JSONResponse({"error": "server error"}, status_code=500)

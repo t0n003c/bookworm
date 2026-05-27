@@ -656,6 +656,16 @@ function _rssFeedRowHtml(fieldId, feed, idx) {
       <span class="flex-1 text-[10px] text-gray-400 dark:text-zinc-500 truncate">
         ${_rssEsc(f.url ? f.url.replace(/https?:\/\/(www\.)?/,'').split('/')[0] : 'New feed')}
       </span>
+      <button type="button"
+              title="Toggle push notifications for this feed"
+              data-rss-notif-url="${_rssEsc(f.url || '')}"
+              onclick="rssWidgetToggleFeedNotif(this)"
+              class="p-0.5 text-gray-400 hover:text-amber-500 transition flex-shrink-0
+                     ${(window._rssWidgetNotifUrls || new Set()).has(f.url || '') ? 'text-amber-400' : ''}"
+              aria-label="Toggle notifications"
+              aria-pressed="${(window._rssWidgetNotifUrls || new Set()).has(f.url || '')}">
+        ${(window._rssWidgetNotifUrls || new Set()).has(f.url || '') ? '🔔' : '🔕'}
+      </button>
       <button type="button" title="Remove" onclick="rssRemoveFeedRow('${rowId}','${fieldId}')"
               class="p-0.5 text-gray-400 hover:text-red-500 transition flex-shrink-0">
         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -712,4 +722,73 @@ function rssAddFeedRow(fieldId) {
 function rssRemoveFeedRow(rowId, fieldId) {
   document.getElementById(rowId)?.remove();
   rssSyncFeeds(fieldId);
+}
+
+// ── Widget settings — per-feed push notification helpers ─────────────────────────
+
+/** Global set of feed URLs with notifications ON (populated when settings panel opens). */
+window._rssWidgetNotifUrls = window._rssWidgetNotifUrls || new Set();
+
+/**
+ * Called when the RSS widget settings panel opens.
+ * Loads notification status for all configured feeds so bell icons render correctly.
+ */
+async function rssWidgetLoadNotifStatus(feeds) {
+  const key = document.querySelector('meta[name="bw-vapid-key"]')?.content || '';
+  if (!key || !feeds || !feeds.length) return;
+  try {
+    const params = new URLSearchParams();
+    feeds.forEach(f => f.url && params.append('url', f.url));
+    const r = await fetch('/push/rss-notif/status?' + params, { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const data = await r.json();
+    window._rssWidgetNotifUrls = new Set(data.enabled || []);
+    // Update any already-rendered bell buttons
+    document.querySelectorAll('[data-rss-notif-url]').forEach(btn => {
+      const on = window._rssWidgetNotifUrls.has(btn.dataset.rssNotifUrl);
+      btn.textContent = on ? '\uD83D\uDD14' : '\uD83D\uDD15';
+      btn.setAttribute('aria-pressed', String(on));
+      btn.classList.toggle('text-amber-400', on);
+      btn.classList.toggle('text-gray-400', !on);
+    });
+  } catch { /* non-critical */ }
+}
+
+/**
+ * Toggle push notification opt-in for an RSS feed in the widget settings panel.
+ * Inline click handler on the bell button rendered by _rssFeedRowHtml.
+ */
+async function rssWidgetToggleFeedNotif(btn) {
+  const feedUrl = btn.dataset.rssNotifUrl;
+  if (!feedUrl) return;
+  const key = document.querySelector('meta[name="bw-vapid-key"]')?.content || '';
+  if (!key) return;
+
+  // Request browser notification permission if needed
+  if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return;
+  }
+  if (typeof bwEnsurePushSubscribed === 'function') {
+    await bwEnsurePushSubscribed();
+  }
+
+  try {
+    const r = await fetch('/push/rss-notif/toggle', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: feedUrl }),
+    });
+    if (!r.ok) return;
+    const data    = await r.json();
+    const enabled = data.enabled === true;
+    if (enabled) window._rssWidgetNotifUrls.add(feedUrl);
+    else         window._rssWidgetNotifUrls.delete(feedUrl);
+    btn.textContent = enabled ? '\uD83D\uDD14' : '\uD83D\uDD15';
+    btn.title       = enabled ? 'Notifications ON — click to turn off' : 'Turn on notifications for this feed';
+    btn.setAttribute('aria-pressed', String(enabled));
+    btn.classList.toggle('text-amber-400', enabled);
+    btn.classList.toggle('text-gray-400', !enabled);
+  } catch { /* non-critical */ }
 }

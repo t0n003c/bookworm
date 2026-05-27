@@ -190,6 +190,113 @@ async def _reminder_push_loop():
             log.exception("[push] reminder loop error")
 
 
+async def _rss_notif_loop():
+    """Background task: push notifications for new RSS items every 15 minutes.
+
+    For each unique feed URL that has at least one subscriber:
+      1. Fetch the feed via the existing httpx helper.
+      2. Filter out item GUIDs already marked seen.
+      3. On first ever fetch (no seen entries yet) silently seed all current
+         GUIDs so the user only gets NEW articles from this point forward.
+      4. Send a push notification to every subscriber of that feed.
+      5. Mark the new GUIDs as seen.
+    """
+    import os
+    if not os.getenv("BW_VAPID_PRIVATE_KEY"):
+        log.info("[rss-push] BW_VAPID_PRIVATE_KEY not set — RSS push disabled")
+        return
+
+    from functools import partial
+    from routers.push_db import (
+        get_all_notif_feeds_with_subs,
+        get_rss_seen_guids,
+        mark_rss_items_seen,
+        send_push,
+        delete_subscription,
+    )
+    # Borrow the internal fetch + parse helpers from the home router.
+    from routers.home import _fetch_raw, _parse_rss, _POOL
+
+    _INTERVAL = 15 * 60  # 15 minutes
+    while True:
+        await asyncio.sleep(_INTERVAL)
+        try:
+            rows = await get_all_notif_feeds_with_subs()
+            if not rows:
+                continue
+
+            # Group subscriptions by feed URL so each URL is only fetched once.
+            from collections import defaultdict
+            feeds_map: dict[str, list[dict]] = defaultdict(list)
+            for row in rows:
+                feeds_map[row["feed_url"]].append(
+                    {"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]}
+                )
+
+            loop = asyncio.get_event_loop()
+            total_sent = 0
+            stale_eps: set[str] = set()
+
+            for feed_url, subs in feeds_map.items():
+                try:
+                    text, _ = await loop.run_in_executor(
+                        _POOL, partial(_fetch_raw, feed_url, True)
+                    )
+                    parsed   = _parse_rss(text)
+                    items    = parsed.get("items") or []
+                    if not items:
+                        continue
+
+                    # Build a stable GUID for each item (link preferred, title fallback)
+                    def _guid(it: dict) -> str:
+                        return (it.get("link") or it.get("title") or "").strip()
+
+                    all_guids  = [_guid(it) for it in items if _guid(it)]
+                    seen_guids = await get_rss_seen_guids(feed_url)
+
+                    if not seen_guids:
+                        # First-ever fetch: seed everything so users aren’t
+                        # bombarded with every historical article at once.
+                        await mark_rss_items_seen(feed_url, all_guids)
+                        continue
+
+                    new_items = [it for it in items if _guid(it) and _guid(it) not in seen_guids]
+                    if not new_items:
+                        continue
+
+                    feed_title = parsed.get("title") or feed_url
+                    for it in new_items[:5]:  # cap at 5 per cycle to avoid notification storms
+                        payload = {
+                            "title":  f"📰 {feed_title}",
+                            "body":   (it.get("title") or "New article").strip()[:120],
+                            "icon":   "/static/img/icons/icon-192.png",
+                            "badge":  "/static/img/icons/icon-192.png",
+                            "tag":    f"bw-rss-{hash(feed_url) & 0xFFFFFF}",
+                            "data":   {"url": it.get("link") or feed_url},
+                        }
+                        for sub in subs:
+                            sub_info = {"endpoint": sub["endpoint"],
+                                        "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}}
+                            result = await send_push(sub_info, payload)
+                            if result is True:
+                                total_sent += 1
+                            elif result is None:
+                                stale_eps.add(sub["endpoint"])
+
+                    await mark_rss_items_seen(feed_url, [_guid(it) for it in new_items if _guid(it)])
+
+                except Exception:
+                    log.exception("[rss-push] error fetching %s", feed_url)
+
+            for ep in stale_eps:
+                await delete_subscription(ep)
+            if total_sent:
+                log.info("[rss-push] sent %d notification(s) across %d feed(s)",
+                         total_sent, len(feeds_map))
+        except Exception:
+            log.exception("[rss-push] loop error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
@@ -205,10 +312,11 @@ async def lifespan(app: FastAPI):
     await purge_old_demo_users()  # clean up stale demo accounts on boot
     purge_task  = asyncio.create_task(_demo_purge_loop())
     push_task   = asyncio.create_task(_reminder_push_loop())
+    rss_task    = asyncio.create_task(_rss_notif_loop())
     try:
         yield
     finally:
-        for t in (purge_task, push_task):
+        for t in (purge_task, push_task, rss_task):
             t.cancel()
             try:
                 await t

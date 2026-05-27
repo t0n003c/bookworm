@@ -1167,6 +1167,36 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_push_subs_user
                 ON push_subscriptions(user_id)
         """)
+
+        # ── RSS per-feed notification opt-ins ───────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS rss_feed_notifs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                feed_url   TEXT    NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, feed_url)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rss_feed_notifs_user "
+            "ON rss_feed_notifs(user_id)"
+        )
+        # ── RSS seen-item dedup (prevents resending items already notified) ────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS rss_notif_seen (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                feed_url  TEXT    NOT NULL,
+                item_guid TEXT    NOT NULL,
+                seen_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(feed_url, item_guid)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rss_notif_seen_url "
+            "ON rss_notif_seen(feed_url)"
+        )
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS public_share_links (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,

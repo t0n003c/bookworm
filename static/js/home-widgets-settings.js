@@ -312,6 +312,10 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
       // _rssFeedsEditorHtml lives in home-widget-rss.js; always available at runtime
       wrap.innerHTML = lbl + _rssFeedsEditorHtml(f.id, existing, f.name);
       body.appendChild(wrap);
+      // Load notification status for the rendered feed rows (non-blocking)
+      if (typeof rssWidgetLoadNotifStatus === 'function') {
+        rssWidgetLoadNotifStatus(existing);
+      }
       return;   // skip generic wrap.innerHTML = lbl + input path below
     } else if (f.type === 'color') {
       const colorVal  = curVal || f.default || '#0053e2';
