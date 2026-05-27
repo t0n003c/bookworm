@@ -1050,6 +1050,38 @@ function _tripRenderDayBlockRow(dayId, b) {
     '</div>';
   }
 
+  if (b.block_type === 'reminder') {
+    var rTitle  = c.title || 'Reminder';
+    var rAt     = b.reminder_at || '';
+    // Format the stored "YYYY-MM-DDTHH:MM" into a friendly display string
+    var rLabel  = '';
+    if (rAt) {
+      try {
+        var rd = new Date(rAt);
+        rLabel = rd.toLocaleString([], {month:'short', day:'numeric',
+                                       hour:'2-digit', minute:'2-digit'});
+      } catch(e) { rLabel = rAt; }
+    }
+    var rPast   = rAt && new Date(rAt) < new Date();
+    var rBadge  = rPast
+      ? '<span class="text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded ' +
+          'bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-zinc-500">Sent</span>'
+      : (rAt ? '<span class="text-[9px] font-bold uppercase tracking-wide px-1 py-0.5 rounded ' +
+          'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">🔔 ' +
+          _tripEsc(rLabel) + '</span>' : '');
+    return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg' + itemCls + ' ' +
+      'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800" ' +
+      viewClick + ' ' + dragAttrs + '>' +
+      '<span class="text-sm flex-shrink-0">🔔</span>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
+          _tripEsc(rTitle) + '</p>' +
+        rBadge +
+      '</div>' +
+      editBtn + delBtn + viewChevron +
+    '</div>';
+  }
+
   return '';
 }
 
@@ -1071,7 +1103,8 @@ window.tripToggleBlockPicker = function(dayId, event) {
     _tripBlockPickerBtn('📝', 'Note',     dayId, 'note')    +
     _tripBlockPickerBtn('🚗', 'Drive',    dayId, 'drive')   +
     _tripBlockPickerBtn('🔖', 'Bookmark', dayId, 'bookmark') +
-    _tripBlockPickerBtn('─',  'Divider',  dayId, 'divider');
+    _tripBlockPickerBtn('—',  'Divider',  dayId, 'divider') +
+    _tripBlockPickerBtn('🔔', 'Reminder', dayId, 'reminder');
 
   var rect = event.currentTarget.getBoundingClientRect();
   el.style.position = 'fixed';
@@ -1110,7 +1143,12 @@ window.tripOpenBlockModal = function(dayId, blockType, blockIdOrData) {
 
   if (existingBlock) {
     var c = {}; try { c = JSON.parse(existingBlock.content); } catch(e) {}
-    _tripFillBlockModal(blockType, existingBlock.time_label || '', c);
+    // Pass reminder_at in place of timeLabel for reminder blocks so
+    // _tripFillBlockModal can split it into the date and time inputs.
+    var fillTl = (existingBlock.block_type === 'reminder')
+      ? (existingBlock.reminder_at || '')
+      : (existingBlock.time_label  || '');
+    _tripFillBlockModal(blockType, fillTl, c);
   } else {
     _tripClearBlockModal(blockType);
   }
@@ -1149,13 +1187,18 @@ window.tripSubmitBlock = function(blockType) {
   var content = _tripCollectBlockContent(blockType);
   if (content === null) return;
 
+  // For reminder blocks, reminder_at is stored as a DB column (not just content)
+  // so we send it as a separate form field for efficient server-side querying.
+  var reminderAt = (blockType === 'reminder') ? (content.remind_at || '') : '';
+
   var tlEl      = document.getElementById('trip-block-' + blockType + '-time');
   var timeLabel = _normalizeTime(tlEl ? tlEl.value : '');
 
   var fd = new URLSearchParams();
-  fd.append('block_type', blockType);
-  fd.append('content',    JSON.stringify(content));
-  fd.append('time_label', timeLabel);
+  fd.append('block_type',  blockType);
+  fd.append('content',     JSON.stringify(content));
+  fd.append('time_label',  timeLabel);
+  fd.append('reminder_at', reminderAt);
 
   var url    = '/home/trip/' + _tripPid + '/days/' + dayId + '/blocks';
   var method = 'POST';
@@ -1201,8 +1244,18 @@ function _tripCollectBlockContent(blockType) {
     return {title: title.trim(), url: burl.trim()};
   }
   if (blockType === 'divider') {
-    var label = (document.getElementById('trip-block-divider-label') || {}).value || '';
-    return {label: label.trim()};
+    var l = document.getElementById('trip-block-divider-label');
+    if (l) l.value = c.label || '';
+    return { label: l ? l.value.trim() : '' };
+  }
+  if (blockType === 'reminder') {
+    var title  = ((document.getElementById('trip-block-reminder-title') || {}).value || '').trim();
+    var rDate  = ((document.getElementById('trip-block-reminder-date')  || {}).value || '').trim();
+    var rTime  = ((document.getElementById('trip-block-reminder-time')  || {}).value || '').trim();
+    if (!title)        { _tripShowToast('Reminder title is required', true); return null; }
+    if (!rDate)        { _tripShowToast('Date is required', true);           return null; }
+    if (!rTime)        { _tripShowToast('Time is required', true);           return null; }
+    return { title: title, remind_at: rDate + 'T' + rTime };
   }
   return {};
 }
@@ -1232,6 +1285,20 @@ function _tripFillBlockModal(blockType, timeLabel, c) {
   } else if (blockType === 'divider') {
     var l = document.getElementById('trip-block-divider-label');
     if (l) l.value = c.label || '';
+  } else if (blockType === 'reminder') {
+    var rt = document.getElementById('trip-block-reminder-title');
+    var rd = document.getElementById('trip-block-reminder-date');
+    var rtime = document.getElementById('trip-block-reminder-time');
+    if (rt) rt.value = c.title || '';
+    // reminder_at is stored on the block object directly (not in content)
+    var ra = (typeof timeLabel === 'string' && timeLabel.includes('T'))
+             ? timeLabel
+             : (c.remind_at || '');
+    if (ra && rd && rtime) {
+      var parts = ra.split('T');
+      rd.value    = parts[0] || '';
+      rtime.value = (parts[1] || '').substring(0, 5);
+    }
   }
 }
 
@@ -1684,6 +1751,52 @@ window.tripViewDetail = function(kind, dayId, id) {
                 _tripEsc(bc.url) + '</p>'
             : '') +
           (openBtn ? '<div>' + openBtn + '</div>' : '') +
+        '</div>'
+      );
+      return;
+    }
+
+    // ── REMINDER ──
+    if (blk.block_type === 'reminder') {
+      var rTitle  = bc.title || 'Reminder';
+      var rAt     = blk.reminder_at || bc.remind_at || '';
+      var rFmt    = '';
+      var rPast   = false;
+      if (rAt) {
+        try {
+          var rd2 = new Date(rAt);
+          rFmt  = rd2.toLocaleString([], {weekday:'long', month:'long', day:'numeric',
+                                          year:'numeric', hour:'2-digit', minute:'2-digit'});
+          rPast = rd2 < new Date();
+        } catch(e) { rFmt = rAt; }
+      }
+      var statusBadge = rPast
+        ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;' +
+            'padding:2px 8px;border-radius:99px;font-weight:600;color:#6b7280;' +
+            'background:#f3f4f6">✅ Sent</span>'
+        : '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;' +
+            'padding:2px 8px;border-radius:99px;font-weight:600;color:#92400e;' +
+            'background:#fef3c7">🔔 Scheduled</span>';
+      _tripShowDrawer(
+        '<div style="padding:0 20px;padding-top:20px;padding-bottom:8px;' +
+             'display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-size:28px">🔔</span>' +
+          '<span style="font-size:17px;font-weight:700;color:' + C.text + '">' +
+            _tripEsc(rTitle) + '</span>' +
+        '</div>' +
+        '<div style="padding:0 20px;padding-bottom:24px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+            statusBadge +
+          '</div>' +
+          (rFmt
+            ? '<div style="background:' + C.bg + ';border-radius:12px;padding:14px 16px;' +
+                'border:1px solid ' + C.border + '">' +
+                '<p style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;' +
+                         'color:' + C.sub + ';margin:0 0 4px">Reminder time</p>' +
+                '<p style="font-size:15px;font-weight:600;color:' + C.text + ';margin:0">' +
+                  _tripEsc(rFmt) + '</p>' +
+              '</div>'
+            : '<p style="font-size:13px;color:' + C.sub + ';font-style:italic">No date set</p>') +
         '</div>'
       );
       return;

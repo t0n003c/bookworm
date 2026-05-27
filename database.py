@@ -914,6 +914,15 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_trip_day_blocks_day "
             "ON trip_day_blocks(day_id)"
         )
+        # reminder_at: ISO datetime "YYYY-MM-DDTHH:MM" stored for push
+        # notifications on itinerary block reminders.
+        try:
+            await db.execute(
+                "ALTER TABLE trip_day_blocks ADD COLUMN reminder_at TEXT"
+            )
+            await db.commit()
+        except Exception:
+            pass
 
         # ── trip_locations (research locations layer, parent of spots) ────────
         await db.execute("""

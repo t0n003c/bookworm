@@ -65,7 +65,7 @@ _SPOT_TYPES = frozenset({
     "Restaurant", "Hotel", "Camping", "Hiking",
     "City Attraction", "Beach", "Museum", "Other",
 })
-_BLOCK_TYPES = frozenset({"note", "drive", "bookmark", "divider", "panel_ref"})
+_BLOCK_TYPES = frozenset({"note", "drive", "bookmark", "divider", "panel_ref", "reminder"})
 _ALLOWED_IMG_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _ALLOWED_IMG_EXT   = {"jpg", "jpeg", "png", "gif", "webp"}
 _MAX_COVER_MB      = 5
@@ -702,9 +702,10 @@ async def list_day_blocks(request: Request, page_id: int, day_id: int):
 @router.post("/trip/{page_id}/days/{day_id}/blocks")
 async def create_day_block(
     request: Request, page_id: int, day_id: int,
-    block_type: str = Form("note"),
-    content:    str = Form("{}"),
-    time_label: str = Form(""),
+    block_type:  str = Form("note"),
+    content:     str = Form("{}"),
+    time_label:  str = Form(""),
+    reminder_at: str = Form(""),
 ):
     import json as _json
     try:
@@ -720,7 +721,8 @@ async def create_day_block(
     except Exception:
         return _err("content must be valid JSON")
     new_id = await add_day_block(
-        day_id, page_id, uid, block_type, content, time_label.strip()
+        day_id, page_id, uid, block_type, content,
+        time_label.strip(), reminder_at.strip() or None,
     )
     if new_id is None:
         return _err("not found", 404)
@@ -730,8 +732,9 @@ async def create_day_block(
 @router.put("/trip/{page_id}/days/{day_id}/blocks/{block_id}")
 async def update_day_block_route(
     request: Request, page_id: int, day_id: int, block_id: int,
-    content:    str = Form("{}"),
-    time_label: str = Form(""),
+    content:     str = Form("{}"),
+    time_label:  str = Form(""),
+    reminder_at: str = Form(""),
 ):
     import json as _json
     try:
@@ -744,7 +747,10 @@ async def update_day_block_route(
         _json.loads(content)
     except Exception:
         return _err("content must be valid JSON")
-    ok = await update_day_block(block_id, day_id, page_id, uid, content, time_label.strip())
+    ok = await update_day_block(
+        block_id, day_id, page_id, uid, content,
+        time_label.strip(), reminder_at.strip() or None,
+    )
     if not ok:
         return _err("not found", 404)
     return JSONResponse({"ok": True})

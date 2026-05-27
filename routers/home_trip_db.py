@@ -684,18 +684,19 @@ async def get_day_blocks(day_id: int, page_id: int, user_id: int) -> list[dict]:
         if not await _day_owned(db, day_id, page_id, user_id):
             return []
         cur = await db.execute(
-            "SELECT id, block_type, order_idx, time_label, content "
+            "SELECT id, block_type, order_idx, time_label, content, reminder_at "
             "FROM trip_day_blocks WHERE day_id=? ORDER BY order_idx",
             (day_id,),
         )
         rows = await cur.fetchall()
         return [
             {
-                "id":         r["id"],
-                "block_type": r["block_type"],
-                "order_idx":  r["order_idx"],
-                "time_label": r["time_label"],
-                "content":    r["content"],
+                "id":          r["id"],
+                "block_type":  r["block_type"],
+                "order_idx":   r["order_idx"],
+                "time_label":  r["time_label"],
+                "content":     r["content"],
+                "reminder_at": r["reminder_at"],
             }
             for r in rows
         ]
@@ -704,6 +705,7 @@ async def get_day_blocks(day_id: int, page_id: int, user_id: int) -> list[dict]:
 async def add_day_block(
     day_id: int, page_id: int, user_id: int,
     block_type: str, content: str, time_label: str,
+    reminder_at: str | None = None,
 ) -> int | None:
     """INSERT a new block. Returns new id or None if ownership check fails."""
     async with get_db() as db:
@@ -726,9 +728,9 @@ async def add_day_block(
         order_idx = (row[0] if row and row[0] is not None else -10) + 10
         await db.execute(
             "INSERT INTO trip_day_blocks "
-            "(day_id, block_type, order_idx, time_label, content) "
-            "VALUES (?,?,?,?,?)",
-            (day_id, block_type, order_idx, time_label, content),
+            "(day_id, block_type, order_idx, time_label, content, reminder_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (day_id, block_type, order_idx, time_label, content, reminder_at or None),
         )
         await db.commit()
         cur = await db.execute("SELECT last_insert_rowid()")
@@ -738,15 +740,16 @@ async def add_day_block(
 async def update_day_block(
     block_id: int, day_id: int, page_id: int, user_id: int,
     content: str, time_label: str,
+    reminder_at: str | None = None,
 ) -> bool:
-    """Update block content + time_label. Returns False if not found/owned."""
+    """Update block content + time_label + reminder_at. Returns False if not found/owned."""
     async with get_db() as db:
         if not await _day_owned(db, day_id, page_id, user_id):
             return False
         await db.execute(
-            "UPDATE trip_day_blocks SET content=?, time_label=? "
+            "UPDATE trip_day_blocks SET content=?, time_label=?, reminder_at=? "
             "WHERE id=? AND day_id=?",
-            (content, time_label, block_id, day_id),
+            (content, time_label, reminder_at or None, block_id, day_id),
         )
         await db.commit()
         return True
@@ -1210,3 +1213,64 @@ async def get_trip_stats(
         "settle_panels":    settle_panels,
         "spots_detail":     spots_detail,
     }
+
+
+# ── Push notification helper ─────────────────────────────────────────────────────
+
+import json as _json
+
+
+async def get_due_trip_reminders() -> list[dict]:
+    """Return itinerary reminder blocks whose reminder_at has arrived.
+
+    Compares reminder_at (stored as local 'YYYY-MM-DDTHH:MM') against the
+    server's current local datetime so that reminders fire at the correct
+    wall-clock time on the host machine.
+
+    Returns one row per (block, push_subscription) pair so a user with
+    multiple devices gets a notification on each.
+
+    Dedup key: "trip_block:{block_id}:{reminder_at}" — changing the time
+    clears the old dedup record and lets the new time fire fresh.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT tdb.id          AS block_id,
+                   tdb.reminder_at,
+                   tdb.content,
+                   td.day_label,
+                   td.day_date,
+                   tp.name        AS trip_name,
+                   hp.user_id,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   trip_day_blocks tdb
+            JOIN   trip_days       td  ON td.id      = tdb.day_id
+            JOIN   trip_plans      tp  ON tp.id      = td.plan_id
+            JOIN   home_pages      hp  ON hp.id      = tp.page_id
+            JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
+            WHERE  tdb.block_type = 'reminder'
+              AND  tdb.reminder_at IS NOT NULL
+              AND  tdb.reminder_at <= strftime('%Y-%m-%dT%H:%M', 'now', 'localtime')
+            """
+        )
+        rows = await cur.fetchall()
+    result = []
+    for r in rows:
+        try:
+            c = _json.loads(r["content"] or "{}")
+        except Exception:
+            c = {}
+        result.append({
+            "block_id":   r["block_id"],
+            "reminder_at": r["reminder_at"],
+            "title":      c.get("title", "Trip reminder"),
+            "day_label":  r["day_label"] or "",
+            "trip_name":  r["trip_name"] or "",
+            "user_id":    r["user_id"],
+            "endpoint":   r["endpoint"],
+            "p256dh":     r["p256dh"],
+            "auth":       r["auth"],
+            "dedup_key":  f"trip_block:{r['block_id']}:{r['reminder_at']}",
+        })
+    return result
