@@ -17,6 +17,7 @@ from routers.home_buds_db import (
     list_buds, add_bud, update_bud, delete_bud,
     water_bud, create_fertilize_plan, complete_fertilize_plan,
     crm_lookup, get_user_buds_widgets,
+    set_contact_reminder,
 )
 
 log = logging.getLogger(__name__)
@@ -137,12 +138,16 @@ async def buds_water(widget_id: int, bud_id: int, request: Request):
 @router.post("/{widget_id}/{bud_id}/fertilize-plan")
 async def buds_fertilize_plan(
     widget_id: int, bud_id: int, request: Request,
-    planned_date: str = Form(""),
-    note:         str = Form(""),
+    planned_date:          str = Form(""),
+    note:                  str = Form(""),
+    visit_reminder_enabled: int = Form(0),
 ):
     uid = _uid(request)
     await _require_bud_widget(widget_id, uid)
-    plan = await create_fertilize_plan(bud_id, uid, planned_date, note)
+    plan = await create_fertilize_plan(
+        bud_id, uid, planned_date, note,
+        visit_reminder_enabled=bool(visit_reminder_enabled),
+    )
     return JSONResponse({"plan": plan})
 
 
@@ -156,4 +161,18 @@ async def buds_fertilize_complete(
         bud = await complete_fertilize_plan(plan_id, bud_id, uid)
     except LookupError:
         raise HTTPException(status_code=404, detail="plan not found")
+    return JSONResponse({"bud": bud})
+
+
+@router.post("/{widget_id}/{bud_id}/contact-reminder")
+async def buds_contact_reminder(
+    widget_id: int, bud_id: int, request: Request,
+    reminder_time: str = Form(""),   # 'HH:MM' or '' to disable
+):
+    """Set or clear the daily contact-overdue push notification for a bud."""
+    uid = _uid(request)
+    await _require_bud_widget(widget_id, uid)
+    bud = await set_contact_reminder(bud_id, uid, reminder_time or None)
+    if not bud:
+        raise HTTPException(status_code=404, detail="bud not found")
     return JSONResponse({"bud": bud})

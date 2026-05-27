@@ -239,7 +239,8 @@ async def water_bud(bud_id: int, user_id: int) -> dict:
 
 
 async def create_fertilize_plan(
-    bud_id: int, user_id: int, planned_date: str, note: str = ""
+    bud_id: int, user_id: int, planned_date: str, note: str = "",
+    visit_reminder_enabled: bool = False,
 ) -> dict:
     """Create (or replace) a pending fertilize plan."""
     # cancel any existing pending plan first
@@ -250,9 +251,12 @@ async def create_fertilize_plan(
             (bud_id, user_id),
         )
         cur = await db.execute(
-            "INSERT INTO bud_fertilize_plans (bud_id, user_id, planned_date, note) "
-            "VALUES (?,?,?,?)",
-            (bud_id, user_id, planned_date, note.strip() if note else None),
+            "INSERT INTO bud_fertilize_plans "
+            "(bud_id, user_id, planned_date, note, visit_reminder_enabled) "
+            "VALUES (?,?,?,?,?)",
+            (bud_id, user_id, planned_date,
+             note.strip() if note else None,
+             1 if visit_reminder_enabled else 0),
         )
         await db.commit()
         plan_id = cur.lastrowid
@@ -370,3 +374,150 @@ async def get_user_buds_widgets(user_id: int) -> list[dict]:
             "widget_name": cfg.get("custom_name") or "Buds",
         })
     return result
+
+
+# ── Contact-frequency & visit push-notification helpers ─────────────────────────
+
+async def set_contact_reminder(bud_id: int, user_id: int,
+                               reminder_time: str | None) -> dict | None:
+    """Set or clear the daily contact-overdue reminder for a bud.
+
+    reminder_time: 'HH:MM' to enable, None / '' to disable.
+    Returns the updated bud dict or None if not found.
+    """
+    t = (reminder_time or "").strip() or None
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE buds SET contact_reminder_time=? WHERE id=? AND user_id=?",
+            (t, bud_id, user_id),
+        )
+        await db.commit()
+        cur = await db.execute(
+            "SELECT * FROM buds WHERE id=? AND user_id=?", (bud_id, user_id)
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    b = dict(row)
+    b["health"] = _apply_decay(b["health"], b["see_every_days"],
+                               b["health_updated_at"])
+    b["health_tier"] = _health_tier(b["health"])
+    b["pending_plan"] = await _get_pending_plan(bud_id, user_id)
+    return b
+
+
+async def get_due_bud_contact_reminders() -> list[dict]:
+    """Return buds whose contact reminder should fire right now.
+
+    Conditions:
+      - contact_reminder_time is set and matches today's HH:MM
+      - NOT already sent today (contact_reminder_last_sent != today)
+      - The bud is overdue: days since health_updated_at >= see_every_days
+    Joined with push_subscriptions so the caller has everything needed to send.
+    """
+    now      = datetime.datetime.now()
+    hhmm     = now.strftime("%H:%M")
+    today    = now.strftime("%Y-%m-%d")
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT b.id, b.user_id, b.name, b.see_every_days,
+                   b.health_updated_at, b.contact_reminder_time,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   buds b
+            JOIN   push_subscriptions ps ON ps.user_id = b.user_id
+            WHERE  b.contact_reminder_time = ?
+              AND  (b.contact_reminder_last_sent IS NULL
+                   OR b.contact_reminder_last_sent != ?)
+              AND  julianday(?) - julianday(b.health_updated_at) >= b.see_every_days
+            """,
+            (hhmm, today, today),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "bud_id":    r[0],
+            "user_id":   r[1],
+            "name":      r[2],
+            "see_every_days": r[3],
+            "endpoint":  r[6],
+            "p256dh":    r[7],
+            "auth":      r[8],
+        }
+        for r in rows
+    ]
+
+
+async def mark_contact_reminder_sent(bud_ids: list[int]) -> None:
+    """Record today as the last-sent date for each bud so it doesn't fire twice."""
+    if not bud_ids:
+        return
+    today = datetime.date.today().isoformat()
+    async with get_db() as db:
+        await db.executemany(
+            "UPDATE buds SET contact_reminder_last_sent=? WHERE id=?",
+            [(today, bid) for bid in bud_ids],
+        )
+        await db.commit()
+
+
+async def get_due_bud_visit_reminders() -> list[dict]:
+    """Return pending visit plans that are due for a reminder today at 9am+.
+
+    Conditions:
+      - visit_reminder_enabled = 1
+      - planned_date = today
+      - completed_at IS NULL
+      - visit_reminder_sent != today
+      - current hour >= 9
+    Joined with push_subscriptions and buds for the notification payload.
+    """
+    now   = datetime.datetime.now()
+    if now.hour < 9:
+        return []
+    today = now.strftime("%Y-%m-%d")
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT bfp.id, bfp.bud_id, bfp.user_id, bfp.planned_date, bfp.note,
+                   b.name,
+                   ps.endpoint, ps.p256dh, ps.auth
+            FROM   bud_fertilize_plans bfp
+            JOIN   buds b ON b.id = bfp.bud_id
+            JOIN   push_subscriptions ps ON ps.user_id = bfp.user_id
+            WHERE  bfp.visit_reminder_enabled = 1
+              AND  bfp.planned_date = ?
+              AND  bfp.completed_at IS NULL
+              AND  (bfp.visit_reminder_sent IS NULL
+                   OR bfp.visit_reminder_sent != ?)
+            """,
+            (today, today),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "plan_id":      r[0],
+            "bud_id":       r[1],
+            "user_id":      r[2],
+            "planned_date": r[3],
+            "note":         r[4],
+            "bud_name":     r[5],
+            "endpoint":     r[6],
+            "p256dh":       r[7],
+            "auth":         r[8],
+        }
+        for r in rows
+    ]
+
+
+async def mark_visit_reminders_sent(plan_ids: list[int]) -> None:
+    """Record today as sent for each plan to prevent re-firing."""
+    if not plan_ids:
+        return
+    today = datetime.date.today().isoformat()
+    async with get_db() as db:
+        await db.executemany(
+            "UPDATE bud_fertilize_plans SET visit_reminder_sent=? WHERE id=?",
+            [(today, pid) for pid in plan_ids],
+        )
+        await db.commit()

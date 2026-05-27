@@ -282,17 +282,23 @@ function _budsFertilizeOpen(wid, budId) {
   document.getElementById('bfm-plan-note').value = plan ? (plan.note||'') : '';
   document.getElementById('bfm-complete-btn').style.display = plan ? '' : 'none';
   document.getElementById('bfm-complete-btn').dataset.planId = plan ? plan.id : '';
+  // Pre-tick the reminder checkbox from the saved plan state
+  var remCb = document.getElementById('bfm-visit-reminder');
+  if (remCb) remCb.checked = plan ? !!(plan.visit_reminder_enabled) : false;
   modal.classList.remove('hidden');
 }
 
 function _budsFertilizeSubmit() {
-  var modal = document.getElementById('buds-fertilize-modal');
-  var wid   = modal.dataset.wid, budId = modal.dataset.budId;
-  var date  = document.getElementById('bfm-plan-date').value;
-  var note  = document.getElementById('bfm-plan-note').value;
-  var fd    = new FormData();
+  var modal  = document.getElementById('buds-fertilize-modal');
+  var wid    = modal.dataset.wid, budId = modal.dataset.budId;
+  var date   = document.getElementById('bfm-plan-date').value;
+  var note   = document.getElementById('bfm-plan-note').value;
+  var remCb  = document.getElementById('bfm-visit-reminder');
+  var remind = remCb && remCb.checked ? 1 : 0;
+  var fd     = new FormData();
   fd.append('planned_date', date);
   fd.append('note', note);
+  fd.append('visit_reminder_enabled', remind);
   fetch('/home/buds/'+wid+'/'+budId+'/fertilize-plan',
     {method:'POST', credentials:'same-origin', body:fd})
   .then(function(r) { return r.ok ? r.json() : null; })
@@ -451,7 +457,57 @@ function _budsDoPermanentDelete(wid, budId) {
   });
 }
 
-// ── Detail panel ──────────────────────────────────────────────────────────────
+// ── Detail panel ─────────────────────────────────────────────────────────────
+
+// ── Contact reminder helpers (called from detail panel buttons) ─────────────────
+
+function _budsSaveContactReminder() {
+  var panel  = document.getElementById('buds-detail-panel'); if (!panel) return;
+  var wid    = panel.dataset.wid, budId = panel.dataset.budId;
+  var timeEl = document.getElementById('bdp-reminder-time');
+  var time   = timeEl ? timeEl.value : '';
+  if (!time) { window._bwToast && window._bwToast('Pick a time first.', 'warn'); return; }
+  var fd = new FormData();
+  fd.append('reminder_time', time);
+  fetch('/home/buds/'+wid+'/'+budId+'/contact-reminder',
+    {method:'POST', credentials:'same-origin', body:fd})
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .then(function(data) {
+    if (!data) return;
+    // Update local state so the panel refreshes correctly
+    var buds = (_budsState[wid] || {buds:[]}).buds;
+    for (var i=0;i<buds.length;i++) {
+      if (buds[i].id == budId) { buds[i] = data.bud; break; }
+    }
+    var statusEl = document.getElementById('bdp-reminder-status');
+    if (statusEl) statusEl.textContent = '\u23F0 Reminder set for ' + time + ' when overdue';
+    window._bwToast && window._bwToast('\uD83D\uDD14 Reminder set for ' + time, 'success');
+  })
+  .catch(function() { window._bwToast && window._bwToast('Could not save reminder', 'error'); });
+}
+
+function _budsClearContactReminder() {
+  var panel  = document.getElementById('buds-detail-panel'); if (!panel) return;
+  var wid    = panel.dataset.wid, budId = panel.dataset.budId;
+  var fd = new FormData();
+  fd.append('reminder_time', '');
+  fetch('/home/buds/'+wid+'/'+budId+'/contact-reminder',
+    {method:'POST', credentials:'same-origin', body:fd})
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .then(function(data) {
+    if (!data) return;
+    var buds = (_budsState[wid] || {buds:[]}).buds;
+    for (var i=0;i<buds.length;i++) {
+      if (buds[i].id == budId) { buds[i] = data.bud; break; }
+    }
+    var timeEl = document.getElementById('bdp-reminder-time');
+    var statusEl = document.getElementById('bdp-reminder-status');
+    if (timeEl)   timeEl.value = '';
+    if (statusEl) statusEl.textContent = 'No reminder set';
+    window._bwToast && window._bwToast('Reminder cleared', 'info');
+  })
+  .catch(function() { window._bwToast && window._bwToast('Could not clear reminder', 'error'); });
+}
 
 function _budsDetailOpen(wid, budId) {
   var bud = _budsFindBud(wid, budId); if (!bud) return;
@@ -495,6 +551,14 @@ function _budsDetailFill(bud, panel) {
   panel.querySelector('#bdp-plan').textContent  = bud.pending_plan
     ? ('\uD83D\uDCC5 '+bud.pending_plan.planned_date+(bud.pending_plan.note?' — '+bud.pending_plan.note:''))
     : 'No upcoming visit planned';
+  // Contact reminder
+  var remTime   = bud.contact_reminder_time || '';
+  var remInput  = panel.querySelector('#bdp-reminder-time');
+  var remStatus = panel.querySelector('#bdp-reminder-status');
+  if (remInput)  remInput.value = remTime;
+  if (remStatus) remStatus.textContent = remTime
+    ? ('\u23F0 Reminder set for ' + remTime + ' when overdue')
+    : 'No reminder set';
   panel.querySelector('#bdp-edit-btn').onclick   = function() { _budsDetailClose(); _budsEditOpen(wid, budId); };
   panel.querySelector('#bdp-delete-btn').onclick  = function() { _budsDetailClose(); _budsDelete(wid, budId); };
 }
@@ -620,9 +684,13 @@ function _budsInjectModals() {
     + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
     + '<label class="block text-xs font-semibold text-gray-500 mb-1">Plan / note (optional)</label>'
     + '<input id="bfm-plan-note" type="text" placeholder="Coffee, walk, game night…"'
-    + ' class="w-full text-sm border border-gray-200 dark:border-zinc-600 rounded-lg px-3 py-2 mb-4'
+    + ' class="w-full text-sm border border-gray-200 dark:border-zinc-600 rounded-lg px-3 py-2 mb-3'
     + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
     + ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+    + '<label class="flex items-center gap-2 mb-4 cursor-pointer select-none">'
+    + '<input id="bfm-visit-reminder" type="checkbox" class="w-4 h-4 rounded accent-wblue">'
+    + '<span class="text-xs text-gray-600 dark:text-zinc-300">🔔 Remind me on visit day (push at 9am)</span>'
+    + '</label>'
     + '<div class="flex flex-col gap-2">'
     + '<button id="bfm-complete-btn" type="button" onclick="_budsFertilizeComplete()"'
     + ' class="w-full px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg'
@@ -658,6 +726,22 @@ function _budsInjectModals() {
     + '<p id="bdp-days" class="text-sm font-medium text-gray-700 dark:text-zinc-200"></p></div>'
     + '<div><p class="text-xs text-gray-400">Upcoming visit</p>'
     + '<p id="bdp-plan" class="text-sm text-gray-700 dark:text-zinc-200"></p></div>'
+    + '<div>'
+    + '<p class="text-xs text-gray-400 mb-1">🔔 Contact reminder</p>'
+    + '<p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-1.5">Sends a push when overdue at your chosen time.</p>'
+    + '<div class="flex items-center gap-2">'
+    + '<input id="bdp-reminder-time" type="time"'
+    + ' class="text-xs border border-gray-200 dark:border-zinc-600 rounded-lg px-2 py-1'
+    + ' bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100'
+    + ' focus:outline-none focus:ring-1 focus:ring-wblue">'
+    + '<button id="bdp-reminder-save" type="button" onclick="_budsSaveContactReminder()"'
+    + ' class="text-xs px-2 py-1 bg-wblue text-white rounded-lg hover:bg-blue-700 transition font-semibold">Set</button>'
+    + '<button id="bdp-reminder-clear" type="button" onclick="_budsClearContactReminder()"'
+    + ' class="text-xs px-2 py-1 border border-gray-200 dark:border-zinc-600 rounded-lg'
+    + ' text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-700 transition">Off</button>'
+    + '</div>'
+    + '<p id="bdp-reminder-status" class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1"></p>'
+    + '</div>'
     + '<div><p class="text-xs text-gray-400">Notes</p>'
     + '<p id="bdp-notes" class="text-sm text-gray-700 dark:text-zinc-200"></p></div>'
     + '<div id="bdp-crm-section" class="hidden">'

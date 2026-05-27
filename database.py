@@ -1284,6 +1284,28 @@ async def init_db() -> None:
             "ON bud_fertilize_plans(bud_id, user_id, completed_at, planned_date)"
         )
 
+        # ── buds: contact reminder fields (additive migration) ──────────────────────
+        # contact_reminder_time      — HH:MM at which to send the overdue push, NULL = off
+        # contact_reminder_last_sent — DATE we last sent it (dedup guard)
+        for _col, _defn in [
+            ("contact_reminder_time",      "TEXT"),
+            ("contact_reminder_last_sent",  "DATE"),
+        ]:
+            _buds_cols = [r[1] for r in (await (await db.execute("PRAGMA table_info(buds)")).fetchall())]
+            if _col not in _buds_cols:
+                await db.execute(f"ALTER TABLE buds ADD COLUMN {_col} {_defn}")
+
+        # ── bud_fertilize_plans: visit reminder fields (additive migration) ────────
+        # visit_reminder_enabled — 1 = push reminder at 9am on planned_date
+        # visit_reminder_sent    — DATE sent (dedup guard)
+        for _col, _defn in [
+            ("visit_reminder_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("visit_reminder_sent",    "DATE"),
+        ]:
+            _plan_cols = [r[1] for r in (await (await db.execute("PRAGMA table_info(bud_fertilize_plans)")).fetchall())]
+            if _col not in _plan_cols:
+                await db.execute(f"ALTER TABLE bud_fertilize_plans ADD COLUMN {_col} {_defn}")
+
         # ── One-shot cleanup: purge orphaned page_upload_tags ─────────────────────
         # Before attachments_db.delete_attachment_record was fixed to cascade
         # into page_upload_tags, deleting a note attachment left orphaned tag

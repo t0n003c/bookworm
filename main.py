@@ -297,6 +297,79 @@ async def _rss_notif_loop():
             log.exception("[rss-push] loop error")
 
 
+async def _bud_notif_loop():
+    """Background task: push notifications for Bud contact & visit reminders.
+
+    Runs every 60 seconds.
+    Contact reminder: fires at the user-chosen HH:MM when a bud is overdue
+                      (days since last contact >= see_every_days).
+    Visit reminder:   fires at 09:00 on the day of a planned visit.
+    """
+    import os
+    if not os.getenv("BW_VAPID_PRIVATE_KEY"):
+        log.info("[bud-push] BW_VAPID_PRIVATE_KEY not set — bud push disabled")
+        return
+    from routers.push_db import send_push, delete_subscription
+    from routers.home_buds_db import (
+        get_due_bud_contact_reminders, mark_contact_reminder_sent,
+        get_due_bud_visit_reminders,   mark_visit_reminders_sent,
+    )
+    _INTERVAL = 60
+    while True:
+        await asyncio.sleep(_INTERVAL)
+        try:
+            # ── Contact-frequency reminders ──────────────────────────────────────
+            due_contacts = await get_due_bud_contact_reminders()
+            stale_eps: set[str] = set()
+            fired_bud_ids: set[int] = set()
+            for row in due_contacts:
+                sub_info = {"endpoint": row["endpoint"],
+                            "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                payload = {
+                    "title":  "\uD83C\uDF31 Time to check in!",
+                    "body":   f"You haven't contacted {row['name']} in a while — reach out!",
+                    "icon":   "/static/img/icons/icon-192.png",
+                    "badge":  "/static/img/icons/icon-192.png",
+                    "tag":    f"bw-bud-contact-{row['bud_id']}",
+                }
+                result = await send_push(sub_info, payload)
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+                else:
+                    fired_bud_ids.add(row["bud_id"])
+            await mark_contact_reminder_sent(list(fired_bud_ids))
+
+            # ── Visit-day reminders ────────────────────────────────────────────
+            due_visits = await get_due_bud_visit_reminders()
+            fired_plan_ids: set[int] = set()
+            for row in due_visits:
+                sub_info = {"endpoint": row["endpoint"],
+                            "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                note_part = f" — {row['note']}" if row["note"] else ""
+                payload = {
+                    "title":  "\uD83D\uDCC5 Visit today!",
+                    "body":   f"{row['bud_name']} — your visit is today{note_part}!",
+                    "icon":   "/static/img/icons/icon-192.png",
+                    "badge":  "/static/img/icons/icon-192.png",
+                    "tag":    f"bw-bud-visit-{row['plan_id']}",
+                }
+                result = await send_push(sub_info, payload)
+                if result is None:
+                    stale_eps.add(row["endpoint"])
+                else:
+                    fired_plan_ids.add(row["plan_id"])
+            await mark_visit_reminders_sent(list(fired_plan_ids))
+
+            for ep in stale_eps:
+                await delete_subscription(ep)
+
+            if fired_bud_ids or fired_plan_ids:
+                log.info("[bud-push] contact=%d visit=%d",
+                         len(fired_bud_ids), len(fired_plan_ids))
+        except Exception:
+            log.exception("[bud-push] loop error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
@@ -313,10 +386,11 @@ async def lifespan(app: FastAPI):
     purge_task  = asyncio.create_task(_demo_purge_loop())
     push_task   = asyncio.create_task(_reminder_push_loop())
     rss_task    = asyncio.create_task(_rss_notif_loop())
+    bud_task    = asyncio.create_task(_bud_notif_loop())
     try:
         yield
     finally:
-        for t in (purge_task, push_task, rss_task):
+        for t in (purge_task, push_task, rss_task, bud_task):
             t.cancel()
             try:
                 await t
