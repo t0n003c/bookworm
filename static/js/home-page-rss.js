@@ -127,10 +127,13 @@ function _markRead(guid) {
     card.querySelector('.rss-dot')?.classList.add('invisible');
   }
   _updateUnreadBadge();
+  // Look up which feed this item belongs to so the server can enforce the cap.
+  const item   = _rawItems.find(it => it.guid === guid);
+  const feedId = item ? (item._feedId ?? null) : null;
   fetch(`/home/rss-reader/${_pid}/read`, {
     method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify([guid]),
+    body: JSON.stringify({ feed_id: feedId, guids: [guid] }),
   }).catch(()=>{});
 }
 
@@ -142,17 +145,28 @@ function _updateUnreadBadge() {
   badge.classList.toggle('hidden', total === 0);
 }
 
-// ── Mark all read ─────────────────────────────────────────────────────────────
+// ── Mark all read ─────────────────────────────────────────────────────────────────
 async function rssMarkAllRead() {
-  const unread = _rawItems.filter(it => !_read.has(it.guid)).map(it => it.guid);
+  const unread = _rawItems.filter(it => !_read.has(it.guid));
   if (!unread.length) return;
-  unread.forEach(g => _read.add(g));
+  unread.forEach(it => _read.add(it.guid));
   _applyDisplay();
-  await fetch(`/home/rss-reader/${_pid}/read`, {
-    method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(unread),
-  }).catch(()=>{});
+  // Group by feed so the server can enforce the per-feed 10-item cap per group.
+  const byFeed = new Map();
+  unread.forEach(it => {
+    const fid = it._feedId ?? null;
+    if (!byFeed.has(fid)) byFeed.set(fid, []);
+    byFeed.get(fid).push(it.guid);
+  });
+  await Promise.allSettled(
+    [...byFeed.entries()].map(([feedId, guids]) =>
+      fetch(`/home/rss-reader/${_pid}/read`, {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ feed_id: feedId, guids }),
+      })
+    )
+  );
 }
 
 // ── Feeds list ────────────────────────────────────────────────────────────────

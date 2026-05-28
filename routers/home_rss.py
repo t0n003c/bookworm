@@ -19,6 +19,7 @@ from routers.home_rss_db import (
     get_page_feeds,
     get_read_guids,
     mark_read,
+    purge_old_rss_read_items,
     update_page_feed,
 )
 from routers.home_db import get_home_page
@@ -115,15 +116,25 @@ async def get_read(request: Request, page_id: int):
 
 @router.post("/rss-reader/{page_id}/read")
 async def post_read(request: Request, page_id: int):
-    """Body: JSON array of guids  OR  form field guids (comma-separated)."""
+    """Mark guids as read.  Accepts two body shapes:
+
+    New (preferred): JSON object  ``{"feed_id": 42, "guids": ["...", ...]}``
+    Legacy fallback: JSON array   ``["guid1", "guid2"]``   (no feed cap)
+    """
     uid = _uid(request)
+    feed_id: int | None = None
+    guids: list[str] = []
     try:
         body = await request.json()
-        guids: list[str] = body if isinstance(body, list) else []
+        if isinstance(body, dict):
+            feed_id = body.get("feed_id")  # may be None / missing
+            guids   = body.get("guids") or []
+        elif isinstance(body, list):
+            guids = body  # legacy array format
     except Exception:
         form = await request.form()
         raw  = form.get("guids", "")
         guids = [g.strip() for g in str(raw).split(",") if g.strip()]
 
-    await mark_read(page_id, uid, guids)
+    await mark_read(page_id, uid, guids, feed_id=feed_id)
     return JSONResponse({"ok": True})

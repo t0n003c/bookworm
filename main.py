@@ -96,6 +96,7 @@ from routers.workspaces_db import (
     purge_expired_trash,
 )
 from routers.home_db import get_home_pages, get_trashed_home_pages, purge_expired_home_pages
+from routers.home_rss_db import purge_old_rss_read_items
 from routers.workspace_db_cards import get_db_cards
 from routers import notes as notes_router
 from routers import categories as categories_router
@@ -712,6 +713,7 @@ async def lifespan(app: FastAPI):
     await purge_expired_trash()   # clean up any trash older than 30 days on boot
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
     await purge_old_demo_users()  # clean up stale demo accounts on boot
+    await purge_old_rss_read_items()  # trim rss read-state to 10 per feed
     purge_task   = asyncio.create_task(_demo_purge_loop())
     push_task    = asyncio.create_task(_reminder_push_loop())
     rss_task     = asyncio.create_task(_rss_notif_loop())

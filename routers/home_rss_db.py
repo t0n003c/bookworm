@@ -106,15 +106,68 @@ async def get_read_guids(page_id: int, user_id: int) -> set[str]:
         return {r[0] for r in rows}
 
 
-async def mark_read(page_id: int, user_id: int, guids: list[str]) -> None:
-    """Mark a batch of guids as read (upsert)."""
+async def mark_read(
+    page_id: int, user_id: int, guids: list[str],
+    feed_id: int | None = None,
+) -> None:
+    """Mark a batch of guids as read (upsert), then cap to 10 per feed.
+
+    feed_id is required for the per-feed retention policy.  Rows without a
+    feed_id (legacy or bulk-mark-all) are not subject to the cap.
+    """
     if not guids:
         return
     async with get_db() as db:
         await db.executemany(
-            "INSERT OR IGNORE INTO rss_read_items(user_id, page_id, item_guid)"
-            " VALUES (?,?,?)",
-            [(user_id, page_id, g) for g in guids],
+            "INSERT OR IGNORE INTO rss_read_items(user_id, page_id, item_guid, feed_id)"
+            " VALUES (?,?,?,?)",
+            [(user_id, page_id, g, feed_id) for g in guids],
+        )
+        # Enforce the 10-item cap for this feed immediately after insert.
+        # The correlated DELETE keeps the 10 most recent rows and drops older ones.
+        if feed_id is not None:
+            await db.execute(
+                """
+                DELETE FROM rss_read_items
+                WHERE user_id = ? AND feed_id = ?
+                  AND rowid NOT IN (
+                      SELECT rowid FROM rss_read_items
+                      WHERE user_id = ? AND feed_id = ?
+                      ORDER BY read_at DESC
+                      LIMIT 10
+                  )
+                """,
+                (user_id, feed_id, user_id, feed_id),
+            )
+        await db.commit()
+
+
+async def purge_old_rss_read_items() -> None:
+    """Startup cleanup for rss_read_items.
+
+    1. Delete all legacy rows with feed_id IS NULL — they pre-date feed
+       tracking so we cannot apply the per-feed cap to them.  Affected
+       articles will simply re-appear as unread once (one-time transition).
+    2. Apply the 10-per-feed cap globally across all users and feeds, in
+       case the server was stopped mid-operation and left excess rows.
+    """
+    async with get_db() as db:
+        # 1. Purge untrackable legacy rows.
+        await db.execute("DELETE FROM rss_read_items WHERE feed_id IS NULL")
+
+        # 2. Trim every (user, feed) group to its 10 most recent entries.
+        await db.execute(
+            """
+            DELETE FROM rss_read_items
+            WHERE rowid NOT IN (
+                SELECT rowid FROM rss_read_items r2
+                WHERE r2.user_id  = rss_read_items.user_id
+                  AND r2.feed_id  = rss_read_items.feed_id
+                ORDER BY r2.read_at DESC
+                LIMIT 10
+            )
+            AND feed_id IS NOT NULL
+            """
         )
         await db.commit()
 

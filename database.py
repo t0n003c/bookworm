@@ -138,6 +138,14 @@ async def init_db() -> None:
         for sql in CREATE_TABLES_SQL:
             await db.execute(sql)
 
+        # ── Index: notes(workspace_id, meeting_date DESC) ─────────────────────
+        # Speeds up search_notes() WHERE workspace_id IN (...) ORDER BY date.
+        # CREATE INDEX IF NOT EXISTS is idempotent — safe to run every boot.
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_ws_date "
+            "ON notes(workspace_id, meeting_date DESC)"
+        )
+
         # ── Migration: drop stale global UNIQUE on workspaces.name ───────────
         # Original single-user schema had `name TEXT NOT NULL UNIQUE`.
         # Multi-user requires only per-user uniqueness; the global constraint
@@ -377,6 +385,23 @@ async def init_db() -> None:
             )
         except Exception:
             pass  # column already exists — idempotent
+
+        # ── rss_read_items: add feed_id for per-feed read-cap (migration) ──────
+        # feed_id tracks which rss_page_feeds row an item belongs to so we can
+        # enforce a max-10-per-feed retention policy without touching old rows.
+        # NULL feed_id = legacy row (pre-migration); purge_old_rss_read_items()
+        # deletes those on startup since we cannot group them per-feed anyway.
+        try:
+            await db.execute(
+                "ALTER TABLE rss_read_items ADD COLUMN feed_id INTEGER "
+                "REFERENCES rss_page_feeds(id) ON DELETE CASCADE"
+            )
+        except Exception:
+            pass  # column already exists — idempotent
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rss_read_feed "
+            "ON rss_read_items(user_id, feed_id, read_at DESC)"
+        )
 
         # ── Subscriptions (Wallos-inspired recurring cost tracker) ──────────────────────────
         await db.execute("""
