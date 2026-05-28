@@ -12,7 +12,7 @@
  *   tppSaveBudgetLink, tppSaveBudgetPeopleLink, tppSaveBudgetGroupLink,
  *   tppBudgetSettleChanged, tppBudgetPeopleChanged, tppBudgetPersonPpChanged,
  *   tppUnlinkBudget,
- *   tppSaveReminderItem, tppDeleteReminderItem
+ *   tppSaveReminderItem, tppDeleteReminderItem, tppEditReminderItem, tppHideReminderForm
  */
 
 var _TPP_TYPES = {
@@ -1060,10 +1060,11 @@ function _tppFmtRemindAt(ra) {
 }
 
 function _tppReminder(p, data, isEdit) {
-  var items = data.items || [];
+  var items  = data.items || [];
   var nowStr = new Date().toISOString().slice(0, 16);  // 'YYYY-MM-DDTHH:MM'
+  var cs     = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 
-  var rows = items.map(function(item, idx) {
+  var rows = items.map(function(item) {
     var past    = item.remind_at && item.remind_at <= nowStr;
     var icon    = past ? '✅' : '🔔';
     var timeStr = _tppFmtRemindAt(item.remind_at);
@@ -1074,9 +1075,14 @@ function _tppReminder(p, data, isEdit) {
           : '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full ' +
               'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">' + _tripEsc(timeStr) + '</span>')
       : '';
-    var del = isEdit
-      ? '<button onclick="tppDeleteReminderItem(' + p.id + ',\'' + _tripEsc(item.id || '') + '\')" ' +
-          'class="text-gray-300 hover:text-red-400 text-xs flex-shrink-0 ml-1" title="Delete">✕</button>'
+    /* Edit + Delete buttons — only in edit mode */
+    var actions = isEdit
+      ? '<div class="flex items-center gap-0.5 flex-shrink-0 ml-1">' +
+          '<button onclick="tppEditReminderItem(' + p.id + ',\'' + _tripEsc(item.id || '') + '\')" ' +
+            'class="text-gray-300 hover:text-blue-400 text-xs p-0.5" title="Edit">✏️</button>' +
+          '<button onclick="tppDeleteReminderItem(' + p.id + ',\'' + _tripEsc(item.id || '') + '\')" ' +
+            'class="text-gray-300 hover:text-red-400 text-xs p-0.5" title="Delete">✕</button>' +
+        '</div>'
       : '';
     return '<div class="flex items-start gap-2 px-3 py-2 border-b ' +
              'border-gray-50 dark:border-zinc-800 last:border-0">' +
@@ -1085,11 +1091,14 @@ function _tppReminder(p, data, isEdit) {
         '<p class="text-xs font-medium text-gray-700 dark:text-zinc-200 truncate">' +
           _tripEsc(item.title || 'Reminder') + '</p>' +
         (badge ? '<div class="mt-0.5">' + badge + '</div>' : '') +
-      '</div>' + del +
+      '</div>' + actions +
     '</div>';
   }).join('');
 
-  // ── Add form (edit mode only) ──
+  /* ── Add / Edit form (edit mode only) ── */
+  var pickerCls = 'flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
+    'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
+    'px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40';
   var form = isEdit
     ? '<div id="tpp-reminder-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
         'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
@@ -1098,21 +1107,21 @@ function _tppReminder(p, data, isEdit) {
           'class="' + _tppInputCls() + '" />' +
         '<div class="flex gap-1.5">' +
           '<input id="tpp-remind-date-' + p.id + '" type="date" ' +
-            'class="flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
-            'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
-            'px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40" />' +
+            'style="color-scheme:' + cs + '" ' +
+            'class="' + pickerCls + '" />' +
           '<input id="tpp-remind-time-' + p.id + '" type="time" ' +
-            'class="flex-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 ' +
-            'bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 ' +
-            'px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40" />' +
+            'style="color-scheme:' + cs + '" ' +
+            'class="' + pickerCls + '" />' +
         '</div>' +
         '<p class="text-[10px] text-gray-400 dark:text-zinc-500">' +
           '🔔 Sends a push notification at the chosen date &amp; time.' +
         '</p>' +
-        _tppFormBtns(
-          'tppSaveReminderItem(' + p.id + ')',
-          'tppHideForm(' + p.id + ',\'reminder\')'
-        ) +
+        '<div class="flex gap-1.5">' +
+          '<button id="tpp-remind-save-' + p.id + '" onclick="tppSaveReminderItem(' + p.id + ')" ' +
+            'class="' + _tppBtnPrimary() + '">Add</button>' +
+          '<button onclick="tppHideReminderForm(' + p.id + ')" ' +
+            'class="' + _tppBtnSecondary() + '">Cancel</button>' +
+        '</div>' +
       '</div>'
     : '';
 
@@ -1560,29 +1569,72 @@ window.tppSaveEmergItem = function(panelId) {
 
 // ── Reminder CRUD ───────────────────────────────────────────────────────────
 
+/* Reset the reminder form to add-mode and hide it. */
+window.tppHideReminderForm = function(panelId) {
+  var formEl  = document.getElementById('tpp-reminder-form-' + panelId);
+  var saveBtn = document.getElementById('tpp-remind-save-'   + panelId);
+  var titleEl = document.getElementById('tpp-remind-title-'  + panelId);
+  var dateEl  = document.getElementById('tpp-remind-date-'   + panelId);
+  var timeEl  = document.getElementById('tpp-remind-time-'   + panelId);
+  if (formEl)  { formEl.classList.add('hidden'); delete formEl.dataset.editingId; }
+  if (saveBtn) saveBtn.textContent = 'Add';
+  if (titleEl) titleEl.value = '';
+  if (dateEl)  dateEl.value  = '';
+  if (timeEl)  timeEl.value  = '';
+};
+
+/* Populate the form with an existing reminder's data and switch to edit mode. */
+window.tppEditReminderItem = function(panelId, itemId) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  var item = (d.items || []).filter(function(it) { return it.id === itemId; })[0];
+  if (!item) return;
+  var formEl  = document.getElementById('tpp-reminder-form-' + panelId);
+  var saveBtn = document.getElementById('tpp-remind-save-'   + panelId);
+  var titleEl = document.getElementById('tpp-remind-title-'  + panelId);
+  var dateEl  = document.getElementById('tpp-remind-date-'   + panelId);
+  var timeEl  = document.getElementById('tpp-remind-time-'   + panelId);
+  if (!formEl || !titleEl || !dateEl || !timeEl) return;
+  var parts   = (item.remind_at || '').split('T');
+  titleEl.value = item.title || '';
+  dateEl.value  = parts[0]  || '';
+  timeEl.value  = parts[1]  || '';
+  formEl.dataset.editingId = itemId;
+  if (saveBtn) saveBtn.textContent = 'Save';
+  formEl.classList.remove('hidden');
+  titleEl.focus();
+};
+
 window.tppSaveReminderItem = function(panelId) {
-  var titleEl = document.getElementById('tpp-remind-title-' + panelId);
-  var dateEl  = document.getElementById('tpp-remind-date-'  + panelId);
-  var timeEl  = document.getElementById('tpp-remind-time-'  + panelId);
+  var formEl  = document.getElementById('tpp-reminder-form-' + panelId);
+  var titleEl = document.getElementById('tpp-remind-title-'  + panelId);
+  var dateEl  = document.getElementById('tpp-remind-date-'   + panelId);
+  var timeEl  = document.getElementById('tpp-remind-time-'   + panelId);
   var title   = (titleEl ? titleEl.value : '').trim();
   var date    = dateEl ? dateEl.value : '';
   var time    = timeEl ? timeEl.value : '';
-  if (!title)       { _tripShowToast('Reminder title is required', true); return; }
-  if (!date)        { _tripShowToast('Date is required', true);           return; }
-  if (!time)        { _tripShowToast('Time is required', true);           return; }
-  var remindAt = date + 'T' + time;   // 'YYYY-MM-DDTHH:MM'
+  if (!title) { _tripShowToast('Reminder title is required', true); return; }
+  if (!date)  { _tripShowToast('Date is required',            true); return; }
+  if (!time)  { _tripShowToast('Time is required',            true); return; }
+  var remindAt  = date + 'T' + time;   // 'YYYY-MM-DDTHH:MM'
+  var editingId = formEl ? (formEl.dataset.editingId || '') : '';
   var p = _tppGetPanel(panelId); if (!p) return;
   var d = _tppParse(p.content);
   if (!d.items) d.items = [];
-  d.items.push({ id: _tppRandId(), title: title, remind_at: remindAt });
-  // sort by remind_at so card reads chronologically
+  if (editingId) {
+    /* Update existing item in-place */
+    d.items = d.items.map(function(it) {
+      return it.id === editingId
+        ? { id: it.id, title: title, remind_at: remindAt }
+        : it;
+    });
+  } else {
+    /* Add new item */
+    d.items.push({ id: _tppRandId(), title: title, remind_at: remindAt });
+  }
+  /* Always keep chronological order */
   d.items.sort(function(a, b) { return (a.remind_at || '') < (b.remind_at || '') ? -1 : 1; });
-  _tppSave(panelId, d, function() {
-    window.tppHideForm(panelId, 'reminder');
-    if (titleEl) titleEl.value = '';
-    if (dateEl)  dateEl.value  = '';
-    if (timeEl)  timeEl.value  = '';
-  });
+  _tppSave(panelId, d, function() { window.tppHideReminderForm(panelId); });
 };
 
 window.tppDeleteReminderItem = function(panelId, itemId) {
