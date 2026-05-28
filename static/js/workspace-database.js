@@ -3079,6 +3079,20 @@ function _dbSelToolbarInit() {
 
   var dark = function() { return document.documentElement.classList.contains('dark'); };
 
+  /* Saved selection range — captured before a flyout opens so that execCommand
+     always has a valid target even if focus flickered during the click.       */
+  var _savedRange = null;
+  function _saveRange() {
+    var sel = window.getSelection();
+    _savedRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
+  }
+  function _restoreRange() {
+    if (!_savedRange) return;
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(_savedRange);
+  }
+
   /* ---- helpers ---- */
   function _theme(el) {
     el.style.background = dark() ? '#18181b' : '#ffffff';
@@ -3132,6 +3146,7 @@ function _dbSelToolbarInit() {
     '<span style="font-size:14px;border-bottom:3px solid #fef08a;line-height:1">A</span>');
   hlBtn.addEventListener('mousedown', function(e) {
     e.preventDefault();
+    _saveRange();  // snapshot selection before flyout opens
     var open = hlFlyout.classList.contains('open');
     tcFlyout.classList.remove('open');
     hlFlyout.classList.toggle('open', !open);
@@ -3145,6 +3160,7 @@ function _dbSelToolbarInit() {
     '<span style="font-size:14px;border-bottom:3px solid #3b82f6;line-height:1">A</span>');
   tcBtn.addEventListener('mousedown', function(e) {
     e.preventDefault();
+    _saveRange();  // snapshot selection before flyout opens
     var open = tcFlyout.classList.contains('open');
     hlFlyout.classList.remove('open');
     tcFlyout.classList.toggle('open', !open);
@@ -3215,6 +3231,7 @@ function _dbSelToolbarInit() {
       }
       sw.addEventListener('mousedown', function(e) {
         e.preventDefault();
+        _restoreRange();  // put selection back before execCommand
         applyFn(item.color);
         hlFlyout.classList.remove('open');
         tcFlyout.classList.remove('open');
@@ -3237,8 +3254,18 @@ function _dbSelToolbarInit() {
   _dbSelBar = bar;
 
   /* ---- show / hide on selectionchange ---- */
+  /* Dismiss flyouts when clicking outside the toolbar */
+  document.addEventListener('mousedown', function(e) {
+    if (!_dbSelBar || _dbSelBar.contains(e.target)) return;
+    hlFlyout.classList.remove('open');
+    tcFlyout.classList.remove('open');
+  });
+
   document.addEventListener('selectionchange', function() {
     if (_dbSelBarTimer) clearTimeout(_dbSelBarTimer);
+    /* While a colour flyout is open the user is picking a swatch — don't
+       let a stray selectionchange event yank the bar away mid-pick.        */
+    if (hlFlyout.classList.contains('open') || tcFlyout.classList.contains('open')) return;
     _dbSelBarTimer = setTimeout(function() {
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) {
