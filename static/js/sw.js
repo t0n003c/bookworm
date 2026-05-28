@@ -73,7 +73,7 @@ self.addEventListener('push', event => {
   const options = {
     body:    data.body   || '',
     icon:    data.icon   || '/static/img/icons/icon-192.png',
-    badge:   data.badge  || '/static/img/icons/icon-192.png',
+    badge:   data.badge  || '/static/img/icons/badge-96.png',
     tag:     data.tag    || 'bw-push',
     data:    data.data   || {},
     vibrate: [200, 100, 200],

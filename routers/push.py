@@ -117,7 +117,7 @@ async def push_test(request: Request):
             "title": "📚 BookWorm",
             "body":  "Test notification — push is working!",
             "icon":  "/static/img/icons/icon-192.png",
-            "badge": "/static/img/icons/icon-192.png",
+            "badge": "/static/img/icons/badge-96.png",
             "tag":   "bw-test",
         }
         sent = 0

@@ -174,7 +174,7 @@ async def _reminder_push_loop():
                     "title":   "\U0001f4da BookWorm Reminder",
                     "body":    body,
                     "icon":    "/static/img/icons/icon-192.png",
-                    "badge":   "/static/img/icons/icon-192.png",
+                    "badge":   "/static/img/icons/badge-96.png",
                     "tag":     f"bw-rem-{row['reminder_id']}",
                     # url lets the SW click handler deep-link to the right note
                     "data":    {"note_id": note_id,
@@ -275,7 +275,7 @@ async def _rss_notif_loop():
                             "title":  f"📰 {feed_title}",
                             "body":   (it.get("title") or "New article").strip()[:120],
                             "icon":   "/static/img/icons/icon-192.png",
-                            "badge":  "/static/img/icons/icon-192.png",
+                            "badge":  "/static/img/icons/badge-96.png",
                             "tag":    f"bw-rss-{hash(feed_url) & 0xFFFFFF}",
                             "data":   {"url": it.get("link") or feed_url},
                         }
@@ -334,7 +334,7 @@ async def _bud_notif_loop():
                     "title":  "\uD83C\uDF31 Time to check in!",
                     "body":   f"You haven't contacted {row['name']} in a while — reach out!",
                     "icon":   "/static/img/icons/icon-192.png",
-                    "badge":  "/static/img/icons/icon-192.png",
+                    "badge":  "/static/img/icons/badge-96.png",
                     "tag":    f"bw-bud-contact-{row['bud_id']}",
                 }
                 result = await send_push(sub_info, payload)
@@ -355,7 +355,7 @@ async def _bud_notif_loop():
                     "title":  "\uD83D\uDCC5 Visit today!",
                     "body":   f"{row['bud_name']} — your visit is today{note_part}!",
                     "icon":   "/static/img/icons/icon-192.png",
-                    "badge":  "/static/img/icons/icon-192.png",
+                    "badge":  "/static/img/icons/badge-96.png",
                     "tag":    f"bw-bud-visit-{row['plan_id']}",
                 }
                 result = await send_push(sub_info, payload)
@@ -499,7 +499,7 @@ async def _widget_notif_loop():
                     "title": "\uD83C\uDF89 It's the day!",
                     "body":  f"{row['label']} is today!",
                     "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/badge-96.png",
                     "tag":   f"bw-countdown-{row['widget_id']}",
                 }
                 result = await send_push(sub, payload)
@@ -542,7 +542,7 @@ async def _widget_notif_loop():
                             "title": "\uD83D\uDCC5 Upcoming event",
                             "body":  f"{item.get('text', 'Event')} — {days_label}",
                             "icon":  "/static/img/icons/icon-192.png",
-                            "badge": "/static/img/icons/icon-192.png",
+                            "badge": "/static/img/icons/badge-96.png",
                             "tag":   f"bw-event-{row['widget_id']}-{item_id}-{ld}",
                         }
                         result = await send_push(sub, payload)
@@ -567,7 +567,7 @@ async def _widget_notif_loop():
                     "body":  (f"{row['name']} renews {when} "
                               f"({row['currency']} {row['amount']:.2f})"),
                     "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/badge-96.png",
                     "tag":   f"bw-sub-{row['sub_id']}",
                 }
                 result = await send_push(sub, payload)
@@ -590,7 +590,7 @@ async def _widget_notif_loop():
                     "title": "🔔 Trip reminder",
                     "body":  f"{row['title']}" + (f" ({day_ctx})" if day_ctx else ""),
                     "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/badge-96.png",
                     "tag":   f"bw-trip-{row['block_id']}",
                 }
                 result = await send_push(sub, payload)
@@ -611,7 +611,7 @@ async def _widget_notif_loop():
                     "title": "🔔 Trip reminder",
                     "body":  row["title"] + (f" ({ctx})" if ctx else ""),
                     "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/badge-96.png",
                     "tag":   f"bw-panel-remind-{row['panel_id']}-{row['item_id']}",
                 }
                 result = await send_push(sub, payload)
@@ -639,7 +639,7 @@ async def _widget_notif_loop():
                     "title": f"\U0001f514 CRM \u2014 {contact}",
                     "body":  body,
                     "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/icon-192.png",
+                    "badge": "/static/img/icons/badge-96.png",
                     "tag":   f"bw-crm-rem-{row['reminder_id']}",
                     "data":  {"page_id": row["page_id"], "url": "/"},
                 }
@@ -678,7 +678,7 @@ async def _widget_notif_loop():
                         "title": "\U0001f514 Reminder",
                         "body":  (item.get("text") or "You have a reminder").strip()[:200],
                         "icon":  "/static/img/icons/icon-192.png",
-                        "badge": "/static/img/icons/icon-192.png",
+                        "badge": "/static/img/icons/badge-96.png",
                         "tag":   f"bw-hwrem-{row['widget_id']}-{item_time}",
                     }
                     result = await send_push(sub, payload)

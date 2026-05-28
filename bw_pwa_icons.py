@@ -1,10 +1,12 @@
 """Generate PWA icon assets for BookWorm.
 
-Produces four PNG files inside static/img/icons/:
+Produces five PNG files inside static/img/icons/:
   icon-192.png          — standard 192×192
   icon-512.png          — standard 512×512
   icon-maskable-512.png — 512×512 with safe-zone padding (Android adaptive)
   apple-touch-icon.png  — 180×180 for iOS Add-to-Home-Screen
+  badge-96.png          — 96×96 white-on-transparent monochrome badge for
+                          Android push notification status bar
 
 Files are only written when missing; call generate_icons(force=True) to redraw.
 
@@ -204,17 +206,67 @@ def _make_icon(size: int, maskable: bool) -> Image.Image:
     return img
 
 
+# ── Monochrome badge icon (Android status-bar push notification) ─────────────
+def _make_badge(size: int = 96) -> Image.Image:
+    """White worm silhouette on transparent background.
+
+    Android draws the badge by colouring all non-transparent pixels white, so
+    the image must be RGBA with transparency — not a solid-colour PNG.
+    Kept deliberately simple so it reads clearly at ~12-16 px on-screen.
+    """
+    W   = (255, 255, 255, 255)   # opaque white
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d   = ImageDraw.Draw(img)
+
+    cx  = size // 2
+    cy  = size // 2 + int(size * 0.04)   # shift body+head slightly down
+
+    # ── Body segment (lower circle) ──────────────────────────────────────────
+    sr  = int(size * 0.175)
+    sy  = cy + int(size * 0.215)
+    d.ellipse([(cx - sr, sy - sr), (cx + sr, sy + sr)], fill=W)
+
+    # ── Head (larger circle) ─────────────────────────────────────────────────
+    hr  = int(size * 0.275)
+    hy  = cy - int(size * 0.055)
+    d.ellipse([(cx - hr, hy - hr), (cx + hr, hy + hr)], fill=W)
+
+    # ── Antennae ─────────────────────────────────────────────────────────────
+    aw  = max(2, int(size * 0.058))    # stroke width
+    atr = max(3, int(size * 0.068))    # tip ball radius
+
+    # left antenna
+    ax1b, ay1b = cx - int(hr * 0.38), hy - int(hr * 0.68)
+    ax1t, ay1t = ax1b - int(hr * 0.52), ay1b - int(hr * 0.68)
+    d.line([(ax1b, ay1b), (ax1t, ay1t)], fill=W, width=aw)
+    d.ellipse([(ax1t - atr, ay1t - atr), (ax1t + atr, ay1t + atr)], fill=W)
+
+    # right antenna (slightly taller for asymmetry — matches main icon)
+    ax2b, ay2b = cx + int(hr * 0.28), hy - int(hr * 0.82)
+    ax2t, ay2t = ax2b + int(hr * 0.46), ay2b - int(hr * 0.68)
+    d.line([(ax2b, ay2b), (ax2t, ay2t)], fill=W, width=aw)
+    d.ellipse([(ax2t - atr, ay2t - atr), (ax2t + atr, ay2t + atr)], fill=W)
+
+    return img
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 def generate_icons(out_dir: str = _OUT_DIR, force: bool = False) -> None:
     """Write PNG icons to *out_dir*. Skips existing files unless *force=True*."""
     os.makedirs(out_dir, exist_ok=True)
+
+    # ── Full-colour app icons (RGBA → flattened to RGB on green bg) ──────────
     for name, size, maskable in _SPECS:
         path = os.path.join(out_dir, name)
         if not force and os.path.exists(path):
             continue
         icon = _make_icon(size, maskable)
-        # Flatten RGBA → RGB on solid blue background (required for JPEG-only
-        # contexts; PNG keeps transparency but some platforms need opaque icons).
+        # Flatten RGBA → RGB on solid background (some platforms need opaque).
         bg = Image.new("RGB", (size, size), _BG)
         bg.paste(icon, mask=icon.split()[3])
         bg.save(path, "PNG", optimize=True)
+
+    # ── Monochrome badge (RGBA — must keep transparency for Android) ──────────
+    badge_path = os.path.join(out_dir, "badge-96.png")
+    if force or not os.path.exists(badge_path):
+        _make_badge(96).save(badge_path, "PNG", optimize=True)
