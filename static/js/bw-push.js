@@ -175,7 +175,8 @@
    * No-op if the device is already subscribed.
    */
   window.bwEnsurePushSubscribed = async function () {
-    var existing = await _getExistingSub();
+    if (!_isSupported() || !_vapidKey()) return false;
+    var existing = await _getCurrentSub();
     if (existing) return true;   // already subscribed
     var sub = await _subscribe();
     if (!sub) return false;
