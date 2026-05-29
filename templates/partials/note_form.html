@@ -277,12 +277,12 @@
         </div>
         <span class="w-px h-4 bg-gray-300 dark:bg-zinc-600" aria-hidden="true"></span>
         <div class="flex rounded overflow-hidden border border-gray-200 dark:border-zinc-700" role="group" aria-label="Editor mode">
-          <button type="button" data-mode="md" onclick="setEditorMode('md', true)" title="Markdown only"
-            class="mode-btn px-2 py-1 text-xs font-semibold" aria-label="Markdown only">MD</button>
-          <button type="button" data-mode="split" onclick="setEditorMode('split', true)" title="Split view"
-            class="mode-btn px-2 py-1 text-xs font-semibold border-x border-gray-200 dark:border-zinc-700" aria-label="Split view">Split</button>
           <button type="button" data-mode="preview" onclick="setEditorMode('preview', true)" title="WYSIWYG preview"
             class="mode-btn px-2 py-1 text-xs font-semibold" aria-label="Preview">Preview</button>
+          <button type="button" data-mode="split" onclick="setEditorMode('split', true)" title="Split view"
+            class="mode-btn px-2 py-1 text-xs font-semibold border-x border-gray-200 dark:border-zinc-700" aria-label="Split view">Split</button>
+          <button type="button" data-mode="md" onclick="setEditorMode('md', true)" title="Markdown only"
+            class="mode-btn px-2 py-1 text-xs font-semibold" aria-label="Markdown only">MD</button>
         </div>
         </div>
       </div>
@@ -302,6 +302,7 @@
             spellcheck="true"
             autocorrect="on"
             autocomplete="off"
+            autocapitalize="sentences"
           >{{ note.content if is_edit else '' }}</textarea>
 
         </div>
@@ -945,6 +946,33 @@
         }
       }
       // else: default browser Enter behaviour
+    }
+
+    /* ── Auto-capitalize first letter after a numbered-list prefix (desktop) ─
+       Mobile handles this via autocapitalize="sentences" on the textarea.
+       On desktop we detect: cursor right after `<indent><N>. ` at line start,
+       nothing selected, and the key pressed is a single lowercase letter.
+       We uppercase it in-place and fire an input event so the preview syncs. */
+    if (
+      e.key.length === 1 &&
+      e.key >= 'a' && e.key <= 'z' &&
+      !e.ctrlKey && !e.metaKey && !e.altKey
+    ) {
+      const ta  = e.target;
+      const pos = ta.selectionStart;
+      if (ta.selectionEnd === pos) {               // no selection — cursor only
+        const val       = ta.value;
+        const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+        const prefix    = val.substring(lineStart, pos);
+        // Match `<optional-indent><digits>. ` with nothing typed after the space yet
+        if (/^\s*\d+\.\s$/.test(prefix)) {
+          e.preventDefault();
+          const upper = e.key.toUpperCase();
+          ta.value    = val.slice(0, pos) + upper + val.slice(pos);
+          ta.setSelectionRange(pos + 1, pos + 1);
+          ta.dispatchEvent(new Event('input'));
+        }
+      }
     }
 
     /* Tab / Shift+Tab on list lines is handled by the permanent
@@ -1993,9 +2021,9 @@
       });
     };
 
-    // Boot: restore saved mode (default 'md'); do NOT persist so the
+    // Boot: restore saved mode (default 'preview'); do NOT persist so the
     // default never gets locked into storage by accident.
-    const saved = localStorage.getItem('bw-editor-mode') || 'md';
+    const saved = localStorage.getItem('bw-editor-mode') || 'preview';
     window.setEditorMode(saved, false);
     renderPreview();
 

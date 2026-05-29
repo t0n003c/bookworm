@@ -2549,7 +2549,7 @@
     // with fresh DOM refs), then this fires — giving us a guaranteed
     // second-pass that survives HTMX script-execution timing quirks.
     if (isForm && typeof window.setEditorMode === 'function') {
-      const savedMode = localStorage.getItem('bw-editor-mode') || 'md';
+      const savedMode = localStorage.getItem('bw-editor-mode') || 'preview';
       window.setEditorMode(savedMode, false);
     }
     // ── Safety-net: ensure code blocks get highlighted + copy buttons even if the
