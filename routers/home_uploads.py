@@ -397,12 +397,18 @@ async def upload_file(
             mime = guessed
 
     # ── WebP conversion (opt-in via ?webp=true, Pillow optional) ────────────
+    # Also caps the maximum pixel dimension so full-res phone photos
+    # (often 12–50 MP) don't hit storage / network as enormous files.
+    _MAX_PIXEL_DIM = 2048
     if webp and mime in _WEBP_SOURCE_TYPES:
         try:
             from PIL import Image  # noqa: PLC0415
             img = Image.open(io.BytesIO(data))
+            # Resize only if either dimension exceeds the cap — preserve aspect ratio
+            if img.width > _MAX_PIXEL_DIM or img.height > _MAX_PIXEL_DIM:
+                img.thumbnail((_MAX_PIXEL_DIM, _MAX_PIXEL_DIM), Image.LANCZOS)
             buf = io.BytesIO()
-            img.save(buf, format="WEBP", quality=85)
+            img.save(buf, format="WEBP", quality=82)
             data = buf.getvalue()
             mime = "image/webp"
             stored_name = f"{uuid.uuid4().hex}.webp"

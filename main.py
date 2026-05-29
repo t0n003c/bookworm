@@ -886,6 +886,70 @@ async def serve_trip_cover(request: Request, filename: str):
     return FileResponse(path=path)
 
 
+@app.get("/uploads/thumb/{filename:path}", include_in_schema=False)
+async def serve_upload_thumb(request: Request, filename: str, w: int = 400):
+    """Serve a fast, owner-verified, disk-cached thumbnail of any uploaded image.
+
+    Only shrinks — never upscales.  Non-image files fall through to the full
+    upload route.  Thumbnails are cached under UPLOAD_DIR/_thumbs/{w}/,
+    regenerated whenever the source file is newer than the cached copy.
+    Served with immutable cache headers so the browser never re-fetches.
+    """
+    import io as _io
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\") or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Clamp width to a sane range
+    w = max(50, min(w, 1600))
+
+    owner_uid = await get_upload_owner(filename)
+    if owner_uid is None:
+        raise HTTPException(status_code=404)
+    if owner_uid != uid:
+        raise HTTPException(status_code=403)
+
+    src_path = UPLOAD_DIR / filename
+    if not src_path.exists():
+        raise HTTPException(status_code=404)
+
+    # Only thumbnail images — anything else: redirect to the full-res route
+    import mimetypes as _mt
+    mime_guess = _mt.guess_type(src_path.name)[0] or ""
+    if not mime_guess.startswith("image/"):
+        return FileResponse(path=src_path)
+
+    # Build the cache path, mirroring any subdirectory structure (e.g. db-attr-files/)
+    thumb_dir  = UPLOAD_DIR / "_thumbs" / str(w)
+    thumb_path = thumb_dir / filename
+    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Regenerate if the source is newer than the cached thumbnail
+    src_mtime  = src_path.stat().st_mtime
+    need_regen = not thumb_path.exists() or thumb_path.stat().st_mtime < src_mtime
+
+    if need_regen:
+        try:
+            from PIL import Image as _PILImage  # noqa: PLC0415
+            with _PILImage.open(src_path) as img:
+                if img.width > w:          # only shrink, never upscale
+                    img.thumbnail((w, w * 10), _PILImage.LANCZOS)  # cap width, free height
+                buf = _io.BytesIO()
+                img.save(buf, format="WEBP", quality=75)
+            thumb_path.write_bytes(buf.getvalue())
+        except Exception:
+            # Pillow failed (e.g. SVG, corrupt file) — serve the original
+            return FileResponse(path=src_path)
+
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 @app.get("/uploads/{filename:path}", include_in_schema=False)
 async def serve_upload(request: Request, filename: str):
     """Serve a user upload only to the file's owner.

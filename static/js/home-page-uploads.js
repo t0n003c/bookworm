@@ -294,7 +294,9 @@ function _uplCard(f) {
   // Thumbnail area
   var thumb;
   if (group === 'image') {
-    thumb = `<img src="/uploads/${_uplEsc(f.filename)}" alt="${_uplEsc(f.original_name)}"
+    // Use a width-capped thumbnail for the grid card — the lightbox loads the full file.
+    const thumbSrc = `/uploads/thumb/${_uplEsc(f.filename)}?w=400`;
+    thumb = `<img src="${thumbSrc}" alt="${_uplEsc(f.original_name)}"
              loading="lazy" decoding="async"
              style="-webkit-touch-callout:none"
              class="w-full h-32 object-cover bg-gray-100 dark:bg-zinc-800"
@@ -608,10 +610,12 @@ function _uplRenderDetail(f) {
   // Preview block — native players where possible
   var preview = '';
   if (group === 'image') {
+    // Detail panel preview uses an 800 px thumbnail; the lightbox opens the full file.
+    const thumbSrc = `/uploads/thumb/${_uplEsc(f.filename)}?w=800`;
     preview = `<div class="mb-4 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800
                           relative group cursor-zoom-in"
                     onclick="_uplOpenLightbox('${fUrl}','${_uplEsc(f.original_name)}')">
-      <img src="${fUrl}" alt="${_uplEsc(f.original_name)}"
+      <img src="${thumbSrc}" alt="${_uplEsc(f.original_name)}"
            class="w-full object-contain max-h-52"
            onerror="this.parentElement.style.display='none'">
       <div class="absolute inset-0 flex items-end justify-center pb-2
