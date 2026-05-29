@@ -994,6 +994,18 @@
   (function () {
     var pv = document.getElementById('md-live-preview');
     if (!pv) return;
+
+    /* Returns true when el contains no real content besides drag-grip spans
+       and <br> placeholders — i.e. the user hasn't typed anything yet.    */
+    function _isEmpty(el) {
+      return Array.from(el.childNodes).every(function (n) {
+        if (n.nodeType === Node.TEXT_NODE)    return n.textContent.trim() === '';
+        if (n.nodeType === Node.ELEMENT_NODE)
+          return n.hasAttribute('data-preview-grip') || n.nodeName === 'BR';
+        return true;
+      });
+    }
+
     pv.addEventListener('keydown', function (e) {
       // Only single lowercase a-z, no modifier keys
       if (e.key.length !== 1 || e.key < 'a' || e.key > 'z') return;
@@ -1002,25 +1014,36 @@
       var sel = window.getSelection();
       if (!sel || !sel.isCollapsed || !sel.rangeCount) return;
 
-      var range      = sel.getRangeAt(0);
-      var anchor     = sel.anchorNode;
-      var anchorEl   = anchor.nodeType === 1 ? anchor : anchor.parentElement;
+      var range    = sel.getRangeAt(0);
+      var anchor   = sel.anchorNode;
+      var anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentElement;
 
       // ── Case A: fresh empty <li> inside <ol> (Enter continuation) ────────
+      // _injectPreviewGrips adds a <span data-preview-grip> as the first
+      // child of every <li>, so we must exclude those from the empty check.
       var li = anchorEl.closest('li');
-      if (li && li.closest('ol') && li.textContent.trim() === '') {
+      if (li && li.closest('ol') && _isEmpty(li)) {
         e.preventDefault();
         document.execCommand('insertText', false, e.key.toUpperCase());
         return;
       }
 
-      // ── Case B: manually typed `N. ` prefix in any block element ─────────
+      // ── Case B: manually typed `N. ` prefix in a block element ───────────
+      // preRange must start AFTER the leading grip span (if any) so its text
+      // doesn't pollute the prefix string and break the regex.
       var blockEl = anchorEl.closest('p,li,div,td') || anchorEl;
       try {
-        var preRange = document.createRange();
-        preRange.setStart(blockEl, 0);
+        var preRange  = document.createRange();
+        var leadGrip  = blockEl.querySelector(':scope > [data-preview-grip]');
+        var rangeBase = leadGrip ? leadGrip.nextSibling : null;
+        if (rangeBase) {
+          preRange.setStart(rangeBase, 0);
+        } else if (!leadGrip) {
+          preRange.setStart(blockEl, 0);   // no grip at all — start from top
+        } else {
+          return; // grip is the only child; nothing typed yet
+        }
         preRange.setEnd(range.startContainer, range.startOffset);
-        // Only look at the last line (handles multi-line blocks)
         var lineText = preRange.toString().split('\n').pop();
         if (/^\s*\d+\.\s$/.test(lineText)) {
           e.preventDefault();
