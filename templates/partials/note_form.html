@@ -980,6 +980,56 @@
        so it survives HTMX swaps of this partial. */
   });
 
+  /* ── Auto-capitalize in contenteditable (Preview mode) ───────────────────
+     The textarea keydown handler above covers MD + Split modes where the user
+     types raw markdown.  In Preview mode the user types directly inside the
+     rendered contenteditable div — that handler never fires there.
+
+     Two scenarios capitalised here:
+       A) User pressed Enter inside an <ol> → browser created a fresh empty
+          <li>; cursor is at its start.  We capitalise the first typed letter.
+       B) User manually typed `N. ` inside a plain paragraph; cursor sits
+          right after that prefix.  Same capitalise-on-first-letter logic.
+  */
+  (function () {
+    var pv = document.getElementById('md-live-preview');
+    if (!pv) return;
+    pv.addEventListener('keydown', function (e) {
+      // Only single lowercase a-z, no modifier keys
+      if (e.key.length !== 1 || e.key < 'a' || e.key > 'z') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      var sel = window.getSelection();
+      if (!sel || !sel.isCollapsed || !sel.rangeCount) return;
+
+      var range      = sel.getRangeAt(0);
+      var anchor     = sel.anchorNode;
+      var anchorEl   = anchor.nodeType === 1 ? anchor : anchor.parentElement;
+
+      // ── Case A: fresh empty <li> inside <ol> (Enter continuation) ────────
+      var li = anchorEl.closest('li');
+      if (li && li.closest('ol') && li.textContent.trim() === '') {
+        e.preventDefault();
+        document.execCommand('insertText', false, e.key.toUpperCase());
+        return;
+      }
+
+      // ── Case B: manually typed `N. ` prefix in any block element ─────────
+      var blockEl = anchorEl.closest('p,li,div,td') || anchorEl;
+      try {
+        var preRange = document.createRange();
+        preRange.setStart(blockEl, 0);
+        preRange.setEnd(range.startContainer, range.startOffset);
+        // Only look at the last line (handles multi-line blocks)
+        var lineText = preRange.toString().split('\n').pop();
+        if (/^\s*\d+\.\s$/.test(lineText)) {
+          e.preventDefault();
+          document.execCommand('insertText', false, e.key.toUpperCase());
+        }
+      } catch (_) { /* range not inside blockEl — skip */ }
+    });
+  }());
+
   /* ---- Category manage panel toggle ---- */
   function toggleCatManagePanel(btn) {
     const panel = document.getElementById('cat-manage-panel');
