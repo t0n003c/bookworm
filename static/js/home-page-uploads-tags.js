@@ -102,6 +102,34 @@ function _uplFmtSize(bytes) {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
+/* Human-readable label for a MIME type shown in the detail panel.
+   Falls back to capitalising the subtype if the mime isn't in the map. */
+function _uplFriendlyType(mime) {
+  const map = {
+    'image/jpeg':'JPEG Image','image/jpg':'JPEG Image','image/png':'PNG Image',
+    'image/gif':'GIF Image','image/webp':'WebP Image','image/avif':'AVIF Image',
+    'image/svg+xml':'SVG Image','image/bmp':'BMP Image','image/tiff':'TIFF Image',
+    'video/mp4':'MP4 Video','video/webm':'WebM Video','video/ogg':'OGG Video',
+    'video/quicktime':'QuickTime Video','video/x-msvideo':'AVI Video',
+    'video/x-matroska':'MKV Video','video/3gpp':'3GP Video',
+    'audio/mpeg':'MP3 Audio','audio/ogg':'OGG Audio','audio/wav':'WAV Audio',
+    'audio/webm':'WebM Audio','audio/aac':'AAC Audio','audio/flac':'FLAC Audio',
+    'application/pdf':'PDF Document',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'Word Document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'Excel Spreadsheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation':'PowerPoint',
+    'application/msword':'Word Document (Legacy)',
+    'application/zip':'ZIP Archive','application/x-zip-compressed':'ZIP Archive',
+    'application/json':'JSON File','text/plain':'Plain Text','text/csv':'CSV File',
+    'text/html':'HTML File','text/css':'CSS File','text/javascript':'JavaScript File',
+    'application/octet-stream':'Binary File',
+  };
+  if (map[mime]) return map[mime];
+  // Fallback: grab the subtype and capitalise it
+  const sub = (mime || '').split('/')[1] || mime || 'File';
+  return sub.charAt(0).toUpperCase() + sub.slice(1).replace(/[+.-]/g, ' ');
+}
+
 function _uplFmtDate(s) {
   if (!s) return '';
   try {

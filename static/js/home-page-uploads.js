@@ -711,7 +711,7 @@ function _uplRenderDetail(f) {
 
   var metaBlock = `
     <p class="text-sm font-semibold text-gray-800 dark:text-zinc-100 break-words mb-0.5">${_uplEsc(f.original_name)}</p>
-    <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFmtSize(f.size)} &middot; ${_uplEsc(mt)} &middot; ${_uplFmtDate(f.created_at)}</p>
+    <p class="text-[10px] text-gray-400 dark:text-zinc-500 mb-3">${_uplFriendlyType(mt)} &middot; ${_uplFmtSize(f.size)}${f.size >= 1024 ? ' <span title="' + Number(f.size).toLocaleString() + ' bytes" class="opacity-70">(' + Number(f.size).toLocaleString() + '&thinsp;B)</span>' : ''} &middot; ${_uplFmtDate(f.created_at)}</p>
     <a href="${dlUrl}" download="${_uplEsc(f.original_name)}"
        class="block w-full text-center py-1.5 text-xs rounded-lg bg-[#0053e2] text-white hover:bg-[#003eb3] transition mb-3">
       \u2193 Download</a>
