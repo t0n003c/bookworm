@@ -628,11 +628,14 @@ async def _widget_notif_loop():
             to_advance_recurring: list[tuple[int, int]] = []  # (reminder_id, user_id)
             to_delete_oneshot:    list[tuple[int, int]] = []  # (reminder_id, contact_id)
             crm_due = await get_due_crm_reminders_with_subs()
-            if crm_due:
-                log.debug("[widget-push] crm: %d due reminder(s) found", len(crm_due))
+            log.info("[widget-push] crm: %d due reminder(s) at %s %s",
+                     len(crm_due), date_str, now_hhmm)
             for row in crm_due:
                 key = row["dedup_key"]
-                if await has_widget_notif_sent(key):
+                already_sent = await has_widget_notif_sent(key)
+                log.info("[widget-push] crm reminder %d (%s) dedup_key=%s already_sent=%s",
+                         row["reminder_id"], row["contact_name"], key, already_sent)
+                if already_sent:
                     continue
                 contact  = row["contact_name"] or "Contact"
                 body     = row["label"]
@@ -649,6 +652,8 @@ async def _widget_notif_loop():
                     "data":  {"page_id": row["page_id"], "url": "/"},
                 }
                 result = await send_push(sub, payload)
+                log.info("[widget-push] crm send_push result=%s endpoint=%.60s",
+                         result, row["endpoint"])
                 if result is None:
                     stale_eps.add(row["endpoint"])
                 elif result:  # True = delivered; False = transient error, retry next tick

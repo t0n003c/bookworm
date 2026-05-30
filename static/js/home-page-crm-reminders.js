@@ -82,13 +82,19 @@ async function _checkCrmReminders() {
       if (typeof _showReminderToast === 'function') _showReminderToast('🔔 ' + toastText);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
         new Notification('🔔 CRM Reminder', { body: toastText, icon: '/static/favicon.ico' });
-      // Advance recurring reminders; delete one-shot reminders after they fire.
-      if (rec !== 'none' && item.page_id && item.contact_id) {
-        fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/advance',
-          { method: 'POST', credentials: 'same-origin' }).catch(function() {});
-      } else if (rec === 'none' && item.page_id && item.contact_id) {
-        fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/delete',
-          { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+      // When push notifications are active the server loop owns advance/delete
+      // (it fires AFTER delivering the push, so the reminder stays in the DB
+      // long enough for the push to be sent even when this tab is closed).
+      // Only fall back to client-side cleanup when push is not subscribed.
+      var pushActive = document.getElementById('bw-push-btn')?.dataset?.active === '1';
+      if (!pushActive) {
+        if (rec !== 'none' && item.page_id && item.contact_id) {
+          fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/advance',
+            { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+        } else if (rec === 'none' && item.page_id && item.contact_id) {
+          fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/delete',
+            { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+        }
       }
     });
   } catch(e) { /* silent — poll failures must not break the UI */ }
