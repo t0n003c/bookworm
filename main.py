@@ -627,7 +627,10 @@ async def _widget_notif_loop():
             # next date so they re-queue automatically.
             to_advance_recurring: list[tuple[int, int]] = []  # (reminder_id, user_id)
             to_delete_oneshot:    list[tuple[int, int]] = []  # (reminder_id, contact_id)
-            for row in await get_due_crm_reminders_with_subs():
+            crm_due = await get_due_crm_reminders_with_subs()
+            if crm_due:
+                log.debug("[widget-push] crm: %d due reminder(s) found", len(crm_due))
+            for row in crm_due:
                 key = row["dedup_key"]
                 if await has_widget_notif_sent(key):
                     continue
@@ -648,7 +651,7 @@ async def _widget_notif_loop():
                 result = await send_push(sub, payload)
                 if result is None:
                     stale_eps.add(row["endpoint"])
-                else:
+                elif result:  # True = delivered; False = transient error, retry next tick
                     sent_keys.append(key)
                     if row["recurrence"] != "none":
                         to_advance_recurring.append(
