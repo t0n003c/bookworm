@@ -1814,9 +1814,10 @@
        data-stack-id="{{ w.id }}"
        data-active="{{ active }}">
     {%- for child in w.children %}
-    <div class="stack-slide absolute inset-0 transition-opacity duration-200
+    <div class="stack-slide absolute inset-x-0 transition-opacity duration-200
                 {%- if loop.index0 == active %} opacity-100 z-10
                 {%- else %} opacity-0 z-0 pointer-events-none{%- endif %}"
+         style="top:1.75rem; bottom:{{ '1.5rem' if child_count > 1 else '0' }};"
          data-slide-index="{{ loop.index0 }}">
       {{ render_stack_child(child) }}
     </div>
@@ -1911,6 +1912,20 @@
                  hover:bg-red-100 dark:hover:bg-red-900/50 transition">
     ✕ unstack
   </button>
+  {#-- Scoped styles: child cards inside this stack fill their slide, strip
+       double chrome (border/shadow/radius/min-height that the outer card
+       already provides), and stay scrollable vertically. --#}
+  <style>
+    #hw-card-{{ w.id }} .stack-child-frame { display:flex; flex-direction:column; }
+    #hw-card-{{ w.id }} .stack-child-frame .hw-card {
+      flex: 1 1 auto;
+      height: 100%;
+      min-height: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+  </style>
 </div>
 {% endmacro %}
 
