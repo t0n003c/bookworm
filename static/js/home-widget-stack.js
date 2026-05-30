@@ -140,6 +140,14 @@ function initStackCards() {
       viewport.dataset.swipeInited = '1';
     }
 
+    // Explicitly enforce the active slide's visual state.
+    // Without this, _applyMobileWidgetOrder()'s appendChild() call can reset
+    // CSS transition state on mobile, leaving slide 0 visually blank until
+    // the user swipes (which triggers _stackSetActive for the first time).
+    if (viewport) {
+      _stackSetActive(stackId, parseInt(viewport.dataset.active || '0', 10));
+    }
+
     // Disable draggable on child cards so they don't interfere with grid drag-drop
     card.querySelectorAll('.stack-child-frame .hw-card').forEach(function(child) {
       child.setAttribute('draggable', 'false');

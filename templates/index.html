@@ -2191,6 +2191,11 @@
       sb.classList.remove('w-72');
       sb.classList.add('w-0');
       btn.setAttribute('aria-expanded', 'false');
+    } else if (_isMobile()) {
+      // Sidebar is open on mobile from a previous session — set up the
+      // fixed overlay + backdrop immediately so click-outside-to-close
+      // works on the very first navigation, not just after a manual toggle.
+      _mobileSidebarOpen();
     }
   })();
 
