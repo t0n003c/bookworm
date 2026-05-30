@@ -27,6 +27,7 @@ from routers.home_crm_db import (
     delete_contact_reminder, advance_crm_reminder,
     get_due_crm_reminders, get_upcoming_crm_reminders,
     get_all_crm_reminders, get_upcoming_birthdays,
+    upsert_field_reminder, clear_field_reminder,
 )
 
 log = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ async def create_contact(
     birthday:       str = Form(""),
     first_met_date: str = Form(""),
     relationship:   str = Form(""),
+    address:        str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -91,7 +93,7 @@ async def create_contact(
                                      tags.strip(), avatar_emoji.strip() or "🧑",
                                      profile_pic.strip(),
                                      birthday.strip(), first_met_date.strip(),
-                                     relationship.strip())
+                                     relationship.strip(), address.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
@@ -113,6 +115,7 @@ async def edit_contact(
     birthday:       str = Form(""),
     first_met_date: str = Form(""),
     relationship:   str = Form(""),
+    address:        str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -123,7 +126,7 @@ async def edit_contact(
                                         tags.strip(), avatar_emoji.strip() or "🧑",
                                         profile_pic.strip(),
                                         birthday.strip(), first_met_date.strip(),
-                                        relationship.strip())
+                                        relationship.strip(), address.strip())
         return JSONResponse(contacts)
     except PermissionError:
         return _err("not logged in", 401)
@@ -221,7 +224,67 @@ async def save_field_value(
         return _err(str(e), 500)
 
 
-# ── Custom field definitions ───────────────────────────────────────────────────
+@router.post("/crm/{page_id}/contacts/{contact_id}/field-reminder")
+async def save_field_reminder(
+    request: Request, page_id: int, contact_id: int,
+    field_id:      int = Form(...),
+    label:         str = Form(""),
+    reminder_date: str = Form(""),
+    reminder_time: str = Form("09:00"),
+    message:       str = Form(""),
+    recurrence:    str = Form("none"),
+):
+    """Upsert (replace) the single reminder row for a 'reminder' custom field.
+
+    Integrates with the existing CRM reminder system: the row this creates
+    is picked up by the 30 s poll, the top-bar missed-reminders banner, and
+    the background push-notification job — no extra wiring needed.
+    """
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        contacts = await get_contacts(page_id, uid)
+        if not any(c["id"] == contact_id for c in contacts):
+            return _err("contact not found", 404)
+        if not reminder_date:
+            return _err("reminder_date is required")
+        await upsert_field_reminder(
+            contact_id, field_id, uid,
+            label.strip() or "Reminder",
+            reminder_date.strip(), reminder_time.strip() or "09:00",
+            message.strip(), recurrence.strip() or "none",
+        )
+        return JSONResponse({"ok": True})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("save_field_reminder contact_id=%s field_id=%s", contact_id, field_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/field-reminder/{field_id}/clear")
+async def clear_field_reminder_ep(
+    request: Request, page_id: int, contact_id: int, field_id: int,
+):
+    """Delete the reminder tied to a specific 'reminder' custom field (value cleared)."""
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        contacts = await get_contacts(page_id, uid)
+        if not any(c["id"] == contact_id for c in contacts):
+            return _err("contact not found", 404)
+        await clear_field_reminder(contact_id, field_id)
+        return JSONResponse({"ok": True})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("clear_field_reminder contact_id=%s field_id=%s", contact_id, field_id)
+        return _err(str(e), 500)
+
+
+# ── Custom field definitions ───────────────────────────────────────────────
 
 @router.get("/crm/{page_id}/fields")
 async def list_fields(request: Request, page_id: int):

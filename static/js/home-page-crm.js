@@ -453,6 +453,14 @@ function _crmFieldDisplay(f, c) {
     // Preserve line breaks in display — each line escaped individually
     return raw.split('\n').map(function(l){ return _crmEsc(l); }).join('<br>');
   }
+  if (f.field_type === 'reminder') {
+    try {
+      var ro = JSON.parse(raw);
+      if (!ro.date) return '—';
+      var rd = ro.date + (ro.time ? ' ' + ro.time : '');
+      return '🔔 ' + _crmEsc(rd);
+    } catch { return raw ? '🔔 ' + _crmEsc(raw) : '—'; }
+  }
   return _crmEsc(raw);
 }
 
@@ -621,6 +629,70 @@ function _crmContactModal(c) {
             icon + '</button>';
         }).join('') +
         '</div>';
+    } else if (f.field_type === 'reminder') {
+      // 'reminder' fields ARE the reminder — parse stored JSON config.
+      var remObj = {}; try { remObj = JSON.parse(val); } catch {}
+      var remDate = remObj.date || '';
+      var remTime = remObj.time || '09:00';
+      var remRec  = remObj.rec  || 'none';
+      var remMsg  = remObj.msg  || '';
+      var recOpts = [
+        ['none','Once'],['daily','Daily 🔁'],['weekly','Weekly 🔁'],
+        ['biweekly','Bi-weekly 🔁'],['monthly','Monthly 🔁'],['yearly','Yearly 🔁'],
+      ].map(function(p) {
+        return '<option value="' + p[0] + '"' + (remRec === p[0] ? ' selected' : '') + '>' + p[1] + '</option>';
+      }).join('');
+      return wrapDrag(f.id,
+        `<div>
+          ${cfLabel(f, '', true)}
+          <!-- Hidden input carries the JSON for crmSaveContact -->
+          <input type="hidden" name="cf_${f.id}" id="cf_rem_val_${f.id}" value="${_crmEsc(val)}"/>
+          <div class="flex flex-col gap-2 mt-1 p-2 border border-gray-200 dark:border-zinc-700
+                      rounded-lg bg-gray-50 dark:bg-zinc-800/60">
+            <div class="flex flex-wrap gap-2">
+              <div class="flex-1 min-w-[120px]">
+                <label class="block text-[9px] font-semibold uppercase tracking-wide
+                              text-gray-400 dark:text-zinc-500 mb-0.5">Date</label>
+                <input id="cf_rem_date_${f.id}" type="date" value="${_crmEsc(remDate)}"
+                  oninput="crmSyncRemVal(${f.id})"
+                  class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
+                         bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+              </div>
+              <div>
+                <label class="block text-[9px] font-semibold uppercase tracking-wide
+                              text-gray-400 dark:text-zinc-500 mb-0.5">Time</label>
+                <input id="cf_rem_time_${f.id}" type="time" value="${_crmEsc(remTime)}"
+                  oninput="crmSyncRemVal(${f.id})"
+                  class="border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
+                         bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-[9px] font-semibold uppercase tracking-wide
+                            text-gray-400 dark:text-zinc-500 mb-0.5">Repeat</label>
+              <select id="cf_rem_rec_${f.id}" oninput="crmSyncRemVal(${f.id})"
+                class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
+                       bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${recOpts}</select>
+            </div>
+            <div>
+              <label class="block text-[9px] font-semibold uppercase tracking-wide
+                            text-gray-400 dark:text-zinc-500 mb-0.5">
+                Message <span class="normal-case font-normal">(optional)</span>
+              </label>
+              <input id="cf_rem_msg_${f.id}" type="text" value="${_crmEsc(remMsg)}"
+                placeholder="Reminder note…"
+                oninput="crmSyncRemVal(${f.id})"
+                class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
+                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                       placeholder-gray-300 dark:placeholder-zinc-600
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+            </div>
+            ${!isEdit ? '<p class="text-[9px] text-gray-400 dark:text-zinc-500 italic">Save the contact first to activate this reminder.</p>' : ''}
+          </div>
+        </div>`);
     } else if (f.field_type === 'date') {
       return wrapDrag(f.id,
         `<div>
@@ -741,6 +813,16 @@ function _crmContactModal(c) {
             ${flatLbl('Company')}
             ${flat('company', c?.company, 'text', 'Acme Corp')}
           </div>
+          <div class="col-span-2">
+            ${flatLbl('Address')}
+            <textarea name="address" rows="2"
+              placeholder="123 Main St, City, State 00000"
+              autocomplete="street-address"
+              class="w-full bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
+                     text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300
+                     dark:placeholder-zinc-600 focus:outline-none focus:border-[#0053e2]
+                     transition resize-none">${_crmEsc(c?.address || '')}</textarea>
+          </div>
         </div>
 
         <!-- Custom fields — flex-col so drag rows stack cleanly -->
@@ -750,28 +832,32 @@ function _crmContactModal(c) {
         <div id="crm-af-form" style="display:none"
           class="mb-3 p-3 rounded-lg bg-gray-50 dark:bg-zinc-800/60
                  border border-gray-200 dark:border-zinc-700">
-          <div class="flex gap-2 items-center">
+          <!-- Stack vertically on mobile so the Add button is never clipped -->
+          <div class="flex flex-col gap-2">
             <input id="crm-af-label" placeholder="Field name"
-              class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+              class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
                      text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                      placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
-            <select id="crm-af-type" onchange="crmAfTypeChange(this)"
-              class="border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                     text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                     focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-              <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="date">Date</option>
-              <option value="url">URL</option>
-              <option value="email">Email</option>
-              <option value="select">Select</option>
-              <option value="multi_select">Multi-select</option>
-              <option value="checkbox">Checkbox</option>
-              <option value="priority">Priority ⭐</option>
-            </select>
-            <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
-              class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
-                     hover:bg-blue-700 transition flex-shrink-0">Add</button>
+            <div class="flex gap-2">
+              <select id="crm-af-type" onchange="crmAfTypeChange(this)"
+                class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                       text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                       focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="url">URL</option>
+                <option value="email">Email</option>
+                <option value="select">Select</option>
+                <option value="multi_select">Multi-select</option>
+                <option value="checkbox">Checkbox</option>
+                <option value="priority">Priority ⭐</option>
+                <option value="reminder">Reminder 🔔</option>
+              </select>
+              <button type="button" id="crm-af-btn" onclick="crmModalAddField(${c?.id||0})"
+                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0053e2] text-white
+                       hover:bg-blue-700 transition flex-shrink-0">Add</button>
+            </div>
           </div>
           <!-- Icon picker — only shown for Priority type -->
           <div id="crm-af-icon-row" style="display:none"
@@ -851,9 +937,12 @@ function _crmContactModal(c) {
   }
   setTimeout(_crmInitEmojiPicker, 0);
   if (isEdit && typeof crmLoadReminders === 'function') {
-    _crmFields.filter(function(f) { return f.field_type === 'date'; })
+    _crmFields.filter(function(f) { return f.field_type === 'date' || f.field_type === 'reminder'; })
       .forEach(function(f) {
-        crmLoadReminders(c.id, c.name, f.id, f.label, fv[f.id] || '');
+        var dateVal = f.field_type === 'reminder'
+          ? (function(){ try{ return (JSON.parse(fv[f.id]||'{}').date)||''; }catch{return '';} })()
+          : (fv[f.id] || '');
+        crmLoadReminders(c.id, c.name, f.id, f.label, dateVal);
       });
   }
 }
@@ -1050,6 +1139,22 @@ function _crmInitEmojiPicker() {
   });
 }
 
+/** Sync the hidden JSON input for a 'reminder' custom field from its sub-inputs. */
+function crmSyncRemVal(fid) {
+  var dateEl = document.getElementById('cf_rem_date_' + fid);
+  var timeEl = document.getElementById('cf_rem_time_' + fid);
+  var recEl  = document.getElementById('cf_rem_rec_'  + fid);
+  var msgEl  = document.getElementById('cf_rem_msg_'  + fid);
+  var valEl  = document.getElementById('cf_rem_val_'  + fid);
+  if (!valEl) return;
+  valEl.value = JSON.stringify({
+    date: dateEl ? dateEl.value : '',
+    time: timeEl ? timeEl.value : '09:00',
+    rec:  recEl  ? recEl.value  : 'none',
+    msg:  msgEl  ? msgEl.value  : '',
+  });
+}
+
 async function crmSaveContact(e, contactId) {
   e.preventDefault();
   const form = e.target;
@@ -1095,12 +1200,47 @@ async function crmSaveContact(e, contactId) {
           (data.get(`cf_${f.id}`) || '').trim().split('\n').map(l => l.trim()).filter(Boolean)
         );
       } else {
+        // For 'reminder' fields the hidden input already holds the JSON (synced by crmSyncRemVal)
         val = (data.get(`cf_${f.id}`) || '').trim();
       }
       const fBody = new URLSearchParams({field_id: f.id, value: val});
       return _crmFetch(`/home/crm/${_crmPid}/contacts/${savedId}/field-value`,
                        {method:'POST', body: fBody}).catch(() => {});
     }));
+
+    // For 'reminder'-type fields: upsert or clear the actual reminder row so
+    // it's picked up by the 30 s poll, missed-reminders top bar, and push push.
+    await Promise.all(_crmFields
+      .filter(f => f.field_type === 'reminder')
+      .map(f => {
+        // Sync the hidden input one last time before reading it
+        crmSyncRemVal(f.id);
+        var raw = data.get('cf_' + f.id) || '';
+        // Re-read from the DOM in case FormData was captured before the sync
+        var valEl = document.getElementById('cf_rem_val_' + f.id);
+        if (valEl) raw = valEl.value;
+        var ro = {}; try { ro = JSON.parse(raw); } catch {}
+        if (!ro.date) {
+          // No date — clear any existing reminder for this field
+          return _crmFetch(
+            `/home/crm/${_crmPid}/contacts/${savedId}/field-reminder/${f.id}/clear`,
+            {method: 'POST'}
+          ).catch(() => {});
+        }
+        const rBody = new URLSearchParams({
+          field_id:      f.id,
+          label:         (data.get('name') || '').trim() + ' — ' + f.label,
+          reminder_date: ro.date,
+          reminder_time: ro.time || '09:00',
+          recurrence:    ro.rec  || 'none',
+          message:       ro.msg  || '',
+        });
+        return _crmFetch(
+          `/home/crm/${_crmPid}/contacts/${savedId}/field-reminder`,
+          {method: 'POST', body: rBody}
+        ).catch(() => {});
+      })
+    );
     // Reload to get updated field_values
     _crmContacts = await _crmFetch(`/home/crm/${_crmPid}/contacts`);
     crmCloseModal();

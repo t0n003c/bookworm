@@ -61,13 +61,14 @@ async def add_contact(
     birthday: str = "",
     first_met_date: str = "",
     relationship: str = "",
+    address: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
             "INSERT INTO crm_contacts "
-            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship),
+            "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship, address) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship, address),
         )
         await db.commit()
     return await get_contacts(page_id, user_id)
@@ -81,13 +82,14 @@ async def update_contact(
     birthday: str = "",
     first_met_date: str = "",
     relationship: str = "",
+    address: str = "",
 ) -> list[dict]:
     async with get_db() as db:
         await db.execute(
             "UPDATE crm_contacts "
-            "SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=?,profile_pic=?,birthday=?,first_met_date=?,relationship=? "
+            "SET name=?,email=?,phone=?,company=?,tags=?,avatar_emoji=?,profile_pic=?,birthday=?,first_met_date=?,relationship=?,address=? "
             "WHERE id=? AND page_id=? AND user_id=?",
-            (name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship,
+            (name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship, address,
              contact_id, page_id, user_id),
         )
         await db.commit()
@@ -479,6 +481,49 @@ async def delete_contact_reminder(reminder_id: int, contact_id: int) -> list[dic
         )
         await db.commit()
     return await get_contact_reminders(contact_id)
+
+
+async def upsert_field_reminder(
+    contact_id: int,
+    field_id: int,
+    user_id: int,
+    label: str,
+    reminder_date: str,
+    reminder_time: str,
+    message: str = "",
+    recurrence: str = "none",
+) -> list[dict]:
+    """Delete any existing reminder for (contact_id, field_id), then insert a fresh one.
+
+    This keeps a 1-to-1 mapping between a 'reminder' custom field and a reminder row,
+    so saving the contact a second time doesn't create duplicate entries.
+    """
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_contact_reminders WHERE contact_id=? AND field_id=?",
+            (contact_id, field_id),
+        )
+        await db.execute(
+            "INSERT INTO crm_contact_reminders"
+            " (contact_id, field_id, user_id, label, message, recurrence, reminder_date, reminder_time)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (contact_id, field_id, user_id, label, message, recurrence, reminder_date, reminder_time),
+        )
+        await db.commit()
+    return await get_contact_reminders(contact_id)
+
+
+async def clear_field_reminder(contact_id: int, field_id: int) -> None:
+    """Delete all reminders tied to a specific custom field for a contact.
+
+    Called when a 'reminder' type field value is cleared (no date set).
+    """
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_contact_reminders WHERE contact_id=? AND field_id=?",
+            (contact_id, field_id),
+        )
+        await db.commit()
 
 
 async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
