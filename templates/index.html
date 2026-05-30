@@ -4206,6 +4206,24 @@
         </div>
       </div><!-- /#acct-s2 -->
 
+      <!-- ── Section 2b: Biometric Sign-In ──────────────────────────── -->
+      <div id="acct-s-wa" class="px-6 py-5 border-t border-gray-200 dark:border-zinc-700">
+        <button type="button" onclick="_acctToggle('acct-s-wa-body', this)" aria-expanded="true"
+          class="w-full flex items-center justify-between group py-0.5 mb-3">
+          <span class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500
+                       group-hover:text-gray-600 dark:group-hover:text-zinc-300 transition">Biometric Sign-In</span>
+          <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 transition-transform duration-200 flex-shrink-0"
+               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+          </svg>
+        </button>
+        <div id="acct-s-wa-body">
+          <div id="webauthn-panel-loader">
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Loading biometric settings…</p>
+          </div>
+        </div>
+      </div><!-- /#acct-s-wa -->
+
       {% if current_role == 'superadmin' %}
       <!-- ── Section 3: Admin (superadmin only) ─────────────────────────── -->
       <div id="acct-s3" class="px-6 py-5 border-t border-gray-200 dark:border-zinc-700">
@@ -4687,7 +4705,8 @@
     document.getElementById('account-modal').classList.remove('hidden');
     /* Restore saved size (default S — compact single-column) */
     try { _setAcctSize(localStorage.getItem(_ACCT_SIZE_KEY) || 'S'); } catch (_) { _setAcctSize('S'); }
-    _loadPanel('/account/2fa',   '2fa-panel-loader');
+    _loadPanel('/account/2fa',           '2fa-panel-loader');
+    _loadPanel('/account/webauthn/panel', 'webauthn-panel-loader');
     _loadPanel('/account/users', 'admin-users-loader');
     /* Auto-refresh the user list every 8 s so new demo sessions appear
      * without the superadmin having to manually reload.  Pause if the
@@ -4708,6 +4727,8 @@
     document.getElementById('password-msg').innerHTML = '';
     const twoFa = document.getElementById('2fa-panel-loader');
     if (twoFa) twoFa.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading 2FA settings…</p>';
+    const waPanelLoader = document.getElementById('webauthn-panel-loader');
+    if (waPanelLoader) waPanelLoader.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading biometric settings…</p>';
     const adminUsers = document.getElementById('admin-users-loader');
     if (adminUsers) adminUsers.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading users…</p>';
   }

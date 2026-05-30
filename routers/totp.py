@@ -124,10 +124,13 @@ async def totp_disable(request: Request, code: str = Form(...)):
 
 @router.get("/2fa/verify", response_class=HTMLResponse)
 async def verify_page(request: Request):
-    """Show the 6-digit code prompt after a successful password login."""
+    """Show the identity-verify prompt after a successful password login."""
     if not request.session.get("pending_2fa_user_id"):
         return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse(request, "2fa_verify.html", {})
+    return templates.TemplateResponse(request, "2fa_verify.html", {
+        "has_webauthn": request.session.get("pending_2fa_has_webauthn", False),
+        "totp_enabled": request.session.get("pending_2fa_totp", True),
+    })
 
 
 @router.post("/2fa/verify", response_class=HTMLResponse)

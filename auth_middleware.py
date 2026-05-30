@@ -24,6 +24,8 @@ from security import session_is_expired
 _PUBLIC = {
     "/login", "/setup", "/register", "/favicon.ico",
     "/2fa/verify",
+    "/2fa/webauthn/begin",    # called during pending-2FA session (no full session yet)
+    "/2fa/webauthn/complete", # same — promotes pending → full session
     "/demo/start", "/demo/end",
     "/demo/pre-end",    # pagehide beacon — user may be mid-session
     "/demo/cancel-end", # refresh cancel — session still valid

@@ -22,7 +22,6 @@
       50%       { box-shadow: 0 0 28px 6px rgba(0,83,226,0.65); }
     }
     .glow-card { animation: borderGlow 3.5s ease-in-out infinite; }
-
     @keyframes wiggle {
       0%, 100% { transform: translateX(0); }
       20%  { transform: translateX(-6px); }
@@ -31,7 +30,6 @@
       80%  { transform: translateX(4px); }
     }
     .wiggle { animation: wiggle 0.4s ease; }
-
     .btn-solid {
       background-color: #0053e2;
       transition: background-color 0.2s ease, box-shadow 0.2s ease;
@@ -40,14 +38,17 @@
       background-color: #0041b8;
       box-shadow: 0 0 20px 5px rgba(0,83,226,0.5);
     }
-
     @keyframes bob {
       0%, 100% { transform: translateY(0); }
       50%       { transform: translateY(-8px); }
     }
     .bob { animation: bob 3s ease-in-out infinite; }
-
-    /* OTP digit-style input */
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.9); opacity: 0.8; }
+      50%  { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.8; }
+    }
+    .pulse-ring { animation: pulse-ring 2s ease-in-out infinite; }
     #code {
       letter-spacing: 0.5em;
       font-size: 1.6rem;
@@ -65,81 +66,161 @@
   <span class="floaty" style="left:40%; animation-duration:17s; animation-delay:1s">🪱</span>
   <span class="floaty" style="left:54%; animation-duration:12s; animation-delay:5s">📖</span>
   <span class="floaty" style="left:67%; animation-duration:20s; animation-delay:2s">🔑</span>
-  <span class="floaty" style="left:78%; animation-duration:14s; animation-delay:7s">📚</span>  <span class="floaty" style="left:89%; animation-duration:16s; animation-delay:4s">✨</span>
+  <span class="floaty" style="left:78%; animation-duration:14s; animation-delay:7s">📚</span>
+  <span class="floaty" style="left:89%; animation-duration:16s; animation-delay:4s">✨</span>
 
   <div class="relative z-10 w-full max-w-sm">
 
-    <div class="text-center mb-6">
-      <div class="bob text-6xl mb-3 drop-shadow-lg select-none inline-block"
-           role="img" aria-label="Lock">🔐</div>
-      <h1 class="text-3xl font-extrabold text-white tracking-tight">Two-Factor Auth</h1>
-      <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
-        Open your authenticator app 📱
-      </p>
-    </div>
+    {% if has_webauthn %}
+    {# ═══════════════ BIOMETRIC SECTION ═══════════════ #}
+    <div id="wa-bio-section">
 
-    <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
-
-      {% if error %}
-      <div class="wiggle mb-5 flex items-start gap-2 px-4 py-3 rounded-xl
-                  bg-red-500/20 border border-red-500/50 text-red-300 text-sm"
-           role="alert">
-        <span class="text-lg leading-none mt-0.5">😕</span>
-        <span>{{ error }}</span>
+      <div class="text-center mb-6">
+        <div class="bob text-6xl mb-3 drop-shadow-lg select-none inline-block"
+             role="img" aria-label="Fingerprint">🫆</div>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">Biometric Sign-In</h1>
+        <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
+          Use your fingerprint or face to continue
+        </p>
       </div>
-      {% endif %}
 
-      <form method="post" action="/2fa/verify" class="space-y-6">
-        <div>
-          <label for="code"
-                 class="block text-xs font-semibold uppercase tracking-wider text-[#ffc220] mb-3 text-center">
-            Enter 6-digit code
-          </label>
-          <input
-            id="code" name="code" type="text"
-            inputmode="numeric" pattern="[0-9]{6}"
-            maxlength="6" required autofocus autocomplete="one-time-code"
-            placeholder="000000"
-            class="w-full px-4 py-3 rounded-xl
-                   bg-white/10 border border-white/20 text-white placeholder-white/25
-                   focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
-                   transition"
-          />
-          <p class="text-xs text-white/35 text-center mt-2">
-            Code refreshes every 30 seconds
+      <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
+
+        {# Fingerprint pulse visual #}
+        <div class="flex flex-col items-center gap-5">
+          <div class="pulse-ring w-20 h-20 rounded-full border-2 border-[#0053e2]/60 flex items-center justify-center">
+            <span class="text-5xl select-none" aria-hidden="true">🫆</span>
+          </div>
+
+          <p id="wa-status" class="text-white/60 text-sm text-center">
+            Waiting for biometric confirmation…
           </p>
+
+          <button id="wa-retry-btn"
+            class="hidden btn-solid px-5 py-2 rounded-xl text-white text-sm font-bold
+                   focus:outline-none focus:ring-2 focus:ring-[#ffc220] active:scale-95 transition-transform">
+            🔄 Try again
+          </button>
         </div>
 
-        <button
-          type="submit"
-          class="btn-solid w-full py-3 rounded-xl text-white font-bold text-sm
-                 tracking-wide shadow-lg
-                 focus:outline-none focus:ring-2 focus:ring-[#ffc220] focus:ring-offset-2
-                 focus:ring-offset-[#080c1a] active:scale-95 transition-transform"
-        >
-          ✅ Verify &amp; Sign In
-        </button>
-      </form>
+        {% if totp_enabled %}
+        <div class="mt-6 pt-5 border-t border-white/10 text-center">
+          <button id="wa-fallback-btn"
+            class="text-sm text-white/40 hover:text-white/70 transition
+                   focus:outline-none focus:underline">
+            Use authenticator code instead →
+          </button>
+        </div>
+        {% endif %}
 
-      <div class="mt-6 pt-5 border-t border-white/10 text-center">
-        <a href="/login"
-           class="text-sm text-white/40 hover:text-white/70 transition
-                  focus:outline-none focus:underline">
-          ← Back to login
-        </a>
       </div>
+
+    </div>{# /wa-bio-section #}
+    {% endif %}
+
+    {# ═══════════════ TOTP SECTION ═══════════════ #}
+    {% if totp_enabled %}
+    <div id="wa-totp-section" class="{{ 'hidden' if has_webauthn else '' }}">
+
+      <div class="text-center mb-6">
+        <div class="bob text-6xl mb-3 drop-shadow-lg select-none inline-block"
+             role="img" aria-label="Lock">🔐</div>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">Two-Factor Auth</h1>
+        <p class="text-[#ffc220] font-semibold mt-1 text-sm tracking-wide">
+          Open your authenticator app 📱
+        </p>
+      </div>
+
+      <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
+
+        {% if error %}
+        <div class="wiggle mb-5 flex items-start gap-2 px-4 py-3 rounded-xl
+                    bg-red-500/20 border border-red-500/50 text-red-300 text-sm"
+             role="alert">
+          <span class="text-lg leading-none mt-0.5">😕</span>
+          <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <form method="post" action="/2fa/verify" class="space-y-6">
+          <div>
+            <label for="code"
+                   class="block text-xs font-semibold uppercase tracking-wider text-[#ffc220] mb-3 text-center">
+              Enter 6-digit code
+            </label>
+            <input
+              id="code" name="code" type="text"
+              inputmode="numeric" pattern="[0-9]{6}"
+              maxlength="6" required {% if not has_webauthn %}autofocus{% endif %} autocomplete="one-time-code"
+              placeholder="000000"
+              class="w-full px-4 py-3 rounded-xl
+                     bg-white/10 border border-white/20 text-white placeholder-white/25
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2]
+                     transition"
+            />
+            <p class="text-xs text-white/35 text-center mt-2">
+              Code refreshes every 30 seconds
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            class="btn-solid w-full py-3 rounded-xl text-white font-bold text-sm
+                   tracking-wide shadow-lg
+                   focus:outline-none focus:ring-2 focus:ring-[#ffc220] focus:ring-offset-2
+                   focus:ring-offset-[#080c1a] active:scale-95 transition-transform">
+            ✅ Verify &amp; Sign In
+          </button>
+        </form>
+
+        {% if has_webauthn %}
+        <div class="mt-4 text-center">
+          <button onclick="document.getElementById('wa-bio-section').classList.remove('hidden');document.getElementById('wa-totp-section').classList.add('hidden');"
+            class="text-sm text-white/40 hover:text-white/70 transition focus:outline-none focus:underline">
+            ← Back to fingerprint
+          </button>
+        </div>
+        {% endif %}
+
+        <div class="mt-6 pt-5 border-t border-white/10 text-center">
+          <a href="/login"
+             class="text-sm text-white/40 hover:text-white/70 transition
+                    focus:outline-none focus:underline">
+            ← Back to login
+          </a>
+        </div>
+      </div>
+
+    </div>{# /wa-totp-section #}
+    {% endif %}
+
+    {# Edge case: neither TOTP nor biometric (shouldn't reach here, but safe fallback) #}
+    {% if not totp_enabled and not has_webauthn %}
+    <div class="text-center text-white/60 text-sm">
+      <p>Something went wrong. <a href="/login" class="underline">Go back to login</a>.</p>
     </div>
+    {% endif %}
 
     <p class="text-center text-xs text-white/25 mt-5">
+      {% if has_webauthn %}
+      Biometric key stays on your device — only a signature is verified.
+      {% else %}
       Lost access to your authenticator? Contact your admin.
+      {% endif %}
     </p>
   </div>
 
+  <script src="/static/js/bw-webauthn.js?v={{ static_v }}"></script>
   <script>
-    /* Auto-submit when 6 digits are entered */
+    {% if not has_webauthn %}
+    /* TOTP-only: auto-submit on 6 digits */
     document.getElementById('code').addEventListener('input', function () {
       if (/^\d{6}$/.test(this.value)) this.closest('form').submit();
     });
+    {% else %}
+    /* Biometric: init the verify page flow */
+    bwWaInitVerifyPage();
+    {% endif %}
   </script>
 
 </body>

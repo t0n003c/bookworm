@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from routers.auth_db import authenticate, create_user, user_count, get_user_by_username, get_registration_open
 from routers.totp_db import get_totp_status
+from routers.webauthn_db import has_credentials
 from routers.seed_uploads import seed_flower_uploads
 from routers.rate_limit import check_rate_limit, record_failure, record_success
 from database import get_db
@@ -96,13 +97,16 @@ async def login_submit(
     record_success(rl_key)
     permanent = stay_signed_in == "on"
 
-    # Check 2FA — if enabled, park a pending session and redirect to verify
+    # Check 2FA — if TOTP enabled OR biometric registered, park a pending session
     totp = await get_totp_status(user["id"])
-    if totp["totp_enabled"]:
-        request.session["pending_2fa_user_id"]  = user["id"]
-        request.session["pending_2fa_username"] = user["username"]
-        request.session["pending_2fa_role"]     = user["role"]
-        request.session["pending_2fa_permanent"] = permanent
+    webauthn_ok = await has_credentials(user["id"])
+    if totp["totp_enabled"] or webauthn_ok:
+        request.session["pending_2fa_user_id"]      = user["id"]
+        request.session["pending_2fa_username"]      = user["username"]
+        request.session["pending_2fa_role"]          = user["role"]
+        request.session["pending_2fa_permanent"]     = permanent
+        request.session["pending_2fa_has_webauthn"]  = webauthn_ok
+        request.session["pending_2fa_totp"]          = totp["totp_enabled"]
         return RedirectResponse("/2fa/verify", status_code=302)
 
     request.session["user_id"]  = user["id"]

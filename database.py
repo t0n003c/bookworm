@@ -117,6 +117,18 @@ CREATE_TABLES_SQL = [
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT    NOT NULL UNIQUE,
+        public_key    TEXT    NOT NULL,
+        sign_count    INTEGER NOT NULL DEFAULT 0,
+        device_name   TEXT    NOT NULL DEFAULT 'My Device',
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_used_at  DATETIME
+    )
+    """,
 ]
 
 SEED_WORKSPACE_NAME = "Grocery Team"
