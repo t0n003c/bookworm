@@ -94,8 +94,8 @@ function _crmRenderDetail() {
           };
           var recStr = (ro.rec && ro.rec !== 'none') ? recLabels[ro.rec] || ro.rec : '';
           display = `<span class="font-medium">🔔 ${_crmEsc(dateStr + timeStr)}</span>`
-            + (recStr ? `<br><span class="text-xs text-[#0053e2] dark:text-blue-400">🔁 ${_crmEsc(recStr)}</span>` : '')
-            + (ro.msg ? `<br><span class="text-xs text-gray-500 dark:text-zinc-400 italic">${_crmEsc(ro.msg)}</span>` : '');
+            + (ro.msg ? ` <span class="text-gray-500 dark:text-zinc-400 italic">· ${_crmEsc(ro.msg)}</span>` : '')
+            + (recStr ? `<br><span class="text-xs text-[#0053e2] dark:text-blue-400">🔁 ${_crmEsc(recStr)}</span>` : '');
         }
       } catch(e) {}
     } else {
