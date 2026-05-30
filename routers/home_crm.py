@@ -311,7 +311,7 @@ async def create_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links", "priority"}
+        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links", "priority", "reminder"}
         if field_type not in VALID_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await add_field(page_id, uid, label.strip(), field_type, options.strip())
@@ -334,7 +334,7 @@ async def edit_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links"}
+        VALID_TYPES = {"text", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links", "priority", "reminder"}
         if field_type not in VALID_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await update_field(field_id, page_id, uid, label.strip(),

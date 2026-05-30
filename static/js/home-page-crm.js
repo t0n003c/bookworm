@@ -815,13 +815,27 @@ function _crmContactModal(c) {
           </div>
           <div class="col-span-2">
             ${flatLbl('Address')}
-            <textarea name="address" rows="2"
-              placeholder="123 Main St, City, State 00000"
-              autocomplete="street-address"
-              class="w-full bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
-                     text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300
-                     dark:placeholder-zinc-600 focus:outline-none focus:border-[#0053e2]
-                     transition resize-none">${_crmEsc(c?.address || '')}</textarea>
+            <!-- Address autocomplete: input + hidden value + suggestion dropdown -->
+            <!-- Nominatim (OpenStreetMap) is used for suggestions — no API key needed -->
+            <div class="relative" id="crm-addr-wrap">
+              <input id="crm-addr-input" name="address"
+                type="text"
+                value="${_crmEsc(c?.address || '')}"
+                placeholder="Start typing an address…"
+                autocomplete="off"
+                aria-autocomplete="list"
+                aria-controls="crm-addr-list"
+                oninput="_crmAddrInput(this)"
+                onblur="setTimeout(function(){_crmAddrHide()},200)"
+                onkeydown="_crmAddrKey(event)"
+                class="w-full bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
+                       text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300
+                       dark:placeholder-zinc-600 focus:outline-none focus:border-[#0053e2] transition"/>
+              <ul id="crm-addr-list" role="listbox"
+                class="hidden absolute z-50 left-0 right-0 mt-1 max-h-52 overflow-y-auto
+                       bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
+                       rounded-lg shadow-lg text-sm"></ul>
+            </div>
           </div>
         </div>
 
@@ -1153,6 +1167,87 @@ function crmSyncRemVal(fid) {
     rec:  recEl  ? recEl.value  : 'none',
     msg:  msgEl  ? msgEl.value  : '',
   });
+}
+
+// ── Address autocomplete (Nominatim / OpenStreetMap) ─────────────────────────────
+// Free, no API key. Debounced at 400 ms, min 4 chars. Results injected into
+// #crm-addr-list as <li> elements the user can click / keyboard-navigate.
+
+var _addrTimer  = null;
+var _addrActive = -1;   // index of the keyboard-highlighted suggestion
+var _addrItems  = [];   // last result set [{display_name, ...}]
+
+function _crmAddrInput(inp) {
+  clearTimeout(_addrTimer);
+  var q = inp.value.trim();
+  if (q.length < 4) { _crmAddrHide(); return; }
+  _addrTimer = setTimeout(function() { _crmAddrFetch(q); }, 400);
+}
+
+async function _crmAddrFetch(q) {
+  var list = document.getElementById('crm-addr-list');
+  if (!list) return;
+  try {
+    var url = 'https://nominatim.openstreetmap.org/search'
+            + '?format=json&addressdetails=0&limit=6'
+            + '&q=' + encodeURIComponent(q);
+    var res = await fetch(url, {
+      headers: { 'Accept-Language': 'en', 'User-Agent': 'BookWorm-CRM/1.0' }
+    });
+    if (!res.ok) return;
+    _addrItems = await res.json();
+    _addrActive = -1;
+    if (!_addrItems.length) { _crmAddrHide(); return; }
+    list.innerHTML = _addrItems.map(function(item, i) {
+      return '<li role="option" data-idx="' + i + '"'
+           + ' class="px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-zinc-800'
+           + ' text-gray-800 dark:text-zinc-100 border-b border-gray-100 dark:border-zinc-800 last:border-0"'
+           + ' onmousedown="_crmAddrPick(' + i + ')">' + _crmEsc(item.display_name) + '</li>';
+    }).join('');
+    list.classList.remove('hidden');
+  } catch(e) { _crmAddrHide(); }
+}
+
+function _crmAddrPick(idx) {
+  var item = _addrItems[idx];
+  if (!item) return;
+  var inp = document.getElementById('crm-addr-input');
+  if (inp) inp.value = item.display_name;
+  _crmAddrHide();
+}
+
+function _crmAddrHide() {
+  var list = document.getElementById('crm-addr-list');
+  if (list) list.classList.add('hidden');
+  _addrActive = -1;
+}
+
+function _crmAddrKey(e) {
+  var list = document.getElementById('crm-addr-list');
+  if (!list || list.classList.contains('hidden')) return;
+  var items = list.querySelectorAll('li');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _addrActive = Math.min(_addrActive + 1, items.length - 1);
+    _crmAddrHighlight(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _addrActive = Math.max(_addrActive - 1, 0);
+    _crmAddrHighlight(items);
+  } else if (e.key === 'Enter' && _addrActive >= 0) {
+    e.preventDefault();
+    _crmAddrPick(_addrActive);
+  } else if (e.key === 'Escape') {
+    _crmAddrHide();
+  }
+}
+
+function _crmAddrHighlight(items) {
+  items.forEach(function(li, i) {
+    li.classList.toggle('bg-blue-50', i === _addrActive);
+    li.classList.toggle('dark:bg-zinc-800', i === _addrActive);
+  });
+  if (_addrActive >= 0) items[_addrActive].scrollIntoView({ block: 'nearest' });
 }
 
 async function crmSaveContact(e, contactId) {
