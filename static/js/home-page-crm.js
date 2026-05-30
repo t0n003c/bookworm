@@ -1175,7 +1175,32 @@ function crmSyncRemVal(fid) {
 
 var _addrTimer  = null;
 var _addrActive = -1;   // index of the keyboard-highlighted suggestion
-var _addrItems  = [];   // last result set [{display_name, ...}]
+var _addrItems  = [];   // last result set [{display_name, _fmt, ...}]
+
+// Cardinal direction replacements — longest compound first to avoid partial matches
+// e.g. "Northwest" must be tried before "North" and "West".
+var _ADDR_DIRS = [
+  [/\bNorthwest\b/gi, 'NW'], [/\bNortheast\b/gi, 'NE'],
+  [/\bSouthwest\b/gi, 'SW'], [/\bSoutheast\b/gi, 'SE'],
+  [/\bNorth\b/gi, 'N'],      [/\bSouth\b/gi, 'S'],
+  [/\bEast\b/gi,  'E'],      [/\bWest\b/gi,  'W'],
+];
+
+// Comma-separated segments that are administrative noise, not part of a mailing address.
+var _ADDR_NOISE_RE = /\b(county|parish|borough|township|census area|municipio)\b/i;
+
+/**
+ * Clean a Nominatim display_name for human consumption:
+ * - abbreviate compass directions (Southwest → SW, etc.)
+ * - strip county / parish / borough / township segments
+ */
+function _crmAddrFormat(raw) {
+  var s = raw;
+  _ADDR_DIRS.forEach(function(pair) { s = s.replace(pair[0], pair[1]); });
+  return s.split(', ')
+    .filter(function(p) { return !_ADDR_NOISE_RE.test(p); })
+    .join(', ');
+}
 
 function _crmAddrInput(inp) {
   clearTimeout(_addrTimer);
@@ -1196,13 +1221,15 @@ async function _crmAddrFetch(q) {
     });
     if (!res.ok) return;
     _addrItems = await res.json();
+    // Pre-format once — both the dropdown label and the picked value use _fmt.
+    _addrItems.forEach(function(item) { item._fmt = _crmAddrFormat(item.display_name); });
     _addrActive = -1;
     if (!_addrItems.length) { _crmAddrHide(); return; }
     list.innerHTML = _addrItems.map(function(item, i) {
       return '<li role="option" data-idx="' + i + '"'
            + ' class="px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-zinc-800'
            + ' text-gray-800 dark:text-zinc-100 border-b border-gray-100 dark:border-zinc-800 last:border-0"'
-           + ' onmousedown="_crmAddrPick(' + i + ')">' + _crmEsc(item.display_name) + '</li>';
+           + ' onmousedown="_crmAddrPick(' + i + ')">' + _crmEsc(item._fmt) + '</li>';
     }).join('');
     list.classList.remove('hidden');
   } catch(e) { _crmAddrHide(); }
@@ -1212,7 +1239,7 @@ function _crmAddrPick(idx) {
   var item = _addrItems[idx];
   if (!item) return;
   var inp = document.getElementById('crm-addr-input');
-  if (inp) inp.value = item.display_name;
+  if (inp) inp.value = item._fmt;   // use pre-formatted string, not raw display_name
   _crmAddrHide();
 }
 
