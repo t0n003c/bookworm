@@ -701,6 +701,77 @@ async def _widget_notif_loop():
 
 
 @asynccontextmanager
+async def _prewarm_thumbs() -> None:
+    """Generate 400-px and 800-px WebP thumbnails for all existing image uploads.
+
+    Runs once as a background task right after startup so the uploads grid
+    is fast on first load for every user.  Files that already have an
+    up-to-date cached thumbnail are skipped (mtime comparison).
+    Runs in a thread pool so Pillow never blocks the async event loop.
+    """
+    import io as _io
+    try:
+        from PIL import Image as _Img, ImageOps as _IOs  # noqa: PLC0415
+    except ImportError:
+        log.info("thumb prewarm: Pillow not installed — skipping")
+        return
+
+    _WIDTHS   = (400, 800)
+    _IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif",
+                 ".bmp", ".tiff", ".tif", ".avif", ".heic", ".heif"}
+
+    # Collect image filenames from both upload tables
+    filenames: list[str] = []
+    async with get_db() as db:
+        for table in ("page_uploads", "note_attachments"):
+            cur = await db.execute(
+                f"SELECT filename, mime_type FROM {table} WHERE filename IS NOT NULL"
+            )
+            for fname, mime in await cur.fetchall():
+                if (mime or "").lower().startswith("image/") or \
+                   Path(fname).suffix.lower() in _IMG_EXTS:
+                    filenames.append(fname)
+
+    if not filenames:
+        return
+
+    generated = skipped = 0
+    for fname in filenames:
+        src = UPLOAD_DIR / fname
+        if not src.exists():
+            continue
+        src_mtime = src.stat().st_mtime
+
+        for w in _WIDTHS:
+            thumb_dir  = UPLOAD_DIR / "_thumbs" / str(w)
+            thumb_path = thumb_dir / fname
+            thumb_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if thumb_path.exists() and thumb_path.stat().st_mtime >= src_mtime:
+                skipped += 1
+                continue
+
+            # Run Pillow in a thread so we don't block the event loop
+            def _gen(src=src, dst=thumb_path, w=w):
+                with _Img.open(src) as img:
+                    img = _IOs.exif_transpose(img)
+                    if img.width > w:
+                        img.thumbnail((w, w * 10), _Img.LANCZOS)
+                    buf = _io.BytesIO()
+                    img.save(buf, format="WEBP", quality=75)
+                    dst.write_bytes(buf.getvalue())
+
+            try:
+                await asyncio.to_thread(_gen)
+                generated += 1
+            except Exception as exc:
+                log.debug("thumb prewarm: skip %s w=%d — %s", fname, w, exc)
+
+        await asyncio.sleep(0)   # yield so other tasks aren't starved
+
+    log.info("thumb prewarm: generated=%d  already-current=%d", generated, skipped)
+
+
 async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
     try:
@@ -719,10 +790,11 @@ async def lifespan(app: FastAPI):
     rss_task     = asyncio.create_task(_rss_notif_loop())
     bud_task     = asyncio.create_task(_bud_notif_loop())
     widget_task  = asyncio.create_task(_widget_notif_loop())
+    prewarm_task = asyncio.create_task(_prewarm_thumbs())
     try:
         yield
     finally:
-        for t in (purge_task, push_task, rss_task, bud_task, widget_task):
+        for t in (purge_task, push_task, rss_task, bud_task, widget_task, prewarm_task):
             t.cancel()
             try:
                 await t
@@ -932,8 +1004,9 @@ async def serve_upload_thumb(request: Request, filename: str, w: int = 400):
 
     if need_regen:
         try:
-            from PIL import Image as _PILImage  # noqa: PLC0415
+            from PIL import Image as _PILImage, ImageOps as _ImageOps  # noqa: PLC0415
             with _PILImage.open(src_path) as img:
+                img = _ImageOps.exif_transpose(img)  # auto-rotate for phone photos
                 if img.width > w:          # only shrink, never upscale
                     img.thumbnail((w, w * 10), _PILImage.LANCZOS)  # cap width, free height
                 buf = _io.BytesIO()

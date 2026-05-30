@@ -123,7 +123,11 @@ function _uplThumbHtml(file, style, sizeClass) {
     if (sizeClass === undefined) sizeClass = 'aspect-square';
     var icon = _uplMimeIcon(file.mime_type || '');
     var name = _uplEsc(_uplTrunc(file.original_name || file.filename, 26));
-    var url  = '/uploads/' + _uplEsc(file.filename);
+    // Images get a resized thumbnail; everything else gets the full URL
+    var isImg = icon === null;  // _uplMimeIcon returns null for images
+    var url  = isImg
+        ? '/uploads/thumb/' + _uplEsc(file.filename) + '?w=400'
+        : '/uploads/' + _uplEsc(file.filename);
 
     if (_uplIsPreviewable(file)) {
         var inner;
@@ -575,7 +579,10 @@ function _uplPrevRenderPickerGrid(files) {
     files.forEach(function(f) {
         var icon    = _uplMimeIcon(f.mime_type || '');
         var name    = _uplEsc(_uplTrunc(f.original_name || f.filename, 20));
-        var url     = '/uploads/' + _uplEsc(f.filename);
+        var isImg   = icon === null;
+        var url     = isImg
+            ? '/uploads/thumb/' + _uplEsc(f.filename) + '?w=400'
+            : '/uploads/' + _uplEsc(f.filename);
         var pos     = _uplPrevSelected.indexOf(f.id);
         var checked = pos !== -1;
         var ring    = checked ? ' ring-2 ring-[#0053e2]' : '';

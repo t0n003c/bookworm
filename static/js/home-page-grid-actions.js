@@ -279,15 +279,17 @@ function _gridRenderMediaFiles(files) {
             var furl    = '/uploads/' + _gridEsc(f.filename);
             var isImg   = f.mime_type.startsWith('image/');
             var isVid   = f.mime_type.startsWith('video/');
+            var thumbUrl = isImg
+                ? '/uploads/thumb/' + _gridEsc(f.filename) + '?w=400'
+                : furl;
             var already = inGrid[f.id] || false;
             var isSel   = !!_gridPickerSelected[f.id];
             var label   = _gridEsc(f.original_name || f.filename);
 
             // Thumbnail: real video frame via #t=0.5 seek, or image
             var thumb = isImg
-                ? '<img src="' + furl + '" class="w-full h-full object-cover"'
+                ? '<img src="' + thumbUrl + '" class="w-full h-full object-cover"'
                   + ' loading="lazy" decoding="async" alt="">'
-                : '<video src="' + furl + '#t=0.5" preload="metadata" muted playsinline'
                   + ' class="w-full h-full object-cover pointer-events-none"'
                   + ' aria-hidden="true"></video>'
                   + '<div class="absolute inset-0 flex items-center justify-center pointer-events-none">'

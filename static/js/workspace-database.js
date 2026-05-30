@@ -2467,6 +2467,17 @@ function _dbCoverIsVideo(url) {
   return ['mp4', 'mov', 'webm', 'ogg', 'ogv'].indexOf(ext) !== -1;
 }
 
+// Returns a resized thumbnail URL for internal /uploads/ images, or the
+// original URL unchanged for external images and videos.
+function _dbThumbUrl(url, w) {
+  if (!url || _dbCoverIsVideo(url)) return url;
+  var prefix = '/uploads/';
+  if (url.indexOf(prefix) === 0) {
+    return '/uploads/thumb/' + url.slice(prefix.length).split('?')[0] + '?w=' + w;
+  }
+  return url;  // external URL — can’t proxy through our thumbnail endpoint
+}
+
 function _dbCoverHtml(card) {
   if (card.cover_url) {
     var isVid = _dbCoverIsVideo(card.cover_url);
@@ -2474,7 +2485,7 @@ function _dbCoverHtml(card) {
       ? '<video src="' + _esc(card.cover_url) + '" muted playsinline preload="metadata" loop'
         + ' class="w-full h-full object-cover"'
         + ' onmouseenter="this.play()" onmouseleave="this.pause()"></video>'
-      : '<img src="' + _esc(card.cover_url) + '" alt="Cover" loading="lazy"'
+      : '<img src="' + _esc(_dbThumbUrl(card.cover_url, 600)) + '" alt="Cover" loading="lazy"'
         + ' class="w-full h-full object-cover" />';
     return (
       '<div class="relative w-full flex-shrink-0 bg-gray-100 dark:bg-zinc-800 cursor-pointer"'
@@ -6019,7 +6030,7 @@ function _dbRenderDetailPanel(card) {
     var coverMedia = isVid
       ? '<video src="' + _esc(card.cover_url) + '" controls preload="metadata"'
         + ' style="width:100%;height:20rem;object-fit:cover;display:block;"></video>'
-      : '<img src="' + _esc(card.cover_url) + '" alt="Cover"'
+      : '<img src="' + _esc(_dbThumbUrl(card.cover_url, 1200)) + '" alt="Cover"'
         + ' style="width:100%;height:20rem;object-fit:cover;display:block;"/>';
     coverHtml = '<div style="margin:-1.5rem -1.5rem 1rem -1.5rem;"'
       + ' class="relative overflow-hidden bg-gray-100 dark:bg-zinc-800">'
