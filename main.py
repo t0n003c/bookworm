@@ -341,11 +341,11 @@ async def _bud_notif_loop():
                 result = await send_push(sub_info, payload)
                 if result is None:
                     stale_eps.add(row["endpoint"])
-                else:
+                elif result:  # True = delivered; False = transient, retry next tick
                     fired_bud_ids.add(row["bud_id"])
             await mark_contact_reminder_sent(list(fired_bud_ids))
 
-            # ── Visit-day reminders ────────────────────────────────────────────
+            # ── Visit-day reminders ──────────────────────────────────────────────────
             due_visits = await get_due_bud_visit_reminders()
             fired_plan_ids: set[int] = set()
             for row in due_visits:
@@ -362,7 +362,7 @@ async def _bud_notif_loop():
                 result = await send_push(sub_info, payload)
                 if result is None:
                     stale_eps.add(row["endpoint"])
-                else:
+                elif result:  # True = delivered; False = transient, retry next tick
                     fired_plan_ids.add(row["plan_id"])
             await mark_visit_reminders_sent(list(fired_plan_ids))
 
@@ -473,8 +473,9 @@ async def _widget_notif_loop():
     while True:
         await asyncio.sleep(_INTERVAL)
         try:
-            now   = datetime.datetime.now()
-            today = datetime.date.today()
+            now      = datetime.datetime.now()
+            today    = datetime.date.today()
+            date_str = today.isoformat()   # shared by all sections below
             stale_eps: set[str] = set()
             sent_keys: list[str] = []
 
@@ -628,14 +629,12 @@ async def _widget_notif_loop():
             to_advance_recurring: list[tuple[int, int]] = []  # (reminder_id, user_id)
             to_delete_oneshot:    list[tuple[int, int]] = []  # (reminder_id, contact_id)
             crm_due = await get_due_crm_reminders_with_subs()
-            log.info("[widget-push] crm: %d due reminder(s) at %s %s",
-                     len(crm_due), date_str, now_hhmm)
+            if crm_due:
+                log.info("[widget-push] crm: %d due reminder(s) at %s %s",
+                         len(crm_due), date_str, now_hhmm)
             for row in crm_due:
                 key = row["dedup_key"]
-                already_sent = await has_widget_notif_sent(key)
-                log.info("[widget-push] crm reminder %d (%s) dedup_key=%s already_sent=%s",
-                         row["reminder_id"], row["contact_name"], key, already_sent)
-                if already_sent:
+                if await has_widget_notif_sent(key):
                     continue
                 contact  = row["contact_name"] or "Contact"
                 body     = row["label"]
@@ -652,8 +651,6 @@ async def _widget_notif_loop():
                     "data":  {"page_id": row["page_id"], "url": "/"},
                 }
                 result = await send_push(sub, payload)
-                log.info("[widget-push] crm send_push result=%s endpoint=%.60s",
-                         result, row["endpoint"])
                 if result is None:
                     stale_eps.add(row["endpoint"])
                 elif result:  # True = delivered; False = transient error, retry next tick
@@ -677,7 +674,7 @@ async def _widget_notif_loop():
             # Items live in home_widgets.config_json, not a DB table, so we
             # parse them server-side and use _rem_is_occurrence() to check
             # whether today is a valid firing day for recurring items.
-            today_str = today.isoformat()
+            today_str = date_str  # alias kept for _rem_is_occurrence() calls below
             for row in await get_reminder_widgets_with_subs():
                 for item in row["items"]:
                     item_time = (item.get("time") or "").strip()

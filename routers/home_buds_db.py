@@ -429,7 +429,7 @@ async def get_due_bud_contact_reminders() -> list[dict]:
                    ps.endpoint, ps.p256dh, ps.auth
             FROM   buds b
             JOIN   push_subscriptions ps ON ps.user_id = b.user_id
-            WHERE  b.contact_reminder_time = ?
+            WHERE  b.contact_reminder_time <= ?
               AND  (b.contact_reminder_last_sent IS NULL
                    OR b.contact_reminder_last_sent != ?)
               AND  julianday(?) - julianday(b.health_updated_at) >= b.see_every_days
