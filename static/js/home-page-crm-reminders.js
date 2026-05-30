@@ -69,7 +69,9 @@ async function _checkCrmReminders() {
     var items = await _crmFetch('/home/crm-reminders/due?date=' + today);
     if (!Array.isArray(items)) return;
     items.forEach(function(item) {
-      if (item.reminder_time !== hhmm) return;
+      // Fire if the reminder time has arrived or passed today (not just exact minute).
+      // _crmRemFired dedup prevents repeat toasts within the same tab session.
+      if (item.reminder_time > hhmm) return;
       var key = item.id + '-' + today;
       if (_crmRemFired[key]) return;
       _crmRemFired[key] = true;
@@ -80,9 +82,12 @@ async function _checkCrmReminders() {
       if (typeof _showReminderToast === 'function') _showReminderToast('🔔 ' + toastText);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
         new Notification('🔔 CRM Reminder', { body: toastText, icon: '/static/favicon.ico' });
-      // Advance recurring reminders to their next occurrence
+      // Advance recurring reminders; delete one-shot reminders after they fire.
       if (rec !== 'none' && item.page_id && item.contact_id) {
         fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/advance',
+          { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+      } else if (rec === 'none' && item.page_id && item.contact_id) {
+        fetch('/home/crm/' + item.page_id + '/contacts/' + item.contact_id + '/reminders/' + item.id + '/delete',
           { method: 'POST', credentials: 'same-origin' }).catch(function() {});
       }
     });

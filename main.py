@@ -466,7 +466,7 @@ async def _widget_notif_loop():
         get_due_crm_reminders_with_subs, get_reminder_widgets_with_subs,
         has_widget_notif_sent, mark_widget_notifs_sent, cleanup_old_widget_notifs,
     )
-    from routers.home_crm_db import advance_crm_reminder
+    from routers.home_crm_db import advance_crm_reminder, delete_contact_reminder
     from routers.home_subscriptions_db import get_due_subscription_reminders
     from routers.home_trip_db import get_due_trip_reminders, get_due_panel_reminders
     _INTERVAL = 60
@@ -626,6 +626,7 @@ async def _widget_notif_loop():
             # the tab is closed.  Recurring reminders are advanced to their
             # next date so they re-queue automatically.
             to_advance_recurring: list[tuple[int, int]] = []  # (reminder_id, user_id)
+            to_delete_oneshot:    list[tuple[int, int]] = []  # (reminder_id, contact_id)
             for row in await get_due_crm_reminders_with_subs():
                 key = row["dedup_key"]
                 if await has_widget_notif_sent(key):
@@ -653,8 +654,16 @@ async def _widget_notif_loop():
                         to_advance_recurring.append(
                             (row["reminder_id"], row["user_id"])
                         )
+                    else:
+                        # One-time reminder fired — delete it so it leaves the
+                        # upcoming list and doesn't re-trigger on the next tick.
+                        to_delete_oneshot.append(
+                            (row["reminder_id"], row["contact_id"])
+                        )
             for rem_id, uid in to_advance_recurring:
                 await advance_crm_reminder(rem_id, uid)
+            for rem_id, contact_id in to_delete_oneshot:
+                await delete_contact_reminder(rem_id, contact_id)
 
             # ── Home Reminder widget items ─────────────────────────────────
             # Items live in home_widgets.config_json, not a DB table, so we

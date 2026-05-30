@@ -810,8 +810,10 @@ async def crm_upcoming_reminders(request: Request, page_id: int):
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        today = datetime.date.today().isoformat()
-        return JSONResponse(await get_upcoming_crm_reminders(page_id, uid, today))
+        now   = datetime.datetime.now()
+        today = now.date().isoformat()
+        hhmm  = now.strftime("%H:%M")
+        return JSONResponse(await get_upcoming_crm_reminders(page_id, uid, today, hhmm))
     except PermissionError:
         return _err("not logged in", 401)
     except Exception as e:

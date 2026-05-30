@@ -542,17 +542,26 @@ async def get_due_crm_reminders(user_id: int, date_str: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def get_upcoming_crm_reminders(page_id: int, user_id: int, from_date: str) -> list[dict]:
-    """Return all upcoming reminders for a CRM page (team-scoped — no user filter)."""
+async def get_upcoming_crm_reminders(page_id: int, user_id: int, from_date: str, from_time: str = "00:00") -> list[dict]:
+    """Return upcoming reminders for a CRM page.
+
+    Excludes reminders whose scheduled moment has already passed:
+    - Any row whose date is strictly before today, OR
+    - Any row whose date is today but whose time is already in the past.
+
+    ``from_time`` should be the caller's current HH:MM so the panel
+    doesn't keep showing reminders that already fired today.
+    """
     async with get_db() as db:
         cur = await db.execute(
             "SELECT r.id, r.contact_id, c.name AS contact_name,"
             " r.field_id, r.label, r.message, r.recurrence, r.reminder_date, r.reminder_time"
             " FROM crm_contact_reminders r"
             " JOIN crm_contacts c ON c.id = r.contact_id"
-            " WHERE c.page_id=? AND r.reminder_date>=?"
+            " WHERE c.page_id=?"
+            " AND (r.reminder_date > ? OR (r.reminder_date = ? AND r.reminder_time >= ?))"
             " ORDER BY r.reminder_date, r.reminder_time",
-            (page_id, from_date),
+            (page_id, from_date, from_date, from_time),
         )
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
