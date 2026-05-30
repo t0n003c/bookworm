@@ -28,8 +28,9 @@
     /* 1. Release the fixed-height viewport cage */
     #trip-page-root         { height: auto !important; overflow: visible !important; }
 
-    /* 2. Tab/control bar: sticky so it stays reachable while scrolling */
-    #trip-topbar            { position: sticky; top: 0; z-index: 30;
+    /* 2. Tab/control bar: sticky so it stays reachable while scrolling.
+          z-index must be below the mobile sidebar (23) and its backdrop (22). */
+    #trip-topbar            { position: sticky; top: 0; z-index: 12;
                               background: #fff; }
     .dark #trip-topbar      { background: #09090b; }   /* zinc-950 */
 
@@ -91,7 +92,7 @@
       position: sticky;
       /* Fall back to 2.75 rem if JS hasn't measured the real topbar height yet. */
       top: var(--bw-trip-topbar-h, 2.75rem);
-      z-index: 29;
+      z-index: 11;
       /* Explicit bg so day cards don't bleed through when scrolling. */
       background: #f9fafb;
     }
@@ -102,7 +103,7 @@
     #trip-filter-bar {
       position: sticky;
       top: var(--bw-trip-topbar-h, 2.75rem);
-      z-index: 29;
+      z-index: 11;
       background: #f9fafb;
     }
     .dark #trip-filter-bar { background: #09090b; }
@@ -111,7 +112,7 @@
       position: sticky;
       /* Sits below topbar + filter bar; falls back if either var is unset. */
       top: calc(var(--bw-trip-topbar-h, 2.75rem) + var(--bw-trip-filter-bar-h, 2.5rem));
-      z-index: 28;
+      z-index: 10;
       background: #f9fafb;
     }
     .dark #trip-assign-drawer { background: #09090b; }
