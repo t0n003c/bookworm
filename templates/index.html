@@ -3996,18 +3996,23 @@
         border-top-color: #3f3f46;
       }
 
-      /* L: sidebar nav (160px) + one section at a time */
+      /* L: sidebar nav (160px) + one section at a time, both columns scrollable */
       #account-modal-body.acct-sz-l {
-        display:grid; grid-template-columns:160px 1fr; max-height:72vh;
+        display:grid; grid-template-columns:160px 1fr;
+        grid-template-rows:1fr;
+        height:72vh; max-height:72vh;
       }
       #account-modal-body.acct-sz-l #acct-l-sidenav {
         display:flex !important; flex-direction:column;
         grid-column:1; grid-row:1;
+        min-height:0; overflow-y:auto;
       }
       #account-modal-body.acct-sz-l #acct-s1,
       #account-modal-body.acct-sz-l #acct-s2,
       #account-modal-body.acct-sz-l #acct-s3 {
-        grid-column:2; grid-row:1; overflow-y:auto; border-top:none;
+        grid-column:2; grid-row:1;
+        min-height:0; overflow-y:auto;
+        border-top:none;
       }
       /* Profile card hidden in L — sidenav shows it instead */
       #account-modal-body.acct-sz-l #acct-inline-profile { display:none; }
