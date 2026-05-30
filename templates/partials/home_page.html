@@ -198,6 +198,22 @@
 </label>
 {% endmacro %}
 
+{# ── Background visibility toggle — same style as _fmt_sel ─────────────── #}
+{% macro _bg_sel(w) %}
+{%- set cur_bg = w.config.get('card_bg', '') -%}
+<label class="flex items-center justify-between text-xs select-none gap-3">
+  <span class="text-gray-500 dark:text-zinc-400">Background</span>
+  <select data-cfg-key="card_bg"
+          onchange="saveClockSetting({{ w.id }}, 'card_bg', this.value)"
+          class="text-xs border border-gray-200 dark:border-zinc-700 rounded-md
+                 px-1.5 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                 focus:outline-none focus:ring-1 focus:ring-wblue">
+    <option value=""  {{ 'selected' if cur_bg != '0' }}>With background</option>
+    <option value="0" {{ 'selected' if cur_bg == '0' }}>No background</option>
+  </select>
+</label>
+{% endmacro %}
+
 {# ══════════════════════════════════════════════════════════════════════
    CLOCK
    ══════════════════════════════════════════════════════════════════════ #}
@@ -281,6 +297,7 @@
   {{ _tog(w, 'show_date',     'Show date',     _dflt) }}
   {{ _tog(w, 'show_greeting', 'Show greeting', _dflt) }}
   {{ _tz_sel(w, tz) }}
+  {{ _bg_sel(w) }}
 </div>
 {% endmacro %}
 
