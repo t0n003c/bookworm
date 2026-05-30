@@ -700,7 +700,6 @@ async def _widget_notif_loop():
             log.exception("[widget-push] loop error")
 
 
-@asynccontextmanager
 async def _prewarm_thumbs() -> None:
     """Generate 400-px and 800-px WebP thumbnails for all existing image uploads.
 
