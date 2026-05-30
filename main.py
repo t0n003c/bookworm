@@ -1,5 +1,6 @@
 """BookWorm — Team Note Taking App (FastAPI + HTMX + Tailwind + SQLite)."""
 import asyncio
+import hashlib
 import os
 import re
 from contextlib import asynccontextmanager
@@ -683,8 +684,14 @@ async def _widget_notif_loop():
                         continue  # not yet
                     if not _rem_is_occurrence(item, today_str):
                         continue  # wrong day
-                    # Stable key: widget + date + time + text hash
-                    text_hash = abs(hash(item.get("text", "") + item_time)) % 0xFFFFFF
+                    # Stable dedup key: widget + date + time + sha256(text+time)[:8]
+                    # sha256 is deterministic across restarts and workers;
+                    # hash() must NOT be used here (PYTHONHASHSEED randomises it
+                    # per-process, so every restart produces a new key and the
+                    # notification re-fires as if it had never been sent).
+                    text_hash = hashlib.sha256(
+                        (item.get("text", "") + item_time).encode()
+                    ).hexdigest()[:8]
                     key = f"hwrem:{row['widget_id']}:{today_str}:{item_time}:{text_hash}"
                     if await has_widget_notif_sent(key):
                         continue

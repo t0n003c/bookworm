@@ -1130,8 +1130,11 @@ function _checkReminderNotifications() {
         _showReminderToast(item.text);
         // Track in missed-reminder log so the bell badge reflects it
         _remLogMissed(item.text, item.time);
-        // also try browser notification if permission already granted
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+        // Only fire a browser/SW notification when push is NOT active.
+        // When push IS subscribed the server loop sends the push already,
+        // so firing here too would double-notify at the exact minute.
+        var pushActive = document.getElementById('bw-push-btn')?.dataset?.active === '1';
+        if (!pushActive && typeof Notification !== 'undefined' && Notification.permission === 'granted')
           _showBrowserNotif('\uD83D\uDD14 Reminder', item.text);
       }
     });
