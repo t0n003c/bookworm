@@ -238,11 +238,16 @@ function _gridRenderCell(cell) {
 
 function _gridRenderCellInner(cell) {
     if (cell.cell_type === 'image' && cell.file_url) {
-        // Click opens lightbox; draggable=false prevents ghost drag from img itself
-        return '<img src="' + _gridEsc(cell.file_url) + '"'
+        // Prefer the width-capped thumbnail for grid cells — much lighter than full-res.
+        // Falls back to full file URL via data-full-src if thumb fails (onerror guard).
+        // Lightbox still opens the full-res file (see gridLightboxOpen — uses cell.file_url).
+        var imgSrc = cell.thumb_url || cell.file_url;
+        return '<img src="' + _gridEsc(imgSrc) + '"'
              + ' class="w-full h-full object-cover cursor-pointer" loading="lazy" decoding="async"'
              + ' alt="' + _gridEsc(cell.caption || '') + '"'
              + ' draggable="false"'
+             + ' data-full-src="' + _gridEsc(cell.file_url) + '"'
+             + ' onerror="if(this.src!==this.dataset.fullSrc)this.src=this.dataset.fullSrc"'
              + ' onclick="if(typeof _msActive!==\'undefined\'&&_msActive){_msToggle(' + cell.id + ')}else{gridLightboxOpen(' + cell.id + ')}">';
     }
     if (cell.cell_type === 'video' && cell.file_url) {

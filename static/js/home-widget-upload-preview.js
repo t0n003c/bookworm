@@ -148,8 +148,12 @@ function _uplThumbHtml(file, style, sizeClass) {
 
         // ── Image: thumbnail + hover gradient + popup on click ────────────────
         if (icon === null) {
-            // Image: keep the thumbnail but add a hover overlay + popup on click
+            // Image: keep the thumbnail but add a hover overlay + popup on click.
+            // onerror falls back to the full-res URL if the thumb fails (mirrors _uplCard).
+            var fullUrl = '/uploads/' + _uplEsc(file.filename);
             inner = '<img src="' + url + '" alt="' + name + '" loading="lazy" decoding="async"'
+                + ' data-full-src="' + fullUrl + '"'
+                + ' onerror="if(this.src!==this.dataset.fullSrc)this.src=this.dataset.fullSrc"'
                 + ' class="w-full h-full object-cover pointer-events-none">'
                 + '<div class="absolute inset-0 flex items-end justify-center pb-1.5'
                 + ' opacity-0 hover:opacity-100 bg-gradient-to-t from-black/50 to-transparent'

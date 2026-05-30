@@ -18,6 +18,9 @@ async def get_grid_cells(page_id: int) -> list[dict]:
                    CASE WHEN pu.filename IS NOT NULL
                         THEN '/uploads/' || pu.filename
                         ELSE NULL END AS file_url,
+                   CASE WHEN pu.filename IS NOT NULL AND pu.mime_type LIKE 'image/%'
+                        THEN '/uploads/thumb/' || pu.filename || '?w=400'
+                        ELSE NULL END AS thumb_url,
                    pu.mime_type,
                    pu.original_name,
                    pu.page_id AS uploads_page_id
