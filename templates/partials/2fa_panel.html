@@ -10,8 +10,7 @@
   .qr-dir-right    { display:none; }
   .qr-dir-below    { display:inline; }
 
-  /* M/L: CSS Grid — text left | QR right (spans both rows)
-     max-content: text column only as wide as its words → QR stays close */
+  /* M/L on a real wide viewport: CSS Grid — text left | QR right (spans both rows) */
   #account-modal-body.acct-sz-m .qr-setup-layout,
   #account-modal-body.acct-sz-l .qr-setup-layout {
     display:grid;
@@ -36,6 +35,30 @@
   #account-modal-body.acct-sz-l .qr-dir-right { display:inline; }
   #account-modal-body.acct-sz-m .qr-dir-below,
   #account-modal-body.acct-sz-l .qr-dir-below { display:none; }
+
+  /* ── Mobile override: on narrow phones the modal is full-width and the
+     side-by-side grid doesn’t fit. Force stacked layout regardless of
+     which size the user picked (M or L) so the QR is always visible. */
+  @media (max-width: 639px) {
+    #account-modal-body.acct-sz-m .qr-setup-layout,
+    #account-modal-body.acct-sz-l .qr-setup-layout {
+      display:flex; flex-direction:column; gap:0.75rem;
+    }
+    #account-modal-body.acct-sz-m .qr-code-box,
+    #account-modal-body.acct-sz-l .qr-code-box {
+      justify-content:center;
+    }
+    #account-modal-body.acct-sz-m .qr-steps,
+    #account-modal-body.acct-sz-l .qr-steps,
+    #account-modal-body.acct-sz-m .qr-actions,
+    #account-modal-body.acct-sz-l .qr-actions {
+      grid-column: unset; grid-row: unset;
+    }
+    #account-modal-body.acct-sz-m .qr-dir-right,
+    #account-modal-body.acct-sz-l .qr-dir-right { display:none; }
+    #account-modal-body.acct-sz-m .qr-dir-below,
+    #account-modal-body.acct-sz-l .qr-dir-below { display:inline; }
+  }
 </style>
 
 <div id="2fa-panel">
@@ -112,11 +135,8 @@
     </span>
   </div>
 
-  {# ── Responsive QR layout ──────────────────────────────────────
-     S  → stacked column  (steps → QR centered → actions)
-     M/L → CSS Grid       (steps top-left | QR right spanning rows | actions bottom-left)
-     Layout is driven by .acct-sz-* on the ancestor #account-modal-body (see <style> block).
-  ── #}
+  {# Responsive QR layout: S=stacked column, M/L=CSS Grid (steps left, QR right) #}
+  {# Layout driven by .acct-sz-* on ancestor #account-modal-body (see style block above) #}
   <div class="qr-setup-layout">
 
     {# ① Steps list #}
