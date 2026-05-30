@@ -46,6 +46,16 @@ from templates_env import templates
 log = logging.getLogger(__name__)
 router = APIRouter()
 
+# Log the effective WebAuthn config at import time so it's visible in server
+# logs on startup — makes proxy/origin mismatches trivial to diagnose.
+_startup_bw_https  = os.getenv("BW_HTTPS", "false")
+_startup_wa_origin = os.getenv("BW_WEBAUTHN_ORIGIN", "(auto-detect)")
+_startup_wa_rp_id  = os.getenv("BW_WEBAUTHN_RP_ID",  "(auto-detect)")
+log.warning(
+    "WebAuthn config — BW_HTTPS=%s  RP_ID=%s  ORIGIN=%s",
+    _startup_bw_https, _startup_wa_rp_id, _startup_wa_origin,
+)
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

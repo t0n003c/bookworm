@@ -82,6 +82,14 @@ services:
       # Short-lived WOPI access token lifetime in seconds (default: 1 hour).
       BW_WOPI_TOKEN_EXPIRY: ${BW_WOPI_TOKEN_EXPIRY:-3600}
 
+      # ── Biometric / Passkey (WebAuthn) ────────────────────────────────────
+      # Required when running behind a TLS proxy (Caddy, nginx, Cloudflare, etc.)
+      # Set BW_HTTPS=true above, then these override the auto-detected origin.
+      # RP ID  = bare domain,       e.g. note.toramochie.com
+      # Origin = full browser URL,  e.g. https://note.toramochie.com
+      BW_WEBAUTHN_RP_ID: ${BW_WEBAUTHN_RP_ID:-}
+      BW_WEBAUTHN_ORIGIN: ${BW_WEBAUTHN_ORIGIN:-}
+
       # ── Uvicorn workers ────────────────────────────────────────────────────
       # Keep at 1 for SQLite (safe default). Max ~4 with WAL mode.
       # NOTE: each worker runs its own background demo-purge loop — that is
