@@ -590,3 +590,15 @@ async function _crmPanelDelete(reminderIdStr) {
     alert('Could not delete: ' + e.message);
   }
 }
+
+// ── Global auto-start ─────────────────────────────────────────────────────────
+// Start the reminder poll as soon as this script loads — not just when the CRM
+// page is visited.  _crmFetch and _showReminderToast are both loaded globally
+// via base.html so the poll works correctly on every Homespace page.
+// initCrmPage() calls initCrmRemindersPolling() too; that's fine — it just
+// resets the interval (idempotent via the HTMX guard inside the function).
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initCrmRemindersPolling);
+} else {
+  initCrmRemindersPolling();
+}
