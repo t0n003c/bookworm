@@ -1197,9 +1197,12 @@ var _ADDR_NOISE_RE = /\b(county|parish|borough|township|census area|municipio)\b
 function _crmAddrFormat(raw) {
   var s = raw;
   _ADDR_DIRS.forEach(function(pair) { s = s.replace(pair[0], pair[1]); });
-  return s.split(', ')
-    .filter(function(p) { return !_ADDR_NOISE_RE.test(p); })
-    .join(', ');
+  var parts = s.split(', ').filter(function(p) { return !_ADDR_NOISE_RE.test(p); });
+  // Nominatim sometimes emits "123, Main Street, …" — join house number to road with a space.
+  if (parts.length >= 2 && /^\d+[A-Za-z]?$/.test(parts[0])) {
+    parts.splice(0, 2, parts[0] + ' ' + parts[1]);
+  }
+  return parts.join(', ');
 }
 
 function _crmAddrInput(inp) {
