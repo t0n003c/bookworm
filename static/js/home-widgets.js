@@ -2468,13 +2468,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Reapply the mobile column cap whenever the viewport resizes
   // (e.g. phone rotates landscape, or DevTools is resized).
-  // Debounced at 150ms so we don’t thrash the style on every pixel.
+  // Debounced at 150ms so we don't thrash the style on every pixel.
+  //
+  // IMPORTANT — keyboard guard:
+  // On mobile, when the on-screen keyboard opens the browser fires a
+  // resize event because the visual viewport height shrinks.  If we run
+  // _applyMobileWidgetOrder() at that moment it calls grid.appendChild()
+  // to re-order widget cards, which moves the DOM node containing the
+  // focused input and causes the browser to immediately blur it —
+  // collapsing the keyboard before the user can type a single character.
+  //
+  // We guard against this in two ways:
+  //   1. Skip if document.activeElement is a text-entry element (keyboard
+  //      is currently open or opening).
+  //   2. Only re-order when the viewport WIDTH changes; a keyboard open/
+  //      close only changes the HEIGHT, so a width-stable resize is safely
+  //      ignored by _applyMobileWidgetOrder (column layout can't change).
   var _colCapTimer;
+  var _lastResizeW = window.innerWidth;
   window.addEventListener('resize', function() {
     clearTimeout(_colCapTimer);
     _colCapTimer = setTimeout(function() {
+      // Skip if the user has a text-entry element focused (keyboard is open).
+      var ae = document.activeElement;
+      var keyboardOpen = ae && (
+        ae.tagName === 'INPUT' ||
+        ae.tagName === 'TEXTAREA' ||
+        ae.isContentEditable
+      );
+      if (keyboardOpen) return;
+
+      var newW = window.innerWidth;
+      var widthChanged = (newW !== _lastResizeW);
+      _lastResizeW = newW;
+
       _applyWidgetGridColCap();
-      _applyMobileWidgetOrder();
+      // Only re-order DOM nodes when the width actually changed.
+      // A height-only change means the keyboard toggled — DOM re-parenting
+      // here would blur any focused input and close the keyboard.
+      if (widthChanged) _applyMobileWidgetOrder();
     }, 150);
   });
 
