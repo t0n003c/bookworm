@@ -2129,6 +2129,50 @@ function _initDnD(grid, pageId) {
     if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
   }
 
+  // ── Drop indicator line ────────────────────────────────────────────────────
+  // A fixed-position blue bar that sits at the top/bottom edge of the card
+  // the dragged widget will land next to. Fixed-position keeps it immune to
+  // the grid's overflow and z-stacking; pointer-events:none means it never
+  // interferes with dragover hit-testing.
+  const _ind = (function () {
+    const el = document.createElement('div');
+    el.id = 'hw-drop-indicator';
+    el.style.cssText = [
+      'position:fixed',
+      'pointer-events:none',
+      'z-index:9999',
+      'height:3px',
+      'border-radius:2px',
+      'background:#0053e2',
+      'box-shadow:0 0 6px 1px rgba(0,83,226,0.45)',
+      'display:none',
+      'transition:top 80ms ease,left 80ms ease,width 80ms ease',
+    ].join(';');
+    document.body.appendChild(el);
+    return el;
+  }());
+
+  let _indTarget = null;  // last card the indicator was shown for
+  let _indSide   = null;  // 'before' | 'after'
+
+  function _showDropIndicator(targetCard, side) {
+    if (targetCard === _indTarget && side === _indSide) return;  // no-op if unchanged
+    _indTarget = targetCard;
+    _indSide   = side;
+    const r = targetCard.getBoundingClientRect();
+    const GAP = 4;  // px offset so the line sits in the gap, not on the card border
+    _ind.style.left  = r.left  + 'px';
+    _ind.style.width = r.width + 'px';
+    _ind.style.top   = (side === 'before' ? r.top - GAP : r.bottom - GAP) + 'px';
+    _ind.style.display = 'block';
+  }
+
+  function _hideDropIndicator() {
+    _ind.style.display = 'none';
+    _indTarget = null;
+    _indSide   = null;
+  }
+
   function _edgeScroll() {
     const scroller = document.getElementById('main-content');
     if (!scroller) return;
@@ -2213,6 +2257,7 @@ function _initDnD(grid, pageId) {
     _holdStack = false;
     _cancelScroll();
     _clearStackDropHighlight();
+    _hideDropIndicator();
   });
   grid.addEventListener('dragover', e => {
     e.preventDefault();
@@ -2236,12 +2281,38 @@ function _initDnD(grid, pageId) {
       } else {
         _clearStackDropHighlight();
       }
+      _hideDropIndicator();  // no line indicator during stack gesture
+      return;
+    }
+    // Normal reorder: show the blue drop-indicator line at the edge of the
+    // target card that matches the actual insertion point the drop handler uses.
+    if (_dragSrc) {
+      let hovCard = e.target.closest('.hw-card');
+      if (hovCard && hovCard.closest('.stack-slide')) {
+        hovCard = hovCard.closest('.hw-card[data-widget-type="stack"]') || hovCard;
+      }
+      if (hovCard && hovCard !== _dragSrc) {
+        const cards = [...grid.querySelectorAll(':scope > .hw-card')];
+        const si    = cards.indexOf(_dragSrc);
+        const ti    = cards.indexOf(hovCard);
+        if (si >= 0 && ti >= 0) {
+          // Mirror the exact insertion logic in the drop handler:
+          // si < ti → card goes AFTER target → indicator at bottom
+          // si >= ti → card goes BEFORE target → indicator at top
+          _showDropIndicator(hovCard, si < ti ? 'after' : 'before');
+        } else {
+          _hideDropIndicator();
+        }
+      } else if (!hovCard || hovCard === _dragSrc) {
+        _hideDropIndicator();
+      }
     }
   });
   grid.addEventListener('drop', async e => {
     e.preventDefault();
     _cancelScroll();
     _clearStackDropHighlight();
+    _hideDropIndicator();
     if (!_dragSrc) return;
 
     let target = e.target.closest('.hw-card');
