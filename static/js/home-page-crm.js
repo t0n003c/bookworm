@@ -456,10 +456,16 @@ function _crmFieldDisplay(f, c) {
   if (f.field_type === 'reminder') {
     try {
       var ro = JSON.parse(raw);
-      if (!ro.date) return '—';
-      var rd = ro.date + (ro.time ? ' ' + ro.time : '');
-      return '🔔 ' + _crmEsc(rd);
-    } catch { return raw ? '🔔 ' + _crmEsc(raw) : '—'; }
+      if (!ro.date) return '\u2014';
+      var dp = ro.date.split('-').map(Number);
+      var dt = new Date(dp[0], dp[1] - 1, dp[2]);
+      var ds = dt.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+      if (ro.time) {
+        var tp = ro.time.split(':').map(Number);
+        ds += ' \u00b7 ' + ((tp[0] % 12) || 12) + ':' + String(tp[1]).padStart(2,'0') + (tp[0] < 12 ? ' AM' : ' PM');
+      }
+      return '\ud83d\udd14 ' + _crmEsc(ds);
+    } catch { return raw ? '\ud83d\udd14 ' + _crmEsc(raw) : '\u2014'; }
   }
   return _crmEsc(raw);
 }

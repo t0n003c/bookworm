@@ -74,6 +74,30 @@ function _crmRenderDetail() {
     } else if (f.field_type === 'url' && raw) {
       display = `<a href="${_crmEsc(raw)}" target="_blank" rel="noopener"
         class="text-[#0053e2] dark:text-blue-400 hover:underline text-sm">${_crmEsc(raw)}</a>`;
+    } else if (f.field_type === 'reminder') {
+      try {
+        var ro = JSON.parse(raw);
+        if (ro.date) {
+          // Parse YYYY-MM-DD manually to avoid UTC-midnight timezone shift
+          var dp = ro.date.split('-').map(Number);
+          var dt = new Date(dp[0], dp[1] - 1, dp[2]);
+          var dateStr = dt.toLocaleDateString(undefined, { month:'long', day:'numeric', year:'numeric' });
+          var timeStr = '';
+          if (ro.time) {
+            var tp = ro.time.split(':').map(Number);
+            var h = tp[0], m = tp[1];
+            timeStr = ' \u00b7 ' + ((h % 12) || 12) + ':' + String(m).padStart(2,'0') + ' ' + (h < 12 ? 'AM' : 'PM');
+          }
+          var recLabels = {
+            none:'', daily:'Repeats daily', weekly:'Repeats weekly',
+            biweekly:'Repeats bi-weekly', monthly:'Repeats monthly', yearly:'Repeats yearly'
+          };
+          var recStr = (ro.rec && ro.rec !== 'none') ? recLabels[ro.rec] || ro.rec : '';
+          display = `<span class="font-medium">🔔 ${_crmEsc(dateStr + timeStr)}</span>`
+            + (recStr ? `<br><span class="text-xs text-[#0053e2] dark:text-blue-400">🔁 ${_crmEsc(recStr)}</span>` : '')
+            + (ro.msg ? `<br><span class="text-xs text-gray-500 dark:text-zinc-400 italic">${_crmEsc(ro.msg)}</span>` : '');
+        }
+      } catch(e) {}
     } else {
       display = _crmEsc(raw);
     }
