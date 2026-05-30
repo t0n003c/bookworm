@@ -290,6 +290,7 @@ function _gridRenderMediaFiles(files) {
             var thumb = isImg
                 ? '<img src="' + thumbUrl + '" class="w-full h-full object-cover"'
                   + ' loading="lazy" decoding="async" alt="">'
+                : '<video src="' + furl + '#t=0.5"'
                   + ' class="w-full h-full object-cover pointer-events-none"'
                   + ' aria-hidden="true"></video>'
                   + '<div class="absolute inset-0 flex items-center justify-center pointer-events-none">'
