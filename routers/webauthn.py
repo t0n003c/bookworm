@@ -54,18 +54,29 @@ def _b64url_encode(b: bytes) -> str:
 
 
 def _rp_config(request: Request) -> tuple[str, str]:
-    """Return (rp_id, origin) — checks env vars first, falls back to request."""
+    """Return (rp_id, origin) — explicit env vars win; otherwise auto-detect.
+
+    Scheme priority (highest → lowest):
+      1. BW_WEBAUTHN_ORIGIN env var  (full explicit override)
+      2. BW_HTTPS=true env var       (set this when behind a TLS proxy)
+      3. X-Forwarded-Proto header    (forwarded by the proxy)
+      4. request.url.scheme          (works for plain localhost dev)
+    """
     rp_id = os.getenv("BW_WEBAUTHN_RP_ID", "").strip()
     origin = os.getenv("BW_WEBAUTHN_ORIGIN", "").strip()
     if not rp_id:
         rp_id = request.url.hostname or "localhost"
     if not origin:
+        if os.getenv("BW_HTTPS", "false").lower() == "true":
+            scheme = "https"
+        else:
+            scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
         port = request.url.port
-        scheme = request.url.scheme
         if port and not (scheme == "http" and port == 80) and not (scheme == "https" and port == 443):
             origin = f"{scheme}://{rp_id}:{port}"
         else:
             origin = f"{scheme}://{rp_id}"
+    log.debug("WebAuthn rp_id=%s origin=%s", rp_id, origin)
     return rp_id, origin
 
 
