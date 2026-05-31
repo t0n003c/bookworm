@@ -871,7 +871,8 @@ function _crmContactModal(c) {
                 class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-                <option value="text">Text</option>
+                <option value="text">Text (multi-line)</option>
+                <option value="text_line">Text (single-line)</option>
                 <option value="number">Number</option>
                 <option value="date">Date</option>
                 <option value="url">URL</option>
