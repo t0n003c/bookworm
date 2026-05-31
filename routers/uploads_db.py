@@ -305,6 +305,8 @@ async def delete_page_upload(upload_id: int, user_id: int) -> Optional[str]:
 
     Also removes any grid cells that reference this upload, so the grid page
     does not show a blank / broken cell after the file is gone.
+    Clears profile_pic on any CRM contacts that pinned this upload, so photos
+    don’t show broken images after the source file is deleted.
     Returns the stored filename for disk cleanup, or None if not found/not owned.
     """
     async with get_db() as db:
@@ -324,12 +326,49 @@ async def delete_page_upload(upload_id: int, user_id: int) -> Optional[str]:
             "DELETE FROM page_upload_tags WHERE upload_src = 'page' AND upload_id = ?",
             (upload_id,),
         )
+        # Clear profile_pic on any CRM contacts that pointed at this upload
+        await db.execute(
+            "UPDATE crm_contacts SET profile_pic = '', profile_pic_upload_id = NULL"
+            " WHERE profile_pic_upload_id = ?",
+            (upload_id,),
+        )
         await db.execute(
             "DELETE FROM page_uploads WHERE id = ? AND user_id = ?",
             (upload_id, user_id),
         )
         await db.commit()
         return row["filename"]
+
+
+async def get_user_images(
+    user_id: int, page: int = 1, search: str = ""
+) -> dict:
+    """Return paginated image files (page_uploads only) for the CRM pic picker.
+
+    Only files whose mime_type starts with 'image/' are returned.
+    Returns {files: [...], total: int, page: int, pages: int}.
+    """
+    _PIC_PAGE = 24
+    offset = (max(page, 1) - 1) * _PIC_PAGE
+    like   = f"%{search.strip()}%" if search.strip() else "%"
+    async with get_db() as db:
+        tcur = await db.execute(
+            "SELECT COUNT(*) FROM page_uploads"
+            " WHERE user_id = ? AND mime_type LIKE 'image/%' AND original_name LIKE ?",
+            (user_id, like),
+        )
+        total = (await tcur.fetchone())[0]
+        cur = await db.execute(
+            "SELECT id, filename, original_name, mime_type, size, created_at"
+            " FROM page_uploads"
+            " WHERE user_id = ? AND mime_type LIKE 'image/%' AND original_name LIKE ?"
+            " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (user_id, like, _PIC_PAGE, offset),
+        )
+        rows = await cur.fetchall()
+    files = [{**dict(r), "url": f"/uploads/{r['filename']}"} for r in rows]
+    pages = max(1, -(-total // _PIC_PAGE))
+    return {"files": files, "total": total, "page": page, "pages": pages}
 
 
 # ── Ownership checks (download endpoints) ─────────────────────────────────────

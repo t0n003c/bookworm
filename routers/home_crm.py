@@ -29,6 +29,7 @@ from routers.home_crm_db import (
     get_all_crm_reminders, get_upcoming_birthdays,
     upsert_field_reminder, clear_field_reminder,
 )
+from routers.uploads_db import get_page_upload_owned, get_user_images
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
@@ -165,6 +166,57 @@ async def upload_contact_pic(
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("upload_contact_pic contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.get("/crm/pick-images")
+async def pick_images(
+    request: Request,
+    page: int = 1,
+    search: str = "",
+):
+    """Return the user’s uploaded images for the profile photo picker.
+
+    Not scoped to a single CRM page — the user can reuse any image they’ve ever uploaded.
+    Response: {files: [...], total, page, pages}.
+    """
+    try:
+        uid = _uid(request)
+        return JSONResponse(await get_user_images(uid, page=page, search=search))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("pick_images")
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/set-pic-from-upload")
+async def set_pic_from_upload(
+    request: Request, page_id: int, contact_id: int,
+    upload_id: int = Form(...),
+):
+    """Link an existing page_upload image as the contact’s profile photo.
+
+    Stores both the URL (for rendering) and the upload_id (for referential integrity).
+    Deleting the upload will automatically clear the photo from the contact.
+    """
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        # Verify the upload is owned by this user and is an image
+        upload = await get_page_upload_owned(upload_id, uid)
+        if not upload:
+            return _err("upload not found", 404)
+        if not (upload.get("mime_type") or "").startswith("image/"):
+            return _err("selected file is not an image", 400)
+        pic_url = f"/uploads/{upload['filename']}"
+        await update_contact_pic(contact_id, page_id, uid, pic_url, upload_id=upload_id)
+        return JSONResponse({"url": pic_url})
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("set_pic_from_upload contact_id=%s", contact_id)
         return _err(str(e), 500)
 
 

@@ -656,6 +656,12 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE crm_contacts ADD COLUMN address TEXT NOT NULL DEFAULT ''"
             )
+        # profile_pic_upload_id — FK to page_uploads for referential integrity
+        # When the upload is deleted, application layer clears both this and profile_pic.
+        if "profile_pic_upload_id" not in _crm_contact_cols:
+            await db.execute(
+                "ALTER TABLE crm_contacts ADD COLUMN profile_pic_upload_id INTEGER"
+            )
 
         # ── crm_projects (pipeline projects — stages belong to a project) ────
         await db.execute("""

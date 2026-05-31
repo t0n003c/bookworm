@@ -97,13 +97,20 @@ async def update_contact(
 
 
 async def update_contact_pic(
-    contact_id: int, page_id: int, user_id: int, pic_url: str
+    contact_id: int, page_id: int, user_id: int,
+    pic_url: str, upload_id: int | None = None,
 ) -> None:
-    """Update profile_pic only — used by the dedicated upload endpoint."""
+    """Update profile_pic (and optional upload_id reference) for a contact.
+
+    upload_id should be set when the picture came from the uploads library so
+    referential integrity can be maintained when the upload is later deleted.
+    It should be None / cleared for direct (CRM-only) file uploads.
+    """
     async with get_db() as db:
         await db.execute(
-            "UPDATE crm_contacts SET profile_pic=? WHERE id=? AND page_id=? AND user_id=?",
-            (pic_url, contact_id, page_id, user_id),
+            "UPDATE crm_contacts SET profile_pic=?, profile_pic_upload_id=?"
+            " WHERE id=? AND page_id=? AND user_id=?",
+            (pic_url, upload_id, contact_id, page_id, user_id),
         )
         await db.commit()
 
