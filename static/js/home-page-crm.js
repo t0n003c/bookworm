@@ -1187,13 +1187,16 @@ function crmSyncRemVal(fid) {
 // ── Address autocomplete (Nominatim / OpenStreetMap) ─────────────────────────────
 // Free, no API key. Debounced at 400 ms, min 4 chars. Results injected into
 // #crm-addr-list as <li> elements the user can click / keyboard-navigate.
+//
+// Uses addressdetails=1 so we build the address from structured fields,
+// not the raw display_name. This gives us the house number and lets us
+// skip sub-locality noise (neighbourhood, hamlet, suburb, etc.).
 
 var _addrTimer  = null;
 var _addrActive = -1;   // index of the keyboard-highlighted suggestion
-var _addrItems  = [];   // last result set [{display_name, _fmt, ...}]
+var _addrItems  = [];   // last result set [{display_name, address, _fmt, ...}]
 
-// Cardinal direction replacements — longest compound first to avoid partial matches
-// e.g. "Northwest" must be tried before "North" and "West".
+// Cardinal direction abbreviations — longest compound first to avoid partial matches.
 var _ADDR_DIRS = [
   [/\bNorthwest\b/gi, 'NW'], [/\bNortheast\b/gi, 'NE'],
   [/\bSouthwest\b/gi, 'SW'], [/\bSoutheast\b/gi, 'SE'],
@@ -1201,19 +1204,79 @@ var _ADDR_DIRS = [
   [/\bEast\b/gi,  'E'],      [/\bWest\b/gi,  'W'],
 ];
 
-// Comma-separated segments that are administrative noise, not part of a mailing address.
-var _ADDR_NOISE_RE = /\b(county|parish|borough|township|census area|municipio)\b/i;
+// US state full-name → 2-letter abbreviation.
+var _US_STATES = {
+  'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+  'Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA',
+  'Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA',
+  'Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD',
+  'Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS',
+  'Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH',
+  'New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC',
+  'North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA',
+  'Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN',
+  'Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA',
+  'West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY',
+  'District of Columbia':'DC','Puerto Rico':'PR','Guam':'GU',
+  'American Samoa':'AS','U.S. Virgin Islands':'VI','Northern Mariana Islands':'MP',
+};
 
 /**
- * Clean a Nominatim display_name for human consumption:
- * - abbreviate compass directions (Southwest → SW, etc.)
- * - strip county / parish / borough / township segments
+ * Build a clean mailing-address string from a Nominatim item that was
+ * fetched with addressdetails=1.
+ *
+ * Output: "1321 Cullinan Street, Centerton, AR 72719"
+ * Skips: neighbourhood, hamlet, suburb, quarter, allotments — OSM
+ * sub-locality fields that are not part of a postal address.
+ *
+ * Falls back to display_name scrubbing when the structured address lacks
+ * both a road and a city (e.g. the result is just a named region).
  */
-function _crmAddrFormat(raw) {
+function _crmAddrFromDetails(item) {
+  var a = item.address || {};
+
+  // ── Street line ──────────────────────────────────────────────────────────
+  var road = a.road || a.pedestrian || a.footway || a.path || a.street || '';
+  // Abbreviate compass directions in the road name only.
+  _ADDR_DIRS.forEach(function(pair) { road = road.replace(pair[0], pair[1]); });
+  var street = a.house_number ? (a.house_number + ' ' + road) : road;
+
+  // ── City ─────────────────────────────────────────────────────────────────
+  // Deliberately skip: neighbourhood, hamlet, suburb, quarter, allotments.
+  // Those are OSM internal subdivisions, not postal cities.
+  var city = a.city || a.town || a.village || a.municipality || '';
+
+  // ── State / postcode ─────────────────────────────────────────────────────
+  var state = a.state || '';
+  var isUS  = (a.country_code || '').toLowerCase() === 'us';
+  if (isUS) state = _US_STATES[state] || state;  // "Arkansas" → "AR"
+  var zip   = a.postcode || '';
+
+  // ── Country (only for non-US results) ────────────────────────────────────
+  var country = isUS ? '' : (a.country || '');
+
+  // Fallback: not enough structured data — scrub the display_name instead.
+  if (!street && !city) return _crmAddrFormatDisplay(item.display_name);
+
+  var parts = [];
+  if (street) parts.push(street);
+  if (city)   parts.push(city);
+  var stateZip = [state, zip].filter(Boolean).join(' ');
+  if (stateZip) parts.push(stateZip);
+  if (country)  parts.push(country);
+  return parts.join(', ');
+}
+
+/**
+ * Fallback formatter for display_name — used only when addressdetails
+ * didn't give us a usable road or city. Strips administrative noise
+ * (county, parish, borough, township) and joins house number to road.
+ */
+var _ADDR_NOISE_RE = /\b(county|parish|borough|township|census area|municipio)\b/i;
+function _crmAddrFormatDisplay(raw) {
   var s = raw;
   _ADDR_DIRS.forEach(function(pair) { s = s.replace(pair[0], pair[1]); });
   var parts = s.split(', ').filter(function(p) { return !_ADDR_NOISE_RE.test(p); });
-  // Nominatim sometimes emits "123, Main Street, …" — join house number to road with a space.
   if (parts.length >= 2 && /^\d+[A-Za-z]?$/.test(parts[0])) {
     parts.splice(0, 2, parts[0] + ' ' + parts[1]);
   }
@@ -1231,8 +1294,10 @@ async function _crmAddrFetch(q) {
   var list = document.getElementById('crm-addr-list');
   if (!list) return;
   try {
+    // addressdetails=1 gives us the structured address object so we can build
+    // a clean mailing address without the OSM sub-locality noise.
     var url = 'https://nominatim.openstreetmap.org/search'
-            + '?format=json&addressdetails=0&limit=6'
+            + '?format=json&addressdetails=1&limit=6'
             + '&q=' + encodeURIComponent(q);
     var res = await fetch(url, {
       headers: { 'Accept-Language': 'en', 'User-Agent': 'BookWorm-CRM/1.0' }
@@ -1240,7 +1305,7 @@ async function _crmAddrFetch(q) {
     if (!res.ok) return;
     _addrItems = await res.json();
     // Pre-format once — both the dropdown label and the picked value use _fmt.
-    _addrItems.forEach(function(item) { item._fmt = _crmAddrFormat(item.display_name); });
+    _addrItems.forEach(function(item) { item._fmt = _crmAddrFromDetails(item); });
     _addrActive = -1;
     if (!_addrItems.length) { _crmAddrHide(); return; }
     list.innerHTML = _addrItems.map(function(item, i) {
