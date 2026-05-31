@@ -284,18 +284,25 @@ window.crmRenderToolbar = function() {
   const fields = (typeof _crmFields !== 'undefined' ? _crmFields : []);
 
   // Sort: field picker only (direction is a separate select shown after picking a field)
-  const sortFieldDefs = [['', '\u2500 Sort by \u2500'], ['name', 'Name'], ['company', 'Company']];
+  const sortFieldDefs = [['', '\u2500 Sort by \u2500'], ['name', 'Name'], ['company', 'Company'], ['relationship', 'Relationship']];
   for (const f of fields)
     sortFieldDefs.push([`cf_${f.id}`, _tbEsc(f.label || ('Field ' + f.id))]);
 
   // Filter options
-  const filterDefs = [['', '\u2500 Field \u2500'], ['company', 'Company']];
+  const filterDefs = [['', '\u2500 Field \u2500'], ['company', 'Company'], ['relationship', 'Relationship']];
   for (const f of fields) filterDefs.push([`cf_${f.id}`, _tbEsc(f.label || ('Field ' + f.id))]);
 
   const filterVals = [];
   if (_crmFilterField && typeof _crmContacts !== 'undefined') {
     const seen = new Set();
     for (const c of _crmContacts) {
+      // Relationship: expand all tags in the JSON array, not just the first
+      if (_crmFilterField === 'relationship') {
+        let rv = []; try { rv = JSON.parse(c.relationship || '[]'); } catch {}
+        if (Array.isArray(rv)) { rv.forEach(x => x && seen.add(String(x))); continue; }
+        if (c.relationship) seen.add(c.relationship);
+        continue;
+      }
       const v = _crmGroupValue(c, _crmFilterField);
       try { const arr = JSON.parse(v); if (Array.isArray(arr)) { arr.forEach(x => x && seen.add(String(x))); continue; } } catch {}
       if (v) seen.add(v);
@@ -304,7 +311,7 @@ window.crmRenderToolbar = function() {
   }
 
   // Group options
-  const groupDefs = [['', 'No grouping'], ['company', 'By Company']];
+  const groupDefs = [['', 'No grouping'], ['company', 'By Company'], ['relationship', 'By Relationship']];
   for (const f of fields) groupDefs.push([`cf_${f.id}`, 'By ' + _tbEsc(f.label || ('Field ' + f.id))]);
 
   const sc = [
@@ -610,6 +617,10 @@ window.crmClearFilters   = function()  {
 window._crmGroupValue = function(c, field) {
   if (!field) return '';
   if (field === 'company') return c.company || '';
+  if (field === 'relationship') {
+    var rv = []; try { rv = JSON.parse(c.relationship || '[]'); } catch {}
+    return Array.isArray(rv) ? (rv[0] || '') : (c.relationship || '');
+  }
   if (field.startsWith('cf_')) {
     const fid = parseInt(field.replace('cf_', ''), 10);
     const raw = String((c.field_values || {})[fid] ?? '');
@@ -626,13 +637,17 @@ window._crmProcessed = function() {
   // 1. Text search
   const q = (typeof _crmQuery !== 'undefined' ? _crmQuery : '').toLowerCase();
   if (q) rows = rows.filter(c =>
-    [c.name, c.email, c.phone, c.company, c.tags].join(' ').toLowerCase().includes(q)
+    [c.name, c.email, c.phone, c.company, c.tags, c.relationship].join(' ').toLowerCase().includes(q)
   );
 
   // 2. Field filter
   if (_crmFilterField && _crmFilterValue) {
     const fv = _crmFilterValue;
     rows = rows.filter(c => {
+      if (_crmFilterField === 'relationship') {
+        let rv = []; try { rv = JSON.parse(c.relationship || '[]'); } catch {}
+        return Array.isArray(rv) ? rv.includes(fv) : (c.relationship === fv);
+      }
       if (_crmFilterField.startsWith('cf_')) {
         const fid = parseInt(_crmFilterField.replace('cf_', ''), 10);
         const raw = String((c.field_values || {})[fid] ?? '');

@@ -33,6 +33,20 @@ function _galAvatar(c, dimCls, rndCls, txtCls) {
     + '</div></div></div>';
 }
 
+function _galRelPills(c) {
+  if (!c.relationship) return '';
+  var vals = [];
+  try { vals = JSON.parse(c.relationship); } catch { vals = c.relationship ? [c.relationship] : []; }
+  if (!Array.isArray(vals)) vals = c.relationship ? [c.relationship] : [];
+  if (!vals.length) return '';
+  return '<div class="flex flex-wrap gap-1 mt-1">' +
+    vals.map(function(v) {
+      return '<span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ' +
+        'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">' +
+        _crmEsc(String(v)) + '</span>';
+    }).join('') + '</div>';
+}
+
 function _galTags(c, cv) {
   if (!cv('tags')) return '';
   return (c.tags||'').split(',').filter(Boolean).map(t =>
@@ -198,6 +212,7 @@ function _crmRenderGallery_cards(rows, cv) {
               </div>
             </div>
             ${cv('company')&&c.company ? `<p class="text-[11px] text-gray-500 dark:text-zinc-400 truncate mt-0.5">${_crmEsc(c.company)}</p>` : ''}
+            ${_galRelPills(c)}
             ${cv('email')&&c.email    ? `<a href="mailto:${_crmEsc(c.email)}" onclick="event.stopPropagation()"
               class="text-[11px] text-[#0053e2] dark:text-blue-400 truncate hover:underline block mt-0.5">
               ${_crmEsc(c.email)}</a>` : ''}

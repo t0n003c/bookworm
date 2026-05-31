@@ -525,6 +525,55 @@ function _crmContactModal(c) {
        ${cpyBtn(name)}
      </div>`;
 
+  // ── Relationship multi-select ─────────────────────────────────────────────
+  var _relVals = [];
+  try { _relVals = JSON.parse(c?.relationship || '[]'); } catch {}
+  if (!Array.isArray(_relVals)) {
+    _relVals = (c?.relationship || '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+  const _REL_OPTS = ['Friend','Family','Colleague','Mentor','Mentee',
+                     'Acquaintance','Client','Partner','Classmate','Neighbor'];
+  const _relDark   = document.documentElement.classList.contains('dark');
+  const _relSelBg  = _relDark ? 'rgba(30,64,175,0.35)' : '#dbeafe';
+  const _relSelTxt = _relDark ? '#93c5fd' : '#1e40af';
+  const relMultiSelect = [
+    `<input type="hidden" name="relationship" id="crm-rel-hidden"`,
+    `       value="${_crmEsc(JSON.stringify(_relVals))}"/>`,
+    `<div class="relative" id="crm-ms-wrap-rel">`,
+    `  <div id="crm-ms-display-rel"`,
+    `       class="min-h-[28px] flex flex-wrap gap-1 p-1.5 rounded-lg cursor-pointer`,
+    `              border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800`,
+    `              hover:border-[#0053e2] transition"`,
+    `       onclick="event.stopPropagation();crmMsToggle('rel')">`,
+    _relVals.length
+      ? _relVals.map(v =>
+          `<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium` +
+          ` bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(v)}</span>`
+        ).join('')
+      : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">\u2014 None \u2014</span>',
+    `  </div>`,
+    `  <div id="crm-ms-panel-rel"`,
+    `       class="hidden absolute z-10 w-full mt-0.5 rounded-lg border border-gray-200`,
+    `              dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg max-h-48 overflow-y-auto">`,
+    ..._REL_OPTS.map(o => {
+      const s  = _relVals.includes(o);
+      const rs = s ? `background:${_relSelBg};color:${_relSelTxt};font-weight:600` : '';
+      return [
+        `<div data-ms-val="${_crmEsc(o)}"`,
+        `  class="flex items-center gap-2 px-3 py-1.5 cursor-pointer`,
+        `         hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-sm"`,
+        `  style="${rs}"`,
+        `  onclick="event.stopPropagation();crmRelPick(this.getAttribute('data-ms-val'))">`,
+        `  <span class="ms-check w-4 text-xs font-bold leading-none"`,
+        `        style="${s ? `color:${_relSelTxt}` : 'color:transparent'}">\u2713</span>`,
+        `  ${_crmEsc(o)}`,
+        `</div>`,
+      ].join('\n');
+    }),
+    `  </div>`,
+    `</div>`,
+  ].join('\n');
+
   // Shared × delete button for custom fields
   const delFieldBtn = (fid) =>
     `<button type="button" onclick="crmModalDeleteField(${fid},${c?.id||0})"
@@ -938,7 +987,7 @@ function _crmContactModal(c) {
           </div>
           <div>
             ${flatLbl('Relationship')}
-            ${flat('relationship', c?.relationship, 'text', 'Friend, colleague…')}
+            ${relMultiSelect}
           </div>
           <div>
             ${flatLbl('Email')}
@@ -2375,6 +2424,45 @@ window.crmMsPick = function(fid, val) {
     row.style.background  = on ? selBg  : '';
     row.style.color       = on ? selTxt : '';
     row.style.fontWeight  = on ? '600'  : '';
+    var chk = row.querySelector('.ms-check');
+    if (chk) chk.style.color = on ? selTxt : 'transparent';
+  });
+};
+
+/**
+ * Toggle one relationship option (stored as JSON array in #crm-rel-hidden).
+ * Refreshes the pill display and option-row highlights.
+ */
+window.crmRelPick = function(val) {
+  var hidden  = document.getElementById('crm-rel-hidden');
+  var display = document.getElementById('crm-ms-display-rel');
+  var panel   = document.getElementById('crm-ms-panel-rel');
+  if (!hidden || !display || !panel) return;
+
+  var selected = [];
+  try { selected = JSON.parse(hidden.value); } catch {}
+  if (!Array.isArray(selected)) selected = [];
+  var idx = selected.indexOf(val);
+  if (idx >= 0) selected.splice(idx, 1); else selected.push(val);
+  hidden.value = JSON.stringify(selected);
+
+  var isDark  = document.documentElement.classList.contains('dark');
+  var selBg   = isDark ? 'rgba(30,64,175,0.35)' : '#dbeafe';
+  var selTxt  = isDark ? '#93c5fd' : '#1e40af';
+
+  display.innerHTML = selected.length
+    ? selected.map(function(v) {
+        return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium '
+          + 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
+          + _crmEsc(v) + '</span>';
+      }).join('')
+    : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">\u2014 None \u2014</span>';
+
+  panel.querySelectorAll('[data-ms-val]').forEach(function(row) {
+    var on = selected.includes(row.getAttribute('data-ms-val'));
+    row.style.background = on ? selBg  : '';
+    row.style.color      = on ? selTxt : '';
+    row.style.fontWeight = on ? '600'  : '';
     var chk = row.querySelector('.ms-check');
     if (chk) chk.style.color = on ? selTxt : 'transparent';
   });

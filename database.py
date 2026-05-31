@@ -1,6 +1,7 @@
 """Database initialization and connection management."""
 import aiosqlite
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -662,6 +663,27 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE crm_contacts ADD COLUMN profile_pic_upload_id INTEGER"
             )
+
+        # ── Migrate relationship column: free-text → JSON array ──────────────
+        # Runs once at startup; idempotent — already-valid JSON arrays are skipped.
+        _rel_rows = await (await db.execute(
+            "SELECT id, relationship FROM crm_contacts "
+            "WHERE relationship IS NOT NULL AND relationship != ''"
+        )).fetchall()
+        for _rr in _rel_rows:
+            _raw = _rr[1]
+            try:
+                _v = json.loads(_raw)
+                if isinstance(_v, list):
+                    continue        # already JSON array — nothing to do
+            except (json.JSONDecodeError, ValueError):
+                pass
+            _items = [x.strip() for x in _raw.split(',') if x.strip()]
+            await db.execute(
+                "UPDATE crm_contacts SET relationship=? WHERE id=?",
+                (json.dumps(_items), _rr[0]),
+            )
+        await db.commit()
 
         # ── crm_conversation_log table (additive) ───────────────────────────────
         await db.execute("""
