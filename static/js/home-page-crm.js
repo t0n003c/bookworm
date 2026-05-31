@@ -858,7 +858,7 @@ function _crmContactModal(c) {
           ${cfLabel(f, '', true)}
           <!-- Hidden input carries the JSON for crmSaveContact -->
           <input type="hidden" name="cf_${f.id}" id="cf_rem_val_${f.id}" value="${_crmEsc(val)}"/>
-          <div class="flex flex-col gap-2 mt-1">
+          <div class="flex flex-col gap-2 mt-1 pl-28">
             <div class="flex flex-wrap gap-3">
               <div class="flex-1 min-w-[120px]">
                 <label class="block text-[9px] font-semibold uppercase tracking-wide
