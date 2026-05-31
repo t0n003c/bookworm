@@ -506,7 +506,7 @@ async def remove_stage(request: Request, page_id: int, stage_id: int):
 
 
 @router.post("/crm/{page_id}/stages/reorder")
-async def reages_handler(request: Request, page_id: int):
+async def crm_reorder_stages(request: Request, page_id: int):
     """Body: JSON array of stage IDs in desired order."""
     try:
         uid = _uid(request)

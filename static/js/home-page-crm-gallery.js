@@ -246,12 +246,7 @@ function _crmRenderGallery_compact(rows, cv) {
           ${tags.length>3?`<span class="text-[10px] text-gray-400 dark:text-zinc-500">+${tags.length-3}</span>`:''}
         </div>`:''}
         <div class="opacity-0 group-hover:opacity-100 flex gap-0.5 flex-shrink-0 transition">
-          <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit"
-            class="w-6 h-6 rounded flex items-center justify-center text-xs text-gray-300
-                   hover:text-[#0053e2] hover:bg-blue-50 dark:hover:bg-blue-900/20 transition">✎</button>
-          <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete"
-            class="w-6 h-6 rounded flex items-center justify-center text-xs text-gray-300
-                   hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition">✕</button>
+          ${_galActionBtns(c)}
         </div>
       </div>`;
   }).join('');
@@ -321,12 +316,7 @@ function _crmRenderGallery_minimal(rows, cv) {
                style="background:hsl(${hue},55%,52%)">${_crmEsc(initial)}</div>
           <p class="font-semibold text-sm text-gray-900 dark:text-zinc-100 truncate flex-1 leading-tight">${_crmEsc(c.name||'—')}</p>
           <div class="opacity-0 group-hover:opacity-100 flex gap-0.5 flex-shrink-0 transition">
-            <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit"
-              class="w-5 h-5 rounded flex items-center justify-center text-xs
-                     text-gray-300 hover:text-[#0053e2] transition">✎</button>
-            <button onclick="event.stopPropagation();crmDeleteContact(${c.id})" title="Delete"
-              class="w-5 h-5 rounded flex items-center justify-center text-xs
-                     text-gray-300 hover:text-red-500 transition">✕</button>
+            ${_galActionBtns(c)}
           </div>
         </div>
         ${cv('company')&&c.company?`<p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">${_crmEsc(c.company)}</p>`:''}

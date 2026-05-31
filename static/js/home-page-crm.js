@@ -879,6 +879,7 @@ function _crmContactModal(c) {
                 <option value="email">Email</option>
                 <option value="select">Select</option>
                 <option value="multi_select">Multi-select</option>
+                <option value="file_links">File links</option>
                 <option value="checkbox">Checkbox</option>
                 <option value="priority">Priority ⭐</option>
                 <option value="reminder">Reminder 🔔</option>
