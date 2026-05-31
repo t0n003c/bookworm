@@ -720,9 +720,13 @@ function _crmContactModal(c) {
           onclick="event.stopPropagation();crmMsPick(${f.id},this.getAttribute('data-ms-val'))">
           <span class="ms-check w-4 text-xs font-bold leading-none"
                 style="${sel ? `color:${_msSelTxt}` : 'color:transparent'}">
-            ✓
+            \u2713
           </span>
-          ${_crmEsc(o)}
+          <span class="flex-1">${_crmEsc(o)}</span>
+          <button type="button" title="Remove this option"
+                  class="ms-del ml-auto text-gray-300 hover:text-red-500 transition
+                         text-xs font-bold leading-none px-1 flex-shrink-0"
+                  onclick="event.stopPropagation();crmMsDelete(${f.id},this)">\u00d7</button>
         </div>`;
       }).join('');
 
@@ -2388,6 +2392,42 @@ window.crmCopyField = function(btn, name) {
 };
 
 // ── Multi-select custom dropdown helpers ──────────────────────────────────────
+/**
+ * Permanently remove one option row from a 6+-option multi_select dropdown.
+ * Unchecks the backing hidden checkbox so the value is dropped on save,
+ * refreshes the pill display, then removes the row from the DOM.
+ */
+window.crmMsDelete = function(fid, btn) {
+  var row = btn.closest('[data-ms-val]');
+  if (!row) return;
+  var val = row.getAttribute('data-ms-val');
+
+  // Uncheck the hidden checkbox that FormData.getAll() reads on save
+  var checksWrap = document.getElementById('crm-ms-checks-' + fid);
+  if (checksWrap) {
+    var cb = checksWrap.querySelector('input[value="' + CSS.escape(val) + '"]');
+    if (cb) cb.checked = false;
+  }
+
+  // Rebuild display pills from what's still checked
+  var display = document.getElementById('crm-ms-display-' + fid);
+  if (display && checksWrap) {
+    var selected = Array.from(
+      checksWrap.querySelectorAll('input[type="checkbox"]:checked')
+    ).map(function(c) { return c.value; });
+    display.innerHTML = selected.length
+      ? selected.map(function(v) {
+          return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium '
+            + 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
+            + _crmEsc(v) + '</span>';
+        }).join('')
+      : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None selected —</span>';
+  }
+
+  // Remove the row itself
+  row.remove();
+};
+
 // Used by 6+ option multi_select fields rendered in _crmContactModal.
 // All state lives in the DOM (hidden sr-only checkboxes) so FormData.getAll()
 // in crmSaveContact continues to work without modification.
