@@ -182,6 +182,15 @@ function _crmRenderDetail() {
               ${c.phone ? `<span class="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400">
                 📞 ${_crmEsc(_crmPhone(c.phone))}</span>` : ''}
             </div>
+            ${c.address ? `<p class="mt-1.5">
+              <a href="https://maps.google.com/?q=${encodeURIComponent(c.address)}"
+                 target="_blank" rel="noopener"
+                 title="Open in Google Maps"
+                 class="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400
+                        hover:text-[#0053e2] dark:hover:text-blue-400 hover:underline transition">
+                📍 ${_crmEsc(c.address)}
+              </a>
+            </p>` : ''}
             ${tagHtml ? `<div class="flex flex-wrap gap-1.5 mt-3">${tagHtml}</div>` : ''}
           </div>
         </div>

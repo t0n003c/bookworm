@@ -2158,6 +2158,24 @@ function crmCloseModal() {
   if (body) body.innerHTML = '';
 }
 
+/**
+ * Smart backdrop / overlay click handler.
+ * • When the EDIT contact form is open (data-contact-id > 0) → submit & save.
+ * • When the ADD contact form is open (data-contact-id === "0") → just close
+ *   (avoids accidentally creating a blank contact on a misclick).
+ * • Any other modal → just close.
+ */
+function _crmBackdropClick() {
+  var modal = document.getElementById('crm-modal');
+  var contactId = parseInt((modal && modal.getAttribute('data-contact-id')) || '0', 10);
+  if (contactId > 0) {
+    // Edit mode — submit the form so changes are saved.
+    var form = document.getElementById('crm-contact-form');
+    if (form) { form.requestSubmit(); return; }
+  }
+  crmCloseModal();
+}
+
 function _crmSetMain(html) {
   const el = document.getElementById('crm-main');
   if (el) el.innerHTML = html;

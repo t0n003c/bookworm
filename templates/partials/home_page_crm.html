@@ -75,7 +75,7 @@
   {# ── Modal backdrop ───────────────────────────────────────────────────── #}
   <div id="crm-backdrop"
        class="hidden fixed inset-0 bg-black/40 z-40"
-       onclick="crmCloseModal()"></div>
+       onclick="_crmBackdropClick()"></div>
 
   {# ── Upcoming reminders panel (slide-in from right) ───────────────────── #}
   <div id="crm-rem-panel"
@@ -100,7 +100,7 @@
   <div id="crm-modal"
        class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
        role="dialog" aria-modal="true"
-       onclick="crmCloseModal()">
+       onclick="_crmBackdropClick()">
     <div id="crm-modal-body"
          class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
                 w-full max-w-lg border border-gray-200 dark:border-zinc-700
