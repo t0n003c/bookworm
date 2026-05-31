@@ -737,17 +737,32 @@ function _crmContactModal(c) {
           ${cfLabel(f, 'pt-0.5')}
           <div class="relative flex-1" id="crm-ms-wrap-${f.id}">
             <div id="crm-ms-display-${f.id}"
-                 class="min-h-[28px] flex flex-wrap gap-1 p-1.5 rounded-lg cursor-pointer
-                        border border-gray-200 dark:border-zinc-700
-                        bg-white dark:bg-zinc-800 hover:border-[#0053e2] transition"
+                 class="min-h-[22px] flex flex-wrap gap-1 py-1 cursor-pointer
+                        border-b border-gray-200 dark:border-zinc-700 bg-transparent
+                        hover:border-[#0053e2] transition"
                  onclick="event.stopPropagation();crmMsToggle(${f.id})">
               ${initDisplay}
             </div>
             <div id="crm-ms-panel-${f.id}"
                  class="hidden absolute z-10 w-full mt-0.5 rounded-lg
                         border border-gray-200 dark:border-zinc-700
-                        bg-white dark:bg-zinc-900 shadow-lg max-h-48 overflow-y-auto">
-              ${panelRows}
+                        bg-white dark:bg-zinc-900 shadow-lg flex flex-col max-h-48">
+              <div id="crm-ms-opts-${f.id}" class="overflow-y-auto flex-1 py-1">
+                ${panelRows}
+              </div>
+              <div class="border-t border-gray-100 dark:border-zinc-700 flex gap-2 items-center px-3 py-1.5 flex-shrink-0">
+                <input id="crm-ms-add-${f.id}" type="text" placeholder="Add option\u2026"
+                       class="flex-1 min-w-0 text-xs bg-transparent border-b border-gray-200
+                              dark:border-zinc-700 px-0 py-0.5 placeholder-gray-300
+                              dark:placeholder-zinc-600 focus:outline-none
+                              focus:border-[#0053e2] transition"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();crmMsAddOpt(${f.id})}"
+                       onclick="event.stopPropagation()"/>
+                <button type="button"
+                        class="flex-shrink-0 text-xs font-semibold text-[#0053e2]
+                               hover:text-blue-700 transition px-1"
+                        onclick="event.stopPropagation();crmMsAddOpt(${f.id})">+ Add</button>
+              </div>
             </div>
             <div id="crm-ms-checks-${f.id}" class="sr-only">${hiddenChecks}</div>
           </div>
@@ -2394,6 +2409,66 @@ window.crmCopyField = function(btn, name) {
 };
 
 // ── Multi-select custom dropdown helpers ──────────────────────────────────────
+/**
+ * Add a new option to a 6+-option multi_select dropdown for this session.
+ * Injects a row into #crm-ms-opts-{fid} and a matching hidden checkbox,
+ * then auto-selects the new value via crmMsPick.
+ */
+window.crmMsAddOpt = function(fid) {
+  var inp = document.getElementById('crm-ms-add-' + fid);
+  if (!inp) return;
+  var val = inp.value.trim();
+  if (!val) return;
+  inp.value = '';
+
+  var opts = document.getElementById('crm-ms-opts-' + fid);
+  var checksWrap = document.getElementById('crm-ms-checks-' + fid);
+  if (!opts || !checksWrap) return;
+
+  // Dedupe against existing rows
+  var already = Array.from(opts.querySelectorAll('[data-ms-val]'))
+    .some(function(el) { return el.getAttribute('data-ms-val') === val; });
+  if (already) { crmMsPick(fid, val); return; }
+
+  // Inject hidden checkbox so FormData.getAll() picks it up on save
+  var cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.name = 'cf_' + fid;
+  cb.value = val;
+  checksWrap.appendChild(cb);
+
+  // Build and append the option row (mirrors the template row structure)
+  var row = document.createElement('div');
+  row.setAttribute('data-ms-val', val);
+  row.className = 'flex items-center gap-2 px-3 py-1.5 cursor-pointer '
+    + 'hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-sm';
+  row.onclick = function(e) { e.stopPropagation(); crmMsPick(fid, this.getAttribute('data-ms-val')); };
+
+  var chk = document.createElement('span');
+  chk.className = 'ms-check w-4 text-xs font-bold leading-none';
+  chk.style.color = 'transparent';
+  chk.textContent = '\u2713';
+
+  var lbl = document.createElement('span');
+  lbl.className = 'flex-1';
+  lbl.textContent = val;
+
+  var del = document.createElement('button');
+  del.type = 'button';
+  del.title = 'Remove this option';
+  del.className = 'ms-del ml-auto text-gray-300 hover:text-red-500 transition text-xs font-bold leading-none px-1 flex-shrink-0';
+  del.textContent = '\u00d7';
+  del.onclick = function(e) { e.stopPropagation(); crmMsDelete(fid, this); };
+
+  row.appendChild(chk);
+  row.appendChild(lbl);
+  row.appendChild(del);
+  opts.appendChild(row);
+
+  // Auto-select the new value
+  crmMsPick(fid, val);
+};
+
 /**
  * Permanently remove one option row from a 6+-option multi_select dropdown.
  * Unchecks the backing hidden checkbox so the value is dropped on save,
