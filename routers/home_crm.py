@@ -34,6 +34,13 @@ from routers.uploads_db import get_page_upload_owned, get_user_images
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
+# All valid CRM custom field types — single source of truth.
+# Validated in both create_field and edit_field.
+VALID_FIELD_TYPES: frozenset[str] = frozenset({
+    "text", "text_line", "select", "url", "date", "number",
+    "email", "checkbox", "multi_select", "file_links", "priority", "reminder",
+})
+
 
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
@@ -363,8 +370,7 @@ async def create_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "text_line", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links", "priority", "reminder"}
-        if field_type not in VALID_TYPES:
+        if field_type not in VALID_FIELD_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await add_field(page_id, uid, label.strip(), field_type, options.strip())
         return JSONResponse(fields)
@@ -386,8 +392,7 @@ async def edit_field(
         uid = _uid(request)
         if not await _crm_page(page_id, uid):
             return _err("page not found", 404)
-        VALID_TYPES = {"text", "text_line", "select", "url", "date", "number", "email", "checkbox", "multi_select", "file_links", "priority", "reminder"}
-        if field_type not in VALID_TYPES:
+        if field_type not in VALID_FIELD_TYPES:
             return _err(f"invalid field_type '{field_type}'")
         fields = await update_field(field_id, page_id, uid, label.strip(),
                                     field_type, options.strip())

@@ -297,7 +297,7 @@
 
 **`crm_custom_fields`** — field definitions per CRM page
 - `id, page_id, user_id, label, field_type`, `options` (pipe-sep for select/multi_select), `sort_order, created_at`
-- `field_type` supports 9 values: `text`, `select`, `multi_select`, `checkbox`, `url`, `email`, `date`, `number`, `file_links`
+- `field_type` supports 11 values: `text`, `text_line`, `select`, `multi_select`, `checkbox`, `url`, `email`, `date`, `number`, `file_links`, `priority`, `reminder`
 
 **`crm_contact_field_values`** — per-contact custom field values
 - `id, contact_id` (→`crm_contacts` CASCADE), `field_id` (→`crm_custom_fields` CASCADE), `value`
