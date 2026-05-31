@@ -121,14 +121,16 @@ async function _crmLoadAll() {
 function _crmRender() {
   if (_crmView === 'pipeline') {
     const tb = document.getElementById('crm-toolbar');
-    if (tb) tb.innerHTML = '';
+    if (tb) tb.innerHTML = '<div class="flex items-center gap-2 px-2 py-1.5" id="crm-view-toggle"></div>';
+    _crmRenderViewToggle();
     if (typeof initCrmPipeline === 'function')
       initCrmPipeline(_crmPid, _crmStages, _crmDeals, _crmContacts, _crmProjects);
     return;
   }
   if (_crmView === 'calendar') {
     const tb = document.getElementById('crm-toolbar');
-    if (tb) tb.innerHTML = '';
+    if (tb) tb.innerHTML = '<div class="flex items-center gap-2 px-2 py-1.5" id="crm-view-toggle"></div>';
+    _crmRenderViewToggle();
     if (typeof _crmRenderCalendar === 'function') _crmRenderCalendar();
     return;
   }
