@@ -543,7 +543,7 @@ function _crmContactModal(c) {
     `  <div id="crm-ms-display-rel"`,
     `       class="min-h-[22px] flex flex-wrap gap-1 py-1 cursor-pointer`,
     `              border-b border-gray-200 dark:border-zinc-700 bg-transparent`,
-    `              hover:border-[#0053e2] transition"`,`
+    `              hover:border-[#0053e2] transition"`,
     `       onclick="event.stopPropagation();crmMsToggle('rel')">`,
     _relVals.length
       ? _relVals.map(v =>
