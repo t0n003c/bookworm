@@ -567,49 +567,84 @@ function _crmContactModal(c) {
     if (f.field_type === 'multi_select') {
       var ms = []; try { ms = JSON.parse(val); } catch {}
       const opts = (f.options||'').split('|').filter(Boolean);
-      const pills = opts.length
-        ? opts.map(o =>
-            `<label class="cursor-pointer">
-               <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
-                      ${ms.includes(o)?'checked':''} class="sr-only peer"/>
-               <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
-                            bg-gray-100 dark:bg-zinc-800
-                            text-gray-500 dark:text-zinc-400
-                            peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
-                            peer-checked:font-medium">
-                 ${_crmEsc(o)}
-               </span>
-             </label>`).join('')
-        : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
+      if (!opts.length) {
+        return wrapDrag(f.id,
+          `<div class="flex items-start gap-2">
+            ${cfLabel(f, 'pt-0.5')}
+            <span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>
+          </div>`);
+      }
+      const pillItems = opts.map(o =>
+        `<label class="cursor-pointer">
+           <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
+                  ${ms.includes(o)?'checked':''} class="sr-only peer"/>
+           <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                        bg-gray-100 dark:bg-zinc-800
+                        text-gray-500 dark:text-zinc-400
+                        peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                        peer-checked:font-medium">
+             ${_crmEsc(o)}
+           </span>
+         </label>`).join('');
+      // > 5 options: scroll the pill list instead of letting it sprawl
+      const pillWrap = opts.length > 5
+        ? `<div class="max-h-28 overflow-y-auto flex flex-wrap gap-1.5 p-1.5
+                      rounded-lg border border-gray-200 dark:border-zinc-700
+                      bg-white dark:bg-zinc-800">${pillItems}</div>`
+        : `<div class="flex flex-wrap gap-1.5">${pillItems}</div>`;
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
           ${cfLabel(f, 'pt-0.5')}
-          <div class="flex flex-wrap gap-1.5">${pills}</div>
+          ${pillWrap}
         </div>`);
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
-      const pills = opts.length
-        ? `<label class="cursor-pointer">
-             <input type="radio" name="cf_${f.id}" value="" ${!val?'checked':''} class="sr-only peer"/>
+      if (!opts.length) {
+        return wrapDrag(f.id,
+          `<div class="flex items-start gap-2">
+            ${cfLabel(f, 'pt-0.5')}
+            <span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>
+          </div>`);
+      }
+      // > 5 options → native dropdown (cleaner than a wall of pills)
+      if (opts.length > 5) {
+        const ddOpts = `<option value="">— None —</option>` +
+          opts.map(o =>
+            `<option value="${_crmEsc(o)}" ${o===val?'selected':''}>${_crmEsc(o)}</option>`
+          ).join('');
+        return wrapDrag(f.id,
+          `<div class="flex items-center gap-2">
+            ${cfLabel(f)}
+            <select name="cf_${f.id}"
+              class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1
+                     text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-200
+                     focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+              ${ddOpts}
+            </select>
+          </div>`);
+      }
+      // ≤5 options → keep the pill / radio UI
+      const pills =
+        `<label class="cursor-pointer">
+           <input type="radio" name="cf_${f.id}" value="" ${!val?'checked':''} class="sr-only peer"/>
+           <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                        bg-gray-100 dark:bg-zinc-800
+                        text-gray-500 dark:text-zinc-400
+                        peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                        peer-checked:font-medium">None</span>
+         </label>` +
+        opts.map(o =>
+          `<label class="cursor-pointer">
+             <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
+                    ${o===val?'checked':''} class="sr-only peer"/>
              <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
                           bg-gray-100 dark:bg-zinc-800
                           text-gray-500 dark:text-zinc-400
                           peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
-                          peer-checked:font-medium">None</span>
-           </label>` +
-          opts.map(o =>
-            `<label class="cursor-pointer">
-               <input type="radio" name="cf_${f.id}" value="${_crmEsc(o)}"
-                      ${o===val?'checked':''} class="sr-only peer"/>
-               <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
-                            bg-gray-100 dark:bg-zinc-800
-                            text-gray-500 dark:text-zinc-400
-                            peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
-                            peer-checked:font-medium">
-                 ${_crmEsc(o)}
-               </span>
-             </label>`).join('')
-        : `<span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>`;
+                          peer-checked:font-medium">
+               ${_crmEsc(o)}
+             </span>
+           </label>`).join('');
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
           ${cfLabel(f, 'pt-0.5')}
@@ -871,8 +906,8 @@ function _crmContactModal(c) {
                 class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5
                        text-xs bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
                        focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
-                <option value="text">Text (multi-line)</option>
                 <option value="text_line">Text (single-line)</option>
+                <option value="text">Text (multi-line)</option>
                 <option value="number">Number</option>
                 <option value="date">Date</option>
                 <option value="url">URL</option>
