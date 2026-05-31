@@ -40,11 +40,15 @@
        top-bar bell panel on all screen sizes. The slide panel (#crm-rem-panel)
        is still reachable via the "See all" link inside the bell. #}
 
-    {# Add contact — bigger tap target on mobile, compact on desktop; sm:ml-auto pins it to the right edge on desktop #}
+    {# Spacer: invisible on mobile (search is already flex-1 there);
+       grows to fill remaining space on desktop so the button is right-aligned.
+       Uses hidden/sm:block which are already in the compiled CSS. #}
+    <div class="hidden sm:block" style="flex:1 1 0%"></div>
+
+    {# Add contact — bigger tap target on mobile, compact on desktop #}
     <button onclick="crmOpenAdd()"
             title="Add contact"
             class="flex items-center gap-1 font-semibold flex-shrink-0
-                   sm:ml-auto
                    px-3 py-2 sm:px-3 sm:py-1.5
                    text-sm sm:text-xs
                    rounded-xl sm:rounded-lg
