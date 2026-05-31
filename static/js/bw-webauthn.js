@@ -102,7 +102,7 @@
    * @param {string} deviceName  — label shown in the device list
    * @param {string} loaderId    — id of the panel's loader div (to refresh)
    */
-  function bwWaRegister(deviceName, loaderId) {
+  function bwWaRegister(deviceName, biometricType, loaderId) {
     var btn = document.getElementById('wa-register-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Registering…'; }
 
@@ -116,7 +116,10 @@
         return fetch('/account/webauthn/register/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(_encodeRegistration(cred, deviceName || 'My Device')),
+          body: JSON.stringify(Object.assign(
+            _encodeRegistration(cred, deviceName || 'My Device'),
+            { biometricType: biometricType || 'auto' }
+          )),
         });
       })
       .then(function (r) { return r.json(); })
@@ -159,33 +162,51 @@
   // ── Authentication (called from 2FA verify page) ───────────────────────────
 
   /**
-   * Attempt biometric authentication.
-   * On success → server redirects to /.
-   * On user-cancel → calls onCancel() so the TOTP fallback can be shown.
+   * Attempt biometric authentication for ONE specific type (or all).
    *
-   * @param {function} onCancel   — called when user dismisses the prompt
-   * @param {function} onError    — called with an error message string
+   * @param {string}   biometricType  'face' | 'fingerprint' | 'auto' | '' (all)
+   * @param {function} onSuccess      called on success (no args — page navigates)
+   * @param {function} onCancel       called when user explicitly dismisses the prompt
+   * @param {function} onNoCredsForType  called when server has no creds of this type
+   * @param {function} onError        called with an error message string
    */
-  function bwWaAuthenticate(onCancel, onError) {
-    fetch('/2fa/webauthn/begin', { method: 'POST' })
+  function bwWaAuthenticate(biometricType, onSuccess, onCancel, onNoCredsForType, onError) {
+    var typeParam = biometricType ? ('?type=' + encodeURIComponent(biometricType)) : '';
+    fetch('/2fa/webauthn/begin' + typeParam, { method: 'POST' })
       .then(function (r) {
-        if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'No credentials.'); });
+        if (r.status === 404) {
+          return r.json().then(function (d) {
+            if (d.error === 'no_creds_for_type') {
+              if (typeof onNoCredsForType === 'function') onNoCredsForType();
+              return null;  // signal: skip this phase
+            }
+            throw new Error(d.error || 'No credentials registered.');
+          });
+        }
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'Begin failed.'); });
         return r.json();
       })
       .then(function (opts) {
+        if (!opts) return null;  // skip phase
         if (opts.error) throw new Error(opts.error);
         return navigator.credentials.get({ publicKey: _prepareRequestOptions(opts) });
       })
       .then(function (cred) {
+        if (!cred) return null;  // skip phase
         return fetch('/2fa/webauthn/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(_encodeAuthentication(cred)),
         });
       })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r) return null;  // skip phase
+        return r.json();
+      })
       .then(function (res) {
+        if (!res) return;  // skip phase
         if (!res.ok) throw new Error(res.error || 'Verification failed.');
+        if (typeof onSuccess === 'function') onSuccess();
         window.location.href = res.redirect || '/';
       })
       .catch(function (err) {
@@ -200,16 +221,31 @@
 
   // ── 2FA verify page bootstrap ───────────────────────────────────────────────
 
+  // Phase config — emoji + label shown during each phase
+  var _PHASES = [
+    { type: 'face',        icon: '\uD83D\uDE36', label: 'Trying Face ID…' },
+    { type: 'fingerprint', icon: '\uD83E\uDEF6', label: 'Trying fingerprint…' },
+    { type: 'auto',        icon: '\uD83D\uDD10', label: 'Waiting for biometric…' },
+  ];
+
   /**
    * Called on page-load of 2fa_verify.html when has_webauthn is true.
-   * Auto-triggers the fingerprint prompt and wires up the fallback toggle.
+   *
+   * Phase sequence (Face-first):
+   *   1. Try credentials of type 'face'   (auto-retries once on OS timeout)
+   *   2. Try credentials of type 'fingerprint'  (same auto-retry)
+   *   3. Try ALL remaining credentials ('auto' / legacy)
+   *   4. If all phases exhausted → show TOTP fallback
+   *
+   * Each phase is skipped silently when the server has no creds of that type.
    */
   function bwWaInitVerifyPage() {
     var bioSection  = document.getElementById('wa-bio-section');
     var totpSection = document.getElementById('wa-totp-section');
     var statusEl    = document.getElementById('wa-status');
-    var fallbackBtn = document.getElementById('wa-fallback-btn');
+    var iconEl      = document.getElementById('wa-bio-icon');
     var retryBtn    = document.getElementById('wa-retry-btn');
+    var fallbackBtn = document.getElementById('wa-fallback-btn');
 
     function showTotp() {
       if (totpSection) totpSection.classList.remove('hidden');
@@ -224,26 +260,60 @@
         : 'text-white/60 text-sm text-center mt-3';
     }
 
-    function doAuth() {
-      setStatus('Waiting for biometric confirmation…', false);
+    function setPhaseIcon(phase) {
+      if (iconEl) iconEl.textContent = phase.icon;
+    }
+
+    // Run phases in order; each phase may auto-retry once before moving on.
+    // phaseIdx  — index into _PHASES
+    // retryLeft — auto-retries remaining for the current phase
+    function runPhase(phaseIdx, retryLeft) {
+      if (phaseIdx >= _PHASES.length) {
+        // All biometric phases exhausted
+        setStatus('Biometric sign-in unavailable. Use your code instead.', true);
+        if (retryBtn) retryBtn.classList.add('hidden');
+        showTotp();
+        return;
+      }
+      var phase = _PHASES[phaseIdx];
+      setPhaseIcon(phase);
+      setStatus(phase.label, false);
       if (retryBtn) retryBtn.classList.add('hidden');
+
       bwWaAuthenticate(
-        function onCancel() {
-          setStatus('Biometric cancelled.', true);
-          if (retryBtn) retryBtn.classList.remove('hidden');
+        phase.type,
+        // onSuccess: page will redirect — nothing to do
+        function () {},
+        // onCancel (NotAllowedError): OS dismissed the prompt
+        function () {
+          if (retryLeft > 0) {
+            // Auto-retry once — OS may have timed out rather than user cancelling
+            setStatus(phase.label + ' (retrying…)', false);
+            setTimeout(function () { runPhase(phaseIdx, retryLeft - 1); }, 600);
+          } else {
+            // Out of retries for this phase — advance to next
+            runPhase(phaseIdx + 1, 1);
+          }
         },
-        function onError(msg) {
+        // onNoCredsForType: server has nothing for this type, skip silently
+        function () {
+          runPhase(phaseIdx + 1, 1);
+        },
+        // onError: unexpected error
+        function (msg) {
           setStatus('Error: ' + msg, true);
-          if (retryBtn) retryBtn.classList.remove('hidden');
+          if (retryBtn) {
+            retryBtn.classList.remove('hidden');
+            retryBtn.onclick = function () { runPhase(0, 1); };
+          }
         }
       );
     }
 
-    if (retryBtn)    retryBtn.addEventListener('click', doAuth);
     if (fallbackBtn) fallbackBtn.addEventListener('click', showTotp);
 
-    // Auto-trigger on load — give the browser 300 ms to settle
-    setTimeout(doAuth, 300);
+    // Auto-trigger Phase 0 (Face ID) after 300 ms browser settle time
+    setTimeout(function () { runPhase(0, 1); }, 300);
   }
   window.bwWaInitVerifyPage = bwWaInitVerifyPage;
 

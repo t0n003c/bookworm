@@ -119,14 +119,15 @@ CREATE_TABLES_SQL = [
     """,
     """
     CREATE TABLE IF NOT EXISTS webauthn_credentials (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        credential_id TEXT    NOT NULL UNIQUE,
-        public_key    TEXT    NOT NULL,
-        sign_count    INTEGER NOT NULL DEFAULT 0,
-        device_name   TEXT    NOT NULL DEFAULT 'My Device',
-        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        last_used_at  DATETIME
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        credential_id  TEXT    NOT NULL UNIQUE,
+        public_key     TEXT    NOT NULL,
+        sign_count     INTEGER NOT NULL DEFAULT 0,
+        device_name    TEXT    NOT NULL DEFAULT 'My Device',
+        biometric_type TEXT    NOT NULL DEFAULT 'auto',
+        created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_used_at   DATETIME
     )
     """,
 ]
@@ -492,9 +493,19 @@ async def init_db() -> None:
                 "ADD COLUMN source_widget_id INTEGER "
                 "REFERENCES home_widgets(id) ON DELETE SET NULL"
             )
-            await db.commit()
         except Exception:
             pass  # column already exists — idempotent
+
+        # ── webauthn_credentials: biometric_type (additive migration) ─────────
+        _cur = await db.execute("PRAGMA table_info(webauthn_credentials)")
+        _wa_cols = {r[1] for r in await _cur.fetchall()}
+        if "biometric_type" not in _wa_cols:
+            await db.execute(
+                "ALTER TABLE webauthn_credentials ADD COLUMN "
+                "biometric_type TEXT NOT NULL DEFAULT 'auto'"
+            )
+
+        await db.commit()
 
         # ── site_settings: persistent runtime flags (admin-toggleable) ────────
         # Separate from env vars so superadmin can change them without a restart.

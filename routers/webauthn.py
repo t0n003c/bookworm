@@ -37,6 +37,7 @@ from routers.webauthn_db import (
     get_all_credential_ids,
     get_credential_by_id,
     get_credentials,
+    get_registered_types,
     has_credentials,
     save_credential,
     update_sign_count,
@@ -193,7 +194,8 @@ async def register_complete(request: Request):
     rp_id, origin = _rp_config(request)
 
     body = await request.json()
-    device_name = body.pop("deviceName", "My Device") or "My Device"
+    device_name   = body.pop("deviceName",    "My Device") or "My Device"
+    biometric_type = body.pop("biometricType", "auto")     or "auto"
 
     try:
         cred = _parse_reg_credential(body)
@@ -214,6 +216,7 @@ async def register_complete(request: Request):
         public_key=_b64url_encode(verification.credential_public_key),
         sign_count=verification.sign_count,
         device_name=device_name[:80],
+        biometric_type=biometric_type,
     )
     return JSONResponse({"ok": True})
 
@@ -233,16 +236,27 @@ async def delete_cred(request: Request, cred_id: int):
 # ── login step-2 — authentication ─────────────────────────────────────────────
 
 @router.post("/2fa/webauthn/begin")
-async def auth_begin(request: Request):
-    """Generate authentication options for a pending-2FA session."""
+async def auth_begin(request: Request, type: str = ""):
+    """Generate authentication options for a pending-2FA session.
+
+    Optional query param ``?type=face`` or ``?type=fingerprint`` filters
+    allowCredentials to only the credentials of that biometric type,
+    enabling the two-phase Face-first → Fingerprint fallback on the client.
+    Returns HTTP 404 when no credentials match the requested type so the
+    client can silently skip that phase.
+    """
     user_id = request.session.get("pending_2fa_user_id")
     if not user_id:
         return JSONResponse({"error": "No pending session."}, status_code=400)
 
     rp_id, _ = _rp_config(request)
-    cred_ids = await get_all_credential_ids(user_id)
+    biometric_type = type.strip() or None   # None = all credentials
+    cred_ids = await get_all_credential_ids(user_id, biometric_type)
     if not cred_ids:
-        return JSONResponse({"error": "No credentials registered."}, status_code=404)
+        return JSONResponse(
+            {"error": "no_creds_for_type", "type": biometric_type or "all"},
+            status_code=404,
+        )
 
     allow = [
         PublicKeyCredentialDescriptor(id=base64url_to_bytes(cid))
@@ -256,7 +270,11 @@ async def auth_begin(request: Request):
     )
 
     request.session["webauthn_auth_challenge"] = _b64url_encode(options.challenge)
-    return JSONResponse(json.loads(options_to_json(options)))
+    resp = json.loads(options_to_json(options))
+    # Tell the client which biometric types this user has registered so it can
+    # plan the phase sequence without extra round-trips.
+    resp["registered_types"] = sorted(await get_registered_types(user_id))
+    return JSONResponse(resp)
 
 
 @router.post("/2fa/webauthn/complete")

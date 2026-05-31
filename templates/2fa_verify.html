@@ -86,10 +86,10 @@
 
       <div class="glow-card rounded-2xl border border-[#0053e2]/40 bg-white/5 backdrop-blur-md p-8">
 
-        {# Fingerprint pulse visual #}
-        <div class="flex flex-col items-center gap-5">
+        {# Biometric pulse visual — icon swaps per phase (Face ID → Fingerprint) #}
+          <div class="flex flex-col items-center gap-5">
           <div class="pulse-ring w-20 h-20 rounded-full border-2 border-[#0053e2]/60 flex items-center justify-center">
-            <span class="text-5xl select-none" aria-hidden="true">🫆</span>
+            <span id="wa-bio-icon" class="text-5xl select-none" aria-hidden="true">&#x1F636;</span>
           </div>
 
           <p id="wa-status" class="text-white/60 text-sm text-center">
