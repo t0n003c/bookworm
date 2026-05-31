@@ -611,19 +611,28 @@ function _crmContactModal(c) {
              </span>`).join('')
         : `<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None selected —</span>`;
 
-      const panelRows = opts.map(o =>
-        `<div data-ms-val="${_crmEsc(o)}"
+      // Detect dark mode once at render time so inline styles match the theme
+      const _msDark = document.documentElement.classList.contains('dark');
+      const _msSelBg  = _msDark ? 'rgba(30,64,175,0.35)' : '#dbeafe';
+      const _msSelTxt = _msDark ? '#93c5fd'              : '#1e40af';
+
+      const panelRows = opts.map(o => {
+        const sel = ms.includes(o);
+        const rowStyle = sel
+          ? `background:${_msSelBg};color:${_msSelTxt};font-weight:600`
+          : '';
+        return `<div data-ms-val="${_crmEsc(o)}"
           class="flex items-center gap-2 px-3 py-1.5 cursor-pointer
-                 hover:bg-gray-50 dark:hover:bg-zinc-800 transition text-sm
-                 text-gray-800 dark:text-zinc-200"
-          style="${ms.includes(o) ? 'background:#eff6ff' : ''}"
+                 hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-sm"
+          style="${rowStyle}"
           onclick="event.stopPropagation();crmMsPick(${f.id},this.getAttribute('data-ms-val'))">
-          <span class="ms-check w-3 text-[#0053e2] text-xs font-bold leading-none">
-            ${ms.includes(o) ? '✓' : ''}
+          <span class="ms-check w-4 text-xs font-bold leading-none"
+                style="${sel ? `color:${_msSelTxt}` : 'color:transparent'}">
+            ✓
           </span>
           ${_crmEsc(o)}
-        </div>`
-      ).join('');
+        </div>`;
+      }).join('');
 
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
@@ -2287,25 +2296,37 @@ window.crmMsPick = function(fid, val) {
     : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None selected —</span>';
 
   // Refresh option rows (highlight + checkmark)
+  var isDark  = document.documentElement.classList.contains('dark');
+  var selBg   = isDark ? 'rgba(30,64,175,0.35)' : '#dbeafe';
+  var selTxt  = isDark ? '#93c5fd'              : '#1e40af';
   panel.querySelectorAll('[data-ms-val]').forEach(function(row) {
     var rowVal = row.getAttribute('data-ms-val');
     var on = selected.includes(rowVal);
-    row.style.background = on ? '#eff6ff' : '';
+    row.style.background  = on ? selBg  : '';
+    row.style.color       = on ? selTxt : '';
+    row.style.fontWeight  = on ? '600'  : '';
     var chk = row.querySelector('.ms-check');
-    if (chk) chk.textContent = on ? '✓' : '';
+    if (chk) chk.style.color = on ? selTxt : 'transparent';
   });
 };
 
-// Close any open ms-panel when clicking outside
+// Close any open ms-panel when clicking outside its wrap element.
+// MUST use capture phase (true) because crm-modal-body calls
+// event.stopPropagation(), which would swallow a normal bubble-phase listener.
 (function() {
-  // Guard: attach only once even if this script is evaluated multiple times
   if (window._crmMsOutsideListenerAdded) return;
   window._crmMsOutsideListenerAdded = true;
-  document.addEventListener('click', function() {
-    document.querySelectorAll('[id^="crm-ms-panel-"]').forEach(function(p) {
-      p.classList.add('hidden');
+  document.addEventListener('click', function(e) {
+    document.querySelectorAll('[id^="crm-ms-panel-"]').forEach(function(panel) {
+      if (panel.classList.contains('hidden')) return; // already closed
+      var fid  = panel.id.replace('crm-ms-panel-', '');
+      var wrap = document.getElementById('crm-ms-wrap-' + fid);
+      // Close only if the click landed outside this dropdown's wrap div
+      if (wrap && !wrap.contains(e.target)) {
+        panel.classList.add('hidden');
+      }
     });
-  });
+  }, true); // true = capture phase, fires before stopPropagation can cancel it
 }());
 
 /**
