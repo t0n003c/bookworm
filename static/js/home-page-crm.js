@@ -1408,8 +1408,11 @@ async function _doCrmDel(id) {
   } catch(e) { alert('Delete failed: ' + e.message); }
 }
 
-// ── Profile picture — 3-tab picker modal ─────────────────────────────────
-// Tabs: Your Uploads | Drag & Drop | Computer
+// ── Profile picture picker modal ──────────────────────────────────────────────
+// Single unified panel:
+//   • Drop zone + Browse button at the top (drag & drop OR click to pick a file)
+//   • Divider
+//   • Searchable thumbnail grid of existing uploads
 function crmOpenPicModal(contactId) {
   if (!contactId) {
     alert('Save the contact first, then edit to change the photo.');
@@ -1422,43 +1425,65 @@ function crmOpenPicModal(contactId) {
   modal.id = 'crm-pic-modal';
   modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm';
   modal.innerHTML = [
-    '<div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:80vh">',
-    '  <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-200 dark:border-zinc-700">',
+    '<div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style="max-height:82vh">',
+
+    '  <!-- header -->',
+    '  <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-200 dark:border-zinc-700 flex-shrink-0">',
     '    <h3 class="text-sm font-bold text-gray-800 dark:text-zinc-100">Change Profile Photo</h3>',
-    '    <button id="crm-pic-close" class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 transition focus:outline-none focus:ring-2 focus:ring-[#0053e2] rounded" aria-label="Close">&times;</button>',
+    '    <button id="crm-pic-close" class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300 text-xl leading-none transition focus:outline-none focus:ring-2 focus:ring-[#0053e2] rounded" aria-label="Close">&times;</button>',
     '  </div>',
-    '  <div class="flex border-b border-gray-200 dark:border-zinc-700">',
-    '    <button data-tab="uploads" class="crm-pic-tab px-4 py-2.5 text-xs font-semibold border-b-2 transition focus:outline-none">🖼️ Your Uploads</button>',
-    '    <button data-tab="drop"    class="crm-pic-tab px-4 py-2.5 text-xs font-semibold border-b-2 transition focus:outline-none">🖥️ Drag &amp; Drop</button>',
-    '    <button data-tab="file"    class="crm-pic-tab px-4 py-2.5 text-xs font-semibold border-b-2 transition focus:outline-none">💻 Computer</button>',
-    '  </div>',
-    '  <div class="flex-1 overflow-auto">',
-    '    <div id="crm-pic-panel-uploads" class="p-4 hidden">',
-    '      <div class="flex gap-2 mb-3">',
-    '        <input id="crm-pic-search" type="text" placeholder="Search images…" class="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0053e2]"/>',
-    '        <button id="crm-pic-search-btn" class="px-3 py-1.5 text-xs bg-[#0053e2] hover:bg-blue-700 text-white rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">Search</button>',
-    '      </div>',
-    '      <div id="crm-pic-grid" class="grid grid-cols-4 gap-2 min-h-[120px]"><div class="col-span-4 flex items-center justify-center text-gray-400 text-xs py-6">Loading…</div></div>',
-    '      <div id="crm-pic-pagination" class="flex gap-2 justify-center mt-3"></div>',
+
+    '  <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">',
+
+    '    <!-- drop zone -->',
+    '    <div id="crm-pic-dropzone"',
+    '      class="border-2 border-dashed border-gray-300 dark:border-zinc-600 rounded-xl',
+    '             flex flex-col items-center justify-center gap-2 py-5 transition cursor-pointer',
+    '             hover:border-[#0053e2] hover:bg-blue-50 dark:hover:bg-zinc-800 flex-shrink-0">',
+    '      <span class="text-3xl">🖼️</span>',
+    '      <p class="text-sm text-gray-500 dark:text-zinc-400">Drop an image here</p>',
+    '      <button id="crm-pic-browse-btn" type="button"',
+    '        class="px-4 py-1.5 text-xs font-semibold bg-[#0053e2] hover:bg-blue-700 text-white',
+    '               rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#ffc220]',
+    '               pointer-events-auto">',
+    '        📂 Browse files…</button>',
+    '      <p class="text-[11px] text-gray-400">JPG · PNG · GIF · WEBP — max 3 MB</p>',
+    '      <p id="crm-pic-upload-status" class="text-xs text-red-500 hidden"></p>',
     '    </div>',
-    '    <div id="crm-pic-panel-drop" class="p-4 hidden">',
-    '      <div id="crm-pic-dropzone" class="border-2 border-dashed border-gray-300 dark:border-zinc-600 rounded-xl flex flex-col items-center justify-center gap-3 py-10 transition cursor-pointer hover:border-[#0053e2] hover:bg-blue-50 dark:hover:bg-zinc-800">',
-    '        <span class="text-4xl">🖼️</span>',
-    '        <p class="text-sm text-gray-500 dark:text-zinc-400">Drop an image here</p>',
-    '        <p class="text-xs text-gray-400">JPG, PNG, GIF, WEBP — max 3 MB</p>',
-    '        <p id="crm-pic-drop-status" class="text-xs text-red-500 hidden"></p>',
-    '      </div>',
+
+    '    <!-- divider -->',
+    '    <div class="flex items-center gap-3 flex-shrink-0">',
+    '      <div class="flex-1 h-px bg-gray-200 dark:bg-zinc-700"></div>',
+    '      <span class="text-[11px] text-gray-400 dark:text-zinc-500 whitespace-nowrap">or pick from your uploads</span>',
+    '      <div class="flex-1 h-px bg-gray-200 dark:bg-zinc-700"></div>',
     '    </div>',
-    '    <div id="crm-pic-panel-file" class="p-4 hidden flex flex-col items-center gap-4">',
-    '      <p class="text-sm text-gray-500 dark:text-zinc-400 text-center">Click below to browse your computer for an image.</p>',
-    '      <button id="crm-pic-browse-btn" class="px-5 py-2.5 bg-[#0053e2] hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition focus:outline-none focus:ring-2 focus:ring-[#ffc220]">📂 Browse files…</button>',
-    '      <p class="text-xs text-gray-400">JPG, PNG, GIF, WEBP — max 3 MB</p>',
-    '      <p id="crm-pic-file-status" class="text-xs text-red-500 hidden"></p>',
+
+    '    <!-- search -->',
+    '    <div class="flex gap-2 flex-shrink-0">',
+    '      <input id="crm-pic-search" type="text" placeholder="Search images…"',
+    '        class="flex-1 px-3 py-1.5 text-xs border border-gray-300 dark:border-zinc-600',
+    '               rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100',
+    '               placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0053e2]"/>',
+    '      <button id="crm-pic-search-btn"',
+    '        class="px-3 py-1.5 text-xs bg-[#0053e2] hover:bg-blue-700 text-white',
+    '               rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">',
+    '        Search</button>',
     '    </div>',
+
+    '    <!-- grid -->',
+    '    <div id="crm-pic-grid" class="grid grid-cols-4 gap-2 min-h-[100px]">',
+    '      <div class="col-span-4 flex items-center justify-center text-gray-400 text-xs py-6">Loading…</div>',
+    '    </div>',
+
+    '    <!-- pagination -->',
+    '    <div id="crm-pic-pagination" class="flex gap-2 justify-center flex-shrink-0"></div>',
+
     '  </div>',
     '</div>'
   ].join('');
   document.body.appendChild(modal);
+
+  // ── shared helpers ─────────────────────────────────────────────────────────
 
   function _applyPic(url) {
     var urlInput = document.getElementById('crm-pic-url');
@@ -1477,7 +1502,8 @@ function crmOpenPicModal(contactId) {
     _closeModal();
   }
 
-  async function _uploadFile(file, statusEl) {
+  var statusEl = document.getElementById('crm-pic-upload-status');
+  async function _uploadFile(file) {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       if (statusEl) { statusEl.textContent = 'Only image files are allowed.'; statusEl.classList.remove('hidden'); }
@@ -1499,26 +1525,47 @@ function crmOpenPicModal(contactId) {
     }
   }
 
-  function _closeModal() { var m = document.getElementById('crm-pic-modal'); if (m) m.remove(); }
-
-  // ── tab switching
-  var _activeTab = '';
-  function _switchTab(name) {
-    if (_activeTab === name) return;
-    _activeTab = name;
-    modal.querySelectorAll('.crm-pic-tab').forEach(function(btn) {
-      var active = btn.dataset.tab === name;
-      btn.className = 'crm-pic-tab px-4 py-2.5 text-xs font-semibold border-b-2 transition focus:outline-none ' +
-        (active ? 'border-[#0053e2] text-[#0053e2]' : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200');
-    });
-    ['uploads','drop','file'].forEach(function(t) {
-      var el = document.getElementById('crm-pic-panel-' + t);
-      if (el) el.classList.toggle('hidden', t !== name);
-    });
-    if (name === 'uploads') _loadImages(1, '');
+  function _openFilePicker() {
+    var tmp = document.createElement('input');
+    tmp.type = 'file'; tmp.accept = 'image/jpeg,image/png,image/gif,image/webp'; tmp.style.display = 'none';
+    document.body.appendChild(tmp);
+    tmp.addEventListener('change', function() { _uploadFile(tmp.files[0]); tmp.remove(); });
+    tmp.click();
   }
 
-  // ── uploads tab
+  function _closeModal() { var m = document.getElementById('crm-pic-modal'); if (m) m.remove(); }
+
+  // ── drop zone ──────────────────────────────────────────────────────────────
+
+  var dropzone  = document.getElementById('crm-pic-dropzone');
+  var browseBtn = document.getElementById('crm-pic-browse-btn');
+
+  dropzone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    dropzone.classList.add('border-[#0053e2]', 'bg-blue-50', 'dark:bg-zinc-800');
+  });
+  dropzone.addEventListener('dragleave', function(e) {
+    // only clear when leaving the zone entirely, not a child element
+    if (!dropzone.contains(e.relatedTarget)) {
+      dropzone.classList.remove('border-[#0053e2]', 'bg-blue-50', 'dark:bg-zinc-800');
+    }
+  });
+  dropzone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dropzone.classList.remove('border-[#0053e2]', 'bg-blue-50', 'dark:bg-zinc-800');
+    _uploadFile(e.dataTransfer && e.dataTransfer.files[0]);
+  });
+  // clicking the zone (but not the button) also opens picker
+  dropzone.addEventListener('click', function(e) {
+    if (e.target !== browseBtn && !browseBtn.contains(e.target)) _openFilePicker();
+  });
+  browseBtn.addEventListener('click', function(e) {
+    e.stopPropagation(); // prevent zone click from double-firing
+    _openFilePicker();
+  });
+
+  // ── uploads grid ───────────────────────────────────────────────────────────
+
   var _imgPage = 1, _imgSearch = '';
   async function _loadImages(page, search) {
     _imgPage = page; _imgSearch = search;
@@ -1531,21 +1578,26 @@ function crmOpenPicModal(contactId) {
       var qs = new URLSearchParams({page: String(page), search: search});
       var j  = await (await fetch('/home/crm/pick-images?' + qs)).json();
       if (!j.files || !j.files.length) {
-        grid.innerHTML = '<div class="col-span-4 flex items-center justify-center text-gray-400 text-xs py-6">No images found. Upload some on an Uploads page first!</div>';
+        grid.innerHTML = '<div class="col-span-4 flex items-center justify-center text-gray-400 text-xs py-6 text-center">' +
+          'No images yet — upload one using the drop zone above!</div>';
         return;
       }
       grid.innerHTML = j.files.map(function(f) {
-        return '<button type="button" data-upload-id="' + f.id + '" data-url="' + _crmEsc(f.url) + '"' +
+        return '<button type="button" data-upload-id="' + f.id + '"' +
           ' title="' + _crmEsc(f.original_name) + '"' +
           ' class="crm-img-pick aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800' +
           ' border-2 border-transparent hover:border-[#0053e2] transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">' +
-          '<img src="' + _crmEsc(f.url) + '" class="w-full h-full object-cover" loading="lazy" alt=""/></button>';
+          '<img src="' + _crmEsc(f.url) + '" class="w-full h-full object-cover" loading="lazy" alt=""/>' +
+          '</button>';
       }).join('');
       if (pag && j.pages > 1) {
         var parts = [];
         for (var p = 1; p <= j.pages; p++) {
           parts.push('<button data-p="' + p + '" class="px-2 py-1 text-xs rounded ' +
-            (p === j.page ? 'bg-[#0053e2] text-white' : 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 hover:bg-gray-200') + '">' + p + '</button>');
+            (p === j.page
+              ? 'bg-[#0053e2] text-white'
+              : 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 hover:bg-gray-200') +
+            '">' + p + '</button>');
         }
         pag.innerHTML = parts.join('');
         pag.querySelectorAll('button[data-p]').forEach(function(btn) {
@@ -1556,7 +1608,10 @@ function crmOpenPicModal(contactId) {
         btn.addEventListener('click', async function() {
           try {
             var fd = new FormData(); fd.append('upload_id', btn.dataset.uploadId);
-            var r = await fetch('/home/crm/' + _crmPid + '/contacts/' + contactId + '/set-pic-from-upload', {method:'POST', body:fd});
+            var r = await fetch(
+              '/home/crm/' + _crmPid + '/contacts/' + contactId + '/set-pic-from-upload',
+              {method: 'POST', body: fd}
+            );
             var rj = await r.json();
             if (!r.ok) throw new Error(rj.error || 'Failed');
             _applyPic(rj.url);
@@ -1570,52 +1625,20 @@ function crmOpenPicModal(contactId) {
 
   var searchInput = document.getElementById('crm-pic-search');
   var searchBtn   = document.getElementById('crm-pic-search-btn');
-  if (searchBtn && searchInput) {
-    searchBtn.addEventListener('click', function() { _loadImages(1, searchInput.value); });
-    searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); _loadImages(1, searchInput.value); } });
-  }
+  searchBtn.addEventListener('click', function() { _loadImages(1, searchInput.value); });
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); _loadImages(1, searchInput.value); }
+  });
 
-  // ── drop tab
-  var dropzone = document.getElementById('crm-pic-dropzone');
-  var dropStatus = document.getElementById('crm-pic-drop-status');
-  if (dropzone) {
-    dropzone.addEventListener('dragover', function(e) { e.preventDefault(); dropzone.classList.add('border-[#0053e2]','bg-blue-50','dark:bg-zinc-800'); });
-    dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('border-[#0053e2]','bg-blue-50','dark:bg-zinc-800'); });
-    dropzone.addEventListener('drop', function(e) {
-      e.preventDefault();
-      dropzone.classList.remove('border-[#0053e2]','bg-blue-50','dark:bg-zinc-800');
-      _uploadFile(e.dataTransfer && e.dataTransfer.files[0], dropStatus);
-    });
-    dropzone.addEventListener('click', function() {
-      var tmp = document.createElement('input'); tmp.type='file'; tmp.accept='image/jpeg,image/png,image/gif,image/webp'; tmp.style.display='none';
-      document.body.appendChild(tmp);
-      tmp.addEventListener('change', function() { _uploadFile(tmp.files[0], dropStatus); tmp.remove(); });
-      tmp.click();
-    });
-  }
+  // ── close / keyboard ────────────────────────────────────────────────────────
 
-  // ── computer tab
-  var browseBtn  = document.getElementById('crm-pic-browse-btn');
-  var fileStatus = document.getElementById('crm-pic-file-status');
-  if (browseBtn) {
-    browseBtn.addEventListener('click', function() {
-      var tmp = document.createElement('input'); tmp.type='file'; tmp.accept='image/jpeg,image/png,image/gif,image/webp'; tmp.style.display='none';
-      document.body.appendChild(tmp);
-      tmp.addEventListener('change', function() { _uploadFile(tmp.files[0], fileStatus); tmp.remove(); });
-      tmp.click();
-    });
-  }
-
-  // ── close
   document.getElementById('crm-pic-close').addEventListener('click', _closeModal);
   modal.addEventListener('click', function(e) { if (e.target === modal) _closeModal(); });
   document.addEventListener('keydown', function _escClose(e) {
     if (e.key === 'Escape') { _closeModal(); document.removeEventListener('keydown', _escClose); }
   });
-  modal.querySelectorAll('.crm-pic-tab').forEach(function(btn) {
-    btn.addEventListener('click', function() { _switchTab(btn.dataset.tab); });
-  });
-  _switchTab('uploads');
+
+  _loadImages(1, '');
 }
 
 // Field management → home-page-crm-fields.js
