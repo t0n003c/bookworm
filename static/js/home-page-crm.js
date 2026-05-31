@@ -919,8 +919,14 @@ function _crmContactModal(c) {
           </div>
         </div>
       </form>
+      ${isEdit ? '<div id="crm-convo-section"></div>' : ''}
     </div>`;
   _crmShowModal(body);
+  // Track which contact is open so the conversation module can reference it
+  // without needing to re-parse the DOM for the contact id.
+  _convoActiveContactId = c ? c.id : null;
+  // Fetch and render conversation log for existing contacts.
+  if (isEdit && c && typeof crmConvoInit === 'function') crmConvoInit(c.id);
   // Stamp the contact id so the field-handle popover can re-open this modal after a save
   var _modalWrap = document.getElementById('crm-modal');
   if (_modalWrap) _modalWrap.setAttribute('data-contact-id', c ? String(c.id) : '');

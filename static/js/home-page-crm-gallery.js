@@ -83,6 +83,10 @@ function _galDragAttrs(c, bulkMode) {
 
 function _galActionBtns(c) {
   return `
+    <button onclick="event.stopPropagation();crmGalConvoPop(${c.id},this)" title="Log conversation"
+      class="w-5 h-5 rounded flex items-center justify-center text-xs leading-none
+             text-gray-300 dark:text-zinc-600
+             hover:text-[#0053e2] dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition">💬</button>
     <button onclick="event.stopPropagation();crmOpenEdit(${c.id})" title="Edit contact"
       class="w-5 h-5 rounded flex items-center justify-center text-xs leading-none
              text-gray-300 dark:text-zinc-600

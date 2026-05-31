@@ -663,6 +663,22 @@ async def init_db() -> None:
                 "ALTER TABLE crm_contacts ADD COLUMN profile_pic_upload_id INTEGER"
             )
 
+        # ── crm_conversation_log table (additive) ───────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS crm_conversation_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL REFERENCES crm_contacts(id) ON DELETE CASCADE,
+                page_id    INTEGER NOT NULL REFERENCES home_pages(id)   ON DELETE CASCADE,
+                user_id    INTEGER NOT NULL REFERENCES users(id)        ON DELETE CASCADE,
+                note       TEXT    NOT NULL DEFAULT '',
+                logged_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_crm_convo_contact
+                ON crm_conversation_log(contact_id, logged_at DESC)
+        """)
+
         # ── crm_projects (pipeline projects — stages belong to a project) ────
         await db.execute("""
             CREATE TABLE IF NOT EXISTS crm_projects (

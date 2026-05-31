@@ -28,6 +28,7 @@ from routers.home_crm_db import (
     get_due_crm_reminders, get_upcoming_crm_reminders,
     get_all_crm_reminders, get_upcoming_birthdays,
     upsert_field_reminder, clear_field_reminder,
+    get_conversations, add_conversation, update_conversation, delete_conversation,
 )
 from routers.uploads_db import get_page_upload_owned, get_user_images
 
@@ -903,4 +904,78 @@ async def crm_upcoming_birthdays(request: Request, page_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("crm_upcoming_birthdays page_id=%s", page_id)
+        return _err(str(e), 500)
+
+
+# ── Conversation log ──────────────────────────────────────────────────────────
+
+@router.get("/crm/{page_id}/contacts/{contact_id}/conversations")
+async def crm_get_conversations(request: Request, page_id: int, contact_id: int):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(await get_conversations(contact_id, page_id, uid))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_get_conversations contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/conversations")
+async def crm_add_conversation(
+    request: Request, page_id: int, contact_id: int,
+    note: str = Form(""),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        if not note.strip():
+            return _err("note cannot be empty", 400)
+        return JSONResponse(await add_conversation(contact_id, page_id, uid, note))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_add_conversation contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/conversations/{convo_id}/update")
+async def crm_update_conversation(
+    request: Request, page_id: int, contact_id: int, convo_id: int,
+    note: str = Form(""),
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        if not note.strip():
+            return _err("note cannot be empty", 400)
+        return JSONResponse(
+            await update_conversation(convo_id, contact_id, page_id, uid, note)
+        )
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_update_conversation convo_id=%s", convo_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/contacts/{contact_id}/conversations/{convo_id}/delete")
+async def crm_delete_conversation(
+    request: Request, page_id: int, contact_id: int, convo_id: int,
+):
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        return JSONResponse(
+            await delete_conversation(convo_id, contact_id, page_id, uid)
+        )
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("crm_delete_conversation convo_id=%s", convo_id)
         return _err(str(e), 500)

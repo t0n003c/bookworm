@@ -727,3 +727,76 @@ async def get_upcoming_birthdays(page_id: int, user_id: int) -> list[dict]:
 
     results.sort(key=lambda x: x["days_away"])
     return results[:3]
+
+
+# ── Conversation log ─────────────────────────────────────────────────────────────
+
+async def _get_convos(db, contact_id: int) -> list[dict]:
+    """Fetch all conversations for a contact, newest first."""
+    cur = await db.execute(
+        "SELECT id, note, logged_at FROM crm_conversation_log "
+        "WHERE contact_id=? ORDER BY logged_at DESC, id DESC",
+        (contact_id,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_conversations(contact_id: int, page_id: int, user_id: int) -> list[dict]:
+    """Return all conversation entries for a contact (owner-scoped via page)."""
+    async with get_db() as db:
+        # Ownership: contact must belong to this page + user.
+        cur = await db.execute(
+            "SELECT id FROM crm_contacts WHERE id=? AND page_id=? AND user_id=?",
+            (contact_id, page_id, user_id),
+        )
+        if not await cur.fetchone():
+            return []
+        return await _get_convos(db, contact_id)
+
+
+async def add_conversation(
+    contact_id: int, page_id: int, user_id: int, note: str
+) -> list[dict]:
+    """Insert a new conversation entry; returns updated list (newest first)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id FROM crm_contacts WHERE id=? AND page_id=? AND user_id=?",
+            (contact_id, page_id, user_id),
+        )
+        if not await cur.fetchone():
+            return []
+        await db.execute(
+            "INSERT INTO crm_conversation_log (contact_id, page_id, user_id, note) "
+            "VALUES (?, ?, ?, ?)",
+            (contact_id, page_id, user_id, note.strip()),
+        )
+        await db.commit()
+        return await _get_convos(db, contact_id)
+
+
+async def update_conversation(
+    convo_id: int, contact_id: int, page_id: int, user_id: int, note: str
+) -> list[dict]:
+    """Edit an existing conversation entry; returns updated list."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE crm_conversation_log SET note=? "
+            "WHERE id=? AND contact_id=? AND page_id=? AND user_id=?",
+            (note.strip(), convo_id, contact_id, page_id, user_id),
+        )
+        await db.commit()
+        return await _get_convos(db, contact_id)
+
+
+async def delete_conversation(
+    convo_id: int, contact_id: int, page_id: int, user_id: int
+) -> list[dict]:
+    """Delete a conversation entry; returns updated list."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM crm_conversation_log "
+            "WHERE id=? AND contact_id=? AND page_id=? AND user_id=?",
+            (convo_id, contact_id, page_id, user_id),
+        )
+        await db.commit()
+        return await _get_convos(db, contact_id)
