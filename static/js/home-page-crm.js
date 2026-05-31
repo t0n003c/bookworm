@@ -718,6 +718,16 @@ function _crmContactModal(c) {
         class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm
                bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
                placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${_crmEsc(val)}</textarea>`;
+    } else if (f.field_type === 'text_line') {
+      return wrapDrag(f.id,
+        `<div class="flex items-center gap-2">
+          ${cfLabel(f)}
+          <input name="cf_${f.id}" type="text" value="${_crmEsc(val)}"
+            class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
+                   text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
+                   placeholder-gray-300 dark:placeholder-zinc-600
+                   focus:outline-none focus:border-[#0053e2] transition"/>
+        </div>`);
     } else if (f.field_type === 'number') {
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">

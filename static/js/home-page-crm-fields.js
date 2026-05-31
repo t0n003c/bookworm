@@ -7,7 +7,9 @@
  */
 
 const _CRM_FIELD_TYPE_DEFS = [
-  {v:'text',l:'Text'},{v:'select',l:'Select'},{v:'multi_select',l:'Multi-select'},
+  {v:'text',      l:'Text (multi-line)'},
+  {v:'text_line', l:'Text (single-line)'},
+  {v:'select',l:'Select'},{v:'multi_select',l:'Multi-select'},
   {v:'checkbox',l:'Checkbox'},{v:'url',l:'URL'},{v:'email',l:'Email'},
   {v:'date',l:'Date'},{v:'number',l:'Number'},{v:'file_links',l:'File links'},
   {v:'priority',l:'Priority ⭐'},{v:'reminder',l:'Reminder 🔔'},
