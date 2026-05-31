@@ -505,15 +505,19 @@ function _crmContactModal(c) {
     + ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
     + '<rect x="9" y="2" width="13" height="13" rx="2" ry="2"></rect>'
     + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
-  // Tiny copy button — reads the live input value at click time via crmCopyField()
+  // Tiny copy button — invisible until the parent row is hovered (group-hover).
+  // The parent must carry a Tailwind `group` class for this to activate.
   const cpyBtn = (name) =>
     `<button type="button" title="Copy to clipboard"
        onclick="crmCopyField(this,'${name}')"
-       class="flex-shrink-0 p-1 rounded text-gray-300 dark:text-zinc-600
-              hover:text-gray-500 dark:hover:text-zinc-300 transition-colors">${_cpySvg}</button>`;
+       class="flex-shrink-0 p-1 rounded
+              text-gray-400 dark:text-zinc-500
+              opacity-0 group-hover:opacity-100
+              hover:text-[#0053e2] dark:hover:text-blue-400
+              transition-opacity duration-150">${_cpySvg}</button>`;
   // Flat underline input + copy button in a flex row (replaces bare flat() for copyable fields)
   const cpyFlat = (name, val, type='text', placeholder='', extraAttrs='') =>
-    `<div class="flex items-center gap-0.5">
+    `<div class="group flex items-center gap-0.5">
        <input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}" ${extraAttrs}
          class="flex-1 min-w-0 bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
                 text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600
@@ -877,6 +881,7 @@ function _crmContactModal(c) {
                    text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
                    placeholder-gray-300 dark:placeholder-zinc-600
                    focus:outline-none focus:border-[#0053e2] transition"/>
+          ${cpyBtn('cf_'+f.id)}
         </div>`);
     }
     return wrapDrag(f.id,
@@ -959,7 +964,7 @@ function _crmContactModal(c) {
             ${flatLbl('Address')}
             <!-- Address autocomplete: input + hidden value + suggestion dropdown -->
             <!-- Nominatim (OpenStreetMap) is used for suggestions — no API key needed -->
-            <div class="flex items-center gap-0.5">
+            <div class="group flex items-center gap-0.5">
               <div class="relative flex-1 min-w-0" id="crm-addr-wrap">
               <input id="crm-addr-input" name="address"
                 type="text"
