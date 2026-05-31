@@ -72,7 +72,7 @@ function _crmRenderDetail() {
     ? '<div class="flex flex-wrap gap-1.5 mt-2">'
         + _relArr.map(function(v){
             return '<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium '
-              + 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">'
+              + 'bg-[#e8f0ff] dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
               + _crmEsc(String(v)) + '</span>';
           }).join('')
         + '</div>'

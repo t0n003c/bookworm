@@ -567,7 +567,11 @@ function _crmContactModal(c) {
         `  onclick="event.stopPropagation();crmRelPick(this.getAttribute('data-ms-val'))">`,
         `  <span class="ms-check w-4 text-xs font-bold leading-none"`,
         `        style="${s ? `color:${_relSelTxt}` : 'color:transparent'}">\u2713</span>`,
-        `  ${_crmEsc(o)}`,
+        `  <span class="flex-1">${_crmEsc(o)}</span>`,
+        `  <button type="button" title="Remove this option"`,
+        `          class="ms-del ml-auto text-gray-300 hover:text-red-500 transition`,
+        `                 text-xs font-bold leading-none px-1 flex-shrink-0"`,
+        `          onclick="event.stopPropagation();crmRelDelete(this)">\u00d7</button>`,
         `</div>`,
       ].join('\n');
     }),
@@ -2444,6 +2448,44 @@ window.crmMsPick = function(fid, val) {
 };
 
 /**
+ * Permanently delete an option row from the relationship dropdown.
+ * If the value was selected, it is also removed from the hidden JSON field
+ * and the pill display is refreshed.
+ */
+window.crmRelDelete = function(btn) {
+  var row = btn.closest('[data-ms-val]');
+  if (!row) return;
+  var val = row.getAttribute('data-ms-val');
+
+  // Remove from selection if currently selected
+  var hidden = document.getElementById('crm-rel-hidden');
+  if (hidden) {
+    var selected = [];
+    try { selected = JSON.parse(hidden.value); } catch {}
+    var idx = selected.indexOf(val);
+    if (idx >= 0) {
+      selected.splice(idx, 1);
+      hidden.value = JSON.stringify(selected);
+
+      // Refresh pill display
+      var display = document.getElementById('crm-ms-display-rel');
+      if (display) {
+        display.innerHTML = selected.length
+          ? selected.map(function(v) {
+              return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium '
+                + 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
+                + _crmEsc(v) + '</span>';
+            }).join('')
+          : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">\u2014 None \u2014</span>';
+      }
+    }
+  }
+
+  // Remove the row itself from the DOM
+  row.remove();
+};
+
+/**
  * Add a custom relationship label. If a row for this value already exists in
  * the options list, just toggle it; otherwise inject a new row then select it.
  */
@@ -2468,8 +2510,18 @@ window.crmRelAddCustom = function() {
       chk.className = 'ms-check w-4 text-xs font-bold leading-none';
       chk.style.color = 'transparent';
       chk.textContent = '\u2713';
+      var lbl = document.createElement('span');
+      lbl.className = 'flex-1';
+      lbl.textContent = val;
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.title = 'Remove this option';
+      del.className = 'ms-del ml-auto text-gray-300 hover:text-red-500 transition text-xs font-bold leading-none px-1 flex-shrink-0';
+      del.textContent = '\u00d7';
+      del.onclick = function(e) { e.stopPropagation(); crmRelDelete(this); };
       row.appendChild(chk);
-      row.appendChild(document.createTextNode('\u00a0' + val));
+      row.appendChild(lbl);
+      row.appendChild(del);
       opts.appendChild(row);
     }
   }
