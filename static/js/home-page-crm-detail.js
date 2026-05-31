@@ -200,11 +200,22 @@ function _crmRenderDetail() {
 
         </div>
       </div>
+
+      <!-- Conversations (full-width, below two-column grid) -->
+      <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm p-5 mt-4">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-4 flex items-center gap-2">
+          <span>💬</span> Conversations
+        </h2>
+        <div id="crm-detail-convo" class="text-xs text-gray-400 italic">Loading…</div>
+      </div>
+
     </div>
   `);
 
-  // Load reminders async
+  // Load async sections
   _crmLoadDetailReminders(c.id);
+  _convoActiveContactId = c.id;
+  if (typeof crmConvoInitDetail === 'function') crmConvoInitDetail(c.id);
 }
 
 async function _crmLoadDetailReminders(contactId) {

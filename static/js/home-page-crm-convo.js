@@ -71,13 +71,14 @@ function _convoEntryHtml(cv, contactId, hidden) {
   </div>`;
 }
 
-function _convoSectionHtml(contactId, convos) {
-  var total = convos.length;
-  var visible = convos.slice(0, _CONVO_PREVIEW);
+// ── Shared input + timeline HTML (used by both modal and detail view) ─────────
+function _convoBodyHtml(contactId, convos) {
+  var total    = convos.length;
+  var visible  = convos.slice(0, _CONVO_PREVIEW);
   var overflow = convos.slice(_CONVO_PREVIEW);
 
   var entriesHtml = visible.map(cv => _convoEntryHtml(cv, contactId, false)).join('');
-  entriesHtml += overflow.map(cv => _convoEntryHtml(cv, contactId, true)).join('');
+  entriesHtml    += overflow.map(cv => _convoEntryHtml(cv, contactId, true)).join('');
 
   var seeAllBtn = overflow.length
     ? `<button onclick="crmConvoShowAll(${contactId})" id="convo-see-all"
@@ -86,12 +87,6 @@ function _convoSectionHtml(contactId, convos) {
     : '';
 
   return `
-  <div class="mt-6 pt-5 border-t border-gray-100 dark:border-zinc-700/60">
-    <h3 class="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3 flex items-center gap-2">
-      <span>💬</span> Conversations
-      ${total ? `<span class="text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400 rounded-full px-1.5 py-0.5 font-normal normal-case tracking-normal">${total}</span>` : ''}
-    </h3>
-
     <div class="flex gap-2 mb-4">
       <input id="convo-input" type="text" maxlength="1000"
         placeholder="Log a conversation…"
@@ -105,28 +100,68 @@ function _convoSectionHtml(contactId, convos) {
         class="px-3 py-1.5 text-sm font-semibold rounded-lg bg-[#0053e2] text-white
                hover:bg-blue-700 transition flex-shrink-0">Log</button>
     </div>
-
     <div id="convo-timeline" class="flex flex-col">
       ${entriesHtml || '<p class="text-sm text-gray-400 dark:text-zinc-500 ml-5 mb-2">No conversations yet.</p>'}
     </div>
-    ${seeAllBtn}
+    ${seeAllBtn}`;
+}
+
+// Modal wrapper: adds section heading + border-top (used inside the contact modal)
+function _convoSectionHtml(contactId, convos) {
+  var total = convos.length;
+  return `
+  <div class="mt-6 pt-5 border-t border-gray-100 dark:border-zinc-700/60">
+    <h3 class="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3 flex items-center gap-2">
+      <span>💬</span> Conversations
+      ${total ? `<span class="text-[10px] bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400 rounded-full px-1.5 py-0.5 font-normal normal-case tracking-normal">${total}</span>` : ''}
+    </h3>
+    ${_convoBodyHtml(contactId, convos)}
   </div>`;
 }
 
-// ── Init (called after modal renders) ─────────────────────────────────────────
+// ── Init helpers ──────────────────────────────────────────────────────────
+async function _convoFetch(contactId) {
+  var res = await fetch(`/home/crm/${_crmPid}/contacts/${contactId}/conversations`);
+  if (!res.ok) throw new Error('fetch failed');
+  var data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+// Modal: called after _crmShowModal — renders into #crm-convo-section
 async function crmConvoInit(contactId) {
   var section = document.getElementById('crm-convo-section');
   if (!section) return;
   section.innerHTML = '<p class="mt-6 text-xs text-gray-400 dark:text-zinc-500 animate-pulse">Loading conversations…</p>';
   try {
-    var res = await fetch(`/home/crm/${_crmPid}/contacts/${contactId}/conversations`);
-    var convos = res.ok ? await res.json() : [];
-    section.innerHTML = _convoSectionHtml(contactId, Array.isArray(convos) ? convos : []);
+    var convos = await _convoFetch(contactId);
+    section.innerHTML = _convoSectionHtml(contactId, convos);
     var inp = document.getElementById('convo-input');
     if (inp) inp.focus();
   } catch (_) {
     section.innerHTML = '<p class="mt-6 text-xs text-red-400">Could not load conversations.</p>';
   }
+}
+
+// Detail view: called after _crmSetMain — renders into #crm-detail-convo
+async function crmConvoInitDetail(contactId) {
+  var el = document.getElementById('crm-detail-convo');
+  if (!el) return;
+  try {
+    var convos = await _convoFetch(contactId);
+    el.innerHTML = _convoBodyHtml(contactId, convos);
+  } catch (_) {
+    el.innerHTML = '<p class="text-xs text-red-400">Could not load conversations.</p>';
+  }
+}
+
+// ── Re-render helper (works for both modal and detail view) ─────────────────
+function _convoRerender(contactId, convos) {
+  // Modal
+  var section = document.getElementById('crm-convo-section');
+  if (section) { section.innerHTML = _convoSectionHtml(contactId, convos); return; }
+  // Detail view
+  var el = document.getElementById('crm-detail-convo');
+  if (el) el.innerHTML = _convoBodyHtml(contactId, convos);
 }
 
 // ── Add ────────────────────────────────────────────────────────────────────────
@@ -143,8 +178,7 @@ async function crmConvoAdd(contactId) {
       {method: 'POST', body: fd});
     if (!res.ok) throw new Error(await res.text());
     var convos = await res.json();
-    var section = document.getElementById('crm-convo-section');
-    if (section) section.innerHTML = _convoSectionHtml(contactId, convos);
+    _convoRerender(contactId, convos);
     var newInp = document.getElementById('convo-input');
     if (newInp) newInp.focus();
   } catch (e) {
@@ -177,8 +211,12 @@ function crmConvoStartEdit(cvid) {
 }
 
 function crmConvoCancelEdit(cvid) {
-  // Re-init from server to restore original text cleanly.
-  if (typeof _convoActiveContactId !== 'undefined') crmConvoInit(_convoActiveContactId);
+  // Re-fetch from server to restore original text cleanly.
+  // Works for both modal (#crm-convo-section) and detail view (#crm-detail-convo).
+  if (typeof _convoActiveContactId !== 'undefined' && _convoActiveContactId) {
+    if (document.getElementById('crm-convo-section'))  crmConvoInit(_convoActiveContactId);
+    else if (document.getElementById('crm-detail-convo')) crmConvoInitDetail(_convoActiveContactId);
+  }
 }
 
 async function crmConvoSaveEdit(cvid, contactId) {
@@ -196,8 +234,7 @@ async function crmConvoSaveEdit(cvid, contactId) {
     );
     if (!res.ok) throw new Error(await res.text());
     var convos = await res.json();
-    var section = document.getElementById('crm-convo-section');
-    if (section) section.innerHTML = _convoSectionHtml(contactId, convos);
+    _convoRerender(contactId, convos);
   } catch (e) {
     ta.disabled = false;
     alert('Could not save: ' + e.message);
@@ -214,8 +251,7 @@ async function crmConvoDelete(cvid, contactId) {
     );
     if (!res.ok) throw new Error(await res.text());
     var convos = await res.json();
-    var section = document.getElementById('crm-convo-section');
-    if (section) section.innerHTML = _convoSectionHtml(contactId, convos);
+    _convoRerender(contactId, convos);
   } catch (e) {
     alert('Could not delete: ' + e.message);
   }
