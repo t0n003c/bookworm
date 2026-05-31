@@ -534,6 +534,12 @@ async def _widget_notif_loop():
                             continue
                         if fire_date != today:
                             continue
+                        # Gate on notify_time — items without it default to 09:00.
+                        # Prevents the loop from firing at 6 AM just because the
+                        # date matches; mirrors the countdown notify_time check.
+                        notify_time = item.get("notify_time") or "09:00"
+                        if now_hhmm < notify_time:
+                            continue
                         key = f"event:{row['widget_id']}:{item_id}:{nxt_iso}:{ld}"
                         if await has_widget_notif_sent(key):
                             continue

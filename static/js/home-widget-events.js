@@ -379,6 +379,9 @@ window.evtOpenEdit = function (wid, idx) {
   // Color
   _evtSetColor(item.color || '#0053e2', modal);
 
+  // Notify time
+  modal.querySelector('#evt-f-time').value = item.notify_time || '09:00';
+
   modal.querySelector('#evt-modal-title').textContent = 'Edit Event';
   modal.querySelector('#evt-save-btn').textContent    = 'Update Event';
   modal.classList.remove('hidden');
@@ -418,7 +421,8 @@ window.evtSaveModal = async function () {
     const n = parseInt(customN.value, 10);
     if (n > 0 && !leads.includes(n)) leads.push(n);
   }
-  const color = modal.querySelector('#evt-f-color').value || '#0053e2';
+  const color       = modal.querySelector('#evt-f-color').value || '#0053e2';
+  const notify_time = modal.querySelector('#evt-f-time').value  || '09:00';
   const items = _evtReadItems(_evtActiveWid);
 
   if (_evtEditingIdx !== null) {
@@ -427,11 +431,13 @@ window.evtSaveModal = async function () {
     items[_evtEditingIdx] = {
       id: origId, text, target_date: date, color,
       repeat_unit: repeatUnit, repeat_interval: repeatInterval, lead_days: leads,
+      notify_time,
     };
   } else {
     items.push({
       id: Date.now(), text, target_date: date, color,
       repeat_unit: repeatUnit, repeat_interval: repeatInterval, lead_days: leads,
+      notify_time,
     });
   }
 
@@ -460,6 +466,7 @@ function _evtResetForm(modal) {
   if (rstCheck) rstCheck.checked = false;
   if (rstN)     { rstN.value = ''; rstN.disabled = true; }
   _evtSetColor('#0053e2', modal);
+  modal.querySelector('#evt-f-time').value = '09:00';
 }
 
 function _evtToggleCustomRepeat(modal, show) {
@@ -589,6 +596,14 @@ function _evtBuildModal() {
                     style="background:${c}" title="${c}"></button>`).join('')}
           </div>
           <input id="evt-f-color" type="hidden" value="#0053e2">
+        </div>
+
+        <!-- Push notification time -->
+        <div>
+          <label for="evt-f-time"
+                 class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Push notification time</label>
+          <input id="evt-f-time" type="time" value="09:00" class="${inputCls}">
+          <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">What time to send the push on alert days (default 9:00 AM)</p>
         </div>
       </div>
 
