@@ -574,28 +574,76 @@ function _crmContactModal(c) {
             <span class="text-xs text-amber-600 dark:text-amber-400">No options yet — go to ⚙️ Fields to add some.</span>
           </div>`);
       }
-      const pillItems = opts.map(o =>
-        `<label class="cursor-pointer">
-           <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
-                  ${ms.includes(o)?'checked':''} class="sr-only peer"/>
-           <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
-                        bg-gray-100 dark:bg-zinc-800
-                        text-gray-500 dark:text-zinc-400
-                        peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
-                        peer-checked:font-medium">
-             ${_crmEsc(o)}
-           </span>
-         </label>`).join('');
-      // > 5 options: scroll the pill list instead of letting it sprawl
-      const pillWrap = opts.length > 5
-        ? `<div class="max-h-28 overflow-y-auto flex flex-wrap gap-1.5 p-1.5
-                      rounded-lg border border-gray-200 dark:border-zinc-700
-                      bg-white dark:bg-zinc-800">${pillItems}</div>`
-        : `<div class="flex flex-wrap gap-1.5">${pillItems}</div>`;
+
+      // ≤5 options: pill/checkbox row (original UI)
+      if (opts.length <= 5) {
+        const pillItems = opts.map(o =>
+          `<label class="cursor-pointer">
+             <input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
+                    ${ms.includes(o)?'checked':''} class="sr-only peer"/>
+             <span class="inline-flex px-2.5 py-0.5 text-xs rounded-full transition-all
+                          bg-gray-100 dark:bg-zinc-800
+                          text-gray-500 dark:text-zinc-400
+                          peer-checked:bg-blue-50 peer-checked:text-[#0053e2]
+                          peer-checked:font-medium">
+               ${_crmEsc(o)}
+             </span>
+           </label>`).join('');
+        return wrapDrag(f.id,
+          `<div class="flex items-start gap-2">
+            ${cfLabel(f, 'pt-0.5')}
+            <div class="flex flex-wrap gap-1.5">${pillItems}</div>
+          </div>`);
+      }
+
+      // 6+ options: custom dropdown
+      // Hidden checkboxes (sr-only) keep FormData.getAll() working — no save changes needed.
+      const hiddenChecks = opts.map(o =>
+        `<input type="checkbox" name="cf_${f.id}" value="${_crmEsc(o)}"
+                ${ms.includes(o) ? 'checked' : ''}/>`
+      ).join('');
+
+      const initDisplay = ms.length
+        ? ms.map(v =>
+            `<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium
+                          bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">
+               ${_crmEsc(v)}
+             </span>`).join('')
+        : `<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None selected —</span>`;
+
+      const panelRows = opts.map(o =>
+        `<div data-ms-val="${_crmEsc(o)}"
+          class="flex items-center gap-2 px-3 py-1.5 cursor-pointer
+                 hover:bg-gray-50 dark:hover:bg-zinc-800 transition text-sm
+                 text-gray-800 dark:text-zinc-200"
+          style="${ms.includes(o) ? 'background:#eff6ff' : ''}"
+          onclick="event.stopPropagation();crmMsPick(${f.id},this.getAttribute('data-ms-val'))">
+          <span class="ms-check w-3 text-[#0053e2] text-xs font-bold leading-none">
+            ${ms.includes(o) ? '✓' : ''}
+          </span>
+          ${_crmEsc(o)}
+        </div>`
+      ).join('');
+
       return wrapDrag(f.id,
         `<div class="flex items-start gap-2">
           ${cfLabel(f, 'pt-0.5')}
-          ${pillWrap}
+          <div class="relative flex-1" id="crm-ms-wrap-${f.id}">
+            <div id="crm-ms-display-${f.id}"
+                 class="min-h-[28px] flex flex-wrap gap-1 p-1.5 rounded-lg cursor-pointer
+                        border border-gray-200 dark:border-zinc-700
+                        bg-white dark:bg-zinc-800 hover:border-[#0053e2] transition"
+                 onclick="event.stopPropagation();crmMsToggle(${f.id})">
+              ${initDisplay}
+            </div>
+            <div id="crm-ms-panel-${f.id}"
+                 class="hidden absolute z-10 w-full mt-0.5 rounded-lg
+                        border border-gray-200 dark:border-zinc-700
+                        bg-white dark:bg-zinc-900 shadow-lg max-h-48 overflow-y-auto">
+              ${panelRows}
+            </div>
+            <div id="crm-ms-checks-${f.id}" class="sr-only">${hiddenChecks}</div>
+          </div>
         </div>`);
     } else if (f.field_type === 'select') {
       const opts = (f.options||'').split('|').filter(Boolean);
@@ -2192,6 +2240,73 @@ function crmCloseModal() {
   if (bd)   bd.classList.add('hidden');
   if (body) body.innerHTML = '';
 }
+
+// ── Multi-select custom dropdown helpers ──────────────────────────────────────
+// Used by 6+ option multi_select fields rendered in _crmContactModal.
+// All state lives in the DOM (hidden sr-only checkboxes) so FormData.getAll()
+// in crmSaveContact continues to work without modification.
+
+/** Toggle the option panel open/closed for the given field id. */
+window.crmMsToggle = function(fid) {
+  var panel = document.getElementById('crm-ms-panel-' + fid);
+  if (!panel) return;
+  var isOpen = !panel.classList.contains('hidden');
+  // Close all other open panels first
+  document.querySelectorAll('[id^="crm-ms-panel-"]').forEach(function(p) {
+    p.classList.add('hidden');
+  });
+  if (!isOpen) panel.classList.remove('hidden');
+};
+
+/**
+ * Toggle one option value, then refresh the display pill row and
+ * option-row highlight for that field.
+ */
+window.crmMsPick = function(fid, val) {
+  var checksWrap = document.getElementById('crm-ms-checks-' + fid);
+  var panel      = document.getElementById('crm-ms-panel-' + fid);
+  var display    = document.getElementById('crm-ms-display-' + fid);
+  if (!checksWrap || !panel || !display) return;
+
+  // Toggle the hidden checkbox
+  var cb = checksWrap.querySelector('input[value="' + CSS.escape(val) + '"]');
+  if (cb) cb.checked = !cb.checked;
+
+  // Collect current selections from hidden checkboxes
+  var selected = Array.from(
+    checksWrap.querySelectorAll('input[type="checkbox"]:checked')
+  ).map(function(c) { return c.value; });
+
+  // Refresh display area (pills when closed)
+  display.innerHTML = selected.length
+    ? selected.map(function(v) {
+        return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium '
+          + 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
+          + _crmEsc(v) + '</span>';
+      }).join('')
+    : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None selected —</span>';
+
+  // Refresh option rows (highlight + checkmark)
+  panel.querySelectorAll('[data-ms-val]').forEach(function(row) {
+    var rowVal = row.getAttribute('data-ms-val');
+    var on = selected.includes(rowVal);
+    row.style.background = on ? '#eff6ff' : '';
+    var chk = row.querySelector('.ms-check');
+    if (chk) chk.textContent = on ? '✓' : '';
+  });
+};
+
+// Close any open ms-panel when clicking outside
+(function() {
+  // Guard: attach only once even if this script is evaluated multiple times
+  if (window._crmMsOutsideListenerAdded) return;
+  window._crmMsOutsideListenerAdded = true;
+  document.addEventListener('click', function() {
+    document.querySelectorAll('[id^="crm-ms-panel-"]').forEach(function(p) {
+      p.classList.add('hidden');
+    });
+  });
+}());
 
 /**
  * Smart backdrop / overlay click handler.
