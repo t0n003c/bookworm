@@ -65,6 +65,7 @@ async def push_subscribe(request: Request):
             return JSONResponse({"error": "missing fields"}, status_code=400)
 
         sid = await save_subscription(uid, endpoint, p256dh, auth_key, ua)
+        log.info("[push] subscribe ok uid=%s endpoint=%.60s sid=%s", uid, endpoint, sid)
         return JSONResponse({"ok": True, "id": sid})
     except HTTPException:
         raise
@@ -161,6 +162,7 @@ async def rss_notif_toggle(request: Request):
         if not _VAPID_PUBLIC_KEY:
             return JSONResponse({"error": "push not configured"}, status_code=503)
         enabled = await toggle_rss_feed_notif(uid, url)
+        log.info("[push] rss-notif uid=%s url=%.80s enabled=%s", uid, url, enabled)
         return JSONResponse({"enabled": enabled})
     except HTTPException:
         raise

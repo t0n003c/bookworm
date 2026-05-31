@@ -16,6 +16,16 @@ try:
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set by the OS / Docker
 
+# Root-logger setup: uvicorn only configures its own loggers, leaving the
+# root logger with no handler. Without this, all app-level log.info() /
+# log.warning() calls are silently dropped.
+import logging as _logging
+_logging.basicConfig(
+    level=_logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s",
+)
+del _logging
+
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
@@ -226,83 +236,84 @@ async def _rss_notif_loop():
     from routers.home import _fetch_raw, _parse_rss, _POOL
 
     _INTERVAL = 15 * 60  # 15 minutes
+    await asyncio.sleep(10)  # brief warm-up so DB init finishes first
     while True:
-        await asyncio.sleep(_INTERVAL)
         try:
             rows = await get_all_notif_feeds_with_subs()
-            if not rows:
-                continue
-
-            # Group subscriptions by feed URL so each URL is only fetched once.
-            from collections import defaultdict
-            feeds_map: dict[str, list[dict]] = defaultdict(list)
-            for row in rows:
-                feeds_map[row["feed_url"]].append(
-                    {"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]}
-                )
-
-            loop = asyncio.get_event_loop()
-            total_sent = 0
-            stale_eps: set[str] = set()
-
-            for feed_url, subs in feeds_map.items():
-                try:
-                    text, _ = await loop.run_in_executor(
-                        _POOL, partial(_fetch_raw, feed_url, True)
+            if rows:
+                log.info("[rss-push] cycle start — %d feed/subscriber pair(s) found", len(rows))
+                # Group subscriptions by feed URL so each URL is only fetched once.
+                from collections import defaultdict
+                feeds_map: dict[str, list[dict]] = defaultdict(list)
+                for row in rows:
+                    feeds_map[row["feed_url"]].append(
+                        {"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]}
                     )
-                    parsed   = _parse_rss(text)
-                    items    = parsed.get("items") or []
-                    if not items:
-                        continue
 
-                    # Build a stable GUID for each item (link preferred, title fallback)
-                    def _guid(it: dict) -> str:
-                        return (it.get("link") or it.get("title") or "").strip()
+                loop = asyncio.get_event_loop()
+                total_sent = 0
+                stale_eps: set[str] = set()
 
-                    all_guids  = [_guid(it) for it in items if _guid(it)]
-                    seen_guids = await get_rss_seen_guids(feed_url)
+                for feed_url, subs in feeds_map.items():
+                    try:
+                        text, _ = await loop.run_in_executor(
+                            _POOL, partial(_fetch_raw, feed_url, True)
+                        )
+                        parsed   = _parse_rss(text)
+                        items    = parsed.get("items") or []
+                        if not items:
+                            continue
 
-                    if not seen_guids:
-                        # First-ever fetch: seed everything so users aren’t
-                        # bombarded with every historical article at once.
-                        await mark_rss_items_seen(feed_url, all_guids)
-                        continue
+                        # Build a stable GUID for each item (link preferred, title fallback)
+                        def _guid(it: dict) -> str:
+                            return (it.get("link") or it.get("title") or "").strip()
 
-                    new_items = [it for it in items if _guid(it) and _guid(it) not in seen_guids]
-                    if not new_items:
-                        continue
+                        all_guids  = [_guid(it) for it in items if _guid(it)]
+                        seen_guids = await get_rss_seen_guids(feed_url)
 
-                    feed_title = parsed.get("title") or feed_url
-                    for it in new_items[:5]:  # cap at 5 per cycle to avoid notification storms
-                        payload = {
-                            "title":  f"📰 {feed_title}",
-                            "body":   (it.get("title") or "New article").strip()[:120],
-                            "icon":   "/static/img/icons/icon-192.png",
-                            "badge":  "/static/img/icons/badge-96.png",
-                            "tag":    f"bw-rss-{hash(feed_url) & 0xFFFFFF}",
-                            "data":   {"url": it.get("link") or feed_url},
-                        }
-                        for sub in subs:
-                            sub_info = {"endpoint": sub["endpoint"],
-                                        "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}}
-                            result = await send_push(sub_info, payload)
-                            if result is True:
-                                total_sent += 1
-                            elif result is None:
-                                stale_eps.add(sub["endpoint"])
+                        if not seen_guids:
+                            # First-ever fetch: seed everything so users aren't
+                            # bombarded with every historical article at once.
+                            await mark_rss_items_seen(feed_url, all_guids)
+                            continue
 
-                    await mark_rss_items_seen(feed_url, [_guid(it) for it in new_items if _guid(it)])
+                        new_items = [it for it in items if _guid(it) and _guid(it) not in seen_guids]
+                        if not new_items:
+                            continue
 
-                except Exception:
-                    log.exception("[rss-push] error fetching %s", feed_url)
+                        feed_title = parsed.get("title") or feed_url
+                        for idx, it in enumerate(new_items[:5]):  # cap at 5 per cycle
+                            payload = {
+                                "title":  f"📰 {feed_title}",
+                                "body":   (it.get("title") or "New article").strip()[:120],
+                                "icon":   "/static/img/icons/icon-192.png",
+                                "badge":  "/static/img/icons/badge-96.png",
+                                # unique tag per article so notifications stack, not overwrite
+                                "tag":    f"bw-rss-{hash(feed_url) & 0xFFFFFF}-{idx}",
+                                "data":   {"url": it.get("link") or feed_url},
+                            }
+                            for sub in subs:
+                                sub_info = {"endpoint": sub["endpoint"],
+                                            "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}}
+                                result = await send_push(sub_info, payload)
+                                if result is True:
+                                    total_sent += 1
+                                elif result is None:
+                                    stale_eps.add(sub["endpoint"])
 
-            for ep in stale_eps:
-                await delete_subscription(ep)
-            if total_sent:
-                log.info("[rss-push] sent %d notification(s) across %d feed(s)",
-                         total_sent, len(feeds_map))
+                        await mark_rss_items_seen(feed_url, [_guid(it) for it in new_items if _guid(it)])
+
+                    except Exception:
+                        log.exception("[rss-push] error fetching %s", feed_url)
+
+                for ep in stale_eps:
+                    await delete_subscription(ep)
+                if total_sent:
+                    log.info("[rss-push] sent %d notification(s) across %d feed(s)",
+                             total_sent, len(feeds_map))
         except Exception:
             log.exception("[rss-push] loop error")
+        await asyncio.sleep(_INTERVAL)
 
 
 async def _bud_notif_loop():

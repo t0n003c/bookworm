@@ -5,6 +5,24 @@
 //   _crmFetch, _crmFieldDisplay, crmOpenEdit, crmDeleteContact
 'use strict';
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Shorten a URL for display: strips protocol + www, truncates to 50 chars.
+ * Full URL is preserved in the href.
+ * e.g. https://www.example.com/some/long/path → example.com/some/long/pa…
+ */
+function _crmShortenUrl(raw) {
+  try {
+    var u = new URL(raw);
+    var display = (u.hostname + u.pathname + u.search).replace(/^www\./, '');
+    display = display.replace(/\/$/, '');
+    return display.length > 50 ? display.slice(0, 49) + '\u2026' : display;
+  } catch (_) {
+    return raw.length > 50 ? raw.slice(0, 49) + '\u2026' : raw;
+  }
+}
+
 // ── State (declared in home-page-crm.js, referenced here) ─────────────────────
 // var _crmDetailContactId = null;
 // var _crmPrevView        = 'table';
@@ -73,7 +91,8 @@ function _crmRenderDetail() {
       } catch(e) {}
     } else if (f.field_type === 'url' && raw) {
       display = `<a href="${_crmEsc(raw)}" target="_blank" rel="noopener"
-        class="text-[#0053e2] dark:text-blue-400 hover:underline text-sm">${_crmEsc(raw)}</a>`;
+        title="${_crmEsc(raw)}"
+        class="text-[#0053e2] dark:text-blue-400 hover:underline text-sm">${_crmEsc(_crmShortenUrl(raw))}</a>`;
     } else if (f.field_type === 'reminder') {
       try {
         var ro = JSON.parse(raw);

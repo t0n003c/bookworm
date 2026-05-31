@@ -780,7 +780,11 @@ async function rssWidgetToggleFeedNotif(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: feedUrl }),
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      const msg = await r.json().catch(() => ({}));
+      alert('Could not save notification setting: ' + (msg.error || r.status));
+      return;
+    }
     const data    = await r.json();
     const enabled = data.enabled === true;
     if (enabled) window._rssWidgetNotifUrls.add(feedUrl);
