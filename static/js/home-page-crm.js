@@ -858,35 +858,34 @@ function _crmContactModal(c) {
           ${cfLabel(f, '', true)}
           <!-- Hidden input carries the JSON for crmSaveContact -->
           <input type="hidden" name="cf_${f.id}" id="cf_rem_val_${f.id}" value="${_crmEsc(val)}"/>
-          <div class="flex flex-col gap-2 mt-1 p-2 border border-gray-200 dark:border-zinc-700
-                      rounded-lg bg-gray-50 dark:bg-zinc-800/60">
-            <div class="flex flex-wrap gap-2">
+          <div class="flex flex-col gap-2 mt-1">
+            <div class="flex flex-wrap gap-3">
               <div class="flex-1 min-w-[120px]">
                 <label class="block text-[9px] font-semibold uppercase tracking-wide
                               text-gray-400 dark:text-zinc-500 mb-0.5">Date</label>
                 <input id="cf_rem_date_${f.id}" type="date" value="${_crmEsc(remDate)}"
                   oninput="crmSyncRemVal(${f.id})"
-                  class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
-                         bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+                  class="w-full border-b border-gray-200 dark:border-zinc-700 bg-transparent
+                         text-xs text-gray-800 dark:text-zinc-100 py-0.5
+                         focus:outline-none focus:border-[#0053e2] transition"/>
               </div>
               <div>
                 <label class="block text-[9px] font-semibold uppercase tracking-wide
                               text-gray-400 dark:text-zinc-500 mb-0.5">Time</label>
                 <input id="cf_rem_time_${f.id}" type="time" value="${_crmEsc(remTime)}"
                   oninput="crmSyncRemVal(${f.id})"
-                  class="border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
-                         bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                         focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+                  class="border-b border-gray-200 dark:border-zinc-700 bg-transparent
+                         text-xs text-gray-800 dark:text-zinc-100 py-0.5
+                         focus:outline-none focus:border-[#0053e2] transition"/>
               </div>
             </div>
             <div>
               <label class="block text-[9px] font-semibold uppercase tracking-wide
                             text-gray-400 dark:text-zinc-500 mb-0.5">Repeat</label>
               <select id="cf_rem_rec_${f.id}" oninput="crmSyncRemVal(${f.id})"
-                class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
-                       bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
-                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]">${recOpts}</select>
+                class="w-full border-b border-gray-200 dark:border-zinc-700 bg-transparent
+                       text-xs text-gray-700 dark:text-zinc-200 py-0.5
+                       focus:outline-none focus:border-[#0053e2] transition cursor-pointer">${recOpts}</select>
             </div>
             <div>
               <label class="block text-[9px] font-semibold uppercase tracking-wide
@@ -896,10 +895,10 @@ function _crmContactModal(c) {
               <input id="cf_rem_msg_${f.id}" type="text" value="${_crmEsc(remMsg)}"
                 placeholder="Reminder note…"
                 oninput="crmSyncRemVal(${f.id})"
-                class="w-full border border-gray-200 dark:border-zinc-700 rounded px-2 py-1 text-xs
-                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                class="w-full border-b border-gray-200 dark:border-zinc-700 bg-transparent
+                       text-xs text-gray-800 dark:text-zinc-100 py-0.5
                        placeholder-gray-300 dark:placeholder-zinc-600
-                       focus:outline-none focus:ring-1 focus:ring-[#0053e2]"/>
+                       focus:outline-none focus:border-[#0053e2] transition"/>
             </div>
             ${!isEdit ? '<p class="text-[9px] text-gray-400 dark:text-zinc-500 italic">Save the contact first to activate this reminder.</p>' : ''}
           </div>
