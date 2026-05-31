@@ -541,9 +541,9 @@ function _crmContactModal(c) {
     `       value="${_crmEsc(JSON.stringify(_relVals))}"/>`,
     `<div class="relative" id="crm-ms-wrap-rel">`,
     `  <div id="crm-ms-display-rel"`,
-    `       class="min-h-[28px] flex flex-wrap gap-1 p-1.5 rounded-lg cursor-pointer`,
-    `              border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800`,
-    `              hover:border-[#0053e2] transition"`,
+    `       class="min-h-[22px] flex flex-wrap gap-1 py-1 cursor-pointer`,
+    `              border-b border-gray-200 dark:border-zinc-700 bg-transparent`,
+    `              hover:border-[#0053e2] transition"`,`
     `       onclick="event.stopPropagation();crmMsToggle('rel')">`,
     _relVals.length
       ? _relVals.map(v =>
@@ -554,7 +554,8 @@ function _crmContactModal(c) {
     `  </div>`,
     `  <div id="crm-ms-panel-rel"`,
     `       class="hidden absolute z-10 w-full mt-0.5 rounded-lg border border-gray-200`,
-    `              dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg max-h-48 overflow-y-auto">`,
+    `              dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg flex flex-col max-h-52">`,
+    `    <div id="crm-rel-options" class="overflow-y-auto flex-1 py-1">`,
     ..._REL_OPTS.map(o => {
       const s  = _relVals.includes(o);
       const rs = s ? `background:${_relSelBg};color:${_relSelTxt};font-weight:600` : '';
@@ -570,6 +571,19 @@ function _crmContactModal(c) {
         `</div>`,
       ].join('\n');
     }),
+    `    </div>`,
+    `    <div class="border-t border-gray-100 dark:border-zinc-700 flex gap-2 items-center px-3 py-1.5 flex-shrink-0">`,
+    `      <input id="crm-rel-custom-input" type="text" placeholder="Add custom\u2026"`,
+    `             class="flex-1 min-w-0 text-xs bg-transparent border-b border-gray-200`,
+    `                    dark:border-zinc-700 px-0 py-0.5 placeholder-gray-300 dark:placeholder-zinc-600`,
+    `                    focus:outline-none focus:border-[#0053e2] transition"`,
+    `             onkeydown="if(event.key==='Enter'){event.preventDefault();crmRelAddCustom()}"`,
+    `             onclick="event.stopPropagation()"/>`,
+    `      <button type="button" onclick="event.stopPropagation();crmRelAddCustom()"`,
+    `              class="text-xs text-[#0053e2] font-semibold hover:underline flex-shrink-0 leading-none">`,
+    `        + Add`,
+    `      </button>`,
+    `    </div>`,
     `  </div>`,
     `</div>`,
   ].join('\n');
@@ -2430,6 +2444,39 @@ window.crmMsPick = function(fid, val) {
 };
 
 /**
+ * Add a custom relationship label. If a row for this value already exists in
+ * the options list, just toggle it; otherwise inject a new row then select it.
+ */
+window.crmRelAddCustom = function() {
+  var inp = document.getElementById('crm-rel-custom-input');
+  if (!inp) return;
+  var val = inp.value.trim();
+  if (!val) return;
+  inp.value = '';
+
+  var opts = document.getElementById('crm-rel-options');
+  if (opts) {
+    var exists = Array.from(opts.querySelectorAll('[data-ms-val]'))
+      .some(function(el) { return el.getAttribute('data-ms-val') === val; });
+    if (!exists) {
+      var row = document.createElement('div');
+      row.setAttribute('data-ms-val', val);
+      row.className = 'flex items-center gap-2 px-3 py-1.5 cursor-pointer '
+        + 'hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-sm';
+      row.onclick = function(e) { e.stopPropagation(); crmRelPick(this.getAttribute('data-ms-val')); };
+      var chk = document.createElement('span');
+      chk.className = 'ms-check w-4 text-xs font-bold leading-none';
+      chk.style.color = 'transparent';
+      chk.textContent = '\u2713';
+      row.appendChild(chk);
+      row.appendChild(document.createTextNode('\u00a0' + val));
+      opts.appendChild(row);
+    }
+  }
+  crmRelPick(val);
+};
+
+/**
  * Toggle one relationship option (stored as JSON array in #crm-rel-hidden).
  * Refreshes the pill display and option-row highlights.
  */
@@ -2458,7 +2505,10 @@ window.crmRelPick = function(val) {
       }).join('')
     : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">\u2014 None \u2014</span>';
 
-  panel.querySelectorAll('[data-ms-val]').forEach(function(row) {
+  // Options live in #crm-rel-options (inner scroll div); include any custom
+  // rows appended by crmRelAddCustom. Fall back to panel if not found.
+  var optContainer = document.getElementById('crm-rel-options') || panel;
+  optContainer.querySelectorAll('[data-ms-val]').forEach(function(row) {
     var on = selected.includes(row.getAttribute('data-ms-val'));
     row.style.background = on ? selBg  : '';
     row.style.color      = on ? selTxt : '';
@@ -2467,9 +2517,6 @@ window.crmRelPick = function(val) {
     if (chk) chk.style.color = on ? selTxt : 'transparent';
   });
 };
-
-// Close any open ms-panel when clicking outside its wrap element.
-// MUST use capture phase (true) because crm-modal-body calls
 // event.stopPropagation(), which would swallow a normal bubble-phase listener.
 (function() {
   if (window._crmMsOutsideListenerAdded) return;
