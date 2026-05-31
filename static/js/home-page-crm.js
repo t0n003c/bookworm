@@ -1229,17 +1229,32 @@ var _US_STATES = {
  * Skips: neighbourhood, hamlet, suburb, quarter, allotments — OSM
  * sub-locality fields that are not part of a postal address.
  *
+ * rawQuery (optional): the original search string the user typed. Used to
+ * recover a leading house number when Nominatim returns a street-level
+ * result (road indexed but specific house not in OSM database).
+ *
  * Falls back to display_name scrubbing when the structured address lacks
  * both a road and a city (e.g. the result is just a named region).
  */
-function _crmAddrFromDetails(item) {
+function _crmAddrFromDetails(item, rawQuery) {
   var a = item.address || {};
 
   // ── Street line ──────────────────────────────────────────────────────────
   var road = a.road || a.pedestrian || a.footway || a.path || a.street || '';
   // Abbreviate compass directions in the road name only.
   _ADDR_DIRS.forEach(function(pair) { road = road.replace(pair[0], pair[1]); });
-  var street = a.house_number ? (a.house_number + ' ' + road) : road;
+
+  // Prefer the house_number Nominatim gives us. Many residential addresses
+  // are not indexed at the building level in OSM, so house_number comes back
+  // empty even though the user clearly typed one. In that case, extract the
+  // leading digits from the raw query as a fallback — only when we have a
+  // road match (so we don't stick a number on a city/region result).
+  var houseNum = a.house_number || '';
+  if (!houseNum && road && rawQuery) {
+    var m = String(rawQuery).trim().match(/^(\d+[A-Za-z]?)\b/);
+    if (m) houseNum = m[1];
+  }
+  var street = houseNum ? (houseNum + ' ' + road) : road;
 
   // ── City ─────────────────────────────────────────────────────────────────
   // Deliberately skip: neighbourhood, hamlet, suburb, quarter, allotments.
@@ -1305,7 +1320,9 @@ async function _crmAddrFetch(q) {
     if (!res.ok) return;
     _addrItems = await res.json();
     // Pre-format once — both the dropdown label and the picked value use _fmt.
-    _addrItems.forEach(function(item) { item._fmt = _crmAddrFromDetails(item); });
+    // Pass the raw query so the formatter can recover a typed house number
+    // when Nominatim returns a street-level result (house not in OSM database).
+    _addrItems.forEach(function(item) { item._fmt = _crmAddrFromDetails(item, q); });
     _addrActive = -1;
     if (!_addrItems.length) { _crmAddrHide(); return; }
     list.innerHTML = _addrItems.map(function(item, i) {
