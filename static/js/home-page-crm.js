@@ -500,6 +500,27 @@ function _crmContactModal(c) {
        ${text}${required ? ' <span class="text-red-400">*</span>' : ''}
      </label>`;
 
+  // ── Copy-to-clipboard helpers ───────────────────────────────────────
+  const _cpySvg = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"'
+    + ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    + '<rect x="9" y="2" width="13" height="13" rx="2" ry="2"></rect>'
+    + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  // Tiny copy button — reads the live input value at click time via crmCopyField()
+  const cpyBtn = (name) =>
+    `<button type="button" title="Copy to clipboard"
+       onclick="crmCopyField(this,'${name}')"
+       class="flex-shrink-0 p-1 rounded text-gray-300 dark:text-zinc-600
+              hover:text-gray-500 dark:hover:text-zinc-300 transition-colors">${_cpySvg}</button>`;
+  // Flat underline input + copy button in a flex row (replaces bare flat() for copyable fields)
+  const cpyFlat = (name, val, type='text', placeholder='', extraAttrs='') =>
+    `<div class="flex items-center gap-0.5">
+       <input name="${name}" type="${type}" value="${_crmEsc(val||'')}" placeholder="${placeholder}" ${extraAttrs}
+         class="flex-1 min-w-0 bg-transparent border-b border-gray-200 dark:border-zinc-700 px-0 py-1
+                text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600
+                focus:outline-none focus:border-[#0053e2] transition"/>
+       ${cpyBtn(name)}
+     </div>`;
+
   // Shared × delete button for custom fields
   const delFieldBtn = (fid) =>
     `<button type="button" onclick="crmModalDeleteField(${fid},${c?.id||0})"
@@ -800,6 +821,7 @@ function _crmContactModal(c) {
               class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
                      text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
                      focus:outline-none focus:border-[#0053e2] transition"/>
+            ${cpyBtn('cf_'+f.id)}
             ${isEdit ? `<span id="crm-rem-btn-${f.id}" class="flex-shrink-0"></span>` : ''}
           </div>
           ${isEdit ? `<div id="crm-rem-${f.id}" class="mt-1"></div>` : ''}
@@ -819,6 +841,7 @@ function _crmContactModal(c) {
                    text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
                    placeholder-gray-300 dark:placeholder-zinc-600
                    focus:outline-none focus:border-[#0053e2] transition"/>
+          ${cpyBtn('cf_'+f.id)}
         </div>`);
     } else if (f.field_type === 'number') {
       return wrapDrag(f.id,
@@ -830,9 +853,22 @@ function _crmContactModal(c) {
                    text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
                    placeholder-gray-300 dark:placeholder-zinc-600
                    focus:outline-none focus:border-[#0053e2] transition"/>
+          ${cpyBtn('cf_'+f.id)}
+        </div>`);
+    } else if (f.field_type === 'url') {
+      return wrapDrag(f.id,
+        `<div class="flex items-center gap-2">
+          ${cfLabel(f)}
+          <input name="cf_${f.id}" type="url" value="${_crmEsc(val)}"
+            class="flex-1 bg-transparent border-b border-gray-200 dark:border-zinc-700
+                   text-sm text-gray-800 dark:text-zinc-100 px-0 py-0.5
+                   placeholder-gray-300 dark:placeholder-zinc-600
+                   focus:outline-none focus:border-[#0053e2] transition"/>
+          ${cpyBtn('cf_'+f.id)}
         </div>`);
     } else {
-      var iType = {url:'url', email:'email'}[f.field_type] || 'text';
+      // email, and any future field types added to VALID_FIELD_TYPES
+      var iType = f.field_type === 'email' ? 'email' : 'text';
       return wrapDrag(f.id,
         `<div class="flex items-center gap-2">
           ${cfLabel(f)}
@@ -893,7 +929,7 @@ function _crmContactModal(c) {
         <div class="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">
           <div>
             ${flatLbl('Name', true)}
-            ${flat('name', c?.name, 'text', 'Full name')}
+            ${cpyFlat('name', c?.name, 'text', 'Full name')}
           </div>
           <div>
             ${flatLbl('Relationship')}
@@ -901,11 +937,11 @@ function _crmContactModal(c) {
           </div>
           <div>
             ${flatLbl('Email')}
-            ${flat('email', c?.email, 'email', 'email@example.com')}
+            ${cpyFlat('email', c?.email, 'email', 'email@example.com')}
           </div>
           <div>
             ${flatLbl('Phone')}
-            ${flat('phone', c?.phone, 'tel', '+1 555 000 0000', 'oninput="crmFmtPhone(this)"')}
+            ${cpyFlat('phone', c?.phone, 'tel', '+1 555 000 0000', 'oninput="crmFmtPhone(this)"')}
           </div>
           <div>
             ${flatLbl('Birthday')}
@@ -917,13 +953,14 @@ function _crmContactModal(c) {
           </div>
           <div class="col-span-2">
             ${flatLbl('Company')}
-            ${flat('company', c?.company, 'text', 'Acme Corp')}
+            ${cpyFlat('company', c?.company, 'text', 'Acme Corp')}
           </div>
           <div class="col-span-2">
             ${flatLbl('Address')}
             <!-- Address autocomplete: input + hidden value + suggestion dropdown -->
             <!-- Nominatim (OpenStreetMap) is used for suggestions — no API key needed -->
-            <div class="relative" id="crm-addr-wrap">
+            <div class="flex items-center gap-0.5">
+              <div class="relative flex-1 min-w-0" id="crm-addr-wrap">
               <input id="crm-addr-input" name="address"
                 type="text"
                 value="${_crmEsc(c?.address || '')}"
@@ -941,6 +978,8 @@ function _crmContactModal(c) {
                 class="hidden absolute z-50 left-0 right-0 mt-1 max-h-52 overflow-y-auto
                        bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700
                        rounded-lg shadow-lg text-sm"></ul>
+              </div>
+              ${cpyBtn('address')}
             </div>
           </div>
         </div>
@@ -2249,6 +2288,32 @@ function crmCloseModal() {
   if (bd)   bd.classList.add('hidden');
   if (body) body.innerHTML = '';
 }
+
+// ── Copy-field handler ────────────────────────────────────────────────────
+/**
+ * Copy the current live value of a form input to the clipboard.
+ * Briefly swaps the clipboard icon for a green ✓ to confirm the copy.
+ * Works for both <input> and <textarea> elements.
+ */
+window.crmCopyField = function(btn, name) {
+  var form = btn.closest('form');
+  var el = form
+    ? (form.querySelector('input[name="' + name + '"]')
+       || form.querySelector('textarea[name="' + name + '"]'))
+    : null;
+  var val = (el ? el.value : '').trim();
+  if (!val) return;
+  var _chkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13"'
+    + ' viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+    + '<polyline points="20 6 9 17 4 12"></polyline></svg>';
+  navigator.clipboard.writeText(val).then(function() {
+    var orig = btn.innerHTML;
+    btn.innerHTML = _chkSvg;
+    btn.style.color = '#16a34a'; // green-600
+    setTimeout(function() { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+  }).catch(function() {});
+};
 
 // ── Multi-select custom dropdown helpers ──────────────────────────────────────
 // Used by 6+ option multi_select fields rendered in _crmContactModal.
