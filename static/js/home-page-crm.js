@@ -786,9 +786,9 @@ function _crmContactModal(c) {
           `<div class="flex items-center gap-2">
             ${cfLabel(f)}
             <select name="cf_${f.id}"
-              class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1
-                     text-xs bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-200
-                     focus:outline-none focus:ring-1 focus:ring-[#0053e2] cursor-pointer">
+              class="flex-1 border-0 border-b border-gray-200 dark:border-zinc-700
+                     bg-transparent text-xs text-gray-800 dark:text-zinc-200 py-1
+                     focus:outline-none focus:border-[#0053e2] cursor-pointer">
               ${ddOpts}
             </select>
           </div>`);
