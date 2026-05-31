@@ -562,29 +562,33 @@ async def _widget_notif_loop():
                             sent_keys.append(key)
 
             # ── Subscriptions: fire N days before next_payment_date ──────────────────
-            for row in await get_due_subscription_reminders():
-                key = row["dedup_key"]
-                if await has_widget_notif_sent(key):
-                    continue
-                days = (datetime.date.fromisoformat(row["next_payment_date"])
-                        - today).days
-                when = "today" if days == 0 else (
-                       "tomorrow" if days == 1 else f"in {days} days")
-                sub = {"endpoint": row["endpoint"],
-                       "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
-                payload = {
-                    "title": "\uD83D\uDCB3 Subscription due",
-                    "body":  (f"{row['name']} renews {when} "
-                              f"({row['currency']} {row['amount']:.2f})"),
-                    "icon":  "/static/img/icons/icon-192.png",
-                    "badge": "/static/img/icons/badge-96.png",
-                    "tag":   f"bw-sub-{row['sub_id']}",
-                }
-                result = await send_push(sub, payload)
-                if result is None:
-                    stale_eps.add(row["endpoint"])
-                elif result:
-                    sent_keys.append(key)
+            # Subscriptions have no user-set time field — gate to 09:00–21:00
+            # local so billing alerts never land at 3 AM during a maintenance
+            # restart.  Dedup key prevents a second fire once the window opens.
+            if "09:00" <= now_hhmm <= "21:00":
+                for row in await get_due_subscription_reminders():
+                    key = row["dedup_key"]
+                    if await has_widget_notif_sent(key):
+                        continue
+                    days = (datetime.date.fromisoformat(row["next_payment_date"])
+                            - today).days
+                    when = "today" if days == 0 else (
+                           "tomorrow" if days == 1 else f"in {days} days")
+                    sub = {"endpoint": row["endpoint"],
+                           "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}}
+                    payload = {
+                        "title": "\uD83D\uDCB3 Subscription due",
+                        "body":  (f"{row['name']} renews {when} "
+                                  f"({row['currency']} {row['amount']:.2f})"),
+                        "icon":  "/static/img/icons/icon-192.png",
+                        "badge": "/static/img/icons/badge-96.png",
+                        "tag":   f"bw-sub-{row['sub_id']}",
+                    }
+                    result = await send_push(sub, payload)
+                    if result is None:
+                        stale_eps.add(row["endpoint"])
+                    elif result:
+                        sent_keys.append(key)
 
             # ── Trip itinerary reminders ─────────────────────────────────────────
             for row in await get_due_trip_reminders():
