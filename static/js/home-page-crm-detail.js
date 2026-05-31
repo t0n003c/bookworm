@@ -64,6 +64,20 @@ function _crmRenderDetail() {
               bg-[#e8f0ff] dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">${_crmEsc(t.trim())}</span>`;
   }).join(' ');
 
+  // Relationship pills
+  var _relArr = [];
+  try { _relArr = JSON.parse(c.relationship || '[]'); } catch {}
+  if (!Array.isArray(_relArr)) _relArr = (c.relationship||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+  var relPills = _relArr.length
+    ? '<div class="flex flex-wrap gap-1.5 mt-2">'
+        + _relArr.map(function(v){
+            return '<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium '
+              + 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">'
+              + _crmEsc(String(v)) + '</span>';
+          }).join('')
+        + '</div>'
+    : '';
+
   // Custom fields — display-only cards
   var cfHtml = _crmFields.map(function(f){
     var raw = String(fv[f.id] ?? '');
@@ -192,6 +206,7 @@ function _crmRenderDetail() {
               </a>
             </p>` : ''}
             ${tagHtml ? `<div class="flex flex-wrap gap-1.5 mt-3">${tagHtml}</div>` : ''}
+            ${relPills}
           </div>
         </div>
       </div>
