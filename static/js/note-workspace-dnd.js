@@ -160,10 +160,17 @@
           return;
         }
         _toast('✅ Moved to ' + (wsName || 'workspace'), 'ok');
-        // Reload the current note list so the moved note disappears/appears correctly
-        var nl = document.getElementById('note-list');
-        if (nl && typeof htmx !== 'undefined') {
-          htmx.trigger(nl, 'bw:sync');
+        // Reload the note list for the *currently active* workspace so the
+        // moved note appears / disappears in the right place.  This is the
+        // same pattern used by workspace DnD throughout the codebase.
+        var wsInput = document.getElementById('active-workspace');
+        var activeWsId = wsInput ? wsInput.value : '';
+        if (activeWsId && typeof htmx !== 'undefined') {
+          htmx.ajax('GET', '/notes', {
+            target: '#note-list',
+            swap:   'innerHTML',
+            values: { workspace_id: activeWsId },
+          });
         }
       })
       .catch(function () { _toast('⚠️ Network error', 'error'); });
@@ -212,7 +219,7 @@
     if (!art) return;
 
     _noteId    = art.dataset.noteId;
-    _noteTitle = (art.dataset.title || art.querySelector('h2')?.textContent || 'Note').trim();
+    _noteTitle = (art.dataset.title || (art.querySelector('h2') ? art.querySelector('h2').textContent : '') || 'Note').trim();
     _startX    = e.clientX;
     _startY    = e.clientY;
 
@@ -256,7 +263,7 @@
     var wsId     = _targetWsId;
     var wsRow    = _prevTarget;
     var wsName   = wsRow
-      ? (wsRow.querySelector('button[data-ws-id]')?.textContent?.trim() || '')
+      ? (function () { var b = wsRow.querySelector('button[data-ws-id]'); return b ? b.textContent.trim() : ''; }())
       : '';
 
     _cancel();

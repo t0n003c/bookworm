@@ -386,7 +386,6 @@ async def delete_note_handler(
 async def move_note_handler(
     request: Request,
     note_id: int,
-    body: dict,
 ):
     """Move a note to a different workspace.
 
@@ -403,6 +402,7 @@ async def move_note_handler(
     uid = request.session.get("user_id")
     await _require_note_owner(note_id, uid)
 
+    body = await request.json()
     target_ws_id: Optional[int] = body.get("target_ws_id")
     if not target_ws_id:
         raise HTTPException(status_code=422, detail="target_ws_id required")
