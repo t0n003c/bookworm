@@ -19,6 +19,7 @@ from routers.notes_db import (
     create_note,
     update_note,
     delete_note,
+    move_note_to_workspace,
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
@@ -379,3 +380,50 @@ async def delete_note_handler(
 
 # Dead duplicate of url_title_endpoint removed — the registered version
 # lives above /{note_id} where Starlette's router finds it first.
+
+
+@router.post("/{note_id}/move", response_class=JSONResponse)
+async def move_note_handler(
+    request: Request,
+    note_id: int,
+    body: dict,
+):
+    """Move a note to a different workspace.
+
+    Rules (mirror the UI description):
+    - source == target   → no-op
+    - target is a descendant of source → no-op (parent→nested blocked;
+      the note stays visible in the parent and would "disappear" if moved)
+    - everything else    → UPDATE notes SET workspace_id = target
+    """
+    uid = request.session.get("user_id")
+    await _require_note_owner(note_id, uid)
+
+    target_ws_id: Optional[int] = body.get("target_ws_id")
+    if not target_ws_id:
+        raise HTTPException(status_code=422, detail="target_ws_id required")
+    await _require_ws_owner(target_ws_id, uid)
+
+    note = await get_note_by_id(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    source_ws_id: Optional[int] = note.get("workspace_id")
+
+    # Same workspace — nothing to do.
+    if source_ws_id == target_ws_id:
+        return JSONResponse({"ok": True, "moved": False, "reason": "same"})
+
+    # Parent → nested: if target is inside source's subtree, block the move.
+    # (The note is already visible from the parent; moving it down would hide it.)
+    if source_ws_id is not None:
+        source_descendants = await get_descendant_ids(source_ws_id)
+        source_descendants.discard(source_ws_id)  # exclude self
+        if target_ws_id in source_descendants:
+            return JSONResponse({
+                "ok": True, "moved": False,
+                "reason": "parent_to_nested",
+            })
+
+    await move_note_to_workspace(note_id, target_ws_id)
+    return JSONResponse({"ok": True, "moved": True, "note_id": note_id, "new_ws_id": target_ws_id})

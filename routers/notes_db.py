@@ -285,6 +285,17 @@ async def update_note(
         return True
 
 
+async def move_note_to_workspace(note_id: int, target_ws_id: int) -> bool:
+    """Reassign a note to a different workspace. Returns False if not found."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE notes SET workspace_id=? WHERE id=?",
+            (target_ws_id, note_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
 async def patch_note_content(note_id: int, content: str) -> bool:
     """Update only the content field of a note. Returns False if not found."""
     async with get_db() as db:
