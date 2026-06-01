@@ -157,8 +157,6 @@
         if (!data.ok) { _toast('⚠️ Could not move note', 'error'); return; }
         if (!data.moved) {
           if (data.reason === 'parent_to_nested') {
-            _toast('🚫 Can\'t move a note into its own nested workspace', 'warn');
-          }
           // 'same' → silent no-op
           return;
         }

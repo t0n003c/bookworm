@@ -390,11 +390,15 @@ async def move_note_handler(
 ):
     """Move a note to a different workspace.
 
-    Rules (mirror the UI description):
-    - source == target   → no-op
-    - target is a descendant of source → no-op (parent→nested blocked;
-      the note stays visible in the parent and would "disappear" if moved)
-    - everything else    → UPDATE notes SET workspace_id = target
+    Rules:
+    - source == target  → no-op (silent)
+    - any other target  → UPDATE notes SET workspace_id = target
+
+    Parent→nested is intentionally ALLOWED.  The parent view still shows the
+    note because search_notes() uses get_descendant_ids(), which includes all
+    children — so the note “stays visible” in the parent as a view effect.
+    Nested→parent is also allowed and truly removes the note from the nested
+    view (it no longer belongs to that workspace_id).
     """
     uid = request.session.get("user_id")
     await _require_note_owner(note_id, uid)
@@ -410,20 +414,8 @@ async def move_note_handler(
 
     source_ws_id: Optional[int] = note.get("workspace_id")
 
-    # Same workspace — nothing to do.
     if source_ws_id == target_ws_id:
         return JSONResponse({"ok": True, "moved": False, "reason": "same"})
-
-    # Parent → nested: if target is inside source's subtree, block the move.
-    # (The note is already visible from the parent; moving it down would hide it.)
-    if source_ws_id is not None:
-        source_descendants = await get_descendant_ids(source_ws_id)
-        source_descendants.discard(source_ws_id)  # exclude self
-        if target_ws_id in source_descendants:
-            return JSONResponse({
-                "ok": True, "moved": False,
-                "reason": "parent_to_nested",
-            })
 
     await move_note_to_workspace(note_id, target_ws_id)
     return JSONResponse({"ok": True, "moved": True, "note_id": note_id, "new_ws_id": target_ws_id})
