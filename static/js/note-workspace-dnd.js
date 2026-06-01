@@ -156,7 +156,6 @@
       .then(function (data) {
         if (!data.ok) { _toast('⚠️ Could not move note', 'error'); return; }
         if (!data.moved) {
-          if (data.reason === 'parent_to_nested') {
           // 'same' → silent no-op
           return;
         }
