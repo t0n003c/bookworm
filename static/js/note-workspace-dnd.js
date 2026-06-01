@@ -1,51 +1,48 @@
 /**
  * note-workspace-dnd.js
- * Hold a note card for 500 ms → drag it to any workspace in the sidebar tree
- * to reassign it.  Works on desktop (mouse) and mobile (touch/pointer).
+ * Hold a note card 500 ms then drag it onto a sidebar workspace row to
+ * reassign it.  Works on desktop (mouse) and mobile (touch/pointer).
  *
- * Rules (enforced by the server, mirrored in UI feedback):
- *  • same workspace           → no-op, no toast
- *  • parent → nested child    → blocked (note stays in parent)
- *  • nested → parent          → allowed (note moves up)
- *  • sibling (unrelated) move → allowed (note disappears from source)
- *
- * Mobile extra:  while dragging, move pointer to x < 80 px → sidebar opens
- * automatically after 300 ms so the workspace tree is reachable.
+ * Key rule: every move is always allowed (same-ws drops are silent no-ops).
+ * Parent workspaces still show the note after a parent→nested move because
+ * the notes query uses get_descendant_ids() — "stays visible" is a view
+ * effect, not a copy.
  */
 
 (function () {
   'use strict';
 
-  /* ── constants ─────────────────────────────────────────── */
-  var HOLD_MS        = 500;   // hold duration before drag arms
-  var MOVE_THRESHOLD = 8;     // px — movement cancels hold timer
-  var EDGE_PX        = 80;    // px from left edge → open sidebar
-  var EDGE_DELAY_MS  = 300;   // ms before sidebar auto-opens
+  /* ── constants ───────────────────────────────────────────── */
+  var HOLD_MS        = 500;  // ms before drag arms
+  var MOVE_THRESHOLD = 8;    // px movement that cancels the hold timer
+  var EDGE_PX        = 80;   // distance from left edge that opens sidebar
+  var EDGE_DELAY_MS  = 300;  // ms to wait at edge before opening sidebar
 
-  /* ── state ──────────────────────────────────────────────── */
-  var _armed       = false;   // hold timer fired, drag is live
-  var _noteId      = null;    // id being dragged
-  var _noteTitle   = null;    // display title for ghost
-  var _startX      = 0;
-  var _startY      = 0;
-  var _holdTimer   = null;
-  var _edgeTimer   = null;
-  var _targetWsId  = null;    // workspace currently under cursor
-  var _prevTarget  = null;    // for highlight cleanup
+  /* ── module state ────────────────────────────────────────── */
+  var _armed      = false;
+  var _noteId     = null;
+  var _noteTitle  = null;
+  var _startX     = 0;
+  var _startY     = 0;
+  var _holdTimer  = null;
+  var _edgeTimer  = null;
+  var _targetWsId = null;
+  var _prevTarget = null;
 
-  /* ── ghost element ──────────────────────────────────────── */
-  function _getGhost() {
+  /* ── ghost pill ──────────────────────────────────────────── */
+  function _ghost() {
     var g = document.getElementById('_nwdnd-ghost');
     if (!g) {
       g = document.createElement('div');
       g.id = '_nwdnd-ghost';
+      g.setAttribute('aria-hidden', 'true');
       g.style.cssText = [
         'position:fixed', 'z-index:9999', 'pointer-events:none',
         'display:none',
-        'max-width:220px', 'padding:6px 12px',
+        'max-width:220px', 'padding:6px 14px',
         'background:#0053e2', 'color:#fff',
         'border-radius:999px', 'font-size:12px', 'font-weight:600',
-        'box-shadow:0 4px 16px rgba(0,0,0,0.25)',
+        'box-shadow:0 4px 16px rgba(0,0,0,.25)',
         'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis',
         'transform:translate(-50%,-50%)',
         'user-select:none',
@@ -56,8 +53,8 @@
   }
 
   function _showGhost(x, y) {
-    var g = _getGhost();
-    g.textContent = '📄 ' + (_noteTitle || 'Note');
+    var g = _ghost();
+    g.textContent   = '📄 ' + (_noteTitle || 'Note');
     g.style.left    = x + 'px';
     g.style.top     = y + 'px';
     g.style.display = 'block';
@@ -65,7 +62,9 @@
 
   function _moveGhost(x, y) {
     var g = document.getElementById('_nwdnd-ghost');
-    if (g) { g.style.left = x + 'px'; g.style.top = y + 'px'; }
+    if (!g) return;
+    g.style.left = x + 'px';
+    g.style.top  = y + 'px';
   }
 
   function _hideGhost() {
@@ -73,17 +72,17 @@
     if (g) g.style.display = 'none';
   }
 
-  /* ── workspace highlight ────────────────────────────────── */
-  function _highlightWs(el) {
-    if (_prevTarget && _prevTarget !== el) _unhighlightWs(_prevTarget);
+  /* ── workspace highlight ─────────────────────────────────── */
+  function _highlight(el) {
+    if (_prevTarget && _prevTarget !== el) _unhighlight(_prevTarget);
     if (!el) { _prevTarget = null; return; }
     el.style.outline       = '2px solid #0053e2';
     el.style.outlineOffset = '-2px';
-    el.style.borderRadius  = '8px';
+    el.style.borderRadius  = '6px';
     _prevTarget = el;
   }
 
-  function _unhighlightWs(el) {
+  function _unhighlight(el) {
     if (!el) return;
     el.style.outline       = '';
     el.style.outlineOffset = '';
@@ -91,36 +90,30 @@
   }
 
   function _clearHighlight() {
-    _unhighlightWs(_prevTarget);
+    _unhighlight(_prevTarget);
     _prevTarget  = null;
     _targetWsId  = null;
   }
 
-  /* ── find the workspace row under the pointer ───────────── */
+  /* ── find the workspace drop row under the pointer ───────── */
   function _wsRowAt(x, y) {
-    var g = document.getElementById('_nwdnd-ghost');
-    var prev = g ? g.style.display : 'none';
-    if (g) g.style.display = 'none';            // hide ghost so it's not the hit target
+    // Temporarily hide ghost so it doesn't intercept elementFromPoint
+    var g    = document.getElementById('_nwdnd-ghost');
+    var prev = g ? g.style.display : '';
+    if (g) g.style.display = 'none';
     var el = document.elementFromPoint(x, y);
     if (g) g.style.display = prev;
     if (!el) return null;
-    var row = el.closest('[data-dnd-drop-ws-id]');
-    return row;
+    return el.closest('[data-dnd-drop-ws-id]');
   }
 
-  /* ── mobile sidebar auto-open ───────────────────────────── */
+  /* ── mobile: auto-open sidebar when dragging near left edge ─ */
   function _checkEdge(x) {
     if (x < EDGE_PX) {
       if (!_edgeTimer) {
         _edgeTimer = setTimeout(function () {
-          var sb = document.getElementById('sidebar');
-          // Only open if actually closed (mobile overlay not already visible)
-          if (sb && (!sb.style.width || sb.style.width === '0px' ||
-                     sb.classList.contains('w-0'))) {
-            // Force sidebar workspace tab active so the tree is visible
-            if (typeof switchSidebarTab === 'function') switchSidebarTab('workspaces');
-            if (typeof _mobileSidebarOpen === 'function') _mobileSidebarOpen();
-          }
+          if (typeof switchSidebarTab === 'function') switchSidebarTab('workspaces');
+          if (typeof _mobileSidebarOpen === 'function') _mobileSidebarOpen();
         }, EDGE_DELAY_MS);
       }
     } else {
@@ -128,24 +121,25 @@
     }
   }
 
-  /* ── cancel / cleanup ───────────────────────────────────── */
-  function _cancel() {
-    _armed = false;
-    if (_holdTimer)  { clearTimeout(_holdTimer);  _holdTimer = null; }
-    if (_edgeTimer)  { clearTimeout(_edgeTimer);  _edgeTimer = null; }
-    _hideGhost();
-    _clearHighlight();
-    document.body.style.userSelect = '';
-    document.body.style.touchAction = '';
+  /* ── reset all state ─────────────────────────────────────── */
+  function _reset() {
+    _armed     = false;
     _noteId    = null;
     _noteTitle = null;
+    if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
+    if (_edgeTimer) { clearTimeout(_edgeTimer); _edgeTimer = null; }
+    _hideGhost();
+    _clearHighlight();
+    document.body.style.userSelect  = '';
+    document.body.style.touchAction = '';
   }
 
-  /* ── do the move ────────────────────────────────────────── */
-  function _doMove(wsId, wsName) {
-    if (!_noteId) return;
-    var noteId = _noteId;
-    _cancel();  // clean up before async work
+  /* ── cancel an in-progress drag ──────────────────────────── */
+  function _cancel() { _reset(); }
+
+  /* ── execute the move via fetch ──────────────────────────── */
+  function _doMove(noteId, wsId, wsName) {
+    if (!noteId || !wsId) return;
 
     fetch('/notes/' + noteId + '/move', {
       method:  'POST',
@@ -155,30 +149,26 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data.ok) { _toast('⚠️ Could not move note', 'error'); return; }
-        if (!data.moved) {
-          // 'same' → silent no-op
-          return;
-        }
+        if (!data.moved) return;   // same-workspace drop — silent no-op
         _toast('✅ Moved to ' + (wsName || 'workspace'), 'ok');
-        // Reload the note list for the *currently active* workspace so the
-        // moved note appears / disappears in the right place.  This is the
-        // same pattern used by workspace DnD throughout the codebase.
-        var wsInput = document.getElementById('active-workspace');
-        var activeWsId = wsInput ? wsInput.value : '';
-        if (activeWsId && typeof htmx !== 'undefined') {
+        // Reload the current workspace's note list using the same htmx.ajax
+        // pattern used by workspace-DnD throughout the codebase.
+        var inp = document.getElementById('active-workspace');
+        var aid = inp ? inp.value : '';
+        if (aid && typeof htmx !== 'undefined') {
           htmx.ajax('GET', '/notes', {
             target: '#note-list',
             swap:   'innerHTML',
-            values: { workspace_id: activeWsId },
+            values: { workspace_id: aid },
           });
         }
       })
       .catch(function () { _toast('⚠️ Network error', 'error'); });
   }
 
-  /* ── toast ──────────────────────────────────────────────── */
+  /* ── toast notification ──────────────────────────────────── */
   function _toast(msg, type) {
-    var t = document.createElement('div');
+    var t  = document.createElement('div');
     var bg = type === 'ok' ? '#2a8703' : type === 'warn' ? '#995213' : '#ea1100';
     t.style.cssText = [
       'position:fixed', 'bottom:24px', 'left:50%',
@@ -187,8 +177,8 @@
       'padding:10px 20px', 'border-radius:999px',
       'background:' + bg, 'color:#fff',
       'font-size:13px', 'font-weight:600',
-      'box-shadow:0 4px 16px rgba(0,0,0,0.2)',
-      'transition:opacity 0.3s',
+      'box-shadow:0 4px 16px rgba(0,0,0,.2)',
+      'transition:opacity .3s',
     ].join(';');
     t.textContent = msg;
     document.body.appendChild(t);
@@ -198,28 +188,26 @@
     }, 2200);
   }
 
-  /* ── should we ignore this target? ─────────────────────── */
-  function _targetIsNote(el) {
-    // Only arm on article[data-note-id] in the standard note list.
-    // Skip timeline view (it has its own DnD), and database views.
+  /* ── gate: only arm on note cards in the standard list view ─ */
+  function _noteCardAt(el) {
     var nl = document.getElementById('note-list');
-    if (!nl) return false;
-    if (nl.dataset.view === 'timeline') return false;
-    var art = el.closest('article[data-note-id]');
-    if (!art) return false;
-    // Don't start drag if user is clicking a button / link inside the card
-    if (el.closest('button,a,input,textarea,select')) return false;
-    return art;
+    if (!nl) return null;
+    if (nl.dataset.view === 'timeline') return null;
+    if (el.closest('button,a,input,textarea,select')) return null;
+    return el.closest('article[data-note-id]');
   }
 
-  /* ── pointer events ─────────────────────────────────────── */
+  /* ── pointer event wiring ────────────────────────────────── */
+
+  // pointerdown: start the hold timer
   document.addEventListener('pointerdown', function (e) {
-    if (e.button !== undefined && e.button !== 0) return; // left button only
-    var art = _targetIsNote(e.target);
+    if (e.button !== 0) return;
+    var art = _noteCardAt(e.target);
     if (!art) return;
 
     _noteId    = art.dataset.noteId;
-    _noteTitle = (art.dataset.title || (art.querySelector('h2') ? art.querySelector('h2').textContent : '') || 'Note').trim();
+    var h2     = art.querySelector('h2');
+    _noteTitle = (art.dataset.title || (h2 ? h2.textContent : '') || 'Note').trim();
     _startX    = e.clientX;
     _startY    = e.clientY;
 
@@ -231,50 +219,54 @@
     }, HOLD_MS);
   }, { passive: true });
 
+  // pointermove: move ghost + track drop target
   document.addEventListener('pointermove', function (e) {
     if (!_noteId) return;
 
-    // Cancel hold if pointer moved too far before 500 ms
     if (!_armed) {
+      // Cancel hold if the pointer strays before the timer fires
       if (Math.hypot(e.clientX - _startX, e.clientY - _startY) > MOVE_THRESHOLD) {
-        _cancel();
+        _reset();
       }
       return;
     }
 
-    e.preventDefault();   // stop scroll while dragging
+    e.preventDefault();  // prevent scroll while dragging (needs non-passive)
 
     _moveGhost(e.clientX, e.clientY);
     _checkEdge(e.clientX);
 
     var row = _wsRowAt(e.clientX, e.clientY);
     if (row) {
-      var wsId = +row.dataset.dndDropWsId;
-      _targetWsId = wsId;
-      _highlightWs(row);
+      _targetWsId = Number(row.dataset.dndDropWsId);
+      _highlight(row);
     } else {
       _clearHighlight();
     }
   }, { passive: false });
 
-  document.addEventListener('pointerup', function (e) {
+  // pointerup: commit the drop — capture everything BEFORE _reset()
+  document.addEventListener('pointerup', function () {
     if (!_noteId) return;
+
+    // Snapshot state before reset wipes it
     var wasArmed = _armed;
+    var noteId   = _noteId;
     var wsId     = _targetWsId;
-    var wsRow    = _prevTarget;
-    var wsName   = wsRow
-      ? (function () { var b = wsRow.querySelector('button[data-ws-id]'); return b ? b.textContent.trim() : ''; }())
-      : '';
+    var row      = _prevTarget;
+    var btn      = row ? row.querySelector('button[data-ws-id]') : null;
+    var wsName   = btn ? btn.textContent.trim() : '';
 
-    _cancel();
+    _reset();
 
-    if (!wasArmed || !wsId) return;   // not a real drag, or no target
-    _doMove(wsId, wsName);
+    if (!wasArmed || !wsId) return;
+    _doMove(noteId, wsId, wsName);
   });
 
-  document.addEventListener('pointercancel', function () { _cancel(); });
+  document.addEventListener('pointercancel', _reset);
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && _armed) _cancel();
+    if (e.key === 'Escape') _reset();
   });
+
 })();
