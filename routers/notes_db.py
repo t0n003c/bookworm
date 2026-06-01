@@ -296,6 +296,16 @@ async def move_note_to_workspace(note_id: int, target_ws_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+async def get_note_workspace_id(note_id: int) -> Optional[int]:
+    """Return the current workspace_id for a note, or None if not found."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT workspace_id FROM notes WHERE id = ?", (note_id,)
+        )
+        row = await cur.fetchone()
+        return row["workspace_id"] if row else None
+
+
 async def patch_note_content(note_id: int, content: str) -> bool:
     """Update only the content field of a note. Returns False if not found."""
     async with get_db() as db:

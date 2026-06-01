@@ -20,6 +20,7 @@ from routers.notes_db import (
     update_note,
     delete_note,
     move_note_to_workspace,
+    get_note_workspace_id,
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
@@ -389,31 +390,23 @@ async def move_note_handler(
 ):
     """Move a note to a different workspace.
 
-    Rules:
     - source == target  → no-op (silent)
     - any other target  → UPDATE notes SET workspace_id = target
 
-    Parent→nested is intentionally ALLOWED.  The parent view still shows the
-    note because search_notes() uses get_descendant_ids(), which includes all
-    children — so the note “stays visible” in the parent as a view effect.
-    Nested→parent is also allowed and truly removes the note from the nested
-    view (it no longer belongs to that workspace_id).
+    Parent→nested is intentionally ALLOWED. Parent workspaces continue to
+    show the note because list_notes() uses get_descendant_ids().
     """
     uid = request.session.get("user_id")
-    await _require_note_owner(note_id, uid)
+    await _require_note_owner(note_id, uid)  # 403 if not owned by uid
 
     body = await request.json()
     target_ws_id: Optional[int] = body.get("target_ws_id")
     if not target_ws_id:
         raise HTTPException(status_code=422, detail="target_ws_id required")
-    await _require_ws_owner(target_ws_id, uid)
+    await _require_ws_owner(target_ws_id, uid)  # 403 if ws not owned by uid
 
-    note = await get_note_by_id(note_id)
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
-
-    source_ws_id: Optional[int] = note.get("workspace_id")
-
+    # Lightweight same-workspace check — avoids a pointless UPDATE.
+    source_ws_id = await get_note_workspace_id(note_id)
     if source_ws_id == target_ws_id:
         return JSONResponse({"ok": True, "moved": False, "reason": "same"})
 
