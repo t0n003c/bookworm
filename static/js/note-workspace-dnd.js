@@ -141,17 +141,31 @@
   function _doMove(noteId, wsId, wsName) {
     if (!noteId || !wsId) return;
 
-    fetch('/notes/' + noteId + '/move', {
+    var url  = '/notes/' + noteId + '/move';
+    var body = { target_ws_id: wsId };
+    console.log('[nwdnd] POST', url, body);
+
+    fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ target_ws_id: wsId }),
+      body:    JSON.stringify(body),
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (!data.ok) { _toast('⚠️ Could not move note', 'error'); return; }
-        if (!data.moved) return;   // same-workspace drop — silent no-op
+      .then(function (r) {
+        console.log('[nwdnd] response status', r.status);
+        return r.json().then(function (data) {
+          return { status: r.status, data: data };
+        });
+      })
+      .then(function (res) {
+        console.log('[nwdnd] response body', res.data);
+        if (res.status !== 200 || !res.data.ok) {
+          var detail = (res.data && res.data.detail) ? res.data.detail : 'status ' + res.status;
+          _toast('⚠️ Move failed: ' + detail, 'error');
+          return;
+        }
+        if (!res.data.moved) return;   // same-workspace — silent no-op
         _toast('✅ Moved to ' + (wsName || 'workspace'), 'ok');
-        // Reload the current workspace's note list using the same htmx.ajax
+        // Reload the current workspace's note list — same htmx.ajax
         // pattern used by workspace-DnD throughout the codebase.
         var inp = document.getElementById('active-workspace');
         var aid = inp ? inp.value : '';
@@ -163,7 +177,10 @@
           });
         }
       })
-      .catch(function () { _toast('⚠️ Network error', 'error'); });
+      .catch(function (err) {
+        console.error('[nwdnd] fetch error', err);
+        _toast('⚠️ Network error', 'error');
+      });
   }
 
   /* ── toast notification ──────────────────────────────────── */
@@ -259,7 +276,11 @@
 
     _reset();
 
-    if (!wasArmed || !wsId) return;
+    if (!wasArmed || !wsId) {
+      console.log('[nwdnd] drop ignored: wasArmed=' + wasArmed + ' wsId=' + wsId);
+      return;
+    }
+    console.log('[nwdnd] drop: noteId=' + noteId + ' wsId=' + wsId);
     _doMove(noteId, wsId, wsName);
   });
 
