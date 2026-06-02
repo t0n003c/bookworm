@@ -477,7 +477,16 @@ async def sync_items_endpoint(request: Request):
     return {"status": "syncing", "message": "Widget sync started in background."}
 
 
-@router.get("/stream")
+@router.post("/sync-crm")
+async def sync_crm_endpoint(request: Request):
+    """Superadmin: trigger an immediate CRM contact search_items resync."""
+    _uid(request)
+    if request.session.get("role") != "superadmin":
+        raise HTTPException(status_code=403)
+    asyncio.create_task(search_index.sync_crm_contacts())
+    return {"status": "syncing", "message": "CRM contact sync started in background."}
+
+
 async def stream_answer(request: Request, q: str = ""):
     """SSE stream — runs hybrid search then streams an LLM answer.
 
