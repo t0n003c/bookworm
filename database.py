@@ -306,6 +306,21 @@ async def init_db() -> None:
                 "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0"
             )
 
+        # ── Phase 4B: per-user LLM settings ─────────────────────────────────
+        # User key takes precedence over site-wide key in get_effective_llm_settings().
+        if "llm_endpoint" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN llm_endpoint TEXT NOT NULL DEFAULT ''"
+            )
+        if "llm_api_key" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN llm_api_key TEXT NOT NULL DEFAULT ''"
+            )
+        if "llm_model" not in u_cols:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN llm_model TEXT NOT NULL DEFAULT ''"
+            )
+
         # ── notes migrations (single PRAGMA read) ─────────────────────────────
         cursor = await db.execute("PRAGMA table_info(notes)")
         n_cols = {r[1] for r in await cursor.fetchall()}
@@ -373,6 +388,142 @@ async def init_db() -> None:
         """)
         await db.commit()
         # ── /FTS5 ─────────────────────────────────────────────────────────
+
+        # ── Phase 4A: search_items shadow table + FTS5 ────────────────────
+        # Unified denormalised table covering db_cards, workspaces, and
+        # home_widgets.  Notes stay in notes_fts (real-time triggers).
+        # db_cards + workspaces get their own triggers below.
+        # Widgets have no SQL-level triggers (config_json needs Python to
+        # parse) — they are refreshed by the hourly APScheduler job.
+        _si_check = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='search_items'"
+        )
+        _si_existed = (await _si_check.fetchone()) is not None
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS search_items (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_type  TEXT    NOT NULL,
+                item_id    INTEGER NOT NULL,
+                user_id    INTEGER NOT NULL,
+                title      TEXT    NOT NULL DEFAULT '',
+                body       TEXT    NOT NULL DEFAULT '',
+                link_data  TEXT    NOT NULL DEFAULT '{}',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(item_type, item_id)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_search_items_user "
+            "ON search_items(user_id)"
+        )
+
+        await db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS search_items_fts
+            USING fts5(title, body, content='search_items', content_rowid='id')
+        """)
+
+        # db_cards triggers
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_dbc_ai
+            AFTER INSERT ON db_cards BEGIN
+                INSERT OR REPLACE INTO search_items
+                    (item_type, item_id, user_id, title, body, link_data)
+                VALUES (
+                    'db_card', new.id, new.user_id,
+                    COALESCE(new.title, ''), COALESCE(new.note_content, ''),
+                    json_object('ws_id', new.db_id)
+                );
+                INSERT INTO search_items_fts(rowid, title, body)
+                SELECT id, title, body FROM search_items
+                WHERE  item_type = 'db_card' AND item_id = new.id;
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_dbc_au
+            AFTER UPDATE OF title, note_content ON db_cards BEGIN
+                UPDATE search_items
+                SET    title      = COALESCE(new.title, ''),
+                       body       = COALESCE(new.note_content, ''),
+                       updated_at = datetime('now')
+                WHERE  item_type = 'db_card' AND item_id = old.id;
+                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
+                VALUES ('delete', old.id,
+                        COALESCE(old.title, ''), COALESCE(old.note_content, ''));
+                INSERT INTO search_items_fts(rowid, title, body)
+                SELECT id, title, body FROM search_items
+                WHERE  item_type = 'db_card' AND item_id = new.id;
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_dbc_ad
+            AFTER DELETE ON db_cards BEGIN
+                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
+                VALUES ('delete', old.id,
+                        COALESCE(old.title, ''), COALESCE(old.note_content, ''));
+                DELETE FROM search_items
+                WHERE  item_type = 'db_card' AND item_id = old.id;
+            END
+        """)
+
+        # workspace triggers
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_ws_ai
+            AFTER INSERT ON workspaces BEGIN
+                INSERT OR IGNORE INTO search_items
+                    (item_type, item_id, user_id, title, body, link_data)
+                VALUES (
+                    'workspace', new.id, new.user_id,
+                    COALESCE(new.emoji, '') || ' ' || COALESCE(new.name, ''), '',
+                    json_object('ws_id', new.id)
+                );
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_ws_au
+            AFTER UPDATE OF name, emoji ON workspaces BEGIN
+                UPDATE search_items
+                SET    title      = COALESCE(new.emoji, '') || ' ' || COALESCE(new.name, ''),
+                       updated_at = datetime('now')
+                WHERE  item_type = 'workspace' AND item_id = old.id;
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS search_items_ws_soft_del
+            AFTER UPDATE OF deleted_at ON workspaces
+            WHEN new.deleted_at IS NOT NULL BEGIN
+                DELETE FROM search_items
+                WHERE  item_type = 'workspace' AND item_id = old.id;
+            END
+        """)
+
+        # First-boot population — only runs once when the table is brand-new.
+        # Widgets are populated by the hourly APScheduler job instead.
+        if not _si_existed:
+            await db.execute("""
+                INSERT OR IGNORE INTO search_items
+                    (item_type, item_id, user_id, title, body, link_data)
+                SELECT
+                    'db_card', id, user_id,
+                    COALESCE(title, ''), COALESCE(note_content, ''),
+                    json_object('ws_id', db_id)
+                FROM db_cards
+            """)
+            await db.execute("""
+                INSERT OR IGNORE INTO search_items
+                    (item_type, item_id, user_id, title, body, link_data)
+                SELECT
+                    'workspace', id, user_id,
+                    COALESCE(emoji, '') || ' ' || COALESCE(name, ''), '',
+                    json_object('ws_id', id)
+                FROM workspaces WHERE deleted_at IS NULL
+            """)
+            # Populate FTS from existing rows
+            await db.execute(
+                "INSERT INTO search_items_fts(search_items_fts) VALUES('rebuild')"
+            )
+        # ── /Phase 4A ──────────────────────────────────────────────────────
+
 
         for name, color, desc in SEED_CATEGORIES:
             await db.execute(

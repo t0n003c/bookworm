@@ -831,7 +831,7 @@ async def lifespan(app: FastAPI):
     await purge_old_demo_users()  # clean up stale demo accounts on boot
     await purge_old_rss_read_items()  # trim rss read-state to 10 per feed
 
-    # ── Hybrid Search Phase 2: TF-IDF index ──────────────────────────
+    # ── Hybrid Search Phase 2: TF-IDF index ───────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     if not search_index.load_from_disk():
         # Pickles missing — build on first boot in the background
@@ -841,8 +841,14 @@ async def lifespan(app: FastAPI):
         search_index.rebuild_index, "cron", hour=6, minute=0,
         id="bw_tfidf_rebuild", replace_existing=True,
     )
+    # Phase 4A: hourly widget sync — widgets have no SQL triggers
+    _sq_scheduler.add_job(
+        search_index.sync_widget_items, "interval", hours=1,
+        id="bw_widget_sync", replace_existing=True,
+    )
     _sq_scheduler.start()
-    # ── /Hybrid Search ───────────────────────────────────────────────
+    asyncio.create_task(search_index.sync_widget_items())  # populate on boot
+    # ── /Hybrid Search ────────────────────────────────────────────────
 
     purge_task   = asyncio.create_task(_demo_purge_loop())
     push_task    = asyncio.create_task(_reminder_push_loop())

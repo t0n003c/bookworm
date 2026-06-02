@@ -19,6 +19,8 @@ from routers.auth_db import (
     update_password,
     get_qa_settings,
     set_qa_settings,
+    get_user_llm_settings,
+    set_user_llm_settings,
 )
 from templates_env import templates
 from routers.seed_uploads import seed_flower_uploads
@@ -304,3 +306,110 @@ async def save_qa_settings(
         request, "partials/admin_users.html",
         await _admin_ctx(request, success="AI Search settings saved."),
     )
+
+
+# ── per-user AI settings (Phase 4B) ──────────────────────────────
+
+@router.get("/ai-settings", response_class=HTMLResponse)
+async def get_user_ai_settings(request: Request):
+    """Return the Account modal AI-settings form for the current user.
+
+    API key is never returned to the browser — only has_key: bool.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        return HTMLResponse("", status_code=401)
+    cfg = await get_user_llm_settings(uid)
+    has_key   = bool(cfg["api_key"])
+    endpoint  = cfg["endpoint"]
+    model     = cfg["model"]
+    checked   = "checked" if has_key else ""
+    key_ph    = "\u2022" * 8 + " (saved)" if has_key else "Paste API key…"
+    return HTMLResponse(f"""
+<form hx-post="/account/ai-settings" hx-target="#acct-ai-msg"
+      hx-swap="innerHTML" class="space-y-3">
+
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">LLM Endpoint URL</label>
+    <input name="ai_endpoint" type="url" value="{endpoint}"
+           placeholder="https://api.openai.com/v1"
+           class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                  py-1 text-sm focus:outline-none focus:border-blue-500"
+           id="acct-ai-endpoint" autocomplete="off"
+           data-bw-acct-qa-wired="false"
+    >
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">
+      API Key <span class="font-normal text-gray-400">(leave blank to keep current)</span>
+    </label>
+    <input name="ai_api_key" type="password" placeholder="{key_ph}"
+           class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                  py-1 text-sm focus:outline-none focus:border-blue-500"
+           autocomplete="new-password">
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">Model</label>
+    <input name="ai_model" type="text" value="{model}" list="bw-acct-model-list"
+           placeholder="gpt-4o-mini"
+           class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                  py-1 text-sm focus:outline-none focus:border-blue-500"
+           id="acct-ai-model" autocomplete="off">
+    <datalist id="bw-acct-model-list"></datalist>
+  </div>
+
+  <div class="flex items-center justify-between gap-2 pt-1">
+    <span id="acct-ai-msg" class="text-xs"></span>
+    <button type="submit"
+            class="px-3 py-1 text-xs rounded bg-blue-600 text-white
+                   hover:bg-blue-700 transition">
+      Save
+    </button>
+  </div>
+</form>
+<script>(function(){{
+  var ep = document.getElementById('acct-ai-endpoint');
+  var ml = document.getElementById('acct-ai-model');
+  if (!ep || ep.getAttribute('data-bw-acct-qa-wired') === 'true') return;
+  ep.setAttribute('data-bw-acct-qa-wired', 'true');
+  ep.addEventListener('blur', function(){{
+    var base = ep.value.trim();
+    if (!base) return;
+    fetch('/qa/models?endpoint=' + encodeURIComponent(base))
+      .then(function(r){{ return r.json(); }})
+      .then(function(d){{
+        var dl = document.getElementById('bw-acct-model-list');
+        if (!dl) return;
+        dl.innerHTML = '';
+        (d.models || []).forEach(function(m){{
+          var opt = document.createElement('option');
+          opt.value = m; dl.appendChild(opt);
+        }});
+        if (d.models && d.models.length && !ml.value) ml.value = d.models[0];
+      }}).catch(function(){{}});
+  }});
+}})();</script>
+""")
+
+
+@router.post("/ai-settings", response_class=HTMLResponse)
+async def save_user_ai_settings(
+    request: Request,
+    ai_endpoint: str = Form(default=""),
+    ai_api_key:  str = Form(default=""),
+    ai_model:    str = Form(default=""),
+):
+    """Persist per-user LLM config. Empty api_key leaves the stored key untouched."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return HTMLResponse(_ERR.format("Not logged in."), status_code=401)
+    key_or_none = ai_api_key.strip() or None
+    await set_user_llm_settings(
+        user_id=uid,
+        endpoint=ai_endpoint,
+        api_key=key_or_none,
+        model=ai_model,
+    )
+    return HTMLResponse(_OK.format("AI Search settings saved."))

@@ -225,3 +225,43 @@ async def set_qa_settings(endpoint: str, api_key: str | None, model: str) -> Non
             ("qa_llm_model", model.strip() or "gpt-4o-mini"),
         )
         await db.commit()
+
+
+# ── Per-user LLM settings (Phase 4B) ──────────────────────────────────
+
+async def get_user_llm_settings(user_id: int) -> dict:
+    """Return {endpoint, api_key, model} for a user. Defaults to empty strings."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT llm_endpoint, llm_api_key, llm_model FROM users WHERE id = ?",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return {"endpoint": "", "api_key": "", "model": ""}
+    return {
+        "endpoint": row["llm_endpoint"] or "",
+        "api_key":  row["llm_api_key"]  or "",
+        "model":    row["llm_model"]    or "",
+    }
+
+
+async def set_user_llm_settings(
+    user_id: int,
+    endpoint: str,
+    api_key: str | None,
+    model: str,
+) -> None:
+    """Persist per-user LLM settings. Pass api_key=None to leave it unchanged."""
+    async with get_db() as db:
+        if api_key is not None:
+            await db.execute(
+                "UPDATE users SET llm_endpoint=?, llm_api_key=?, llm_model=? WHERE id=?",
+                (endpoint.strip(), api_key.strip(), model.strip(), user_id),
+            )
+        else:
+            await db.execute(
+                "UPDATE users SET llm_endpoint=?, llm_model=? WHERE id=?",
+                (endpoint.strip(), model.strip(), user_id),
+            )
+        await db.commit()

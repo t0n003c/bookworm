@@ -48,9 +48,20 @@
     bwSqStopStream();   // cancel any active LLM stream on close
   };
 
-  window.bwSearchGo = function (noteId) {
+  window.bwSearchGo = function (itemType, itemId, linkData) {
     bwSearchClose();
-    window.location.href = '/?note=' + noteId;
+    var ld = linkData || {};
+    if (itemType === 'note') {
+      window.location.href = '/?note=' + itemId;
+    } else if (itemType === 'db_card') {
+      window.location.href = ld.ws_id ? '/?ws=' + ld.ws_id : '/';
+    } else if (itemType === 'workspace') {
+      window.location.href = '/?ws=' + itemId;
+    } else if (itemType === 'widget') {
+      window.location.href = ld.page_id ? '/?hp=' + ld.page_id : '/';
+    } else {
+      window.location.href = '/';
+    }
   };
 
   window.bwSqStopStream = function () {
@@ -110,6 +121,14 @@
     if (thinking) thinking.classList.remove('hidden');
   }
 
+  function _bwSqItemIcon(itemType) {
+    if (itemType === 'note')      return '🗒';
+    if (itemType === 'db_card')   return '🗂';
+    if (itemType === 'workspace') return '📁';
+    if (itemType === 'widget')    return '🧩';
+    return '📄';
+  }
+
   function _bwSqRender(results) {
     var el = document.getElementById('bw-sq-results');
     if (!el) return;
@@ -119,26 +138,42 @@
     if (!results || results.length === 0) {
       el.innerHTML =
         '<p class="px-4 py-6 text-sm text-center text-gray-400 dark:text-zinc-500">' +
-        'No notes found</p>';
+        'No results found</p>';
       return;
     }
 
     var html = '';
     for (var i = 0; i < results.length; i++) {
-      var r = results[i];
+      var r        = results[i];
+      var itype    = r.item_type || 'note';
+      var iid      = r.item_id   || r.note_id;
+      var ld       = r.link_data || {};
+      var icon     = _bwSqItemIcon(itype);
+      var subLabel = r.workspace_name || '';
+
+      // For non-note types show a type label when no workspace name is available
+      if (!subLabel) {
+        if (itype === 'db_card')   subLabel = 'Database card';
+        if (itype === 'workspace') subLabel = 'Workspace';
+        if (itype === 'widget')    subLabel = 'Widget';
+      }
+
       html +=
         '<div class="bw-sq-item px-4 py-2.5 cursor-pointer' +
         ' hover:bg-gray-50 dark:hover:bg-zinc-800 border-b' +
         ' border-gray-50 dark:border-zinc-800 last:border-0"' +
         ' role="option" aria-selected="false"' +
-        ' data-note-id="' + r.note_id + '"' +
-        ' onclick="bwSearchGo(' + r.note_id + ')">' +
+        ' data-item-type="' + _bwSqEsc(itype) + '"' +
+        ' data-item-id="'   + iid  + '"' +
+        ' data-link-data="' + _bwSqEsc(JSON.stringify(ld)) + '"' +
+        ' onclick="bwSearchGo(' +
+            '\'' + _bwSqEsc(itype) + '\',' + iid + ',' +
+            JSON.stringify(ld) + ')">' +
 
         '<div class="flex items-center gap-1.5 mb-0.5">' +
-        '<span class="text-sm leading-none select-none" aria-hidden="true">' +
-        _bwSqEsc(r.workspace_emoji) + '</span>' +
+        '<span class="text-sm leading-none select-none" aria-hidden="true">' + icon + '</span>' +
         '<span class="text-xs text-gray-400 dark:text-zinc-500 truncate">' +
-        _bwSqEsc(r.workspace_name) + '</span>' +
+        _bwSqEsc(subLabel) + '</span>' +
         '</div>' +
 
         '<p class="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">' +
@@ -153,7 +188,7 @@
     var cards = el.querySelectorAll('.bw-sq-item');
     for (var j = 0; j < results.length; j++) {
       var snipEl = cards[j] && cards[j].querySelector('.bw-sq-snippet');
-      if (snipEl) snipEl.innerHTML = _bwSqSnippet(results[j].snippet);
+      if (snipEl) snipEl.innerHTML = _bwSqSnippet(results[j].snippet || '');
     }
   }
 
@@ -290,9 +325,13 @@
         if (e.key === 'Enter') {
           e.preventDefault();
           if (_bwSqIdx >= 0 && items[_bwSqIdx]) {
-            // Card highlighted → open note
-            var nid = items[_bwSqIdx].getAttribute('data-note-id');
-            if (nid) bwSearchGo(Number(nid));
+            // Card highlighted → open it
+            var card = items[_bwSqIdx];
+            var itype = card.getAttribute('data-item-type') || 'note';
+            var iid   = Number(card.getAttribute('data-item-id'));
+            var ld    = {};
+            try { ld = JSON.parse(card.getAttribute('data-link-data') || '{}'); } catch(e2){}
+            bwSearchGo(itype, iid, ld);
           } else {
             // No highlight → ask AI
             var q = inputEl.value.trim();

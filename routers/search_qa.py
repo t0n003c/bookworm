@@ -1,14 +1,19 @@
-"""Full-text + TF-IDF hybrid search — Phase 2, Hybrid Search Q&A.
+"""Full-text + TF-IDF hybrid search — Phase 2+4, Hybrid Search Q&A.
 
 Pipeline (mirrors note #265 architecture):
-  asyncio.gather(fts5_search, semantic_search) → merge → hybrid_score → top K
+  asyncio.gather(fts5_search, items_fts_search, semantic_search) → merge → top K
 
-Scoring formula (from note #265):
-  hybrid = tfidf_score * 5  +  (-bm25_score)  +  bigram_bonus(0.3)
+Phase 4A additions:
+- _items_fts_search(): FTS over search_items (db_cards, workspaces, widgets).
+- _fetch_items_meta_sync(): metadata fetch for TF-IDF-only non-note hits.
+- semantic_search() now returns [{item_type, item_id, score}] — all callers updated.
+- Response shape: adds item_type, item_id, link_data fields (note_id preserved
+  as alias when item_type == 'note' for soft backwards compatibility).
+- POST /qa/sync-items: superadmin endpoint to trigger widget resync.
 
-FTS5 supplies the result window and workspace metadata.
-TF-IDF contributes re-ranking signal; its note IDs are used to pull
-metadata for any candidates the keyword pass missed entirely.
+Phase 4B additions:
+- GET /qa/models now also accepts the requesting user's personal API key so
+  regular users can test their own endpoint from the Account modal.
 
 Auth: all endpoints require a valid session. None are in _PUBLIC.
 """
@@ -28,7 +33,7 @@ import httpx
 import search_index
 import search_llm
 from database import DB_PATH, get_db
-from routers.auth_db import get_qa_settings
+from routers.auth_db import get_qa_settings, get_user_llm_settings
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/qa", tags=["search-qa"])
@@ -36,19 +41,25 @@ router = APIRouter(prefix="/qa", tags=["search-qa"])
 _MAX_TOKENS = 20
 
 
-# ── model discovery (superadmin, proxied so API key stays server-side) ──
+# ── model discovery (proxied so API key stays server-side) ──────────────
 
 @router.get("/models")
 async def list_models(request: Request, endpoint: str = ""):
     """Proxy GET /models to the configured LLM endpoint.
 
-    The stored API key is read server-side and never sent to the browser.
+    Superadmins: uses site-wide API key.
+    Regular users: uses their personal API key (from Phase 4B per-user settings).
     Returns {models: [str]} sorted A-Z, or {models: [], error: str} on failure.
     """
-    if request.session.get("role") != "superadmin":
-        raise HTTPException(status_code=403)
+    uid = _uid(request)
 
-    cfg = await get_qa_settings()
+    # Resolve which key to use for this caller
+    if request.session.get("role") == "superadmin":
+        cfg = await get_qa_settings()
+    else:
+        user_cfg = await get_user_llm_settings(uid)
+        cfg = user_cfg if user_cfg["endpoint"] else await get_qa_settings()
+
     base = (endpoint.strip() or cfg["endpoint"]).rstrip("/")
     if not base:
         return {"models": [], "error": "No endpoint configured."}
@@ -74,6 +85,8 @@ async def list_models(request: Request, endpoint: str = ""):
         {(m["id"] if isinstance(m, dict) else str(m)) for m in raw}
     )
     return {"models": ids}
+
+
 _MAX_LIMIT  = 50
 _FTS5_POOL  = 50   # internal over-fetch for re-ranking
 
@@ -104,15 +117,17 @@ def _bigram_bonus(title: str, words: list) -> float:
 
 
 async def _fts5_search(uid: int, fts_query: str) -> list:
-    """Run FTS5 and return up to _FTS5_POOL rows with full metadata."""
+    """Run FTS5 over notes and return up to _FTS5_POOL rows with full metadata."""
     sql = """
         SELECT
-            n.id                                                        AS note_id,
+            n.id                                                        AS item_id,
+            'note'                                                      AS item_type,
             n.title,
             snippet(notes_fts, 1, char(2), char(3), '\u2026', 32)          AS snippet,
             bm25(notes_fts)                                             AS bm25_score,
             w.name                                                      AS workspace_name,
-            w.emoji                                                     AS workspace_emoji
+            w.emoji                                                     AS workspace_emoji,
+            '{}'                                                        AS link_data
         FROM  notes_fts
         JOIN  notes      n ON n.id  = notes_fts.rowid
         JOIN  workspaces w ON w.id  = n.workspace_id
@@ -131,18 +146,45 @@ async def _fts5_search(uid: int, fts_query: str) -> list:
         return []
 
 
-def _fetch_meta_sync(note_ids: list, uid: int) -> dict:
-    """Sync: fetch title + workspace for a list of note IDs (TF-IDF only hits)."""
+async def _items_fts_search(uid: int, fts_query: str) -> list:
+    """Run FTS5 over search_items (db_cards, workspaces, widgets) for this user."""
+    sql = """
+        SELECT
+            si.id         AS rowid_alias,
+            si.item_id,
+            si.item_type,
+            si.title,
+            si.link_data,
+            snippet(search_items_fts, 1, char(2), char(3), '\u2026', 32) AS snippet,
+            bm25(search_items_fts)                                        AS bm25_score
+        FROM  search_items_fts
+        JOIN  search_items si ON si.id = search_items_fts.rowid
+        WHERE search_items_fts MATCH ?
+          AND si.user_id = ?
+        ORDER BY bm25(search_items_fts)
+        LIMIT ?
+    """
+    try:
+        async with get_db() as db:
+            cur  = await db.execute(sql, (fts_query, uid, _FTS5_POOL))
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _fetch_note_meta_sync(note_ids: list, uid: int) -> dict:
+    """Sync: fetch title + workspace for TF-IDF-only note hits."""
     if not note_ids:
         return {}
-    placeholders = ",".join("?" * len(note_ids))
+    ph  = ",".join("?" * len(note_ids))
     sql = f"""
         SELECT n.id, n.title, n.content,
                w.name AS workspace_name, w.emoji AS workspace_emoji
         FROM   notes n
         JOIN   workspaces w ON w.id = n.workspace_id AND w.user_id = ?
                            AND w.deleted_at IS NULL
-        WHERE  n.id IN ({placeholders})
+        WHERE  n.id IN ({ph})
     """
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -153,76 +195,157 @@ def _fetch_meta_sync(note_ids: list, uid: int) -> dict:
     return {r["id"]: dict(r) for r in rows}
 
 
+def _fetch_items_meta_sync(item_pairs: list, uid: int) -> dict:
+    """Sync: fetch title + link_data for TF-IDF-only non-note hits.
+
+    item_pairs: [(item_type, item_id), ...]
+    Returns: {(item_type, item_id): {title, link_data, snippet}}
+    """
+    if not item_pairs:
+        return {}
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    result = {}
+    try:
+        card_ids = [p[1] for p in item_pairs if p[0] == "db_card"]
+        ws_ids   = [p[1] for p in item_pairs if p[0] == "workspace"]
+        wgt_ids  = [p[1] for p in item_pairs if p[0] == "widget"]
+
+        if card_ids:
+            ph = ",".join("?" * len(card_ids))
+            rows = conn.execute(
+                f"SELECT si.item_id, si.title, si.body, si.link_data "
+                f"FROM search_items si WHERE si.item_type='db_card' "
+                f"AND si.item_id IN ({ph}) AND si.user_id=?",
+                [*card_ids, uid],
+            ).fetchall()
+            for r in rows:
+                result[("db_card", r["item_id"])] = {
+                    "title": r["title"], "snippet": (r["body"] or "")[:150],
+                    "link_data": r["link_data"],
+                }
+        if ws_ids:
+            ph = ",".join("?" * len(ws_ids))
+            rows = conn.execute(
+                f"SELECT si.item_id, si.title, si.link_data "
+                f"FROM search_items si WHERE si.item_type='workspace' "
+                f"AND si.item_id IN ({ph}) AND si.user_id=?",
+                [*ws_ids, uid],
+            ).fetchall()
+            for r in rows:
+                result[("workspace", r["item_id"])] = {
+                    "title": r["title"], "snippet": "",
+                    "link_data": r["link_data"],
+                }
+        if wgt_ids:
+            ph = ",".join("?" * len(wgt_ids))
+            rows = conn.execute(
+                f"SELECT si.item_id, si.title, si.body, si.link_data "
+                f"FROM search_items si WHERE si.item_type='widget' "
+                f"AND si.item_id IN ({ph}) AND si.user_id=?",
+                [*wgt_ids, uid],
+            ).fetchall()
+            for r in rows:
+                result[("widget", r["item_id"])] = {
+                    "title": r["title"], "snippet": (r["body"] or "")[:150],
+                    "link_data": r["link_data"],
+                }
+    finally:
+        conn.close()
+    return result
+
+
 def _merge_and_score(
-    fts_rows: list,
+    note_fts_rows: list,
+    item_fts_rows: list,
     tfidf_hits: list,
     words: list,
     limit: int,
-    extra_meta: dict | None = None,
+    extra_note_meta: dict | None = None,
+    extra_item_meta: dict | None = None,
 ) -> list:
-    """Combine FTS5 and TF-IDF candidates into a single ranked list.
+    """Merge notes FTS5, items FTS5, and TF-IDF into a single ranked list."""
+    # Index FTS results by (item_type, item_id)
+    fts_by_key = {}
+    for r in note_fts_rows:
+        key = ("note", r["item_id"])
+        fts_by_key[key] = r
+    for r in item_fts_rows:
+        key = (r["item_type"], r["item_id"])
+        fts_by_key[key] = r
 
-    extra_meta: pre-fetched metadata dict {note_id: row} for TF-IDF-only
-    hits — must be fetched and passed by the caller (in an executor) so
-    this function stays pure and never blocks the event loop.
-    """
-    fts_by_id    = {r["note_id"]: r for r in fts_rows}
-    tfidf_by_id  = {h["note_id"]: h["score"] for h in tfidf_hits}
-    all_note_ids = list(dict.fromkeys(list(fts_by_id) + list(tfidf_by_id)))
-    extra_meta   = extra_meta or {}
+    # TF-IDF indexed by (item_type, item_id)
+    tfidf_by_key = {(h["item_type"], h["item_id"]): h["score"] for h in tfidf_hits}
+
+    # Collect all unique keys preserving FTS order first
+    all_keys = list(dict.fromkeys(list(fts_by_key) + list(tfidf_by_key)))
+
+    extra_note_meta = extra_note_meta or {}
+    extra_item_meta = extra_item_meta or {}
 
     scored = []
-    for nid in all_note_ids:
-        fts_row    = fts_by_id.get(nid)
-        tfidf_sc   = tfidf_by_id.get(nid, 0.0)
-        bm25_sc    = fts_row["bm25_score"] if fts_row else 0.0
-        title      = (fts_row or extra_meta.get(nid, {})).get("title") or ""
-        bigram     = _bigram_bonus(title, words)
+    for key in all_keys:
+        item_type, item_id = key
+        fts_row   = fts_by_key.get(key)
+        tfidf_sc  = tfidf_by_key.get(key, 0.0)
+        bm25_sc   = fts_row["bm25_score"] if fts_row else 0.0
+        title     = (fts_row or {}).get("title") or ""
+        if not title:
+            if item_type == "note":
+                title = extra_note_meta.get(item_id, {}).get("title") or ""
+            else:
+                title = extra_item_meta.get(key, {}).get("title") or ""
+        bigram  = _bigram_bonus(title, words)
+        hybrid  = tfidf_sc * 5.0 + (-bm25_sc) + bigram
 
-        # Hybrid score — per note #265 formula
-        hybrid = tfidf_sc * 5.0 + (-bm25_sc) + bigram
-
-        # Build result dict — prefer FTS5 metadata (has snippet)
         if fts_row:
-            entry = dict(fts_row)
+            snippet    = fts_row.get("snippet") or ""
+            link_data  = fts_row.get("link_data") or "{}"
+            ws_name    = fts_row.get("workspace_name") or ""
+            ws_emoji   = fts_row.get("workspace_emoji") or ""
+        elif item_type == "note":
+            meta       = extra_note_meta.get(item_id, {})
+            snippet    = (meta.get("content") or "")[:150]
+            link_data  = "{}"
+            ws_name    = meta.get("workspace_name") or ""
+            ws_emoji   = meta.get("workspace_emoji") or "📁"
         else:
-            meta  = extra_meta.get(nid, {})
-            entry = {
-                "note_id":         nid,
-                "title":           meta.get("title") or "Untitled",
-                "snippet":         (meta.get("content") or "")[:150],
-                "bm25_score":      0.0,
-                "workspace_name":  meta.get("workspace_name") or "",
-                "workspace_emoji": meta.get("workspace_emoji") or "📁",
-            }
+            meta       = extra_item_meta.get(key, {})
+            snippet    = meta.get("snippet") or ""
+            link_data  = meta.get("link_data") or "{}"
+            ws_name    = ""
+            ws_emoji   = ""
 
-        entry["hybrid_score"] = hybrid
-        scored.append(entry)
+        try:
+            link_obj = json.loads(link_data)
+        except (json.JSONDecodeError, ValueError):
+            link_obj = {}
 
-    scored.sort(key=lambda x: x["hybrid_score"], reverse=True)
-
-    results = []
-    for e in scored[:limit]:
-        results.append({
-            "note_id":         e["note_id"],
-            "title":           e.get("title") or "Untitled",
-            "snippet":         e.get("snippet") or "",
-            "score":           e["hybrid_score"],
-            "workspace_name":  e.get("workspace_name") or "",
-            "workspace_emoji": e.get("workspace_emoji") or "📁",
+        scored.append({
+            "item_type":       item_type,
+            "item_id":         item_id,
+            "title":           title or "Untitled",
+            "snippet":         snippet,
+            "score":           hybrid,
+            "workspace_name":  ws_name,
+            "workspace_emoji": ws_emoji,
+            "link_data":       link_obj,
+            # Backwards compat alias — note_id still present when type is 'note'
+            "note_id":         item_id if item_type == "note" else None,
         })
-    return results
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:limit]
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("/search")
 async def fts_search(request: Request, q: str = "", limit: int = 12):
-    """Hybrid FTS5 + TF-IDF search over the requesting user's notes.
+    """Hybrid FTS5 + TF-IDF search across all content types.
 
     Returns {results: [...], index_ready: bool}
-    When the TF-IDF index isn't built yet (first boot), falls back
-    to BM25-only ordering — no degraded UX.
+    When TF-IDF isn't ready, falls back to BM25-only (notes + search_items).
     """
     uid   = _uid(request)
     q     = (q or "").strip()
@@ -235,53 +358,107 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
     if not fts_query:
         return {"results": [], "index_ready": search_index.is_ready()}
 
-    # Run FTS5 and TF-IDF concurrently
+    # Run all three searches concurrently
     loop = asyncio.get_running_loop()
-    fts_task   = asyncio.create_task(_fts5_search(uid, fts_query))
-    tfidf_task = loop.run_in_executor(
+    note_fts_task  = asyncio.create_task(_fts5_search(uid, fts_query))
+    items_fts_task = asyncio.create_task(_items_fts_search(uid, fts_query))
+    tfidf_task     = loop.run_in_executor(
         None, search_index.semantic_search, q, uid, _FTS5_POOL
     )
-    fts_rows, tfidf_hits = await asyncio.gather(fts_task, tfidf_task)
+    note_fts_rows, item_fts_rows, tfidf_hits = await asyncio.gather(
+        note_fts_task, items_fts_task, tfidf_task
+    )
 
-    # Fallback: no TF-IDF index yet — return BM25-only results
+    # Fallback: no TF-IDF index — return combined FTS5 results only
     if not search_index.is_ready() or not tfidf_hits:
-        results = [
-            {
-                "note_id":         r["note_id"],
+        combined = []
+        for r in note_fts_rows:
+            combined.append({
+                "item_type":       "note",
+                "item_id":         r["item_id"],
+                "note_id":         r["item_id"],
                 "title":           r["title"] or "Untitled",
                 "snippet":         r["snippet"] or "",
                 "score":           float(-r["bm25_score"]),
                 "workspace_name":  r["workspace_name"] or "",
                 "workspace_emoji": r["workspace_emoji"] or "📁",
-            }
-            for r in fts_rows[:limit]
-        ]
-        return {"results": results, "index_ready": False}
+                "link_data":       {},
+            })
+        for r in item_fts_rows:
+            try:
+                link_obj = json.loads(r.get("link_data") or "{}")
+            except (json.JSONDecodeError, ValueError):
+                link_obj = {}
+            combined.append({
+                "item_type":       r["item_type"],
+                "item_id":         r["item_id"],
+                "note_id":         None,
+                "title":           r["title"] or "Untitled",
+                "snippet":         r["snippet"] or "",
+                "score":           float(-r["bm25_score"]),
+                "workspace_name":  "",
+                "workspace_emoji": "",
+                "link_data":       link_obj,
+            })
+        combined.sort(key=lambda x: x["score"], reverse=True)
+        return {"results": combined[:limit], "index_ready": False}
 
-    # Fetch metadata for TF-IDF-only hits in an executor — never blocks the loop
-    fts_ids    = {r["note_id"] for r in fts_rows}
-    tfidf_only = [h["note_id"] for h in tfidf_hits if h["note_id"] not in fts_ids]
-    extra_meta: dict = {}
-    if tfidf_only:
-        extra_meta = await loop.run_in_executor(
-            None, _fetch_meta_sync, tfidf_only[:20], uid
-        )
+    # Fetch metadata for TF-IDF-only hits in executors
+    all_fts_keys   = {("note", r["item_id"]) for r in note_fts_rows}
+    all_fts_keys  |= {(r["item_type"], r["item_id"]) for r in item_fts_rows}
+    tfidf_only_notes = [
+        h["item_id"] for h in tfidf_hits
+        if h["item_type"] == "note" and ("note", h["item_id"]) not in all_fts_keys
+    ]
+    tfidf_only_items = [
+        (h["item_type"], h["item_id"]) for h in tfidf_hits
+        if h["item_type"] != "note" and (h["item_type"], h["item_id"]) not in all_fts_keys
+    ]
 
-    results = _merge_and_score(fts_rows, tfidf_hits, words, limit, extra_meta)
+    extra_note_meta: dict = {}
+    extra_item_meta: dict = {}
+    tasks = []
+    if tfidf_only_notes:
+        tasks.append(loop.run_in_executor(
+            None, _fetch_note_meta_sync, tfidf_only_notes[:20], uid
+        ))
+    if tfidf_only_items:
+        tasks.append(loop.run_in_executor(
+            None, _fetch_items_meta_sync, tfidf_only_items[:20], uid
+        ))
+    if tasks:
+        fetched = await asyncio.gather(*tasks)
+        idx = 0
+        if tfidf_only_notes:
+            extra_note_meta = fetched[idx]; idx += 1
+        if tfidf_only_items:
+            extra_item_meta = fetched[idx]
+
+    results = _merge_and_score(
+        note_fts_rows, item_fts_rows, tfidf_hits, words, limit,
+        extra_note_meta, extra_item_meta,
+    )
     return {"results": results, "index_ready": True}
 
 
 @router.post("/rebuild-index")
 async def rebuild_index_endpoint(request: Request):
-    """Superadmin: trigger an immediate TF-IDF index rebuild.
-
-    Returns immediately; rebuild runs in background.
-    """
-    _uid(request)  # 401 if not authenticated
+    """Superadmin: trigger an immediate TF-IDF index rebuild."""
+    _uid(request)
     if request.session.get("role") != "superadmin":
         raise HTTPException(status_code=403)
     asyncio.create_task(search_index.rebuild_index())
     return {"status": "rebuilding", "message": "Rebuild started in background."}
+
+
+@router.post("/sync-items")
+async def sync_items_endpoint(request: Request):
+    """Superadmin: trigger an immediate widget search_items resync."""
+    _uid(request)
+    if request.session.get("role") != "superadmin":
+        raise HTTPException(status_code=403)
+    asyncio.create_task(search_index.sync_widget_items())
+    return {"status": "syncing", "message": "Widget sync started in background."}
 
 
 @router.get("/stream")
@@ -309,23 +486,31 @@ async def stream_answer(request: Request, q: str = ""):
         )
 
     # Hybrid search — same pipeline as /qa/search
-    loop = asyncio.get_running_loop()
-    fts_task   = asyncio.create_task(_fts5_search(uid, fts_query))
-    tfidf_task = loop.run_in_executor(
+    loop           = asyncio.get_running_loop()
+    note_fts_task  = asyncio.create_task(_fts5_search(uid, fts_query))
+    items_fts_task = asyncio.create_task(_items_fts_search(uid, fts_query))
+    tfidf_task     = loop.run_in_executor(
         None, search_index.semantic_search, q, uid, _FTS5_POOL
     )
-    fts_rows, tfidf_hits = await asyncio.gather(fts_task, tfidf_task)
+    note_fts_rows, item_fts_rows, tfidf_hits = await asyncio.gather(
+        note_fts_task, items_fts_task, tfidf_task
+    )
 
-    # Build ordered note_id list (FTS5 first, then TF-IDF-only extras)
-    fts_ids    = [r["note_id"] for r in fts_rows]
-    seen       = set(fts_ids)
-    extra_ids  = [h["note_id"] for h in tfidf_hits if h["note_id"] not in seen]
-    note_ids   = (fts_ids + extra_ids)[:search_llm._CONTEXT_NOTES]
+    # Build ordered items list for LLM context (notes + cards only)
+    words       = re.sub(r'["\'\\^*():\-]', " ", q).split()
+    merged      = _merge_and_score(
+        note_fts_rows, item_fts_rows, tfidf_hits, words,
+        search_llm._CONTEXT_NOTES * 2,  # over-fetch; LLM filter drops ws/widget
+    )
+    context_items = [
+        {"item_type": r["item_type"], "item_id": r["item_id"]}
+        for r in merged
+        if r["item_type"] in ("note", "db_card")
+    ][:search_llm._CONTEXT_NOTES]
 
     async def _event_gen():
         try:
-            async for token in search_llm.stream_llm(q, note_ids, uid):
-                # JSON-encode each token so newlines don't break SSE framing
+            async for token in search_llm.stream_llm(q, context_items, uid):
                 yield "data: " + json.dumps(token) + "\n\n"
         except Exception:
             log.exception("/qa/stream: generator error")

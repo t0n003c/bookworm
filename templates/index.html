@@ -4191,6 +4191,30 @@
 
       </div><!-- /.acct-credential-grid -->
 
+      {# ── AI Search — per-user LLM key (Phase 4B) ──────────────────────── #}
+      <div class="mt-5 border-t border-gray-100 dark:border-zinc-700 pt-5">
+        <button type="button" onclick="_acctToggle('acct-ai-body', this)" aria-expanded="false"
+          class="w-full flex items-center justify-between group py-0.5 mb-2">
+          <span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">🤖 AI Search</span>
+          <svg class="w-4 h-4 text-gray-400 transition-transform group-[.open]:rotate-180"
+               viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+        <div id="acct-ai-body" class="hidden">
+          <p class="text-xs text-gray-500 dark:text-zinc-400 mb-3">
+            Set your own LLM endpoint and API key for the Ctrl+K AI answer feature.
+            Your key takes priority over the site-wide key.
+          </p>
+          <div hx-get="/account/ai-settings"
+               hx-trigger="revealed"
+               hx-swap="innerHTML">
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Loading…</p>
+          </div>
+        </div>
+      </div>
+      {# ── /AI Search ──────────────────────────────────────────────────── #}
+
       </div><!-- /#acct-s1 -->
 
       <!-- ── Section 2: Security (2FA) ──────────────────────────────────── -->
