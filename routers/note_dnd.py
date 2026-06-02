@@ -14,12 +14,6 @@ from routers.sharing_db import note_belongs_to_user, workspace_belongs_to_user
 router = APIRouter(prefix="/nwdnd", tags=["note-dnd"])
 
 
-@router.get("/ping", include_in_schema=False)
-async def dnd_ping():
-    """Canary — visit /nwdnd/ping in the browser to confirm this router loaded."""
-    return {"ok": True, "router": "note_dnd"}
-
-
 async def _require_note_owner(note_id: int, uid: Optional[int]) -> None:
     if not uid or not await note_belongs_to_user(note_id, uid):
         raise HTTPException(status_code=403, detail="Not authorised")

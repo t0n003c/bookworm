@@ -143,7 +143,6 @@
 
     var url  = '/nwdnd/move';
     var body = { note_id: Number(noteId), target_ws_id: wsId };
-    console.log('[nwdnd] POST', url, body);
 
     fetch(url, {
       method:  'POST',
@@ -151,22 +150,17 @@
       body:    JSON.stringify(body),
     })
       .then(function (r) {
-        console.log('[nwdnd] response status', r.status);
         return r.json().then(function (data) {
           return { status: r.status, data: data };
         });
       })
       .then(function (res) {
-        console.log('[nwdnd] response body', res.data);
         if (res.status !== 200 || !res.data.ok) {
-          var detail = (res.data && res.data.detail) ? res.data.detail : 'HTTP ' + res.status;
-          _toast('⚠️ ' + detail + ' — ' + url, 'error');
+          _toast('⚠️ Could not move note', 'error');
           return;
         }
         if (!res.data.moved) return;   // same-workspace — silent no-op
         _toast('✅ Moved to ' + (wsName || 'workspace'), 'ok');
-        // Reload the current workspace's note list — same htmx.ajax
-        // pattern used by workspace-DnD throughout the codebase.
         var inp = document.getElementById('active-workspace');
         var aid = inp ? inp.value : '';
         if (aid && typeof htmx !== 'undefined') {
@@ -177,10 +171,7 @@
           });
         }
       })
-      .catch(function (err) {
-        console.error('[nwdnd] fetch error', err);
-        _toast('⚠️ Network error', 'error');
-      });
+      .catch(function () { _toast('⚠️ Network error', 'error'); });
   }
 
   /* ── toast notification ──────────────────────────────────── */
@@ -276,11 +267,7 @@
 
     _reset();
 
-    if (!wasArmed || !wsId) {
-      console.log('[nwdnd] drop ignored: wasArmed=' + wasArmed + ' wsId=' + wsId);
-      return;
-    }
-    console.log('[nwdnd] drop: noteId=' + noteId + ' wsId=' + wsId);
+    if (!wasArmed || !wsId) return;
     _doMove(noteId, wsId, wsName);
   });
 
