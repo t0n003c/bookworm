@@ -114,4 +114,10 @@ qa_*.txt
 # Eddie one-off debug / inspection scripts
 _rss_routes.py
 _qa_*.txt
+_eddie_*.py
+_read*.py
+_p3_*.py
+_create_note.py
+bwqa.py
+*.txt
 ERROR

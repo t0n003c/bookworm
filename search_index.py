@@ -21,6 +21,7 @@ They survive server restarts; a fresh boot loads them in ~200 ms.
 import asyncio
 import json
 import logging
+import os
 import pickle
 import sqlite3
 import threading
@@ -195,12 +196,25 @@ def _sync_rebuild() -> None:
     )
     matrix = vectorizer.fit_transform(corpus)
 
-    # Persist — write then atomically swap so queries keep old index until done
-    _PKL_VECTORIZER.write_bytes(pickle.dumps(vectorizer))
-    _PKL_MATRIX.write_bytes(pickle.dumps(matrix))
-    _PKL_ITEM_IDS.write_bytes(pickle.dumps(item_ids))
-    _PKL_ITEM_TYPES.write_bytes(pickle.dumps(item_types))
-    _PKL_USER_IDS.write_bytes(pickle.dumps(user_ids))
+    # Persist — write to temp files first, then atomically rename so a crash
+    # mid-write never leaves a mix of old/new pickle files on disk.
+    import tempfile
+    pkl_pairs = [
+        (_PKL_VECTORIZER, pickle.dumps(vectorizer)),
+        (_PKL_MATRIX,     pickle.dumps(matrix)),
+        (_PKL_ITEM_IDS,   pickle.dumps(item_ids)),
+        (_PKL_ITEM_TYPES, pickle.dumps(item_types)),
+        (_PKL_USER_IDS,   pickle.dumps(user_ids)),
+    ]
+    for dest, data in pkl_pairs:
+        fd, tmp_path = tempfile.mkstemp(dir=dest.parent, prefix=".bw_tmp_")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp_path, dest)  # atomic on POSIX and Windows
+        except Exception:
+            os.unlink(tmp_path)   # clean up orphaned temp on failure
+            raise
 
     with _lock:
         _vectorizer  = vectorizer
@@ -291,6 +305,10 @@ def _sync_widget_items() -> int:
                     updated_at = datetime('now')
             """, (r["id"], r["user_id"], r["widget_type"], text, link_data))
             count += 1
+
+        if count == 0:
+            log.debug("search_index: widget sync — no text widgets found, skipping FTS rebuild")
+            return count
 
         # Rebuild the FTS index to reflect upserted rows
         conn.execute("INSERT INTO search_items_fts(search_items_fts) VALUES('rebuild')")

@@ -371,22 +371,20 @@ async def update_widget_style(widget_id: int, style: str) -> None:
 
 async def reorder_widgets(page_id: int, ordered_ids: list[int]) -> None:
     async with get_db() as db:
-        for i, wid in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE home_widgets SET sort_order=? WHERE id=? AND page_id=?",
-                (i, wid, page_id),
-            )
+        await db.executemany(
+            "UPDATE home_widgets SET sort_order=? WHERE id=? AND page_id=?",
+            [(i, wid, page_id) for i, wid in enumerate(ordered_ids)],
+        )
         await db.commit()
 
 
 async def reorder_home_pages(user_id: int, ordered_ids: list[int]) -> None:
     """Persist a new sidebar order for a user\'s home pages."""
     async with get_db() as db:
-        for i, pid in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE home_pages SET sort_order=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                (i, pid, user_id),
-            )
+        await db.executemany(
+            "UPDATE home_pages SET sort_order=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
+            [(i, pid, user_id) for i, pid in enumerate(ordered_ids)],
+        )
         await db.commit()
 
 

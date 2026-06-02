@@ -331,11 +331,10 @@ async def reorder_workspace(
         siblings.insert(insert_at, workspace_id)
 
         # 4. Persist: update sort_order for all siblings, move mover to new parent
-        for rank, sid in enumerate(siblings):
-            await db.execute(
-                "UPDATE workspaces SET sort_order = ? WHERE id = ?",
-                (rank * 10, sid),
-            )
+        await db.executemany(
+            "UPDATE workspaces SET sort_order = ? WHERE id = ?",
+            [(rank * 10, sid) for rank, sid in enumerate(siblings)],
+        )
         await db.execute(
             "UPDATE workspaces SET parent_id = ? WHERE id = ?",
             (dest_parent_id, workspace_id),

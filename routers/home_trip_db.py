@@ -156,11 +156,10 @@ async def reorder_trip_locations(
     page_id: int, user_id: int, ordered_ids: list[int]
 ) -> None:
     async with get_db() as db:
-        for idx, lid in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE trip_locations SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (idx * 10, lid, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE trip_locations SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(idx * 10, lid, page_id, user_id) for idx, lid in enumerate(ordered_ids)],
+        )
         await db.commit()
 
 
@@ -398,11 +397,10 @@ async def reorder_trip_spots(
 ) -> None:
     """Set sort_order for each spot id in the ordered list."""
     async with get_db() as db:
-        for idx, spot_id in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE trip_spots SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (idx * 10, spot_id, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE trip_spots SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(idx * 10, spot_id, page_id, user_id) for idx, spot_id in enumerate(ordered_ids)],
+        )
         await db.commit()
 
 
@@ -606,11 +604,10 @@ async def reorder_trip_days(
     page_id: int, user_id: int, ordered_ids: list[int]
 ) -> None:
     async with get_db() as db:
-        for idx, day_id in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE trip_days SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (idx * 10, day_id, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE trip_days SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(idx * 10, day_id, page_id, user_id) for idx, day_id in enumerate(ordered_ids)],
+        )
         await db.commit()
 
 

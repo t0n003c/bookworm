@@ -61,6 +61,26 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if os.getenv("BW_HTTPS", "false").lower() == "true"
         else ""
     )
+    # Content-Security-Policy — computed once at startup.
+    # script-src / style-src keep 'unsafe-inline' because HTMX + widget JS
+    # renders inline <script> blocks and inline style attributes throughout.
+    # https: in both allows third-party CDN libs (Jspreadsheet, SheetJS) that
+    # are lazy-loaded on demand.  Tighten to specific origins when the CDN list
+    # is fully enumerated.
+    _collabora: str = os.getenv("BW_COLLABORA_URL", "").strip().rstrip("/")
+    _CSP: str = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https:; "
+        "style-src 'self' 'unsafe-inline' https:; "
+        "img-src 'self' data: blob: https:; "
+        "font-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "worker-src 'self' blob:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-src 'self'" + (f" {_collabora}" if _collabora else "") + ";"
+    )
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
@@ -68,6 +88,7 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(k, v)
         if self._HSTS:
             response.headers.setdefault("Strict-Transport-Security", self._HSTS)
+        response.headers.setdefault("Content-Security-Policy", self._CSP)
         return response
 
 
@@ -821,7 +842,9 @@ async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
     try:
         from bw_pwa_icons import generate_icons
-        generate_icons()
+        # CPU-bound (Pillow rendering); offload to thread so the event loop
+        # isn't blocked during server startup.
+        await asyncio.to_thread(generate_icons)
     except Exception:
         log.warning("PWA icon generation failed — continuing without icons")
 

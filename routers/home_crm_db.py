@@ -130,11 +130,10 @@ async def reorder_contacts(
 ) -> list[dict]:
     """Persist gallery card order by writing sort_order for each contact ID."""
     async with get_db() as db:
-        for i, cid in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE crm_contacts SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (i, cid, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE crm_contacts SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(i, cid, page_id, user_id) for i, cid in enumerate(ordered_ids)],
+        )
         await db.commit()
     return await get_contacts(page_id, user_id)
 
@@ -192,11 +191,10 @@ async def update_field(
 
 async def reorder_fields(page_id: int, user_id: int, field_ids: list[int]) -> list[dict]:
     async with get_db() as db:
-        for i, fid in enumerate(field_ids):
-            await db.execute(
-                "UPDATE crm_custom_fields SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (i, fid, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE crm_custom_fields SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(i, fid, page_id, user_id) for i, fid in enumerate(field_ids)],
+        )
         await db.commit()
     return await get_fields(page_id, user_id)
 
@@ -268,11 +266,10 @@ async def reorder_stages(
     page_id: int, user_id: int, ordered_ids: list[int],
 ) -> list[dict]:
     async with get_db() as db:
-        for i, sid in enumerate(ordered_ids):
-            await db.execute(
-                "UPDATE crm_stages SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
-                (i, sid, page_id, user_id),
-            )
+        await db.executemany(
+            "UPDATE crm_stages SET sort_order=? WHERE id=? AND page_id=? AND user_id=?",
+            [(i, sid, page_id, user_id) for i, sid in enumerate(ordered_ids)],
+        )
         await db.commit()
     return await get_stages(page_id, user_id)
 

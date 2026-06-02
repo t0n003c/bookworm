@@ -57,7 +57,10 @@ def _evt_prepare_items(items: list) -> list:
                     mo = n.month + iv; yr = n.year + (mo - 1) // 12; mo = (mo - 1) % 12 + 1
                     n  = _d(yr, mo, min(n.day, monthrange(yr, mo)[1]))
                 elif unit == 'year':
-                    n = _d(n.year + iv, n.month, n.day)
+                    yr = n.year + iv
+                    # Clamp day to max valid for target month (handles Feb 29
+                    # in a non-leap year — e.g. 2024-02-29 → 2025-02-28).
+                    n = _d(yr, n.month, min(n.day, monthrange(yr, n.month)[1]))
                 else:
                     break
                 if n >= today:

@@ -1,4 +1,5 @@
 """Note CRUD + search/filter helpers."""
+import re
 from pathlib import Path
 from typing import Optional
 from database import get_db
@@ -58,7 +59,29 @@ async def get_note_by_id(note_id: int) -> Optional[dict]:
         return note
 
 
-# Allowlists — only these values ever touch SQL so injection is impossible.
+# ---------------------------------------------------------------------------
+# FTS5 query helpers
+# ---------------------------------------------------------------------------
+
+def _fts5_expr(q: str) -> Optional[str]:
+    """Convert a free-text query into a safe FTS5 MATCH expression.
+
+    Splits into whitespace-separated tokens, strips FTS5 special characters,
+    quotes each token (neutralises operators), and appends '*' for prefix
+    matching.  Returns None when nothing valid remains (prevents empty MATCH).
+
+    Example: 'Q2 planning!' → '"Q2"* "planning"*'
+    """
+    tokens = [
+        re.sub(r'[^\w\-]', '', t)  # keep word chars + hyphens
+        for t in q.split()
+    ]
+    tokens = [t for t in tokens if t]   # drop empties
+    if not tokens:
+        return None
+    return " ".join(f'"{t}"*' for t in tokens)
+
+
 # Dynamic attr_{id} tokens are handled separately in _build_order_clause.
 _FIELD_MAP: dict[str, str] = {
     "date":     "n.meeting_date",
@@ -162,8 +185,15 @@ async def search_notes(
         params.append(workspace_id)
 
     if q:
-        conditions.append("(n.title LIKE ? OR n.content LIKE ?)")
-        params.extend([f"%{q}%", f"%{q}%"])
+        fts_expr = _fts5_expr(q)
+        if fts_expr:
+            # FTS5 index covers both title and content; rowid == notes.id.
+            # Far faster than LIKE on large note sets — avoids a full scan.
+            conditions.append(
+                "n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)"
+            )
+            params.append(fts_expr)
+        # else: q was pure punctuation — skip filter (return all, same as blank)
 
     if date_from:
         conditions.append("n.meeting_date >= ?")

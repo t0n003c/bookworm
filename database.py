@@ -160,6 +160,22 @@ async def init_db() -> None:
             "ON notes(workspace_id, meeting_date DESC)"
         )
 
+        # ── Index: workspaces(user_id) ───────────────────────────────────────
+        # Speeds up sidebar workspace listing (SELECT ... WHERE user_id=? ORDER BY
+        # sort_order) which runs on every page load for every authenticated user.
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ws_user "
+            "ON workspaces(user_id, sort_order)"
+        )
+
+        # ── Index: webauthn_credentials(user_id) ─────────────────────────────
+        # Speeds up passkey authentication (SELECT ... WHERE user_id=?) which
+        # runs on every WebAuthn login attempt.
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_webauthn_user "
+            "ON webauthn_credentials(user_id)"
+        )
+
         # ── Migration: drop stale global UNIQUE on workspaces.name ───────────
         # Original single-user schema had `name TEXT NOT NULL UNIQUE`.
         # Multi-user requires only per-user uniqueness; the global constraint
