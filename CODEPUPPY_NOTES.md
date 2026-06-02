@@ -29,6 +29,10 @@
   | `BW_WEBAUTHN_RP_ID` | `` (auto-detect from request) | WebAuthn Relying Party ID — bare domain, e.g. `note.toramochie.com`. Leave empty for localhost dev; set explicitly if auto-detect fails behind a non-standard proxy. |
   | `BW_WEBAUTHN_ORIGIN` | `` (auto-detect from request) | WebAuthn expected browser origin — full URL, e.g. `https://note.toramochie.com`. Auto-detect priority: env var → `BW_HTTPS=true` → `X-Forwarded-Proto` header → `request.url.scheme`. Must match exactly what the browser uses — `http://` ≠ `https://`. |
   | `BW_HTTP_PROXY` | `` (auto-detected) | Outbound HTTP/S proxy for RSS fetches. If unset, `_detect_proxy()` auto-detects via: HTTPS_PROXY/HTTP_PROXY env vars → Windows registry PAC file (`AutoConfigURL`). On Walmart machines this resolves to `http://sysproxy.wal-mart.com:8080` automatically. Set explicitly in Docker: `BW_HTTP_PROXY=http://sysproxy.wal-mart.com:8080`. |
+  | `BW_TRUST_PROXY` | `false` | Set `true` when BookWorm sits behind a reverse proxy (Caddy, Nginx, Traefik, Cloudflare Tunnel). Enables Starlette `ProxyHeadersMiddleware` with `trusted_hosts="*"` so `X-Forwarded-Proto` / `X-Forwarded-For` headers are honoured. Required for correct scheme detection (HTTPS cookies, WebAuthn origin) and real-visitor IP logging. **Never set on a server directly exposed to the internet.** |
+  | `BW_RL_WINDOW_SECS` | `600` | Rate-limiter sliding window in seconds (10 min). Counts login / 2FA failures per `(IP, endpoint)` key. |
+  | `BW_RL_MAX_FAILURES` | `5` | Max failures within `BW_RL_WINDOW_SECS` before an IP is hard-blocked. |
+  | `BW_RL_LOCKOUT_SECS` | `900` | Hard-block duration in seconds (15 min) after `BW_RL_MAX_FAILURES` is reached. State is in-process only — resets on server restart; not shared across uvicorn workers. |
   | `WORKERS` | `1` | Uvicorn workers (max ~4 with SQLite+WAL) |
 
 - **New env var added?** → also add it to `.env.example` AND `docker-compose.yml` (with comment). No exceptions.
@@ -227,6 +231,7 @@
 | `routers/workspace_db_cards.py` | **DB card CRUD API** — create/read/update/delete `db_cards` + `db_card_attrs`; card cover upload/unlink. |
 | `routers/note_reminders.py` | **Note reminders API** — CRUD for `note_reminders` (reminders set via `/reminder` slash command in note editor). |
 | `routers/note_dnd.py` | **Note drag-and-drop (workspace move) endpoint.** Isolated router with prefix `/nwdnd` (deliberately unique — NOT `/notes`). Single endpoint: `POST /nwdnd/move`. Body: `{note_id: int, target_ws_id: int}`. Returns `{ok, moved, reason}`. Ownership double-checked via `note_belongs_to_user` + `workspace_belongs_to_user`. Uses `get_note_workspace_id()` for lightweight same-workspace no-op guard. **Why isolated:** Starlette in the version used does NOT reliably prefer literal path segments over parameterised ones within the same router. `POST /notes/move` (literal) was silently swallowed by `POST /notes/{note_id}` (param) regardless of registration order. Moving the endpoint to `/nwdnd` (its own router, its own prefix) made it physically impossible to shadow-match. See **⚠️ Starlette routing trap** in Architecture Patterns. |
+| `routers/search_qa.py` | **Full-text search Q&A router** (Phase 1, Hybrid Search). Prefix `/qa`, tag `search-qa`. Isolated router — no wildcard `/{param}` routes, so the Starlette routing trap cannot apply. Single endpoint: `GET /qa/search?q=&limit=` (auth-gated via `request.session`; limit clamped to 1–50, default 12). Query sanitised via regex (strips FTS5 operator chars), tokens suffixed with `*` for prefix matching, max 20 tokens. Returns `{results: [{note_id, title, snippet, score, workspace_name, workspace_emoji}]}`. Snippet uses `char(2)/char(3)` (ASCII STX/ETX) as XSS-safe highlight markers — JS HTML-escapes the full string first, then swaps markers for `<mark>`/`</mark>`. Results scoped to requesting user via `JOIN workspaces w ON w.user_id = ? AND w.deleted_at IS NULL`. BM25 score included for Phase 2 hybrid re-ranking (not displayed in Phase 1 UI). DB errors from malformed FTS5 queries return `{results: []}` gracefully (no 500). |
 | `routers/seed_uploads.py` | Dev/demo helper — seeds sample upload files; not exposed in prod. |
 | `routers/home_subscriptions_db.py` | **Subscriptions DB helpers + business logic** (Phase 1). Key fns: `get_price_per_month(cycle, frequency, amount)` — normalises any cycle to monthly cost; `get_subscription_progress(cycle, frequency, next_payment_date)` — returns 0.0–1.0 progress float through current billing period; `get_subscriptions`, `add_subscription`, `update_subscription`, `delete_subscription`, `get_summary_data` (totals + per-category breakdown, active-only). |
 | `routers/push.py` | **Web Push API router** (prefix `/push`). Endpoints: `GET /push/vapid-public-key` — returns `{public_key}` (public; also in `<meta>` tag); `POST /push/subscribe` — upserts a browser push subscription (`endpoint`, `p256dh`, `auth`) for the current user; `DELETE /push/unsubscribe` — removes it; `POST /push/test` — sends a test push to the current user’s device (dev helper). Push is disabled (no-op) when `BW_VAPID_PRIVATE_KEY` is empty. |
@@ -234,6 +239,7 @@
 | `gen_vapid_keys.py` | **Standalone helper script.** Run `python gen_vapid_keys.py` to generate a fresh VAPID key pair and print the two env var lines to paste into `.env`. Uses `cryptography` library (already in requirements as a transitive dep). |
 | `bw_pwa_icons.py` | **PWA icon generator.** Run `python bw_pwa_icons.py` (or call `generate_icons(force=True)`) to regenerate all icons into `static/img/icons/`. Produces 5 files: `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (all RGBA→RGB on green bg, full-colour), `apple-touch-icon.png` (180×180), and `badge-96.png` (96×96 **RGBA with full transparency** — monochrome white worm silhouette for Android push status-bar badge). **Critical:** `badge-96.png` MUST stay RGBA (not flattened to RGB) — Android uses only the alpha channel to render the badge shape in white. Files skipped if they already exist unless `force=True`. |
 | `static/js/bw-push.js` | **Web Push client module.** Loaded in `base.html` (deferred). `_bwPushInit()` — reads `<meta name="bw-vapid-key">` content; if empty, hides all push UI and exits. `_bwPushRegister()` — `navigator.serviceWorker.ready` → `pushManager.subscribe({userVisibleOnly:true, applicationServerKey})` → `POST /push/subscribe`. `_bwPushUnregister()` — `pushManager.getSubscription()` → unsubscribe + `DELETE /push/unsubscribe`. `_bwPushToggle()` — wired to the 🔔 bell button in the sidebar; toggles between subscribed/unsubscribed state. Bell button state persisted in `localStorage` key `bw-push-on`. `sw.js` `push` event handler: shows notification with title/body/icon from `event.data.json()`; `notificationclick` focuses existing tab or opens `/`. **Badge field:** all notification payloads (in `main.py`, `routers/push.py`, and `sw.js` fallback) use `badge: '/static/img/icons/badge-96.png'` — the 96×96 RGBA monochrome icon. Do NOT change badge back to `icon-192.png`; that file has a solid green background (all pixels fully opaque) which Android renders as a solid white square in the status bar. |
+| `static/js/bw-search-qa.js` | **Ctrl+K / Cmd+K floating search panel** (Phase 1, Hybrid Search). All `var`, IIFE-wrapped. Exposes on `window`: `bwSearchOpen`, `bwSearchClose`, `bwSearchGo(noteId)`. Opens a floating modal panel on Ctrl+K/Cmd+K; 300 ms debounced `fetch` to `GET /qa/search?q=&limit=12`; renders result cards with workspace emoji + name + highlighted snippet; ↑↓ arrow-key navigation between cards; Enter opens note via `window.location.href = '/?note=' + noteId`; Escape closes. **XSS guard:** `_bwSqSnippet(raw)` HTML-escapes the full snippet string FIRST (via `textContent` assignment + `innerHTML` read), THEN replaces `\u0002`/`\u0003` (STX/ETX markers from `snippet()`) with `<mark>`/`</mark>`. Wrong order = XSS — do not change the sequence. Redirected responses (session expiry) detected via `r.redirected` or non-JSON content-type → closes panel silently instead of showing an error. Panel HTML injected into `base.html` before `#rem-fun-popup-wrap`; script tag added after `note-workspace-dnd.js`. |
 | `templates/partials/home_page_subscriptions.html` | **Subscriptions page shell** (Phase 1). Two-panel layout. Root: `#subs-page-root[data-page-id]`. Left panel: `#subs-filter-bar`, `#subs-list`, add button. Right panel: `#subs-summary-cards`, `#subs-donut-chart`, `#subs-bar-chart` (both in fixed-height divs), `#subs-upcoming`. Modals: `#subs-modal` (add/edit), `#subs-del-modal` (delete confirm). No inline `<script>` blocks. |
 | `static/js/home-page-subscriptions.js` | **Subscriptions JS module** (Phase 1). All `var`. Entry: `initSubsPage(pid)` called by `_initSwappedPage()`. Key fns: `_subsLoadAll`, `_subsRenderList`, `_subsRenderSummaryCards`, `_subsLoadCharts` (lazy-loads `chart.umd.min.js`), `_subsRenderDonut`, `_subsRenderBar`, `_subsRenderUpcoming`, `subsOpenAddModal`, `subsCloseModal`, `_subsEdit`, `_subsSubmitForm`, `_subsDeletePrompt`. Inactive subscriptions excluded from all analytics totals. |
 | `static/js/vendor/chart.umd.min.js` | **Bundled Chart.js 4.4.4** (~200 KB). Loaded lazily by `_subsLoadCharts()` on subscriptions pages only — not in `base.html`. Stored in `static/js/vendor/` and served as a regular static file with `?v={{ static_v }}` cache-busting. No CDN dependency. |
@@ -262,7 +268,15 @@
 - `id, workspace_id, title, content, meeting_date, created_at, updated_at, icon`
 - `updated_at` maintained by SQLite trigger `notes_updated_at`
 
-**`categories`** — global tag pool with color
+**`notes_fts`** — FTS5 virtual table (Phase 1, Hybrid Search)
+- External content table: `content='notes'`, `content_rowid='id'` — no data duplication; `snippet()` and `bm25()` read from the `notes` table directly
+- Columns indexed: `title`, `content`
+- First-boot populate: `INSERT INTO notes_fts(notes_fts) VALUES('rebuild')` gated by `_fts_existed` check — runs only once when the table is newly created
+- Sync triggers (all idempotent `CREATE TRIGGER IF NOT EXISTS`):
+  - `notes_fts_ai` — `AFTER INSERT ON notes`: inserts new row into FTS index
+  - `notes_fts_au` — `AFTER UPDATE OF title, content ON notes`: delete-old + insert-new; scoped to `title, content` only to avoid double-fire with the existing `notes_updated_at` trigger (which only updates `updated_at` and would otherwise cause two redundant FTS re-indexes per note save)
+  - `notes_fts_ad` — `AFTER DELETE ON notes`: removes deleted row from FTS index
+- Search endpoint: `GET /qa/search` in `routers/search_qa.py`; uses `snippet(notes_fts, 1, char(2), char(3), '…', 32)` and `bm25(notes_fts)` for scoring; results scoped to requesting user via `JOIN workspaces w ON w.user_id = ? AND w.deleted_at IS NULL`
 **`attr_definitions`** — custom field definitions (type: text/select/etc.)
 **`note_categories`** — M2M: notes ↔ categories
 **`note_attributes`** — per-note custom field values
@@ -544,7 +558,8 @@ The stack widget is a carousel container. Its sizing is tricky because slides ar
 
 - Session-based via `starlette.middleware.sessions` (30-day cookie TTL)
 - `AuthMiddleware` in `auth_middleware.py` intercepts unauthenticated requests
-- Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`, `/manifest.json`, `/sw.js`, `/offline`
+- Public routes (bypass auth — `_PUBLIC` set in `auth_middleware.py`): `/login`, `/setup`, `/register`, `/favicon.ico`, `/2fa/verify`, `/2fa/webauthn/begin`, `/2fa/webauthn/complete`, `/demo/start`, `/demo/end`, `/demo/pre-end`, `/demo/cancel-end`, `/demo/alive`, `/health`, `/manifest.json`, `/sw.js`, `/offline`
+  - `/2fa/webauthn/begin` + `/2fa/webauthn/complete` are public because they are called during a **pending-2FA session** (no full session cookie yet); they promote `pending` → `full` session on successful authentication
   - PWA routes (`/manifest.json`, `/sw.js`, `/offline`) are public so browsers and the OS can fetch them without a session cookie (needed for installable PWA / offline page support)
 - `/static/` prefix is allowed separately via path-prefix check, not via `_PUBLIC`
 - `/wopi/` prefix is also bypassed via the same path-prefix check (alongside `/static/`) — **NOT added to `_PUBLIC`**. This lets Collabora’s server-to-server WOPI callbacks (CheckFileInfo, GetFile, PutFile) reach BookWorm without a session cookie; they carry a short-lived `itsdangerous` token in `?access_token=` instead.
@@ -749,23 +764,27 @@ YouTube's `feeds/videos.xml?channel_id=UC…` endpoint is blocked through Walmar
 ## 🚧 In Progress / Last Session Work
 
 > ⚠️ **This section requires human judgment to update — not auto-updated by docs-keeper.**
-> Last recorded session: **2026-05-25** (Note→Workspace drag-and-drop shipped; Starlette routing trap documented).
+> Last recorded session: **2026-06-01** (Hybrid Search Q&A Phase 1 shipped — FTS5 + Ctrl+K panel).
 
 ### 📌 NEXT FEATURE — READ THIS BEFORE BUILDING
 > **Note #265 — "🔍 Hybrid Search Q&A — Planning & Phases"** lives in WS 47 (📁 BOOKWORM).
 > Open it in BookWorm before writing a single line of code. It has the full architecture,
 > all 4 phases, code snippets, a pre-build checklist, and open questions.
 >
+> **✅ Phase 1 shipped (2026-06-01):** FTS5 + Ctrl+K search panel. No new deps. See In Progress table.
+> **🔜 Phase 2 is next:** TF-IDF re-ranking via `search_index.py` — nightly rebuild at 6 AM (APScheduler).
+>
 > **TL;DR of locked decisions:**
 > - Embedded in BookWorm — NOT a separate Docker service
 > - Global TF-IDF matrix + post-rank `user_ids[i] == user_id` filter (no per-user pickles)
 > - FTS5 via SQLite triggers (always in sync) — TF-IDF nightly at 6 AM via APScheduler
 > - Configurable LLM via `site_settings` (OpenAI-compatible endpoint + key + model)
-> - Phase 1 = FTS5 + Ctrl+K panel (no new deps). Phase 2 = TF-IDF. Phase 3 = LLM streaming.
-> - New files: `routers/search_qa.py`, `static/js/bw-search-qa.js`, `search_index.py`, `search_llm.py`
+> - Phase 1 = FTS5 + Ctrl+K panel ✅. Phase 2 = TF-IDF. Phase 3 = LLM streaming.
+> - New files: `routers/search_qa.py` ✅, `static/js/bw-search-qa.js` ✅, `search_index.py`, `search_llm.py`
 
 | Item | Status | Notes |
 |---|---|---|
+| Hybrid Search Q&A — Phase 1 (FTS5 + Ctrl+K) | ✅ Shipped (2026-06-01) | FTS5 virtual table `notes_fts` (external content, no duplication) + three idempotent sync triggers (`notes_fts_ai/au/ad`). `notes_fts_au` fires only on `UPDATE OF title, content` to avoid double-fire with the existing `notes_updated_at` trigger. First-boot `rebuild` gated by `_fts_existed` check. Search router: `routers/search_qa.py` (prefix `/qa`, single endpoint `GET /qa/search?q=&limit=`, auth-gated via session). Returns `{results: [{note_id, title, snippet, score, workspace_name, workspace_emoji}]}`. Snippet uses `char(2)/char(3)` XSS-safe STX/ETX markers; user-scoped via `JOIN workspaces w ON w.user_id = ?`. BM25 score included in response for Phase 2 re-ranking. JS: `static/js/bw-search-qa.js` (all `var`, IIFE-wrapped, Ctrl+K/Cmd+K shortcut, 300 ms debounce, ↑↓ keyboard nav, Enter opens note via `window.location.href='/?note='+noteId`, Escape closes). XSS guard: `_bwSqSnippet()` HTML-escapes FIRST then replaces ``/`` with `<mark>`/`</mark>`. Redirected response (session expiry) → closes panel silently. Panel HTML added to `base.html` before `#rem-fun-popup-wrap`; script tag added after `note-workspace-dnd.js`. `main.py`: `app.include_router(search_qa_router.router)`. Phase 2 (TF-IDF re-ranking) is next. |
 | Note → Workspace drag-and-drop | ✅ Shipped (2026-05-25) | Hold a note card ~300 ms to arm, drag to a sidebar workspace row, release to move. Backend: `POST /nwdnd/move` (isolated router). Frontend: `static/js/note-workspace-dnd.js`. On success, `#note-list` reloads via `htmx.ajax`. Root cause of the long debug journey: Starlette's `POST /{note_id}` inside the notes router was shadow-matching every variation of the `/move` path tried (`/notes/{id}/move`, `/notes/move/{id}`, `/notes/move`). Fixed by moving the endpoint to its own `/nwdnd` router. New files: `routers/note_dnd.py`. New DB helper: `get_note_workspace_id()` in `notes_db.py`. |
 | Starlette routing trap documented | ✅ (2026-05-25) | See **⚠️ Starlette Routing Trap** in Architecture Patterns. |
 |---|---|---|

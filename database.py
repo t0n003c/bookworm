@@ -324,6 +324,56 @@ async def init_db() -> None:
             "UPDATE notes SET workspace_id = ? WHERE workspace_id IS NULL", (default_ws_id,)
         )
 
+        # ── FTS5 full-text search index (Phase 1) ─────────────────────────
+        # External content table — no duplication; snippet() reads from notes.
+        # First-creation gate: 'rebuild' populates from existing rows once only.
+        _fts_check = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'"
+        )
+        _fts_existed = (await _fts_check.fetchone()) is not None
+
+        await db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+                title,
+                content,
+                content='notes',
+                content_rowid='id'
+            )
+        """)
+        if not _fts_existed:
+            # Populate from all existing notes — runs once on first migration
+            await db.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+
+        # Sync triggers — idempotent (IF NOT EXISTS)
+        # UPDATE trigger: AFTER UPDATE OF title, content only — prevents
+        # double-fire with the existing notes_updated_at trigger (which only
+        # touches updated_at and would otherwise cause two FTS re-indexes).
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS notes_fts_ai
+            AFTER INSERT ON notes BEGIN
+                INSERT INTO notes_fts(rowid, title, content)
+                VALUES (new.id, new.title, new.content);
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS notes_fts_au
+            AFTER UPDATE OF title, content ON notes BEGIN
+                INSERT INTO notes_fts(notes_fts, rowid, title, content)
+                VALUES('delete', old.id, old.title, old.content);
+                INSERT INTO notes_fts(rowid, title, content)
+                VALUES (new.id, new.title, new.content);
+            END
+        """)
+        await db.execute("""
+            CREATE TRIGGER IF NOT EXISTS notes_fts_ad
+            AFTER DELETE ON notes BEGIN
+                INSERT INTO notes_fts(notes_fts, rowid, title, content)
+                VALUES('delete', old.id, old.title, old.content);
+            END
+        """)
+        await db.commit()
+        # ── /FTS5 ─────────────────────────────────────────────────────────
+
         for name, color, desc in SEED_CATEGORIES:
             await db.execute(
                 "INSERT OR IGNORE INTO categories (name, color, description) VALUES (?, ?, ?)",

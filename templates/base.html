@@ -773,6 +773,50 @@
 <script src="/static/js/bw-push.js?v={{ static_v }}" defer></script>
 <script src="/static/js/bw-webauthn.js?v={{ static_v }}" defer></script>
 <script src="/static/js/note-workspace-dnd.js?v={{ static_v }}" defer></script>
+<script src="/static/js/bw-search-qa.js?v={{ static_v }}" defer></script>
+
+{# ── Hybrid Search Q&A — Ctrl+K floating panel ──────────────────── #}
+<div id="bw-sq-backdrop"
+     class="fixed inset-0 z-[55] bg-black/40 hidden"
+     onclick="bwSearchClose()"
+     aria-hidden="true"></div>
+
+<div id="bw-sq-panel"
+     class="fixed inset-x-4 top-16 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2
+            sm:w-[640px] z-[56] hidden
+            bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+            border border-gray-200 dark:border-zinc-700 overflow-hidden"
+     role="dialog" aria-label="Search notes" aria-modal="true">
+
+  <div class="flex items-center gap-2 px-4 py-3
+              border-b border-gray-100 dark:border-zinc-800">
+    <span class="text-gray-400 flex-shrink-0 select-none text-base"
+          aria-hidden="true">🔍</span>
+    <input id="bw-sq-input" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Search your notes…"
+           class="flex-1 bg-transparent text-sm text-gray-900 dark:text-zinc-100
+                  outline-none placeholder-gray-400 dark:placeholder-zinc-500"
+           aria-label="Search notes">
+    <kbd class="hidden sm:inline-flex items-center text-xs text-gray-400
+                border border-gray-200 dark:border-zinc-700
+                px-1.5 py-0.5 rounded font-mono select-none">Esc</kbd>
+  </div>
+
+  <div id="bw-sq-results"
+       class="max-h-80 overflow-y-auto py-1"
+       role="listbox" aria-label="Search results"></div>
+
+  <style>
+    #bw-sq-panel mark {
+      background: #ffc220; color: inherit;
+      border-radius: 2px; padding: 0 2px;
+    }
+    .dark #bw-sq-panel mark { background: #995213; color: #fff; }
+    .bw-sq-item.bw-sq-active { background: #eff6ff; }
+    .dark .bw-sq-item.bw-sq-active { background: #27272a; }
+  </style>
+</div>
+{# ── /Hybrid Search ──────────────────────────────────────────────────── #}
 
 {# ── Reminder toast container — position:fixed, lives outside home-content
    so toasts appear even when the user is in workspace view. #}

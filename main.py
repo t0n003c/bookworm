@@ -139,6 +139,7 @@ from routers import note_reminders as note_reminders_router
 from routers import sharing as sharing_router
 from routers import push as push_router
 from routers import webauthn as webauthn_router
+from routers import search_qa as search_qa_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 from routers.home_db import get_home_page
 
@@ -939,6 +940,7 @@ app.include_router(workspace_databases_router.router)
 app.include_router(sharing_router.router)
 app.include_router(push_router.router)
 app.include_router(webauthn_router.router)
+app.include_router(search_qa_router.router)
 
 
 # ── Ownership-gated file serving ──────────────────────────────────────────────
