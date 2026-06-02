@@ -106,6 +106,49 @@
       </form>
     </div>
 
+    {# ── AI Search / LLM endpoint ──────────────────────────────── #}
+    <div class="px-3 py-3">
+      <p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 mb-0.5">🤖 AI Search (LLM)</p>
+      <p class="text-xs text-gray-500 dark:text-zinc-400 mb-2">
+        OpenAI-compatible endpoint for streaming Q&amp;A answers in the search panel.
+        Leave blank to use keyword + semantic search only.
+      </p>
+      <form onsubmit="event.preventDefault(); adminPost('/account/settings/qa-llm', this, this.querySelector('button[type=submit]'))">
+        <div class="space-y-1.5">
+          <input name="qa_endpoint" type="url" placeholder="https://api.openai.com/v1"
+            value="{{ qa_settings.endpoint | default('') }}"
+            class="w-full px-2.5 py-1.5 text-xs rounded-lg
+                   border border-gray-300 dark:border-zinc-600
+                   bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2]"
+            aria-label="LLM endpoint URL" />
+          <div class="flex gap-1.5">
+            <input name="qa_model" type="text" placeholder="Model (e.g. gpt-4o-mini)"
+              value="{{ qa_settings.model | default('gpt-4o-mini') }}"
+              class="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg
+                     border border-gray-300 dark:border-zinc-600
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]"
+              aria-label="Model name" />
+            <input name="qa_api_key" type="password"
+              placeholder="{% if qa_settings.api_key %}API key set — leave blank to keep{% else %}API key (optional){% endif %}"
+              autocomplete="new-password"
+              class="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg
+                     border border-gray-300 dark:border-zinc-600
+                     bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]"
+              aria-label="API key" />
+          </div>
+          <button type="submit"
+            class="px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white
+                   text-xs font-semibold rounded-lg transition
+                   focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+            Save AI Settings
+          </button>
+        </div>
+      </form>
+    </div>
+
   </div>
 
   <p class="text-xs font-semibold uppercase tracking-wider

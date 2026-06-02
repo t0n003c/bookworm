@@ -17,6 +17,8 @@ from routers.auth_db import (
     set_unlimited_uploads,
     update_username,
     update_password,
+    get_qa_settings,
+    set_qa_settings,
 )
 from templates_env import templates
 from routers.seed_uploads import seed_flower_uploads
@@ -29,6 +31,20 @@ _ERR = "<span class='text-red-600  text-xs font-medium'>{}</span>"
 
 def _is_superadmin(request: Request) -> bool:
     return request.session.get("role") == "superadmin"
+
+
+async def _admin_ctx(request: Request, **extra) -> dict:
+    """Shared context dict for admin_users.html — one place to add new keys."""
+    me = request.session.get("user_id")
+    ctx = {
+        "users":             await get_all_users(),
+        "me":                me,
+        "registration_open": await get_registration_open(),
+        "unlimited_uploads": await get_unlimited_uploads(me),
+        "qa_settings":       await get_qa_settings(),
+    }
+    ctx.update(extra)
+    return ctx
 
 
 # ── change username ───────────────────────────────────────────
@@ -87,13 +103,8 @@ async def list_users(request: Request):
     """Return the admin user-list partial (superadmin only)."""
     if not _is_superadmin(request):
         return HTMLResponse("", status_code=403)
-    users = await get_all_users()
-    me    = request.session.get("user_id")
     return templates.TemplateResponse(
-        request, "partials/admin_users.html",
-        {"users": users, "me": me,
-         "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads(me)},
+        request, "partials/admin_users.html", await _admin_ctx(request)
     )
 
 
@@ -114,9 +125,9 @@ async def toggle_registration(
     label = "open" if new_value else "closed"
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": new_value,
-         "unlimited_uploads": await get_unlimited_uploads(me),
-         "success": f"Public registration is now {label}."},
+        await _admin_ctx(request,
+            registration_open=new_value,
+            success=f"Public registration is now {label}."),
     )
 
 
@@ -137,10 +148,9 @@ async def toggle_unlimited_uploads(
     label = "enabled" if new_value else "disabled"
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
-        {"users": users, "me": me,
-         "registration_open": await get_registration_open(),
-         "unlimited_uploads": new_value,
-         "success": f"Unlimited file uploads {label} for your account."},
+        await _admin_ctx(request,
+            unlimited_uploads=new_value,
+            success=f"Unlimited file uploads {label} for your account."),
     )
 
 
@@ -169,15 +179,9 @@ async def create_user_handler(
 
     new_uid = await create_user(new_username, new_password, role="user")
     await seed_flower_uploads(new_uid)
-    # Re-render the full user list so HTMX swaps it in
-    users = await get_all_users()
-    me    = request.session.get("user_id")
     return templates.TemplateResponse(
-        request,
-        "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads(me),
-         "success": f'User "{new_username}" created.'},
+        request, "partials/admin_users.html",
+        await _admin_ctx(request, success=f'User "{new_username}" created.'),
     )
 
 
@@ -209,15 +213,11 @@ async def delete_user_handler(request: Request, target_id: int):
 
     filenames = await delete_user(target_id)
     _purge_files(filenames)
-
-    users = await get_all_users()
     tname = target_user["username"]
     return templates.TemplateResponse(
-        request,
-        "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads(me),
-         "success": f'User "{tname}" and all their data deleted.'},
+        request, "partials/admin_users.html",
+        await _admin_ctx(request,
+            success=f'User "{tname}" and all their data deleted.'),
     )
 
 
@@ -233,25 +233,19 @@ async def delete_all_demo_handler(request: Request):
     all_users = await get_all_users()
     demo_users = [u for u in all_users if u["role"] == "demo"]
     if not demo_users:
-        users = await get_all_users()
         return templates.TemplateResponse(
             request, "partials/admin_users.html",
-            {"users": users, "me": me, "registration_open": await get_registration_open(),
-             "unlimited_uploads": await get_unlimited_uploads(me),
-             "success": "No demo users to delete."},
+            await _admin_ctx(request, success="No demo users to delete."),
         )
 
     all_filenames: list[str] = []
     for u in demo_users:
         all_filenames += await delete_user(u["id"])
     _purge_files(all_filenames)
-
-    users = await get_all_users()
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads(me),
-         "success": f"{len(demo_users)} demo user(s) and all their data deleted."},
+        await _admin_ctx(request,
+            success=f"{len(demo_users)} demo user(s) and all their data deleted."),
     )
 
 
@@ -279,13 +273,34 @@ async def reset_user_password(
         return HTMLResponse(_ERR.format("Passwords do not match."))
 
     await update_password(target_id, new_password)
-    me = request.session.get("user_id")
-    users = await get_all_users()
     tname = target_user["username"]
     return templates.TemplateResponse(
-        request,
-        "partials/admin_users.html",
-        {"users": users, "me": me, "registration_open": await get_registration_open(),
-         "unlimited_uploads": await get_unlimited_uploads(me),
-         "success": f'Password reset for "{tname}".'},
+        request, "partials/admin_users.html",
+        await _admin_ctx(request, success=f'Password reset for "{tname}".'),
+    )
+
+
+# ── admin: save QA / LLM settings ──────────────────────────────────
+
+@router.post("/settings/qa-llm", response_class=HTMLResponse)
+async def save_qa_settings(
+    request: Request,
+    qa_endpoint: str = Form(default=""),
+    qa_model:    str = Form(default=""),
+    qa_api_key:  str = Form(default=""),
+):
+    """Superadmin-only: persist OpenAI-compatible LLM endpoint config."""
+    if not _is_superadmin(request):
+        return HTMLResponse("", status_code=403)
+    # Only overwrite the stored API key if the user typed something new.
+    # Empty submission → leave the existing key untouched.
+    key_or_none = qa_api_key.strip() or None
+    await set_qa_settings(
+        endpoint=qa_endpoint,
+        api_key=key_or_none,
+        model=qa_model,
+    )
+    return templates.TemplateResponse(
+        request, "partials/admin_users.html",
+        await _admin_ctx(request, success="AI Search settings saved."),
     )

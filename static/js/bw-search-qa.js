@@ -1,17 +1,21 @@
-/* bw-search-qa.js — Ctrl+K floating search panel (Phase 1, FTS5)
- * All var, IIFE-wrapped — matches BookWorm JS conventions.
- * Exposes: bwSearchOpen, bwSearchClose, bwSearchGo on window.
+/* bw-search-qa.js — Ctrl+K floating search panel (Phase 3, Hybrid + LLM streaming)
+ * All var, IIFE-wrapped — BookWorm JS conventions.
+ * Exposes: bwSearchOpen, bwSearchClose, bwSearchGo, bwSqStopStream on window.
  *
- * XSS note: _bwSqSnippet() HTML-escapes the full string FIRST,
- * then replaces \u0002/\u0003 (STX/ETX) with <mark>/</mark>.
+ * XSS note: _bwSqSnippet() HTML-escapes FIRST, then injects <mark> tags.
  * Wrong order = XSS. Do not change the sequence.
+ *
+ * Streaming: Enter (no card highlighted) → POST /qa/stream, render tokens.
+ * Enter (card highlighted) → open that note. Arrow keys navigate cards.
+ * AbortController wired to the Stop button — cancels the fetch stream.
  */
 (function () {
   'use strict';
 
-  var _bwSqTimer  = null;   // debounce handle
-  var _bwSqIdx    = -1;     // keyboard-highlighted result index (-1 = none)
-  var _bwSqCount  = 0;      // number of result cards currently rendered
+  var _bwSqTimer    = null;   // debounce handle
+  var _bwSqIdx      = -1;     // keyboard-highlighted result index (-1 = none)
+  var _bwSqCount    = 0;      // number of result cards currently rendered
+  var _bwSqAbort    = null;   // AbortController for the active LLM stream
 
   /* ── public API ──────────────────────────────────────────────────── */
   window.bwSearchOpen = function () {
@@ -24,6 +28,7 @@
     if (results) results.innerHTML = '';
     _bwSqIdx   = -1;
     _bwSqCount = 0;
+    _bwSqResetAnswer();
 
     backdrop && backdrop.classList.remove('hidden');
     panel.classList.remove('hidden');
@@ -40,11 +45,23 @@
     _bwSqIdx   = -1;
     _bwSqCount = 0;
     clearTimeout(_bwSqTimer);
+    bwSqStopStream();   // cancel any active LLM stream on close
   };
 
   window.bwSearchGo = function (noteId) {
     bwSearchClose();
     window.location.href = '/?note=' + noteId;
+  };
+
+  window.bwSqStopStream = function () {
+    if (_bwSqAbort) {
+      _bwSqAbort.abort();
+      _bwSqAbort = null;
+    }
+    var btn = document.getElementById('bw-sq-stop-btn');
+    var thinking = document.getElementById('bw-sq-thinking');
+    if (btn)     btn.classList.add('hidden');
+    if (thinking) thinking.classList.add('hidden');
   };
 
   /* ── internal helpers ─────────────────────────────────────────────── */
@@ -56,11 +73,9 @@
       .replace(/"/g, '&quot;');
   }
 
-  /* Escape HTML first, THEN inject <mark> tags from STX/ETX markers.
-   * This order is mandatory — see XSS note at top of file. */
+  /* Escape HTML first, THEN inject <mark> tags from STX/ETX markers. */
   function _bwSqSnippet(s) {
     var escaped = _bwSqEsc(s);
-    // \u0002 = STX (char(2) from SQLite snippet()), \u0003 = ETX (char(3))
     return escaped
       .replace(/\u0002/g, '<mark>')
       .replace(/\u0003/g, '</mark>');
@@ -83,6 +98,16 @@
     var results = document.getElementById('bw-sq-results');
     if (!results) return [];
     return Array.prototype.slice.call(results.querySelectorAll('.bw-sq-item'));
+  }
+
+  function _bwSqResetAnswer() {
+    var wrap    = document.getElementById('bw-sq-answer-wrap');
+    var ansEl   = document.getElementById('bw-sq-answer');
+    var thinking = document.getElementById('bw-sq-thinking');
+    bwSqStopStream();
+    if (wrap)    wrap.classList.add('hidden');
+    if (ansEl)   ansEl.textContent = '';
+    if (thinking) thinking.classList.remove('hidden');
   }
 
   function _bwSqRender(results) {
@@ -125,7 +150,6 @@
     }
     el.innerHTML = html;
 
-    // Inject snippet HTML separately (safe — escaped before markers)
     var cards = el.querySelectorAll('.bw-sq-item');
     for (var j = 0; j < results.length; j++) {
       var snipEl = cards[j] && cards[j].querySelector('.bw-sq-snippet');
@@ -136,19 +160,75 @@
   function _bwSqFetch(q) {
     fetch('/qa/search?q=' + encodeURIComponent(q) + '&limit=12')
       .then(function (r) {
-        if (r.redirected) {
-          // Session expired — close panel silently
-          bwSearchClose();
-          return null;
-        }
+        if (r.redirected) { bwSearchClose(); return null; }
         return r.json();
       })
       .then(function (data) {
         if (!data) return;
         _bwSqRender(data.results);
       })
-      .catch(function () {
-        _bwSqRender([]);
+      .catch(function () { _bwSqRender([]); });
+  }
+
+  /* ── LLM streaming ────────────────────────────────────────────────── */
+  function _bwSqStream(q) {
+    _bwSqResetAnswer();
+
+    var wrap    = document.getElementById('bw-sq-answer-wrap');
+    var ansEl   = document.getElementById('bw-sq-answer');
+    var stopBtn = document.getElementById('bw-sq-stop-btn');
+    var thinking = document.getElementById('bw-sq-thinking');
+    if (!wrap || !ansEl) return;
+
+    wrap.classList.remove('hidden');
+    if (stopBtn) stopBtn.classList.remove('hidden');
+
+    _bwSqAbort = new AbortController();
+    var text = '';
+
+    fetch('/qa/stream?q=' + encodeURIComponent(q), { signal: _bwSqAbort.signal })
+      .then(function (resp) {
+        if (resp.redirected) { bwSearchClose(); return; }
+        if (!resp.body)      { bwSqStopStream(); return; }
+
+        var reader  = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buf     = '';
+
+        function pump() {
+          reader.read().then(function (chunk) {
+            if (chunk.done) { bwSqStopStream(); return; }
+            buf += decoder.decode(chunk.value, { stream: true });
+
+            var lines = buf.split('\n');
+            buf = lines.pop(); // keep incomplete line
+
+            for (var i = 0; i < lines.length; i++) {
+              var line = lines[i].trim();
+              if (!line.startsWith('data:')) continue;
+              var raw = line.slice(5).trim();
+              if (raw === '[DONE]' || raw === '[ERROR]') {
+                bwSqStopStream();
+                // Hide answer wrap if nothing was streamed
+                if (!text) wrap.classList.add('hidden');
+                return;
+              }
+              try {
+                var token = JSON.parse(raw);
+                text += token;
+                ansEl.textContent = text;
+                // Hide "thinking…" once we get the first token
+                if (thinking) thinking.classList.add('hidden');
+              } catch (e) { /* malformed chunk — skip */ }
+            }
+            pump();
+          }).catch(function () { bwSqStopStream(); });
+        }
+        pump();
+      })
+      .catch(function (err) {
+        // AbortError is expected when user clicks Stop — no-op
+        if (err && err.name !== 'AbortError') { bwSqStopStream(); }
       });
   }
 
@@ -185,30 +265,38 @@
           if (el) el.innerHTML = '';
           _bwSqCount = 0;
           _bwSqIdx   = -1;
+          _bwSqResetAnswer();
           return;
         }
         _bwSqTimer = setTimeout(function () { _bwSqFetch(q); }, 300);
       });
 
-      /* Arrow key nav + Enter to open */
+      /* Arrow key nav + Enter */
       inputEl.addEventListener('keydown', function (e) {
         var items = _bwSqItems();
-        if (!items.length) return;
 
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           _bwSqIdx = Math.min(_bwSqIdx + 1, items.length - 1);
           _bwSqHighlight(items);
-        } else if (e.key === 'ArrowUp') {
+          return;
+        }
+        if (e.key === 'ArrowUp') {
           e.preventDefault();
           _bwSqIdx = Math.max(_bwSqIdx - 1, 0);
           _bwSqHighlight(items);
-        } else if (e.key === 'Enter') {
+          return;
+        }
+        if (e.key === 'Enter') {
           e.preventDefault();
-          var active = _bwSqIdx >= 0 ? items[_bwSqIdx] : items[0];
-          if (active) {
-            var nid = active.getAttribute('data-note-id');
+          if (_bwSqIdx >= 0 && items[_bwSqIdx]) {
+            // Card highlighted → open note
+            var nid = items[_bwSqIdx].getAttribute('data-note-id');
             if (nid) bwSearchGo(Number(nid));
+          } else {
+            // No highlight → ask AI
+            var q = inputEl.value.trim();
+            if (q) _bwSqStream(q);
           }
         }
       });

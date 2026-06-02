@@ -13,13 +13,16 @@ metadata for any candidates the keyword pass missed entirely.
 Auth: all endpoints require a valid session. None are in _PUBLIC.
 """
 import asyncio
+import json
 import logging
 import re
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 import search_index
+import search_llm
 from database import DB_PATH, get_db
 
 log = logging.getLogger(__name__)
@@ -234,3 +237,58 @@ async def rebuild_index_endpoint(request: Request):
         raise HTTPException(status_code=403)
     asyncio.create_task(search_index.rebuild_index())
     return {"status": "rebuilding", "message": "Rebuild started in background."}
+
+
+@router.get("/stream")
+async def stream_answer(request: Request, q: str = ""):
+    """SSE stream — runs hybrid search then streams an LLM answer.
+
+    Format: `data: <json_token>\\n\\n` per chunk; ends with `data: [DONE]\\n\\n`.
+    When no LLM endpoint is configured, emits only [DONE] (pure retrieval).
+    """
+    uid = _uid(request)
+    q   = (q or "").strip()
+    if not q:
+        return StreamingResponse(
+            iter(["data: [DONE]\n\n"]),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    fts_query = _build_fts_query(q)
+    if not fts_query:
+        return StreamingResponse(
+            iter(["data: [DONE]\n\n"]),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # Hybrid search — same pipeline as /qa/search
+    loop = asyncio.get_running_loop()
+    fts_task   = asyncio.create_task(_fts5_search(uid, fts_query))
+    tfidf_task = loop.run_in_executor(
+        None, search_index.semantic_search, q, uid, _FTS5_POOL
+    )
+    fts_rows, tfidf_hits = await asyncio.gather(fts_task, tfidf_task)
+
+    # Build ordered note_id list (FTS5 first, then TF-IDF-only extras)
+    fts_ids    = [r["note_id"] for r in fts_rows]
+    seen       = set(fts_ids)
+    extra_ids  = [h["note_id"] for h in tfidf_hits if h["note_id"] not in seen]
+    note_ids   = (fts_ids + extra_ids)[:search_llm._CONTEXT_NOTES]
+
+    async def _event_gen():
+        try:
+            async for token in search_llm.stream_llm(q, note_ids, uid):
+                # JSON-encode each token so newlines don't break SSE framing
+                yield "data: " + json.dumps(token) + "\n\n"
+        except Exception:
+            log.exception("/qa/stream: generator error")
+            yield "data: [ERROR]\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        _event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
