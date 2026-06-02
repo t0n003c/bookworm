@@ -110,19 +110,18 @@ def _merge_and_score(
     tfidf_hits: list,
     words: list,
     limit: int,
-    uid: int = 0,
+    extra_meta: dict | None = None,
 ) -> list:
-    """Combine FTS5 and TF-IDF candidates into a single ranked list."""
+    """Combine FTS5 and TF-IDF candidates into a single ranked list.
+
+    extra_meta: pre-fetched metadata dict {note_id: row} for TF-IDF-only
+    hits — must be fetched and passed by the caller (in an executor) so
+    this function stays pure and never blocks the event loop.
+    """
     fts_by_id    = {r["note_id"]: r for r in fts_rows}
     tfidf_by_id  = {h["note_id"]: h["score"] for h in tfidf_hits}
     all_note_ids = list(dict.fromkeys(list(fts_by_id) + list(tfidf_by_id)))
-
-    # Fetch metadata for TF-IDF-only notes the FTS pool didn't cover
-    tfidf_only = [nid for nid in tfidf_by_id if nid not in fts_by_id]
-    extra_meta = {}
-    if tfidf_only:
-        # Run in executor because it's a sync sqlite call
-        extra_meta = _fetch_meta_sync(tfidf_only[:20], uid=uid)
+    extra_meta   = extra_meta or {}
 
     scored = []
     for nid in all_note_ids:
@@ -189,9 +188,9 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
         return {"results": [], "index_ready": search_index.is_ready()}
 
     # Run FTS5 and TF-IDF concurrently
-    loop = asyncio.get_event_loop()
-    fts_task    = asyncio.create_task(_fts5_search(uid, fts_query))
-    tfidf_task  = loop.run_in_executor(
+    loop = asyncio.get_running_loop()
+    fts_task   = asyncio.create_task(_fts5_search(uid, fts_query))
+    tfidf_task = loop.run_in_executor(
         None, search_index.semantic_search, q, uid, _FTS5_POOL
     )
     fts_rows, tfidf_hits = await asyncio.gather(fts_task, tfidf_task)
@@ -211,7 +210,16 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
         ]
         return {"results": results, "index_ready": False}
 
-    results = _merge_and_score(fts_rows, tfidf_hits, words, limit, uid=uid)
+    # Fetch metadata for TF-IDF-only hits in an executor — never blocks the loop
+    fts_ids    = {r["note_id"] for r in fts_rows}
+    tfidf_only = [h["note_id"] for h in tfidf_hits if h["note_id"] not in fts_ids]
+    extra_meta: dict = {}
+    if tfidf_only:
+        extra_meta = await loop.run_in_executor(
+            None, _fetch_meta_sync, tfidf_only[:20], uid
+        )
+
+    results = _merge_and_score(fts_rows, tfidf_hits, words, limit, extra_meta)
     return {"results": results, "index_ready": True}
 
 
