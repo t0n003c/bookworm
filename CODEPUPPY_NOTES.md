@@ -751,6 +751,19 @@ YouTube's `feeds/videos.xml?channel_id=UC…` endpoint is blocked through Walmar
 > ⚠️ **This section requires human judgment to update — not auto-updated by docs-keeper.**
 > Last recorded session: **2026-05-25** (Note→Workspace drag-and-drop shipped; Starlette routing trap documented).
 
+### 📌 NEXT FEATURE — READ THIS BEFORE BUILDING
+> **Note #265 — "🔍 Hybrid Search Q&A — Planning & Phases"** lives in WS 47 (📁 BOOKWORM).
+> Open it in BookWorm before writing a single line of code. It has the full architecture,
+> all 4 phases, code snippets, a pre-build checklist, and open questions.
+>
+> **TL;DR of locked decisions:**
+> - Embedded in BookWorm — NOT a separate Docker service
+> - Global TF-IDF matrix + post-rank `user_ids[i] == user_id` filter (no per-user pickles)
+> - FTS5 via SQLite triggers (always in sync) — TF-IDF nightly at 6 AM via APScheduler
+> - Configurable LLM via `site_settings` (OpenAI-compatible endpoint + key + model)
+> - Phase 1 = FTS5 + Ctrl+K panel (no new deps). Phase 2 = TF-IDF. Phase 3 = LLM streaming.
+> - New files: `routers/search_qa.py`, `static/js/bw-search-qa.js`, `search_index.py`, `search_llm.py`
+
 | Item | Status | Notes |
 |---|---|---|
 | Note → Workspace drag-and-drop | ✅ Shipped (2026-05-25) | Hold a note card ~300 ms to arm, drag to a sidebar workspace row, release to move. Backend: `POST /nwdnd/move` (isolated router). Frontend: `static/js/note-workspace-dnd.js`. On success, `#note-list` reloads via `htmx.ajax`. Root cause of the long debug journey: Starlette's `POST /{note_id}` inside the notes router was shadow-matching every variation of the `/move` path tried (`/notes/{id}/move`, `/notes/move/{id}`, `/notes/move`). Fixed by moving the endpoint to its own `/nwdnd` router. New files: `routers/note_dnd.py`. New DB helper: `get_note_workspace_id()` in `notes_db.py`. |
