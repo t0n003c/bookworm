@@ -20,7 +20,6 @@ from routers.notes_db import (
     update_note,
     delete_note,
     move_note_to_workspace,
-    get_note_workspace_id,
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
@@ -307,40 +306,6 @@ async def create_note_handler(
             "attr_defs": attr_defs,
         },
     )
-
-
-@router.post("/move", response_class=JSONResponse)
-async def move_note_handler(
-    request: Request,
-):
-    """Move a note to a different workspace.
-
-    Fully literal path — no URL params, zero routing ambiguity.
-    Body: { "note_id": int, "target_ws_id": int }
-
-    - source == target  → silent no-op
-    - any other target  → UPDATE notes SET workspace_id = target
-    """
-    uid = request.session.get("user_id")
-
-    body = await request.json()
-    note_id:      Optional[int] = body.get("note_id")
-    target_ws_id: Optional[int] = body.get("target_ws_id")
-
-    if not note_id:
-        raise HTTPException(status_code=422, detail="note_id required")
-    if not target_ws_id:
-        raise HTTPException(status_code=422, detail="target_ws_id required")
-
-    await _require_note_owner(note_id, uid)   # 403 if not owned by uid
-    await _require_ws_owner(target_ws_id, uid)  # 403 if ws not owned by uid
-
-    source_ws_id = await get_note_workspace_id(note_id)
-    if source_ws_id == target_ws_id:
-        return JSONResponse({"ok": True, "moved": False, "reason": "same"})
-
-    await move_note_to_workspace(note_id, target_ws_id)
-    return JSONResponse({"ok": True, "moved": True, "note_id": note_id, "new_ws_id": target_ws_id})
 
 
 @router.post("/{note_id}", response_class=HTMLResponse)

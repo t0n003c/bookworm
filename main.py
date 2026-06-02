@@ -110,6 +110,7 @@ from routers.home_db import get_home_pages, get_trashed_home_pages, purge_expire
 from routers.home_rss_db import purge_old_rss_read_items
 from routers.workspace_db_cards import get_db_cards
 from routers import notes as notes_router
+from routers import note_dnd as note_dnd_router
 from routers import categories as categories_router
 from routers import workspaces as workspaces_router
 from routers import workspace_databases as workspace_databases_router
@@ -933,6 +934,7 @@ app.include_router(wopi_router.router)
 app.include_router(demo_router.router)
 app.include_router(note_reminders_router.router)
 app.include_router(notes_router.router)
+app.include_router(note_dnd_router.router)
 app.include_router(attachments_router.router)
 app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
