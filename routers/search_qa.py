@@ -21,14 +21,59 @@ import sqlite3
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+import os
+
+import httpx
+
 import search_index
 import search_llm
 from database import DB_PATH, get_db
+from routers.auth_db import get_qa_settings
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/qa", tags=["search-qa"])
 
 _MAX_TOKENS = 20
+
+
+# ── model discovery (superadmin, proxied so API key stays server-side) ──
+
+@router.get("/models")
+async def list_models(request: Request, endpoint: str = ""):
+    """Proxy GET /models to the configured LLM endpoint.
+
+    The stored API key is read server-side and never sent to the browser.
+    Returns {models: [str]} sorted A-Z, or {models: [], error: str} on failure.
+    """
+    if request.session.get("role") != "superadmin":
+        raise HTTPException(status_code=403)
+
+    cfg = await get_qa_settings()
+    base = (endpoint.strip() or cfg["endpoint"]).rstrip("/")
+    if not base:
+        return {"models": [], "error": "No endpoint configured."}
+
+    headers = {}
+    if cfg["api_key"]:
+        headers["Authorization"] = f"Bearer {cfg['api_key']}"
+
+    proxy = os.getenv("BW_HTTP_PROXY") or None
+    try:
+        async with httpx.AsyncClient(
+            proxy=proxy, timeout=8.0, follow_redirects=True
+        ) as client:
+            resp = await client.get(f"{base}/models", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        return {"models": [], "error": str(exc)}
+
+    # OpenAI format: {data: [{id: "..."}]}; some servers return {models: [str]}
+    raw = data.get("data") or data.get("models") or []
+    ids = sorted(
+        {(m["id"] if isinstance(m, dict) else str(m)) for m in raw}
+    )
+    return {"models": ids}
 _MAX_LIMIT  = 50
 _FTS5_POOL  = 50   # internal over-fetch for re-ranking
 
