@@ -309,6 +309,38 @@ async def create_note_handler(
     )
 
 
+@router.post("/move/{note_id}", response_class=JSONResponse)
+async def move_note_handler(
+    request: Request,
+    note_id: int,
+):
+    """Move a note to a different workspace.
+
+    Path is /notes/move/{note_id} (literal prefix before the param) so that
+    Starlette cannot confuse it with POST /notes/{note_id} regardless of
+    registration order.
+
+    - source == target  → silent no-op
+    - any other target  → UPDATE notes SET workspace_id = target
+    """
+    uid = request.session.get("user_id")
+    await _require_note_owner(note_id, uid)  # 403 if not owned by uid
+
+    body = await request.json()
+    target_ws_id: Optional[int] = body.get("target_ws_id")
+    if not target_ws_id:
+        raise HTTPException(status_code=422, detail="target_ws_id required")
+    await _require_ws_owner(target_ws_id, uid)  # 403 if ws not owned by uid
+
+    # Lightweight same-workspace check — avoids a pointless UPDATE.
+    source_ws_id = await get_note_workspace_id(note_id)
+    if source_ws_id == target_ws_id:
+        return JSONResponse({"ok": True, "moved": False, "reason": "same"})
+
+    await move_note_to_workspace(note_id, target_ws_id)
+    return JSONResponse({"ok": True, "moved": True, "note_id": note_id, "new_ws_id": target_ws_id})
+
+
 @router.post("/{note_id}", response_class=HTMLResponse)
 async def update_note_handler(
     request: Request,
@@ -382,33 +414,3 @@ async def delete_note_handler(
 # Dead duplicate of url_title_endpoint removed — the registered version
 # lives above /{note_id} where Starlette's router finds it first.
 
-
-@router.post("/{note_id}/move", response_class=JSONResponse)
-async def move_note_handler(
-    request: Request,
-    note_id: int,
-):
-    """Move a note to a different workspace.
-
-    - source == target  → no-op (silent)
-    - any other target  → UPDATE notes SET workspace_id = target
-
-    Parent→nested is intentionally ALLOWED. Parent workspaces continue to
-    show the note because list_notes() uses get_descendant_ids().
-    """
-    uid = request.session.get("user_id")
-    await _require_note_owner(note_id, uid)  # 403 if not owned by uid
-
-    body = await request.json()
-    target_ws_id: Optional[int] = body.get("target_ws_id")
-    if not target_ws_id:
-        raise HTTPException(status_code=422, detail="target_ws_id required")
-    await _require_ws_owner(target_ws_id, uid)  # 403 if ws not owned by uid
-
-    # Lightweight same-workspace check — avoids a pointless UPDATE.
-    source_ws_id = await get_note_workspace_id(note_id)
-    if source_ws_id == target_ws_id:
-        return JSONResponse({"ok": True, "moved": False, "reason": "same"})
-
-    await move_note_to_workspace(note_id, target_ws_id)
-    return JSONResponse({"ok": True, "moved": True, "note_id": note_id, "new_ws_id": target_ws_id})

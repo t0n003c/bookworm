@@ -141,7 +141,7 @@
   function _doMove(noteId, wsId, wsName) {
     if (!noteId || !wsId) return;
 
-    var url  = '/notes/' + noteId + '/move';
+    var url  = '/notes/move/' + noteId;
     var body = { target_ws_id: wsId };
     console.log('[nwdnd] POST', url, body);
 
