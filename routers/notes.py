@@ -309,30 +309,32 @@ async def create_note_handler(
     )
 
 
-@router.post("/move/{note_id}", response_class=JSONResponse)
+@router.post("/move", response_class=JSONResponse)
 async def move_note_handler(
     request: Request,
-    note_id: int,
 ):
     """Move a note to a different workspace.
 
-    Path is /notes/move/{note_id} (literal prefix before the param) so that
-    Starlette cannot confuse it with POST /notes/{note_id} regardless of
-    registration order.
+    Fully literal path — no URL params, zero routing ambiguity.
+    Body: { "note_id": int, "target_ws_id": int }
 
     - source == target  → silent no-op
     - any other target  → UPDATE notes SET workspace_id = target
     """
     uid = request.session.get("user_id")
-    await _require_note_owner(note_id, uid)  # 403 if not owned by uid
 
     body = await request.json()
+    note_id:      Optional[int] = body.get("note_id")
     target_ws_id: Optional[int] = body.get("target_ws_id")
+
+    if not note_id:
+        raise HTTPException(status_code=422, detail="note_id required")
     if not target_ws_id:
         raise HTTPException(status_code=422, detail="target_ws_id required")
+
+    await _require_note_owner(note_id, uid)   # 403 if not owned by uid
     await _require_ws_owner(target_ws_id, uid)  # 403 if ws not owned by uid
 
-    # Lightweight same-workspace check — avoids a pointless UPDATE.
     source_ws_id = await get_note_workspace_id(note_id)
     if source_ws_id == target_ws_id:
         return JSONResponse({"ok": True, "moved": False, "reason": "same"})
