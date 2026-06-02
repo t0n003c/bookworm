@@ -135,7 +135,7 @@
 | `routers/auth.py` | Login / logout / `/setup` (first-run) / register |
 | `routers/auth_db.py` | DB helpers for users |
 | `routers/notes.py` | Note CRUD routes |
-| `routers/notes_db.py` | DB helpers for notes |
+| `routers/notes_db.py` | DB helpers for notes. `get_note_workspace_id(note_id)` — lightweight single-column SELECT used by the DnD move handler for same-workspace no-op detection (avoids loading the full note object). |
 | `routers/workspaces.py` | Workspace CRUD + tree + trash |
 | `routers/workspaces_db.py` | DB helpers for workspaces (largest file ~16 KB) |
 | `routers/categories.py` | Category + attribute definition management |
@@ -179,7 +179,7 @@
 | `static/js/timeline.js` | Timeline view logic |
 | `static/js/timeline-render.js` | Timeline rendering |
 | `static/js/timeline-ui.js` | Timeline UI interactions |
-| `static/js/bw-spellcheck.js` | Spell-check integration |
+| `static/js/note-workspace-dnd.js` | **Note → Workspace drag-and-drop engine.** Pointer-events DnD (works on touch and mouse). Hold a note card for ~300 ms → ghost clone appears → drag over sidebar workspace row → drop to move. Highlights the target workspace row in blue during hover. Calls `POST /nwdnd/move` on drop. On success, reloads `#note-list` via `htmx.ajax`. Registered via `<script defer>` in `base.html`. All `var`, IIFE-wrapped. Key vars: `_armed`, `_noteId`, `_targetWsId`. Key fns: `_noteCardAt(ev)`, `_showGhost()`, `_hideGhost()`, `_clearHighlight()`, `_doMove(noteId, wsId, wsName)`, `_toast(msg, type)`. |
 | `static/js/home-widget-text.js` | Text/title widget editor |
 | `static/js/home-widget-upload-preview.js` | **File Preview widget engine** (commit `92b68bc`). Public API: `_loadUploadPreview(el)` (entry point, called on widget boot), `_uplPrevOpenPicker(widgetId)`, `_uplPrevClosePicker()`, `_uplPrevFetchPages()`, `_uplPrevLoadFiles(pageId)`, `_uplPrevFetch()`, `_uplPrevRenderPickerGrid(files)`, `_uplPrevToggleFile(fileId)`, `_uplPrevPrevPage()`, `_uplPrevNextPage()`, `_uplPrevConfirm()` (async — saves config + reloads widget). All module state uses `var`. |
 | `static/js/home-widget-buds.js` | **Buds widget engine** (animated flower sprites). Entry: `_budsInit(el)` called from `initHomeWidgets()`. Renders bud cards with animated species sprites (`static/img/buds/`), health bars, watering buttons. Manages add/edit/delete bud modals. Fertilize plan CRUD. All `var`. |
@@ -226,6 +226,7 @@
 | `routers/workspace_databases.py` | **Workspace Database node API** — manages database-type workspaces (`ws_type='database'`). |
 | `routers/workspace_db_cards.py` | **DB card CRUD API** — create/read/update/delete `db_cards` + `db_card_attrs`; card cover upload/unlink. |
 | `routers/note_reminders.py` | **Note reminders API** — CRUD for `note_reminders` (reminders set via `/reminder` slash command in note editor). |
+| `routers/note_dnd.py` | **Note drag-and-drop (workspace move) endpoint.** Isolated router with prefix `/nwdnd` (deliberately unique — NOT `/notes`). Single endpoint: `POST /nwdnd/move`. Body: `{note_id: int, target_ws_id: int}`. Returns `{ok, moved, reason}`. Ownership double-checked via `note_belongs_to_user` + `workspace_belongs_to_user`. Uses `get_note_workspace_id()` for lightweight same-workspace no-op guard. **Why isolated:** Starlette in the version used does NOT reliably prefer literal path segments over parameterised ones within the same router. `POST /notes/move` (literal) was silently swallowed by `POST /notes/{note_id}` (param) regardless of registration order. Moving the endpoint to `/nwdnd` (its own router, its own prefix) made it physically impossible to shadow-match. See **⚠️ Starlette routing trap** in Architecture Patterns. |
 | `routers/seed_uploads.py` | Dev/demo helper — seeds sample upload files; not exposed in prod. |
 | `routers/home_subscriptions_db.py` | **Subscriptions DB helpers + business logic** (Phase 1). Key fns: `get_price_per_month(cycle, frequency, amount)` — normalises any cycle to monthly cost; `get_subscription_progress(cycle, frequency, next_payment_date)` — returns 0.0–1.0 progress float through current billing period; `get_subscriptions`, `add_subscription`, `update_subscription`, `delete_subscription`, `get_summary_data` (totals + per-category breakdown, active-only). |
 | `routers/push.py` | **Web Push API router** (prefix `/push`). Endpoints: `GET /push/vapid-public-key` — returns `{public_key}` (public; also in `<meta>` tag); `POST /push/subscribe` — upserts a browser push subscription (`endpoint`, `p256dh`, `auth`) for the current user; `DELETE /push/unsubscribe` — removes it; `POST /push/test` — sends a test push to the current user’s device (dev helper). Push is disabled (no-op) when `BW_VAPID_PRIVATE_KEY` is empty. |
@@ -573,6 +574,35 @@ The stack widget is a carousel container. Its sizing is tricky because slides ar
 - Exposed as Jinja2 global `static_v` → used as `?v={{ static_v }}` query param on asset URLs
 - Recomputed once at server startup — restart server after JS/CSS changes in production
 
+### ⚠️ Starlette Routing Trap — Literal vs Parameterised Segments
+
+**Never add a special-purpose `POST` endpoint inside a router that also contains `POST /{param}`.**
+
+Starlette matches routes in registration order. In the version BookWorm uses, a parameterised
+route like `POST /{note_id}` can silently swallow requests destined for `POST /move` or
+`POST /{note_id}/move` **regardless of where the literal route is defined in the file**.
+
+The symptom: the request reaches the wrong handler, which then fails validation and returns a
+422 Pydantic error array (`[object Object],[object Object],[object Object]`).
+
+**The rule:** if you need a one-off endpoint that lives conceptually under `/notes` but must
+not be eaten by `/{note_id}`, give it its **own router with its own unique prefix**.
+
+```python
+# BAD — POST /notes/move gets eaten by POST /notes/{note_id}
+router = APIRouter(prefix="/notes")
+@router.post("/move")      # ← Starlette may never reach this
+@router.post("/{note_id}") # ← this eats everything, including /move
+
+# GOOD — completely separate prefix, physically impossible to conflict
+router = APIRouter(prefix="/nwdnd")  # unique prefix
+@router.post("/move")      # ← unambiguous
+```
+
+Real example: `routers/note_dnd.py` (`POST /nwdnd/move`) was extracted from the notes
+router after `POST /notes/move`, `POST /notes/move/{id}`, and `POST /notes/{id}/move` all
+failed with 404 or 422. Moving to `/nwdnd` fixed it immediately.
+
 ### Confirmation / Info Modals — Standard Pattern
 **Never use `window.confirm()` or `window.alert()`.** All confirmation dialogs must use the
 consistent styled modal structure. Copy this pattern exactly:
@@ -719,9 +749,12 @@ YouTube's `feeds/videos.xml?channel_id=UC…` endpoint is blocked through Walmar
 ## 🚧 In Progress / Last Session Work
 
 > ⚠️ **This section requires human judgment to update — not auto-updated by docs-keeper.**
-> Last recorded session: **2026-05-25** (Biometric/WebAuthn sign-in shipped; 6 account modal bugs fixed; WebAuthn proxy origin mismatch fixed; daily reminder double-fire fixed).
+> Last recorded session: **2026-05-25** (Note→Workspace drag-and-drop shipped; Starlette routing trap documented).
 
 | Item | Status | Notes |
+|---|---|---|
+| Note → Workspace drag-and-drop | ✅ Shipped (2026-05-25) | Hold a note card ~300 ms to arm, drag to a sidebar workspace row, release to move. Backend: `POST /nwdnd/move` (isolated router). Frontend: `static/js/note-workspace-dnd.js`. On success, `#note-list` reloads via `htmx.ajax`. Root cause of the long debug journey: Starlette's `POST /{note_id}` inside the notes router was shadow-matching every variation of the `/move` path tried (`/notes/{id}/move`, `/notes/move/{id}`, `/notes/move`). Fixed by moving the endpoint to its own `/nwdnd` router. New files: `routers/note_dnd.py`. New DB helper: `get_note_workspace_id()` in `notes_db.py`. |
+| Starlette routing trap documented | ✅ (2026-05-25) | See **⚠️ Starlette Routing Trap** in Architecture Patterns. |
 |---|---|---|
 | Biometric / Passkey sign-in (WebAuthn) | ✅ Shipped (2026-05-25) | Full WebAuthn registration + authentication flow using `py-webauthn==2.7.1`. New table `webauthn_credentials` (auto-migrates). New files: `routers/webauthn.py` (6 endpoints: panel GET, register begin/complete, delete, auth begin/complete), `routers/webauthn_db.py` (DB helpers), `static/js/bw-webauthn.js` (browser API: `bwWaRegister`, `bwWaAuthenticate`, `bwWaInitVerifyPage`, `bwWaAvailable`, `bwWaDelete`), `templates/partials/webauthn_panel.html`, `templates/2fa_verify.html`. Biometric registered on a device = fingerprint prompt replaces TOTP code on that device at login. `routers/auth.py` checks `has_credentials()` to gate the 2FA step. Credentials stored as public key only — private key stays in OS secure enclave. Commits `c27cf90`. |
 | Account modal: biometric section invisible | ✅ Fixed (2026-05-25) | Added biometric as its own top-level section `acct-s-wa` but `_acctNav()` only knew `['s1','s2','s3']` and L-mode CSS grid only positioned those three IDs. Section rendered off-grid and invisible. Fix: folded biometric loader directly inside `acct-s2-body` (Security section) where it semantically belongs — no nav or CSS changes needed. Commit `fbd6e4a`. |
