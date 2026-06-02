@@ -1042,6 +1042,26 @@ Eddie is always the outermost layer — agents supplement, not replace.
     - **The only safe process name to taskkill by name is `uvicorn.exe` — never `python.exe`.**
 20. **`_uplJsStr(s)` in `home-page-uploads.js` — JS-string onclick escaping.** Backslash-escapes `\` and `'` so a value can be safely embedded inside a single-quoted JS string literal inside an `onclick` attribute (e.g. `onclick="fn('${_uplJsStr(name)}')"`). Use this instead of `_uplEsc` when the value goes into a JS string context (not an HTML attribute context). `_uplEsc` HTML-encodes for HTML attribute safety; `_uplJsStr` JS-escapes for JS string-literal safety. Mixing them causes either broken JS or XSS.
 21. **WOPI LOCK/UNLOCK not implemented (Phase 7 TODO).** `routers/wopi.py` handles `POST /wopi/files/{file_id}` (the LOCK action) with a stub that returns HTTP 200. Collabora sends lock requests for collaborative multi-user editing — not a scenario we support. Single-user editing works fine without real locking. Do NOT implement a real LOCK table until Phase 7; adding one now would add DB state (lock tokens, expiry) with no corresponding unlock cleanup path.
+
+25. **Phase 4 Hybrid Search — what does and doesn't auto-wire when you add new features.** The Ctrl+K search index is NOT magic — new content types need explicit wiring. Decision tree:
+
+    **✅ Automatic — no action needed:**
+    - New notes → `notes_fts_ai/au/ad` triggers handle it
+    - New db_cards → `search_items_dbc_ai` trigger on INSERT
+    - Workspaces renamed/deleted → `search_items_ws_au/soft_del` triggers
+
+    **🟡 One small code touch needed:**
+    - New widget type (e.g. `kanban`, `habit`) → add to `_TEXT_WIDGET_TYPES` set in `search_index.py` AND add text-extraction branch in `_extract_widget_text()`
+    - New searchable field on an existing indexed type → update the `UPDATE OF …` column list in the relevant trigger AND the shadow-table body concat in all 3 triggers + first-boot population query
+
+    **🔴 Full wiring required (new table / new content type):**
+    1. `database.py` — add `search_items_*` triggers (ai/au/ad) for the new table
+    2. `database.py` — add to the first-boot population query at the bottom of the Phase 4A block
+    3. `search_index.py` — add to the UNION query inside `_sync_rebuild()`
+    4. `search_llm.py` — add a context-fetch branch inside `_fetch_contexts_sync()` if the new type should be used in AI answers
+    5. `bw-search-qa.js` — add a navigation case in `bwSearchGo()` and icon in `_bwSqItemIcon()`
+
+    **Rule of thumb:** if it lives in `notes`, `db_cards`, or `workspaces` you're done. Anything else needs all 5 steps.
 22. **`_WOPI_MIMES` JS array in `home-page-uploads-wopi.js` must stay in sync with `WOPI_MIMES` frozenset in `routers/wopi.py`.** These two lists are intentionally separate (server = frozenset, client = array for fast `.includes()` checks) but must contain identical MIME types. If you add a new WOPI-eligible type, update both. Current set: `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (DOCX), `application/msword` (DOC), `application/vnd.oasis.opendocument.text` (ODT), `text/plain` (TXT), `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` (XLSX), `text/csv` (CSV), `application/vnd.openxmlformats-officedocument.presentationml.presentation` (PPTX). PDF is explicitly excluded.
 23. **Ghost Signature `_uplSigGhostActive` MUST be reset BEFORE the early-return guard in `_uplSigConfirmGhost()`** (`home-page-uploads-sign.js`, commit `39cc0c2`). The function places a ghost PNG onto the PDF canvas. If the DOM race fires between the ghost being activated and `_uplSigConfirmGhost` executing, `ghost` or `wrap` may be null — the function must bail early. However, if `_uplSigGhostActive` is still `true` at that point, the entire ghost-signature state is soft-locked for the session: the user can no longer trigger ghost placement because the guard at the top of `_uplSigStartGhost()` sees `_uplSigGhostActive == true` and returns immediately. **Rule: always reset `_uplSigGhostActive = false` on the very first line of `_uplSigConfirmGhost()`, before ANY `if (!ghost || !wrap) return` check.**
 24. **PDF.js CDN URLs — worker version MUST match main script version exactly** (`home-page-uploads-annot.js`, Phase 8). Current pinned version: **3.11.174**.
