@@ -439,36 +439,46 @@ async def init_db() -> None:
                 WHERE  item_type = 'db_card' AND item_id = new.id;
             END
         """)
+        # ── Recreate (not IF NOT EXISTS) so rowid-fix always applies ───────
+        await db.execute("DROP TRIGGER IF EXISTS search_items_dbc_au")
         await db.execute("""
-            CREATE TRIGGER IF NOT EXISTS search_items_dbc_au
+            CREATE TRIGGER search_items_dbc_au
             AFTER UPDATE OF title, note_content ON db_cards BEGIN
+                -- FTS delete FIRST (while shadow table still holds old content)
+                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
+                SELECT 'delete', si.id, si.title, si.body
+                FROM   search_items si
+                WHERE  si.item_type = 'db_card' AND si.item_id = old.id;
+                -- Update shadow table
                 UPDATE search_items
                 SET    title      = COALESCE(new.title, ''),
                        body       = COALESCE(new.note_content, ''),
                        updated_at = datetime('now')
                 WHERE  item_type = 'db_card' AND item_id = old.id;
-                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
-                VALUES ('delete', old.id,
-                        COALESCE(old.title, ''), COALESCE(old.note_content, ''));
+                -- Re-insert FTS with new content
                 INSERT INTO search_items_fts(rowid, title, body)
                 SELECT id, title, body FROM search_items
                 WHERE  item_type = 'db_card' AND item_id = new.id;
             END
         """)
+        await db.execute("DROP TRIGGER IF EXISTS search_items_dbc_ad")
         await db.execute("""
-            CREATE TRIGGER IF NOT EXISTS search_items_dbc_ad
+            CREATE TRIGGER search_items_dbc_ad
             AFTER DELETE ON db_cards BEGIN
+                -- FTS delete FIRST (rowid from search_items, content still valid)
                 INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
-                VALUES ('delete', old.id,
-                        COALESCE(old.title, ''), COALESCE(old.note_content, ''));
+                SELECT 'delete', si.id, si.title, si.body
+                FROM   search_items si
+                WHERE  si.item_type = 'db_card' AND si.item_id = old.id;
                 DELETE FROM search_items
                 WHERE  item_type = 'db_card' AND item_id = old.id;
             END
         """)
 
         # workspace triggers
+        await db.execute("DROP TRIGGER IF EXISTS search_items_ws_ai")
         await db.execute("""
-            CREATE TRIGGER IF NOT EXISTS search_items_ws_ai
+            CREATE TRIGGER search_items_ws_ai
             AFTER INSERT ON workspaces BEGIN
                 INSERT OR IGNORE INTO search_items
                     (item_type, item_id, user_id, title, body, link_data)
@@ -477,15 +487,30 @@ async def init_db() -> None:
                     COALESCE(new.emoji, '') || ' ' || COALESCE(new.name, ''), '',
                     json_object('ws_id', new.id)
                 );
+                -- Sync FTS immediately after shadow-table insert
+                INSERT OR IGNORE INTO search_items_fts(rowid, title, body)
+                SELECT id, title, body FROM search_items
+                WHERE  item_type = 'workspace' AND item_id = new.id;
             END
         """)
+        await db.execute("DROP TRIGGER IF EXISTS search_items_ws_au")
         await db.execute("""
-            CREATE TRIGGER IF NOT EXISTS search_items_ws_au
+            CREATE TRIGGER search_items_ws_au
             AFTER UPDATE OF name, emoji ON workspaces BEGIN
+                -- FTS delete FIRST (shadow table still holds old title)
+                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
+                SELECT 'delete', si.id, si.title, si.body
+                FROM   search_items si
+                WHERE  si.item_type = 'workspace' AND si.item_id = old.id;
+                -- Update shadow table
                 UPDATE search_items
                 SET    title      = COALESCE(new.emoji, '') || ' ' || COALESCE(new.name, ''),
                        updated_at = datetime('now')
                 WHERE  item_type = 'workspace' AND item_id = old.id;
+                -- Re-insert FTS with new title
+                INSERT INTO search_items_fts(rowid, title, body)
+                SELECT id, title, body FROM search_items
+                WHERE  item_type = 'workspace' AND item_id = new.id;
             END
         """)
         await db.execute("""
