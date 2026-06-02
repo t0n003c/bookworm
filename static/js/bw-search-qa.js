@@ -132,13 +132,13 @@
     return '📄';
   }
 
-  function _bwSqHandleClick(el) {
+  window._bwSqHandleClick = function (el) {
     var itype = el.getAttribute('data-item-type') || 'note';
     var iid   = Number(el.getAttribute('data-item-id'));
     var ld    = {};
     try { ld = JSON.parse(el.getAttribute('data-link-data') || '{}'); } catch (e) {}
     bwSearchGo(itype, iid, ld);
-  }
+  };
 
   function _bwSqRender(results) {
     var el = document.getElementById('bw-sq-results');
