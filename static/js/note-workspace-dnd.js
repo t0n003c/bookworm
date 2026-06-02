@@ -159,8 +159,8 @@
       .then(function (res) {
         console.log('[nwdnd] response body', res.data);
         if (res.status !== 200 || !res.data.ok) {
-          var detail = (res.data && res.data.detail) ? res.data.detail : 'status ' + res.status;
-          _toast('⚠️ Move failed: ' + detail, 'error');
+          var detail = (res.data && res.data.detail) ? res.data.detail : 'HTTP ' + res.status;
+          _toast('⚠️ ' + detail + ' — ' + url, 'error');
           return;
         }
         if (!res.data.moved) return;   // same-workspace — silent no-op

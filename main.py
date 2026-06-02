@@ -827,6 +827,9 @@ async def lifespan(app: FastAPI):
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
     await purge_old_demo_users()  # clean up stale demo accounts on boot
     await purge_old_rss_read_items()  # trim rss read-state to 10 per feed
+    # Debug: confirm the notes /move route is registered
+    _note_routes = [r for r in app.routes if getattr(r, 'path', '').endswith('/move')]
+    log.info("[boot] /move routes registered: %s", [getattr(r,'path','?') for r in _note_routes])
     purge_task   = asyncio.create_task(_demo_purge_loop())
     push_task    = asyncio.create_task(_reminder_push_loop())
     rss_task     = asyncio.create_task(_rss_notif_loop())
