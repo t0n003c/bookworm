@@ -37,3 +37,7 @@ python-dotenv>=1.0.0
 
 # Web Push notifications
 pywebpush==2.3.0
+
+# Hybrid Search Q&A — Phase 2
+scikit-learn>=1.5.0      # TF-IDF vectorizer + cosine similarity
+apscheduler>=3.10,<4.0   # Nightly 6 AM index rebuild cron (3.x API)

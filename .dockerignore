@@ -17,6 +17,8 @@ venv/
 *.sqlite
 *.sqlite3
 uploads/
+# TF-IDF index pickles — rebuilt at startup from the live DB
+bw_tfidf_*.pkl
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log

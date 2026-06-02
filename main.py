@@ -142,6 +142,7 @@ from routers import webauthn as webauthn_router
 from routers import search_qa as search_qa_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 from routers.home_db import get_home_page
+import search_index
 
 
 async def _demo_purge_loop():
@@ -829,6 +830,20 @@ async def lifespan(app: FastAPI):
     await purge_expired_home_pages()  # purge home pages trashed for >30 days
     await purge_old_demo_users()  # clean up stale demo accounts on boot
     await purge_old_rss_read_items()  # trim rss read-state to 10 per feed
+
+    # ── Hybrid Search Phase 2: TF-IDF index ──────────────────────────
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    if not search_index.load_from_disk():
+        # Pickles missing — build on first boot in the background
+        asyncio.create_task(search_index.rebuild_index())
+    _sq_scheduler = AsyncIOScheduler()
+    _sq_scheduler.add_job(
+        search_index.rebuild_index, "cron", hour=6, minute=0,
+        id="bw_tfidf_rebuild", replace_existing=True,
+    )
+    _sq_scheduler.start()
+    # ── /Hybrid Search ───────────────────────────────────────────────
+
     purge_task   = asyncio.create_task(_demo_purge_loop())
     push_task    = asyncio.create_task(_reminder_push_loop())
     rss_task     = asyncio.create_task(_rss_notif_loop())
@@ -838,6 +853,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        _sq_scheduler.shutdown(wait=False)
         for t in (purge_task, push_task, rss_task, bud_task, widget_task, prewarm_task):
             t.cancel()
             try:

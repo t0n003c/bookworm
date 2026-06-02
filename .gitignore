@@ -70,6 +70,9 @@ openapi_*.json
 *.sqlite
 *.sqlite3
 
+# TF-IDF index pickles (generated at runtime; rebuild via APScheduler or POST /qa/rebuild-index)
+bw_tfidf_*.pkl
+
 # Uploads (user files)
 uploads/
 
