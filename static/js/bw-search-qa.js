@@ -132,6 +132,14 @@
     return '📄';
   }
 
+  function _bwSqHandleClick(el) {
+    var itype = el.getAttribute('data-item-type') || 'note';
+    var iid   = Number(el.getAttribute('data-item-id'));
+    var ld    = {};
+    try { ld = JSON.parse(el.getAttribute('data-link-data') || '{}'); } catch (e) {}
+    bwSearchGo(itype, iid, ld);
+  }
+
   function _bwSqRender(results) {
     var el = document.getElementById('bw-sq-results');
     if (!el) return;
@@ -170,9 +178,7 @@
         ' data-item-type="' + _bwSqEsc(itype) + '"' +
         ' data-item-id="'   + iid  + '"' +
         ' data-link-data="' + _bwSqEsc(JSON.stringify(ld)) + '"' +
-        ' onclick="bwSearchGo(' +
-            '\'' + _bwSqEsc(itype) + '\',' + iid + ',' +
-            JSON.stringify(ld) + ')">' +
+        ' onclick="_bwSqHandleClick(this)">' +
 
         '<div class="flex items-center gap-1.5 mb-0.5">' +
         '<span class="text-sm leading-none select-none" aria-hidden="true">' + icon + '</span>' +
