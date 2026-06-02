@@ -59,6 +59,8 @@
       window.location.href = '/?ws=' + itemId;
     } else if (itemType === 'widget') {
       window.location.href = ld.page_id ? '/?hp=' + ld.page_id : '/';
+    } else if (itemType === 'crm_contact') {
+      window.location.href = ld.page_id ? '/?hp=' + ld.page_id : '/';
     } else {
       window.location.href = '/';
     }
@@ -122,10 +124,11 @@
   }
 
   function _bwSqItemIcon(itemType) {
-    if (itemType === 'note')      return '🗒';
-    if (itemType === 'db_card')   return '🗂';
-    if (itemType === 'workspace') return '📁';
-    if (itemType === 'widget')    return '🧩';
+    if (itemType === 'note')        return '🗒';
+    if (itemType === 'db_card')     return '🗂';
+    if (itemType === 'workspace')   return '📁';
+    if (itemType === 'widget')      return '🧩';
+    if (itemType === 'crm_contact') return '👤';
     return '📄';
   }
 
@@ -153,9 +156,10 @@
 
       // For non-note types show a type label when no workspace name is available
       if (!subLabel) {
-        if (itype === 'db_card')   subLabel = 'Database card';
-        if (itype === 'workspace') subLabel = 'Workspace';
-        if (itype === 'widget')    subLabel = 'Widget';
+        if (itype === 'db_card')     subLabel = 'Database card';
+        if (itype === 'workspace')   subLabel = 'Workspace';
+        if (itype === 'widget')      subLabel = 'Widget';
+        if (itype === 'crm_contact') subLabel = (ld.company || '') || 'Contact';
       }
 
       html +=

@@ -871,6 +871,12 @@ async def lifespan(app: FastAPI):
     )
     _sq_scheduler.start()
     asyncio.create_task(search_index.sync_widget_items())  # populate on boot
+    # Phase 5: CRM contacts sync (boot + hourly)
+    _sq_scheduler.add_job(
+        search_index.sync_crm_contacts, "interval", hours=1,
+        id="bw_crm_contact_sync", replace_existing=True,
+    )
+    asyncio.create_task(search_index.sync_crm_contacts())  # populate on boot
     # ── /Hybrid Search ────────────────────────────────────────────────
 
     purge_task   = asyncio.create_task(_demo_purge_loop())

@@ -54,18 +54,15 @@ async def get_effective_llm_settings(uid: int) -> dict:
 def _fetch_contexts_sync(items: list, uid: int) -> list:
     """Sync sqlite fetch of text context for the top search items (runs in executor).
 
-    items: [{item_type, item_id}] — notes and db_cards are fetched;
+    items: [{item_type, item_id}] — notes, db_cards, and crm_contacts are fetched;
     workspaces and widgets are skipped (not enough text for useful LLM context).
     """
     if not items:
         return []
 
-    note_ids = [
-        it["item_id"] for it in items if it["item_type"] == "note"
-    ]
-    card_ids = [
-        it["item_id"] for it in items if it["item_type"] == "db_card"
-    ]
+    note_ids    = [it["item_id"] for it in items if it["item_type"] == "note"]
+    card_ids    = [it["item_id"] for it in items if it["item_type"] == "db_card"]
+    contact_ids = [it["item_id"] for it in items if it["item_type"] == "crm_contact"]
 
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -102,6 +99,59 @@ def _fetch_contexts_sync(items: list, uid: int) -> list:
                  "title": r["title"] or "Untitled", "content": r["content"] or ""}
                 for r in rows
             )
+
+        # CRM contacts — core fields + custom field values + last 10 conversations
+        if contact_ids:
+            ph = ",".join("?" * len(contact_ids))
+            c_rows = conn.execute(
+                f"SELECT id, user_id, name, email, phone, company, "
+                f"       tags, relationship, address "
+                f"FROM crm_contacts WHERE id IN ({ph}) AND user_id = ?",
+                [*contact_ids, uid],
+            ).fetchall()
+            for c in c_rows:
+                parts = []
+                for field in ("email", "phone", "company", "tags", "address"):
+                    val = (c[field] or "").strip()
+                    if val:
+                        parts.append(f"{field.title()}: {val}")
+                # Relationship (may be JSON array)
+                rel = (c["relationship"] or "").strip()
+                if rel:
+                    if rel.startswith("["):
+                        try:
+                            rel = ", ".join(json.loads(rel))
+                        except Exception:
+                            pass
+                    parts.append(f"Relationship: {rel}")
+                # Custom field values
+                cf_rows = conn.execute(
+                    "SELECT cf.label, cfv.value "
+                    "FROM crm_contact_field_values cfv "
+                    "JOIN crm_custom_fields cf ON cf.id = cfv.field_id "
+                    "WHERE cfv.contact_id = ? AND cfv.value != ''",
+                    (c["id"],),
+                ).fetchall()
+                for cf in cf_rows:
+                    parts.append(f"{cf['label']}: {cf['value']}")
+                # Last 10 conversations
+                convos = conn.execute(
+                    "SELECT note, logged_at FROM crm_conversation_log "
+                    "WHERE contact_id = ? ORDER BY logged_at DESC, id DESC LIMIT 10",
+                    (c["id"],),
+                ).fetchall()
+                if convos:
+                    parts.append("Recent conversations:")
+                    for convo in convos:
+                        note = (convo["note"] or "").strip()
+                        date = (convo["logged_at"] or "")[:10]
+                        if note:
+                            parts.append(f"  [{date}] {note}")
+                results.append({
+                    "id": c["id"], "item_type": "crm_contact",
+                    "title": c["name"] or "Unnamed Contact",
+                    "content": "\n".join(parts),
+                })
     finally:
         conn.close()
 

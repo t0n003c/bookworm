@@ -8,8 +8,10 @@ Tables:
 ALL access via get_db() -- never raw aiosqlite.connect().
 """
 from __future__ import annotations
+import asyncio
 import datetime
 from database import get_db
+import search_index
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -64,13 +66,15 @@ async def add_contact(
     address: str = "",
 ) -> list[dict]:
     async with get_db() as db:
-        await db.execute(
+        cur = await db.execute(
             "INSERT INTO crm_contacts "
             "(page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship, address) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (page_id, user_id, name, email, phone, company, tags, avatar_emoji, profile_pic, birthday, first_met_date, relationship, address),
         )
+        new_id = cur.lastrowid
         await db.commit()
+    asyncio.create_task(search_index.upsert_contact_search_item(new_id))
     return await get_contacts(page_id, user_id)
 
 
@@ -93,6 +97,7 @@ async def update_contact(
              contact_id, page_id, user_id),
         )
         await db.commit()
+    asyncio.create_task(search_index.upsert_contact_search_item(contact_id))
     return await get_contacts(page_id, user_id)
 
 
@@ -146,6 +151,7 @@ async def upsert_field_value(contact_id: int, field_id: int, value: str) -> bool
             (contact_id, field_id, value),
         )
         await db.commit()
+    asyncio.create_task(search_index.upsert_contact_search_item(contact_id))
     return True
 
 
@@ -768,7 +774,9 @@ async def add_conversation(
             (contact_id, page_id, user_id, note.strip()),
         )
         await db.commit()
-        return await _get_convos(db, contact_id)
+        convos = await _get_convos(db, contact_id)
+    asyncio.create_task(search_index.upsert_contact_search_item(contact_id))
+    return convos
 
 
 async def update_conversation(
@@ -782,7 +790,9 @@ async def update_conversation(
             (note.strip(), convo_id, contact_id, page_id, user_id),
         )
         await db.commit()
-        return await _get_convos(db, contact_id)
+        convos = await _get_convos(db, contact_id)
+    asyncio.create_task(search_index.upsert_contact_search_item(contact_id))
+    return convos
 
 
 async def delete_conversation(
@@ -796,4 +806,6 @@ async def delete_conversation(
             (convo_id, contact_id, page_id, user_id),
         )
         await db.commit()
-        return await _get_convos(db, contact_id)
+        convos = await _get_convos(db, contact_id)
+    asyncio.create_task(search_index.upsert_contact_search_item(contact_id))
+    return convos

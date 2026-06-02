@@ -326,3 +326,189 @@ async def sync_widget_items() -> None:
         log.info("search_index: widget sync — %d rows upserted", n)
     except Exception:
         log.exception("search_index: widget sync failed")
+
+
+# ── CRM contact search sync (Phase 5) ────────────────────────────────────────
+
+def _build_contact_body(conn: sqlite3.Connection, contact_id: int, c: sqlite3.Row) -> tuple:
+    """Return (title, body) for a crm_contact search_items row.
+
+    Body = pipe-joined: core fields + custom-field label:value pairs
+    + last 10 conversation snippets (dated).
+    """
+    parts = []
+    for field in ("email", "phone", "company", "tags", "relationship", "address"):
+        val = (c[field] or "").strip()
+        if val:
+            parts.append(val)
+
+    # Custom field values: "Label: value"
+    cf_rows = conn.execute(
+        "SELECT cf.label, cfv.value "
+        "FROM crm_contact_field_values cfv "
+        "JOIN crm_custom_fields cf ON cf.id = cfv.field_id "
+        "WHERE cfv.contact_id = ? AND cfv.value != ''",
+        (contact_id,),
+    ).fetchall()
+    for cf in cf_rows:
+        parts.append(f"{cf['label']}: {cf['value']}")
+
+    # Last 10 conversation entries (newest first, each dated)
+    convos = conn.execute(
+        "SELECT note, logged_at FROM crm_conversation_log "
+        "WHERE contact_id = ? ORDER BY logged_at DESC, id DESC LIMIT 10",
+        (contact_id,),
+    ).fetchall()
+    for convo in convos:
+        note = (convo["note"] or "").strip()
+        if note:
+            date = (convo["logged_at"] or "")[:10]
+            parts.append(f"[{date}] {note}")
+
+    title = (c["name"] or "").strip() or "Unnamed Contact"
+    body = " | ".join(parts)
+    return title, body
+
+
+def _last_convo_preview(conn: sqlite3.Connection, contact_id: int) -> str:
+    """Return the most recent conversation note (truncated) for link_data preview."""
+    row = conn.execute(
+        "SELECT note FROM crm_conversation_log "
+        "WHERE contact_id = ? ORDER BY logged_at DESC, id DESC LIMIT 1",
+        (contact_id,),
+    ).fetchone()
+    return ((row["note"] or "") if row else "")[:120]
+
+
+def _sync_crm_contacts() -> int:
+    """Bulk-upsert all CRM contacts into search_items + rebuild FTS.
+
+    Returns the number of contacts upserted.
+    Safe to call multiple times (idempotent ON CONFLICT DO UPDATE).
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        contacts = conn.execute(
+            "SELECT id, user_id, page_id, name, email, phone, company, "
+            "       tags, relationship, address "
+            "FROM crm_contacts"
+        ).fetchall()
+
+        if not contacts:
+            return 0
+
+        for c in contacts:
+            cid = c["id"]
+            title, body = _build_contact_body(conn, cid, c)
+            link_data = json.dumps({
+                "page_id":    c["page_id"],
+                "contact_id": cid,
+                "email":      (c["email"] or "").strip(),
+                "company":    (c["company"] or "").strip(),
+                "last_convo": _last_convo_preview(conn, cid),
+            })
+            conn.execute(
+                "INSERT INTO search_items "
+                "    (item_type, item_id, user_id, title, body, link_data) "
+                "VALUES ('crm_contact', ?, ?, ?, ?, ?) "
+                "ON CONFLICT(item_type, item_id) DO UPDATE SET "
+                "    title=excluded.title, body=excluded.body, "
+                "    link_data=excluded.link_data, updated_at=datetime('now')",
+                (cid, c["user_id"], title, body, link_data),
+            )
+
+        conn.execute("INSERT INTO search_items_fts(search_items_fts) VALUES('rebuild')")
+        conn.commit()
+        return len(contacts)
+    finally:
+        conn.close()
+
+
+def _upsert_contact_si_sync(contact_id: int) -> None:
+    """Sync one CRM contact into search_items after a mutation.
+
+    Uses the precise delete-update-reinsert FTS pattern (not a full rebuild)
+    so it's cheap enough to call on every conversation or field change.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        c = conn.execute(
+            "SELECT id, user_id, page_id, name, email, phone, company, "
+            "       tags, relationship, address "
+            "FROM crm_contacts WHERE id = ?",
+            (contact_id,),
+        ).fetchone()
+        if c is None:
+            return  # deleted — SQL trigger already cleaned up search_items
+
+        title, body = _build_contact_body(conn, contact_id, c)
+        link_data = json.dumps({
+            "page_id":    c["page_id"],
+            "contact_id": contact_id,
+            "email":      (c["email"] or "").strip(),
+            "company":    (c["company"] or "").strip(),
+            "last_convo": _last_convo_preview(conn, contact_id),
+        })
+
+        existing = conn.execute(
+            "SELECT id, title, body FROM search_items "
+            "WHERE item_type = 'crm_contact' AND item_id = ?",
+            (contact_id,),
+        ).fetchone()
+
+        if existing:
+            # FTS delete FIRST (while shadow table still holds old content)
+            conn.execute(
+                "INSERT INTO search_items_fts(search_items_fts, rowid, title, body) "
+                "VALUES ('delete', ?, ?, ?)",
+                (existing["id"], existing["title"], existing["body"]),
+            )
+            conn.execute(
+                "UPDATE search_items "
+                "SET title=?, body=?, link_data=?, updated_at=datetime('now') "
+                "WHERE item_type='crm_contact' AND item_id=?",
+                (title, body, link_data, contact_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO search_items "
+                "    (item_type, item_id, user_id, title, body, link_data) "
+                "VALUES ('crm_contact', ?, ?, ?, ?, ?)",
+                (contact_id, c["user_id"], title, body, link_data),
+            )
+
+        # Re-insert updated FTS row
+        si = conn.execute(
+            "SELECT id FROM search_items "
+            "WHERE item_type='crm_contact' AND item_id=?",
+            (contact_id,),
+        ).fetchone()
+        if si:
+            conn.execute(
+                "INSERT INTO search_items_fts(rowid, title, body) VALUES (?, ?, ?)",
+                (si["id"], title, body),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def sync_crm_contacts() -> None:
+    """Async wrapper — bulk-sync all CRM contacts into search shadow table."""
+    loop = asyncio.get_event_loop()
+    try:
+        n = await loop.run_in_executor(None, _sync_crm_contacts)
+        log.info("search_index: CRM contact sync — %d rows upserted", n)
+    except Exception:
+        log.exception("search_index: CRM contact sync failed")
+
+
+async def upsert_contact_search_item(contact_id: int) -> None:
+    """Async — sync one CRM contact after a mutation (add/edit/conversation)."""
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _upsert_contact_si_sync, contact_id)
+    except Exception:
+        log.exception("search_index: upsert_contact_search_item(%d) failed", contact_id)

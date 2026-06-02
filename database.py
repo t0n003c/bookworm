@@ -791,6 +791,20 @@ async def init_db() -> None:
                 UPDATE crm_contacts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
             END
         """)
+        # Phase 5: clean up search_items when a contact is deleted.
+        # (No FK cascade — search_items links by item_type+item_id, not FK.)
+        await db.execute("DROP TRIGGER IF EXISTS search_items_crm_contact_ad")
+        await db.execute("""
+            CREATE TRIGGER search_items_crm_contact_ad
+            AFTER DELETE ON crm_contacts BEGIN
+                INSERT INTO search_items_fts(search_items_fts, rowid, title, body)
+                SELECT 'delete', si.id, si.title, si.body
+                FROM   search_items si
+                WHERE  si.item_type = 'crm_contact' AND si.item_id = old.id;
+                DELETE FROM search_items
+                WHERE  item_type = 'crm_contact' AND item_id = old.id;
+            END
+        """)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS crm_custom_fields (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -250,6 +250,22 @@ def _fetch_items_meta_sync(item_pairs: list, uid: int) -> dict:
                     "title": r["title"], "snippet": (r["body"] or "")[:150],
                     "link_data": r["link_data"],
                 }
+
+        # Phase 5: CRM contacts
+        contact_ids = [p[1] for p in item_pairs if p[0] == "crm_contact"]
+        if contact_ids:
+            ph = ",".join("?" * len(contact_ids))
+            rows = conn.execute(
+                f"SELECT si.item_id, si.title, si.body, si.link_data "
+                f"FROM search_items si WHERE si.item_type='crm_contact' "
+                f"AND si.item_id IN ({ph}) AND si.user_id=?",
+                [*contact_ids, uid],
+            ).fetchall()
+            for r in rows:
+                result[("crm_contact", r["item_id"])] = {
+                    "title": r["title"], "snippet": (r["body"] or "")[:200],
+                    "link_data": r["link_data"],
+                }
     finally:
         conn.close()
     return result
@@ -505,7 +521,7 @@ async def stream_answer(request: Request, q: str = ""):
     context_items = [
         {"item_type": r["item_type"], "item_id": r["item_id"]}
         for r in merged
-        if r["item_type"] in ("note", "db_card")
+        if r["item_type"] in ("note", "db_card", "crm_contact")
     ][:search_llm._CONTEXT_NOTES]
 
     async def _event_gen():
