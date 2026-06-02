@@ -116,6 +116,14 @@ async function _crmLoadAll() {
     console.warn('[CRM] partial load errors:', errors);
   }
   _crmRender();
+
+  // Auto-open a contact when navigating here from Ctrl+K search (#crm-c-{id})
+  var _hm = window.location.hash.match(/^#crm-c-(\d+)$/);
+  if (_hm) {
+    history.replaceState(null, '', location.pathname + location.search);
+    var _hcid = parseInt(_hm[1], 10);
+    if (_hcid && typeof crmOpenDetail === 'function') crmOpenDetail(_hcid);
+  }
 }
 
 function _crmRender() {

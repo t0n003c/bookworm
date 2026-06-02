@@ -60,7 +60,17 @@
     } else if (itemType === 'widget') {
       window.location.href = ld.page_id ? '/?hp=' + ld.page_id : '/';
     } else if (itemType === 'crm_contact') {
-      window.location.href = ld.page_id ? '/?hp=' + ld.page_id : '/';
+      var cid = ld.contact_id;
+      if (ld.page_id && window._crmPid === ld.page_id &&
+          typeof window.crmOpenDetail === 'function') {
+        // Already on this CRM page — open the detail panel directly
+        window.crmOpenDetail(cid);
+      } else if (ld.page_id) {
+        // Navigate to the CRM page, carry contact ID in hash
+        window.location.href = '/?hp=' + ld.page_id + '#crm-c-' + cid;
+      } else {
+        window.location.href = '/';
+      }
     } else {
       window.location.href = '/';
     }
