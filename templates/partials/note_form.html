@@ -2579,71 +2579,74 @@
   </div>
 </div>
 
-<!-- ===== Floating table context toolbar ===== -->
-<div id="bw-tbl-toolbar"
-  role="toolbar" aria-label="Table options"
-  class="hidden fixed z-60 select-none
+<!-- ===== Table handles (grip + resize) ===== -->
+
+<!-- Drag-grip: sits top-left of the table. Drag = move table. Click = menu. -->
+<div id="bw-tbl-grip"
+  title="Drag to move • Click for options"
+  class="hidden fixed z-60 cursor-grab select-none
+         w-5 h-5 rounded flex items-center justify-center
+         bg-white dark:bg-zinc-800
+         border border-gray-300 dark:border-zinc-500 shadow"
+  style="touch-action:none"
+>
+  <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-400" aria-hidden="true">
+    <circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/>
+    <circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/>
+    <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
+  </svg>
+</div>
+
+<!-- Grip menu: appears on grip click -->
+<div id="bw-tbl-grip-menu"
+  role="menu" aria-label="Table options"
+  class="hidden fixed z-60 select-none min-w-[160px]
          bg-white dark:bg-zinc-800
          border border-gray-200 dark:border-zinc-600
-         rounded-lg shadow-xl"
+         rounded-lg shadow-xl py-1 text-sm"
 >
-  <div class="flex items-center gap-0.5 p-1 flex-wrap">
-    <!-- Row ops -->
-    <button type="button" id="tblt-row-above" title="Insert row above" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <line x1="10" y1="2" x2="10" y2="9"/><line x1="6.5" y1="5.5" x2="13.5" y2="5.5"/>
-        <rect x="2" y="11" width="16" height="7" rx="1"/>
-      </svg>
-    </button>
-    <button type="button" id="tblt-row-below" title="Insert row below" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <rect x="2" y="2" width="16" height="7" rx="1"/>
-        <line x1="10" y1="11" x2="10" y2="18"/><line x1="6.5" y1="14.5" x2="13.5" y2="14.5"/>
-      </svg>
-    </button>
-    <button type="button" id="tblt-row-del" title="Delete row" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <rect x="2" y="7" width="16" height="6" rx="1"/>
-        <line x1="6" y1="2" x2="14" y2="5" stroke-width="1.4" stroke-dasharray="2 1"/>
-        <line x1="6" y1="18" x2="14" y2="15" stroke-width="1.4" stroke-dasharray="2 1"/>
-        <line x1="8" y1="9.5" x2="12" y2="12.5" stroke="#ea1100"/><line x1="12" y1="9.5" x2="8" y2="12.5" stroke="#ea1100"/>
-      </svg>
-    </button>
-    <div class="cp-vsep"></div>
-    <!-- Col ops -->
-    <button type="button" id="tblt-col-left" title="Insert column left" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <line x1="2" y1="10" x2="9" y2="10"/><line x1="5.5" y1="6.5" x2="5.5" y2="13.5"/>
-        <rect x="11" y="2" width="7" height="16" rx="1"/>
-      </svg>
-    </button>
-    <button type="button" id="tblt-col-right" title="Insert column right" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <rect x="2" y="2" width="7" height="16" rx="1"/>
-        <line x1="11" y1="10" x2="18" y2="10"/><line x1="14.5" y1="6.5" x2="14.5" y2="13.5"/>
-      </svg>
-    </button>
-    <button type="button" id="tblt-col-del" title="Delete column" class="cp-fmt-btn">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
-        <rect x="7" y="2" width="6" height="16" rx="1"/>
-        <line x1="2" y1="6" x2="5" y2="14" stroke-width="1.4" stroke-dasharray="2 1"/>
-        <line x1="18" y1="6" x2="15" y2="14" stroke-width="1.4" stroke-dasharray="2 1"/>
-        <line x1="9.5" y1="8" x2="12.5" y2="12" stroke="#ea1100"/><line x1="12.5" y1="8" x2="9.5" y2="12" stroke="#ea1100"/>
-      </svg>
-    </button>
-    <div class="cp-vsep"></div>
-    <!-- Header toggles -->
-    <button type="button" id="tblt-hdr-row" title="Toggle header row" class="cp-fmt-btn text-xs font-bold">H↔―</button>
-    <button type="button" id="tblt-hdr-col" title="Toggle header column" class="cp-fmt-btn text-xs font-bold">H↔┃</button>
-    <div class="cp-vsep"></div>
-    <!-- Delete table -->
-    <button type="button" id="tblt-del-table" title="Delete table" class="cp-fmt-btn" style="color:#ea1100">
-      <svg viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
-      </svg>
-    </button>
-  </div>
+  <button type="button" id="tblt-m-hdr-row"
+    class="flex items-center gap-2 w-full px-3 py-1.5 text-left
+           text-gray-700 dark:text-zinc-200
+           hover:bg-gray-100 dark:hover:bg-zinc-700"
+  >
+    <span id="tblt-m-hdr-row-chk" class="text-blue-600 dark:text-blue-400 w-4 text-center font-bold"></span>
+    Header row
+  </button>
+  <button type="button" id="tblt-m-hdr-col"
+    class="flex items-center gap-2 w-full px-3 py-1.5 text-left
+           text-gray-700 dark:text-zinc-200
+           hover:bg-gray-100 dark:hover:bg-zinc-700"
+  >
+    <span id="tblt-m-hdr-col-chk" class="text-blue-600 dark:text-blue-400 w-4 text-center font-bold"></span>
+    Header column
+  </button>
+  <div class="border-t border-gray-100 dark:border-zinc-700 my-1"></div>
+  <button type="button" id="tblt-m-del"
+    class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-red-600 dark:text-red-400
+           hover:bg-red-50 dark:hover:bg-red-900/30"
+  >
+    <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
+      <path d="M6.5 1a.5.5 0 00-.447.276L5.5 2H2a.5.5 0 000 1h.5v9A1.5 1.5 0 004 13.5h8A1.5 1.5 0 0013.5 12V3H14a.5.5 0 000-1h-3.5l-.553-1.724A.5.5 0 009.5 1h-3zm1 3a.5.5 0 01.5.5v6a.5.5 0 01-1 0v-6a.5.5 0 01.5-.5zm2.5.5a.5.5 0 00-1 0v6a.5.5 0 001 0v-6z"/>
+    </svg>
+    Delete table
+  </button>
 </div>
+
+<!-- Resize handle: bottom-right corner of the table -->
+<div id="bw-tbl-resize"
+  title="Drag to resize"
+  class="hidden fixed z-60 cursor-se-resize select-none
+         w-4 h-4 rounded-br"
+  style="touch-action:none;background:radial-gradient(circle at 100% 100%,#0053e2 0%,#0053e2 40%,transparent 41%);"
+></div>
+
+<!-- Size tooltip shown while resizing -->
+<div id="bw-tbl-size-tip"
+  class="hidden fixed z-60 pointer-events-none select-none
+         px-2 py-0.5 rounded text-xs font-mono font-semibold
+         bg-zinc-800 text-white dark:bg-white dark:text-zinc-900 shadow"
+></div>
 
 
 <style>
@@ -3718,29 +3721,19 @@
 })();
 </script>
 
-<!-- ===== Table context toolbar JS ===== -->
+<!-- ===== Table handles JS (grip + resize) ===== -->
 <script>(function() {
-  var tbar = document.getElementById('bw-tbl-toolbar');
-  var ce   = document.getElementById('md-live-preview');
-  if (!tbar || !ce) return;
+  var grip    = document.getElementById('bw-tbl-grip');
+  var menu    = document.getElementById('bw-tbl-grip-menu');
+  var rzHnd   = document.getElementById('bw-tbl-resize');
+  var sizeTip = document.getElementById('bw-tbl-size-tip');
+  var ce      = document.getElementById('md-live-preview');
+  if (!grip || !menu || !rzHnd || !sizeTip || !ce) return;
 
-  var _curTable = null;   // <table> the cursor is currently in
-  var _curCell  = null;   // <td>/<th> the cursor is currently in
+  var _curTable = null;   // <table> cursor is inside
+  var _menuOpen = false;
 
-  /* ── Positioning ────────────────────────────────────────── */
-  function _positionAbove(el) {
-    tbar.classList.remove('hidden');
-    var r   = el.getBoundingClientRect();
-    var tw  = tbar.offsetWidth;
-    var th  = tbar.offsetHeight;
-    var vw  = window.innerWidth;
-    var top = r.top - th - 6 < 4 ? r.bottom + 6 : r.top - th - 6;
-    var left = Math.max(4, Math.min(r.left, vw - tw - 4));
-    tbar.style.top  = Math.max(4, top) + 'px';
-    tbar.style.left = left + 'px';
-  }
-
-  /* ── Show / hide logic ─────────────────────────────────── */
+  /* ── Helpers ──────────────────────────────────────────── */
   function _findAncestor(node, tag) {
     while (node && node !== ce) {
       if (node.nodeName === tag.toUpperCase()) return node;
@@ -3748,232 +3741,358 @@
     }
     return null;
   }
-
-  document.addEventListener('selectionchange', function() {
-    var sel = window.getSelection();
-    if (!sel || !sel.rangeCount) { _hideTbar(); return; }
-    var anchor = sel.getRangeAt(0).commonAncestorContainer;
-    if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentElement;
-    var table = _findAncestor(anchor, 'TABLE');
-    var cell  = _findAncestor(anchor, 'TD') || _findAncestor(anchor, 'TH');
-    if (!table || !ce.contains(table)) { _hideTbar(); return; }
-    _curTable = table;
-    _curCell  = cell;
-    _positionAbove(table);
-  });
-
-  function _hideTbar() {
-    _curTable = null;
-    _curCell  = null;
-    tbar.classList.add('hidden');
-  }
-
-  // Keep toolbar visible when user clicks its own buttons
-  tbar.addEventListener('mousedown', function(e) { e.preventDefault(); });
-
-  /* ── Helpers ──────────────────────────────────────────── */
-  function _colIndex(cell) {
-    if (!cell) return 0;
-    return Array.from(cell.parentElement.children).indexOf(cell);
-  }
-  function _rowIndex(cell) {
-    if (!cell) return -1;
-    var tr = cell.parentElement;
-    var tbody = tr.parentElement;
-    return Array.from(tbody.children).indexOf(tr);
-  }
-  function _allRows() {
-    if (!_curTable) return [];
-    return Array.from(_curTable.querySelectorAll('tr'));
-  }
-  function _cellAt(tr, colIdx) {
-    return tr.children[colIdx] || null;
-  }
-  function _makeTd(tag) {
-    var c = document.createElement(tag || 'td');
-    c.innerHTML = '<br>';
-    return c;
-  }
+  function _allRows(tbl) { return Array.from((tbl||_curTable).querySelectorAll('tr')); }
+  function _makeTd(tag) { var c=document.createElement(tag||'td'); c.innerHTML='<br>'; return c; }
   function _parkCursor(cell) {
     if (!cell) return;
-    var r = document.createRange();
-    r.setStart(cell, 0); r.collapse(true);
-    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    var r=document.createRange(); r.setStart(cell,0); r.collapse(true);
+    var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
   }
-  function _dispatch() {
-    ce.dispatchEvent(new Event('input'));
-  }
+  function _dispatch() { ce.dispatchEvent(new Event('input')); }
+  function _cellText(c) { return c.textContent.replace(/\u00a0/g,'').trim(); }
 
-  /* ── Row operations ────────────────────────────────────── */
-  function _insertRow(before) {
-    if (!_curCell) return;
-    var refTr   = _curCell.parentElement;
-    var cols    = refTr.children.length;
-    var newTr   = document.createElement('tr');
-    for (var i = 0; i < cols; i++) newTr.appendChild(_makeTd('td'));
-    if (before) refTr.parentElement.insertBefore(newTr, refTr);
-    else        refTr.after(newTr);
-    _parkCursor(newTr.firstElementChild);
-    _dispatch();
-  }
-
-  function _deleteRow() {
-    if (!_curCell) return;
-    var tr    = _curCell.parentElement;
-    var tbody = tr.parentElement;
-    var rows  = Array.from(tbody.children);
-    if (rows.length <= 1 && !_curTable.querySelector('thead')) {
-      // Last row — remove whole table
-      _deleteTable(); return;
-    }
-    var idx = rows.indexOf(tr);
-    var nextRow = rows[idx + 1] || rows[idx - 1];
-    tr.remove();
-    if (nextRow) _parkCursor(nextRow.firstElementChild);
-    _dispatch();
-  }
-
-  /* ── Column operations ────────────────────────────────── */
-  function _insertCol(before) {
-    if (!_curCell) return;
-    var ci  = _colIndex(_curCell);
-    var newCell;
-    _allRows().forEach(function(tr) {
-      var ref  = tr.children[ci];
-      var tag  = ref ? ref.nodeName : 'TD';
-      var cell = _makeTd(tag);
-      if (ref) {
-        if (before) tr.insertBefore(cell, ref);
-        else        ref.after(cell);
-      } else {
-        tr.appendChild(cell);
-      }
-      if (!newCell) newCell = cell;
+  /** Returns { rows, cols } minimum to preserve all non-empty cells. */
+  function _minDims(tbl) {
+    var minR=0, minC=0;
+    var rows=_allRows(tbl);
+    rows.forEach(function(tr,ri) {
+      Array.from(tr.children).forEach(function(cell,ci) {
+        if (_cellText(cell)) { minR=Math.max(minR,ri+1); minC=Math.max(minC,ci+1); }
+      });
     });
-    if (newCell) _parkCursor(newCell);
-    _dispatch();
+    return { rows:minR, cols:minC };
   }
 
-  function _deleteCol() {
-    if (!_curCell) return;
-    var ci   = _colIndex(_curCell);
-    var rows = _allRows();
-    if (rows.length && rows[0].children.length <= 1) {
-      _deleteTable(); return;
+  /* ── Handle positioning ───────────────────────────────── */
+  function _placeHandles(tbl) {
+    var r = tbl.getBoundingClientRect();
+    // Grip: top-left of table
+    grip.style.left = (r.left - 22) + 'px';
+    grip.style.top  = r.top + 'px';
+    grip.classList.remove('hidden');
+    // Resize: bottom-right corner
+    rzHnd.style.left = (r.right  - 8) + 'px';
+    rzHnd.style.top  = (r.bottom - 8) + 'px';
+    rzHnd.classList.remove('hidden');
+  }
+  function _hideHandles() {
+    grip.classList.add('hidden');
+    rzHnd.classList.add('hidden');
+    _closeMenu();
+    _curTable = null;
+  }
+
+  /* ── Selection tracking ──────────────────────────────── */
+  document.addEventListener('selectionchange', function() {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { _hideHandles(); return; }
+    var anchor = sel.getRangeAt(0).commonAncestorContainer;
+    if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentElement;
+    var tbl = _findAncestor(anchor, 'TABLE');
+    if (!tbl || !ce.contains(tbl)) { _hideHandles(); return; }
+    _curTable = tbl;
+    _placeHandles(tbl);
+  });
+
+  // Reposition on scroll / resize
+  window.addEventListener('scroll', function() { if (_curTable) _placeHandles(_curTable); }, true);
+  window.addEventListener('resize', function() { if (_curTable) _placeHandles(_curTable); });
+
+  /* ── Grip: click-vs-drag detection ──────────────────────── */
+  var _gDragging = false;
+  var _gStartX   = 0;
+  var _gStartY   = 0;
+  var _gGhost    = null;
+  var _gDropLine = null;
+
+  grip.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    _gDragging = false;
+    _gStartX = e.clientX; _gStartY = e.clientY;
+    document.addEventListener('mousemove', _onGripMove);
+    document.addEventListener('mouseup',   _onGripUp);
+  });
+
+  function _onGripMove(e) {
+    if (!_curTable) return;
+    var dx = e.clientX - _gStartX, dy = e.clientY - _gStartY;
+    if (!_gDragging && Math.hypot(dx, dy) > 5) {
+      _gDragging = true;
+      _closeMenu();
+      // Create ghost
+      _gGhost = _curTable.cloneNode(true);
+      _gGhost.style.cssText =
+        'position:fixed;opacity:.35;pointer-events:none;z-index:9999;'
+        +'border:2px dashed #0053e2;';
+      document.body.appendChild(_gGhost);
+      // Drop line
+      _gDropLine = document.createElement('div');
+      _gDropLine.style.cssText =
+        'position:fixed;left:0;right:0;height:2px;background:#0053e2;'
+        +'z-index:9999;pointer-events:none;';
+      document.body.appendChild(_gDropLine);
+      grip.style.cursor = 'grabbing';
     }
-    var nextCell;
-    rows.forEach(function(tr) {
-      var c = tr.children[ci];
-      if (!nextCell) nextCell = tr.children[ci + 1] || tr.children[ci - 1];
-      if (c) c.remove();
-    });
-    if (nextCell) _parkCursor(nextCell);
+    if (!_gDragging) return;
+    // Follow mouse
+    var tr = _curTable.getBoundingClientRect();
+    _gGhost.style.top  = (tr.top  + dy) + 'px';
+    _gGhost.style.left = (tr.left + dx) + 'px';
+    _gGhost.style.width= tr.width + 'px';
+    // Find nearest block to drop after
+    var drop = _nearestDropTarget(e.clientY);
+    if (drop) {
+      var dr = drop.el.getBoundingClientRect();
+      _gDropLine.style.top = (drop.after ? dr.bottom : dr.top) + 'px';
+      _gDropLine.style.display = 'block';
+    } else {
+      _gDropLine.style.display = 'none';
+    }
+  }
+
+  function _onGripUp(e) {
+    document.removeEventListener('mousemove', _onGripMove);
+    document.removeEventListener('mouseup',   _onGripUp);
+    grip.style.cursor = '';
+    if (_gGhost)    { _gGhost.remove();    _gGhost = null; }
+    if (_gDropLine) { _gDropLine.remove(); _gDropLine = null; }
+
+    if (!_gDragging) {
+      // Plain click — open menu
+      _openMenu();
+      return;
+    }
+    _gDragging = false;
+    if (!_curTable) return;
+
+    // Do the move
+    var drop = _nearestDropTarget(e.clientY);
+    if (!drop) return;
+    var p = document.createElement('p'); p.innerHTML = '<br>';
+    if (drop.after) {
+      drop.el.after(_curTable, p);
+    } else {
+      drop.el.before(p, _curTable);
+    }
+    _placeHandles(_curTable);
     _dispatch();
   }
 
-  /* ── Header row toggle ──────────────────────────────────── */
+  /** Walk direct CE children; find block closest to clientY to insert near. */
+  function _nearestDropTarget(clientY) {
+    var blocks = Array.from(ce.children).filter(function(el) {
+      return el !== _curTable && !el.hasAttribute('data-preview-grip');
+    });
+    if (!blocks.length) return null;
+    var best = null, bestDist = Infinity;
+    blocks.forEach(function(el) {
+      var r = el.getBoundingClientRect();
+      var distAbove = Math.abs(clientY - r.top);
+      var distBelow = Math.abs(clientY - r.bottom);
+      if (distAbove < bestDist) { bestDist = distAbove; best = { el: el, after: false }; }
+      if (distBelow < bestDist) { bestDist = distBelow; best = { el: el, after: true  }; }
+    });
+    return best;
+  }
+
+  /* ── Grip menu ───────────────────────────────────────────── */
+  function _openMenu() {
+    if (!_curTable) return;
+    // Update checkmarks
+    var hasHdrRow = !!_curTable.querySelector('thead');
+    var hasHdrCol = (function() {
+      var rows = _allRows();
+      return rows.some(function(tr) {
+        var fc = tr.firstElementChild;
+        return fc && fc.nodeName === 'TH' && tr.parentElement.nodeName !== 'THEAD';
+      });
+    })();
+    document.getElementById('tblt-m-hdr-row-chk').textContent = hasHdrRow ? '✓' : '';
+    document.getElementById('tblt-m-hdr-col-chk').textContent = hasHdrCol ? '✓' : '';
+    // Position below the grip
+    menu.classList.remove('hidden');
+    var gr = grip.getBoundingClientRect();
+    var mw = menu.offsetWidth, mh = menu.offsetHeight;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var top  = gr.bottom + 4;
+    if (top + mh > vh - 4) top = gr.top - mh - 4;
+    var left = gr.left;
+    if (left + mw > vw - 4) left = vw - mw - 4;
+    menu.style.top  = Math.max(4, top)  + 'px';
+    menu.style.left = Math.max(4, left) + 'px';
+    _menuOpen = true;
+  }
+  function _closeMenu() {
+    menu.classList.add('hidden');
+    _menuOpen = false;
+  }
+
+  // Close menu on outside click / Escape
+  document.addEventListener('mousedown', function(e) {
+    if (_menuOpen && !menu.contains(e.target) && e.target !== grip) _closeMenu();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') _closeMenu();
+  });
+  // Prevent mousedown inside menu from collapsing CE selection
+  menu.addEventListener('mousedown',  function(e) { e.preventDefault(); });
+  grip.addEventListener('mousedown',  function(e) { /* handled above */ });
+
+  /* ── Header row toggle ────────────────────────────────── */
   function _toggleHeaderRow() {
     if (!_curTable) return;
     var thead = _curTable.querySelector('thead');
     var tbody = _curTable.querySelector('tbody') ||
                 _curTable.appendChild(document.createElement('tbody'));
     if (thead) {
-      // Remove header — convert <th> → <td> and move to tbody top
       var htr = thead.firstElementChild;
       if (htr) {
         Array.from(htr.children).forEach(function(th) {
-          var td = document.createElement('td');
-          td.innerHTML = th.innerHTML;
-          htr.replaceChild(td, th);
+          var td=document.createElement('td'); td.innerHTML=th.innerHTML;
+          htr.replaceChild(td,th);
         });
         tbody.insertBefore(htr, tbody.firstElementChild);
       }
       thead.remove();
     } else {
-      // Add header — move first tbody row to new <thead>, convert to <th>
-      var firstTr = tbody.firstElementChild;
-      if (!firstTr) return;
+      var firstTr = tbody.firstElementChild; if (!firstTr) return;
       Array.from(firstTr.children).forEach(function(cell) {
-        var th = document.createElement('th');
-        th.innerHTML = cell.innerHTML;
-        firstTr.replaceChild(th, cell);
+        var th=document.createElement('th'); th.innerHTML=cell.innerHTML;
+        firstTr.replaceChild(th,cell);
       });
-      var newThead = document.createElement('thead');
-      newThead.appendChild(firstTr);
-      _curTable.insertBefore(newThead, tbody);
+      var nt=document.createElement('thead'); nt.appendChild(firstTr);
+      _curTable.insertBefore(nt, tbody);
     }
-    _dispatch();
+    _closeMenu(); _dispatch();
   }
 
-  /* ── Header column toggle ───────────────────────────────── */
+  /* ── Header column toggle ─────────────────────────────── */
   function _toggleHeaderCol() {
     if (!_curTable) return;
-    var rows     = _allRows();
-    var hasHdr   = rows.some(function(tr) {
+    var rows = _allRows();
+    var hasHdr = rows.some(function(tr) {
       var fc = tr.firstElementChild;
-      return fc && fc.nodeName === 'TH' &&
-             !(tr.parentElement && tr.parentElement.nodeName === 'THEAD');
+      return fc && fc.nodeName === 'TH' && tr.parentElement.nodeName !== 'THEAD';
     });
     rows.forEach(function(tr) {
-      // Skip thead rows
-      if (tr.parentElement && tr.parentElement.nodeName === 'THEAD') return;
-      var first = tr.firstElementChild;
-      if (!first) return;
-      var replacement = document.createElement(hasHdr ? 'td' : 'th');
-      replacement.innerHTML = first.innerHTML;
-      tr.replaceChild(replacement, first);
+      if (tr.parentElement.nodeName === 'THEAD') return;
+      var first = tr.firstElementChild; if (!first) return;
+      var rep = document.createElement(hasHdr ? 'td' : 'th');
+      rep.innerHTML = first.innerHTML;
+      tr.replaceChild(rep, first);
     });
-    _dispatch();
+    _closeMenu(); _dispatch();
   }
 
-  /* ── Delete whole table ──────────────────────────────────── */
+  /* ── Delete table ──────────────────────────────────────── */
   function _deleteTable() {
     if (!_curTable) return;
-    var p = document.createElement('p');
-    p.innerHTML = '<br>';
-    _curTable.after(p);
-    _curTable.remove();
-    _parkCursor(p);
-    _hideTbar();
+    var p=document.createElement('p'); p.innerHTML='<br>';
+    _curTable.after(p); _curTable.remove();
+    _parkCursor(p); _hideHandles(); _dispatch();
+  }
+
+  document.getElementById('tblt-m-hdr-row').addEventListener('click', _toggleHeaderRow);
+  document.getElementById('tblt-m-hdr-col').addEventListener('click', _toggleHeaderCol);
+  document.getElementById('tblt-m-del').addEventListener('click', _deleteTable);
+
+  /* ── Resize handle (drag to add/remove rows+cols) ─────────── */
+  var _rzActive  = false;
+  var _rzStartX  = 0;
+  var _rzStartY  = 0;
+  var _rzRows0   = 0;   // rows at drag start
+  var _rzCols0   = 0;   // cols at drag start
+  var _rzCellW   = 80;  // avg cell px width (estimated)
+  var _rzCellH   = 32;  // avg cell px height (estimated)
+
+  rzHnd.addEventListener('mousedown', function(e) {
+    if (e.button !== 0 || !_curTable) return;
+    e.preventDefault(); e.stopPropagation();
+    _rzActive = true;
+    _rzStartX = e.clientX; _rzStartY = e.clientY;
+    var rows = _allRows();
+    _rzRows0 = rows.length;
+    _rzCols0 = rows.length ? rows[0].children.length : 1;
+    // Estimate cell size from actual table bounds
+    var r = _curTable.getBoundingClientRect();
+    if (_rzCols0) _rzCellW = Math.max(40, r.width  / _rzCols0);
+    if (_rzRows0) _rzCellH = Math.max(20, r.height / _rzRows0);
+    document.addEventListener('mousemove', _onRzMove);
+    document.addEventListener('mouseup',   _onRzUp);
+  });
+
+  function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function _onRzMove(e) {
+    if (!_rzActive || !_curTable) return;
+    var dx = e.clientX - _rzStartX;
+    var dy = e.clientY - _rzStartY;
+    var min = _minDims(_curTable);
+    var tgtCols = _clamp(Math.round(_rzCols0 + dx / _rzCellW), Math.max(1,min.cols), 20);
+    var tgtRows = _clamp(Math.round(_rzRows0 + dy / _rzCellH), Math.max(1,min.rows), 50);
+    // Show tooltip near cursor
+    sizeTip.textContent = tgtRows + ' × ' + tgtCols;
+    sizeTip.classList.remove('hidden');
+    sizeTip.style.left = (e.clientX + 14) + 'px';
+    sizeTip.style.top  = (e.clientY + 14) + 'px';
+    // Live-preview table size (shadow only — no DOM write until mouseup)
+    rzHnd._tgtRows = tgtRows;
+    rzHnd._tgtCols = tgtCols;
+  }
+
+  function _onRzUp(e) {
+    document.removeEventListener('mousemove', _onRzMove);
+    document.removeEventListener('mouseup',   _onRzUp);
+    sizeTip.classList.add('hidden');
+    if (!_rzActive) return;
+    _rzActive = false;
+    if (!_curTable) return;
+    var tgtRows = rzHnd._tgtRows || _rzRows0;
+    var tgtCols = rzHnd._tgtCols || _rzCols0;
+    _applyResize(_curTable, tgtRows, tgtCols);
+    _placeHandles(_curTable);
     _dispatch();
   }
 
-  /* ── Auto-remove table when all cells are empty ──────────────── */
+  function _applyResize(tbl, tgtRows, tgtCols) {
+    var tbody = tbl.querySelector('tbody') || tbl;
+    var rows  = Array.from(tbody.querySelectorAll('tr'));
+    // Adjust columns in every existing row
+    rows.forEach(function(tr) {
+      var cur = tr.children.length;
+      // Add cols
+      for (var i = cur; i < tgtCols; i++) tr.appendChild(_makeTd('td'));
+      // Remove cols from right
+      for (var j = tr.children.length - 1; j >= tgtCols; j--) {
+        tr.children[j].remove();
+      }
+    });
+    // Add rows
+    for (var r = rows.length; r < tgtRows; r++) {
+      var tr = document.createElement('tr');
+      for (var c = 0; c < tgtCols; c++) tr.appendChild(_makeTd('td'));
+      tbody.appendChild(tr);
+    }
+    // Remove rows from bottom (beyond minimum with data)
+    var allRows = Array.from(tbody.querySelectorAll('tr'));
+    for (var ri = allRows.length - 1; ri >= tgtRows; ri--) {
+      allRows[ri].remove();
+    }
+  }
+
+  /* ── Auto-remove table when all cells are empty ──────────── */
   ce.addEventListener('input', function() {
-    var tables = Array.from(ce.querySelectorAll('table'));
-    tables.forEach(function(tbl) {
-      var cells = Array.from(tbl.querySelectorAll('td, th'));
-      if (!cells.length) { tbl.remove(); return; }
-      var allEmpty = cells.every(function(c) {
-        return c.textContent.replace(/\u00a0/g, '').trim() === '';
-      });
-      if (allEmpty) {
-        var p = document.createElement('p');
-        p.innerHTML = '<br>';
-        tbl.after(p);
-        tbl.remove();
-        _parkCursor(p);
-        _hideTbar();
+    Array.from(ce.querySelectorAll('table')).forEach(function(tbl) {
+      var cells = Array.from(tbl.querySelectorAll('td,th'));
+      if (!cells.length || cells.every(function(c){ return !_cellText(c); })) {
+        var p=document.createElement('p'); p.innerHTML='<br>';
+        tbl.after(p); tbl.remove();
+        _parkCursor(p); _hideHandles();
       }
     });
   });
 
-  /* ── Wire buttons ──────────────────────────────────────────── */
-  var _btnMap = {
-    'tblt-row-above': function() { _insertRow(true);  },
-    'tblt-row-below': function() { _insertRow(false); },
-    'tblt-row-del':   _deleteRow,
-    'tblt-col-left':  function() { _insertCol(true);  },
-    'tblt-col-right': function() { _insertCol(false); },
-    'tblt-col-del':   _deleteCol,
-    'tblt-hdr-row':   _toggleHeaderRow,
-    'tblt-hdr-col':   _toggleHeaderCol,
-    'tblt-del-table': _deleteTable,
-  };
-  Object.keys(_btnMap).forEach(function(id) {
-    var btn = document.getElementById(id);
-    if (btn) btn.addEventListener('click', _btnMap[id]);
-  });
 })();</script>
 
 <!-- ===== DELETE CATEGORY MODAL (matches workspace delete style) ===== -->
