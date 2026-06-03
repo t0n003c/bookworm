@@ -62,8 +62,9 @@
     } else if (itemType === 'crm_contact') {
       var cid = ld.contact_id;
       if (ld.page_id && window._crmPid === ld.page_id &&
-          typeof window.crmOpenDetail === 'function') {
-        // Already on this CRM page — open the detail panel directly
+          typeof window.crmOpenDetail === 'function' &&
+          document.getElementById('crm-page-root')) {
+        // CRM page is in the DOM and matches — open the detail panel directly
         window.crmOpenDetail(cid);
       } else if (ld.page_id) {
         // Bust the cache first — prevents showHomePage() from serving stale
