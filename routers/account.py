@@ -17,7 +17,6 @@ from routers.auth_db import (
     set_unlimited_uploads,
     update_username,
     update_password,
-    get_qa_settings,
     set_qa_settings,
     get_user_llm_settings,
     set_user_llm_settings,
@@ -43,7 +42,6 @@ async def _admin_ctx(request: Request, **extra) -> dict:
         "me":                me,
         "registration_open": await get_registration_open(),
         "unlimited_uploads": await get_unlimited_uploads(me),
-        "qa_settings":       await get_qa_settings(),
     }
     ctx.update(extra)
     return ctx
