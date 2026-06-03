@@ -66,7 +66,12 @@
         // Already on this CRM page — open the detail panel directly
         window.crmOpenDetail(cid);
       } else if (ld.page_id) {
-        // Navigate via the app's own page-switcher (not a URL reload)
+        // Bust the cache first — prevents showHomePage() from serving stale
+        // HTML and then firing a background revalidation that calls
+        // _initSwappedPage() a second time, racing against our sessionStorage read.
+        if (typeof window.invalidateHomePageCache === 'function') {
+          window.invalidateHomePageCache(ld.page_id);
+        }
         sessionStorage.setItem('bw_crm_open_contact', String(cid));
         if (typeof window.openHomePage === 'function') {
           window.openHomePage(ld.page_id);
@@ -149,40 +154,40 @@
 
   /** Render a compact structured card for a CRM contact search result. */
   function _bwSqContactCard(ld) {
-    var parts = [];
+    var rows = [];
 
-    // Row 1: email + phone
+    // Row 1: email + phone — each in its own span so flex gap works
     var row1 = [];
-    if (ld.email) row1.push('📧\u202F' + _bwSqEsc(ld.email));
-    if (ld.phone) row1.push('📞\u202F' + _bwSqEsc(ld.phone));
-    if (row1.length) parts.push(
-      '<span class="flex gap-3 flex-wrap">' + row1.join('<span class="text-gray-300 dark:text-zinc-600">·</span>') + '</span>'
-    );
+    if (ld.email) row1.push('<span>📧\u202F' + _bwSqEsc(ld.email) + '</span>');
+    if (ld.phone) row1.push('<span>📞\u202F' + _bwSqEsc(ld.phone) + '</span>');
+    if (row1.length)
+      rows.push('<div class="flex gap-3 flex-wrap">' + row1.join('') + '</div>');
 
     // Row 2: tags as small pills
     if (ld.tags) {
       var pills = ld.tags.split(/[,;]+/).map(function(t){ return t.trim(); }).filter(Boolean);
       if (pills.length) {
-        parts.push(
-          '<span class="flex gap-1 flex-wrap">' +
+        rows.push(
+          '<div class="flex gap-1 flex-wrap">' +
           pills.map(function(p){
-            return '<span class="px-1.5 py-px rounded-full bg-gray-100 dark:bg-zinc-700' +
-                   ' text-gray-500 dark:text-zinc-400">' + _bwSqEsc(p) + '</span>';
-          }).join('') + '</span>'
+            return '<span class="px-1.5 py-px rounded-full bg-gray-100' +
+                   ' dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">' +
+                   _bwSqEsc(p) + '</span>';
+          }).join('') + '</div>'
         );
       }
     }
 
     // Row 3: last conversation preview
     if (ld.last_convo) {
-      parts.push(
-        '<span class="italic text-gray-400 dark:text-zinc-500 line-clamp-1">' +
-        '💬\u202F' + _bwSqEsc(ld.last_convo) + '</span>'
+      rows.push(
+        '<div class="italic text-gray-400 dark:text-zinc-500 truncate">' +
+        '💬\u202F' + _bwSqEsc(ld.last_convo) + '</div>'
       );
     }
 
-    return parts.length
-      ? '<div class="flex flex-col gap-0.5">' + parts.join('') + '</div>'
+    return rows.length
+      ? '<div class="flex flex-col gap-0.5">' + rows.join('') + '</div>'
       : '';
   }
 
@@ -224,6 +229,28 @@
         if (itype === 'crm_contact') subLabel = (ld.company || '') || 'Contact';
       }
 
+      // CRM contacts: fold company into the title line; drop the subLabel row
+      var titleHtml;
+      if (itype === 'crm_contact') {
+        titleHtml =
+          '<p class="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">' +
+          '<span>' + _bwSqEsc(r.title) + '</span>' +
+          (ld.company
+            ? '<span class="font-normal text-gray-400 dark:text-zinc-500"> &middot; ' +
+              _bwSqEsc(ld.company) + '</span>'
+            : '') +
+          '</p>';
+      } else {
+        titleHtml =
+          '<div class="flex items-center gap-1.5 mb-0.5">' +
+          '<span class="text-sm leading-none select-none" aria-hidden="true">' + icon + '</span>' +
+          '<span class="text-xs text-gray-400 dark:text-zinc-500 truncate">' +
+          _bwSqEsc(subLabel) + '</span>' +
+          '</div>' +
+          '<p class="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">' +
+          _bwSqEsc(r.title) + '</p>';
+      }
+
       html +=
         '<div class="bw-sq-item px-4 py-2.5 cursor-pointer' +
         ' hover:bg-gray-50 dark:hover:bg-zinc-800 border-b' +
@@ -233,16 +260,12 @@
         ' data-item-id="'   + iid  + '"' +
         ' data-link-data="' + _bwSqEsc(JSON.stringify(ld)) + '"' +
         ' onclick="_bwSqHandleClick(this)">' +
-
-        '<div class="flex items-center gap-1.5 mb-0.5">' +
-        '<span class="text-sm leading-none select-none" aria-hidden="true">' + icon + '</span>' +
-        '<span class="text-xs text-gray-400 dark:text-zinc-500 truncate">' +
-        _bwSqEsc(subLabel) + '</span>' +
-        '</div>' +
-
-        '<p class="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">' +
-        _bwSqEsc(r.title) + '</p>' +
-
+        (itype === 'crm_contact'
+          ? '<div class="flex items-center gap-1.5 mb-0.5">' +
+            '<span class="text-sm leading-none select-none" aria-hidden="true">' + icon + '</span>' +
+            '<span class="text-xs text-gray-400 dark:text-zinc-500">Contact</span></div>'
+          : '') +
+        titleHtml +
         '<div class="bw-sq-snippet text-xs text-gray-500 dark:text-zinc-400 mt-0.5"></div>' +
         '</div>';
     }
