@@ -315,7 +315,7 @@
             contenteditable="true"
             spellcheck="true"
             data-placeholder="Preview will appear here…"
-            class="md-body flex-1 min-h-[26rem] overflow-y-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
+            class="md-body flex-1 min-h-0 overflow-y-auto overflow-x-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
             aria-label="WYSIWYG note editor"
             aria-multiline="true"
             role="textbox"
@@ -532,7 +532,8 @@
   #md-live-preview li { margin: .1em 0; }
 
   /* ── Tables in the contenteditable preview ── */
-  #md-live-preview table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; overflow-x: auto; display: block; }
+  /* NOTE: never set display:block on <table> — it breaks the table layout algorithm */
+  #md-live-preview table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
   #md-live-preview th { background: #f3f4f6; font-weight: 700; text-align: left; padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
   #md-live-preview td { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; min-height: 1.75rem; }
   #md-live-preview tr:nth-child(even) td { background: #f9fafb; }
@@ -2581,13 +2582,16 @@
 
 <!-- ===== Table handles (grip + resize) ===== -->
 
-<!-- Drag-grip: sits top-left of the table. Drag = move table. Click = menu. -->
+<!-- Drag-grip: sits top-left of the table.
+     Desktop: invisible until you hover over the table, fades in.
+     Mobile (coarse pointer): always visible when inside a table. -->
 <div id="bw-tbl-grip"
   title="Drag to move • Click for options"
   class="hidden fixed z-60 cursor-grab select-none
          w-5 h-5 rounded flex items-center justify-center
          bg-white dark:bg-zinc-800
-         border border-gray-300 dark:border-zinc-500 shadow"
+         border border-gray-300 dark:border-zinc-500 shadow
+         opacity-0 transition-opacity duration-150"
   style="touch-action:none"
 >
   <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-400" aria-hidden="true">
@@ -2636,9 +2640,8 @@
 <!-- Resize handle: bottom-right corner of the table -->
 <div id="bw-tbl-resize"
   title="Drag to resize"
-  class="hidden fixed z-60 cursor-se-resize select-none
-         w-4 h-4 rounded-br"
-  style="touch-action:none;background:radial-gradient(circle at 100% 100%,#0053e2 0%,#0053e2 40%,transparent 41%);"
+  class="hidden fixed z-60 cursor-se-resize select-none w-5 h-5"
+  style="touch-action:none;background:radial-gradient(circle at 100% 100%,#0053e2 0%,#0053e2 38%,transparent 40%);"
 ></div>
 
 <!-- Size tooltip shown while resizing -->
@@ -3730,8 +3733,11 @@
   var ce      = document.getElementById('md-live-preview');
   if (!grip || !menu || !rzHnd || !sizeTip || !ce) return;
 
-  var _curTable = null;   // <table> cursor is inside
-  var _menuOpen = false;
+  var _curTable   = null;   // table cursor is inside (via selectionchange)
+  var _menuOpen   = false;
+  var _hideGripTO = null;   // debounce timer for grip fade-out
+  // Coarse pointer = touch/mobile → grip always visible when in table
+  var _isMobile   = window.matchMedia('(pointer:coarse)').matches;
 
   /* ── Helpers ──────────────────────────────────────────── */
   function _findAncestor(node, tag) {
@@ -3751,11 +3757,10 @@
   function _dispatch() { ce.dispatchEvent(new Event('input')); }
   function _cellText(c) { return c.textContent.replace(/\u00a0/g,'').trim(); }
 
-  /** Returns { rows, cols } minimum to preserve all non-empty cells. */
+  /** Minimum {rows, cols} that preserves all non-empty cells. */
   function _minDims(tbl) {
     var minR=0, minC=0;
-    var rows=_allRows(tbl);
-    rows.forEach(function(tr,ri) {
+    _allRows(tbl).forEach(function(tr,ri) {
       Array.from(tr.children).forEach(function(cell,ci) {
         if (_cellText(cell)) { minR=Math.max(minR,ri+1); minC=Math.max(minC,ci+1); }
       });
@@ -3765,24 +3770,34 @@
 
   /* ── Handle positioning ───────────────────────────────── */
   function _placeHandles(tbl) {
-    var r = tbl.getBoundingClientRect();
-    // Grip: top-left of table
-    grip.style.left = (r.left - 22) + 'px';
-    grip.style.top  = r.top + 'px';
+    var r  = tbl.getBoundingClientRect();
+    var gw = grip.offsetWidth  || 20;
+    var gh = grip.offsetHeight || 20;
+    var rw = rzHnd.offsetWidth  || 20;
+    var rh = rzHnd.offsetHeight || 20;
+
+    // Grip: to the left of the table's top edge, clamped inside viewport
+    grip.style.left = Math.max(4, r.left - gw - 4) + 'px';
+    grip.style.top  = Math.max(4, r.top) + 'px';
     grip.classList.remove('hidden');
-    // Resize: bottom-right corner
-    rzHnd.style.left = (r.right  - 8) + 'px';
-    rzHnd.style.top  = (r.bottom - 8) + 'px';
+    if (_isMobile) grip.style.opacity = '1';
+    // (Desktop opacity is controlled by hover events below)
+
+    // Resize handle: centered on the bottom-right corner of the table
+    rzHnd.style.left = (r.right  - rw / 2) + 'px';
+    rzHnd.style.top  = (r.bottom - rh / 2) + 'px';
     rzHnd.classList.remove('hidden');
   }
+
   function _hideHandles() {
     grip.classList.add('hidden');
+    grip.style.opacity = '0';
     rzHnd.classList.add('hidden');
     _closeMenu();
     _curTable = null;
   }
 
-  /* ── Selection tracking ──────────────────────────────── */
+  /* ── Selection tracking (cursor-in-table detection) ──────────── */
   document.addEventListener('selectionchange', function() {
     var sel = window.getSelection();
     if (!sel || !sel.rangeCount) { _hideHandles(); return; }
@@ -3797,6 +3812,40 @@
   // Reposition on scroll / resize
   window.addEventListener('scroll', function() { if (_curTable) _placeHandles(_curTable); }, true);
   window.addEventListener('resize', function() { if (_curTable) _placeHandles(_curTable); });
+
+  /* ── Desktop hover: show grip when mouse is over the table ───── */
+  function _showGrip() {
+    clearTimeout(_hideGripTO);
+    if (!grip.classList.contains('hidden')) grip.style.opacity = '1';
+  }
+  function _scheduleHideGrip() {
+    clearTimeout(_hideGripTO);
+    _hideGripTO = setTimeout(function() {
+      if (!_menuOpen) grip.style.opacity = '0';
+    }, 220);
+  }
+
+  if (!_isMobile) {
+    // Show grip when hovering any cell or the table itself
+    ce.addEventListener('mouseover', function(e) {
+      if (_findAncestor(e.target, 'TABLE') || e.target.nodeName === 'TABLE') _showGrip();
+    });
+    ce.addEventListener('mouseout', function(e) {
+      // Only schedule hide if the related target is NOT the grip or the table
+      if (!grip.contains(e.relatedTarget) && e.relatedTarget !== grip) {
+        var stillInTable = e.relatedTarget &&
+          (_findAncestor(e.relatedTarget, 'TABLE') || e.relatedTarget.nodeName==='TABLE');
+        if (!stillInTable) _scheduleHideGrip();
+      }
+    });
+    grip.addEventListener('mouseover', _showGrip);
+    grip.addEventListener('mouseout', function(e) {
+      var goingToTable = e.relatedTarget &&
+        (_findAncestor(e.relatedTarget,'TABLE') || e.relatedTarget.nodeName==='TABLE'
+         || ce.contains(e.relatedTarget));
+      if (!goingToTable) _scheduleHideGrip();
+    });
+  }
 
   /* ── Grip: click-vs-drag detection ──────────────────────── */
   var _gDragging = false;
@@ -3820,31 +3869,33 @@
     if (!_gDragging && Math.hypot(dx, dy) > 5) {
       _gDragging = true;
       _closeMenu();
-      // Create ghost
+      // Ghost clone
       _gGhost = _curTable.cloneNode(true);
       _gGhost.style.cssText =
         'position:fixed;opacity:.35;pointer-events:none;z-index:9999;'
-        +'border:2px dashed #0053e2;';
+        +'border:2px dashed #0053e2;box-sizing:border-box;';
       document.body.appendChild(_gGhost);
-      // Drop line
+      // Drop line — constrained to the CE editor bounds
       _gDropLine = document.createElement('div');
       _gDropLine.style.cssText =
-        'position:fixed;left:0;right:0;height:2px;background:#0053e2;'
-        +'z-index:9999;pointer-events:none;';
+        'position:fixed;height:2px;background:#0053e2;'
+        +'z-index:9999;pointer-events:none;display:none;';
       document.body.appendChild(_gDropLine);
       grip.style.cursor = 'grabbing';
     }
     if (!_gDragging) return;
-    // Follow mouse
     var tr = _curTable.getBoundingClientRect();
-    _gGhost.style.top  = (tr.top  + dy) + 'px';
-    _gGhost.style.left = (tr.left + dx) + 'px';
-    _gGhost.style.width= tr.width + 'px';
-    // Find nearest block to drop after
+    _gGhost.style.top   = (tr.top  + dy) + 'px';
+    _gGhost.style.left  = (tr.left + dx) + 'px';
+    _gGhost.style.width = tr.width + 'px';
+    // Drop indicator constrained to CE
     var drop = _nearestDropTarget(e.clientY);
     if (drop) {
-      var dr = drop.el.getBoundingClientRect();
-      _gDropLine.style.top = (drop.after ? dr.bottom : dr.top) + 'px';
+      var ceR = ce.getBoundingClientRect();
+      var dr  = drop.el.getBoundingClientRect();
+      _gDropLine.style.left    = ceR.left  + 'px';
+      _gDropLine.style.width   = ceR.width + 'px';
+      _gDropLine.style.top     = (drop.after ? dr.bottom : dr.top) + 'px';
       _gDropLine.style.display = 'block';
     } else {
       _gDropLine.style.display = 'none';
@@ -3855,31 +3906,22 @@
     document.removeEventListener('mousemove', _onGripMove);
     document.removeEventListener('mouseup',   _onGripUp);
     grip.style.cursor = '';
-    if (_gGhost)    { _gGhost.remove();    _gGhost = null; }
+    if (_gGhost)    { _gGhost.remove();    _gGhost    = null; }
     if (_gDropLine) { _gDropLine.remove(); _gDropLine = null; }
 
-    if (!_gDragging) {
-      // Plain click — open menu
-      _openMenu();
-      return;
-    }
+    if (!_gDragging) { _openMenu(); return; }
     _gDragging = false;
     if (!_curTable) return;
-
-    // Do the move
     var drop = _nearestDropTarget(e.clientY);
     if (!drop) return;
-    var p = document.createElement('p'); p.innerHTML = '<br>';
-    if (drop.after) {
-      drop.el.after(_curTable, p);
-    } else {
-      drop.el.before(p, _curTable);
-    }
+    var p = document.createElement('p'); p.innerHTML='<br>';
+    if (drop.after) drop.el.after(_curTable, p);
+    else            drop.el.before(p, _curTable);
     _placeHandles(_curTable);
     _dispatch();
   }
 
-  /** Walk direct CE children; find block closest to clientY to insert near. */
+  /** Nearest CE block to insert near (excludes the dragged table). */
   function _nearestDropTarget(clientY) {
     var blocks = Array.from(ce.children).filter(function(el) {
       return el !== _curTable && !el.hasAttribute('data-preview-grip');
@@ -3888,10 +3930,9 @@
     var best = null, bestDist = Infinity;
     blocks.forEach(function(el) {
       var r = el.getBoundingClientRect();
-      var distAbove = Math.abs(clientY - r.top);
-      var distBelow = Math.abs(clientY - r.bottom);
-      if (distAbove < bestDist) { bestDist = distAbove; best = { el: el, after: false }; }
-      if (distBelow < bestDist) { bestDist = distBelow; best = { el: el, after: true  }; }
+      var da = Math.abs(clientY - r.top),  db = Math.abs(clientY - r.bottom);
+      if (da < bestDist) { bestDist = da; best = { el:el, after:false }; }
+      if (db < bestDist) { bestDist = db; best = { el:el, after:true  }; }
     });
     return best;
   }
@@ -3899,45 +3940,30 @@
   /* ── Grip menu ───────────────────────────────────────────── */
   function _openMenu() {
     if (!_curTable) return;
-    // Update checkmarks
     var hasHdrRow = !!_curTable.querySelector('thead');
-    var hasHdrCol = (function() {
-      var rows = _allRows();
-      return rows.some(function(tr) {
-        var fc = tr.firstElementChild;
-        return fc && fc.nodeName === 'TH' && tr.parentElement.nodeName !== 'THEAD';
-      });
-    })();
+    var hasHdrCol = _allRows().some(function(tr) {
+      var fc = tr.firstElementChild;
+      return fc && fc.nodeName==='TH' && tr.parentElement.nodeName!=='THEAD';
+    });
     document.getElementById('tblt-m-hdr-row-chk').textContent = hasHdrRow ? '✓' : '';
     document.getElementById('tblt-m-hdr-col-chk').textContent = hasHdrCol ? '✓' : '';
-    // Position below the grip
     menu.classList.remove('hidden');
     var gr = grip.getBoundingClientRect();
     var mw = menu.offsetWidth, mh = menu.offsetHeight;
     var vw = window.innerWidth, vh = window.innerHeight;
-    var top  = gr.bottom + 4;
-    if (top + mh > vh - 4) top = gr.top - mh - 4;
-    var left = gr.left;
-    if (left + mw > vw - 4) left = vw - mw - 4;
+    var top  = gr.bottom + 4; if (top+mh > vh-4) top = gr.top - mh - 4;
+    var left = gr.left;       if (left+mw > vw-4) left = vw - mw - 4;
     menu.style.top  = Math.max(4, top)  + 'px';
     menu.style.left = Math.max(4, left) + 'px';
     _menuOpen = true;
   }
-  function _closeMenu() {
-    menu.classList.add('hidden');
-    _menuOpen = false;
-  }
+  function _closeMenu() { menu.classList.add('hidden'); _menuOpen = false; }
 
-  // Close menu on outside click / Escape
   document.addEventListener('mousedown', function(e) {
     if (_menuOpen && !menu.contains(e.target) && e.target !== grip) _closeMenu();
   });
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') _closeMenu();
-  });
-  // Prevent mousedown inside menu from collapsing CE selection
-  menu.addEventListener('mousedown',  function(e) { e.preventDefault(); });
-  grip.addEventListener('mousedown',  function(e) { /* handled above */ });
+  document.addEventListener('keydown', function(e) { if (e.key==='Escape') _closeMenu(); });
+  menu.addEventListener('mousedown', function(e) { e.preventDefault(); });
 
   /* ── Header row toggle ────────────────────────────────── */
   function _toggleHeaderRow() {
@@ -3973,10 +3999,10 @@
     var rows = _allRows();
     var hasHdr = rows.some(function(tr) {
       var fc = tr.firstElementChild;
-      return fc && fc.nodeName === 'TH' && tr.parentElement.nodeName !== 'THEAD';
+      return fc && fc.nodeName==='TH' && tr.parentElement.nodeName!=='THEAD';
     });
     rows.forEach(function(tr) {
-      if (tr.parentElement.nodeName === 'THEAD') return;
+      if (tr.parentElement.nodeName==='THEAD') return;
       var first = tr.firstElementChild; if (!first) return;
       var rep = document.createElement(hasHdr ? 'td' : 'th');
       rep.innerHTML = first.innerHTML;
@@ -3997,14 +4023,11 @@
   document.getElementById('tblt-m-hdr-col').addEventListener('click', _toggleHeaderCol);
   document.getElementById('tblt-m-del').addEventListener('click', _deleteTable);
 
-  /* ── Resize handle (drag to add/remove rows+cols) ─────────── */
-  var _rzActive  = false;
-  var _rzStartX  = 0;
-  var _rzStartY  = 0;
-  var _rzRows0   = 0;   // rows at drag start
-  var _rzCols0   = 0;   // cols at drag start
-  var _rzCellW   = 80;  // avg cell px width (estimated)
-  var _rzCellH   = 32;  // avg cell px height (estimated)
+  /* ── Resize handle ────────────────────────────────────────── */
+  var _rzActive = false;
+  var _rzStartX = 0, _rzStartY = 0;
+  var _rzRows0  = 0, _rzCols0  = 0;
+  var _rzCellW  = 80, _rzCellH = 32;
 
   rzHnd.addEventListener('mousedown', function(e) {
     if (e.button !== 0 || !_curTable) return;
@@ -4014,7 +4037,6 @@
     var rows = _allRows();
     _rzRows0 = rows.length;
     _rzCols0 = rows.length ? rows[0].children.length : 1;
-    // Estimate cell size from actual table bounds
     var r = _curTable.getBoundingClientRect();
     if (_rzCols0) _rzCellW = Math.max(40, r.width  / _rzCols0);
     if (_rzRows0) _rzCellH = Math.max(20, r.height / _rzRows0);
@@ -4022,21 +4044,17 @@
     document.addEventListener('mouseup',   _onRzUp);
   });
 
-  function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function _clamp(v,lo,hi) { return Math.max(lo, Math.min(hi, v)); }
 
   function _onRzMove(e) {
     if (!_rzActive || !_curTable) return;
-    var dx = e.clientX - _rzStartX;
-    var dy = e.clientY - _rzStartY;
     var min = _minDims(_curTable);
-    var tgtCols = _clamp(Math.round(_rzCols0 + dx / _rzCellW), Math.max(1,min.cols), 20);
-    var tgtRows = _clamp(Math.round(_rzRows0 + dy / _rzCellH), Math.max(1,min.rows), 50);
-    // Show tooltip near cursor
+    var tgtCols = _clamp(Math.round(_rzCols0 + (e.clientX-_rzStartX)/_rzCellW), Math.max(1,min.cols), 20);
+    var tgtRows = _clamp(Math.round(_rzRows0 + (e.clientY-_rzStartY)/_rzCellH), Math.max(1,min.rows), 50);
     sizeTip.textContent = tgtRows + ' × ' + tgtCols;
     sizeTip.classList.remove('hidden');
     sizeTip.style.left = (e.clientX + 14) + 'px';
     sizeTip.style.top  = (e.clientY + 14) + 'px';
-    // Live-preview table size (shadow only — no DOM write until mouseup)
     rzHnd._tgtRows = tgtRows;
     rzHnd._tgtCols = tgtCols;
   }
@@ -4048,9 +4066,7 @@
     if (!_rzActive) return;
     _rzActive = false;
     if (!_curTable) return;
-    var tgtRows = rzHnd._tgtRows || _rzRows0;
-    var tgtCols = rzHnd._tgtCols || _rzCols0;
-    _applyResize(_curTable, tgtRows, tgtCols);
+    _applyResize(_curTable, rzHnd._tgtRows || _rzRows0, rzHnd._tgtCols || _rzCols0);
     _placeHandles(_curTable);
     _dispatch();
   }
@@ -4058,27 +4074,18 @@
   function _applyResize(tbl, tgtRows, tgtCols) {
     var tbody = tbl.querySelector('tbody') || tbl;
     var rows  = Array.from(tbody.querySelectorAll('tr'));
-    // Adjust columns in every existing row
     rows.forEach(function(tr) {
       var cur = tr.children.length;
-      // Add cols
-      for (var i = cur; i < tgtCols; i++) tr.appendChild(_makeTd('td'));
-      // Remove cols from right
-      for (var j = tr.children.length - 1; j >= tgtCols; j--) {
-        tr.children[j].remove();
-      }
+      for (var i=cur; i<tgtCols; i++) tr.appendChild(_makeTd('td'));
+      for (var j=tr.children.length-1; j>=tgtCols; j--) tr.children[j].remove();
     });
-    // Add rows
-    for (var r = rows.length; r < tgtRows; r++) {
-      var tr = document.createElement('tr');
-      for (var c = 0; c < tgtCols; c++) tr.appendChild(_makeTd('td'));
+    for (var r=rows.length; r<tgtRows; r++) {
+      var tr=document.createElement('tr');
+      for (var c=0; c<tgtCols; c++) tr.appendChild(_makeTd('td'));
       tbody.appendChild(tr);
     }
-    // Remove rows from bottom (beyond minimum with data)
     var allRows = Array.from(tbody.querySelectorAll('tr'));
-    for (var ri = allRows.length - 1; ri >= tgtRows; ri--) {
-      allRows[ri].remove();
-    }
+    for (var ri=allRows.length-1; ri>=tgtRows; ri--) allRows[ri].remove();
   }
 
   /* ── Auto-remove table when all cells are empty ──────────── */
