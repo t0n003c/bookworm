@@ -45,6 +45,7 @@ var _crmDupOverride = false;
 // ── Entry point ───────────────────────────────────────────────────────────────
 function initCrmPage(pid) {
   _crmPid  = pid;
+  window._crmPid = pid;  // expose for cross-module same-page shortcut in bw-search-qa.js
   _crmView         = localStorage.getItem('bw_crm_view')   || 'table';
   _crmGalleryStyle  = localStorage.getItem('bw_crm_gstyle') || 'cards';
   _crmQuery = '';

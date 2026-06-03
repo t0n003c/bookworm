@@ -136,6 +136,10 @@ function homeExit() {
   // Clear the home-page session so a subsequent F5 lands on the workspace.
   sessionStorage.removeItem('bw-hp');
   document.documentElement.classList.remove('bw-hp-restore');
+  // Clear module-level sentinels so stale cross-module shortcuts don't fire
+  // against a page that's no longer visible.
+  window._crmPid       = null;
+  window._crmLoadedPid = null;
   // Restore view-toggle buttons for normal workspace views.
   const _tl = document.getElementById('list-view-toggle');
   if (_tl) _tl.style.display = '';

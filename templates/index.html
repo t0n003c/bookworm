@@ -3335,7 +3335,12 @@
       htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
         target: '#note-list', swap: 'innerHTML',
       }).then(() => {
-        if (nl) nl.classList.remove('hidden');
+        // Guard: user may have navigated to a homespace page while the HTMX
+        // workspace switch was in flight.  If #home-content is now visible,
+        // we must NOT unhide #note-list — it would cover the CRM/homespace.
+        const _hcNow = document.getElementById('home-content');
+        const _nowHome = _hcNow && !_hcNow.classList.contains('hidden');
+        if (nl && !_nowHome) nl.classList.remove('hidden');
         refreshCatFilter(id);
       });
     }, 280); // long enough for ondblclick to fire on any OS/browser
@@ -3354,8 +3359,11 @@
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
     }).then(() => {
-      if (nl) nl.classList.remove('hidden');
-      refreshCatFilter(id);
+        // Same guard as wsSingleClick: don't cover homespace with the note-list.
+        const _hcNow = document.getElementById('home-content');
+        const _nowHome = _hcNow && !_hcNow.classList.contains('hidden');
+        if (nl && !_nowHome) nl.classList.remove('hidden');
+        refreshCatFilter(id);
     });
   }
 
