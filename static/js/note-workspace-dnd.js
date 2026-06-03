@@ -309,6 +309,13 @@
       return;
     }
 
+    // Drag is over — close the mobile sidebar overlay if it was opened during
+    // this drag session (backdrop is the sentinel; not present on desktop).
+    if (document.getElementById('_sb-mobile-backdrop') &&
+        typeof _mobileSidebarClose === 'function') {
+      _mobileSidebarClose();
+    }
+
     if (!wsId) return;
     _doMove(noteId, wsId, wsName);
   });
@@ -319,7 +326,13 @@
   document.addEventListener('pointercancel', _reset);
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') _reset();
+    if (e.key !== 'Escape') return;
+    // Close the mobile sidebar overlay if the user escapes an armed drag.
+    if (_armed && document.getElementById('_sb-mobile-backdrop') &&
+        typeof _mobileSidebarClose === 'function') {
+      _mobileSidebarClose();
+    }
+    _reset();
   });
 
 })();
