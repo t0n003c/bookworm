@@ -187,45 +187,6 @@ async def set_unlimited_uploads(user_id: int, value: bool) -> None:
         await db.commit()
 
 
-# ── QA / LLM settings (site_settings, superadmin-only) ──────────────────
-
-_QA_KEYS = ("qa_llm_endpoint", "qa_llm_api_key", "qa_llm_model")
-
-
-async def get_qa_settings() -> dict:
-    """Return {endpoint, api_key, model} from site_settings. Defaults to empty."""
-    async with get_db() as db:
-        cur = await db.execute(
-            "SELECT key, value FROM site_settings WHERE key IN (?, ?, ?)",
-            _QA_KEYS,
-        )
-        rows = await cur.fetchall()
-    kv = {r["key"]: r["value"] for r in rows}
-    return {
-        "endpoint": kv.get("qa_llm_endpoint", ""),
-        "api_key":  kv.get("qa_llm_api_key",  ""),
-        "model":    kv.get("qa_llm_model",    "gpt-4o-mini"),
-    }
-
-
-async def set_qa_settings(endpoint: str, api_key: str | None, model: str) -> None:
-    """Persist QA LLM config. Pass api_key=None to leave it unchanged."""
-    async with get_db() as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)",
-            ("qa_llm_endpoint", endpoint.strip()),
-        )
-        if api_key is not None:
-            await db.execute(
-                "INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)",
-                ("qa_llm_api_key", api_key.strip()),
-            )
-        await db.execute(
-            "INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)",
-            ("qa_llm_model", model.strip() or "gpt-4o-mini"),
-        )
-        await db.commit()
-
 
 # ── Per-user LLM settings (Phase 4B) ──────────────────────────────────
 

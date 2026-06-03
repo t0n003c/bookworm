@@ -17,7 +17,6 @@ from routers.auth_db import (
     set_unlimited_uploads,
     update_username,
     update_password,
-    set_qa_settings,
     get_user_llm_settings,
     set_user_llm_settings,
 )
@@ -277,32 +276,6 @@ async def reset_user_password(
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
         await _admin_ctx(request, success=f'Password reset for "{tname}".'),
-    )
-
-
-# ── admin: save QA / LLM settings ──────────────────────────────────
-
-@router.post("/settings/qa-llm", response_class=HTMLResponse)
-async def save_qa_settings(
-    request: Request,
-    qa_endpoint: str = Form(default=""),
-    qa_model:    str = Form(default=""),
-    qa_api_key:  str = Form(default=""),
-):
-    """Superadmin-only: persist OpenAI-compatible LLM endpoint config."""
-    if not _is_superadmin(request):
-        return HTMLResponse("", status_code=403)
-    # Only overwrite the stored API key if the user typed something new.
-    # Empty submission → leave the existing key untouched.
-    key_or_none = qa_api_key.strip() or None
-    await set_qa_settings(
-        endpoint=qa_endpoint,
-        api_key=key_or_none,
-        model=qa_model,
-    )
-    return templates.TemplateResponse(
-        request, "partials/admin_users.html",
-        await _admin_ctx(request, success="AI Search settings saved."),
     )
 
 

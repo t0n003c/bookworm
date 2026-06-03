@@ -3,13 +3,9 @@
 Sends the top search results as context to any OpenAI-compatible endpoint
 and streams token chunks back as an async generator.
 
-Phase 4B additions:
-- get_effective_llm_settings(uid): user key → site-wide key → empty (pure retrieval).
-- _fetch_contexts_sync() now accepts [{item_type, item_id}] and fetches notes
-  and db_cards; workspaces and widgets are skipped (too little text for LLM context).
-
 Design rules:
-- If effective endpoint is empty → yields nothing silently (pure-retrieval fallback).
+- Each user must configure their own LLM endpoint + API key in Account → AI Search.
+- If a user has no endpoint set → yields nothing silently (pure-retrieval fallback).
 - API key is optional — some local endpoints (Ollama, LM Studio) don't need one.
 - Newlines in tokens are preserved; caller must handle SSE line-break escaping.
 - No proxy by default; set BW_HTTP_PROXY env var if your LLM endpoint needs one.
@@ -23,7 +19,7 @@ from typing import AsyncGenerator
 import httpx
 
 from database import DB_PATH
-from routers.auth_db import get_qa_settings, get_user_llm_settings
+from routers.auth_db import get_user_llm_settings
 
 log = logging.getLogger(__name__)
 
@@ -35,20 +31,18 @@ _LLM_TIMEOUT    = 60.0   # seconds for the full stream
 async def get_effective_llm_settings(uid: int) -> dict:
     """Return the LLM config to use for this user.
 
-    Fallback chain: user's own key → site-wide key → all-empty (pure retrieval).
+    Users must configure their own endpoint in Account → AI Search.
+    Returns all-empty dict if no personal key is set → caller yields nothing.
     API key is never returned to the browser — this function is server-only.
     """
     user_cfg = await get_user_llm_settings(uid)
     if user_cfg["endpoint"]:
-        # User has their own endpoint configured — use it exclusively.
         return {
             "endpoint": user_cfg["endpoint"],
             "api_key":  user_cfg["api_key"],
             "model":    user_cfg["model"] or "gpt-4o-mini",
         }
-    # Fall back to site-wide admin settings.
-    site_cfg = await get_qa_settings()
-    return site_cfg
+    return {"endpoint": "", "api_key": "", "model": ""}
 
 
 def _fetch_contexts_sync(items: list, uid: int) -> list:

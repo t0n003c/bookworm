@@ -33,7 +33,7 @@ import httpx
 import search_index
 import search_llm
 from database import DB_PATH, get_db
-from routers.auth_db import get_qa_settings, get_user_llm_settings
+from routers.auth_db import get_user_llm_settings
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/qa", tags=["search-qa"])
@@ -45,20 +45,12 @@ _MAX_TOKENS = 20
 
 @router.get("/models")
 async def list_models(request: Request, endpoint: str = ""):
-    """Proxy GET /models to the configured LLM endpoint.
+    """Proxy GET /models to the configured LLM endpoint using the caller's personal key.
 
-    Superadmins: uses site-wide API key.
-    Regular users: uses their personal API key (from Phase 4B per-user settings).
     Returns {models: [str]} sorted A-Z, or {models: [], error: str} on failure.
     """
     uid = _uid(request)
-
-    # Resolve which key to use for this caller
-    if request.session.get("role") == "superadmin":
-        cfg = await get_qa_settings()
-    else:
-        user_cfg = await get_user_llm_settings(uid)
-        cfg = user_cfg if user_cfg["endpoint"] else await get_qa_settings()
+    cfg = await get_user_llm_settings(uid)
 
     base = (endpoint.strip() or cfg["endpoint"]).rstrip("/")
     if not base:
