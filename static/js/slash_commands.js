@@ -314,6 +314,19 @@ const SLASH_COMMANDS = [
     snippet: '---\n', cursorOffset: 4,
     ceExec: { cmd: 'insertHorizontalRule' },
   },
+  {
+    id: 'table', label: 'Table', desc: 'Insert a 3×2 table',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4">
+             <rect x="3" y="3" width="18" height="18" rx="2"/>
+             <line x1="3" y1="9"  x2="21" y2="9"/>
+             <line x1="3" y1="15" x2="21" y2="15"/>
+             <line x1="9" y1="3"  x2="9"  y2="21"/>
+             <line x1="15" y1="3" x2="15" y2="21"/>
+           </svg>`,
+    snippet: '| Col 1 | Col 2 | Col 3 |\n| ----- | ----- | ----- |\n|       |       |       |\n|       |       |       |\n',
+    cursorFromStart: 56,
+    action: (ce) => { _ceInsertTable(ce); },
+  },
 
   // ── Toggle Headings ────────────────────────────────────────────────────
   {
@@ -883,6 +896,61 @@ function _ceInsertCode(ce) {
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(r);
+  ce.dispatchEvent(new Event('input'));
+}
+
+/** Insert a 3×2 table directly in the contenteditable. */
+function _ceInsertTable(ce) {
+  const block = _ceFindBlock(ce);
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+
+  // Header row
+  const htr = document.createElement('tr');
+  ['Col 1', 'Col 2', 'Col 3'].forEach(label => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+
+  // Two data rows
+  let firstTd = null;
+  for (let r = 0; r < 2; r++) {
+    const tr = document.createElement('tr');
+    for (let c = 0; c < 3; c++) {
+      const td = document.createElement('td');
+      td.innerHTML = '<br>';
+      if (!firstTd) firstTd = td;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  const after = document.createElement('p');
+  after.innerHTML = '<br>';
+
+  if (block) {
+    block.after(table, after);
+    if (!block.textContent.trim()) block.remove();
+  } else {
+    ce.appendChild(table);
+    ce.appendChild(after);
+  }
+
+  // Park cursor in the first data cell
+  if (firstTd) {
+    const r = document.createRange();
+    r.setStart(firstTd, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
   ce.dispatchEvent(new Event('input'));
 }
 

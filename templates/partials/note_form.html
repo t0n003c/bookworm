@@ -531,6 +531,15 @@
   #md-live-preview ol ol ol { list-style-type: lower-roman; }
   #md-live-preview li { margin: .1em 0; }
 
+  /* ── Tables in the contenteditable preview ── */
+  #md-live-preview table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; overflow-x: auto; display: block; }
+  #md-live-preview th { background: #f3f4f6; font-weight: 700; text-align: left; padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
+  #md-live-preview td { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; min-height: 1.75rem; }
+  #md-live-preview tr:nth-child(even) td { background: #f9fafb; }
+  .dark #md-live-preview th { background: #27272a; border-color: #3f3f46; }
+  .dark #md-live-preview td { border-color: #3f3f46; }
+  .dark #md-live-preview tr:nth-child(even) td { background: #1f1f22; }
+
   /* ── Preview block drag-and-drop ── */
   #md-live-preview { padding-left: 1.5rem !important; }
   [data-preview-grip] {
@@ -2544,6 +2553,8 @@
   let _draggingFrom = null;   // 'ta' | 'ce' | null
   let _src          = null;   // confirmed source after mouseup
   let _taSel        = null;   // { start, end }
+  let _lastAnchorX  = 0;      // viewport x saved at last showPopup call
+  let _lastAnchorY  = 0;      // viewport y saved at last showPopup call
 
   let _anchorEl      = null;  // nearest <a> when selection is inside a link
 
@@ -2615,9 +2626,10 @@
       Object.values(_flyouts).forEach(fId =>
         document.getElementById(fId)?.classList.add('hidden')
       );
-      // Toggle the clicked one
+      // Toggle the clicked one; reposition so the taller popup stays on screen
       if (!isOpen) {
         target.classList.remove('hidden');
+        showPopup(_lastAnchorX, _lastAnchorY);
       }
     });
   });
@@ -2757,6 +2769,8 @@
   }
 
   function showPopup(x, y) {
+    _lastAnchorX = x;
+    _lastAnchorY = y;
     // Briefly make it visible-but-transparent to measure real dimensions
     popup.style.visibility = 'hidden';
     popup.classList.remove('hidden');
@@ -2764,11 +2778,17 @@
     const ph = popup.offsetHeight;
     popup.style.visibility = '';
 
-    const vw   = window.innerWidth;
+    const vw  = window.innerWidth;
+    const vh  = window.innerHeight;
     const left = Math.max(8, Math.min(x - pw / 2, vw - pw - 8));
-    const top  = y - ph - 12 < 8 ? y + 16 : y - ph - 12;
+    // Prefer above the selection; flip below if no room; clamp so flyout never leaves screen
+    const topAbove = y - ph - 12;
+    const topBelow = y + 16;
+    const top = topAbove < 8
+      ? Math.min(topBelow, vh - ph - 8)   // below, clamped at bottom
+      : topAbove;                          // above (original behaviour)
     popup.style.left = left + 'px';
-    popup.style.top  = top  + 'px';
+    popup.style.top  = Math.max(8, top) + 'px';
 
     // Show the "Edit link" button only when the CE selection is inside a link.
     const _linkBtn = document.getElementById('cp-link-btn');
@@ -2851,6 +2871,7 @@
   document.addEventListener('selectionchange', () => {
     if (_draggingFrom) return; // mid-mouse-drag — let mouseup handle it
     if (_suppressNextSel) { _suppressNextSel = false; return; }
+    if (!popup.classList.contains('hidden')) return; // popup already visible — don’t jostle it
     requestAnimationFrame(() => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) return; // nothing selected
