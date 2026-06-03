@@ -297,7 +297,7 @@ async def get_user_ai_settings(request: Request):
     checked   = "checked" if has_key else ""
     key_ph    = "\u2022" * 8 + " (saved)" if has_key else "Paste API key…"
     return HTMLResponse(f"""
-<form hx-post="/account/ai-settings" hx-target="#acct-ai-msg"
+<form id="acct-ai-form" hx-post="/account/ai-settings" hx-target="#acct-ai-msg"
       hx-swap="innerHTML" class="space-y-3">
 
   <div class="flex flex-col gap-1">
@@ -306,9 +306,7 @@ async def get_user_ai_settings(request: Request):
            placeholder="https://api.openai.com/v1"
            class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
                   py-1 text-sm focus:outline-none focus:border-blue-500"
-           id="acct-ai-endpoint" autocomplete="off"
-           data-bw-acct-qa-wired="false"
-    >
+           id="acct-ai-endpoint" autocomplete="off">
   </div>
 
   <div class="flex flex-col gap-1">
@@ -318,49 +316,88 @@ async def get_user_ai_settings(request: Request):
     <input name="ai_api_key" type="password" placeholder="{key_ph}"
            class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
                   py-1 text-sm focus:outline-none focus:border-blue-500"
-           autocomplete="new-password">
+           autocomplete="new-password" id="acct-ai-key">
   </div>
 
   <div class="flex flex-col gap-1">
     <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">Model</label>
-    <input name="ai_model" type="text" value="{model}" list="bw-acct-model-list"
-           placeholder="gpt-4o-mini"
-           class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
-                  py-1 text-sm focus:outline-none focus:border-blue-500"
-           id="acct-ai-model" autocomplete="off">
+    <div class="flex items-center gap-1.5">
+      <input name="ai_model" type="text" value="{model}" list="bw-acct-model-list"
+             placeholder="e.g. gpt-4o-mini"
+             class="flex-1 border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                    py-1 text-sm focus:outline-none focus:border-blue-500"
+             id="acct-ai-model" autocomplete="off">
+      <button type="button" id="acct-ai-load-btn"
+              title="Load available models from your endpoint"
+              onclick="_acctLoadModels(false)"
+              class="flex-shrink-0 px-2 py-1 text-xs rounded
+                     border border-gray-300 dark:border-zinc-600
+                     text-gray-500 dark:text-zinc-400
+                     hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+        🔄
+      </button>
+    </div>
     <datalist id="bw-acct-model-list"></datalist>
+    <p id="acct-ai-model-status" class="text-xs text-gray-400 dark:text-zinc-500"></p>
   </div>
 
   <div class="flex items-center justify-between gap-2 pt-1">
     <span id="acct-ai-msg" class="text-xs"></span>
     <button type="submit"
-            class="px-3 py-1 text-xs rounded bg-blue-600 text-white
+            class="px-3 py-1 text-xs rounded bg-[#0053e2] text-white
                    hover:bg-blue-700 transition">
       Save
     </button>
   </div>
 </form>
 <script>(function(){{
-  var ep = document.getElementById('acct-ai-endpoint');
-  var ml = document.getElementById('acct-ai-model');
-  if (!ep || ep.getAttribute('data-bw-acct-qa-wired') === 'true') return;
-  ep.setAttribute('data-bw-acct-qa-wired', 'true');
-  ep.addEventListener('blur', function(){{
-    var base = ep.value.trim();
-    if (!base) return;
-    fetch('/qa/models?endpoint=' + encodeURIComponent(base))
-      .then(function(r){{ return r.json(); }})
-      .then(function(d){{
-        var dl = document.getElementById('bw-acct-model-list');
-        if (!dl) return;
-        dl.innerHTML = '';
-        (d.models || []).forEach(function(m){{
-          var opt = document.createElement('option');
-          opt.value = m; dl.appendChild(opt);
-        }});
-        if (d.models && d.models.length && !ml.value) ml.value = d.models[0];
-      }}).catch(function(){{}});
+  /* Guard against HTMX re-injection */
+  if (window._acctAiWired) return;
+  window._acctAiWired = true;
+
+  function _acctLoadModels(silent) {{
+    var ep  = (document.getElementById('acct-ai-endpoint') || {{}}).value || '';
+    var st  = document.getElementById('acct-ai-model-status');
+    var btn = document.getElementById('acct-ai-load-btn');
+    if (!ep) {{
+      if (!silent && st) st.textContent = '⚠ Enter an endpoint URL first.';
+      return;
+    }}
+    if (st)  st.textContent = '⏳ Loading models…';
+    if (btn) btn.disabled = true;
+    fetch('/qa/models?endpoint=' + encodeURIComponent(ep))
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        var dl  = document.getElementById('bw-acct-model-list');
+        var ml  = document.getElementById('acct-ai-model');
+        if (dl) {{
+          dl.innerHTML = '';
+          (d.models || []).forEach(function(m) {{
+            var opt = document.createElement('option');
+            opt.value = m;
+            dl.appendChild(opt);
+          }});
+        }}
+        if (st) {{
+          if (d.error)            st.textContent = '\u26a0 ' + d.error;
+          else if (!d.models || !d.models.length) st.textContent = '\u26a0 No models returned — check endpoint & key.';
+          else                    st.textContent = '\u2713 ' + d.models.length + ' models loaded — click the field to browse.';
+        }}
+      }})
+      .catch(function() {{ if (st) st.textContent = '\u26a0 Request failed.'; }})
+      .finally(function() {{ if (btn) btn.disabled = false; }});
+  }}
+  window._acctLoadModels = _acctLoadModels;
+
+  /* Auto-fetch after a successful Save so model list is always fresh */
+  document.getElementById('acct-ai-form').addEventListener('htmx:afterRequest', function(ev) {{
+    if (ev.detail.successful) _acctLoadModels(true);
   }});
+
+  /* Auto-fetch on load if an endpoint is already configured */
+  if (document.getElementById('acct-ai-endpoint').value.trim()) {{
+    _acctLoadModels(true);
+  }}
 }})();</script>
 """)
 
