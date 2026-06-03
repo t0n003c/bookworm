@@ -117,11 +117,20 @@ async function _crmLoadAll() {
   }
   _crmRender();
 
-  // Auto-open a contact when arriving from Ctrl+K search on another page
+  // Auto-open a contact when arriving from Ctrl+K search on another page.
+  // We do NOT immediately clear the sessionStorage key — a 3-second grace
+  // window lets the stale-while-revalidate background refetch (which calls
+  // _initSwappedPage() a second time) also see and re-open the contact
+  // instead of resetting to table view and losing the detail.
   var _pendingCid = parseInt(sessionStorage.getItem('bw_crm_open_contact') || '', 10);
   if (_pendingCid) {
-    sessionStorage.removeItem('bw_crm_open_contact');
     if (typeof crmOpenDetail === 'function') crmOpenDetail(_pendingCid);
+    if (!window._bwCrmOpenTimer) {
+      window._bwCrmOpenTimer = setTimeout(function () {
+        sessionStorage.removeItem('bw_crm_open_contact');
+        window._bwCrmOpenTimer = null;
+      }, 3000);
+    }
   }
 }
 

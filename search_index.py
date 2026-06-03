@@ -405,7 +405,9 @@ def _sync_crm_contacts() -> int:
                 "page_id":    c["page_id"],
                 "contact_id": cid,
                 "email":      (c["email"] or "").strip(),
+                "phone":      (c["phone"] or "").strip(),
                 "company":    (c["company"] or "").strip(),
+                "tags":       (c["tags"] or "").strip(),
                 "last_convo": _last_convo_preview(conn, cid),
             })
             conn.execute(
@@ -448,7 +450,9 @@ def _upsert_contact_si_sync(contact_id: int) -> None:
             "page_id":    c["page_id"],
             "contact_id": contact_id,
             "email":      (c["email"] or "").strip(),
+            "phone":      (c["phone"] or "").strip(),
             "company":    (c["company"] or "").strip(),
+            "tags":       (c["tags"] or "").strip(),
             "last_convo": _last_convo_preview(conn, contact_id),
         })
 

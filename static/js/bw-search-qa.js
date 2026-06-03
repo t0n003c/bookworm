@@ -147,6 +147,45 @@
     return '📄';
   }
 
+  /** Render a compact structured card for a CRM contact search result. */
+  function _bwSqContactCard(ld) {
+    var parts = [];
+
+    // Row 1: email + phone
+    var row1 = [];
+    if (ld.email) row1.push('📧\u202F' + _bwSqEsc(ld.email));
+    if (ld.phone) row1.push('📞\u202F' + _bwSqEsc(ld.phone));
+    if (row1.length) parts.push(
+      '<span class="flex gap-3 flex-wrap">' + row1.join('<span class="text-gray-300 dark:text-zinc-600">·</span>') + '</span>'
+    );
+
+    // Row 2: tags as small pills
+    if (ld.tags) {
+      var pills = ld.tags.split(/[,;]+/).map(function(t){ return t.trim(); }).filter(Boolean);
+      if (pills.length) {
+        parts.push(
+          '<span class="flex gap-1 flex-wrap">' +
+          pills.map(function(p){
+            return '<span class="px-1.5 py-px rounded-full bg-gray-100 dark:bg-zinc-700' +
+                   ' text-gray-500 dark:text-zinc-400">' + _bwSqEsc(p) + '</span>';
+          }).join('') + '</span>'
+        );
+      }
+    }
+
+    // Row 3: last conversation preview
+    if (ld.last_convo) {
+      parts.push(
+        '<span class="italic text-gray-400 dark:text-zinc-500 line-clamp-1">' +
+        '💬\u202F' + _bwSqEsc(ld.last_convo) + '</span>'
+      );
+    }
+
+    return parts.length
+      ? '<div class="flex flex-col gap-0.5">' + parts.join('') + '</div>'
+      : '';
+  }
+
   window._bwSqHandleClick = function (el) {
     var itype = el.getAttribute('data-item-type') || 'note';
     var iid   = Number(el.getAttribute('data-item-id'));
@@ -204,16 +243,23 @@
         '<p class="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">' +
         _bwSqEsc(r.title) + '</p>' +
 
-        '<p class="bw-sq-snippet text-xs text-gray-500 dark:text-zinc-400' +
-        ' line-clamp-2 mt-0.5"></p>' +
+        '<div class="bw-sq-snippet text-xs text-gray-500 dark:text-zinc-400 mt-0.5"></div>' +
         '</div>';
     }
     el.innerHTML = html;
 
     var cards = el.querySelectorAll('.bw-sq-item');
     for (var j = 0; j < results.length; j++) {
-      var snipEl = cards[j] && cards[j].querySelector('.bw-sq-snippet');
-      if (snipEl) snipEl.innerHTML = _bwSqSnippet(results[j].snippet || '');
+      var r2      = results[j];
+      var snipEl  = cards[j] && cards[j].querySelector('.bw-sq-snippet');
+      if (!snipEl) continue;
+
+      if ((r2.item_type || 'note') === 'crm_contact') {
+        snipEl.innerHTML = _bwSqContactCard(r2.link_data || {});
+      } else {
+        snipEl.className += ' line-clamp-2';
+        snipEl.innerHTML  = _bwSqSnippet(r2.snippet || '');
+      }
     }
   }
 
