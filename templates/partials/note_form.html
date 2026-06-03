@@ -3726,17 +3726,36 @@
 
 <!-- ===== Table handles JS (grip + resize) ===== -->
 <script>(function() {
-  var grip    = document.getElementById('bw-tbl-grip');
-  var menu    = document.getElementById('bw-tbl-grip-menu');
-  var rzHnd   = document.getElementById('bw-tbl-resize');
-  var sizeTip = document.getElementById('bw-tbl-size-tip');
-  var ce      = document.getElementById('md-live-preview');
-  if (!grip || !menu || !rzHnd || !sizeTip || !ce) return;
+  var ce = document.getElementById('md-live-preview');
+  if (!ce) return;
 
-  var _curTable   = null;   // table cursor is inside (via selectionchange)
+  /* ── Hoist handles to document.body so they are NEVER clipped by
+     any ancestor overflow / transform inside the HTMX-swapped panel.
+     On re-injection we reuse the existing body-level elements and
+     remove the newly-injected duplicates from the form.              ── */
+  function _getOrHoist(id) {
+    // The element injected by the current HTMX swap (inside the panel)
+    var inPanel = document.getElementById(id);
+    // If there is already a body-direct child with this id, reuse it
+    var inBody  = document.body.querySelector(':scope > #' + id);
+    if (inBody) {
+      if (inPanel && inPanel !== inBody) inPanel.remove(); // kill duplicate
+      return inBody;
+    }
+    // First run: move the element out to body
+    if (inPanel) { document.body.appendChild(inPanel); return inPanel; }
+    return null;
+  }
+
+  var grip    = _getOrHoist('bw-tbl-grip');
+  var menu    = _getOrHoist('bw-tbl-grip-menu');
+  var rzHnd   = _getOrHoist('bw-tbl-resize');
+  var sizeTip = _getOrHoist('bw-tbl-size-tip');
+  if (!grip || !menu || !rzHnd || !sizeTip) return;
+
+  var _curTable   = null;
   var _menuOpen   = false;
-  var _hideGripTO = null;   // debounce timer for grip fade-out
-  // Coarse pointer = touch/mobile → grip always visible when in table
+  var _hideGripTO = null;
   var _isMobile   = window.matchMedia('(pointer:coarse)').matches;
 
   /* ── Helpers ──────────────────────────────────────────── */
@@ -3770,22 +3789,30 @@
 
   /* ── Handle positioning ───────────────────────────────── */
   function _placeHandles(tbl) {
-    var r  = tbl.getBoundingClientRect();
-    var gw = grip.offsetWidth  || 20;
-    var gh = grip.offsetHeight || 20;
-    var rw = rzHnd.offsetWidth  || 20;
-    var rh = rzHnd.offsetHeight || 20;
+    var r   = tbl.getBoundingClientRect();
+    var ceR = ce.getBoundingClientRect();  // clamp targets to editor bounds
+    var gw  = 20, gh = 20;                // grip size (w-5 h-5)
+    var rw  = 20, rh = 20;                // resize handle size
 
-    // Grip: to the left of the table's top edge, clamped inside viewport
-    grip.style.left = Math.max(4, r.left - gw - 4) + 'px';
-    grip.style.top  = Math.max(4, r.top) + 'px';
+    // Grip: to the left of the table's top edge, never outside CE
+    var gLeft = r.left - gw - 4;
+    var gTop  = r.top;
+    // Clamp so grip doesn't go past the left or right viewport edge
+    gLeft = Math.max(4, Math.min(gLeft, window.innerWidth - gw - 4));
+    gTop  = Math.max(ceR.top, Math.min(gTop, ceR.bottom - gh));
+    grip.style.left = gLeft + 'px';
+    grip.style.top  = gTop  + 'px';
     grip.classList.remove('hidden');
     if (_isMobile) grip.style.opacity = '1';
-    // (Desktop opacity is controlled by hover events below)
 
-    // Resize handle: centered on the bottom-right corner of the table
-    rzHnd.style.left = (r.right  - rw / 2) + 'px';
-    rzHnd.style.top  = (r.bottom - rh / 2) + 'px';
+    // Resize: centered on the table's bottom-right corner, clamped inside CE
+    var rxCenter = r.right;
+    var ryCenter = r.bottom;
+    // Keep the handle's visible area within the CE box
+    rxCenter = Math.max(ceR.left + rw, Math.min(rxCenter, ceR.right));
+    ryCenter = Math.max(ceR.top  + rh, Math.min(ryCenter, ceR.bottom));
+    rzHnd.style.left = (rxCenter - rw / 2) + 'px';
+    rzHnd.style.top  = (ryCenter - rh / 2) + 'px';
     rzHnd.classList.remove('hidden');
   }
 
