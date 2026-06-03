@@ -7,6 +7,18 @@
  * Parent workspaces still show the note after a parent→nested move because
  * the notes query uses get_descendant_ids() — "stays visible" is a view
  * effect, not a copy.
+ *
+ * ── Mobile fix ──────────────────────────────────────────────────────────────
+ * Root cause: pointerdown was { passive: true }.  On iOS / Android the browser
+ * fires pointercancel shortly after pointerdown when it decides the touch will
+ * scroll — this wiped all state before the 500 ms hold could arm the drag.
+ *
+ * Fix: pointerdown is now { passive: false } and calls e.preventDefault() for
+ * touch/pen events.  This tells the browser "I own this touch — don't scroll,
+ * don't fire pointercancel."  The side-effect is that the synthesised click
+ * event (which HTMX uses to open the note) is also suppressed on touch.  We
+ * restore tap-to-open by calling tapTarget.click() in pointerup when the hold
+ * was cancelled (quick tap, no drag).  Mouse pointers are unaffected.
  */
 
 (function () {
@@ -28,6 +40,9 @@
   var _edgeTimer  = null;
   var _targetWsId = null;
   var _prevTarget = null;
+  // Touch-specific: remember what to click if the user just tapped.
+  var _tapTarget  = null;   // <article> element to click() on a quick tap
+  var _isTouch    = false;  // true when active pointer is touch or pen
 
   /* ── ghost pill ──────────────────────────────────────────── */
   function _ghost() {
@@ -123,9 +138,11 @@
 
   /* ── reset all state ─────────────────────────────────────── */
   function _reset() {
-    _armed     = false;
-    _noteId    = null;
-    _noteTitle = null;
+    _armed      = false;
+    _noteId     = null;
+    _noteTitle  = null;
+    _tapTarget  = null;
+    _isTouch    = false;
     if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
     if (_edgeTimer) { clearTimeout(_edgeTimer); _edgeTimer = null; }
     _hideGhost();
@@ -134,25 +151,17 @@
     document.body.style.touchAction = '';
   }
 
-  /* ── cancel an in-progress drag ──────────────────────────── */
-  function _cancel() { _reset(); }
-
   /* ── execute the move via fetch ──────────────────────────── */
   function _doMove(noteId, wsId, wsName) {
     if (!noteId || !wsId) return;
 
-    var url  = '/nwdnd/move';
-    var body = { note_id: Number(noteId), target_ws_id: wsId };
-
-    fetch(url, {
+    fetch('/nwdnd/move', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
+      body:    JSON.stringify({ note_id: Number(noteId), target_ws_id: wsId }),
     })
       .then(function (r) {
-        return r.json().then(function (data) {
-          return { status: r.status, data: data };
-        });
+        return r.json().then(function (data) { return { status: r.status, data: data }; });
       })
       .then(function (res) {
         if (res.status !== 200 || !res.data.ok) {
@@ -207,13 +216,32 @@
 
   /* ── pointer event wiring ────────────────────────────────── */
 
-  // pointerdown: start the hold timer
+  // pointerdown — non-passive so we can preventDefault() for touch/pen.
+  //
+  // Why preventDefault() for touch?
+  //   Without it the browser fires pointercancel ~immediately when it decides
+  //   the gesture might be a scroll, killing the hold timer before it can arm.
+  //   preventDefault() tells the browser "I own this touch sequence entirely"
+  //   so pointercancel no longer fires for scroll-related reasons.
+  //
+  // Side-effect: suppresses the synthesised click that HTMX normally uses to
+  //   open a note on tap.  We restore that in pointerup (see below).
+  //
+  // Mouse events are left completely untouched (no preventDefault call).
   document.addEventListener('pointerdown', function (e) {
     if (e.button !== 0) return;
     var art = _noteCardAt(e.target);
     if (!art) return;
 
+    var touch = (e.pointerType === 'touch' || e.pointerType === 'pen');
+    if (touch) {
+      // Claim the touch sequence so the browser won't cancel it for scrolling.
+      e.preventDefault();
+    }
+
     _noteId    = art.dataset.noteId;
+    _tapTarget = art;
+    _isTouch   = touch;
     var h2     = art.querySelector('h2');
     _noteTitle = (art.dataset.title || (h2 ? h2.textContent : '') || 'Note').trim();
     _startX    = e.clientX;
@@ -225,22 +253,25 @@
       document.body.style.touchAction = 'none';
       _showGhost(_startX, _startY);
     }, HOLD_MS);
-  }, { passive: true });
+  }, { passive: false });  // ← must be non-passive to allow preventDefault
 
-  // pointermove: move ghost + track drop target
+  // pointermove — prevent scroll while an armed drag is in progress.
+  // Cancel the hold if the finger moves too far before arming.
   document.addEventListener('pointermove', function (e) {
     if (!_noteId) return;
 
     if (!_armed) {
-      // Cancel hold if the pointer strays before the timer fires
       if (Math.hypot(e.clientX - _startX, e.clientY - _startY) > MOVE_THRESHOLD) {
+        // Finger moved too much before hold — cancel.
+        // Note: on touch, the current scroll is already blocked for this touch
+        // sequence because we called preventDefault() in pointerdown.  The user
+        // can scroll by swiping on the gaps between cards.
         _reset();
       }
       return;
     }
 
-    e.preventDefault();  // prevent scroll while dragging (needs non-passive)
-
+    e.preventDefault();  // block scroll while drag is active
     _moveGhost(e.clientX, e.clientY);
     _checkEdge(e.clientX);
 
@@ -253,24 +284,38 @@
     }
   }, { passive: false });
 
-  // pointerup: commit the drop — capture everything BEFORE _reset()
+  // pointerup — commit drop, or forward as a tap if the hold never armed.
   document.addEventListener('pointerup', function () {
     if (!_noteId) return;
 
-    // Snapshot state before reset wipes it
-    var wasArmed = _armed;
-    var noteId   = _noteId;
-    var wsId     = _targetWsId;
-    var row      = _prevTarget;
-    var btn      = row ? row.querySelector('button[data-ws-id]') : null;
-    var wsName   = btn ? btn.textContent.trim() : '';
+    var wasArmed   = _armed;
+    var noteId     = _noteId;
+    var wsId       = _targetWsId;
+    var row        = _prevTarget;
+    var tapTarget  = _tapTarget;
+    var wasTouch   = _isTouch;
+    var btn        = row ? row.querySelector('button[data-ws-id]') : null;
+    var wsName     = btn ? btn.textContent.trim() : '';
 
     _reset();
 
-    if (!wasArmed || !wsId) return;
+    if (!wasArmed) {
+      // Quick tap (hold cancelled or never reached 500 ms).
+      // On touch we prevented the native click, so fire it manually so HTMX
+      // still opens the note.  Mouse gets a native click automatically.
+      if (wasTouch && tapTarget) {
+        tapTarget.click();
+      }
+      return;
+    }
+
+    if (!wsId) return;
     _doMove(noteId, wsId, wsName);
   });
 
+  // pointercancel fires for multitouch (second finger) or OS interruptions
+  // (e.g. incoming call).  Our preventDefault() handles scroll-related
+  // cancellations, but we still need to clean up for these edge cases.
   document.addEventListener('pointercancel', _reset);
 
   document.addEventListener('keydown', function (e) {
