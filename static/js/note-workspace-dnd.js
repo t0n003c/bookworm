@@ -29,6 +29,8 @@
   var MOVE_THRESHOLD = 8;    // px movement that cancels the hold timer
   var EDGE_PX        = 80;   // distance from left edge that opens sidebar
   var EDGE_DELAY_MS  = 300;  // ms to wait at edge before opening sidebar
+  var SCROLL_ZONE_PX = 64;   // px from sidebar top/bottom that triggers auto-scroll
+  var SCROLL_SPEED   = 7;    // px per animation frame (~420 px/s at 60 fps)
 
   /* ── module state ────────────────────────────────────────── */
   var _armed      = false;
@@ -43,6 +45,9 @@
   // Touch-specific: remember what to click if the user just tapped.
   var _tapTarget  = null;   // <article> element to click() on a quick tap
   var _isTouch    = false;  // true when active pointer is touch or pen
+  // Sidebar auto-scroll state
+  var _scrollRaf  = null;   // requestAnimationFrame handle
+  var _scrollDir  = 0;      // -1 = scroll up, 0 = idle, +1 = scroll down
 
   /* ── ghost pill ──────────────────────────────────────────── */
   function _ghost() {
@@ -136,6 +141,47 @@
     }
   }
 
+  /* ── sidebar auto-scroll during drag ────────────────────── */
+  function _stopSidebarScroll() {
+    if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
+    _scrollDir = 0;
+  }
+
+  function _startSidebarScroll(dir) {
+    if (_scrollDir === dir) return;   // already scrolling that way
+    _scrollDir = dir;
+    if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
+    var sb = document.getElementById('sidebar');
+    function _step() {
+      if (!_scrollDir || !sb) return;
+      sb.scrollTop += _scrollDir * SCROLL_SPEED;
+      _scrollRaf = requestAnimationFrame(_step);
+    }
+    _scrollRaf = requestAnimationFrame(_step);
+  }
+
+  // Called every pointermove while armed.  Only scrolls when the mobile
+  // sidebar overlay is open (backdrop sentinel) and the pointer is inside it.
+  function _checkSidebarScroll(x, y) {
+    if (!document.getElementById('_sb-mobile-backdrop')) {
+      _stopSidebarScroll();
+      return;
+    }
+    var sb = document.getElementById('sidebar');
+    if (!sb) { _stopSidebarScroll(); return; }
+    var rect = sb.getBoundingClientRect();
+    // Pointer must be horizontally inside the sidebar panel
+    if (x < rect.left || x > rect.right) { _stopSidebarScroll(); return; }
+    var relY = y - rect.top;
+    if (relY < SCROLL_ZONE_PX) {
+      _startSidebarScroll(-1);               // near top — scroll up
+    } else if (relY > rect.height - SCROLL_ZONE_PX) {
+      _startSidebarScroll(1);                // near bottom — scroll down
+    } else {
+      _stopSidebarScroll();                  // middle zone — idle
+    }
+  }
+
   /* ── reset all state ─────────────────────────────────────── */
   function _reset() {
     _armed      = false;
@@ -145,6 +191,7 @@
     _isTouch    = false;
     if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
     if (_edgeTimer) { clearTimeout(_edgeTimer); _edgeTimer = null; }
+    _stopSidebarScroll();
     _hideGhost();
     _clearHighlight();
     document.body.style.userSelect  = '';
@@ -274,6 +321,7 @@
     e.preventDefault();  // block scroll while drag is active
     _moveGhost(e.clientX, e.clientY);
     _checkEdge(e.clientX);
+    _checkSidebarScroll(e.clientX, e.clientY);
 
     var row = _wsRowAt(e.clientX, e.clientY);
     if (row) {
