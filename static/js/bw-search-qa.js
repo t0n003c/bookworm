@@ -67,18 +67,36 @@
         // CRM page is in the DOM and matches — open the detail panel directly
         window.crmOpenDetail(cid);
       } else if (ld.page_id) {
-        // Bust the cache first — prevents showHomePage() from serving stale
-        // HTML and then firing a background revalidation that calls
-        // _initSwappedPage() a second time, racing against our sessionStorage read.
+        // Cross-page navigation: bust the cache so showHomePage() does exactly
+        // one fresh fetch with no background revalidation race, then poll until
+        // the CRM page signals it has finished loading (_crmLoadedPid sentinel)
+        // before calling crmOpenDetail directly.
+        var _targetPid = ld.page_id;
+        var _targetCid = cid;
         if (typeof window.invalidateHomePageCache === 'function') {
-          window.invalidateHomePageCache(ld.page_id);
+          window.invalidateHomePageCache(_targetPid);
         }
-        sessionStorage.setItem('bw_crm_open_contact', String(cid));
+        // Clear any stale sentinel from a previous navigation
+        window._crmLoadedPid = null;
         if (typeof window.openHomePage === 'function') {
-          window.openHomePage(ld.page_id);
+          window.openHomePage(_targetPid);
         } else {
           window.location.href = '/';
+          return;
         }
+        // Poll every 80 ms, give up after 5 s
+        var _crmNavStart   = Date.now();
+        var _crmNavTimer   = setInterval(function () {
+          if (window._crmLoadedPid === _targetPid &&
+              typeof window.crmOpenDetail === 'function' &&
+              document.getElementById('crm-page-root')) {
+            clearInterval(_crmNavTimer);
+            window.crmOpenDetail(_targetCid);
+          } else if (Date.now() - _crmNavStart > 5000) {
+            clearInterval(_crmNavTimer);
+            console.warn('[bw-search] CRM nav timeout for pid', _targetPid);
+          }
+        }, 80);
       } else {
         window.location.href = '/';
       }

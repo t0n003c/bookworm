@@ -117,14 +117,9 @@ async function _crmLoadAll() {
   }
   _crmRender();
 
-  // Auto-open a contact when arriving from Ctrl+K search on another page.
-  // bwSearchGo() busts the page cache before calling openHomePage() so
-  // there is exactly one _initSwappedPage() call — no revalidation race.
-  var _pendingCid = parseInt(sessionStorage.getItem('bw_crm_open_contact') || '', 10);
-  if (_pendingCid) {
-    sessionStorage.removeItem('bw_crm_open_contact');
-    if (typeof crmOpenDetail === 'function') crmOpenDetail(_pendingCid);
-  }
+  // Signal to any external waiter (e.g. bwSearchGo cross-page nav) that
+  // contacts are loaded and the page is ready for crmOpenDetail().
+  window._crmLoadedPid = _crmPid;
 }
 
 function _crmRender() {
