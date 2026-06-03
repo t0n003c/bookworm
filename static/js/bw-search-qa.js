@@ -66,8 +66,10 @@
         // Already on this CRM page — open the detail panel directly
         window.crmOpenDetail(cid);
       } else if (ld.page_id) {
-        // Navigate to the CRM page, carry contact ID in hash
-        window.location.href = '/?hp=' + ld.page_id + '#crm-c-' + cid;
+        // Navigate to the CRM page; pass contact ID via sessionStorage
+        // (hash is unreliable through HTMX page swaps)
+        sessionStorage.setItem('bw_crm_open_contact', String(cid));
+        window.location.href = '/?hp=' + ld.page_id;
       } else {
         window.location.href = '/';
       }

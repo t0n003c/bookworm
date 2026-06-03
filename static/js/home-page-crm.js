@@ -117,12 +117,11 @@ async function _crmLoadAll() {
   }
   _crmRender();
 
-  // Auto-open a contact when navigating here from Ctrl+K search (#crm-c-{id})
-  var _hm = window.location.hash.match(/^#crm-c-(\d+)$/);
-  if (_hm) {
-    history.replaceState(null, '', location.pathname + location.search);
-    var _hcid = parseInt(_hm[1], 10);
-    if (_hcid && typeof crmOpenDetail === 'function') crmOpenDetail(_hcid);
+  // Auto-open a contact when arriving from Ctrl+K search on another page
+  var _pendingCid = parseInt(sessionStorage.getItem('bw_crm_open_contact') || '', 10);
+  if (_pendingCid) {
+    sessionStorage.removeItem('bw_crm_open_contact');
+    if (typeof crmOpenDetail === 'function') crmOpenDetail(_pendingCid);
   }
 }
 
