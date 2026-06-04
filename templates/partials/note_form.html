@@ -2831,7 +2831,7 @@
   </button>
 </div>
 
-<!-- Resize handle: bottom-right corner of the table -->
+<!-- Resize handle: bottom-right corner of the table (desktop) / inside last cell (mobile) -->
 <div id="bw-tbl-resize"
   title="Drag to resize"
   class="hidden fixed z-60 cursor-se-resize select-none w-5 h-5"
@@ -4006,18 +4006,10 @@
     var r   = tbl.getBoundingClientRect();
     var ceR = ce.getBoundingClientRect();  // clamp targets to editor bounds
     var gw  = 20, gh = 20;                // grip size (w-5 h-5)
-    // On touch devices make the resize corner 44×44 px (WCAG 2.5.5 / iOS HIG).
-    var rw  = _isMobile ? 44 : 20;
-    var rh  = _isMobile ? 44 : 20;
-    if (_isMobile) {
-      rzHnd.style.width  = rw + 'px';
-      rzHnd.style.height = rh + 'px';
-    }
 
     // Grip: to the left of the table's top edge, never outside CE
     var gLeft = r.left - gw - 4;
     var gTop  = r.top;
-    // Clamp so grip doesn't go past the left or right viewport edge
     gLeft = Math.max(4, Math.min(gLeft, window.innerWidth - gw - 4));
     gTop  = Math.max(ceR.top, Math.min(gTop, ceR.bottom - gh));
     grip.style.left = gLeft + 'px';
@@ -4025,14 +4017,57 @@
     grip.classList.remove('hidden');
     if (_isMobile) grip.style.opacity = '1';
 
-    // Resize: centered on the table's bottom-right corner, clamped inside CE AND viewport
-    var vw = window.innerWidth, vh = window.innerHeight;
-    var rxCenter = r.right;
-    var ryCenter = r.bottom;
-    rxCenter = Math.max(ceR.left + rw, Math.min(rxCenter, ceR.right,  vw - 4));
-    ryCenter = Math.max(ceR.top  + rh, Math.min(ryCenter, ceR.bottom, vh - 4));
-    rzHnd.style.left = (rxCenter - rw / 2) + 'px';
-    rzHnd.style.top  = (ryCenter - rh / 2) + 'px';
+    if (_isMobile) {
+      // ── Mobile: small handle INSIDE the bottom-right cell ──────────────
+      // This keeps it away from the viewport edge so dragging right works.
+      var rw = 22, rh = 22;
+      rzHnd.style.width  = rw + 'px';
+      rzHnd.style.height = rh + 'px';
+      // Pill-style grip dots so it looks intentional inside the cell
+      rzHnd.style.background = 'none';
+      rzHnd.style.border     = '2px solid #0053e2';
+      rzHnd.style.borderRadius = '4px';
+      rzHnd.style.opacity    = '0.85';
+      // Paint three diagonal dots (↘) as a resize hint
+      rzHnd.innerHTML =
+        '<svg viewBox="0 0 10 10" width="10" height="10"'
+        + ' style="position:absolute;bottom:2px;right:2px;display:block">'
+        + '<circle cx="8" cy="8" r="1.4" fill="#0053e2"/>'
+        + '<circle cx="5" cy="8" r="1.4" fill="#0053e2"/>'
+        + '<circle cx="8" cy="5" r="1.4" fill="#0053e2"/>'
+        + '</svg>';
+
+      // Find the last cell of the last row
+      var lastRow  = tbl.querySelector('tr:last-child');
+      var lastCell = lastRow ? lastRow.querySelector('td:last-child,th:last-child') : null;
+      if (lastCell) {
+        var cr = lastCell.getBoundingClientRect();
+        // Position flush with the inside bottom-right corner of the cell
+        rzHnd.style.left = (cr.right  - rw - 3) + 'px';
+        rzHnd.style.top  = (cr.bottom - rh - 3) + 'px';
+      } else {
+        // Fallback to table corner if cell lookup fails
+        rzHnd.style.left = (Math.min(r.right,  window.innerWidth  - rw - 4) - rw) + 'px';
+        rzHnd.style.top  = (Math.min(r.bottom, window.innerHeight - rh - 4) - rh) + 'px';
+      }
+    } else {
+      // ── Desktop: original corner behaviour (20×20 quarter-circle) ───────
+      var rw = 20, rh = 20;
+      rzHnd.style.width      = rw + 'px';
+      rzHnd.style.height     = rh + 'px';
+      rzHnd.style.background = 'radial-gradient(circle at 100% 100%,#0053e2 0%,#0053e2 38%,transparent 40%)';
+      rzHnd.style.border     = 'none';
+      rzHnd.style.borderRadius = '0';
+      rzHnd.style.opacity    = '';
+      rzHnd.innerHTML        = '';
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var rxCenter = r.right;
+      var ryCenter = r.bottom;
+      rxCenter = Math.max(ceR.left + rw, Math.min(rxCenter, ceR.right,  vw - 4));
+      ryCenter = Math.max(ceR.top  + rh, Math.min(ryCenter, ceR.bottom, vh - 4));
+      rzHnd.style.left = (rxCenter - rw / 2) + 'px';
+      rzHnd.style.top  = (ryCenter - rh / 2) + 'px';
+    }
     rzHnd.classList.remove('hidden');
   }
 
@@ -4289,6 +4324,11 @@
     var totalRows = _allRows().length;
     if (_rzCols0)  _rzCellW = Math.max(30, r.width  / _rzCols0);
     if (totalRows) _rzCellH = Math.max(18, r.height / totalRows);
+    // On mobile tables are usually full-width, so the user has very little
+    // room to drag right before hitting the viewport edge.  Halving the
+    // effective cell width means each column step only needs ~half the real
+    // cell width of drag distance, making column adds much easier.
+    if (_isMobile) _rzCellW = Math.max(18, _rzCellW * 0.45);
   }
 
   rzHnd.addEventListener('mousedown', function(e) {
@@ -4330,9 +4370,15 @@
     var totalRows = tgtBodyRows + theadRows;
     sizeTip.textContent = totalRows + ' × ' + tgtCols + ' (rows × cols)';
     sizeTip.classList.remove('hidden');
-    // Keep tip on-screen; offset slightly from finger so it isn't obscured
-    var tipX = Math.min(cx + 16, window.innerWidth  - 160);
-    var tipY = Math.min(cy + 16, window.innerHeight -  36);
+    // Keep tip on-screen; on mobile put it ABOVE the finger so it isn't hidden by the hand
+    var tipX, tipY;
+    if (_isMobile) {
+      tipX = Math.max(4, Math.min(cx - 60, window.innerWidth  - 164));
+      tipY = Math.max(4, cy - 44);
+    } else {
+      tipX = Math.min(cx + 16, window.innerWidth  - 160);
+      tipY = Math.min(cy + 16, window.innerHeight -  36);
+    }
     sizeTip.style.left = tipX + 'px';
     sizeTip.style.top  = tipY + 'px';
 
