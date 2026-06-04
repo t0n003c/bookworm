@@ -125,20 +125,20 @@
       .replace(/"/g, '&quot;');
   }
 
-  /* Escape HTML first, THEN inject <mark> tags from STX/ETX markers.
-   * Also strips any residual HTML tags the server may have left in the
-   * snippet (db_cards store hljs-highlighted HTML in their body column).
-   * Strip order: tags first → escape → restore highlight markers. */
+  /* Strip HTML from snippet text, then escape and inject highlight markers.
+   *
+   * Why two passes:
+   *  Pass 1  /<[^>]*>/g   catches complete tags: <span class="x">...</span>
+   *  Pass 2  /<[^>]*$/g   catches dangling tags truncated by FTS snippet(),
+   *                        e.g. the text ends with  `id <span class`
+   *                        (no closing >) which pass 1 never matched.
+   */
   function _bwSqSnippet(s) {
-    // 1. Pull out the STX/ETX markers so the tag-strip regex can't eat them
-    //    (they're non-HTML, but replace with a safe placeholder just in case).
-    //    Actually \x02/\x03 can't appear inside an HTML tag, so stripping
-    //    tags after preserving markers is fine — do it in one pass.
-    // 2. Strip HTML tags: replace <...> with a space.
-    var stripped = s.replace(/<[^>]*>/g, ' ');
-    // 3. Collapse runs of whitespace created by tag removal.
-    stripped = stripped.replace(/[ \t]+/g, ' ').trim();
-    // 4. Standard escape + highlight marker injection.
+    var stripped = s
+      .replace(/<[^>]*>/g, ' ')   // pass 1: complete tags
+      .replace(/<[^>]*$/g, ' ')   // pass 2: dangling open tag at end of string
+      .replace(/[ \t]+/g, ' ')    // collapse whitespace
+      .trim();
     var escaped = _bwSqEsc(stripped);
     return escaped
       .replace(/\u0002/g, '<mark>')

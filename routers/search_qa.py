@@ -39,22 +39,24 @@ from routers.auth_db import get_user_llm_settings
 log = logging.getLogger(__name__)
 
 # ── HTML → plain-text helper ────────────────────────────────────────
-_TAG_RE = re.compile(r'<[^>]+>')
+# Matches a complete tag  OR  a dangling fragment cut off by FTS snippet
+# truncation, e.g.  "<span class"  without a closing >.
+_TAG_RE = re.compile(r'<[^>]*>?')
 
 def _strip_html(text: str) -> str:
     """Strip HTML tags and decode entities, preserving STX/ETX highlight markers.
 
-    db_cards store note_content as hljs-annotated HTML.  When that body is
-    pulled into a search snippet it would show raw <span class="hljs-*">...
-    markup to the user.  This function removes tags and normalises whitespace
-    while leaving the \x02/\x03 markers that _bwSqSnippet() uses for <mark>.
+    db_cards store note_content as hljs-annotated HTML.  FTS5 snippet()
+    truncates at word boundaries, so tags can be cut mid-way, leaving
+    fragments like  <span class  without a closing >.  _TAG_RE matches
+    both complete (<span ...>) and dangling (<span class) forms.
     """
     if not text:
         return ""
-    text = _TAG_RE.sub(' ', text)        # strip tags → spaces
-    text = _html_mod.unescape(text)      # &amp; &lt; etc. → real chars
+    text = _TAG_RE.sub(' ', text)        # strip complete + dangling tags
+    text = _html_mod.unescape(text)      # &amp; &lt; → real chars
     text = re.sub(r'[ \t]+', ' ', text)  # collapse horizontal whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)  # at most two newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 router = APIRouter(prefix="/qa", tags=["search-qa"])
 
