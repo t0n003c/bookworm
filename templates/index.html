@@ -2438,8 +2438,9 @@
   // Must be called BEFORE dp.innerHTML is wiped.
   function _noteFlush() {
     var form = document.getElementById('note-form');
-    if (!form) return;
+    if (!form) { console.debug('[noteFlush] no note-form found'); return; }
     var action = form.getAttribute('hx-post') || '';
+    console.debug('[noteFlush] action=', action);
 
     // ── Existing note: always silently save ─────────────────────────────
     if (/^\/notes\/\d+$/.test(action)) {
@@ -2452,25 +2453,28 @@
     }
 
     // ── New note: only save when there is actual content ────────────────
-    if (action !== '/notes') return;
+    if (action !== '/notes') { console.debug('[noteFlush] not a new-note form, skipping'); return; }
     if (typeof window._bwSyncPreviewToMd === 'function') {
-      try { window._bwSyncPreviewToMd(); } catch (e) {}
+      try { window._bwSyncPreviewToMd(); } catch (e) { console.warn('[noteFlush] sync threw', e); }
     }
     // Check textarea (markdown mode) or CE (preview mode) for content.
     var ta  = document.getElementById('note-content');
     var ce  = document.getElementById('md-live-preview');
-    var hasContent = (ta  && (ta.value  || '').trim())
-                  || (ce  && (ce.innerText || '').trim());
-    if (!hasContent) return;
+    var taVal = (ta  && (ta.value  || '').trim()) || '';
+    var ceVal = (ce  && (ce.innerText || '').trim()) || '';
+    console.debug('[noteFlush] taVal.len=', taVal.length, 'ceVal.len=', ceVal.length);
+    if (!taVal && !ceVal) { console.debug('[noteFlush] no content — skipping auto-save'); return; }
 
     // Capture form data now — the DOM is wiped after this call returns.
     var fd = new FormData(form);
     // Clear the title so the server auto-generates 'Note 1', 'Note 2', …
     fd.set('title', '');
     var wsId = fd.get('workspace_id');
+    console.debug('[noteFlush] auto-saving new note, wsId=', wsId, 'content-len=', (fd.get('content')||'').length);
 
     fetch('/notes', { method: 'POST', body: fd })
-      .then(function() {
+      .then(function(res) {
+        console.debug('[noteFlush] auto-save response status=', res.status);
         // Refresh the note list so the new note appears straight away.
         if (wsId) {
           htmx.ajax('GET', '/notes?workspace_id=' + wsId, {
@@ -2479,7 +2483,7 @@
           });
         }
       })
-      .catch(function() {});
+      .catch(function(err) { console.error('[noteFlush] auto-save fetch failed', err); });
   }
 
   function closePanel() {

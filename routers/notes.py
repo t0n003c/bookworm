@@ -274,6 +274,11 @@ async def create_note_handler(
     attr_values: list[str] = Form(default=[]),
     workspace_id: Optional[int] = Form(default=None),
 ):
+    import logging as _log
+    _log.getLogger("bookworm").debug(
+        "create_note_handler title=%r content_len=%d ws=%s uid=%s",
+        title, len(content), workspace_id, request.session.get("user_id")
+    )
     uid = request.session.get("user_id")
     await _require_ws_owner(workspace_id, uid)
     # Auto-generate title when the user dismissed the form without typing one.
