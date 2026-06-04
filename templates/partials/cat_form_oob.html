@@ -2,32 +2,30 @@
   cat_form_oob.html — HTMX response for note-form category management.
 
   Primary swap  →  #cat-manage-list-form  (outerHTML, inside the manage panel)
-  OOB swap      →  #note-form-cats        (innerHTML, the checkbox grid)
+  OOB swap      →  #note-form-cats        (innerHTML, the hidden-checkbox set)
+
+  After the OOB fires, the htmx:afterSwap listener in note_form.html
+  calls _catInit() which rebuilds the visible dropdown from the new
+  checkbox states.
 
   Context: categories, workspace_id, selected_ids
 #}
 
-{# ── Primary: refreshed manage panel ──────────────────────────────── #}
+{# ── Primary: refreshed manage panel ─────────────────────────────────── #}
 {% include "partials/cat_manage_panel.html" %}
 
-{# ── OOB: refresh the checkbox grid in the note form ─────────────── #}
+{# ── OOB: refresh hidden checkboxes + dropdown shell in the note form ── #}
 <div id="note-form-cats" hx-swap-oob="innerHTML">
-  {% if categories %}
-  <div class="grid grid-cols-2 gap-1">
+  {# Hidden inputs: form submission + hx-include="#note-form-cats input:checked" #}
+  <div class="sr-only" aria-hidden="true">
     {% for cat in categories %}
-    <label class="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded
-                  hover:bg-gray-50 dark:hover:bg-zinc-800
-                  text-gray-700 dark:text-zinc-300">
-      <input type="checkbox" name="category_ids" value="{{ cat.id }}"
-             {% if cat.id in selected_ids %}checked{% endif %}
-             class="accent-wblue" aria-label="Category: {{ cat.name }}">
-      <span class="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-            style="background:{{ cat.color }}"></span>
-      <span class="truncate">{{ cat.name }}</span>
-    </label>
+    <input type="checkbox" name="category_ids" value="{{ cat.id }}"
+           id="cat-cb-{{ cat.id }}"
+           data-cat-name="{{ cat.name | e }}"
+           data-cat-color="{{ cat.color }}"
+           {% if cat.id in selected_ids %}checked{% endif %}>
     {% endfor %}
   </div>
-  {% else %}
-  <p class="text-xs text-gray-400 italic">No categories yet.</p>
-  {% endif %}
+  {# Dropdown shell — _catInit() re-populates this via htmx:afterSwap #}
+  <div class="relative" id="cat-dropdown-wrap"></div>
 </div>

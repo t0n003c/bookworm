@@ -101,7 +101,7 @@
             id="note-title" name="title" type="text"
             value="{{ note.title if is_edit else '' }}"
             placeholder="e.g. Weekly Sync — Grocery Team"
-            class="border-0 border-b border-gray-300 dark:border-zinc-600 bg-transparent py-1 text-sm
+            class="border-0 border-b border-gray-300 dark:border-zinc-600 bg-transparent py-1 text-base font-medium
                    focus:outline-none focus:border-wblue
                    text-gray-800 dark:text-zinc-100 placeholder-gray-400"
             required aria-required="true"
@@ -163,27 +163,21 @@
       </div>
       {% endif %}
 
-      {# Checkbox grid — always visible, OOB-swappable after manage actions #}
+      {# Multi-select dropdown — hidden checkboxes keep hx-include + form-submit working #}
       <div id="note-form-cats">
-        {% if categories %}
-        <div class="grid grid-cols-2 gap-1">
-          {% set selected_ids = note.categories | map(attribute='id') | list if (is_edit and note) else [] %}
+        {# Hidden inputs: form submission + hx-include="#note-form-cats input:checked" #}
+        {% set selected_ids = note.categories | map(attribute='id') | list if (is_edit and note) else [] %}
+        <div class="sr-only" aria-hidden="true">
           {% for cat in categories %}
-          <label class="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded
-                        hover:bg-gray-50 dark:hover:bg-zinc-800
-                        text-gray-700 dark:text-zinc-300">
-            <input type="checkbox" name="category_ids" value="{{ cat.id }}"
-              {% if cat.id in selected_ids %}checked{% endif %}
-              class="accent-wblue" aria-label="Category: {{ cat.name }}">
-            <span class="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style="background:{{ cat.color }}"></span>
-            <span class="truncate">{{ cat.name }}</span>
-          </label>
+          <input type="checkbox" name="category_ids" value="{{ cat.id }}"
+                 id="cat-cb-{{ cat.id }}"
+                 data-cat-name="{{ cat.name | e }}"
+                 data-cat-color="{{ cat.color }}"
+                 {% if cat.id in selected_ids %}checked{% endif %}>
           {% endfor %}
         </div>
-        {% else %}
-        <p class="text-xs text-gray-400 italic">No categories yet. Use ✏️ to add one.</p>
-        {% endif %}
+        {# Dropdown UI — _catInit() builds this from the checkboxes above #}
+        <div class="relative" id="cat-dropdown-wrap"></div>
       </div>
 
     </div>
@@ -303,7 +297,7 @@
           <textarea
             id="note-content" name="content"
             placeholder="Write your meeting notes here… (supports **bold**, # H1, - bullet, 1. numbered)"
-            class="flex-1 min-h-[26rem] border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue resize-none bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400 font-mono leading-relaxed"
+            class="flex-1 min-h-[34rem] border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue resize-none bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400 font-mono leading-relaxed"
             aria-label="Note content"
             lang="en-US"
             spellcheck="true"
@@ -1090,6 +1084,156 @@
     btn.classList.toggle('text-wblue', !isOpen);
     btn.classList.toggle('text-gray-400', isOpen);
   }
+
+  /* ---- Category multi-select dropdown ---- */
+  (function () {
+    'use strict';
+
+    function _esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Builds / rebuilds the entire dropdown from the hidden checkboxes.
+    // Called on first render and after each OOB swap.
+    function _catInit() {
+      var wrap = document.getElementById('cat-dropdown-wrap');
+      if (!wrap) return;
+      var cbs = Array.from(
+        document.querySelectorAll('#note-form-cats input[type="checkbox"]'));
+
+      var opts = cbs.length
+        ? cbs.map(function (cb) {
+            var id  = cb.value;
+            var clr = _esc(cb.dataset.catColor || '#9ca3af');
+            var nm  = _esc(cb.dataset.catName  || '');
+            return '<button type="button" role="option"' +
+              ' id="cat-opt-' + id + '"' +
+              ' data-cat-id="' + id + '"' +
+              ' aria-selected="' + cb.checked + '"' +
+              ' onclick="_catSelect(\'' + id + '\')"' +
+              ' class="w-full flex items-center gap-2 px-3 py-1.5 text-xs' +
+              ' hover:bg-gray-50 dark:hover:bg-zinc-800' +
+              ' text-gray-700 dark:text-zinc-300">' +
+              '<span class="w-2.5 h-2.5 rounded-full flex-shrink-0"' +
+              ' style="background:' + clr + '"></span>' +
+              '<span class="flex-1 truncate text-left">' + nm + '</span>' +
+              '<svg id="cat-chk-' + id + '" class="h-3 w-3 text-wblue flex-shrink-0' +
+              (cb.checked ? '' : ' invisible') + '"' +
+              ' xmlns="http://www.w3.org/2000/svg" fill="none"' +
+              ' viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">' +
+              '<path stroke-linecap="round" stroke-linejoin="round"' +
+              ' stroke-width="2.5" d="M5 13l4 4L19 7"/>' +
+              '</svg>' +
+              '</button>';
+          }).join('')
+        : '<p class="px-3 py-2 text-xs text-gray-400 italic">No categories yet. Use ✏️ to add one.</p>';
+
+      wrap.innerHTML =
+        '<button type="button" id="cat-dd-btn"' +
+        ' aria-haspopup="listbox" aria-expanded="false"' +
+        ' class="w-full flex items-center gap-1.5 py-1' +
+        ' border-0 border-b border-gray-300 dark:border-zinc-600' +
+        ' bg-transparent focus:outline-none focus:border-wblue">' +
+        '<div id="cat-pills-wrap" class="flex flex-wrap gap-1 flex-1 min-w-0"></div>' +
+        '<svg id="cat-dd-chev" class="h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform"' +
+        ' xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"' +
+        ' stroke="currentColor" aria-hidden="true">' +
+        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>' +
+        '</svg>' +
+        '</button>' +
+        '<div id="cat-dd-panel" role="listbox" aria-multiselectable="true"' +
+        ' class="hidden absolute left-0 top-full mt-1 z-30 w-full' +
+        ' rounded-lg border border-gray-200 dark:border-zinc-700' +
+        ' bg-white dark:bg-zinc-900 shadow-lg py-1 max-h-44 overflow-y-auto">' +
+        opts +
+        '</div>';
+
+      document.getElementById('cat-dd-btn')
+        .addEventListener('click', _catToggleDropdown);
+      _catRefreshPills();
+    }
+
+    function _catRefreshPills() {
+      var wrap = document.getElementById('cat-pills-wrap');
+      if (!wrap) return;
+      var sel = Array.from(
+        document.querySelectorAll('#note-form-cats input[type="checkbox"]:checked'));
+      wrap.innerHTML = sel.length
+        ? sel.map(function (cb) {
+            var id  = cb.value;
+            var clr = _esc(cb.dataset.catColor || '#9ca3af');
+            var nm  = _esc(cb.dataset.catName  || '');
+            return '<span class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5' +
+              ' rounded-full text-xs' +
+              ' bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-zinc-200">' +
+              '<span class="w-1.5 h-1.5 rounded-full flex-shrink-0"' +
+              ' style="background:' + clr + '"></span>' +
+              '<span class="truncate max-w-[7rem]">' + nm + '</span>' +
+              '<button type="button" onclick="_catRemove(\'' + id + '\')"' +
+              ' aria-label="Remove ' + nm + '"' +
+              ' class="ml-0.5 leading-none text-gray-400 hover:text-wred' +
+              ' focus:outline-none">&#215;</button>' +
+              '</span>';
+          }).join('')
+        : '<span class="text-xs text-gray-400 dark:text-zinc-500 py-0.5">' +
+          'Select categories…</span>';
+    }
+
+    function _catToggleDropdown() {
+      var panel = document.getElementById('cat-dd-panel');
+      var btn   = document.getElementById('cat-dd-btn');
+      var chev  = document.getElementById('cat-dd-chev');
+      if (!panel) return;
+      var closing = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden', closing);
+      if (btn)  btn.setAttribute('aria-expanded', String(!closing));
+      if (chev) chev.style.transform = closing ? '' : 'rotate(180deg)';
+    }
+
+    window._catSelect = function (catId) {
+      var cb = document.getElementById('cat-cb-' + catId);
+      if (!cb) return;
+      cb.checked = !cb.checked;
+      var opt = document.getElementById('cat-opt-' + catId);
+      var chk = document.getElementById('cat-chk-' + catId);
+      if (opt) opt.setAttribute('aria-selected', String(cb.checked));
+      if (chk) chk.classList.toggle('invisible', !cb.checked);
+      _catRefreshPills();
+    };
+
+    window._catRemove = function (catId) {
+      var cb  = document.getElementById('cat-cb-' + catId);
+      var opt = document.getElementById('cat-opt-' + catId);
+      var chk = document.getElementById('cat-chk-' + catId);
+      if (cb)  cb.checked = false;
+      if (opt) opt.setAttribute('aria-selected', 'false');
+      if (chk) chk.classList.add('invisible');
+      _catRefreshPills();
+    };
+
+    // Close when clicking outside
+    document.addEventListener('click', function (e) {
+      var wrap = document.getElementById('cat-dropdown-wrap');
+      if (!wrap || wrap.contains(e.target)) return;
+      var panel = document.getElementById('cat-dd-panel');
+      var chev  = document.getElementById('cat-dd-chev');
+      var btn   = document.getElementById('cat-dd-btn');
+      if (panel && !panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        if (btn)  btn.setAttribute('aria-expanded', 'false');
+        if (chev) chev.style.transform = '';
+      }
+    });
+
+    // Re-init after OOB swap refreshes the hidden checkboxes
+    document.addEventListener('htmx:afterSwap', function (e) {
+      var t = e.detail && e.detail.target;
+      if (t && t.id === 'note-form-cats') _catInit();
+    });
+
+    _catInit();
+  }());
 
   /* ---- Sync markdown preview → textarea before the form POSTs ----
    * HTMX collects form values early, so we intercept htmx:configRequest
