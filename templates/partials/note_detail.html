@@ -55,21 +55,35 @@
     {% if note.content %}
     <div id="md-render-target"
       class="md-body text-sm text-gray-800 dark:text-zinc-200 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg p-4 min-h-[20rem] leading-relaxed"
+      style="overflow-wrap: anywhere;"
       data-raw="{{ note.content | e }}"
     ></div>
     <script>
       (function() {
         const el  = document.getElementById('md-render-target');
         const raw = el.getAttribute('data-raw');
-        // Normalize visual bullet chars (•) at any indent level → markdown (-)
-        // Preserving leading spaces keeps nested list indentation intact for marked.
-        const md = raw.replace(/^(\s*)• /gm, '$1- ');
+        // Normalise \r\n (Windows) and bare \r (old Mac) → \n so marked.js
+        // handles them correctly (same fix as renderPreview in note_form.html).
+        // Also replace visual bullet • → markdown -.
+        const md = raw
+          .replace(/\r\n?/g, '\n')
+          .replace(/^(\s*)\u2022 /gm, '$1- ');
         marked.use({ gfm: true, breaks: true });
         // ADD_ATTR style: lets color/highlight/font-size spans pass through
         el.innerHTML = DOMPurify.sanitize(marked.parse(md), {
           ADD_TAGS: ['mark'],
           ADD_ATTR: ['style', 'target', 'rel'],
           FORCE_BODY: true,
+        });
+
+        // Wrap every <table> in a .bw-tbl-scroll div so wide tables scroll
+        // horizontally without overflowing the note panel.
+        el.querySelectorAll('table').forEach(function(tbl) {
+          if (tbl.parentElement && tbl.parentElement.classList.contains('bw-tbl-scroll')) return;
+          const wrap = document.createElement('div');
+          wrap.className = 'bw-tbl-scroll';
+          tbl.parentNode.insertBefore(wrap, tbl);
+          wrap.appendChild(tbl);
         });
 
         // ── Syntax highlighting + copy buttons (shared utility in base.html) ───────

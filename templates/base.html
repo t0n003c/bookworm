@@ -501,12 +501,17 @@
     .dark .npp-body code { background:#27272a; }
     .md-body table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
     .md-body th   { background: #f3f4f6; font-weight: 700; text-align: left;
-                    padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
+                    padding: .45rem .75rem; border: 1px solid #d1d5db; }
     .md-body td   { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; height: 2.25rem; }
-    .md-body tr:nth-child(even) td { background: #f9fafb; }
+    /* Scope stripe to tbody only — header row is not counted, so body row 1
+       is always white and body row 2 gets the tint, giving clean separation. */
+    .md-body tbody tr:nth-child(even) td { background: #f9fafb; }
     .dark .md-body th { background: #27272a; border-color: #3f3f46; }
     .dark .md-body td { border-color: #3f3f46; }
-    .dark .md-body tr:nth-child(even) td { background: #1f1f22; }
+    .dark .md-body tbody tr:nth-child(even) td { background: #1f1f22; }
+    /* Wide tables scroll inside their own container (injected by JS). */
+    .bw-tbl-scroll { overflow-x: auto; max-width: 100%; margin: .75rem 0; }
+    .bw-tbl-scroll table { margin: 0; }
 
     /* ── Toggle headings (Notion-style) ───────────────────────────────────────
        Borderless, transparent. Only the icon span [data-bw-ti] toggles —
