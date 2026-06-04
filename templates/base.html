@@ -803,6 +803,19 @@
            class="flex-1 bg-transparent text-sm text-gray-900 dark:text-zinc-100
                   outline-none placeholder-gray-400 dark:placeholder-zinc-500"
            aria-label="Search notes, press Enter to ask AI">
+    {# AI toggle pill — mobile only, lives here so it only appears with the search box #}
+    <button id="bw-mob-ai-pill"
+            type="button"
+            aria-label="AI answers ON — tap to disable"
+            title="AI answers: ON"
+            class="sm:hidden flex items-center gap-1 px-2.5 py-1 rounded-full
+                   text-xs font-bold transition-all duration-200 select-none
+                   bg-[#ffc220] text-zinc-900 shadow-[0_0_8px_#ffc22066]">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2 L13.5 10.5 L22 12 L13.5 13.5 L12 22 L10.5 13.5 L2 12 L10.5 10.5 Z"/>
+      </svg>
+      AI
+    </button>
     <kbd class="hidden sm:inline-flex items-center text-xs text-gray-400
                 border border-gray-200 dark:border-zinc-700
                 px-1.5 py-0.5 rounded font-mono select-none">Esc</kbd>
@@ -859,22 +872,7 @@
             flex flex-col items-center gap-2 transition-opacity duration-200"
      aria-label="Mobile search controls">
 
-  {# AI toggle pill #}
-  <button id="bw-mob-ai-pill"
-          type="button"
-          aria-label="AI answers ON — tap to disable"
-          title="AI answers: ON"
-          class="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold
-                 transition-all duration-200 select-none shadow-sm
-                 bg-[#ffc220] text-zinc-900 shadow-[0_0_8px_#ffc22066]">
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      {# 4-pointed star #}
-      <path d="M12 2 L13.5 10.5 L22 12 L13.5 13.5 L12 22 L10.5 13.5 L2 12 L10.5 10.5 Z"/>
-    </svg>
-    AI
-  </button>
-
-  {# Main search FAB #}
+  {# Main search FAB (no AI pill here — pill lives in the search panel header) #}
   <button id="bw-mob-search-btn"
           type="button"
           aria-label="Search notes (tap to open)"

@@ -33,21 +33,14 @@
     if (_iconBase) _iconBase.classList.toggle('hidden', _aiOn);
     if (_iconAi)   _iconAi.classList.toggle('hidden', !_aiOn);
 
-    /* FAB: gold ring when AI is ON */
-    _fab.classList.toggle('ring-2',            _aiOn);
-    _fab.classList.toggle('ring-[#ffc220]',    _aiOn);
-    _fab.classList.toggle('ring-offset-2',     _aiOn);
-    _fab.classList.toggle('ring-offset-[#0053e2]', _aiOn);
-
     if (_pill) {
-      /* pill background + text */
-      _pill.classList.toggle('bg-[#ffc220]',          _aiOn);
-      _pill.classList.toggle('text-zinc-900',          _aiOn);
+      _pill.classList.toggle('bg-[#ffc220]',               _aiOn);
+      _pill.classList.toggle('text-zinc-900',              _aiOn);
       _pill.classList.toggle('shadow-[0_0_8px_#ffc22066]', _aiOn);
-      _pill.classList.toggle('bg-gray-200',            !_aiOn);
-      _pill.classList.toggle('dark:bg-zinc-700',       !_aiOn);
-      _pill.classList.toggle('text-gray-400',          !_aiOn);
-      _pill.classList.toggle('dark:text-zinc-500',     !_aiOn);
+      _pill.classList.toggle('bg-gray-200',                !_aiOn);
+      _pill.classList.toggle('dark:bg-zinc-700',           !_aiOn);
+      _pill.classList.toggle('text-gray-400',              !_aiOn);
+      _pill.classList.toggle('dark:text-zinc-500',         !_aiOn);
       _pill.setAttribute('aria-label',
         _aiOn ? 'AI answers ON — tap to disable' : 'AI answers OFF — tap to enable');
       _pill.setAttribute('title',
@@ -62,7 +55,7 @@
     if (!panel || !wrap) return;
 
     var obs = new MutationObserver(function () {
-      wrap.classList.toggle('opacity-0',      !panel.classList.contains('hidden'));
+      wrap.classList.toggle('opacity-0',           !panel.classList.contains('hidden'));
       wrap.classList.toggle('pointer-events-none', !panel.classList.contains('hidden'));
     });
     obs.observe(panel, { attributes: true, attributeFilter: ['class'] });
@@ -70,6 +63,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     _fab      = document.getElementById('bw-mob-search-btn');
+    // Pill now lives inside the search panel header (sm:hidden)
     _pill     = document.getElementById('bw-mob-ai-pill');
     _iconBase = document.getElementById('bw-mob-icon-base');
     _iconAi   = document.getElementById('bw-mob-icon-ai');
