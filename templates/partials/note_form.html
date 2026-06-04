@@ -2651,6 +2651,14 @@
          bg-zinc-800 text-white dark:bg-white dark:text-zinc-900 shadow"
 ></div>
 
+<!-- Grid overlay shown while resizing -->
+<div id="bw-tbl-rz-overlay"
+  class="hidden fixed z-50 pointer-events-none"
+  style="border:2px dashed #0053e2;box-sizing:border-box;
+         background-image:linear-gradient(rgba(0,83,226,.08) 1px,transparent 1px),
+                          linear-gradient(90deg,rgba(0,83,226,.08) 1px,transparent 1px);"
+></div>
+
 
 <style>
   /* z-60 shim — Tailwind CDN doesn't generate arbitrary z-index utilities */
@@ -3751,7 +3759,8 @@
   var menu    = _getOrHoist('bw-tbl-grip-menu');
   var rzHnd   = _getOrHoist('bw-tbl-resize');
   var sizeTip = _getOrHoist('bw-tbl-size-tip');
-  if (!grip || !menu || !rzHnd || !sizeTip) return;
+  var rzOvl   = _getOrHoist('bw-tbl-rz-overlay');
+  if (!grip || !menu || !rzHnd || !sizeTip || !rzOvl) return;
 
   var _curTable   = null;
   var _menuOpen   = false;
@@ -3776,15 +3785,26 @@
   function _dispatch() { ce.dispatchEvent(new Event('input')); }
   function _cellText(c) { return c.textContent.replace(/\u00a0/g,'').trim(); }
 
-  /** Minimum {rows, cols} that preserves all non-empty cells. */
+  /** Minimum dimensions that preserve all non-empty cells.
+   *  bodyRows = min body rows needed (row-resize floor).
+   *  cols     = min cols across ALL rows (col-resize floor). */
   function _minDims(tbl) {
-    var minR=0, minC=0;
-    _allRows(tbl).forEach(function(tr,ri) {
-      Array.from(tr.children).forEach(function(cell,ci) {
-        if (_cellText(cell)) { minR=Math.max(minR,ri+1); minC=Math.max(minC,ci+1); }
+    var minBodyR = 0, minC = 0;
+    var tbody = tbl.querySelector('tbody') || tbl;
+    Array.from(tbody.querySelectorAll('tr')).forEach(function(tr, ri) {
+      Array.from(tr.children).forEach(function(cell, ci) {
+        if (_cellText(cell)) { minBodyR=Math.max(minBodyR,ri+1); minC=Math.max(minC,ci+1); }
       });
     });
-    return { rows:minR, cols:minC };
+    var thead = tbl.querySelector('thead');
+    if (thead) {
+      Array.from(thead.querySelectorAll('tr')).forEach(function(tr) {
+        Array.from(tr.children).forEach(function(cell, ci) {
+          if (_cellText(cell)) minC = Math.max(minC, ci+1);
+        });
+      });
+    }
+    return { bodyRows: minBodyR, cols: minC };
   }
 
   /* ── Handle positioning ───────────────────────────────── */
@@ -4053,20 +4073,30 @@
   /* ── Resize handle ────────────────────────────────────────── */
   var _rzActive = false;
   var _rzStartX = 0, _rzStartY = 0;
-  var _rzRows0  = 0, _rzCols0  = 0;
-  var _rzCellW  = 80, _rzCellH = 32;
+  var _rzBodyRows0 = 0;  // body-only row count at drag start
+  var _rzCols0     = 0;  // column count (any row) at drag start
+  var _rzCellW = 80, _rzCellH = 32;  // estimated cell dimensions
 
   rzHnd.addEventListener('mousedown', function(e) {
     if (e.button !== 0 || !_curTable) return;
     e.preventDefault(); e.stopPropagation();
     _rzActive = true;
     _rzStartX = e.clientX; _rzStartY = e.clientY;
-    var rows = _allRows();
-    _rzRows0 = rows.length;
-    _rzCols0 = rows.length ? rows[0].children.length : 1;
+
+    // Count only BODY rows (exclude thead) for row resizing
+    var tbody = _curTable.querySelector('tbody') || _curTable;
+    var bodyRows = Array.from(tbody.querySelectorAll('tr'));
+    _rzBodyRows0 = bodyRows.length;
+    // Columns: read from the first row found anywhere in the table
+    var firstRow = _curTable.querySelector('tr');
+    _rzCols0 = firstRow ? firstRow.children.length : 1;
+
+    // Estimate cell dimensions from the actual table rect
     var r = _curTable.getBoundingClientRect();
-    if (_rzCols0) _rzCellW = Math.max(40, r.width  / _rzCols0);
-    if (_rzRows0) _rzCellH = Math.max(20, r.height / _rzRows0);
+    var totalRows = _allRows().length;
+    if (_rzCols0)   _rzCellW = Math.max(30, r.width  / _rzCols0);
+    if (totalRows)  _rzCellH = Math.max(18, r.height / totalRows);
+
     document.addEventListener('mousemove', _onRzMove);
     document.addEventListener('mouseup',   _onRzUp);
   });
@@ -4075,44 +4105,89 @@
 
   function _onRzMove(e) {
     if (!_rzActive || !_curTable) return;
-    var min = _minDims(_curTable);
-    var tgtCols = _clamp(Math.round(_rzCols0 + (e.clientX-_rzStartX)/_rzCellW), Math.max(1,min.cols), 20);
-    var tgtRows = _clamp(Math.round(_rzRows0 + (e.clientY-_rzStartY)/_rzCellH), Math.max(1,min.rows), 50);
-    sizeTip.textContent = tgtRows + ' × ' + tgtCols;
+    var min  = _minDims(_curTable);
+    var tgtCols = _clamp(
+      Math.round(_rzCols0     + (e.clientX - _rzStartX) / _rzCellW),
+      Math.max(1, min.cols), 20
+    );
+    var tgtBodyRows = _clamp(
+      Math.round(_rzBodyRows0 + (e.clientY - _rzStartY) / _rzCellH),
+      Math.max(1, min.bodyRows), 50
+    );
+
+    // Store for mouseup
+    rzHnd._tgtCols     = tgtCols;
+    rzHnd._tgtBodyRows = tgtBodyRows;
+
+    // ── Floating size badge next to cursor ──
+    var theadRows = _curTable.querySelector('thead') ? 1 : 0;
+    var totalRows = tgtBodyRows + theadRows;
+    sizeTip.textContent = totalRows + ' × ' + tgtCols + ' (rows × cols)';
     sizeTip.classList.remove('hidden');
-    sizeTip.style.left = (e.clientX + 14) + 'px';
-    sizeTip.style.top  = (e.clientY + 14) + 'px';
-    rzHnd._tgtRows = tgtRows;
-    rzHnd._tgtCols = tgtCols;
+    sizeTip.style.left = (e.clientX + 16) + 'px';
+    sizeTip.style.top  = (e.clientY + 16) + 'px';
+
+    // ── Grid overlay showing projected table bounds ──
+    var r   = _curTable.getBoundingClientRect();
+    var ceR = ce.getBoundingClientRect();
+    var projW = Math.min(tgtCols     * _rzCellW, ceR.right  - r.left);
+    var projH =          totalRows   * _rzCellH;
+    var ovlL  = r.left;
+    var ovlT  = r.top;
+    var ovlW  = Math.max(20, projW);
+    var ovlH  = Math.max(18, projH);
+    rzOvl.style.left   = ovlL + 'px';
+    rzOvl.style.top    = ovlT + 'px';
+    rzOvl.style.width  = ovlW + 'px';
+    rzOvl.style.height = ovlH + 'px';
+    // Grid lines spaced per cell
+    rzOvl.style.backgroundSize =
+      'calc(100% / ' + tgtCols + ') calc(100% / ' + totalRows + ')';
+    rzOvl.classList.remove('hidden');
   }
 
   function _onRzUp(e) {
     document.removeEventListener('mousemove', _onRzMove);
     document.removeEventListener('mouseup',   _onRzUp);
     sizeTip.classList.add('hidden');
+    rzOvl.classList.add('hidden');
     if (!_rzActive) return;
     _rzActive = false;
     if (!_curTable) return;
-    _applyResize(_curTable, rzHnd._tgtRows || _rzRows0, rzHnd._tgtCols || _rzCols0);
+    _applyResize(
+      _curTable,
+      rzHnd._tgtBodyRows !== undefined ? rzHnd._tgtBodyRows : _rzBodyRows0,
+      rzHnd._tgtCols     !== undefined ? rzHnd._tgtCols     : _rzCols0
+    );
+    // Reset stored targets
+    rzHnd._tgtCols = rzHnd._tgtBodyRows = undefined;
     _placeHandles(_curTable);
     _dispatch();
   }
 
-  function _applyResize(tbl, tgtRows, tgtCols) {
-    var tbody = tbl.querySelector('tbody') || tbl;
-    var rows  = Array.from(tbody.querySelectorAll('tr'));
-    rows.forEach(function(tr) {
+  function _applyResize(tbl, tgtBodyRows, tgtCols) {
+    // ── Columns: apply to ALL rows including thead ──
+    Array.from(tbl.querySelectorAll('tr')).forEach(function(tr) {
       var cur = tr.children.length;
-      for (var i=cur; i<tgtCols; i++) tr.appendChild(_makeTd('td'));
-      for (var j=tr.children.length-1; j>=tgtCols; j--) tr.children[j].remove();
+      // Preserve cell type (th vs td) when adding
+      var existingTag = tr.lastElementChild ? tr.lastElementChild.nodeName : 'TD';
+      for (var i = cur; i < tgtCols; i++) tr.appendChild(_makeTd(existingTag));
+      for (var j = tr.children.length - 1; j >= tgtCols; j--) tr.children[j].remove();
     });
-    for (var r=rows.length; r<tgtRows; r++) {
-      var tr=document.createElement('tr');
-      for (var c=0; c<tgtCols; c++) tr.appendChild(_makeTd('td'));
+
+    // ── Rows: add/remove only in tbody ──
+    var tbody = tbl.querySelector('tbody') || tbl;
+    var bodyRows = Array.from(tbody.querySelectorAll('tr'));
+    var colsNow = tgtCols;
+    for (var r = bodyRows.length; r < tgtBodyRows; r++) {
+      var tr = document.createElement('tr');
+      for (var c = 0; c < colsNow; c++) tr.appendChild(_makeTd('td'));
       tbody.appendChild(tr);
     }
-    var allRows = Array.from(tbody.querySelectorAll('tr'));
-    for (var ri=allRows.length-1; ri>=tgtRows; ri--) allRows[ri].remove();
+    var updatedRows = Array.from(tbody.querySelectorAll('tr'));
+    for (var ri = updatedRows.length - 1; ri >= tgtBodyRows; ri--) {
+      updatedRows[ri].remove();
+    }
   }
 
   /* ── Auto-remove table when all cells are empty ──────────── */
