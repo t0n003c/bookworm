@@ -189,6 +189,7 @@ async def stream_llm(
         None, _fetch_contexts_sync, items[:_CONTEXT_NOTES], uid
     )
     if not context_items:
+        yield "I couldn't find any relevant notes or contacts to answer that. Try searching with a specific name or keyword first."
         return
 
     context = _build_context_block(context_items)

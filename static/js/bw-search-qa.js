@@ -369,8 +369,13 @@
               var raw = line.slice(5).trim();
               if (raw === '[DONE]' || raw === '[ERROR]') {
                 bwSqStopStream();
-                // Hide answer wrap if nothing was streamed
-                if (!text) wrap.classList.add('hidden');
+                // If nothing was streamed, show a gentle nudge instead of hiding
+                if (!text) {
+                  if (thinking) thinking.classList.add('hidden');
+                  ansEl.textContent = raw === '[ERROR]'
+                    ? 'Something went wrong. Check your AI settings in Account.'
+                    : 'No answer — make sure your AI endpoint and API key are saved in Account → AI Search.';
+                }
                 return;
               }
               try {

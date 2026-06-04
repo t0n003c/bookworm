@@ -105,7 +105,24 @@ _MAX_LIMIT  = 50
 _FTS5_POOL  = 50   # internal over-fetch for re-ranking
 
 
-# ── helpers ───────────────────────────────────────────────────────────────
+# Common English stop-words stripped before FTS5 AND-query construction.
+# Keeps only meaningful terms so natural-language questions like
+# "what is the last conversation I had with Thanh?" still find "Thanh".
+_STOP_WORDS = frozenset({
+    "a","an","and","are","as","at","be","been","but","by","do",
+    "for","from","had","has","have","he","her","him","his","how",
+    "i","if","in","is","it","its","me","my","no","not","of","on",
+    "or","our","she","so","than","that","the","their","them","then",
+    "there","they","this","to","us","was","we","were","what","when",
+    "where","which","who","whom","why","will","with","would","you",
+    "your","did","does","am","can","could","should","shall","may",
+    "might","about","into","through","during","before","after","above",
+    "between","each","few","more","most","other","some","such","own",
+    "same","also","just","because","while","although","however",
+    "tell","me","give","show","find","get","got","let","put","say",
+    "know","think","want","need","look","see","go","going",
+})
+
 
 def _uid(request: Request) -> int:
     uid = request.session.get("user_id")
@@ -116,9 +133,16 @@ def _uid(request: Request) -> int:
 
 def _build_fts_query(q: str) -> str | None:
     words = re.sub(r'["\'\\^*():\-]', " ", q).split()
-    if not words:
+    # Strip stop-words so natural-language questions don't kill FTS5 AND-logic.
+    # Keep words shorter than 3 chars only if they're not in the stop list
+    # (e.g. an actual short name like "Ed" should still survive).
+    meaningful = [w for w in words if w.lower() not in _STOP_WORDS and len(w) >= 2]
+    if not meaningful:
+        # Fallback: use original words if stop-word strip wiped everything
+        meaningful = words
+    if not meaningful:
         return None
-    return " ".join(w + "*" for w in words[:_MAX_TOKENS])
+    return " ".join(w + "*" for w in meaningful[:_MAX_TOKENS])
 
 
 def _bigram_bonus(title: str, words: list) -> float:
