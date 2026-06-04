@@ -243,6 +243,6 @@ async def stream_llm(
                             yield token
                     except (json.JSONDecodeError, IndexError, KeyError):
                         continue
-    except Exception:
+    except Exception as exc:
         log.exception("search_llm: stream failed")
-        yield "[LLM error — check your endpoint/API key in Account → AI Search]"
+        yield f"\u26a0 AI error: {type(exc).__name__}: {exc} — check endpoint/key in Account → AI Search."

@@ -343,11 +343,19 @@ async def get_user_ai_settings(request: Request):
 
   <div class="flex items-center justify-between gap-2 pt-1">
     <span id="acct-ai-msg" class="text-xs"></span>
-    <button type="submit"
-            class="px-3 py-1 text-xs rounded bg-[#0053e2] text-white
-                   hover:bg-blue-700 transition">
-      Save
-    </button>
+    <div class="flex gap-2">
+      <button type="button" id="acct-ai-test-btn"
+              onclick="_acctTestLlm()"
+              class="px-3 py-1 text-xs rounded border border-gray-300 dark:border-zinc-600
+                     text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+        Test
+      </button>
+      <button type="submit"
+              class="px-3 py-1 text-xs rounded bg-[#0053e2] text-white
+                     hover:bg-blue-700 transition">
+        Save
+      </button>
+    </div>
   </div>
 </form>
 <script>(function(){{
@@ -388,6 +396,27 @@ async def get_user_ai_settings(request: Request):
       .finally(function() {{ if (btn) btn.disabled = false; }});
   }}
   window._acctLoadModels = _acctLoadModels;
+
+  /* Test connection — hits /qa/ping-llm and shows real error details */
+  function _acctTestLlm() {{
+    var msg = document.getElementById('acct-ai-msg');
+    var btn = document.getElementById('acct-ai-test-btn');
+    if (msg) msg.textContent = '⏳ Testing…';
+    if (btn) btn.disabled = true;
+    fetch('/qa/ping-llm')
+      .then(function(r) {{ return r.json(); }})
+      .then(function(d) {{
+        if (msg) {{
+          msg.className = 'text-xs ' + (d.ok ? 'text-green-600' : 'text-red-600');
+          msg.textContent = (d.ok ? '✓ ' : '✗ ') + d.detail;
+        }}
+      }})
+      .catch(function(err) {{
+        if (msg) {{ msg.className = 'text-xs text-red-600'; msg.textContent = '✗ ' + err; }}
+      }})
+      .finally(function() {{ if (btn) btn.disabled = false; }});
+  }}
+  window._acctTestLlm = _acctTestLlm;
 
   /* Auto-fetch after a successful Save so model list is always fresh */
   document.getElementById('acct-ai-form').addEventListener('htmx:afterRequest', function(ev) {{

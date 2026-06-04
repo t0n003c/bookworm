@@ -65,6 +65,53 @@ _MAX_TOKENS = 20
 
 # ── model discovery (proxied so API key stays server-side) ──────────────
 
+@router.get("/ping-llm")
+async def ping_llm(request: Request):
+    """Test the user's LLM config with a tiny non-streaming call.
+
+    Returns {ok: bool, detail: str} so the Account modal can show a
+    real error instead of a mysterious silence.
+    """
+    uid = _uid(request)
+    from routers.auth_db import get_user_llm_settings
+    cfg = await get_user_llm_settings(uid)
+    endpoint = (cfg["endpoint"] or "").rstrip("/")
+    if not endpoint:
+        return {"ok": False, "detail": "No endpoint saved. Fill in Account → AI Search."}
+    model   = cfg["model"] or "gpt-4o-mini"
+    api_key = cfg["api_key"] or ""
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Say OK"}],
+        "max_tokens": 5,
+        "stream": False,
+    }
+    proxy = os.getenv("BW_HTTP_PROXY") or None
+    try:
+        async with httpx.AsyncClient(
+            proxy=proxy, timeout=15.0, follow_redirects=True
+        ) as client:
+            resp = await client.post(
+                endpoint + "/chat/completions",
+                json=payload, headers=headers,
+            )
+            if resp.status_code >= 400:
+                body = resp.text[:400]
+                return {"ok": False, "detail": f"HTTP {resp.status_code}: {body}"}
+            data = resp.json()
+            reply = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "(empty)")
+            )
+            return {"ok": True, "detail": f"Model: {model} • Reply: {reply.strip()[:80]}"}
+    except Exception as exc:
+        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+
+
 @router.get("/models")
 async def list_models(request: Request, endpoint: str = ""):
     """Proxy GET /models to the configured LLM endpoint using the caller's personal key.
