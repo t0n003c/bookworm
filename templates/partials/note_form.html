@@ -4277,78 +4277,85 @@
   var _rzCols0     = 0;  // column count (any row) at drag start
   var _rzCellW = 80, _rzCellH = 32;  // estimated cell dimensions
 
+  /** Shared start-logic: init state from a {clientX, clientY} point. */
+  function _rzBegin(cx, cy) {
+    _rzActive = true;
+    _rzStartX = cx; _rzStartY = cy;
+    var tbody = _curTable.querySelector('tbody') || _curTable;
+    _rzBodyRows0 = Array.from(tbody.querySelectorAll('tr')).length;
+    var firstRow = _curTable.querySelector('tr');
+    _rzCols0 = firstRow ? firstRow.children.length : 1;
+    var r = _curTable.getBoundingClientRect();
+    var totalRows = _allRows().length;
+    if (_rzCols0)  _rzCellW = Math.max(30, r.width  / _rzCols0);
+    if (totalRows) _rzCellH = Math.max(18, r.height / totalRows);
+  }
+
   rzHnd.addEventListener('mousedown', function(e) {
     if (e.button !== 0 || !_curTable) return;
     e.preventDefault(); e.stopPropagation();
-    _rzActive = true;
-    _rzStartX = e.clientX; _rzStartY = e.clientY;
-
-    // Count only BODY rows (exclude thead) for row resizing
-    var tbody = _curTable.querySelector('tbody') || _curTable;
-    var bodyRows = Array.from(tbody.querySelectorAll('tr'));
-    _rzBodyRows0 = bodyRows.length;
-    // Columns: read from the first row found anywhere in the table
-    var firstRow = _curTable.querySelector('tr');
-    _rzCols0 = firstRow ? firstRow.children.length : 1;
-
-    // Estimate cell dimensions from the actual table rect
-    var r = _curTable.getBoundingClientRect();
-    var totalRows = _allRows().length;
-    if (_rzCols0)   _rzCellW = Math.max(30, r.width  / _rzCols0);
-    if (totalRows)  _rzCellH = Math.max(18, r.height / totalRows);
-
+    _rzBegin(e.clientX, e.clientY);
     document.addEventListener('mousemove', _onRzMove);
     document.addEventListener('mouseup',   _onRzUp);
   });
 
+  /* Touch support for the resize corner ── mobile gets no mouse events */
+  rzHnd.addEventListener('touchstart', function(e) {
+    if (!_curTable || !e.touches.length) return;
+    e.preventDefault(); e.stopPropagation(); // prevent page scroll while resizing
+    _rzBegin(e.touches[0].clientX, e.touches[0].clientY);
+    document.addEventListener('touchmove',  _onRzTouchMove, { passive: false });
+    document.addEventListener('touchend',   _onRzTouchEnd);
+    document.addEventListener('touchcancel',_onRzTouchEnd);
+  }, { passive: false });
+
   function _clamp(v,lo,hi) { return Math.max(lo, Math.min(hi, v)); }
 
-  function _onRzMove(e) {
+  /** Shared move-logic from a {clientX, clientY} point. */
+  function _rzTrack(cx, cy) {
     if (!_rzActive || !_curTable) return;
-    var min  = _minDims(_curTable);
+    var min = _minDims(_curTable);
     var tgtCols = _clamp(
-      Math.round(_rzCols0     + (e.clientX - _rzStartX) / _rzCellW),
+      Math.round(_rzCols0     + (cx - _rzStartX) / _rzCellW),
       Math.max(1, min.cols), 20
     );
     var tgtBodyRows = _clamp(
-      Math.round(_rzBodyRows0 + (e.clientY - _rzStartY) / _rzCellH),
+      Math.round(_rzBodyRows0 + (cy - _rzStartY) / _rzCellH),
       Math.max(1, min.bodyRows), 50
     );
-
-    // Store for mouseup
     rzHnd._tgtCols     = tgtCols;
     rzHnd._tgtBodyRows = tgtBodyRows;
 
-    // ── Floating size badge next to cursor ──
     var theadRows = _curTable.querySelector('thead') ? 1 : 0;
     var totalRows = tgtBodyRows + theadRows;
     sizeTip.textContent = totalRows + ' × ' + tgtCols + ' (rows × cols)';
     sizeTip.classList.remove('hidden');
-    sizeTip.style.left = (e.clientX + 16) + 'px';
-    sizeTip.style.top  = (e.clientY + 16) + 'px';
+    // Keep tip on-screen; offset slightly from finger so it isn't obscured
+    var tipX = Math.min(cx + 16, window.innerWidth  - 160);
+    var tipY = Math.min(cy + 16, window.innerHeight -  36);
+    sizeTip.style.left = tipX + 'px';
+    sizeTip.style.top  = tipY + 'px';
 
-    // ── Grid overlay showing projected table bounds ──
+    // Grid overlay
     var r   = _curTable.getBoundingClientRect();
     var ceR = ce.getBoundingClientRect();
-    var projW = Math.min(tgtCols     * _rzCellW, ceR.right  - r.left);
-    var projH =          totalRows   * _rzCellH;
-    var ovlL  = r.left;
-    var ovlT  = r.top;
-    var ovlW  = Math.max(20, projW);
-    var ovlH  = Math.max(18, projH);
-    rzOvl.style.left   = ovlL + 'px';
-    rzOvl.style.top    = ovlT + 'px';
-    rzOvl.style.width  = ovlW + 'px';
-    rzOvl.style.height = ovlH + 'px';
-    // Grid lines spaced per cell
+    var projW = Math.min(tgtCols * _rzCellW, ceR.right - r.left);
+    var projH = totalRows * _rzCellH;
+    rzOvl.style.left   = r.left + 'px';
+    rzOvl.style.top    = r.top  + 'px';
+    rzOvl.style.width  = Math.max(20, projW) + 'px';
+    rzOvl.style.height = Math.max(18, projH) + 'px';
     rzOvl.style.backgroundSize =
       'calc(100% / ' + tgtCols + ') calc(100% / ' + totalRows + ')';
     rzOvl.classList.remove('hidden');
   }
 
-  function _onRzUp(e) {
-    document.removeEventListener('mousemove', _onRzMove);
-    document.removeEventListener('mouseup',   _onRzUp);
+  function _onRzMove(e) { _rzTrack(e.clientX, e.clientY); }
+  function _onRzTouchMove(e) {
+    if (e.touches.length) { e.preventDefault(); _rzTrack(e.touches[0].clientX, e.touches[0].clientY); }
+  }
+
+  function _rzCommit() {
     sizeTip.classList.add('hidden');
     rzOvl.classList.add('hidden');
     if (!_rzActive) return;
@@ -4359,10 +4366,24 @@
       rzHnd._tgtBodyRows !== undefined ? rzHnd._tgtBodyRows : _rzBodyRows0,
       rzHnd._tgtCols     !== undefined ? rzHnd._tgtCols     : _rzCols0
     );
-    // Reset stored targets
     rzHnd._tgtCols = rzHnd._tgtBodyRows = undefined;
     _placeHandles(_curTable);
     _dispatch();
+  }
+
+  function _onRzTouchEnd() {
+    document.removeEventListener('touchmove',  _onRzTouchMove);
+    document.removeEventListener('touchend',   _onRzTouchEnd);
+    document.removeEventListener('touchcancel',_onRzTouchEnd);
+    _rzCommit();
+  }
+
+
+
+  function _onRzUp() {
+    document.removeEventListener('mousemove', _onRzMove);
+    document.removeEventListener('mouseup',   _onRzUp);
+    _rzCommit();
   }
 
   function _applyResize(tbl, tgtBodyRows, tgtCols) {
