@@ -143,6 +143,22 @@ async def edit_note_form(request: Request, note_id: int):
     )
 
 
+@router.get("/suggest-title")
+async def suggest_title_endpoint(
+    request: Request,
+    workspace_id: Optional[int] = Query(default=None),
+):
+    """Return the next available auto-title for a workspace as JSON.
+
+    Used by the client auto-save path so it always sends a real non-empty
+    title and never hits form-validation errors on the POST /notes route.
+    """
+    uid = request.session.get("user_id")
+    await _require_ws_owner(workspace_id, uid)
+    title = await next_auto_title(workspace_id)
+    return JSONResponse({"title": title})
+
+
 @router.get("/url-title")
 async def url_title_endpoint(url: str = Query(..., description="URL whose page title to fetch")):
     """Fetch og:title / <title> of a URL for mention pill annotations.
