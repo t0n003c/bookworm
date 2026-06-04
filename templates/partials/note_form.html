@@ -315,7 +315,7 @@
             contenteditable="true"
             spellcheck="true"
             data-placeholder="Preview will appear here…"
-            class="md-body flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
+            class="md-body flex-1 min-h-0 min-w-0 overflow-y-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
             aria-label="WYSIWYG note editor"
             aria-multiline="true"
             role="textbox"
@@ -543,7 +543,14 @@
 
   /* ── Preview block drag-and-drop ── */
   #md-live-preview { padding-left: 1.5rem !important; overflow-wrap: anywhere; }
-  /* Code blocks scroll horizontally — never break mid-character */
+  /* Tables that are wider than the panel get their own horizontal scroll so
+     they don't blow out the wrapper. The scroll div is injected by renderPreview
+     and stripped by syncPreviewToMd before Turndown converts back to Markdown. */
+  .bw-tbl-scroll { overflow-x: auto; max-width: 100%; margin: .75rem 0; }
+  .bw-tbl-scroll table { margin: 0; }  /* table already has margin from .bw-tbl-scroll */
+  /* Code blocks need their own horizontal scroll independent of the CE.
+     overflow-wrap must NOT apply here — code should scroll, not break. */
+  #md-live-preview pre { overflow-x: auto; }
   #md-live-preview pre,
   #md-live-preview pre code { overflow-wrap: normal; }
   [data-preview-grip] {
@@ -1441,10 +1448,18 @@
     while (block && block.parentElement !== ce) block = block.parentElement;
 
     if (block && ce.contains(block)) {
-      block.after(table, after);
+      // Wrap the table in a .bw-tbl-scroll div so wide tables scroll instead
+      // of blowing out the editor panel width (mirrors renderPreview wrapping).
+      const wrap = document.createElement('div');
+      wrap.className = 'bw-tbl-scroll';
+      wrap.appendChild(table);
+      block.after(wrap, after);
       if (!block.textContent.trim()) block.remove();
     } else {
-      ce.appendChild(table);
+      const wrap = document.createElement('div');
+      wrap.className = 'bw-tbl-scroll';
+      wrap.appendChild(table);
+      ce.appendChild(wrap);
       ce.appendChild(after);
     }
 
@@ -1844,6 +1859,16 @@
       _pv.innerHTML = raw.trim()
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
+      // Wrap every rendered <table> in a scroll div so wide tables scroll
+      // horizontally without blowing out the panel width.
+      // We do this AFTER DOMPurify so the wrapper survives sanitisation.
+      _pv.querySelectorAll('table:not(.bw-tbl-wrapped)').forEach(function(tbl) {
+        if (tbl.parentElement && tbl.parentElement.classList.contains('bw-tbl-scroll')) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'bw-tbl-scroll';
+        tbl.parentNode.insertBefore(wrap, tbl);
+        wrap.appendChild(tbl);
+      });
       // NOTE: _bwApplyCodeHighlighting is intentionally NOT called here.
       // The live preview is contenteditable, so injecting wrapper divs would
       // corrupt the note content on save. Highlighting runs only in the
@@ -1925,6 +1950,11 @@
       // Clone so we can strip grip handles without mutating the live DOM
       const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+      // Unwrap table scroll containers — Turndown must see raw <table>, not a <div>
+      clone.querySelectorAll('.bw-tbl-scroll').forEach(function(wrap) {
+        while (wrap.firstChild) wrap.parentNode.insertBefore(wrap.firstChild, wrap);
+        wrap.remove();
+      });
       // Strip JS-injected code-block UI (header bars, gutters) — Turndown's GFM
       // fenced-code rule checks node.firstChild.nodeName === 'CODE', so the header
       // div must be gone before Turndown processes the clone or it corrupts MD output.
@@ -4198,13 +4228,17 @@
     }
   }
 
-  /* ── Auto-remove table when all cells are empty ──────────── */
+  /* ── Auto-remove table when all cells are empty ─────────── */
   ce.addEventListener('input', function() {
     Array.from(ce.querySelectorAll('table')).forEach(function(tbl) {
       var cells = Array.from(tbl.querySelectorAll('td,th'));
       if (!cells.length || cells.every(function(c){ return !_cellText(c); })) {
-        var p=document.createElement('p'); p.innerHTML='<br>';
-        tbl.after(p); tbl.remove();
+        var p = document.createElement('p'); p.innerHTML = '<br>';
+        // If the table is inside a .bw-tbl-scroll wrapper, replace the whole wrapper
+        var wrap = tbl.parentElement;
+        var anchor = (wrap && wrap.classList.contains('bw-tbl-scroll')) ? wrap : tbl;
+        anchor.after(p);
+        anchor.remove();
         _parkCursor(p); _hideHandles();
       }
     });
