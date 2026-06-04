@@ -275,7 +275,7 @@ def _fetch_items_meta_sync(item_pairs: list, uid: int) -> dict:
             ).fetchall()
             for r in rows:
                 result[("crm_contact", r["item_id"])] = {
-                    "title": r["title"], "snippet": (r["body"] or "")[:200],
+                    "title": r["title"], "snippet": _strip_html((r["body"] or ""))[:200],
                     "link_data": r["link_data"],
                 }
     finally:
