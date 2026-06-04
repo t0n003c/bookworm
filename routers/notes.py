@@ -20,6 +20,7 @@ from routers.notes_db import (
     update_note,
     delete_note,
     move_note_to_workspace,
+    next_auto_title,
 )
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.workspaces_db import get_descendant_ids
@@ -264,10 +265,10 @@ async def toggle_todo_handler(
 @router.post("", response_class=HTMLResponse)
 async def create_note_handler(
     request: Request,
-    title: str = Form(...),
+    title: str = Form(default=""),
     icon: Optional[str] = Form(default=None),
     content: str = Form(default=""),
-    meeting_date: str = Form(...),
+    meeting_date: str = Form(default=""),
     category_ids: list[str] = Form(default=[]),
     attr_keys: list[str] = Form(default=[]),
     attr_values: list[str] = Form(default=[]),
@@ -275,6 +276,12 @@ async def create_note_handler(
 ):
     uid = request.session.get("user_id")
     await _require_ws_owner(workspace_id, uid)
+    # Auto-generate title when the user dismissed the form without typing one.
+    if not title.strip():
+        title = await next_auto_title(workspace_id)
+    # Default date to today when the form was submitted without a date.
+    if not meeting_date.strip():
+        meeting_date = date_type.today().isoformat()
     cat_ids = [int(c) for c in category_ids if c]
     attributes = [
         {"key": k.strip(), "value": v.strip()}

@@ -252,6 +252,32 @@ async def search_notes(
         return notes
 
 
+async def next_auto_title(workspace_id: Optional[int]) -> str:
+    """Return the lowest 'Note N' title not already taken in workspace_id.
+
+    Scans existing note titles for the pattern 'Note <integer>' (case-
+    insensitive) and returns 'Note 1', 'Note 2', … whichever comes first.
+    Falls back to 'Note 1' when workspace_id is None.
+    """
+    if workspace_id is None:
+        return "Note 1"
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT title FROM notes WHERE workspace_id = ?", (workspace_id,)
+        )
+        rows = await cur.fetchall()
+    taken: set[int] = set()
+    import re as _re
+    for (t,) in rows:
+        m = _re.fullmatch(r"note\s+(\d+)", (t or "").strip().lower())
+        if m:
+            taken.add(int(m.group(1)))
+    n = 1
+    while n in taken:
+        n += 1
+    return f"Note {n}"
+
+
 async def create_note(
     title: str,
     content: Optional[str],

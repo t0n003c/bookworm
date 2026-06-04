@@ -2429,20 +2429,57 @@
     panel.addEventListener('click', panel._bwClickClose);
   }
 
-  // Auto-save an existing note when the panel closes.
-  // Fires a silent fetch POST identical to what the Save button submits.
-  // Only runs for edit forms (hx-post='/notes/<id>'). New notes are skipped.
+  // Auto-save a note when the panel closes.
+  // • Edit form  (hx-post='/notes/<id>'): always flush silently.
+  // • New-note form (hx-post='/notes'):  only flush when content is non-empty.
+  //   The title is left blank — the server generates 'Note 1', 'Note 2', …
+  //   After the save the note list is refreshed via HTMX so the new note
+  //   appears immediately without the user having to do anything.
   // Must be called BEFORE dp.innerHTML is wiped.
   function _noteFlush() {
     var form = document.getElementById('note-form');
     if (!form) return;
     var action = form.getAttribute('hx-post') || '';
-    if (!/^\/notes\/\d+$/.test(action)) return;
+
+    // ── Existing note: always silently save ─────────────────────────────
+    if (/^\/notes\/\d+$/.test(action)) {
+      if (typeof window._bwSyncPreviewToMd === 'function') {
+        try { window._bwSyncPreviewToMd(); } catch (e) {}
+      }
+      var fd = new FormData(form);
+      fetch(action, { method: 'POST', body: fd }).catch(function() {});
+      return;
+    }
+
+    // ── New note: only save when there is actual content ────────────────
+    if (action !== '/notes') return;
     if (typeof window._bwSyncPreviewToMd === 'function') {
       try { window._bwSyncPreviewToMd(); } catch (e) {}
     }
+    // Check textarea (markdown mode) or CE (preview mode) for content.
+    var ta  = document.getElementById('note-content');
+    var ce  = document.getElementById('md-live-preview');
+    var hasContent = (ta  && (ta.value  || '').trim())
+                  || (ce  && (ce.innerText || '').trim());
+    if (!hasContent) return;
+
+    // Capture form data now — the DOM is wiped after this call returns.
     var fd = new FormData(form);
-    fetch(action, { method: 'POST', body: fd }).catch(function() {});
+    // Clear the title so the server auto-generates 'Note 1', 'Note 2', …
+    fd.set('title', '');
+    var wsId = fd.get('workspace_id');
+
+    fetch('/notes', { method: 'POST', body: fd })
+      .then(function() {
+        // Refresh the note list so the new note appears straight away.
+        if (wsId) {
+          htmx.ajax('GET', '/notes?workspace_id=' + wsId, {
+            target:  '#note-list',
+            swap:    'innerHTML',
+          });
+        }
+      })
+      .catch(function() {});
   }
 
   function closePanel() {
