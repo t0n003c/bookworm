@@ -2438,9 +2438,8 @@
   // Must be called BEFORE dp.innerHTML is wiped.
   function _noteFlush() {
     var form = document.getElementById('note-form');
-    if (!form) { console.debug('[noteFlush] no note-form found'); return; }
+    if (!form) return;
     var action = form.getAttribute('hx-post') || '';
-    console.debug('[noteFlush] action=', action);
 
     // ── Existing note: always silently save ─────────────────────────────
     if (/^\/notes\/\d+$/.test(action)) {
@@ -2453,37 +2452,35 @@
     }
 
     // ── New note: only save when there is actual content ────────────────
-    if (action !== '/notes') { console.debug('[noteFlush] not a new-note form, skipping'); return; }
+    if (action !== '/notes') return;
     if (typeof window._bwSyncPreviewToMd === 'function') {
-      try { window._bwSyncPreviewToMd(); } catch (e) { console.warn('[noteFlush] sync threw', e); }
+      try { window._bwSyncPreviewToMd(); } catch (e) {}
     }
     // Check textarea (markdown mode) or CE (preview mode) for content.
     var ta  = document.getElementById('note-content');
     var ce  = document.getElementById('md-live-preview');
     var taVal = (ta  && (ta.value  || '').trim()) || '';
     var ceVal = (ce  && (ce.innerText || '').trim()) || '';
-    console.debug('[noteFlush] taVal.len=', taVal.length, 'ceVal.len=', ceVal.length);
-    if (!taVal && !ceVal) { console.debug('[noteFlush] no content — skipping auto-save'); return; }
+    if (!taVal && !ceVal) return;
 
     // Capture form data now — the DOM is wiped after this call returns.
     var fd = new FormData(form);
     // Clear the title so the server auto-generates 'Note 1', 'Note 2', …
     fd.set('title', '');
     var wsId = fd.get('workspace_id');
-    console.debug('[noteFlush] auto-saving new note, wsId=', wsId, 'content-len=', (fd.get('content')||'').length);
 
     fetch('/notes', { method: 'POST', body: fd })
       .then(function(res) {
-        console.debug('[noteFlush] auto-save response status=', res.status);
+        if (!res.ok) { console.warn('[BookWorm] auto-save responded', res.status); return; }
         // Refresh the note list so the new note appears straight away.
         if (wsId) {
           htmx.ajax('GET', '/notes?workspace_id=' + wsId, {
-            target:  '#note-list',
-            swap:    'innerHTML',
+            target: '#note-list',
+            swap:   'innerHTML',
           });
         }
       })
-      .catch(function(err) { console.error('[noteFlush] auto-save fetch failed', err); });
+      .catch(function(err) { console.warn('[BookWorm] auto-save failed', err); });
   }
 
   function closePanel() {
