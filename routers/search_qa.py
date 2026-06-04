@@ -582,6 +582,51 @@ async def sync_crm_endpoint(request: Request):
     return {"status": "syncing", "message": "CRM contact sync started in background."}
 
 
+@router.get("/debug-stream")
+async def debug_stream(request: Request, q: str = ""):
+    """Diagnostic: run the stream pipeline and return what each step finds.
+
+    Safe to call any time — does NOT call the LLM. Shows fts_query,
+    how many rows each search returned, and what context_items were built.
+    """
+    uid = _uid(request)
+    q   = (q or "").strip()
+    if not q:
+        return {"error": "q is required"}
+
+    fts_query = _build_fts_query(q, or_mode=True)
+    loop = asyncio.get_running_loop()
+    note_fts_rows, item_fts_rows, tfidf_hits = await asyncio.gather(
+        asyncio.create_task(_fts5_search(uid, fts_query)),
+        asyncio.create_task(_items_fts_search(uid, fts_query)),
+        loop.run_in_executor(None, search_index.semantic_search, q, uid, _FTS5_POOL),
+    )
+    words = re.sub(r'["\'\\^*():\-]', " ", q).split()
+    merged = _merge_and_score(
+        note_fts_rows, item_fts_rows, tfidf_hits, words,
+        search_llm._CONTEXT_NOTES * 2,
+    )
+    context_items = [
+        {"item_type": r["item_type"], "item_id": r["item_id"]}
+        for r in merged
+        if r["item_type"] in ("note", "db_card", "crm_contact")
+    ][:search_llm._CONTEXT_NOTES]
+    cfg = await get_user_llm_settings(uid)
+    return {
+        "fts_query":       fts_query,
+        "note_fts_hits":   len(note_fts_rows),
+        "item_fts_hits":   len(item_fts_rows),
+        "item_fts_types":  list({r["item_type"] for r in item_fts_rows}),
+        "tfidf_hits":      len(tfidf_hits),
+        "merged_total":    len(merged),
+        "context_items":   context_items,
+        "llm_endpoint":    cfg["endpoint"] or "(not set)",
+        "llm_model":       cfg["model"]    or "(not set)",
+        "llm_has_key":     bool(cfg["api_key"]),
+    }
+
+
+@router.get("/stream")
 async def stream_answer(request: Request, q: str = ""):
     """SSE stream — runs hybrid search then streams an LLM answer.
 
@@ -597,7 +642,9 @@ async def stream_answer(request: Request, q: str = ""):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    fts_query = _build_fts_query(q)
+    # Stream uses OR-mode FTS so natural-language questions still surface
+    # contacts/cards even when the query words aren't literally in the body.
+    fts_query = _build_fts_query(q, or_mode=True)
     if not fts_query:
         return StreamingResponse(
             iter(["data: [DONE]\n\n"]),
@@ -605,7 +652,6 @@ async def stream_answer(request: Request, q: str = ""):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # Hybrid search — same pipeline as /qa/search
     loop           = asyncio.get_running_loop()
     note_fts_task  = asyncio.create_task(_fts5_search(uid, fts_query))
     items_fts_task = asyncio.create_task(_items_fts_search(uid, fts_query))
@@ -616,17 +662,34 @@ async def stream_answer(request: Request, q: str = ""):
         note_fts_task, items_fts_task, tfidf_task
     )
 
-    # Build ordered items list for LLM context (notes + cards only)
-    words       = re.sub(r'["\'\\^*():\-]', " ", q).split()
-    merged      = _merge_and_score(
+    # Fetch extra metadata for TF-IDF-only non-note hits (e.g. crm_contacts
+    # found by semantic search but not FTS5).
+    words = re.sub(r'["\'\\^*():\-]', " ", q).split()
+    all_fts_keys  = {("note", r["item_id"]) for r in note_fts_rows}
+    all_fts_keys |= {(r["item_type"], r["item_id"]) for r in item_fts_rows}
+    tfidf_only_items = [
+        (h["item_type"], h["item_id"])
+        for h in tfidf_hits
+        if h["item_type"] != "note" and (h["item_type"], h["item_id"]) not in all_fts_keys
+    ][:20]
+    extra_item_meta: dict = {}
+    if tfidf_only_items:
+        extra_item_meta = await loop.run_in_executor(
+            None, _fetch_items_meta_sync, tfidf_only_items, uid
+        )
+
+    merged = _merge_and_score(
         note_fts_rows, item_fts_rows, tfidf_hits, words,
-        search_llm._CONTEXT_NOTES * 2,  # over-fetch; LLM filter drops ws/widget
+        search_llm._CONTEXT_NOTES * 2,
+        extra_item_meta=extra_item_meta,
     )
     context_items = [
         {"item_type": r["item_type"], "item_id": r["item_id"]}
         for r in merged
         if r["item_type"] in ("note", "db_card", "crm_contact")
     ][:search_llm._CONTEXT_NOTES]
+    log.info("/qa/stream q=%r fts_query=%r merged=%d context=%d",
+             q, fts_query, len(merged), len(context_items))
 
     async def _event_gen():
         try:
