@@ -2429,12 +2429,21 @@
     panel.addEventListener('click', panel._bwClickClose);
   }
 
+  // ── Set to true by cancelNewNote() to suppress auto-save for new notes. ──
+  // Reset to false after every _noteFlush() check so it never lingers.
+  var _bwSkipNewFlush = false;
+
+  // Called by the Cancel button ONLY on new-note forms.
+  // Signals _noteFlush to bail out before the async save chain fires.
+  function cancelNewNote() {
+    _bwSkipNewFlush = true;
+    closePanel();
+  }
+
   // Auto-save a note when the panel closes.
   // • Edit form  (hx-post='/notes/<id>'): always flush silently.
-  // • New-note form (hx-post='/notes'):  only flush when content is non-empty.
-  //   The title is left blank — the server generates 'Note 1', 'Note 2', …
-  //   After the save the note list is refreshed via HTMX so the new note
-  //   appears immediately without the user having to do anything.
+  // • New-note form (hx-post='/notes'):  only flush when content is non-empty
+  //   AND the user didn't explicitly click Cancel (_bwSkipNewFlush === false).
   // Must be called BEFORE dp.innerHTML is wiped.
   function _noteFlush() {
     var form = document.getElementById('note-form');
@@ -2451,8 +2460,12 @@
       return;
     }
 
-    // ── New note: only save when there is actual content ────────────────
+    // ── New note: only save when there is actual content
+    //    AND the user didn't explicitly click Cancel ────────────────
+    var skip = _bwSkipNewFlush;
+    _bwSkipNewFlush = false;           // always reset — no lingering state
     if (action !== '/notes') return;
+    if (skip) return;                  // explicit Cancel: discard silently
     if (typeof window._bwSyncPreviewToMd === 'function') {
       try { window._bwSyncPreviewToMd(); } catch (e) {}
     }

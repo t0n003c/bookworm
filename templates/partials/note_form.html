@@ -22,15 +22,12 @@
   >
     <input type="hidden" name="workspace_id" value="{{ workspace_id or '' }}">
 
-    <!-- Title + Icon -->
+    <!-- Title + Icon + Date — single row -->
     <div class="flex-shrink-0">
-      <label for="note-title" class="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-1">
-        Title <span class="text-wred" aria-hidden="true">*</span>
-      </label>
-      <div class="flex items-center gap-2">
+      <div class="flex items-end gap-2">
 
         <!-- ── Icon picker ──────────────────────────────── -->
-        <div class="relative flex-shrink-0" id="icon-picker-wrap">
+        <div class="relative flex-shrink-0 pb-0.5" id="icon-picker-wrap">
 
           <!-- Trigger button -->
           <button
@@ -96,27 +93,37 @@
         </div><!-- /icon-picker-wrap -->
 
         <!-- Title input -->
-        <input
-          id="note-title" name="title" type="text"
-          value="{{ note.title if is_edit else '' }}"
-          placeholder="e.g. Weekly Sync — Grocery Team"
-          class="flex-1 border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm
-                 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800
-                 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
-          required aria-required="true"
-        />
-      </div>
-    </div>
+        <div class="flex-1 flex flex-col">
+          <label for="note-title" class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-0.5">
+            Title <span class="text-wred" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="note-title" name="title" type="text"
+            value="{{ note.title if is_edit else '' }}"
+            placeholder="e.g. Weekly Sync — Grocery Team"
+            class="border-0 border-b border-gray-300 dark:border-zinc-600 bg-transparent py-1 text-sm
+                   focus:outline-none focus:border-wblue
+                   text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+            required aria-required="true"
+          />
+        </div>
 
-    <!-- Date -->
-    <div class="flex-shrink-0">
-      <label for="note-date" class="block text-sm font-semibold text-gray-700 dark:text-zinc-300 mb-1">Date <span class="text-wred" aria-hidden="true">*</span></label>
-      <input
-        id="note-date" name="meeting_date" type="date"
-        value="{{ note.meeting_date if is_edit else today }}"
-        class="w-full border border-gray-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100"
-        required aria-required="true"
-      />
+        <!-- Date input -->
+        <div class="flex-shrink-0 flex flex-col">
+          <label for="note-date" class="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-0.5">
+            Date <span class="text-wred" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="note-date" name="meeting_date" type="date"
+            value="{{ note.meeting_date if is_edit else today }}"
+            class="border-0 border-b border-gray-300 dark:border-zinc-600 bg-transparent py-1 text-sm
+                   focus:outline-none focus:border-wblue
+                   text-gray-800 dark:text-zinc-100"
+            required aria-required="true"
+          />
+        </div>
+
+      </div>
     </div>
 
     <!-- Categories -->
@@ -388,7 +395,7 @@
       <button type="submit"
         class="flex-1 bg-wblue text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue"
       >{{ 'Save Changes' if is_edit else 'Create Note' }}</button>
-      <button type="button" onclick="closePanel()"
+      <button type="button" onclick="{{ 'closePanel()' if is_edit else 'cancelNewNote()' }}"
         class="px-4 py-2.5 border border-gray-300 dark:border-zinc-600 rounded-lg text-sm text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition focus:outline-none focus:ring-2 focus:ring-gray-300"
       >Cancel</button>
       {% if is_edit %}
