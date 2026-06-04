@@ -25,8 +25,8 @@
   'use strict';
 
   /* ── constants ───────────────────────────────────────────── */
-  var HOLD_MS        = 500;  // ms before drag arms
-  var MOVE_THRESHOLD = 8;    // px movement that cancels the hold timer
+  var HOLD_MS        = 450;  // ms before drag arms
+  var MOVE_THRESHOLD = 22;   // px movement that cancels the hold timer (touch jitter can reach 15-20 px)
   var EDGE_PX        = 80;   // distance from left edge that opens sidebar
   var EDGE_DELAY_MS  = 300;  // ms to wait at edge before opening sidebar
   var SCROLL_ZONE_PX = 64;   // px from sidebar top/bottom that triggers auto-scroll
@@ -195,7 +195,7 @@
     _hideGhost();
     _clearHighlight();
     document.body.style.userSelect  = '';
-    document.body.style.touchAction = '';
+    document.body.style.touchAction = '';  // always clear — set early in pointerdown
   }
 
   /* ── execute the move via fetch ──────────────────────────── */
@@ -283,7 +283,10 @@
     var touch = (e.pointerType === 'touch' || e.pointerType === 'pen');
     if (touch) {
       // Claim the touch sequence so the browser won't cancel it for scrolling.
+      // Also set touch-action immediately — don't wait for the hold timer.
+      // Setting it after 450 ms is too late; the browser already decided by then.
       e.preventDefault();
+      document.body.style.touchAction = 'none';
     }
 
     _noteId    = art.dataset.noteId;
@@ -296,8 +299,7 @@
 
     _holdTimer = setTimeout(function () {
       _armed = true;
-      document.body.style.userSelect  = 'none';
-      document.body.style.touchAction = 'none';
+      document.body.style.userSelect = 'none';
       _showGhost(_startX, _startY);
     }, HOLD_MS);
   }, { passive: false });  // ← must be non-passive to allow preventDefault
@@ -308,11 +310,15 @@
     if (!_noteId) return;
 
     if (!_armed) {
+      // Must call preventDefault() here too, not just in pointerdown.
+      // iOS re-evaluates scroll intent on every pointermove; if we don't
+      // preventDefault() here, it can fire pointercancel and kill the drag
+      // mid-hold even though we already claimed the touch in pointerdown.
+      if (_isTouch) e.preventDefault();
+
       if (Math.hypot(e.clientX - _startX, e.clientY - _startY) > MOVE_THRESHOLD) {
-        // Finger moved too much before hold — cancel.
-        // Note: on touch, the current scroll is already blocked for this touch
-        // sequence because we called preventDefault() in pointerdown.  The user
-        // can scroll by swiping on the gaps between cards.
+        // Finger moved too much — clear scroll-lock and cancel.
+        document.body.style.touchAction = '';
         _reset();
       }
       return;
