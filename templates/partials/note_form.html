@@ -542,7 +542,10 @@
   .dark #md-live-preview tr:nth-child(even) td { background: #1f1f22; }
 
   /* ── Preview block drag-and-drop ── */
-  #md-live-preview { padding-left: 1.5rem !important; }
+  #md-live-preview { padding-left: 1.5rem !important; overflow-wrap: anywhere; }
+  /* Code blocks scroll horizontally — never break mid-character */
+  #md-live-preview pre,
+  #md-live-preview pre code { overflow-wrap: normal; }
   [data-preview-grip] {
     position: absolute; left: -1.2rem; top: 2px;
     color: transparent;
@@ -1830,9 +1833,14 @@
       // Do NOT trim the full value — leading spaces on the first line are valid
       // indentation for nested lists (trim would destroy them).
       const raw = _ta.value;
-      // Normalize visual bullet chars (•) at any indent level → standard markdown (-).
-      // Preserves leading spaces so marked.js sees proper nested list indentation.
-      const md  = raw.replace(/(^|\n)(\s*)• /g, '$1$2- ');
+      // Normalise Windows (\r\n) and old-Mac (\r) line endings to \n.
+      // Without this, \r\n\r\n blank lines turn each row of a Unicode
+      // box-drawing table into its own <p>, creating unbreakable 100+ char
+      // strings that overflow the editor horizontally.
+      // Normalize visual bullet chars (•) → standard markdown (-).
+      const md  = raw
+        .replace(/\r\n?/g, '\n')
+        .replace(/(^|\n)(\s*)• /g, '$1$2- ');
       _pv.innerHTML = raw.trim()
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
