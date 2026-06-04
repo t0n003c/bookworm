@@ -18,6 +18,7 @@ Phase 4B additions:
 Auth: all endpoints require a valid session. None are in _PUBLIC.
 """
 import asyncio
+import html as _html_mod
 import json
 import logging
 import re
@@ -36,6 +37,25 @@ from database import DB_PATH, get_db
 from routers.auth_db import get_user_llm_settings
 
 log = logging.getLogger(__name__)
+
+# ── HTML → plain-text helper ────────────────────────────────────────
+_TAG_RE = re.compile(r'<[^>]+>')
+
+def _strip_html(text: str) -> str:
+    """Strip HTML tags and decode entities, preserving STX/ETX highlight markers.
+
+    db_cards store note_content as hljs-annotated HTML.  When that body is
+    pulled into a search snippet it would show raw <span class="hljs-*">...
+    markup to the user.  This function removes tags and normalises whitespace
+    while leaving the \x02/\x03 markers that _bwSqSnippet() uses for <mark>.
+    """
+    if not text:
+        return ""
+    text = _TAG_RE.sub(' ', text)        # strip tags → spaces
+    text = _html_mod.unescape(text)      # &amp; &lt; etc. → real chars
+    text = re.sub(r'[ \t]+', ' ', text)  # collapse horizontal whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)  # at most two newlines
+    return text.strip()
 router = APIRouter(prefix="/qa", tags=["search-qa"])
 
 _MAX_TOKENS = 20
@@ -213,7 +233,7 @@ def _fetch_items_meta_sync(item_pairs: list, uid: int) -> dict:
             ).fetchall()
             for r in rows:
                 result[("db_card", r["item_id"])] = {
-                    "title": r["title"], "snippet": (r["body"] or "")[:150],
+                    "title": r["title"], "snippet": _strip_html((r["body"] or ""))[:150],
                     "link_data": r["link_data"],
                 }
         if ws_ids:
@@ -239,7 +259,7 @@ def _fetch_items_meta_sync(item_pairs: list, uid: int) -> dict:
             ).fetchall()
             for r in rows:
                 result[("widget", r["item_id"])] = {
-                    "title": r["title"], "snippet": (r["body"] or "")[:150],
+                    "title": r["title"], "snippet": _strip_html((r["body"] or ""))[:150],
                     "link_data": r["link_data"],
                 }
 
@@ -307,19 +327,19 @@ def _merge_and_score(
         hybrid  = tfidf_sc * 5.0 + (-bm25_sc) + bigram
 
         if fts_row:
-            snippet    = fts_row.get("snippet") or ""
+            snippet    = _strip_html(fts_row.get("snippet") or "")
             link_data  = fts_row.get("link_data") or "{}"
             ws_name    = fts_row.get("workspace_name") or ""
             ws_emoji   = fts_row.get("workspace_emoji") or ""
         elif item_type == "note":
             meta       = extra_note_meta.get(item_id, {})
-            snippet    = (meta.get("content") or "")[:150]
+            snippet    = _strip_html((meta.get("content") or ""))[:150]
             link_data  = "{}"
             ws_name    = meta.get("workspace_name") or ""
             ws_emoji   = meta.get("workspace_emoji") or "📁"
         else:
             meta       = extra_item_meta.get(key, {})
-            snippet    = meta.get("snippet") or ""
+            snippet    = _strip_html(meta.get("snippet") or "")
             link_data  = meta.get("link_data") or "{}"
             ws_name    = ""
             ws_emoji   = ""
@@ -386,7 +406,7 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
                 "item_id":         r["item_id"],
                 "note_id":         r["item_id"],
                 "title":           r["title"] or "Untitled",
-                "snippet":         r["snippet"] or "",
+                "snippet":         _strip_html(r["snippet"] or ""),
                 "score":           float(-r["bm25_score"]),
                 "workspace_name":  r["workspace_name"] or "",
                 "workspace_emoji": r["workspace_emoji"] or "📁",
@@ -402,7 +422,7 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
                 "item_id":         r["item_id"],
                 "note_id":         None,
                 "title":           r["title"] or "Untitled",
-                "snippet":         r["snippet"] or "",
+                "snippet":         _strip_html(r["snippet"] or ""),
                 "score":           float(-r["bm25_score"]),
                 "workspace_name":  "",
                 "workspace_emoji": "",
