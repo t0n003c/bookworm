@@ -779,6 +779,7 @@
 <script src="/static/js/bw-webauthn.js?v={{ static_v }}" defer></script>
 <script src="/static/js/note-workspace-dnd.js?v={{ static_v }}" defer></script>
 <script src="/static/js/bw-search-qa.js?v={{ static_v }}" defer></script>
+<script src="/static/js/bw-mobile-fab.js?v={{ static_v }}" defer></script>
 
 {# ── Hybrid Search Q&A — Ctrl+K floating panel ──────────────────── #}
 <div id="bw-sq-backdrop"
@@ -848,6 +849,134 @@
   </style>
 </div>
 {# ── /Hybrid Search ──────────────────────────────────────────────────── #}
+
+{# ── Mobile Search FAB (Ctrl+K equivalent) ─────────────────────────── #}
+{#  Only visible on mobile (md:hidden). Two states:
+    - AI OFF: book-worm magnifying glass, plain blue button
+    - AI ON:  same worm but with sparkle lens + gold ring + active pill #}
+<div id="bw-mob-fab-wrap"
+     class="md:hidden fixed bottom-6 right-5 z-[57]
+            flex flex-col items-center gap-2 transition-opacity duration-200"
+     aria-label="Mobile search controls">
+
+  {# AI toggle pill #}
+  <button id="bw-mob-ai-pill"
+          type="button"
+          aria-label="AI answers ON — tap to disable"
+          title="AI answers: ON"
+          class="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold
+                 transition-all duration-200 select-none shadow-sm
+                 bg-[#ffc220] text-zinc-900 shadow-[0_0_8px_#ffc22066]">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {# 4-pointed star #}
+      <path d="M12 2 L13.5 10.5 L22 12 L13.5 13.5 L12 22 L10.5 13.5 L2 12 L10.5 10.5 Z"/>
+    </svg>
+    AI
+  </button>
+
+  {# Main search FAB #}
+  <button id="bw-mob-search-btn"
+          type="button"
+          aria-label="Search notes (tap to open)"
+          title="Search notes"
+          class="w-14 h-14 rounded-full bg-[#0053e2] text-white
+                 shadow-[0_4px_20px_rgba(0,83,226,0.45)]
+                 flex items-center justify-center
+                 transition-all duration-150 active:scale-95
+                 focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:ring-offset-2">
+
+    {# ── Non-AI icon: worm peeking through a magnifying glass with book-line lens ── #}
+    <svg id="bw-mob-icon-base"
+         width="32" height="32" viewBox="0 0 56 56"
+         fill="none" xmlns="http://www.w3.org/2000/svg"
+         aria-hidden="true">
+
+      {# Magnifying glass lens circle #}
+      <circle cx="22" cy="22" r="13" stroke="white" stroke-width="3.2" fill="rgba(255,255,255,0.15)"/>
+
+      {# Book lines inside lens (suggests notes/text) #}
+      <line x1="15" y1="19" x2="29" y2="19" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+      <line x1="15" y1="23" x2="29" y2="23" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+      <line x1="15" y1="27" x2="24" y2="27" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+
+      {# Handle (worm body segments - three circles getting slightly smaller) #}
+      <circle cx="33.5" cy="33.5" r="4.2" fill="#a3e635"/>
+      <circle cx="39.5" cy="39.5" r="3.5" fill="#86efac"/>
+
+      {# Worm head #}
+      <circle cx="45.5" cy="45.5" r="5" fill="#a3e635"/>
+      {# Head highlight #}
+      <circle cx="44" cy="43.5" r="1.3" fill="rgba(255,255,255,0.55)"/>
+
+      {# Eyes #}
+      <circle cx="43.5" cy="43" r="1.2" fill="#1a1a1a"/>
+      <circle cx="47.5" cy="43" r="1.2" fill="#1a1a1a"/>
+
+      {# Smile #}
+      <path d="M43.5 47 Q45.5 49 47.5 47" stroke="#1a1a1a" stroke-width="1.2"
+            stroke-linecap="round" fill="none"/>
+
+      {# Antenna #}
+      <path d="M45.5 40.5 Q47 37.5 50 36" stroke="#4ade80" stroke-width="1.5"
+            stroke-linecap="round" fill="none"/>
+      <circle cx="50" cy="35.5" r="1.3" fill="#4ade80"/>
+    </svg>
+
+    {# ── AI icon: sparkle lens + gold star eyes + external sparkles ── #}
+    <svg id="bw-mob-icon-ai"
+         width="32" height="32" viewBox="0 0 56 56"
+         fill="none" xmlns="http://www.w3.org/2000/svg"
+         class="hidden" aria-hidden="true">
+
+      {# Magnifying glass lens circle #}
+      <circle cx="22" cy="22" r="13" stroke="white" stroke-width="3.2" fill="rgba(255,255,255,0.15)"/>
+
+      {# 4-pointed star inside the lens instead of plain lines #}
+      <path d="M22 11 L23.2 19.8 L32 21 L23.2 22.2 L22 31 L20.8 22.2 L12 21 L20.8 19.8 Z"
+            fill="white" opacity="0.92"/>
+
+      {# Tiny dot sparkles inside lens #}
+      <circle cx="15" cy="15" r="1.4" fill="#ffc220" opacity="0.9"/>
+      <circle cx="29" cy="15" r="1.4" fill="#ffc220" opacity="0.9"/>
+      <circle cx="15" cy="29" r="1.4" fill="#ffc220" opacity="0.9"/>
+      <circle cx="29" cy="29" r="1.4" fill="#ffc220" opacity="0.9"/>
+
+      {# Handle (worm body segments) #}
+      <circle cx="33.5" cy="33.5" r="4.2" fill="#a3e635"/>
+      <circle cx="39.5" cy="39.5" r="3.5" fill="#86efac"/>
+
+      {# Worm head (same shape, but gold star eyes = AI mode) #}
+      <circle cx="45.5" cy="45.5" r="5" fill="#a3e635"/>
+      <circle cx="44" cy="43.5" r="1.3" fill="rgba(255,255,255,0.55)"/>
+
+      {# Star eyes — replace the plain dot eyes #}
+      <path d="M43.5 42 L43.8 43 L44.8 43 L44 43.6 L44.3 44.6 L43.5 44 L42.7 44.6 L43 43.6 L42.2 43 L43.2 43 Z"
+            fill="#ffc220"/>
+      <path d="M47.5 42 L47.8 43 L48.8 43 L48 43.6 L48.3 44.6 L47.5 44 L46.7 44.6 L47 43.6 L46.2 43 L47.2 43 Z"
+            fill="#ffc220"/>
+
+      {# Smile — same as base #}
+      <path d="M43.5 47 Q45.5 49 47.5 47" stroke="#1a1a1a" stroke-width="1.2"
+            stroke-linecap="round" fill="none"/>
+
+      {# Antenna with star tip #}
+      <path d="M45.5 40.5 Q47 37.5 50 36" stroke="#4ade80" stroke-width="1.5"
+            stroke-linecap="round" fill="none"/>
+      <path d="M50 34.2 L50.5 35.5 L51.8 35.5 L50.8 36.3 L51.2 37.6 L50 36.8 L48.8 37.6 L49.2 36.3 L48.2 35.5 L49.5 35.5 Z"
+            fill="#ffc220"/>
+
+      {# External sparkle — top right of lens #}
+      <path d="M36 8 L36.6 10.4 L39 11 L36.6 11.6 L36 14 L35.4 11.6 L33 11 L35.4 10.4 Z"
+            fill="#ffc220" opacity="0.9"/>
+
+      {# External sparkle — top left of lens #}
+      <path d="M7 12 L7.4 13.6 L9 14 L7.4 14.4 L7 16 L6.6 14.4 L5 14 L6.6 13.6 Z"
+            fill="white" opacity="0.7"/>
+    </svg>
+
+  </button>
+</div>
+{# ── /Mobile Search FAB ───────────────────────────────────────────────── #}
 
 {# ── Reminder toast container — position:fixed, lives outside home-content
    so toasts appear even when the user is in workspace view. #}
