@@ -204,13 +204,21 @@ In the NPM web UI (`http://<your-server-ip>:81`):
 
 Under **SSL** tab: Request a Let's Encrypt certificate, enable **Force SSL** and **HTTP/2**.
 
-Under **Advanced** tab, add these custom headers so BookWorm gets the real client IP and knows it's on HTTPS:
+Under **Advanced** tab, add these custom headers so BookWorm gets the real client IP, knows it's on HTTPS, **and so that AI streaming (SSE) works correctly** — without `proxy_buffering off` nginx queues every token from the LLM and the browser sees nothing until the entire response finishes:
 
 ```nginx
+# Required headers
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 proxy_set_header X-Real-IP         $remote_addr;
 proxy_set_header Host              $host;
+
+# SSE / AI streaming — disables NPM's response buffer so tokens
+# arrive in real-time instead of all at once at the end.
+proxy_buffering           off;
+proxy_http_version        1.1;
+proxy_set_header          Connection '';
+proxy_read_timeout        300s;
 ```
 
 **Step 3 — Point Cloudflare Tunnel at NPM**
@@ -302,10 +310,17 @@ server {
     server_name notes.example.com;
     # ... ssl_certificate / ssl_certificate_key ...
     location / {
-        proxy_pass         http://localhost:8001;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Forwarded-Proto https;
-        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_pass             http://localhost:8001;
+        proxy_set_header       Host              $host;
+        proxy_set_header       X-Forwarded-Proto https;
+        proxy_set_header       X-Real-IP         $remote_addr;
+
+        # SSE / AI streaming — without these, nginx buffers every LLM
+        # token and the browser sees nothing until the response ends.
+        proxy_buffering        off;
+        proxy_http_version     1.1;
+        proxy_set_header       Connection '';
+        proxy_read_timeout     300s;
     }
 }
 ```
