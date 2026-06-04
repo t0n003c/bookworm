@@ -288,10 +288,10 @@
       </div>
 
       <!-- Split: editor left | live preview right -->
-      <div class="flex gap-3 flex-1 min-h-0">
+      <div class="flex gap-3 flex-1 min-h-0 min-w-0">
 
         <!-- Editor -->
-        <div id="editor-pane" class="flex flex-col flex-1 min-h-0">
+        <div id="editor-pane" class="flex flex-col flex-1 min-h-0 min-w-0">
           <span class="text-xs text-gray-400 dark:text-zinc-500 mb-1 font-medium">Markdown</span>
           <textarea
             id="note-content" name="content"
@@ -308,14 +308,14 @@
         </div>
 
         <!-- Live preview (hidden by default → JS reveals it for split/preview modes) -->
-        <div id="preview-pane" class="hidden flex flex-col flex-1 min-h-0">
+        <div id="preview-pane" class="hidden flex flex-col flex-1 min-h-0 min-w-0">
           <span class="text-xs text-gray-400 dark:text-zinc-500 mb-1 font-medium">Preview</span>
           <div
             id="md-live-preview"
             contenteditable="true"
             spellcheck="true"
             data-placeholder="Preview will appear here…"
-            class="md-body flex-1 min-h-0 overflow-y-auto overflow-x-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
+            class="md-body flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-auto border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 cursor-text"
             aria-label="WYSIWYG note editor"
             aria-multiline="true"
             role="textbox"
@@ -534,7 +534,7 @@
   /* ── Tables in the contenteditable preview ── */
   /* NOTE: never set display:block on <table> — it breaks the table layout algorithm */
   #md-live-preview table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
-  #md-live-preview th { background: #f3f4f6; font-weight: 700; text-align: left; padding: .45rem .75rem; border: 1px solid #d1d5db; white-space: nowrap; }
+  #md-live-preview th { background: #f3f4f6; font-weight: 700; text-align: left; padding: .45rem .75rem; border: 1px solid #d1d5db; }
   #md-live-preview td { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; min-height: 1.75rem; }
   #md-live-preview tr:nth-child(even) td { background: #f9fafb; }
   .dark #md-live-preview th { background: #27272a; border-color: #3f3f46; }
@@ -3805,12 +3805,12 @@
     grip.classList.remove('hidden');
     if (_isMobile) grip.style.opacity = '1';
 
-    // Resize: centered on the table's bottom-right corner, clamped inside CE
+    // Resize: centered on the table's bottom-right corner, clamped inside CE AND viewport
+    var vw = window.innerWidth, vh = window.innerHeight;
     var rxCenter = r.right;
     var ryCenter = r.bottom;
-    // Keep the handle's visible area within the CE box
-    rxCenter = Math.max(ceR.left + rw, Math.min(rxCenter, ceR.right));
-    ryCenter = Math.max(ceR.top  + rh, Math.min(ryCenter, ceR.bottom));
+    rxCenter = Math.max(ceR.left + rw, Math.min(rxCenter, ceR.right,  vw - 4));
+    ryCenter = Math.max(ceR.top  + rh, Math.min(ryCenter, ceR.bottom, vh - 4));
     rzHnd.style.left = (rxCenter - rw / 2) + 'px';
     rzHnd.style.top  = (ryCenter - rh / 2) + 'px';
     rzHnd.classList.remove('hidden');
