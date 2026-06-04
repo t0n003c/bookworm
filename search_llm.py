@@ -245,3 +245,4 @@ async def stream_llm(
                         continue
     except Exception:
         log.exception("search_llm: stream failed")
+        yield "[LLM error — check your endpoint/API key in Account → AI Search]"

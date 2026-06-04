@@ -131,18 +131,25 @@ def _uid(request: Request) -> int:
     return uid
 
 
-def _build_fts_query(q: str) -> str | None:
+def _build_fts_query(q: str, or_mode: bool = False) -> str | None:
+    """Build an FTS5 query string from a user query.
+
+    or_mode=False (default): terms joined by AND — precise, used for /qa/search.
+    or_mode=True:            terms joined by OR  — broad,   used for /qa/stream
+                             so natural-language questions like 'What was the last
+                             conversation with Thanh?' still surface the CRM contact
+                             even though the document doesn't contain 'last' or
+                             'conversation' as literal indexed words.
+    """
     words = re.sub(r'["\'\\^*():\-]', " ", q).split()
-    # Strip stop-words so natural-language questions don't kill FTS5 AND-logic.
-    # Keep words shorter than 3 chars only if they're not in the stop list
-    # (e.g. an actual short name like "Ed" should still survive).
+    # Strip stop-words so noise words don't swamp the query.
     meaningful = [w for w in words if w.lower() not in _STOP_WORDS and len(w) >= 2]
     if not meaningful:
-        # Fallback: use original words if stop-word strip wiped everything
-        meaningful = words
+        meaningful = words  # fallback: use originals if everything was stripped
     if not meaningful:
         return None
-    return " ".join(w + "*" for w in meaningful[:_MAX_TOKENS])
+    sep = " OR " if or_mode else " "
+    return sep.join(w + "*" for w in meaningful[:_MAX_TOKENS])
 
 
 def _bigram_bonus(title: str, words: list) -> float:
@@ -408,7 +415,10 @@ async def fts_search(request: Request, q: str = "", limit: int = 12):
 
     limit     = max(1, min(limit, _MAX_LIMIT))
     words     = re.sub(r'["\'\\^*():\-]', " ", q).split()
-    fts_query = _build_fts_query(q)
+    # Stream uses OR-mode FTS so natural-language questions ('What was the last
+    # conversation with Thanh?') still surface the contact even though the indexed
+    # body doesn't contain words like 'last' or 'conversation' literally.
+    fts_query = _build_fts_query(q, or_mode=True)
     if not fts_query:
         return {"results": [], "index_ready": search_index.is_ready()}
 
