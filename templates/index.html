@@ -2469,18 +2469,32 @@
     fd.set('title', '');
     var wsId = fd.get('workspace_id');
 
+    // Include active sort params so the refreshed list keeps its order.
+    var sortQs = (typeof _sortSearchParams === 'function') ? _sortSearchParams() : '';
+    var listUrl = '/notes?workspace_id=' + (wsId || '') + (sortQs ? '&' + sortQs : '');
+
     fetch('/notes', { method: 'POST', body: fd })
       .then(function(res) {
         if (!res.ok) { console.warn('[BookWorm] auto-save responded', res.status); return; }
-        // Refresh the note list so the new note appears straight away.
+        _bwToast('📝 Note auto-saved');
         if (wsId) {
-          htmx.ajax('GET', '/notes?workspace_id=' + wsId, {
-            target: '#note-list',
-            swap:   'innerHTML',
-          });
+          htmx.ajax('GET', listUrl, { target: '#note-list', swap: 'innerHTML' });
         }
       })
       .catch(function(err) { console.warn('[BookWorm] auto-save failed', err); });
+  }
+
+  // Tiny ephemeral toast — no dependency on a toast library.
+  function _bwToast(msg) {
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:1.25rem;right:1.25rem;z-index:9999;' +
+      'background:#1e293b;color:#f1f5f9;padding:.5rem 1rem;border-radius:.5rem;' +
+      'font-size:.875rem;box-shadow:0 4px 12px rgba(0,0,0,.35);pointer-events:none;' +
+      'transition:opacity .4s;opacity:1;';
+    document.body.appendChild(t);
+    setTimeout(function() { t.style.opacity = '0'; }, 2200);
+    setTimeout(function() { t.remove(); }, 2700);
   }
 
   function closePanel() {
@@ -2529,6 +2543,12 @@
 
     /* Primary hook — htmx:beforeSwap fires for every swap attempt.         */
     document.addEventListener('htmx:beforeSwap', function (evt) {
+      // ── Flush unsaved new-note form before any panel replacement ─────────
+      // closePanel() covers X-button / Escape / backdrop-click paths.
+      // This covers clicking a note in the list (HTMX swap bypasses closePanel).
+      if (evt.detail.target && evt.detail.target.id === 'detail-panel') {
+        _noteFlush();
+      }
       var xhr = evt.detail && evt.detail.xhr;
       if (_isDemoEnded(xhr)) {
         evt.detail.shouldSwap = false;
