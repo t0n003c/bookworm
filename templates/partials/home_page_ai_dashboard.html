@@ -56,20 +56,8 @@
 
     <div class="flex-1"></div>
 
-    {# Range picker #}
-    <select id="ai-days-select" onchange="aiOnRangeChange()"
-            class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
-                   bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
-                   focus:outline-none focus:ring-2 focus:ring-wblue">
-      <option value="7">Last 7 days</option>
-      <option value="30" selected>Last 30 days</option>
-      <option value="90">Last 90 days</option>
-      <option value="365">Last year</option>
-      <option value="custom">✏️ Custom…</option>
-    </select>
-
     {# Custom date inputs:
-       • Desktop (sm+): inline in the top bar, between the select and refresh
+       • Desktop (sm+): inline in the top bar, between the select and the controls group
        • Mobile (<sm):  wraps to a second row (order-last + w-full + border-t) #}
     <div id="ai-custom-range"
          class="hidden items-center gap-2 flex-shrink-0
@@ -95,15 +83,32 @@
             class="text-[10px] text-red-500 dark:text-red-400 hidden">End must be after start.</span>
     </div>
 
-    {# ── Retention gear icon + popover ──────────────────────────────────── #}
-    <div class="relative" id="ai-retention-wrap">
-      <button id="ai-retention-gear" onclick="aiToggleRetentionPopover(event)"
-              title="History &amp; Data Retention"
-              class="p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700
-                     text-gray-400 hover:text-wblue hover:border-wblue
-                     dark:text-zinc-500 dark:hover:text-blue-400
-                     transition focus:outline-none focus:ring-2 focus:ring-wblue"
-              aria-label="History &amp; retention settings" aria-haspopup="true" aria-expanded="false">
+    {# ── Controls group: select + gear + refresh always on the same row ────
+       flex-shrink-0 prevents any of the three from wrapping away from each other
+       on narrow mobile screens. #}
+    <div class="flex items-center gap-2 flex-shrink-0">
+
+      {# Range picker #}
+      <select id="ai-days-select" onchange="aiOnRangeChange()"
+              class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
+                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                     focus:outline-none focus:ring-2 focus:ring-wblue">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+        <option value="custom">✏️ Custom…</option>
+      </select>
+
+      {# ── Retention gear icon + popover ────────────────────────────────── #}
+      <div class="relative" id="ai-retention-wrap">
+        <button id="ai-retention-gear" onclick="aiToggleRetentionPopover(event)"
+                title="History &amp; Data Retention"
+                class="p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700
+                       text-gray-400 hover:text-wblue hover:border-wblue
+                       dark:text-zinc-500 dark:hover:text-blue-400
+                       transition focus:outline-none focus:ring-2 focus:ring-wblue"
+                aria-label="History &amp; retention settings" aria-haspopup="true" aria-expanded="false">
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round"
                 d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573
@@ -159,19 +164,20 @@
              class="hidden text-[10px] text-gray-400 dark:text-zinc-600"></p>
         </div>
       </div>
-    </div>{# /retention-wrap #}
+      </div>{# /retention-wrap #}
 
-    <button onclick="aiLoadOverview()" title="Refresh"
-            class="p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700
-                   text-gray-400 hover:text-wblue hover:border-wblue
-                   dark:text-zinc-500 dark:hover:text-blue-400
-                   transition focus:outline-none focus:ring-2 focus:ring-wblue"
-            aria-label="Refresh">
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-      </svg>
-    </button>
+      <button onclick="aiLoadOverview()" title="Refresh"
+              class="p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700
+                     text-gray-400 hover:text-wblue hover:border-wblue
+                     dark:text-zinc-500 dark:hover:text-blue-400
+                     transition focus:outline-none focus:ring-2 focus:ring-wblue"
+              aria-label="Refresh">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+    </div>{# /controls-group #}
   </div>
 
   {# ── Pill tab bar ─────────────────────────────────────────────────────────── #}
