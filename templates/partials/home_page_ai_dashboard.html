@@ -42,8 +42,8 @@
      class="flex flex-col select-none bg-gray-50 dark:bg-zinc-950"
      style="height:calc(100vh - 3.5rem)">
 
-  {# ── Top bar ─────────────────────────────────────────────────────────────── #}
-  <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
+  {# ── Top bar ────────────────────────────────────────────────────────────────── #}
+  <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 flex-shrink-0
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-900">
     <span class="text-lg leading-none flex-shrink-0" aria-hidden="true">{{ page.emoji or '🤖' }}</span>
@@ -68,8 +68,13 @@
       <option value="custom">✏️ Custom…</option>
     </select>
 
-    {# Custom date inputs — inline, hidden until 'Custom…' is picked #}
-    <div id="ai-custom-range" class="hidden items-center gap-2 flex-shrink-0">
+    {# Custom date inputs:
+       • Desktop (sm+): inline in the top bar, between the select and refresh
+       • Mobile (<sm):  wraps to a second row (order-last + w-full + border-t) #}
+    <div id="ai-custom-range"
+         class="hidden items-center gap-2 flex-shrink-0
+                order-last w-full border-t border-gray-100 dark:border-zinc-800 pt-1.5
+                sm:order-none sm:w-auto sm:border-t-0 sm:pt-0">
       <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500">From</span>
       <input id="ai-date-from" type="date"
              class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
