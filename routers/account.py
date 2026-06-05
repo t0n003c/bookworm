@@ -1,6 +1,4 @@
 """Account management — change credentials + superadmin user management."""
-from pathlib import Path
-
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -119,8 +117,6 @@ async def toggle_registration(
         return HTMLResponse("", status_code=403)
     new_value = enabled.strip().lower() == "on"
     await set_registration_open(new_value)
-    users = await get_all_users()
-    me    = request.session.get("user_id")
     label = "open" if new_value else "closed"
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
@@ -143,7 +139,6 @@ async def toggle_unlimited_uploads(
     new_value = enabled.strip().lower() == "on"
     me    = request.session.get("user_id")
     await set_unlimited_uploads(me, new_value)
-    users = await get_all_users()
     label = "enabled" if new_value else "disabled"
     return templates.TemplateResponse(
         request, "partials/admin_users.html",
