@@ -12,32 +12,71 @@ from database import get_db
 _HISTORY_PER_PAGE = 20
 
 
-async def get_ai_overview(uid: int, days: int = 30) -> dict:
+import re as _re
+
+_DATE_RE = _re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def _build_time_clause(
+    days: int,
+    start_date: str,
+    end_date: str,
+) -> tuple[str, tuple]:
+    """Return (WHERE fragment, params-tuple) for the time window.
+
+    Custom range wins when both start_date and end_date are valid ISO dates.
+    Falls back to rolling-window otherwise.
+    """
+    if (
+        start_date
+        and end_date
+        and _DATE_RE.match(start_date)
+        and _DATE_RE.match(end_date)
+        and start_date <= end_date
+    ):
+        return "DATE(queried_at) BETWEEN ? AND ?", (start_date, end_date)
+    days = max(1, min(days, 3650))
+    return "queried_at >= datetime('now', ? || ' days')", (f"-{days}",)
+
+
+async def get_ai_overview(
+    uid: int,
+    days: int = 30,
+    start_date: str = "",
+    end_date: str = "",
+) -> dict:
     """Return summary stats + per-day breakdowns for charts.
 
-    Returns:
+    Accepts either a rolling ``days`` window OR an explicit ``start_date``/
+    ``end_date`` pair (YYYY-MM-DD).  When both dates are provided and valid,
+    the explicit range takes priority.
+
+    Returns::
+
         {
-          summary: {total_queries, total_input, total_output, total_tokens, total_cost},
-          daily:   [{day, queries, input_tokens, output_tokens, cost_usd}],  # oldest→newest
-          models:  [{model, count}],
+          summary:      {total_queries, total_input, total_output,
+                         total_tokens, total_cost},
+          daily:        [{day, queries, input_tokens, output_tokens, cost_usd}],
+          models:       [{model, count}],
+          period_label: str,   # human-readable e.g. "Last 30 days" or "Jan 1 – Mar 31"
         }
     """
-    days = max(1, min(days, 365))
+    time_clause, time_params = _build_time_clause(days, start_date, end_date)
+
     async with get_db() as db:
         # ── Summary totals ────────────────────────────────────────────────
         cur = await db.execute(
-            """
+            f"""
             SELECT
-                COUNT(*)              AS total_queries,
-                COALESCE(SUM(input_tokens),  0) AS total_input,
-                COALESCE(SUM(output_tokens), 0) AS total_output,
-                COALESCE(SUM(input_tokens) + SUM(output_tokens), 0) AS total_tokens,
-                SUM(cost_usd)         AS total_cost
+                COUNT(*)                                              AS total_queries,
+                COALESCE(SUM(input_tokens),  0)                       AS total_input,
+                COALESCE(SUM(output_tokens), 0)                       AS total_output,
+                COALESCE(SUM(input_tokens) + SUM(output_tokens), 0)   AS total_tokens,
+                SUM(cost_usd)                                         AS total_cost
             FROM ai_usage_log
-            WHERE user_id = ?
-              AND queried_at >= datetime('now', ? || ' days')
+            WHERE user_id = ? AND {time_clause}
             """,
-            (uid, f"-{days}"),
+            (uid,) + time_params,
         )
         row = await cur.fetchone()
         summary = dict(row) if row else {}
@@ -49,7 +88,7 @@ async def get_ai_overview(uid: int, days: int = 30) -> dict:
 
         # ── Per-day breakdown ─────────────────────────────────────────────
         cur = await db.execute(
-            """
+            f"""
             SELECT
                 DATE(queried_at)                AS day,
                 COUNT(*)                        AS queries,
@@ -57,30 +96,54 @@ async def get_ai_overview(uid: int, days: int = 30) -> dict:
                 COALESCE(SUM(output_tokens), 0) AS output_tokens,
                 COALESCE(SUM(cost_usd),      0) AS cost_usd
             FROM ai_usage_log
-            WHERE user_id = ?
-              AND queried_at >= datetime('now', ? || ' days')
+            WHERE user_id = ? AND {time_clause}
             GROUP BY DATE(queried_at)
             ORDER BY DATE(queried_at) ASC
             """,
-            (uid, f"-{days}"),
+            (uid,) + time_params,
         )
         daily = [dict(r) for r in await cur.fetchall()]
 
         # ── Model breakdown ───────────────────────────────────────────────
         cur = await db.execute(
-            """
+            f"""
             SELECT model, COUNT(*) AS count
             FROM ai_usage_log
-            WHERE user_id = ?
-              AND queried_at >= datetime('now', ? || ' days')
+            WHERE user_id = ? AND {time_clause}
             GROUP BY model
             ORDER BY count DESC
             """,
-            (uid, f"-{days}"),
+            (uid,) + time_params,
         )
         models = [dict(r) for r in await cur.fetchall()]
 
-    return {"summary": summary, "daily": daily, "models": models}
+    # ── Human-readable period label sent to the frontend ─────────────────
+    if start_date and end_date and _DATE_RE.match(start_date) and _DATE_RE.match(end_date):
+        period_label = f"{_fmt_date(start_date)} – {_fmt_date(end_date)}"
+    else:
+        period_label = f"Last {days} day{'s' if days != 1 else ''}"
+
+    return {
+        "summary":      summary,
+        "daily":        daily,
+        "models":       models,
+        "period_label": period_label,
+    }
+
+
+def _fmt_date(iso: str) -> str:
+    """'2025-01-07' → 'Jan 7, 2025'."""
+    try:
+        from datetime import date
+        d = date.fromisoformat(iso)
+        return d.strftime("%b %-d, %Y")  # Linux/Mac
+    except ValueError:
+        try:
+            from datetime import date
+            d = date.fromisoformat(iso)
+            return d.strftime("%b %#d, %Y")  # Windows
+        except Exception:
+            return iso
 
 
 async def get_ai_history(

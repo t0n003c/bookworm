@@ -42,8 +42,19 @@ async def _get_ai_page(page_id: int, uid: int) -> dict | None:
 
 
 @router.get("/ai-dashboard/{page_id}/overview")
-async def ai_overview(request: Request, page_id: int, days: int = 30):
-    """Summary cards + per-day chart data for the AI Dashboard overview tab."""
+async def ai_overview(
+    request: Request,
+    page_id: int,
+    days: int = 30,
+    start_date: str = "",
+    end_date: str = "",
+):
+    """Summary cards + per-day chart data for the AI Dashboard overview tab.
+
+    Accepts either ?days=N  (rolling window) or
+    ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD  (explicit range).
+    When both dates are provided and valid, the explicit range wins.
+    """
     try:
         uid = _uid(request)
     except PermissionError:
@@ -53,7 +64,12 @@ async def ai_overview(request: Request, page_id: int, days: int = 30):
     if not page:
         return JSONResponse({"error": "page not found"}, status_code=404)
 
-    data = await get_ai_overview(uid, days=days)
+    data = await get_ai_overview(
+        uid,
+        days=days,
+        start_date=start_date.strip(),
+        end_date=end_date.strip(),
+    )
     return JSONResponse(data)
 
 

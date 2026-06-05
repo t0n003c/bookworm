@@ -13,6 +13,8 @@ var _aiHistPage    = 1;
 var _aiHistBusy    = false;
 var _aiHistTimer   = null;
 var _aiDays        = 30;
+var _aiCustomFrom  = '';   // YYYY-MM-DD, empty = not in custom mode
+var _aiCustomTo    = '';
 
 // ── Chart.js lazy loader ──────────────────────────────────────────────────────
 var _aiCjReady   = false;
@@ -71,11 +73,66 @@ function _aiApplyTab(tab) {
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
+/** Called when the range <select> changes. */
+function aiOnRangeChange() {
+  var sel = document.getElementById('ai-days-select');
+  var row = document.getElementById('ai-custom-range');
+  if (!sel || !row) return;
+  if (sel.value === 'custom') {
+    // Show the date-picker row and seed sensible defaults if blank
+    row.classList.remove('hidden');
+    row.classList.add('flex');
+    var fromEl = document.getElementById('ai-date-from');
+    var toEl   = document.getElementById('ai-date-to');
+    if (fromEl && !fromEl.value) {
+      // Default: 30 days ago → today
+      var to   = new Date();
+      var from = new Date(to.getTime() - 29 * 86400000);
+      toEl.value   = _aiIso(to);
+      fromEl.value = _aiIso(from);
+    }
+    // Don't auto-load yet — wait for Apply
+  } else {
+    row.classList.add('hidden');
+    row.classList.remove('flex');
+    _aiCustomFrom = '';
+    _aiCustomTo   = '';
+    aiLoadOverview();
+  }
+}
+
+/** Validates the custom range and fires the overview load. */
+function aiApplyCustomRange() {
+  var fromEl = document.getElementById('ai-date-from');
+  var toEl   = document.getElementById('ai-date-to');
+  var errEl  = document.getElementById('ai-custom-err');
+  if (!fromEl || !toEl) return;
+  var from = fromEl.value, to = toEl.value;
+  if (!from || !to || from > to) {
+    if (errEl) { errEl.classList.remove('hidden'); }
+    return;
+  }
+  if (errEl) { errEl.classList.add('hidden'); }
+  _aiCustomFrom = from;
+  _aiCustomTo   = to;
+  aiLoadOverview();
+}
+
 function aiLoadOverview() {
   var sel = document.getElementById('ai-days-select');
-  _aiDays = sel ? parseInt(sel.value, 10) : 30;
+  _aiDays = (sel && sel.value !== 'custom') ? parseInt(sel.value, 10) : _aiDays;
+
+  var url;
+  if (_aiCustomFrom && _aiCustomTo) {
+    url = '/home/ai-dashboard/' + _aiPid
+        + '/overview?start_date=' + encodeURIComponent(_aiCustomFrom)
+        + '&end_date='            + encodeURIComponent(_aiCustomTo);
+  } else {
+    url = '/home/ai-dashboard/' + _aiPid + '/overview?days=' + _aiDays;
+  }
+
   _aiSetCardsSkeleton();
-  fetch('/home/ai-dashboard/' + _aiPid + '/overview?days=' + _aiDays)
+  fetch(url)
     .then(function(r) { return r.json(); })
     .then(_aiRenderOverview)
     .catch(function(e) {
@@ -147,6 +204,7 @@ function _aiCardHtml(def, value, sub) {
 
 function _aiRenderOverview(data) {
   var s = data.summary || {}, daily = data.daily || [], models = data.models || [];
+  var period = data.period_label || ('Last ' + _aiDays + ' days');
   var empty = !s.total_queries;
 
   // Empty state toggle
@@ -154,21 +212,20 @@ function _aiRenderOverview(data) {
   if (emptyEl) emptyEl.classList.toggle('hidden', !empty);
 
   // Stat cards
-  var q   = s.total_queries || 0;
-  var inp = s.total_input   || 0;
-  var out = s.total_output  || 0;
-  var tot = s.total_tokens  || 0;
-  var cost = s.total_cost   || 0;
-  var period = 'Last ' + _aiDays + ' day' + (_aiDays === 1 ? '' : 's');
+  var q    = s.total_queries || 0;
+  var inp  = s.total_input   || 0;
+  var out  = s.total_output  || 0;
+  var tot  = s.total_tokens  || 0;
+  var cost = s.total_cost    || 0;
   var cardsEl = document.getElementById('ai-summary-cards');
   if (cardsEl) {
     cardsEl.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3';
     cardsEl.innerHTML =
-      _aiCardHtml(_AI_CARD_DEFS[0], _aiFmtN(q),   period)  +
-      _aiCardHtml(_AI_CARD_DEFS[1], _aiFmtN(inp),  period)  +
-      _aiCardHtml(_AI_CARD_DEFS[2], _aiFmtN(out),  period)  +
-      _aiCardHtml(_AI_CARD_DEFS[3], _aiFmtN(tot),  period)  +
-      _aiCardHtml(_AI_CARD_DEFS[4], '$' + cost.toFixed(4), period);
+      _aiCardHtml(_AI_CARD_DEFS[0], _aiFmtN(q),            period) +
+      _aiCardHtml(_AI_CARD_DEFS[1], _aiFmtN(inp),           period) +
+      _aiCardHtml(_AI_CARD_DEFS[2], _aiFmtN(out),           period) +
+      _aiCardHtml(_AI_CARD_DEFS[3], _aiFmtN(tot),           period) +
+      _aiCardHtml(_AI_CARD_DEFS[4], '$' + cost.toFixed(4),  period);
   }
 
   // Charts
@@ -435,7 +492,7 @@ function _aiRenderPagination(page, tp) {
     + btn('Next →', page + 1, page >= tp);
 }
 
-// ── Formatters ────────────────────────────────────────────────────────────────
+// ── Formatters ────────────────────────────────────────────────────────────────────────────────
 function _aiEsc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -451,4 +508,10 @@ function _aiTs(iso) {
     return d.toLocaleString(undefined, { month:'short', day:'numeric',
            year:'numeric', hour:'numeric', minute:'2-digit' });
   } catch(_) { return iso; }
+}
+/** Returns a YYYY-MM-DD string for the given Date object (local time). */
+function _aiIso(d) {
+  var mo = String(d.getMonth() + 1).padStart(2, '0');
+  var da = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + mo + '-' + da;
 }
