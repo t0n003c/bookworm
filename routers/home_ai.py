@@ -97,6 +97,8 @@ async def ai_delete_history(
     deleted = await delete_ai_history(uid, keep_days=keep_days)
     return JSONResponse({"deleted": deleted})
 
+
+@router.get("/ai-dashboard/{page_id}/history")
 async def ai_history(
     request: Request,
     page_id: int,
