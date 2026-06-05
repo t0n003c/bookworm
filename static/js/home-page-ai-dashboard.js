@@ -24,9 +24,10 @@ function _aiLoadChartJs() {
   _aiChartJsPromise = new Promise(function(resolve, reject) {
     if (window.Chart) { _aiChartJsReady = true; resolve(); return; }
     var s = document.createElement('script');
-    s.src = '/static/js/chart.umd.min.js';
+    s.src = '/static/js/vendor/chart.umd.min.js';
     s.onload  = function() { _aiChartJsReady = true; resolve(); };
-    s.onerror = reject;
+    // Pass a proper Error so unhandledrejection shows something useful
+    s.onerror = function(e) { reject(new Error('Chart.js failed to load: ' + s.src)); };
     document.head.appendChild(s);
   });
   return _aiChartJsPromise;
@@ -138,12 +139,20 @@ function _aiRenderOverview(data) {
     }).join('');
   }
 
-  // ── Charts ───────────────────────────────────────────────────────────────
+  // ── Charts ────────────────────────────────────────────────────────────────────────────────
   _aiLoadChartJs().then(function() {
     _aiRenderQueryChart(daily);
     _aiRenderTokenChart(daily);
     _aiRenderCostChart(daily);
     _aiRenderModelChart(models);
+  }).catch(function(err) {
+    console.error('[ai-dash] Chart.js failed to load:', err);
+    // Show a non-blocking warning under the cards instead of crashing
+    var warn = document.createElement('p');
+    warn.className = 'text-xs text-amber-600 dark:text-amber-400 text-center mt-2';
+    warn.textContent = '⚠️ Charts unavailable — Chart.js could not load.';
+    var cards = document.getElementById('ai-summary-cards');
+    if (cards && cards.parentNode) cards.parentNode.insertBefore(warn, cards.nextSibling);
   });
 }
 
