@@ -2578,7 +2578,15 @@
       // closePanel() covers X-button / Escape / backdrop-click paths.
       // This covers clicking a note in the list (HTMX swap bypasses closePanel).
       if (evt.detail.target && evt.detail.target.id === 'detail-panel') {
-        _noteFlush();
+        // GUARD: do NOT flush when this very swap IS the note-form submission.
+        // If we flushed here, clicking Create would fire _noteFlush() (auto-save
+        // → "Note 1") AND the actual form POST (→ titled note) — two notes total.
+        var rc = evt.detail.requestConfig;
+        var isNoteFormSubmit = rc && rc.verb === 'post' &&
+          (rc.path === '/notes' || /^\/notes\/\d+$/.test(rc.path || ''));
+        if (!isNoteFormSubmit) {
+          _noteFlush();
+        }
       }
       var xhr = evt.detail && evt.detail.xhr;
       if (_isDemoEnded(xhr)) {
