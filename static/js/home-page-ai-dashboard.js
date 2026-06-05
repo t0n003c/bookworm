@@ -135,11 +135,10 @@ function _aiCardHtml(def, value, sub) {
     +   '<span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 leading-tight">'
     +     _aiEsc(def.label)
     +   '</span>'
-    +   '<span class="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ' + a.bg + '">'
-    +     '<svg class="w-3.5 h-3.5 ' + a.txt + '" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">'
-    +       ico
-    +     '</svg>'
-    +   '</span>'
+    // Bare icon — accent colour only, no background pill
+    +   '<svg class="w-5 h-5 flex-shrink-0 ' + a.txt + '" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">'
+    +     ico
+    +   '</svg>'
     + '</div>'
     + '<p class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-none tracking-tight">' + _aiEsc(value) + '</p>'
     + (sub ? '<p class="text-[10px] text-gray-400 dark:text-zinc-600">' + _aiEsc(sub) + '</p>' : '')

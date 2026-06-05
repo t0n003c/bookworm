@@ -86,7 +86,7 @@
               bg-white dark:bg-zinc-900">
     <button id="ai-tab-overview" onclick="aiSwitchTab('overview')"
             class="ai-tab-btn ai-tab-active flex items-center gap-1.5
-                   px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all"
+                   px-5 py-2 rounded-full text-xs font-semibold transition-all"
             aria-selected="true">
       <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round"
@@ -98,7 +98,7 @@
     </button>
     <button id="ai-tab-history" onclick="aiSwitchTab('history')"
             class="ai-tab-btn flex items-center gap-1.5
-                   px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all
+                   px-5 py-2 rounded-full text-xs font-semibold transition-all
                    text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
             aria-selected="false">
       <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
@@ -133,50 +133,36 @@
       {# Charts 2×2 grid #}
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {# Queries bar #}
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100
-                    dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div class="px-4 pt-4 pb-2 border-b border-gray-50 dark:border-zinc-800/60">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Queries per Day</p>
-          </div>
-          <div class="p-4" style="height:210px;position:relative;">
+        <div class="py-1">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Queries per Day</p>
+          <div style="height:210px;position:relative;">
             <canvas id="ai-chart-queries"></canvas>
           </div>
         </div>
 
         {# Tokens line #}
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100
-                    dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div class="px-4 pt-4 pb-2 border-b border-gray-50 dark:border-zinc-800/60">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Token Usage — Input vs Output</p>
-          </div>
-          <div class="p-4" style="height:210px;position:relative;">
+        <div class="py-1">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Token Usage — Input vs Output</p>
+          <div style="height:210px;position:relative;">
             <canvas id="ai-chart-tokens"></canvas>
           </div>
         </div>
 
         {# Cost area #}
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100
-                    dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div class="px-4 pt-4 pb-2 border-b border-gray-50 dark:border-zinc-800/60">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Estimated Cost (USD)</p>
-          </div>
-          <div class="p-4" style="height:210px;position:relative;">
+        <div class="py-1">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Estimated Cost (USD)</p>
+          <div style="height:210px;position:relative;">
             <canvas id="ai-chart-cost"></canvas>
           </div>
         </div>
 
         {# Models donut #}
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100
-                    dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div class="px-4 pt-4 pb-2 border-b border-gray-50 dark:border-zinc-800/60">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Model Breakdown</p>
+        <div class="py-1 flex flex-col items-center">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3 self-start">Model Breakdown</p>
+          <div style="height:160px;position:relative;width:100%;">
+            <canvas id="ai-chart-models"></canvas>
           </div>
-          <div class="p-3 flex flex-col items-center gap-2">
-            <div style="height:160px;position:relative;width:100%;">
-              <canvas id="ai-chart-models"></canvas>
-            </div>
-            <div id="ai-model-legend" class="flex flex-wrap gap-2 justify-center pb-1"></div>
-          </div>
+          <div id="ai-model-legend" class="mt-3 flex flex-wrap gap-2 justify-center"></div>
         </div>
       </div>
 
