@@ -1,11 +1,41 @@
 /**
- * home-page-ai-budget.js — Budget tracker + history retention for the AI Dashboard.
+ * home-page-ai-budget.js — Budget tracker, retention popover, balance check.
  * Depends on globals from home-page-ai-dashboard.js:
  *   _aiPid, _aiLastCost, _aiLastPeriod, _AI_LS_BUDGET, _AI_LS_RETENTION,
  *   _aiEsc(), aiLoadOverview()
  * All var — HTMX-safe on repeated swaps.
  */
 'use strict';
+
+// ── Retention popover ─────────────────────────────────────────────────────────
+function aiToggleRetentionPopover(e) {
+  if (e) e.stopPropagation();
+  var pop  = document.getElementById('ai-retention-popover');
+  var gear = document.getElementById('ai-retention-gear');
+  if (!pop) return;
+  var opening = pop.classList.contains('hidden');
+  pop.classList.toggle('hidden', !opening);
+  if (gear) gear.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  if (opening) {
+    // Seed select from localStorage each time we open
+    var sel = document.getElementById('ai-retention-select');
+    if (sel) sel.value = localStorage.getItem(_AI_LS_RETENTION) || '0';
+    // Close on next outside click
+    setTimeout(function() {
+      document.addEventListener('click', _aiCloseRetentionOnOutside, { once: true });
+    }, 0);
+  }
+}
+
+function _aiCloseRetentionOnOutside(e) {
+  var wrap = document.getElementById('ai-retention-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var pop  = document.getElementById('ai-retention-popover');
+    var gear = document.getElementById('ai-retention-gear');
+    if (pop)  pop.classList.add('hidden');
+    if (gear) gear.setAttribute('aria-expanded', 'false');
+  }
+}
 
 // ── Budget tracker ────────────────────────────────────────────────────────────
 function _aiRenderBudget(cost, period) {
@@ -73,6 +103,18 @@ function _aiRenderBudget(cost, period) {
         + pct.toFixed(1) + '% of monthly budget used</p>'
       : '')
 
+    // OpenAI balance check row
+    + '<div class="flex items-center gap-2 mt-auto pt-1 border-t border-gray-100 dark:border-zinc-800">'
+    +   '<button onclick="aiCheckBalance()"'
+    +     ' id="ai-balance-btn"'
+    +     ' class="text-[10px] px-2.5 py-1 rounded-lg border border-gray-200 dark:border-zinc-700'
+    +     ' text-gray-500 dark:text-zinc-400 hover:border-wblue hover:text-wblue transition font-semibold'
+    +     ' focus:outline-none focus:ring-2 focus:ring-wblue">'
+    +     '💳 Check OpenAI Balance'
+    +   '</button>'
+    +   '<span id="ai-balance-result" class="text-[10px] text-gray-400 dark:text-zinc-500"></span>'
+    + '</div>'
+
     + '</div>';
 }
 
@@ -85,7 +127,37 @@ function aiBudgetSave() {
   _aiRenderBudget(_aiLastCost, _aiLastPeriod);
 }
 
-// ── Retention / cleanup ───────────────────────────────────────────────────────
+// ── OpenAI balance check ─────────────────────────────────────────────────────────
+function aiCheckBalance() {
+  var btn = document.getElementById('ai-balance-btn');
+  var out = document.getElementById('ai-balance-result');
+  if (!btn || !out) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking…';
+  out.textContent = '';
+  fetch('/home/ai-dashboard/' + _aiPid + '/balance')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = '💳 Check OpenAI Balance';
+      if (d.ok) {
+        out.style.color = '#2a8703';
+        out.textContent = '$' + Number(d.total_available).toFixed(4)
+          + ' available  (≈ $' + Number(d.total_granted).toFixed(2)
+          + ' granted, $' + Number(d.total_used).toFixed(4) + ' used)';
+      } else {
+        out.style.color = '#ea1100';
+        out.textContent = d.msg || 'Could not retrieve balance.';
+      }
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = '💳 Check OpenAI Balance'; }
+      if (out)  { out.style.color = '#ea1100'; out.textContent = 'Network error — see console.'; }
+      console.error('[ai-dash] balance:', e);
+    });
+}
+
+// ── Retention / cleanup ───────────────────────────────────────────────────────────
 function aiApplyRetention() {
   var sel = document.getElementById('ai-retention-select');
   if (!sel) return;
