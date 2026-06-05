@@ -1,53 +1,44 @@
 /**
- * home-page-ai-dashboard.js — AI Dashboard homespace page engine.
- * Entry: initAiDashboardPage(pid) called by _initSwappedPage() in home-widgets.js.
- * All var — safe for repeated _initSwappedPage calls (HTMX re-injection rule).
+ * home-page-ai-dashboard.js — AI Dashboard engine.
+ * Entry: initAiDashboardPage(pid)  called by _initSwappedPage() + inline boot.
+ * All var — HTMX-safe on repeated swaps.
  */
 'use strict';
 
-// ── Module state ──────────────────────────────────────────────────────────────
-var _aiPid          = null;
-var _aiTab          = 'overview';
-var _aiCharts       = {};          // keyed by canvas id
-var _aiHistPage     = 1;
-var _aiHistBusy     = false;
-var _aiHistTimer    = null;
-var _aiOverviewDays = 30;
+// ── State ─────────────────────────────────────────────────────────────────────
+var _aiPid         = null;
+var _aiTab         = 'overview';
+var _aiCharts      = {};
+var _aiHistPage    = 1;
+var _aiHistBusy    = false;
+var _aiHistTimer   = null;
+var _aiDays        = 30;
 
 // ── Chart.js lazy loader ──────────────────────────────────────────────────────
-var _aiChartJsReady    = false;
-var _aiChartJsPromise  = null;
-
-function _aiLoadChartJs() {
-  if (_aiChartJsReady) return Promise.resolve();
-  if (_aiChartJsPromise) return _aiChartJsPromise;
-  _aiChartJsPromise = new Promise(function(resolve, reject) {
-    if (window.Chart) { _aiChartJsReady = true; resolve(); return; }
+var _aiCjReady   = false;
+var _aiCjPromise = null;
+function _aiLoadCj() {
+  if (_aiCjReady)   return Promise.resolve();
+  if (_aiCjPromise) return _aiCjPromise;
+  _aiCjPromise = new Promise(function(res, rej) {
+    if (window.Chart) { _aiCjReady = true; res(); return; }
     var s = document.createElement('script');
     s.src = '/static/js/vendor/chart.umd.min.js';
-    s.onload  = function() { _aiChartJsReady = true; resolve(); };
-    // Pass a proper Error so unhandledrejection shows something useful
-    s.onerror = function(e) { reject(new Error('Chart.js failed to load: ' + s.src)); };
+    s.onload  = function() { _aiCjReady = true; res(); };
+    s.onerror = function() { rej(new Error('Chart.js failed to load')); };
     document.head.appendChild(s);
   });
-  return _aiChartJsPromise;
+  return _aiCjPromise;
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────────
+// ── Entry ─────────────────────────────────────────────────────────────────────
 function initAiDashboardPage(pid) {
-  _aiPid    = pid;
-  _aiTab    = 'overview';
-  _aiCharts = {};
+  _aiPid      = pid;
+  _aiCharts   = {};
   _aiHistPage = 1;
-
-  // Restore tab from localStorage
-  var saved = localStorage.getItem('bw_ai_tab');
-  if (saved === 'history') {
-    _aiApplyTab('history');
-  } else {
-    _aiApplyTab('overview');
-    aiLoadOverview();
-  }
+  var saved = localStorage.getItem('bw_ai_tab') || 'overview';
+  _aiApplyTab(saved);
+  if (saved === 'history') { aiLoadHistory(1); } else { aiLoadOverview(); }
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -55,30 +46,26 @@ function aiSwitchTab(tab) {
   _aiTab = tab;
   _aiApplyTab(tab);
   localStorage.setItem('bw_ai_tab', tab);
-  if (tab === 'overview') {
-    aiLoadOverview();
-  } else {
-    aiLoadHistory(1);
-  }
+  if (tab === 'history') { aiLoadHistory(1); } else { aiLoadOverview(); }
 }
 
 function _aiApplyTab(tab) {
-  var panels = ['overview', 'history'];
-  panels.forEach(function(t) {
+  _aiTab = tab;
+  ['overview','history'].forEach(function(t) {
     var panel = document.getElementById('ai-panel-' + t);
     var btn   = document.getElementById('ai-tab-' + t);
     if (!panel || !btn) return;
-    var active = t === tab;
-    panel.classList.toggle('hidden', !active);
-    btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    if (active) {
-      btn.classList.add('border-wblue', 'text-wblue', 'dark:text-blue-400', 'dark:border-blue-400');
-      btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-zinc-400',
-                           'hover:text-gray-700', 'dark:hover:text-zinc-200');
+    var on = t === tab;
+    panel.classList.toggle('hidden', !on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on) {
+      btn.classList.add('ai-tab-active');
+      btn.classList.remove('text-gray-500','dark:text-zinc-400',
+                           'hover:bg-gray-100','dark:hover:bg-zinc-800');
     } else {
-      btn.classList.remove('border-wblue', 'text-wblue', 'dark:text-blue-400', 'dark:border-blue-400');
-      btn.classList.add('border-transparent', 'text-gray-500', 'dark:text-zinc-400',
-                        'hover:text-gray-700', 'dark:hover:text-zinc-200');
+      btn.classList.remove('ai-tab-active');
+      btn.classList.add('text-gray-500','dark:text-zinc-400',
+                        'hover:bg-gray-100','dark:hover:bg-zinc-800');
     }
   });
 }
@@ -86,229 +73,242 @@ function _aiApplyTab(tab) {
 // ── Overview ──────────────────────────────────────────────────────────────────
 function aiLoadOverview() {
   var sel = document.getElementById('ai-days-select');
-  _aiOverviewDays = sel ? parseInt(sel.value, 10) : 30;
-
-  _aiSetCardsLoading();
-  fetch('/home/ai-dashboard/' + _aiPid + '/overview?days=' + _aiOverviewDays)
+  _aiDays = sel ? parseInt(sel.value, 10) : 30;
+  _aiSetCardsSkeleton();
+  fetch('/home/ai-dashboard/' + _aiPid + '/overview?days=' + _aiDays)
     .then(function(r) { return r.json(); })
-    .then(function(data) { _aiRenderOverview(data); })
+    .then(_aiRenderOverview)
     .catch(function(e) {
-      console.error('[ai-dash] overview fetch failed:', e);
-      _aiSetCardsError();
+      console.error('[ai-dash] overview:', e);
+      _aiSetCardsErr();
     });
 }
 
-function _aiSetCardsLoading() {
+function _aiSetCardsSkeleton() {
   var el = document.getElementById('ai-summary-cards');
-  if (el) el.innerHTML =
-    '<div class="col-span-full text-center py-8 text-gray-400 dark:text-zinc-600 text-sm animate-pulse">Loading…</div>';
+  if (!el) return;
+  el.innerHTML = '<div class="col-span-full flex gap-3">'
+    + '<div class="ai-skel flex-1 h-24 rounded-2xl"></div>'
+    + '<div class="ai-skel flex-1 h-24 rounded-2xl"></div>'
+    + '<div class="ai-skel flex-1 h-24 rounded-2xl hidden sm:block"></div>'
+    + '<div class="ai-skel flex-1 h-24 rounded-2xl hidden lg:block"></div>'
+    + '<div class="ai-skel flex-1 h-24 rounded-2xl hidden lg:block"></div>'
+    + '</div>';
 }
 
-function _aiSetCardsError() {
+function _aiSetCardsErr() {
   var el = document.getElementById('ai-summary-cards');
-  if (el) el.innerHTML =
-    '<div class="col-span-full text-center py-8 text-red-500 text-sm">Failed to load data. Check console.</div>';
+  if (el) el.innerHTML = '<p class="col-span-full text-center text-xs text-red-500 py-6">'
+    + '⚠ Failed to load data — check the console for details.</p>';
+}
+
+// Card definitions: [icon svg path, label, value fn, color classes]
+var _AI_CARD_DEFS = [
+  { key:'queries',  label:'Queries',       icon:'search',   accent:'blue'   },
+  { key:'input',    label:'Input Tokens',  icon:'upload',   accent:'violet' },
+  { key:'output',   label:'Output Tokens', icon:'download', accent:'emerald'},
+  { key:'tokens',   label:'Total Tokens',  icon:'chip',     accent:'sky'    },
+  { key:'cost',     label:'Est. Cost',     icon:'currency', accent:'amber'  },
+];
+
+var _AI_ACCENT = {
+  blue:    { bg:'bg-blue-50 dark:bg-blue-950/40',    txt:'text-blue-600 dark:text-blue-400'   },
+  violet:  { bg:'bg-violet-50 dark:bg-violet-950/40',txt:'text-violet-600 dark:text-violet-400'},
+  emerald: { bg:'bg-emerald-50 dark:bg-emerald-950/40',txt:'text-emerald-600 dark:text-emerald-400'},
+  sky:     { bg:'bg-sky-50 dark:bg-sky-950/40',      txt:'text-sky-600 dark:text-sky-400'     },
+  amber:   { bg:'bg-amber-50 dark:bg-amber-950/40',  txt:'text-amber-600 dark:text-amber-400' },
+};
+
+var _AI_ICONS = {
+  search:   '<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>',
+  upload:   '<path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>',
+  download: '<path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>',
+  chip:     '<path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>',
+  currency: '<path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 13v-1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+};
+
+function _aiCardHtml(def, value, sub) {
+  var a   = _AI_ACCENT[def.accent] || _AI_ACCENT.blue;
+  var ico = _AI_ICONS[def.icon] || _AI_ICONS.search;
+  return '<div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm p-4 flex flex-col gap-2">'
+    + '<div class="flex items-start justify-between gap-2">'
+    +   '<span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 leading-tight">'
+    +     _aiEsc(def.label)
+    +   '</span>'
+    +   '<span class="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ' + a.bg + '">'
+    +     '<svg class="w-3.5 h-3.5 ' + a.txt + '" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">'
+    +       ico
+    +     '</svg>'
+    +   '</span>'
+    + '</div>'
+    + '<p class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-none tracking-tight">' + _aiEsc(value) + '</p>'
+    + (sub ? '<p class="text-[10px] text-gray-400 dark:text-zinc-600">' + _aiEsc(sub) + '</p>' : '')
+    + '</div>';
 }
 
 function _aiRenderOverview(data) {
-  var s = data.summary || {};
-  var daily  = data.daily  || [];
-  var models = data.models || [];
+  var s = data.summary || {}, daily = data.daily || [], models = data.models || [];
+  var empty = !s.total_queries;
 
-  // ── Empty state ──────────────────────────────────────────────────────────
+  // Empty state toggle
   var emptyEl = document.getElementById('ai-overview-empty');
-  if (emptyEl) emptyEl.classList.toggle('hidden', s.total_queries > 0);
+  if (emptyEl) emptyEl.classList.toggle('hidden', !empty);
 
-  // ── Summary cards ────────────────────────────────────────────────────────
-  var cards = [
-    { icon:'🔍', label:'Queries',      value: _aiFmt(s.total_queries || 0) },
-    { icon:'⬆️',  label:'Input Tokens', value: _aiFmtNum(s.total_input  || 0) },
-    { icon:'⬇️',  label:'Output Tokens',value: _aiFmtNum(s.total_output || 0) },
-    { icon:'🪙',  label:'Total Tokens', value: _aiFmtNum(s.total_tokens || 0) },
-    { icon:'💵',  label:'Est. Cost',    value: '$' + ((s.total_cost || 0).toFixed(4)) },
-  ];
+  // Stat cards
+  var q   = s.total_queries || 0;
+  var inp = s.total_input   || 0;
+  var out = s.total_output  || 0;
+  var tot = s.total_tokens  || 0;
+  var cost = s.total_cost   || 0;
+  var period = 'Last ' + _aiDays + ' day' + (_aiDays === 1 ? '' : 's');
   var cardsEl = document.getElementById('ai-summary-cards');
   if (cardsEl) {
-    cardsEl.innerHTML = cards.map(function(c) {
-      return '<div class="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800' +
-             ' p-4 shadow-sm flex flex-col items-center gap-1 text-center">' +
-             '<span class="text-2xl leading-none">' + c.icon + '</span>' +
-             '<span class="text-lg font-bold text-gray-900 dark:text-zinc-100 leading-tight">' + _aiEsc(c.value) + '</span>' +
-             '<span class="text-xs text-gray-400 dark:text-zinc-500">' + _aiEsc(c.label) + '</span>' +
-             '</div>';
-    }).join('');
+    cardsEl.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3';
+    cardsEl.innerHTML =
+      _aiCardHtml(_AI_CARD_DEFS[0], _aiFmtN(q),   period)  +
+      _aiCardHtml(_AI_CARD_DEFS[1], _aiFmtN(inp),  period)  +
+      _aiCardHtml(_AI_CARD_DEFS[2], _aiFmtN(out),  period)  +
+      _aiCardHtml(_AI_CARD_DEFS[3], _aiFmtN(tot),  period)  +
+      _aiCardHtml(_AI_CARD_DEFS[4], '$' + cost.toFixed(4), period);
   }
 
-  // ── Charts ────────────────────────────────────────────────────────────────────────────────
-  _aiLoadChartJs().then(function() {
-    _aiRenderQueryChart(daily);
-    _aiRenderTokenChart(daily);
-    _aiRenderCostChart(daily);
-    _aiRenderModelChart(models);
-  }).catch(function(err) {
-    console.error('[ai-dash] Chart.js failed to load:', err);
-    // Show a non-blocking warning under the cards instead of crashing
-    var warn = document.createElement('p');
-    warn.className = 'text-xs text-amber-600 dark:text-amber-400 text-center mt-2';
-    warn.textContent = '⚠️ Charts unavailable — Chart.js could not load.';
-    var cards = document.getElementById('ai-summary-cards');
-    if (cards && cards.parentNode) cards.parentNode.insertBefore(warn, cards.nextSibling);
+  // Charts
+  _aiLoadCj().then(function() {
+    _aiDrawBar(daily);
+    _aiDrawTokens(daily);
+    _aiDrawCost(daily);
+    _aiDrawModels(models);
+  }).catch(function(e) {
+    console.error('[ai-dash] Chart.js:', e);
   });
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
-var _AI_BLUE   = '#0053e2';
-var _AI_GREEN  = '#2a8703';
-var _AI_AMBER  = '#f59e0b';
-var _AI_SPARK  = '#ffc220';
-var _AI_COLORS = [
-  '#0053e2','#ffc220','#2a8703','#ea1100','#8b5cf6',
-  '#06b6d4','#f97316','#ec4899','#10b981','#64748b',
-];
+function _aiDestroy(id) {
+  if (_aiCharts[id]) { try { _aiCharts[id].destroy(); } catch(_) {} delete _aiCharts[id]; }
+}
+function _isDark() { return document.documentElement.classList.contains('dark'); }
+function _aiGrid()  { return _isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }
+function _aiTick()  { return _isDark() ? '#71717a' : '#9ca3af'; }
 
-function _aiDestroyChart(id) {
-  if (_aiCharts[id]) { try { _aiCharts[id].destroy(); } catch(e) {} delete _aiCharts[id]; }
+function _aiBaseOpts(extra) {
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: _aiGrid(), drawBorder: false },
+           ticks: { color: _aiTick(), font: { size: 10 }, maxRotation: 35, maxTicksLimit: 8 },
+           border: { display: false } },
+      y: { grid: { color: _aiGrid(), drawBorder: false },
+           ticks: { color: _aiTick(), font: { size: 10 } },
+           border: { display: false }, beginAtZero: true },
+    },
+  }, extra || {});
 }
 
-function _aiIsDark() {
-  return document.documentElement.classList.contains('dark');
-}
-function _aiGridColor() { return _aiIsDark() ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'; }
-function _aiTextColor() { return _aiIsDark() ? '#a1a1aa' : '#6b7280'; }
-
-function _aiBaseScales() {
-  return {
-    x: { grid: { color: _aiGridColor() }, ticks: { color: _aiTextColor(), maxRotation: 45, maxTicksLimit: 10, font: { size: 10 } } },
-    y: { grid: { color: _aiGridColor() }, ticks: { color: _aiTextColor(), font: { size: 10 } }, beginAtZero: true },
-  };
-}
-
-function _aiRenderQueryChart(daily) {
-  var id = 'ai-chart-queries';
-  _aiDestroyChart(id);
-  var canvas = document.getElementById(id);
-  if (!canvas) return;
-  _aiCharts[id] = new Chart(canvas, {
+function _aiDrawBar(daily) {
+  var id = 'ai-chart-queries'; _aiDestroy(id);
+  var c = document.getElementById(id); if (!c) return;
+  _aiCharts[id] = new Chart(c, {
     type: 'bar',
     data: {
-      labels:   daily.map(function(d) { return d.day; }),
-      datasets: [{ label: 'Queries', data: daily.map(function(d) { return d.queries; }),
-        backgroundColor: _AI_BLUE + 'cc', borderRadius: 4, borderSkipped: false }],
+      labels: daily.map(function(d) { return d.day; }),
+      datasets: [{ label:'Queries', data: daily.map(function(d){ return d.queries; }),
+        backgroundColor: _isDark() ? 'rgba(99,179,237,.7)' : 'rgba(0,83,226,.7)',
+        hoverBackgroundColor: _isDark() ? '#63b3ed' : '#0053e2',
+        borderRadius: 5, borderSkipped: false }],
     },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: {
-        title: function(i) { return i[0].label; },
-        label: function(i) { return i.raw + ' quer' + (i.raw === 1 ? 'y' : 'ies'); },
-      }}},
-      scales: _aiBaseScales(),
-    },
+    options: _aiBaseOpts({
+      plugins: { legend: { display: false },
+                 tooltip: { callbacks: { label: function(i) { return i.raw + ' quer' + (i.raw === 1 ? 'y' : 'ies'); } } } },
+    }),
   });
 }
 
-function _aiRenderTokenChart(daily) {
-  var id = 'ai-chart-tokens';
-  _aiDestroyChart(id);
-  var canvas = document.getElementById(id);
-  if (!canvas) return;
-  _aiCharts[id] = new Chart(canvas, {
+function _aiDrawTokens(daily) {
+  var id = 'ai-chart-tokens'; _aiDestroy(id);
+  var c = document.getElementById(id); if (!c) return;
+  _aiCharts[id] = new Chart(c, {
     type: 'line',
     data: {
-      labels:   daily.map(function(d) { return d.day; }),
+      labels: daily.map(function(d) { return d.day; }),
       datasets: [
-        { label: 'Input',  data: daily.map(function(d) { return d.input_tokens; }),
-          borderColor: _AI_BLUE,  backgroundColor: _AI_BLUE  + '22',
-          fill: true, tension: 0.3, pointRadius: 3 },
-        { label: 'Output', data: daily.map(function(d) { return d.output_tokens; }),
-          borderColor: _AI_GREEN, backgroundColor: _AI_GREEN + '22',
-          fill: true, tension: 0.3, pointRadius: 3 },
+        { label:'Input',  data: daily.map(function(d){ return d.input_tokens; }),
+          borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.1)',
+          fill:true, tension:.4, pointRadius:0, pointHoverRadius:4, borderWidth:2 },
+        { label:'Output', data: daily.map(function(d){ return d.output_tokens; }),
+          borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.1)',
+          fill:true, tension:.4, pointRadius:0, pointHoverRadius:4, borderWidth:2 },
       ],
     },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: _aiTextColor(), font: { size: 11 } } } },
-      scales: _aiBaseScales(),
-    },
+    options: _aiBaseOpts({
+      plugins: { legend: { display: true, position: 'bottom',
+                           labels: { color: _aiTick(), font: { size: 10 }, boxWidth: 10, padding: 12 } } },
+    }),
   });
 }
 
-function _aiRenderCostChart(daily) {
-  var id = 'ai-chart-cost';
-  _aiDestroyChart(id);
-  var canvas = document.getElementById(id);
-  if (!canvas) return;
-  _aiCharts[id] = new Chart(canvas, {
+function _aiDrawCost(daily) {
+  var id = 'ai-chart-cost'; _aiDestroy(id);
+  var c = document.getElementById(id); if (!c) return;
+  _aiCharts[id] = new Chart(c, {
     type: 'line',
     data: {
-      labels:   daily.map(function(d) { return d.day; }),
-      datasets: [{ label: 'Cost (USD)', data: daily.map(function(d) { return +(d.cost_usd || 0).toFixed(6); }),
-        borderColor: _AI_AMBER, backgroundColor: _AI_AMBER + '22',
-        fill: true, tension: 0.3, pointRadius: 3 }],
+      labels: daily.map(function(d) { return d.day; }),
+      datasets: [{ label:'Cost', data: daily.map(function(d){ return +(d.cost_usd||0).toFixed(6); }),
+        borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.12)',
+        fill:true, tension:.4, pointRadius:0, pointHoverRadius:4, borderWidth:2 }],
     },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: function(i) { return '$' + i.raw.toFixed(6); } } },
-      },
-      scales: Object.assign({}, _aiBaseScales(), {
-        y: Object.assign({}, _aiBaseScales().y, {
-          ticks: Object.assign({}, _aiBaseScales().y.ticks, {
-            callback: function(v) { return '$' + v.toFixed(4); },
+    options: _aiBaseOpts({
+      plugins: { legend: { display: false },
+                 tooltip: { callbacks: { label: function(i) { return '$' + i.raw.toFixed(6); } } } },
+      scales: Object.assign({}, _aiBaseOpts().scales, {
+        y: Object.assign({}, _aiBaseOpts().scales.y, {
+          ticks: Object.assign({}, _aiBaseOpts().scales.y.ticks, {
+            callback: function(v) { return '$' + (+v).toFixed(4); },
           }),
         }),
       }),
-    },
+    }),
   });
 }
 
-function _aiRenderModelChart(models) {
-  var id = 'ai-chart-models';
-  _aiDestroyChart(id);
-  var canvas = document.getElementById(id);
-  if (!canvas) return;
+var _AI_DONUT_COLORS = ['#0053e2','#8b5cf6','#10b981','#f59e0b','#ef4444','#06b6d4','#ec4899','#64748b'];
+
+function _aiDrawModels(models) {
+  var id = 'ai-chart-models'; _aiDestroy(id);
+  var c = document.getElementById(id); if (!c) return;
+  var leg = document.getElementById('ai-model-legend');
 
   if (!models.length) {
-    var ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = _aiTextColor();
-      ctx.font = '13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('No data', canvas.width / 2, canvas.height / 2);
-    }
-    var leg = document.getElementById('ai-model-legend');
     if (leg) leg.innerHTML = '';
     return;
   }
-
   var labels = models.map(function(m) { return m.model || 'unknown'; });
-  var counts = models.map(function(m) { return m.count; });
-  var colors = labels.map(function(_, i) { return _AI_COLORS[i % _AI_COLORS.length]; });
+  var counts  = models.map(function(m) { return m.count; });
+  var colors  = labels.map(function(_,i) { return _AI_DONUT_COLORS[i % _AI_DONUT_COLORS.length]; });
 
-  _aiCharts[id] = new Chart(canvas, {
+  _aiCharts[id] = new Chart(c, {
     type: 'doughnut',
-    data: { labels: labels, datasets: [{ data: counts, backgroundColor: colors, borderWidth: 2,
-            borderColor: _aiIsDark() ? '#18181b' : '#fff' }] },
-    options: {
-      responsive: true, maintainAspectRatio: false, cutout: '60%',
-      plugins: { legend: { display: false },
-                 tooltip: { callbacks: { label: function(i) {
-                   var total = i.dataset.data.reduce(function(a,b){return a+b;},0);
-                   var pct = total ? ((i.raw/total)*100).toFixed(1) : 0;
-                   return i.label + ': ' + i.raw + ' (' + pct + '%)';
-                 }}}},
+    data: { labels: labels,
+            datasets: [{ data: counts, backgroundColor: colors,
+                         borderWidth: 3, borderColor: _isDark() ? '#18181b' : '#fff',
+                         hoverOffset: 6 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
+               plugins: { legend: { display:false },
+                          tooltip: { callbacks: { label: function(i) {
+                            var t = i.dataset.data.reduce(function(a,b){return a+b;},0);
+                            return i.label + ': ' + i.raw + ' (' + (t ? (i.raw/t*100).toFixed(1) : 0) + '%)';
+                          }}}},
     },
   });
 
-  // Custom legend pills below the donut
-  var leg = document.getElementById('ai-model-legend');
   if (leg) {
     leg.innerHTML = labels.map(function(lbl, i) {
-      return '<span class="flex items-center gap-1 text-xs text-gray-600 dark:text-zinc-400">' +
-             '<span class="inline-block w-3 h-3 rounded-full flex-shrink-0" style="background:' + colors[i] + '"></span>' +
-             _aiEsc(lbl.length > 20 ? lbl.slice(0,18) + '…' : lbl) +
-             '</span>';
+      return '<span class="flex items-center gap-1 text-[10px] text-gray-600 dark:text-zinc-400">'
+        + '<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:' + colors[i] + '"></span>'
+        + _aiEsc(lbl.length > 22 ? lbl.slice(0,20) + '\u2026' : lbl)
+        + '</span>';
     }).join('');
   }
 }
@@ -323,151 +323,133 @@ function aiLoadHistory(page) {
   if (_aiHistBusy) return;
   _aiHistBusy = true;
   _aiHistPage = page || 1;
-
   var q   = (document.getElementById('ai-hist-search') || {}).value || '';
   var url = '/home/ai-dashboard/' + _aiPid + '/history?page=' + _aiHistPage + '&q=' + encodeURIComponent(q);
-
   var thread = document.getElementById('ai-history-thread');
   if (thread) thread.innerHTML =
-    '<div class="text-center py-8 text-gray-400 dark:text-zinc-600 text-sm animate-pulse">Loading…</div>';
+    '<div class="flex flex-col gap-3">'
+    + '<div class="ai-skel h-14 rounded-2xl ml-12"></div>'
+    + '<div class="ai-skel h-24 rounded-2xl mr-12"></div>'
+    + '<div class="ai-skel h-10 rounded-2xl ml-12"></div>'
+    + '</div>';
 
   fetch(url)
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-      _aiRenderHistory(data);
-      _aiHistBusy = false;
-    })
+    .then(function(d) { _aiRenderHistory(d); _aiHistBusy = false; })
     .catch(function(e) {
-      console.error('[ai-dash] history fetch failed:', e);
+      console.error('[ai-dash] history:', e);
       _aiHistBusy = false;
-      if (thread) thread.innerHTML =
-        '<p class="text-center text-red-500 text-sm py-8">Failed to load history.</p>';
+      if (thread) thread.innerHTML = '<p class="text-center text-xs text-red-500 py-8">Failed to load history.</p>';
     });
 }
 
 function _aiRenderHistory(data) {
-  var items      = data.items      || [];
-  var total      = data.total      || 0;
-  var page       = data.page       || 1;
-  var totalPages = data.total_pages|| 1;
-
+  var items = data.items || [], page = data.page || 1, tp = data.total_pages || 1;
   var thread = document.getElementById('ai-history-thread');
   if (!thread) return;
 
   if (!items.length) {
     thread.innerHTML =
-      '<div class="text-center py-16">' +
-      '<p class="text-4xl mb-3">💬</p>' +
-      '<p class="text-gray-500 dark:text-zinc-400 font-semibold">No conversations yet</p>' +
-      '<p class="text-xs text-gray-400 dark:text-zinc-600 mt-1">Use Ctrl+K to ask the AI a question.</p>' +
-      '</div>';
-    _aiRenderPagination(page, totalPages);
+      '<div class="flex flex-col items-center justify-center py-16 gap-3">'
+      + '<div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-2xl">💬</div>'
+      + '<p class="text-sm font-semibold text-gray-600 dark:text-zinc-400">No conversations yet</p>'
+      + '<p class="text-xs text-gray-400 dark:text-zinc-600">Ask BookWorm AI a question to start your history.</p>'
+      + '</div>';
+    _aiRenderPagination(page, tp);
     return;
   }
 
-  thread.innerHTML = items.map(function(item) {
-    return _aiRenderBubblePair(item);
-  }).join('');
-
-  _aiRenderPagination(page, totalPages);
+  thread.innerHTML = items.map(_aiBubblePair).join('');
+  _aiRenderPagination(page, tp);
 }
 
-function _aiRenderBubblePair(item) {
-  var ts    = _aiFormatTs(item.queried_at || '');
-  var model = item.model ? ('<span class="text-[10px] text-gray-400 dark:text-zinc-600">' + _aiEsc(item.model) + '</span>') : '';
-  var meta  = '';
-  if (item.input_tokens || item.output_tokens) {
-    meta = '<span class="text-[10px] text-gray-400 dark:text-zinc-600">' +
-           _aiFmtNum((item.input_tokens||0) + (item.output_tokens||0)) + ' tok' +
-           (item.cost_usd ? ' · $' + (+item.cost_usd).toFixed(5) : '') +
-           '</span>';
-  }
+function _aiBubblePair(item) {
+  var ts    = _aiTs(item.queried_at || '');
+  var q     = _aiEsc(item.query_text || '(empty)');
+  var ans   = _aiEsc(item.answer_text || '').replace(/\n/g, '<br>');
+  var model = item.model ? item.model.split('/').pop() : '';
+  var toks  = (item.input_tokens || 0) + (item.output_tokens || 0);
+  var cost  = item.cost_usd ? '$' + (+item.cost_usd).toFixed(5) : null;
 
-  var question = _aiEsc(item.query_text || '');
-  var answer   = item.answer_text || '';
+  // Metadata chips
+  var chips = '';
+  if (model) chips += _aiChip(model, '#8b5cf6');
+  if (toks)  chips += _aiChip(_aiFmtN(toks) + ' tok', '#6b7280');
+  if (cost)  chips += _aiChip(cost, '#f59e0b');
 
-  // Convert markdown-ish newlines in answer to <br> for readability
-  var answerHtml = _aiEsc(answer).replace(/\n/g, '<br>');
-
-  return '<div class="space-y-2">' +
-    // Timestamp divider
-    '<div class="flex items-center gap-2 my-1">' +
-    '<hr class="flex-1 border-gray-200 dark:border-zinc-800">' +
-    '<span class="text-[10px] text-gray-400 dark:text-zinc-600 whitespace-nowrap">' + _aiEsc(ts) + '</span>' +
-    '<hr class="flex-1 border-gray-200 dark:border-zinc-800">' +
-    '</div>' +
-    // User bubble (right-aligned, blue)
-    '<div class="flex justify-end">' +
-    '<div class="max-w-[80%] flex flex-col items-end gap-1">' +
-    '<div class="bg-wblue text-white text-sm rounded-2xl rounded-br-sm px-4 py-2.5 shadow-sm leading-relaxed">' +
-    question +
-    '</div>' +
-    '<span class="text-[10px] text-gray-400 dark:text-zinc-600">You</span>' +
-    '</div>' +
-    '</div>' +
-    // AI bubble (left-aligned, gray)
-    (answer ?
-      '<div class="flex justify-start">' +
-      '<div class="max-w-[80%] flex flex-col items-start gap-1">' +
-      '<div class="flex items-start gap-2">' +
-      '<span class="mt-1 text-base leading-none flex-shrink-0" title="BookWorm AI">🤖</span>' +
-      '<div class="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 ' +
-           'text-gray-800 dark:text-zinc-200 text-sm rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm leading-relaxed">' +
-      answerHtml +
-      '</div>' +
-      '</div>' +
-      '<div class="flex items-center gap-2 ml-8">' + model + meta + '</div>' +
-      '</div>' +
-      '</div>'
-    : '') +
-    '</div>';
+  return '<div class="space-y-3">'
+    // ── Timestamp divider ──
+    + '<div class="flex items-center gap-3">'
+    +   '<div class="flex-1 h-px bg-gray-100 dark:bg-zinc-800"></div>'
+    +   '<span class="text-[10px] text-gray-400 dark:text-zinc-600 whitespace-nowrap flex-shrink-0">' + _aiEsc(ts) + '</span>'
+    +   '<div class="flex-1 h-px bg-gray-100 dark:bg-zinc-800"></div>'
+    + '</div>'
+    // ── User bubble (right) ──
+    + '<div class="flex justify-end">'
+    +   '<div class="max-w-[78%] flex flex-col items-end gap-1">'
+    +     '<div class="ai-bubble-user text-white text-sm rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm leading-relaxed">'
+    +       q
+    +     '</div>'
+    +     '<span class="text-[10px] text-gray-400 dark:text-zinc-600 mr-1">You</span>'
+    +   '</div>'
+    + '</div>'
+    // ── AI bubble (left) ──
+    + (ans
+      ? '<div class="flex justify-start gap-2">'
+        +   '<div class="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-1'
+        +        ' flex items-center justify-center text-white text-[10px] font-bold shadow-sm">AI</div>'
+        +   '<div class="max-w-[78%] flex flex-col gap-1.5">'
+        +     '<div class="bg-white dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700'
+        +          ' text-gray-800 dark:text-zinc-200 text-sm rounded-2xl rounded-tl-sm'
+        +          ' px-4 py-2.5 shadow-sm leading-relaxed">'
+        +       ans
+        +     '</div>'
+        +     (chips ? '<div class="flex flex-wrap gap-1.5 ml-1">' + chips + '</div>' : '')
+        +   '</div>'
+        + '</div>'
+      : '')
+    + '</div>';
 }
 
-function _aiRenderPagination(page, totalPages) {
+function _aiChip(text, color) {
+  return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold text-white"'
+    + ' style="background:' + color + '20;color:' + color + '">'
+    + _aiEsc(text) + '</span>';
+}
+
+function _aiRenderPagination(page, tp) {
   var el = document.getElementById('ai-hist-pagination');
   if (!el) return;
-  if (totalPages <= 1) { el.innerHTML = ''; return; }
-
-  var html = '';
-  html += '<button onclick="aiLoadHistory(' + (page - 1) + ')" ' +
-          (page <= 1 ? 'disabled ' : '') +
-          'class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-700 ' +
-          'bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 ' +
-          'hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition">← Prev</button>';
-
-  html += '<span class="text-xs text-gray-500 dark:text-zinc-400">Page ' + page + ' of ' + totalPages + '</span>';
-
-  html += '<button onclick="aiLoadHistory(' + (page + 1) + ')" ' +
-          (page >= totalPages ? 'disabled ' : '') +
-          'class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-700 ' +
-          'bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 ' +
-          'hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>';
-
-  el.innerHTML = html;
+  if (tp <= 1) { el.innerHTML = ''; return; }
+  var btn = function(label, pg, disabled) {
+    return '<button onclick="aiLoadHistory(' + pg + ')" '
+      + (disabled ? 'disabled ' : '')
+      + 'class="px-3.5 py-1.5 text-xs font-semibold rounded-full border transition '
+      + (disabled
+        ? 'border-gray-200 dark:border-zinc-800 text-gray-300 dark:text-zinc-700 cursor-not-allowed'
+        : 'border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:border-wblue hover:text-wblue')
+      + '">' + label + '</button>';
+  };
+  el.innerHTML =
+    btn('← Prev', page - 1, page <= 1)
+    + '<span class="text-[10px] text-gray-400 dark:text-zinc-500 px-1">Page ' + page + ' / ' + tp + '</span>'
+    + btn('Next →', page + 1, page >= tp);
 }
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
-function _aiEsc(str) {
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+// ── Formatters ────────────────────────────────────────────────────────────────
+function _aiEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
-function _aiFmt(n) { return String(n); }
-
-function _aiFmtNum(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+function _aiFmtN(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
   return String(n);
 }
-
-function _aiFormatTs(iso) {
+function _aiTs(iso) {
   if (!iso) return '';
   try {
     var d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
     return d.toLocaleString(undefined, { month:'short', day:'numeric',
            year:'numeric', hour:'numeric', minute:'2-digit' });
-  } catch(e) { return iso; }
+  } catch(_) { return iso; }
 }
