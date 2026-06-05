@@ -2491,23 +2491,31 @@
     // Capture form data now — the DOM is wiped after this call returns.
     var fd = new FormData(form);
     var wsId = fd.get('workspace_id');
+    var userTitle = (fd.get('title') || '').trim();  // preserve what the user typed
 
     // Include active sort params so the refreshed list keeps its order.
     var sortQs = (typeof _sortSearchParams === 'function') ? _sortSearchParams() : '';
     var listUrl = '/notes?workspace_id=' + (wsId || '') + (sortQs ? '&' + sortQs : '');
 
-    // Fetch a real title first so the POST never sends an empty required field.
-    // /notes/suggest-title returns {"title": "Note N"} without mutating any data.
-    var titleUrl = '/notes/suggest-title' + (wsId ? '?workspace_id=' + wsId : '');
-    fetch(titleUrl)
-      .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
-      .then(function(data) {
-        fd.set('title', data.title || 'Note');
-        return fetch('/notes', { method: 'POST', body: fd });
-      })
+    // If the user typed a title, post directly — no round-trip needed.
+    // If the title is blank, fetch a suggested one so the POST never sends
+    // an empty required field.
+    var savePromise;
+    if (userTitle) {
+      savePromise = fetch('/notes', { method: 'POST', body: fd });
+    } else {
+      var titleUrl = '/notes/suggest-title' + (wsId ? '?workspace_id=' + wsId : '');
+      savePromise = fetch(titleUrl)
+        .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function(data) {
+          fd.set('title', data.title || 'Note');
+          return fetch('/notes', { method: 'POST', body: fd });
+        });
+    }
+    savePromise
       .then(function(res) {
         if (!res.ok) { console.warn('[BookWorm] auto-save responded', res.status); return; }
-        _bwToast('📝 Note auto-saved');
+        _bwToast('\uD83D\uDCDD Note auto-saved');
         if (wsId) {
           htmx.ajax('GET', listUrl, { target: '#note-list', swap: 'innerHTML' });
         }
