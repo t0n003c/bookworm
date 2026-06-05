@@ -2914,13 +2914,20 @@
   if (!popup || !ta || !ce) return;
 
   // Which surface started the drag + saved TA selection indices
-  let _draggingFrom = null;   // 'ta' | 'ce' | null
-  let _src          = null;   // confirmed source after mouseup
-  let _taSel        = null;   // { start, end }
-  let _lastAnchorX  = 0;      // viewport x saved at last showPopup call
-  let _lastAnchorY  = 0;      // viewport y saved at last showPopup call
+  let _draggingFrom    = null;   // 'ta' | 'ce' | null
+  let _src             = null;   // confirmed source after mouseup
+  let _taSel           = null;   // { start, end }
+  let _lastAnchorX     = 0;      // viewport x saved at last showPopup call
+  let _lastAnchorY     = 0;      // viewport y saved at last showPopup call
+  let _popupMousedown  = false;  // true when mousedown started inside the popup
+                                 // prevents a repositioning-caused mouseup dismissal
 
-  let _anchorEl      = null;  // nearest <a> when selection is inside a link
+  let _anchorEl        = null;   // nearest <a> when selection is inside a link
+
+  // Track any mousedown inside the popup so the global mouseup guard
+  // never closes it based on cursor position (which shifts when the flyout
+  // expands and showPopup repositions the whole panel).
+  popup.addEventListener('mousedown', () => { _popupMousedown = true; });
 
   /* ── Build color swatches ───────────────────────────── */
   function buildSwatches(container, palette, applyFn) {
@@ -2990,10 +2997,15 @@
       Object.values(_flyouts).forEach(fId =>
         document.getElementById(fId)?.classList.add('hidden')
       );
-      // Toggle the clicked one; reposition so the taller popup stays on screen
+      // Toggle the clicked one.  Do NOT call showPopup() here — it
+      // repositions the panel mid-mousedown, which shifts it out from under
+      // the cursor before mouseup fires, causing the spurious dismiss bug.
+      // Instead, clamp off-screen edges after the DOM has settled.
       if (!isOpen) {
         target.classList.remove('hidden');
-        showPopup(_lastAnchorX, _lastAnchorY);
+        // Deferred reposition: runs after mouseup so the panel's new height
+        // is measured correctly and the sentinel flag is already cleared.
+        setTimeout(() => showPopup(_lastAnchorX, _lastAnchorY), 0);
       }
     });
   });
@@ -3187,8 +3199,14 @@
 
   /* ── Global mouseup — catches release anywhere on page ── */
   window.addEventListener('mouseup', (e) => {
-    // If the click landed inside the popup, let the swatch handler deal with it
-    if (popup.contains(e.target)) return;
+    // If mousedown started inside the popup (including flyout swatches), let
+    // the individual button handlers deal with it.  We MUST use the sentinel
+    // flag rather than popup.contains(e.target) here: when a flyout opens it
+    // calls showPopup() which repositions the panel, so by the time mouseup
+    // fires the cursor may be outside the popup's new bounding rect even
+    // though the user never left it — causing a spurious close.  The flag is
+    // cleared here so subsequent outside-clicks still dismiss correctly.
+    if (_popupMousedown) { _popupMousedown = false; return; }
 
     if (_draggingFrom === 'ta') {
       _draggingFrom = null;
