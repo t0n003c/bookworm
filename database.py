@@ -1726,11 +1726,16 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_ai_usage_user_date "
             "ON ai_usage_log(user_id, queried_at)"
         )
-        # Additive migration — answer_text added after initial ship
-        await db.execute(
-            "ALTER TABLE ai_usage_log ADD COLUMN IF NOT EXISTS "
-            "answer_text TEXT NOT NULL DEFAULT ''"
-        )
+        # Additive migration — answer_text added after initial ship.
+        # Use try/except instead of IF NOT EXISTS — SQLite < 3.35 doesn't
+        # support that syntax on ALTER TABLE.
+        try:
+            await db.execute(
+                "ALTER TABLE ai_usage_log ADD COLUMN "
+                "answer_text TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass  # column already exists — safe to ignore
 
         await db.commit()
 
