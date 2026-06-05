@@ -1105,6 +1105,9 @@ async def home_page_view(request: Request, page_id: int):
             # Pass all uploads pages so the media-picker modal can list them.
             all_pages = await get_home_pages(uid)
             uploads_pages = [p for p in all_pages if p.get("page_type") == "uploads"]
+        elif p_type == "ai_dashboard":
+            tmpl = "partials/home_page_ai_dashboard.html"
+            # No server-side DB prep — JS fetches /overview and /history after load.
         else:
             tmpl = "partials/home_page_coming_soon.html"
 

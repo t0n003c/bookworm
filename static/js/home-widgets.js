@@ -364,6 +364,8 @@ const HP_TYPE_DEFAULTS = {
   uploads:     { emoji: '🖼️', placeholder: 'e.g. Media Library' },
   rss:         { emoji: '📡', placeholder: 'e.g. My Feeds'      },
   trip:        { emoji: '✈️', placeholder: 'e.g. Smoky Mountains 2026' },
+  subscriptions:{ emoji: '💳', placeholder: 'e.g. My Subscriptions' },
+  ai_dashboard:{ emoji: '🤖', placeholder: 'e.g. AI Analytics'  },
 };
 
 /**
@@ -2426,6 +2428,17 @@ function _initSwappedPage() {
     var tripPid = parseInt(tripRoot.dataset.pageId, 10);
     if (tripPid && typeof initTripPage === 'function') {
       try { initTripPage(tripPid); } catch(e) { console.error('[home] initTripPage:', e); }
+    }
+    var _ta = document.getElementById('top-action-area');
+    if (_ta) _ta.innerHTML = '';
+    return;
+  }
+  // AI Dashboard page
+  var aiDashRoot = document.getElementById('ai-dash-page-root');
+  if (aiDashRoot) {
+    var aiDashPid = parseInt(aiDashRoot.dataset.pageId, 10);
+    if (aiDashPid && typeof initAiDashboardPage === 'function') {
+      try { initAiDashboardPage(aiDashPid); } catch(e) { console.error('[home] initAiDashboardPage:', e); }
     }
     var _ta = document.getElementById('top-action-area');
     if (_ta) _ta.innerHTML = '';

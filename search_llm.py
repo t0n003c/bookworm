@@ -60,16 +60,16 @@ def _estimate_cost(model: str, input_tok: int, output_tok: int) -> float | None:
 
 def _save_usage_sync(
     uid: int, model: str, input_tok: int, output_tok: int,
-    cost: float | None, query: str,
+    cost: float | None, query: str, answer: str,
 ) -> None:
     """Write one row to ai_usage_log.  Runs in a thread-pool executor."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.execute(
             "INSERT INTO ai_usage_log "
-            "(user_id, model, input_tokens, output_tokens, cost_usd, query_text) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (uid, model, input_tok, output_tok, cost, query[:500]),
+            "(user_id, model, input_tokens, output_tokens, cost_usd, query_text, answer_text) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (uid, model, input_tok, output_tok, cost, query[:500], answer[:4000]),
         )
         conn.commit()
     except Exception:
@@ -272,6 +272,7 @@ async def stream_llm(
 
     # Mutable box so the inner loop can write usage data for the finally block.
     _usage: dict = {"input": 0, "output": 0, "captured": False}
+    _answer_parts: list = []  # accumulate tokens for history tab
 
     try:
         async with httpx.AsyncClient(
@@ -302,6 +303,7 @@ async def stream_llm(
                             .get("content") or ""
                         )
                         if token:
+                            _answer_parts.append(token)
                             yield token
                     except (json.JSONDecodeError, IndexError, KeyError):
                         continue
@@ -313,8 +315,9 @@ async def stream_llm(
         if _usage["captured"] and (_usage["input"] or _usage["output"]):
             inp, out = _usage["input"], _usage["output"]
             cost     = _estimate_cost(model, inp, out)
+            answer   = "".join(_answer_parts)
             import asyncio
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
-                None, _save_usage_sync, uid, model, inp, out, cost, question
+                None, _save_usage_sync, uid, model, inp, out, cost, question, answer
             )

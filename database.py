@@ -1718,12 +1718,18 @@ async def init_db() -> None:
                 input_tokens  INTEGER  NOT NULL DEFAULT 0,
                 output_tokens INTEGER  NOT NULL DEFAULT 0,
                 cost_usd      REAL,
-                query_text    TEXT     NOT NULL DEFAULT ''
+                query_text    TEXT     NOT NULL DEFAULT '',
+                answer_text   TEXT     NOT NULL DEFAULT ''
             )
         """)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_ai_usage_user_date "
             "ON ai_usage_log(user_id, queried_at)"
+        )
+        # Additive migration — answer_text added after initial ship
+        await db.execute(
+            "ALTER TABLE ai_usage_log ADD COLUMN IF NOT EXISTS "
+            "answer_text TEXT NOT NULL DEFAULT ''"
         )
 
         await db.commit()
