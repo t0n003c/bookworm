@@ -9,6 +9,8 @@ Design rules:
 - API key is optional — some local endpoints (Ollama, LM Studio) don't need one.
 - Newlines in tokens are preserved; caller must handle SSE line-break escaping.
 - No proxy by default; set BW_HTTP_PROXY env var if your LLM endpoint needs one.
+- Token usage is captured via stream_options and written to ai_usage_log after
+  every successful stream.  cost_usd is NULL for unknown/local models.
 """
 import json
 import logging
@@ -26,6 +28,54 @@ log = logging.getLogger(__name__)
 _CONTEXT_NOTES  = 5      # how many items to pass as context
 _MAX_NOTE_CHARS = 2_000  # truncation per item (title + content)
 _LLM_TIMEOUT    = 60.0   # seconds for the full stream
+
+# ── Known model pricing (USD per 1 million tokens) ────────────────────────────────
+# Matched by substring so "gpt-4o-mini-2024-07" also matches "gpt-4o-mini".
+# Update when OpenAI changes pricing at https://openai.com/api/pricing/
+# Local endpoints (Ollama, LM Studio, etc.) are intentionally absent —
+# cost will be stored as NULL for those.
+_MODEL_COSTS: dict[str, tuple[float, float]] = {
+    # (input $/1M, output $/1M)
+    "gpt-4o-mini":          (0.15,   0.60),
+    "gpt-4o":               (2.50,  10.00),
+    "gpt-4.1-nano":         (0.10,   0.40),
+    "gpt-4.1-mini":         (0.40,   1.60),
+    "gpt-4.1":              (2.00,   8.00),
+    "gpt-4-turbo":          (10.00, 30.00),
+    "gpt-3.5-turbo":        (0.50,   1.50),
+    "o1-mini":              (1.10,   4.40),
+    "o1":                   (15.00, 60.00),
+    "o3-mini":              (1.10,   4.40),
+}
+
+
+def _estimate_cost(model: str, input_tok: int, output_tok: int) -> float | None:
+    """Return estimated USD cost or None if the model isn’t in _MODEL_COSTS."""
+    model_lower = model.lower()
+    for key, (inp_rate, out_rate) in _MODEL_COSTS.items():
+        if key in model_lower:
+            return (input_tok * inp_rate + output_tok * out_rate) / 1_000_000
+    return None
+
+
+def _save_usage_sync(
+    uid: int, model: str, input_tok: int, output_tok: int,
+    cost: float | None, query: str,
+) -> None:
+    """Write one row to ai_usage_log.  Runs in a thread-pool executor."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute(
+            "INSERT INTO ai_usage_log "
+            "(user_id, model, input_tokens, output_tokens, cost_usd, query_text) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (uid, model, input_tok, output_tok, cost, query[:500]),
+        )
+        conn.commit()
+    except Exception:
+        log.exception("search_llm: failed to write ai_usage_log")
+    finally:
+        conn.close()
 
 
 async def get_effective_llm_settings(uid: int) -> dict:
@@ -208,15 +258,20 @@ async def stream_llm(
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
 
     payload = {
-        "model":       cfg["model"] or "gpt-4o-mini",
-        "messages":    messages,
-        "stream":      True,
-        "temperature": 0.3,
-        "max_tokens":  512,
+        "model":          cfg["model"] or "gpt-4o-mini",
+        "messages":       messages,
+        "stream":         True,
+        "stream_options": {"include_usage": True},  # final chunk carries usage stats
+        "temperature":    0.3,
+        "max_tokens":     512,
     }
 
     proxy    = os.getenv("BW_HTTP_PROXY") or None
     endpoint = cfg["endpoint"].rstrip("/") + "/chat/completions"
+    model    = cfg["model"] or "gpt-4o-mini"
+
+    # Mutable box so the inner loop can write usage data for the finally block.
+    _usage: dict = {"input": 0, "output": 0, "captured": False}
 
     try:
         async with httpx.AsyncClient(
@@ -234,6 +289,13 @@ async def stream_llm(
                         break
                     try:
                         chunk = json.loads(raw)
+                        # Usage chunk: choices is empty, usage key is present.
+                        if not chunk.get("choices") and chunk.get("usage"):
+                            u = chunk["usage"]
+                            _usage["input"]    = u.get("prompt_tokens", 0)
+                            _usage["output"]   = u.get("completion_tokens", 0)
+                            _usage["captured"] = True
+                            continue
                         token = (
                             chunk.get("choices", [{}])[0]
                             .get("delta", {})
@@ -246,3 +308,13 @@ async def stream_llm(
     except Exception as exc:
         log.exception("search_llm: stream failed")
         yield f"\u26a0 AI error: {type(exc).__name__}: {exc} — check endpoint/key in Account → AI Search."
+    finally:
+        # Persist usage whether stream finished normally or raised.
+        if _usage["captured"] and (_usage["input"] or _usage["output"]):
+            inp, out = _usage["input"], _usage["output"]
+            cost     = _estimate_cost(model, inp, out)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None, _save_usage_sync, uid, model, inp, out, cost, question
+            )

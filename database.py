@@ -1706,6 +1706,26 @@ async def init_db() -> None:
             """
         )
 
+        # ── ai_usage_log (per-query LLM token + cost tracking) ────────────────────────
+        # One row per successful LLM stream.  cost_usd is NULL for models
+        # whose pricing is not in search_llm._MODEL_COSTS (e.g. local Ollama).
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS ai_usage_log (
+                id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+                user_id       INTEGER  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                queried_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                model         TEXT     NOT NULL DEFAULT '',
+                input_tokens  INTEGER  NOT NULL DEFAULT 0,
+                output_tokens INTEGER  NOT NULL DEFAULT 0,
+                cost_usd      REAL,
+                query_text    TEXT     NOT NULL DEFAULT ''
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_usage_user_date "
+            "ON ai_usage_log(user_id, queried_at)"
+        )
+
         await db.commit()
 
 @asynccontextmanager

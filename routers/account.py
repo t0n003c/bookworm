@@ -1,8 +1,12 @@
 """Account management — change credentials + superadmin user management."""
+import sqlite3
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
+
+from database import DB_PATH
 
 from routers.attachments_db import UPLOAD_DIR
 from routers.auth_db import (
@@ -450,3 +454,209 @@ async def save_user_ai_settings(
         model=ai_model,
     )
     return HTMLResponse(_OK.format("AI Search settings saved."))
+
+
+# ── AI Usage tracking ───────────────────────────────────────────────────────────────
+
+def _query_ai_usage(uid: int, from_date: str, to_date: str) -> dict:
+    """Sync SQLite query — returns summary + daily rows for the date range."""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        # Summary totals
+        row = conn.execute(
+            """
+            SELECT COUNT(*)            AS queries,
+                   SUM(input_tokens)   AS input_tok,
+                   SUM(output_tokens)  AS output_tok,
+                   SUM(cost_usd)       AS cost
+            FROM ai_usage_log
+            WHERE user_id = ?
+              AND date(queried_at) BETWEEN ? AND ?
+            """,
+            (uid, from_date, to_date),
+        ).fetchone()
+        summary = {
+            "queries":    row["queries"]   or 0,
+            "input_tok":  row["input_tok"] or 0,
+            "output_tok": row["output_tok"] or 0,
+            "cost":       row["cost"],  # may be None if all models are unknown
+        }
+
+        # Per-day breakdown
+        daily_rows = conn.execute(
+            """
+            SELECT date(queried_at)   AS day,
+                   COUNT(*)           AS queries,
+                   SUM(input_tokens)  AS input_tok,
+                   SUM(output_tokens) AS output_tok,
+                   SUM(cost_usd)      AS cost
+            FROM ai_usage_log
+            WHERE user_id = ?
+              AND date(queried_at) BETWEEN ? AND ?
+            GROUP BY day
+            ORDER BY day DESC
+            """,
+            (uid, from_date, to_date),
+        ).fetchall()
+        daily = [
+            {
+                "day":        r["day"],
+                "queries":    r["queries"],
+                "input_tok":  r["input_tok"],
+                "output_tok": r["output_tok"],
+                "cost":       r["cost"],
+            }
+            for r in daily_rows
+        ]
+    finally:
+        conn.close()
+    return {"summary": summary, "daily": daily}
+
+
+def _fmt_cost(val) -> str:
+    """Format a cost value: two decimal places, or '—' when unknown."""
+    if val is None:
+        return "—"
+    return f"${val:.4f}"
+
+
+def _fmt_num(val) -> str:
+    """Comma-formatted integer."""
+    return f"{int(val):,}"
+
+
+@router.get("/ai-usage", response_class=HTMLResponse)
+async def get_ai_usage_panel(request: Request):
+    """Initial panel load: date range picker + lazy-loaded data table."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return HTMLResponse("", status_code=401)
+    today   = date.today()
+    from_d  = today.replace(day=1).isoformat()          # start of current month
+    to_d    = today.isoformat()
+    return HTMLResponse(f"""
+<div class="space-y-3">
+  <p class="text-xs text-gray-500 dark:text-zinc-400">
+    Tracks token consumption and estimated cost for every AI search query.
+    Cost is calculated using published OpenAI pricing; local/custom models show —.
+  </p>
+
+  <!-- Date range pickers -->
+  <div class="flex flex-wrap items-center gap-2">
+    <label class="text-xs text-gray-500 dark:text-zinc-400">From</label>
+    <input type="date" id="ai-usage-from" value="{from_d}"
+           class="border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                  text-xs py-0.5 focus:outline-none focus:border-blue-500"
+           onchange="_loadAiUsage()">
+    <label class="text-xs text-gray-500 dark:text-zinc-400">To</label>
+    <input type="date" id="ai-usage-to" value="{to_d}"
+           class="border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                  text-xs py-0.5 focus:outline-none focus:border-blue-500"
+           onchange="_loadAiUsage()">
+    <button onclick="_loadAiUsage()"
+            class="px-2 py-0.5 text-xs rounded border border-gray-300 dark:border-zinc-600
+                   text-gray-600 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition">
+      Refresh
+    </button>
+  </div>
+
+  <!-- Data target -->
+  <div id="ai-usage-data"
+       hx-get="/account/ai-usage/data?from={from_d}&to={to_d}"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <p class="text-xs text-gray-400 dark:text-zinc-500">Loading…</p>
+  </div>
+</div>
+<script>(function(){{
+  if (window._aiUsageWired) return;
+  window._aiUsageWired = true;
+  window._loadAiUsage = function() {{
+    var f = (document.getElementById('ai-usage-from') || {{}}).value || '';
+    var t = (document.getElementById('ai-usage-to')   || {{}}).value || '';
+    var el = document.getElementById('ai-usage-data');
+    if (!el || !f || !t) return;
+    el.innerHTML = '<p class="text-xs text-gray-400 dark:text-zinc-500">Loading…</p>';
+    htmx.ajax('GET', '/account/ai-usage/data?from=' + f + '&to=' + t, {{
+      target: '#ai-usage-data', swap: 'innerHTML'
+    }});
+  }};
+}})();</script>
+""")
+
+
+@router.get("/ai-usage/data", response_class=HTMLResponse)
+async def get_ai_usage_data(
+    request: Request,
+    from_: str = None,
+    to:    str = None,
+):
+    """HTMX partial — summary cards + daily breakdown table."""
+    uid = request.session.get("user_id")
+    if not uid:
+        return HTMLResponse("", status_code=401)
+
+    # FastAPI reads query param named 'from' via alias; use default approach
+    from_date = request.query_params.get("from") or date.today().replace(day=1).isoformat()
+    to_date   = request.query_params.get("to")   or date.today().isoformat()
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, _query_ai_usage, uid, from_date, to_date)
+    s    = data["summary"]
+    rows = data["daily"]
+
+    total_tok = s["input_tok"] + s["output_tok"]
+
+    card = (
+        "<div class='rounded-lg border border-gray-200 dark:border-zinc-700 "
+        "p-2 text-center flex flex-col gap-0.5'>"
+        "<span class='text-lg font-bold text-gray-800 dark:text-zinc-100'>{val}</span>"
+        "<span class='text-xs text-gray-500 dark:text-zinc-400'>{label}</span></div>"
+    )
+    cards = (
+        card.format(val=_fmt_num(s["queries"]),    label="Queries") +
+        card.format(val=_fmt_num(s["input_tok"]),  label="Input tokens") +
+        card.format(val=_fmt_num(s["output_tok"]), label="Output tokens") +
+        card.format(val=_fmt_num(total_tok),        label="Total tokens") +
+        card.format(val=_fmt_cost(s["cost"]),       label="Est. cost (USD)")
+    )
+
+    if not rows:
+        table_html = "<p class='text-xs text-gray-400 dark:text-zinc-500 py-2'>No AI queries in this range yet.</p>"
+    else:
+        th = "<th class='px-2 py-1 text-left text-xs font-medium text-gray-500 dark:text-zinc-400'>{}</th>"
+        td = "<td class='px-2 py-1 text-xs text-gray-700 dark:text-zinc-300'>{}</td>"
+        header = (
+            "<thead><tr class='border-b border-gray-200 dark:border-zinc-700'>"
+            + th.format("Date")
+            + th.format("Queries")
+            + th.format("Input tok")
+            + th.format("Output tok")
+            + th.format("Est. cost")
+            + "</tr></thead>"
+        )
+        body_rows = "".join(
+            "<tr class='border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700/40'>"
+            + td.format(r["day"])
+            + td.format(_fmt_num(r["queries"]))
+            + td.format(_fmt_num(r["input_tok"]))
+            + td.format(_fmt_num(r["output_tok"]))
+            + td.format(_fmt_cost(r["cost"]))
+            + "</tr>"
+            for r in rows
+        )
+        table_html = (
+            "<div class='overflow-x-auto'>"
+            "<table class='w-full border-collapse'>"
+            + header
+            + "<tbody>" + body_rows + "</tbody>"
+            "</table></div>"
+        )
+
+    return HTMLResponse(
+        f"<div class='grid grid-cols-5 gap-2 mb-3'>{cards}</div>"
+        f"<p class='text-xs font-medium text-gray-600 dark:text-zinc-300 mb-1'>Daily breakdown</p>"
+        f"{table_html}"
+    )

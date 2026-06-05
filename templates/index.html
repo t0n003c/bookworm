@@ -4298,7 +4298,27 @@
           </div>
         </div>
       </div>
-      {# ── /AI Search ──────────────────────────────────────────────────── #}
+      {# ── /AI Search ───────────────────────────────────────────────── #}
+
+      {# ── AI Usage ────────────────────────────────────────────────── #}
+      <div class="mt-5 border-t border-gray-100 dark:border-zinc-700 pt-5">
+        <button type="button" onclick="_acctToggle('acct-aiusage-body', this)" aria-expanded="false"
+          class="w-full flex items-center justify-between group py-0.5 mb-2">
+          <span class="text-sm font-semibold text-gray-800 dark:text-zinc-100">📊 AI Usage &amp; Cost</span>
+          <svg class="w-4 h-4 text-gray-400 transition-transform group-[.open]:rotate-180"
+               viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+          </svg>
+        </button>
+        <div id="acct-aiusage-body" class="hidden">
+          <div hx-get="/account/ai-usage"
+               hx-trigger="revealed"
+               hx-swap="innerHTML">
+            <p class="text-xs text-gray-400 dark:text-zinc-500">Loading…</p>
+          </div>
+        </div>
+      </div>
+      {# ── /AI Usage ───────────────────────────────────────────────── #}
 
       </div><!-- /#acct-s1 -->
 
