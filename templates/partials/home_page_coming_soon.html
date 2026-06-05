@@ -3,22 +3,14 @@
   fully implemented. Shows a friendly preview card with the type's icon,
   label, description and planned feature list.
   Context: page (dict), page_type (str)
+
+  NOTE: Only list page types here that are GENUINELY coming soon.
+  Implemented types (crm, rss, uploads, grid, subscriptions, trip, ai_dashboard)
+  are routed by home.py to their own templates and never reach this partial.
 #}
 {% set TYPE_META = {
-  "crm": {
-    "icon":  "👥",
-    "label": "CRM",
-    "desc":  "Relationship management for contacts, pipelines &amp; activity logs.",
-    "features": [
-      "Contact database with custom fields",
-      "Kanban pipeline with drag-and-drop stages",
-      "Gallery &amp; list views",
-      "Activity log &amp; linked BookWorm notes",
-      "Next follow-up reminders"
-    ]
-  },
   "media": {
-    "icon":  "📅",
+    "icon":  "📱",
     "label": "Media Management",
     "desc":  "Plan and schedule social media posts across platforms.",
     "features": [
@@ -39,30 +31,6 @@
       "Pull photos &amp; videos from Uploads",
       "Swap cells by dragging",
       "Link cells to scheduled posts"
-    ]
-  },
-  "uploads": {
-    "icon":  "🖼️",
-    "label": "Images &amp; Uploads",
-    "desc":  "Your unified media library — photos, videos, documents and more.",
-    "features": [
-      "Auto-grouped by type (Photos · Videos · Documents · Audio)",
-      "Custom groups with color labels",
-      "Tag &amp; filter system",
-      "Auto WebP conversion on upload",
-      "File detail panel with note links"
-    ]
-  },
-  "rss": {
-    "icon":  "📡",
-    "label": "RSS Reader",
-    "desc":  "Full-page feed reader — sources, items &amp; article preview in one view.",
-    "features": [
-      "3-column layout: sources · items · preview",
-      "Shared feed sources with RSS dashboard widgets",
-      "Persistent read/unread state",
-      "Category tabs &amp; per-feed filtering",
-      "Deleting a widget never removes your saved feeds"
     ]
   }
 } %}
