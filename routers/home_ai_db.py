@@ -171,6 +171,7 @@ async def delete_ai_history(uid: int, keep_days: int = 0) -> int:
         return cur.rowcount
 
 
+async def get_ai_history(
     uid: int,
     page: int = 1,
     q: str = "",
