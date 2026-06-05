@@ -15,8 +15,6 @@ var _aiHistTimer   = null;
 var _aiDays        = 30;
 var _aiCustomFrom  = '';   // YYYY-MM-DD, empty = not in custom mode
 var _aiCustomTo    = '';
-var _aiLastCost    = 0;    // total cost from last overview fetch
-var _aiLastPeriod  = '';   // period label
 var _aiLastDaily   = [];   // daily rows — shared with budget chart
 
 // _AI_LS_BUDGET and _AI_LS_RETENTION are declared in home-page-ai-budget.js
@@ -209,10 +207,8 @@ function _aiCardHtml(def, value, sub) {
 function _aiRenderOverview(data) {
   var s = data.summary || {}, daily = data.daily || [], models = data.models || [];
   var period = data.period_label || ('Last ' + _aiDays + ' days');
-  var empty = !s.total_queries;
-  _aiLastCost   = s.total_cost || 0;
-  _aiLastPeriod = period;
-  _aiLastDaily  = daily;
+  var empty  = !s.total_queries;
+  _aiLastDaily = daily;
 
   // Empty state toggle
   var emptyEl = document.getElementById('ai-overview-empty');
@@ -326,13 +322,15 @@ function _aiDrawCost(daily) {
     options: _aiBaseOpts({
       plugins: { legend: { display: false },
                  tooltip: { callbacks: { label: function(i) { return '$' + i.raw.toFixed(6); } } } },
-      scales: Object.assign({}, _aiBaseOpts().scales, {
-        y: Object.assign({}, _aiBaseOpts().scales.y, {
-          ticks: Object.assign({}, _aiBaseOpts().scales.y.ticks, {
-            callback: function(v) { return '$' + (+v).toFixed(4); },
-          }),
-        }),
-      }),
+      scales: {
+        x: { grid: { color: _aiGrid(), drawBorder: false },
+             ticks: { color: _aiTick(), font: { size: 10 }, maxRotation: 35, maxTicksLimit: 8 },
+             border: { display: false } },
+        y: { grid: { color: _aiGrid(), drawBorder: false },
+             ticks: { color: _aiTick(), font: { size: 10 },
+                      callback: function(v) { return '$' + (+v).toFixed(4); } },
+             border: { display: false }, beginAtZero: true },
+      },
     }),
   });
 }

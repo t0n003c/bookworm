@@ -6,6 +6,7 @@ All DB access via get_db() — never raw aiosqlite.connect().
 from __future__ import annotations
 
 import math
+from datetime import date as _date
 
 from database import get_db
 
@@ -132,18 +133,15 @@ async def get_ai_overview(
 
 
 def _fmt_date(iso: str) -> str:
-    """'2025-01-07' → 'Jan 7, 2025'."""
+    """'2025-01-07' → 'Jan 7, 2025'. Works on Linux, Mac, and Windows."""
     try:
-        from datetime import date
-        d = date.fromisoformat(iso)
-        return d.strftime("%b %-d, %Y")  # Linux/Mac
-    except ValueError:
+        d = _date.fromisoformat(iso)
         try:
-            from datetime import date
-            d = date.fromisoformat(iso)
-            return d.strftime("%b %#d, %Y")  # Windows
-        except Exception:
-            return iso
+            return d.strftime("%b %-d, %Y")   # Linux / Mac
+        except ValueError:
+            return d.strftime("%b %#d, %Y")   # Windows
+    except Exception:
+        return iso
 
 
 async def delete_ai_history(uid: int, keep_days: int = 0) -> int:
@@ -207,7 +205,6 @@ async def get_ai_history(
         total = (await cur.fetchone())[0]
 
         if q:
-            like = f"%{q}%"
             cur = await db.execute(
                 """
                 SELECT id, query_text, answer_text, model,
