@@ -76,25 +76,24 @@ function _aiApplyTab(tab) {
 /** Called when the range <select> changes. */
 function aiOnRangeChange() {
   var sel = document.getElementById('ai-days-select');
-  var row = document.getElementById('ai-custom-range');
-  if (!sel || !row) return;
+  var grp = document.getElementById('ai-custom-range');
+  if (!sel || !grp) return;
   if (sel.value === 'custom') {
-    // Show the date-picker row and seed sensible defaults if blank
-    row.classList.remove('hidden');
-    row.classList.add('flex');
+    // Show inline date inputs and seed defaults if blank
+    grp.classList.remove('hidden');
+    grp.classList.add('flex');
     var fromEl = document.getElementById('ai-date-from');
     var toEl   = document.getElementById('ai-date-to');
     if (fromEl && !fromEl.value) {
-      // Default: 30 days ago → today
       var to   = new Date();
       var from = new Date(to.getTime() - 29 * 86400000);
       toEl.value   = _aiIso(to);
       fromEl.value = _aiIso(from);
     }
-    // Don't auto-load yet — wait for Apply
+    // Don't auto-load — wait for Apply
   } else {
-    row.classList.add('hidden');
-    row.classList.remove('flex');
+    grp.classList.add('hidden');
+    grp.classList.remove('flex');
     _aiCustomFrom = '';
     _aiCustomTo   = '';
     aiLoadOverview();

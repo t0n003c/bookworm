@@ -67,6 +67,29 @@
       <option value="365">Last year</option>
       <option value="custom">✏️ Custom…</option>
     </select>
+
+    {# Custom date inputs — inline, hidden until 'Custom…' is picked #}
+    <div id="ai-custom-range" class="hidden items-center gap-2 flex-shrink-0">
+      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500">From</span>
+      <input id="ai-date-from" type="date"
+             class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
+                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                    focus:outline-none focus:ring-2 focus:ring-wblue"/>
+      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500">To</span>
+      <input id="ai-date-to" type="date"
+             class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
+                    bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                    focus:outline-none focus:ring-2 focus:ring-wblue"/>
+      <button onclick="aiApplyCustomRange()"
+              class="text-xs px-5 py-2 rounded-lg bg-wblue text-white
+                     font-semibold hover:bg-blue-700 transition
+                     focus:outline-none focus:ring-2 focus:ring-wblue focus:ring-offset-1">
+        Apply
+      </button>
+      <span id="ai-custom-err"
+            class="text-[10px] text-red-500 dark:text-red-400 hidden">End must be after start.</span>
+    </div>
+
     <button onclick="aiLoadOverview()" title="Refresh"
             class="p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700
                    text-gray-400 hover:text-wblue hover:border-wblue
@@ -78,31 +101,6 @@
               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
       </svg>
     </button>
-  </div>
-
-  {# ── Custom date range row (hidden until 'Custom…' is selected) ─────────── #}
-  <div id="ai-custom-range"
-       class="hidden items-center gap-2 flex-wrap px-4 py-2 flex-shrink-0
-              border-b border-gray-100 dark:border-zinc-800
-              bg-white dark:bg-zinc-900">
-    <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">From</span>
-    <input id="ai-date-from" type="date"
-           class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
-                  bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
-                  focus:outline-none focus:ring-2 focus:ring-wblue"/>
-    <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide">To</span>
-    <input id="ai-date-to" type="date"
-           class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
-                  bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
-                  focus:outline-none focus:ring-2 focus:ring-wblue"/>
-    <button onclick="aiApplyCustomRange()"
-            class="text-xs px-3.5 py-1.5 rounded-lg bg-wblue text-white
-                   font-semibold hover:bg-blue-700 transition
-                   focus:outline-none focus:ring-2 focus:ring-wblue focus:ring-offset-1">
-      Apply
-    </button>
-    <span id="ai-custom-err"
-          class="text-[10px] text-red-500 dark:text-red-400 hidden">End date must be after start date.</span>
   </div>
 
   {# ── Pill tab bar ─────────────────────────────────────────────────────────── #}
