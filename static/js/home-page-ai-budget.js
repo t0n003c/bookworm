@@ -1,11 +1,185 @@
 /**
- * home-page-ai-budget.js — Budget tracker, retention popover, balance check.
+ * home-page-ai-budget.js — Budget tracker line chart + retention popover.
+ *
  * Depends on globals from home-page-ai-dashboard.js:
- *   _aiPid, _aiLastCost, _aiLastPeriod, _AI_LS_BUDGET, _AI_LS_RETENTION,
- *   _aiEsc(), aiLoadOverview()
+ *   _aiPid, _aiLastDaily, _AI_LS_RETENTION, _aiCharts,
+ *   _aiDestroy(), _isDark(), _aiGrid(), _aiTick(), aiLoadOverview()
  * All var — HTMX-safe on repeated swaps.
  */
 'use strict';
+
+var _AI_LS_BUDGET    = 'bw-ai-budget';      // JSON array of {date,amount}
+var _AI_LS_RETENTION = 'bw-ai-retention';   // keep_days string
+
+// ── Budget tracker — payment store ───────────────────────────────────────────
+function _aiBudgetPayments() {
+  try { return JSON.parse(localStorage.getItem(_AI_LS_BUDGET) || '[]'); }
+  catch (_) { return []; }
+}
+
+function _aiBudgetSave(payments) {
+  // Sort ascending by date so the chart always reads chronologically
+  payments.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  localStorage.setItem(_AI_LS_BUDGET, JSON.stringify(payments));
+}
+
+function aiBudgetAddPayment() {
+  var dateEl   = document.getElementById('ai-budget-date');
+  var amountEl = document.getElementById('ai-budget-amount');
+  if (!dateEl || !amountEl) return;
+
+  var date   = dateEl.value;
+  var amount = parseFloat(amountEl.value);
+  if (!date || isNaN(amount) || amount <= 0) return;
+
+  var payments = _aiBudgetPayments();
+  payments.push({ date: date, amount: amount });
+  _aiBudgetSave(payments);
+
+  // Clear inputs
+  dateEl.value   = '';
+  amountEl.value = '';
+
+  // Redraw with current data
+  _aiRenderBudget(_aiLastDaily);
+}
+
+function aiBudgetRemovePayment(idx) {
+  var payments = _aiBudgetPayments();
+  payments.splice(idx, 1);
+  _aiBudgetSave(payments);
+  _aiRenderBudget(_aiLastDaily);
+}
+
+// ── Budget tracker — render pills + chart ────────────────────────────────────
+function _aiRenderBudget(daily) {
+  _aiRenderPaymentPills();
+  _aiDrawBudget(daily);
+}
+
+function _aiRenderPaymentPills() {
+  var el = document.getElementById('ai-budget-payments');
+  if (!el) return;
+  var payments = _aiBudgetPayments();
+  if (!payments.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = payments.map(function(p, i) {
+    return '<span class="inline-flex items-center gap-1 text-[10px] font-semibold'
+      + ' px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40'
+      + ' text-[#0053e2] dark:text-blue-300 border border-blue-100 dark:border-blue-900">'
+      + _aiEsc(p.date) + ' &nbsp;$' + Number(p.amount).toFixed(2)
+      + '<button onclick="aiBudgetRemovePayment(' + i + ')"'
+      + ' class="ml-0.5 text-gray-400 hover:text-red-500 transition leading-none"'
+      + ' aria-label="Remove payment">&times;</button>'
+      + '</span>';
+  }).join('');
+}
+
+function _aiDrawBudget(daily) {
+  var id = 'ai-chart-budget';
+  _aiDestroy(id);
+  var c = document.getElementById(id);
+  if (!c) return;
+
+  var payments = _aiBudgetPayments();
+  var labels   = (daily || []).map(function(d) { return d.day; });
+
+  // ── Cumulative spend line (always shown) ────────────────────────────────
+  var cumSpend = [];
+  var running  = 0;
+  (daily || []).forEach(function(d) {
+    running += +(d.cost_usd || 0);
+    cumSpend.push(+running.toFixed(6));
+  });
+
+  var datasets = [{
+    label:           'Cumulative Spend',
+    data:            cumSpend,
+    borderColor:     '#f59e0b',
+    backgroundColor: 'rgba(245,158,11,0.10)',
+    fill:            true,
+    tension:         0.4,
+    pointRadius:     0,
+    pointHoverRadius: 4,
+    borderWidth:     2,
+    yAxisID:         'y',
+  }];
+
+  // ── Remaining balance line (only when payments are entered) ─────────────
+  if (payments.length && labels.length) {
+    // Sum all payments on or before each label date
+    var balLine = labels.map(function(day, i) {
+      var prepaid = payments.reduce(function(sum, p) {
+        return sum + (p.date <= day ? p.amount : 0);
+      }, 0);
+      return +(prepaid - cumSpend[i]).toFixed(6);
+    });
+
+    var allPositive = balLine.every(function(v) { return v >= 0; });
+    datasets.push({
+      label:            'Remaining Balance',
+      data:             balLine,
+      borderColor:      allPositive ? '#2a8703' : '#ea1100',
+      backgroundColor:  allPositive ? 'rgba(42,135,3,0.08)' : 'rgba(234,17,0,0.08)',
+      fill:             true,
+      tension:          0.4,
+      pointRadius:      0,
+      pointHoverRadius: 4,
+      borderWidth:      2,
+      yAxisID:          'y',
+    });
+  }
+
+  var emptyState = !labels.length;
+  if (emptyState) {
+    // No data yet — show a flat zero chart so the canvas isn't blank
+    labels   = ['(no data)'];
+    datasets = [{ label: 'Cumulative Spend', data: [0],
+                  borderColor: '#f59e0b', borderWidth: 2,
+                  pointRadius: 0, fill: false, yAxisID: 'y' }];
+  }
+
+  _aiCharts[id] = new Chart(c, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive:          true,
+      maintainAspectRatio: false,
+      interaction:         { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display:  datasets.length > 1,
+          position: 'bottom',
+          labels:   { color: _aiTick(), font: { size: 10 }, boxWidth: 10, padding: 10 },
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label + ': $' + Number(ctx.raw).toFixed(4);
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid:   { color: _aiGrid(), drawBorder: false },
+          ticks:  { color: _aiTick(), font: { size: 10 }, maxRotation: 35, maxTicksLimit: 8 },
+          border: { display: false },
+        },
+        y: {
+          grid:        { color: _aiGrid(), drawBorder: false },
+          border:      { display: false },
+          beginAtZero: true,
+          ticks: {
+            color:    _aiTick(),
+            font:     { size: 10 },
+            callback: function(v) { return '$' + (+v).toFixed(4); },
+          },
+        },
+      },
+    },
+  });
+}
 
 // ── Retention popover ─────────────────────────────────────────────────────────
 function aiToggleRetentionPopover(e) {
@@ -17,10 +191,8 @@ function aiToggleRetentionPopover(e) {
   pop.classList.toggle('hidden', !opening);
   if (gear) gear.setAttribute('aria-expanded', opening ? 'true' : 'false');
   if (opening) {
-    // Seed select from localStorage each time we open
     var sel = document.getElementById('ai-retention-select');
     if (sel) sel.value = localStorage.getItem(_AI_LS_RETENTION) || '0';
-    // Close on next outside click
     setTimeout(function() {
       document.addEventListener('click', _aiCloseRetentionOnOutside, { once: true });
     }, 0);
@@ -37,127 +209,7 @@ function _aiCloseRetentionOnOutside(e) {
   }
 }
 
-// ── Budget tracker ────────────────────────────────────────────────────────────
-function _aiRenderBudget(cost, period) {
-  var el = document.getElementById('ai-budget-card');
-  if (!el) return;
-  var budget    = parseFloat(localStorage.getItem(_AI_LS_BUDGET) || '0');
-  var pct       = budget > 0 ? Math.min(cost / budget * 100, 100) : 0;
-  var over      = budget > 0 && cost > budget;
-  var barColor  = over ? '#ea1100' : (pct > 80 ? '#f59e0b' : '#0053e2');
-  var remaining = budget > 0 ? Math.max(budget - cost, 0) : null;
-
-  el.innerHTML =
-    '<div class="rounded-2xl border border-gray-100 dark:border-zinc-800'
-    + ' bg-white dark:bg-zinc-900 p-4 h-full flex flex-col gap-3">'
-
-    // Budget input row
-    + '<div class="flex items-center gap-2">'
-    +   '<label class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500'
-    +          ' uppercase tracking-wide flex-shrink-0">Monthly Budget</label>'
-    +   '<span class="text-gray-400 dark:text-zinc-600 text-xs">$</span>'
-    +   '<input id="ai-budget-input" type="number" min="0" step="0.01" placeholder="0.00"'
-    +     ' value="' + (budget > 0 ? budget.toFixed(2) : '') + '"'
-    +     ' class="w-24 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg'
-    +     ' px-2 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300'
-    +     ' focus:outline-none focus:ring-2 focus:ring-wblue"/>'
-    +   '<button onclick="aiBudgetSave()"'
-    +     ' class="text-xs px-3 py-1 rounded-lg bg-wblue text-white font-semibold'
-    +     ' hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue">'
-    +     'Set'
-    +   '</button>'
-    + '</div>'
-
-    // Spent vs budget numbers
-    + '<div class="flex items-end justify-between">'
-    +   '<div>'
-    +     '<p class="text-2xl font-bold leading-none tracking-tight '
-    +       (over ? 'text-red-500' : 'text-gray-900 dark:text-zinc-100') + '">'
-    +       '$' + cost.toFixed(4)
-    +     '</p>'
-    +     '<p class="text-[10px] text-gray-400 dark:text-zinc-600 mt-0.5">'
-    +       'spent &middot; ' + _aiEsc(period)
-    +     '</p>'
-    +   '</div>'
-    +   (budget > 0
-      ? '<div class="text-right">'
-        + '<p class="text-sm font-bold '
-        + (over ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400') + '">'
-        + (over
-            ? '+$' + (cost - budget).toFixed(4) + ' over'
-            : '$' + remaining.toFixed(4) + ' left')
-        + '</p>'
-        + '<p class="text-[10px] text-gray-400 dark:text-zinc-600">of $'
-        + budget.toFixed(2) + ' budget</p>'
-        + '</div>'
-      : '<p class="text-[10px] text-gray-400 dark:text-zinc-600">Set a budget to track</p>')
-    + '</div>'
-
-    // Progress bar (only when budget is set)
-    + (budget > 0
-      ? '<div class="h-2 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden">'
-        + '<div class="h-full rounded-full transition-all duration-500"'
-        + ' style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div>'
-        + '</div>'
-        + '<p class="text-[10px] text-gray-400 dark:text-zinc-600">'
-        + pct.toFixed(1) + '% of monthly budget used</p>'
-      : '')
-
-    // OpenAI balance check row
-    + '<div class="flex items-center gap-2 mt-auto pt-1 border-t border-gray-100 dark:border-zinc-800">'
-    +   '<button onclick="aiCheckBalance()"'
-    +     ' id="ai-balance-btn"'
-    +     ' class="text-[10px] px-2.5 py-1 rounded-lg border border-gray-200 dark:border-zinc-700'
-    +     ' text-gray-500 dark:text-zinc-400 hover:border-wblue hover:text-wblue transition font-semibold'
-    +     ' focus:outline-none focus:ring-2 focus:ring-wblue">'
-    +     '💳 Check OpenAI Balance'
-    +   '</button>'
-    +   '<span id="ai-balance-result" class="text-[10px] text-gray-400 dark:text-zinc-500"></span>'
-    + '</div>'
-
-    + '</div>';
-}
-
-function aiBudgetSave() {
-  var inp = document.getElementById('ai-budget-input');
-  if (!inp) return;
-  var val = parseFloat(inp.value);
-  if (isNaN(val) || val < 0) val = 0;
-  localStorage.setItem(_AI_LS_BUDGET, String(val));
-  _aiRenderBudget(_aiLastCost, _aiLastPeriod);
-}
-
-// ── OpenAI balance check ─────────────────────────────────────────────────────────
-function aiCheckBalance() {
-  var btn = document.getElementById('ai-balance-btn');
-  var out = document.getElementById('ai-balance-result');
-  if (!btn || !out) return;
-  btn.disabled = true;
-  btn.textContent = '⏳ Checking…';
-  out.textContent = '';
-  fetch('/home/ai-dashboard/' + _aiPid + '/balance')
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      btn.disabled = false;
-      btn.textContent = '💳 Check OpenAI Balance';
-      if (d.ok) {
-        out.style.color = '#2a8703';
-        out.textContent = '$' + Number(d.total_available).toFixed(4)
-          + ' available  (≈ $' + Number(d.total_granted).toFixed(2)
-          + ' granted, $' + Number(d.total_used).toFixed(4) + ' used)';
-      } else {
-        out.style.color = '#ea1100';
-        out.textContent = d.msg || 'Could not retrieve balance.';
-      }
-    })
-    .catch(function(e) {
-      if (btn) { btn.disabled = false; btn.textContent = '💳 Check OpenAI Balance'; }
-      if (out)  { out.style.color = '#ea1100'; out.textContent = 'Network error — see console.'; }
-      console.error('[ai-dash] balance:', e);
-    });
-}
-
-// ── Retention / cleanup ───────────────────────────────────────────────────────────
+// ── Retention / cleanup ───────────────────────────────────────────────────────
 function aiApplyRetention() {
   var sel = document.getElementById('ai-retention-select');
   if (!sel) return;

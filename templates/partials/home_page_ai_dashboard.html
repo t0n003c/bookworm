@@ -253,11 +253,38 @@
           </div>
         </div>
 
-        {# Budget tracker — rendered by JS into #ai-budget-card #}
+        {# Budget tracker — static layout; JS draws the chart via _aiDrawBudget() #}
         <div class="py-1">
           <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Budget Tracker</p>
-          <div id="ai-budget-card">
-            <div class="ai-skel h-32 rounded-2xl"></div>
+          <div class="rounded-2xl border border-gray-100 dark:border-zinc-800
+                      bg-white dark:bg-zinc-900 p-3 flex flex-col gap-2">
+
+            {# Payment entry row #}
+            <div class="flex flex-wrap items-center gap-2">
+              <input id="ai-budget-date" type="date"
+                     class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg
+                            px-2 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                            focus:outline-none focus:ring-2 focus:ring-wblue"/>
+              <span class="text-gray-400 dark:text-zinc-600 text-xs">$</span>
+              <input id="ai-budget-amount" type="number" min="0" step="0.01" placeholder="Amount paid"
+                     class="w-28 text-xs border border-gray-200 dark:border-zinc-700 rounded-lg
+                            px-2 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
+                            focus:outline-none focus:ring-2 focus:ring-wblue"/>
+              <button onclick="aiBudgetAddPayment()"
+                      class="text-xs px-3 py-1 rounded-lg bg-wblue text-white font-semibold
+                             hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-wblue">
+                Add
+              </button>
+            </div>
+
+            {# Payment pills — JS-rendered #}
+            <div id="ai-budget-payments" class="flex flex-wrap gap-1.5 empty:hidden"></div>
+
+            {# Chart canvas — fixed height so Chart.js stays stable #}
+            <div style="height:155px;position:relative;">
+              <canvas id="ai-chart-budget"></canvas>
+            </div>
+
           </div>
         </div>
 

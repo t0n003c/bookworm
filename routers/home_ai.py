@@ -4,17 +4,16 @@ Mounted with prefix=/home (same as home.py).
 The page shell is rendered by home_page_view() in home.py when page_type == 'ai_dashboard'.
 
 Endpoints:
-  GET /home/ai-dashboard/{page_id}/overview?days=30   -> summary + chart data JSON
-  GET /home/ai-dashboard/{page_id}/history?page=1&q=  -> paginated chat history JSON
+  GET  /home/ai-dashboard/{page_id}/overview?days=30   -> summary + chart data JSON
+  GET  /home/ai-dashboard/{page_id}/history?page=1&q=  -> paginated chat history JSON
+  DELETE /home/ai-dashboard/{page_id}/history?keep_days=N -> trim / delete history
 """
 from __future__ import annotations
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from database import get_db
-from routers.auth_db import get_llm_settings
 from routers.home_ai_db import get_ai_overview, get_ai_history, delete_ai_history
 
 router = APIRouter(prefix="/home", tags=["ai-dashboard"])
@@ -41,55 +40,6 @@ async def _get_ai_page(page_id: int, uid: int) -> dict | None:
     if page.get("page_type") != "ai_dashboard":
         return None
     return page
-
-
-@router.get("/ai-dashboard/{page_id}/balance")
-async def ai_check_balance(request: Request, page_id: int):
-    """Try to fetch prepaid credit balance from the user's LLM provider.
-
-    Only works with OpenAI endpoints; other providers return a not-supported
-    message rather than an error.
-    """
-    try:
-        uid = _uid(request)
-    except PermissionError:
-        return JSONResponse({"error": "not authenticated"}, status_code=401)
-
-    page = await _get_ai_page(page_id, uid)
-    if not page:
-        return JSONResponse({"error": "page not found"}, status_code=404)
-
-    cfg = await get_llm_settings(uid)
-    endpoint: str = cfg.get("endpoint", "").strip().rstrip("/")
-    api_key: str  = cfg.get("api_key",  "").strip()
-
-    if not api_key:
-        return JSONResponse({"error": "no_key", "msg": "No API key configured — add one in Account → AI Search."})
-
-    is_openai = "openai.com" in endpoint or not endpoint  # blank endpoint ⇒ assume OpenAI
-    if not is_openai:
-        return JSONResponse({"error": "not_openai", "msg": "Balance lookup is only supported for OpenAI endpoints."})
-
-    # OpenAI billing endpoint — works for many account types; 401/403 means
-    # the key doesn’t have billing scope (common with project keys).
-    balance_url = "https://api.openai.com/dashboard/billing/credit_grants"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(balance_url, headers=headers)
-        if r.status_code == 200:
-            data = r.json()
-            return JSONResponse({
-                "ok": True,
-                "total_granted":   data.get("total_granted",   0),
-                "total_used":      data.get("total_used",      0),
-                "total_available": data.get("total_available", 0),
-            })
-        if r.status_code in (401, 403):
-            return JSONResponse({"error": "no_scope", "msg": "Your API key doesn’t have billing access. Check your balance at platform.openai.com/account/billing."})
-        return JSONResponse({"error": "upstream", "msg": f"OpenAI returned {r.status_code}. Check platform.openai.com/account/billing."})
-    except Exception as exc:
-        return JSONResponse({"error": "network", "msg": f"Request failed: {exc}"})
 
 
 @router.get("/ai-dashboard/{page_id}/overview")
