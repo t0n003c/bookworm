@@ -114,20 +114,32 @@ async def ping_llm(request: Request):
 
 @router.get("/models")
 async def list_models(request: Request, endpoint: str = ""):
-    """Proxy GET /models to the configured LLM endpoint using the caller's personal key.
+    """Proxy GET /models to the user's *saved* LLM endpoint.
+
+    The user-supplied ``endpoint`` query param is accepted only as a hint for
+    discovery-before-save (no API key is forwarded to it).  The stored API key
+    is ONLY ever sent to the endpoint the user has already saved in their
+    account — never to a caller-supplied URL (prevents SSRF key exfiltration).
 
     Returns {models: [str]} sorted A-Z, or {models: [], error: str} on failure.
     """
     uid = _uid(request)
     cfg = await get_user_llm_settings(uid)
+    saved_base = cfg["endpoint"].rstrip("/") if cfg["endpoint"] else ""
 
-    base = (endpoint.strip() or cfg["endpoint"]).rstrip("/")
+    # Resolve which base URL to call
+    requested = endpoint.strip().rstrip("/")
+    if requested and requested != saved_base:
+        # Caller supplied a different (unsaved) endpoint — probe it WITHOUT the key
+        base    = requested
+        headers: dict = {}
+    else:
+        # Use the saved endpoint + key (the only safe combination)
+        base    = saved_base
+        headers = {"Authorization": f"Bearer {cfg['api_key']}"} if cfg["api_key"] else {}
+
     if not base:
         return {"models": [], "error": "No endpoint configured."}
-
-    headers = {}
-    if cfg["api_key"]:
-        headers["Authorization"] = f"Bearer {cfg['api_key']}"
 
     proxy = os.getenv("BW_HTTP_PROXY") or None
     try:
@@ -138,7 +150,9 @@ async def list_models(request: Request, endpoint: str = ""):
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        return {"models": [], "error": str(exc)}
+        # Return only the exception type — not the full message which may
+        # contain the endpoint URL or other internal detail.
+        return {"models": [], "error": f"{type(exc).__name__}: check endpoint in Account → AI Search."}
 
     # OpenAI format: {data: [{id: "..."}]}; some servers return {models: [str]}
     raw = data.get("data") or data.get("models") or []

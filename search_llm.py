@@ -62,9 +62,13 @@ def _save_usage_sync(
     uid: int, model: str, input_tok: int, output_tok: int,
     cost: float | None, query: str, answer: str,
 ) -> None:
-    """Write one row to ai_usage_log.  Runs in a thread-pool executor."""
+    """Write one row to ai_usage_log.  Runs in a thread-pool executor.
+
+    Uses WAL journal mode to stay consistent with the rest of the app.
+    """
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(
             "INSERT INTO ai_usage_log "
             "(user_id, model, input_tokens, output_tokens, cost_usd, query_text, answer_text) "
@@ -309,7 +313,9 @@ async def stream_llm(
                         continue
     except Exception as exc:
         log.exception("search_llm: stream failed")
-        yield f"\u26a0 AI error: {type(exc).__name__}: {exc} — check endpoint/key in Account → AI Search."
+        # Yield only the exception type — not str(exc) which may contain
+        # the endpoint URL or Bearer token fragment from httpx internals.
+        yield f"\u26a0 AI error ({type(exc).__name__}) — check endpoint/key in Account → AI Search."
     finally:
         # Persist usage whether stream finished normally or raised.
         if _usage["captured"] and (_usage["input"] or _usage["output"]):
