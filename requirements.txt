@@ -16,6 +16,7 @@ aiosqlite==0.22.1
 
 # Auth & security
 bcrypt==5.0.0
+cryptography>=42.0.0   # Fernet symmetric encryption for LLM API keys at rest
 itsdangerous==2.2.0
 pyotp==2.9.0
 webauthn==2.7.1

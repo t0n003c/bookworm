@@ -322,7 +322,7 @@ async def init_db() -> None:
                 "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0"
             )
 
-        # ── Phase 4B: per-user LLM settings ─────────────────────────────────
+        # ── Phase 4B: per-user LLM settings ───────────────────────────────────
         # User key takes precedence over site-wide key in get_effective_llm_settings().
         if "llm_endpoint" not in u_cols:
             await db.execute(
@@ -335,6 +335,33 @@ async def init_db() -> None:
         if "llm_model" not in u_cols:
             await db.execute(
                 "ALTER TABLE users ADD COLUMN llm_model TEXT NOT NULL DEFAULT ''"
+            )
+
+        # ── Phase 4B security: encrypt any plaintext LLM API keys at rest ───────
+        # Fernet tokens always start with "gAAAAA".  Any non-empty key that
+        # doesn’t match that prefix is still plaintext — encrypt it now.
+        # Runs once per boot; is a no-op after the first migration.
+        from security import encrypt_secret
+        cur = await db.execute(
+            "SELECT id, llm_api_key FROM users WHERE llm_api_key != ''"
+        )
+        rows = await cur.fetchall()
+        needs_encrypt = [
+            (r["id"], r["llm_api_key"])
+            for r in rows
+            if not r["llm_api_key"].startswith("gAAAAA")
+        ]
+        for uid, plaintext_key in needs_encrypt:
+            await db.execute(
+                "UPDATE users SET llm_api_key = ? WHERE id = ?",
+                (encrypt_secret(plaintext_key), uid),
+            )
+        if needs_encrypt:
+            await db.commit()
+            import logging as _log
+            _log.getLogger(__name__).info(
+                "database: encrypted %d plaintext LLM API key(s) at rest.",
+                len(needs_encrypt),
             )
 
         # ── notes migrations (single PRAGMA read) ─────────────────────────────

@@ -189,9 +189,13 @@ async def set_unlimited_uploads(user_id: int, value: bool) -> None:
 
 
 # ── Per-user LLM settings (Phase 4B) ──────────────────────────────────
-
 async def get_user_llm_settings(user_id: int) -> dict:
-    """Return {endpoint, api_key, model} for a user. Defaults to empty strings."""
+    """Return {endpoint, api_key, model} for a user.
+
+    api_key is Fernet-decrypted before return — callers always see plaintext.
+    Defaults to empty strings when the user has no settings saved.
+    """
+    from security import decrypt_secret
     async with get_db() as db:
         cur = await db.execute(
             "SELECT llm_endpoint, llm_api_key, llm_model FROM users WHERE id = ?",
@@ -202,7 +206,7 @@ async def get_user_llm_settings(user_id: int) -> dict:
         return {"endpoint": "", "api_key": "", "model": ""}
     return {
         "endpoint": row["llm_endpoint"] or "",
-        "api_key":  row["llm_api_key"]  or "",
+        "api_key":  decrypt_secret(row["llm_api_key"] or ""),
         "model":    row["llm_model"]    or "",
     }
 
@@ -213,12 +217,17 @@ async def set_user_llm_settings(
     api_key: str | None,
     model: str,
 ) -> None:
-    """Persist per-user LLM settings. Pass api_key=None to leave it unchanged."""
+    """Persist per-user LLM settings.
+
+    api_key is Fernet-encrypted before writing to the DB.
+    Pass api_key=None to leave the stored key untouched.
+    """
+    from security import encrypt_secret
     async with get_db() as db:
         if api_key is not None:
             await db.execute(
                 "UPDATE users SET llm_endpoint=?, llm_api_key=?, llm_model=? WHERE id=?",
-                (endpoint.strip(), api_key.strip(), model.strip(), user_id),
+                (endpoint.strip(), encrypt_secret(api_key.strip()), model.strip(), user_id),
             )
         else:
             await db.execute(

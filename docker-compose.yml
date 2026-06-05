@@ -6,7 +6,7 @@
 #
 # The app auto-generates and persists a secret key in the data volume on
 # first boot.  For production, set BW_SECRET_KEY in a .env file to prevent
-# session invalidation if the volume is ever replaced.
+# session invalidation AND LLM API key loss if the volume is ever replaced.
 #
 # FIRST-RUN CHECKLIST (production):
 #   1. Copy .env.example → .env and fill in your values.
@@ -41,10 +41,12 @@ services:
       # ── Data location ──────────────────────────────────────────────────────
       BW_DATA_DIR: /data
 
-      # ── Secret key ────────────────────────────────────────────────────────
-      # Optional — the app auto-generates and persists one in /data/bookworm.secret
-      # on first boot.  Set this in .env for production so sessions survive
-      # volume replacements.
+      # ── Secret key ──────────────────────────────────────────────────────────────
+      # Used for session signing AND Fernet encryption of stored LLM API keys.
+      # Optional — auto-generated and persisted to /data/bookworm.secret on
+      # first boot.  Set in .env for production so sessions and encrypted keys
+      # survive volume replacements.  Changing this invalidates all sessions
+      # AND makes stored LLM keys unreadable (users must re-enter them).
       BW_SECRET_KEY: ${BW_SECRET_KEY:-}
 
       # ── HTTPS cookies ──────────────────────────────────────────────────────

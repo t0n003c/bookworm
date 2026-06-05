@@ -1,8 +1,13 @@
-"""Security helpers — persisted secret key + session expiry utilities."""
+"""Security helpers — persisted secret key, session expiry, and Fernet encryption."""
+import base64
+import hashlib
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _DATA_DIR = Path(os.getenv("BW_DATA_DIR", "."))
 _KEY_FILE  = _DATA_DIR / "bookworm.secret"
@@ -25,6 +30,60 @@ def load_secret_key() -> str:
     key = secrets.token_hex(32)
     _KEY_FILE.write_text(key)
     return key
+
+
+# ── Fernet encryption (LLM API keys at rest) ──────────────────────────────────
+# Fernet requires a 32-byte URL-safe base64 key.
+# We derive one deterministically from the app secret so no extra env var
+# is needed.  If BW_SECRET_KEY changes, stored keys become unreadable and
+# users must re-enter them — the same disruptive consequence as rotating the
+# session secret, which is already documented.
+
+_fernet_cache: "_Fernet | None" = None  # noqa: F821 — quoted to avoid import at module top
+
+
+def get_fernet():
+    """Return a cached Fernet instance derived from the app secret key.
+
+    Import is lazy so the cryptography package is only loaded when first needed.
+    """
+    global _fernet_cache
+    if _fernet_cache is not None:
+        return _fernet_cache
+    from cryptography.fernet import Fernet
+    raw = (os.getenv("BW_SECRET_KEY") or load_secret_key()).encode()
+    # SHA-256 → 32 bytes → URL-safe base64 = valid Fernet key
+    fernet_key    = base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+    _fernet_cache = Fernet(fernet_key)
+    return _fernet_cache
+
+
+def encrypt_secret(plaintext: str) -> str:
+    """Encrypt a secret string and return a Fernet token (str).
+
+    Empty input returns empty string unchanged.
+    """
+    if not plaintext:
+        return ""
+    return get_fernet().encrypt(plaintext.encode()).decode()
+
+
+def decrypt_secret(token: str) -> str:
+    """Decrypt a Fernet token back to plaintext.
+
+    Returns empty string and logs a warning on failure (e.g. key mismatch).
+    Empty input returns empty string unchanged.
+    """
+    if not token:
+        return ""
+    try:
+        return get_fernet().decrypt(token.encode()).decode()
+    except Exception:
+        log.warning(
+            "security: failed to decrypt stored LLM API key — "
+            "BW_SECRET_KEY may have changed. User must re-enter their key."
+        )
+        return ""
 
 
 def make_expires_at(permanent: bool) -> str | None:
