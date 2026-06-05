@@ -156,26 +156,28 @@
 
     {# Row 2: custom date pickers — hidden until ‘Custom…’ is selected #}
     <div id="ai-custom-range"
-         class="hidden items-center flex-wrap gap-2 px-4 pb-2.5
+         class="hidden items-center gap-1.5 px-4 pb-2.5
                 border-t border-gray-100 dark:border-zinc-800 pt-2">
-      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500">From</span>
+      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 flex-shrink-0">From</span>
       <input id="ai-date-from" type="date"
-             class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
+             class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-700
+                    rounded-lg px-1.5 py-1.5
                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
-      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500">To</span>
+      <span class="text-[10px] font-semibold text-gray-400 dark:text-zinc-500 flex-shrink-0">To</span>
       <input id="ai-date-to" type="date"
-             class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5
+             class="flex-1 min-w-0 text-xs border border-gray-200 dark:border-zinc-700
+                    rounded-lg px-1.5 py-1.5
                     bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300
                     focus:outline-none focus:ring-2 focus:ring-wblue"/>
       <button onclick="aiApplyCustomRange()"
-              class="text-xs px-5 py-2 rounded-lg bg-wblue text-white
+              class="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-wblue text-white
                      font-semibold hover:bg-blue-700 transition
                      focus:outline-none focus:ring-2 focus:ring-wblue focus:ring-offset-1">
         Apply
       </button>
       <span id="ai-custom-err"
-            class="text-[10px] text-red-500 dark:text-red-400 hidden">End must be after start.</span>
+            class="text-[10px] text-red-500 dark:text-red-400 hidden flex-shrink-0">Invalid range.</span>
     </div>{# /row-2 custom range #}
 
   </div>{# /top-bar column #}
