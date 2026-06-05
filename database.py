@@ -148,6 +148,7 @@ SEED_CATEGORIES = [
 async def init_db() -> None:
     """Initialize database schema, run migrations, and seed defaults."""
     async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row          # named-column access throughout init_db
         await db.execute("PRAGMA foreign_keys = ON")
         for sql in CREATE_TABLES_SQL:
             await db.execute(sql)
