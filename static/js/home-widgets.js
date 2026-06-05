@@ -406,8 +406,10 @@ function openNewHomePage() {
   action.value           = '/home/pages/create';
   nameEl.value           = '';
 
-  // Reset type picker to Dashboard (also resets emoji + placeholder)
-  selectPageType('dashboard');
+  // Restore the last-used page type so users creating multiple pages of the
+  // same type don't have to re-click the card every time.
+  const lastType = sessionStorage.getItem('bw-last-page-type') || 'dashboard';
+  selectPageType(lastType);
 
   // Hide the emoji picker — the type card already chooses a sensible emoji.
   // Users can customise the icon later via Rename.
@@ -454,6 +456,9 @@ async function submitHpModal() {
   const emoji     = document.getElementById('hp-emoji').value || '🏠';
   const action    = document.getElementById('hp-modal-action').value;
   const page_type = document.getElementById('hp-page-type').value || 'dashboard';
+
+  // Remember this type for next time the modal opens
+  sessionStorage.setItem('bw-last-page-type', page_type);
 
   closeHpModal();
   const res  = await _post(action, { name, emoji, page_type });
@@ -2437,7 +2442,8 @@ function _initSwappedPage() {
   var aiDashRoot = document.getElementById('ai-dash-page-root');
   if (aiDashRoot) {
     var aiDashPid = parseInt(aiDashRoot.dataset.pageId, 10);
-    if (aiDashPid && typeof initAiDashboardPage === 'function') {
+    // Skip if the inline self-bootstrap script already fired
+    if (aiDashPid && !aiDashRoot.dataset.aiBooted && typeof initAiDashboardPage === 'function') {
       try { initAiDashboardPage(aiDashPid); } catch(e) { console.error('[home] initAiDashboardPage:', e); }
     }
     var _ta = document.getElementById('top-action-area');

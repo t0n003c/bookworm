@@ -165,3 +165,42 @@
   </div>{# /scrollable area #}
 
 </div>{# /ai-dash-page-root #}
+
+{# ── Self-bootstrap: fire initAiDashboardPage() as soon as this partial loads.
+   _initSwappedPage() in home-widgets.js does the same thing, but if the SW
+   is still serving an old cached home-widgets.js the dispatch won't exist.
+   This inline script is the belt-and-suspenders guarantee. #}
+<script>
+(function _aiDashBoot() {
+  var root = document.getElementById('ai-dash-page-root');
+  if (!root) return;
+  var pid = parseInt(root.dataset.pageId, 10);
+  if (!pid) return;
+  // Guard: only fire once per page load
+  if (root.dataset.aiBooted === '1') return;
+  root.dataset.aiBooted = '1';
+  // Clear the "Add Widget" button that showHomePage() injected before we loaded
+  var ta = document.getElementById('top-action-area');
+  if (ta) ta.innerHTML = '';
+  // Call now if the module is already loaded, otherwise wait for it
+  if (typeof initAiDashboardPage === 'function') {
+    try { initAiDashboardPage(pid); } catch(e) { console.error('[ai-dash] boot error:', e); }
+  } else {
+    // Deferred scripts haven't finished yet — wait for them
+    var waited = 0;
+    var poll = setInterval(function() {
+      waited += 50;
+      if (typeof initAiDashboardPage === 'function') {
+        clearInterval(poll);
+        if (root.dataset.aiBooted !== '2') {
+          root.dataset.aiBooted = '2';
+          try { initAiDashboardPage(pid); } catch(e) { console.error('[ai-dash] boot error:', e); }
+        }
+      } else if (waited > 5000) {
+        clearInterval(poll);
+        console.warn('[ai-dash] initAiDashboardPage not found after 5s — JS may be cached. Please hard-refresh (Ctrl+Shift+R).');
+      }
+    }, 50);
+  }
+}());
+</script>
