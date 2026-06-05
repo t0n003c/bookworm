@@ -1,10 +1,11 @@
 /**
- * bw-mobile-fab.js — Mobile search FAB with AI toggle
+ * bw-mobile-fab.js — Mobile search FAB + AI toggle pill
  *
  * Manages the bottom-right floating action button that replaces Ctrl+K on
  * mobile.  Reads / writes 'bw-ai-mob-on' from localStorage to persist the
  * AI-answer toggle between sessions.  Exposes window.bwMobileAiEnabled so
- * bw-search-qa.js can check it before streaming (desktop is unaffected).
+ * bw-search-qa.js can check it before streaming (works on desktop too — the
+ * pill is visible inside the search panel on all screen sizes).
  *
  * Two visual states:
  *   AI OFF → plain book-worm search icon (blue FAB)
@@ -63,7 +64,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     _fab      = document.getElementById('bw-mob-search-btn');
-    // Pill now lives inside the search panel header (sm:hidden)
+    // Pill lives inside the search panel header (all screen sizes)
     _pill     = document.getElementById('bw-mob-ai-pill');
     _iconBase = document.getElementById('bw-mob-icon-base');
     _iconAi   = document.getElementById('bw-mob-icon-ai');

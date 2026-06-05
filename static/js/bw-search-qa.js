@@ -463,13 +463,11 @@
             try { ld = JSON.parse(card.getAttribute('data-link-data') || '{}'); } catch(e2){}
             bwSearchGo(itype, iid, ld);
           } else {
-            // No highlight → ask AI (unless mobile AI toggle is OFF)
+            // No highlight → ask AI (unless AI toggle is OFF)
             var q = inputEl.value.trim();
             if (q) {
-              var mobileAiOff = window.innerWidth < 768 &&
-                                window.bwMobileAiEnabled === false;
-              if (mobileAiOff) {
-                // AI disabled on mobile — just run a fresh search instead
+              if (window.bwMobileAiEnabled === false) {
+                // AI disabled — run a fresh search instead
                 _bwSqFetch(q);
               } else {
                 _bwSqStream(q);
