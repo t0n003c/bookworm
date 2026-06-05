@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from database import get_db
-from routers.home_ai_db import get_ai_overview, get_ai_history
+from routers.home_ai_db import get_ai_overview, get_ai_history, delete_ai_history
 
 router = APIRouter(prefix="/home", tags=["ai-dashboard"])
 
@@ -73,7 +73,29 @@ async def ai_overview(
     return JSONResponse(data)
 
 
-@router.get("/ai-dashboard/{page_id}/history")
+@router.delete("/ai-dashboard/{page_id}/history")
+async def ai_delete_history(
+    request: Request,
+    page_id: int,
+    keep_days: int = 0,
+):
+    """Delete chat history for the current user.
+
+    ?keep_days=0  → delete everything
+    ?keep_days=90 → delete rows older than 90 days (keep recent 90 days)
+    """
+    try:
+        uid = _uid(request)
+    except PermissionError:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+
+    page = await _get_ai_page(page_id, uid)
+    if not page:
+        return JSONResponse({"error": "page not found"}, status_code=404)
+
+    deleted = await delete_ai_history(uid, keep_days=keep_days)
+    return JSONResponse({"deleted": deleted})
+
 async def ai_history(
     request: Request,
     page_id: int,

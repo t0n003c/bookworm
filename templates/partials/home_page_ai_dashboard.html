@@ -159,8 +159,10 @@
         </div>
       </div>
 
-      {# Charts 2×2 grid #}
+      {# ── Charts ──────────────────────────────────────────────────────────── #}
+      {# Desktop: 2-col grid  Mobile: single-col stack                          #}
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
         {# Queries bar #}
         <div class="py-1">
           <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Queries per Day</p>
@@ -185,19 +187,29 @@
           </div>
         </div>
 
-        {# Models donut #}
-        <div class="py-1 flex flex-col items-center">
-          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3 self-start">Model Breakdown</p>
-          <div style="height:160px;position:relative;width:100%;">
+        {# Budget tracker — rendered by JS into #ai-budget-card #}
+        <div class="py-1">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Budget Tracker</p>
+          <div id="ai-budget-card">
+            <div class="ai-skel h-32 rounded-2xl"></div>
+          </div>
+        </div>
+
+      </div>{# /2-col grid #}
+
+      {# Model breakdown — own row, full-width on all screen sizes #}
+      <div class="py-1">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-3">Model Breakdown</p>
+        <div class="flex flex-col sm:flex-row items-center gap-4">
+          <div style="height:160px;position:relative;width:100%;max-width:260px;">
             <canvas id="ai-chart-models"></canvas>
           </div>
-          <div id="ai-model-legend" class="mt-3 flex flex-wrap gap-2 justify-center"></div>
+          <div id="ai-model-legend" class="flex flex-wrap gap-2"></div>
         </div>
       </div>
 
       {# Empty state #}
       <div id="ai-overview-empty" class="hidden">
-        <div class="flex flex-col items-center justify-center py-20 gap-3">
           <div class="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/40
                       flex items-center justify-center text-3xl shadow-sm">🤖</div>
           <p class="text-sm font-semibold text-gray-700 dark:text-zinc-300">No AI queries yet</p>
@@ -210,6 +222,47 @@
       </div>
 
     </div>{# /overview #}
+
+    {# ── History retention settings ──────────────────────────────────────── #}
+    {# Lives outside both tab panels so it's always visible on Overview     #}
+    <div id="ai-retention-section"
+         class="mx-4 md:mx-5 mb-5 mt-1 rounded-2xl border border-gray-100
+                dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+      <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400
+                dark:text-zinc-500 mb-3">History &amp; Data Retention</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-xs text-gray-600 dark:text-zinc-400 font-medium">Keep history for</label>
+        <select id="ai-retention-select"
+                class="text-xs border border-gray-200 dark:border-zinc-700 rounded-lg
+                       px-2.5 py-1.5 bg-white dark:bg-zinc-800
+                       text-gray-700 dark:text-zinc-300
+                       focus:outline-none focus:ring-2 focus:ring-wblue">
+          <option value="0">Forever (default)</option>
+          <option value="365">1 year</option>
+          <option value="180">6 months</option>
+          <option value="90">3 months</option>
+          <option value="30">1 month</option>
+        </select>
+        <button onclick="aiApplyRetention()"
+                class="text-xs px-4 py-1.5 rounded-lg border border-gray-200
+                       dark:border-zinc-700 text-gray-600 dark:text-zinc-400
+                       hover:border-wblue hover:text-wblue transition font-semibold
+                       focus:outline-none focus:ring-2 focus:ring-wblue">
+          Apply &amp; Trim Now
+        </button>
+        <div class="sm:ml-auto flex items-center gap-2">
+          <button onclick="aiConfirmDeleteAll()"
+                  class="text-xs px-4 py-1.5 rounded-lg border border-red-200
+                         dark:border-red-900 text-red-500 dark:text-red-400
+                         hover:bg-red-50 dark:hover:bg-red-950/40 transition font-semibold
+                         focus:outline-none focus:ring-2 focus:ring-red-400">
+            🗑 Delete All History
+          </button>
+        </div>
+      </div>
+      <p id="ai-retention-msg"
+         class="hidden mt-2 text-[10px] text-gray-400 dark:text-zinc-600"></p>
+    </div>
 
     {# ── History panel ────────────────────────────────────────────────────── #}
     <div id="ai-panel-history" class="hidden p-4 md:p-5">

@@ -146,7 +146,31 @@ def _fmt_date(iso: str) -> str:
             return iso
 
 
-async def get_ai_history(
+async def delete_ai_history(uid: int, keep_days: int = 0) -> int:
+    """Delete AI usage log rows for *uid*.
+
+    Args:
+        keep_days: rows older than this many days are deleted.
+                   0 (default) = delete everything.
+    Returns:
+        Number of rows deleted.
+    """
+    async with get_db() as db:
+        if keep_days <= 0:
+            cur = await db.execute(
+                "DELETE FROM ai_usage_log WHERE user_id = ?", (uid,)
+            )
+        else:
+            cur = await db.execute(
+                "DELETE FROM ai_usage_log "
+                "WHERE user_id = ? "
+                "  AND queried_at < datetime('now', ? || ' days')",
+                (uid, f"-{keep_days}"),
+            )
+        await db.commit()
+        return cur.rowcount
+
+
     uid: int,
     page: int = 1,
     q: str = "",

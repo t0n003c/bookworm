@@ -15,6 +15,12 @@ var _aiHistTimer   = null;
 var _aiDays        = 30;
 var _aiCustomFrom  = '';   // YYYY-MM-DD, empty = not in custom mode
 var _aiCustomTo    = '';
+var _aiLastCost    = 0;    // total cost from last overview fetch (for budget card)
+var _aiLastPeriod  = '';   // period label from last fetch
+
+// localStorage keys
+var _AI_LS_BUDGET    = 'bw-ai-budget';      // monthly budget in USD (string)
+var _AI_LS_RETENTION = 'bw-ai-retention';  // keep_days (string)
 
 // ── Chart.js lazy loader ──────────────────────────────────────────────────────
 var _aiCjReady   = false;
@@ -205,6 +211,15 @@ function _aiRenderOverview(data) {
   var s = data.summary || {}, daily = data.daily || [], models = data.models || [];
   var period = data.period_label || ('Last ' + _aiDays + ' days');
   var empty = !s.total_queries;
+  _aiLastCost   = s.total_cost || 0;
+  _aiLastPeriod = period;
+
+  // Seed retention select from localStorage
+  var retSel = document.getElementById('ai-retention-select');
+  if (retSel) {
+    var saved = localStorage.getItem(_AI_LS_RETENTION) || '0';
+    retSel.value = saved;
+  }
 
   // Empty state toggle
   var emptyEl = document.getElementById('ai-overview-empty');
@@ -236,6 +251,8 @@ function _aiRenderOverview(data) {
   }).catch(function(e) {
     console.error('[ai-dash] Chart.js:', e);
   });
+
+  _aiRenderBudget(_aiLastCost, period);
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
@@ -368,7 +385,7 @@ function _aiDrawModels(models) {
   }
 }
 
-// ── History ───────────────────────────────────────────────────────────────────
+// ── History ────────────────────────────────────────────────────────────────────────
 function aiHistDebounceSearch() {
   if (_aiHistTimer) clearTimeout(_aiHistTimer);
   _aiHistTimer = setTimeout(function() { aiLoadHistory(1); }, 350);
