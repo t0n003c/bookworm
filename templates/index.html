@@ -4387,8 +4387,38 @@
     <!-- Body -->
     <div class="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
 
+      <!-- Search -->
       <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Editor Formatting</p>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">🔍 Search</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Open / close search panel</span>
+            <div class="flex gap-1">
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + K</span>
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">⌘ K</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Navigate results</span>
+            <div class="flex gap-1">
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">↑</span>
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">↓</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Open selected result</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Close panel</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Escape</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Note Editor -->
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">📝 Note Editor</p>
         <div class="grid gap-1.5">
           <div class="flex items-center justify-between text-sm">
             <span class="text-gray-700 dark:text-zinc-300">Bold</span>
@@ -4399,8 +4429,16 @@
             <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + I</span>
           </div>
           <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-700 dark:text-zinc-300">Insert / Edit Link</span>
+            <span class="text-gray-700 dark:text-zinc-300">Insert / edit link <span class="text-gray-400 dark:text-zinc-500 text-xs font-normal">(in editor)</span></span>
             <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + K</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Indent list item</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Tab</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Outdent list item</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Shift + Tab</span>
           </div>
           <div class="flex items-center justify-between text-sm">
             <span class="text-gray-700 dark:text-zinc-300">Undo / Redo</span>
@@ -4409,9 +4447,31 @@
               <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + Y</span>
             </div>
           </div>
+          <div class="flex items-start justify-between text-sm gap-4">
+            <span class="text-gray-500 dark:text-zinc-400 text-xs italic">Notes auto-save when you navigate away or close the panel.</span>
+          </div>
         </div>
       </div>
 
+      <!-- Smart Lists -->
+      <div>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Smart Lists</p>
+        <div class="grid gap-1.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Continue list / exit on blank item</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Indent / outdent item</span>
+            <div class="flex gap-1">
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Tab</span>
+              <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Shift + Tab</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slash Commands -->
       <div>
         <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Slash Commands</p>
         <div class="grid gap-1.5">
@@ -4437,30 +4497,26 @@
         </div>
       </div>
 
+      <!-- Text File Editor -->
       <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Smart Lists</p>
+        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">📄 Text File Editor <span class="normal-case font-normal text-gray-400 dark:text-zinc-600">(Uploads pages)</span></p>
         <div class="grid gap-1.5">
           <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-700 dark:text-zinc-300">Continue list on next line</span>
-            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+            <span class="text-gray-700 dark:text-zinc-300">Save file</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + S</span>
           </div>
           <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-700 dark:text-zinc-300">Exit list (blank item)</span>
-            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Enter</span>
+            <span class="text-gray-700 dark:text-zinc-300">Find in file</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + F</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-700 dark:text-zinc-300">Close find bar</span>
+            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Escape</span>
           </div>
         </div>
       </div>
 
-      <div>
-        <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Note Actions</p>
-        <div class="grid gap-1.5">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-700 dark:text-zinc-300">Save note</span>
-            <span class="font-mono text-xs bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 px-2 py-0.5 rounded border border-gray-300 dark:border-zinc-600">Ctrl + Enter</span>
-          </div>
-        </div>
-      </div>
-
+      <!-- Timeline -->
       <div>
         <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">Timeline View 📅</p>
         <div class="grid gap-1.5">
@@ -4487,6 +4543,7 @@
         </div>
       </div>
 
+      <!-- General -->
       <div>
         <p class="text-xs font-semibold uppercase text-gray-400 dark:text-zinc-500 mb-2">General</p>
         <div class="grid gap-1.5">
