@@ -53,7 +53,7 @@
         hx-post="/workspaces/{{ ws.id }}/favorite"
         hx-target="#note-list"
         hx-swap="innerHTML"
-        hx-vals="js:{active_ws_id: document.getElementById('active-workspace').value}"
+        data-inject-active-ws="1"
         title="Remove from favorites"
         aria-label="Remove {{ ws.name }} from favorites"
         class="flex-shrink-0 p-1.5 rounded-lg transition
@@ -277,7 +277,7 @@
           hx-post="/workspaces/{{ node.id }}/favorite"
           hx-target="#note-list"
           hx-swap="innerHTML"
-          hx-vals="js:{active_ws_id: document.getElementById('active-workspace').value}"
+          data-inject-active-ws="1"
           title="{% if is_fav %}Remove from favorites{% else %}Add to favorites{% endif %}"
           aria-label="{% if is_fav %}Remove {{ node.name }} from favorites{% else %}Add {{ node.name }} to favorites{% endif %}"
           class="flex-shrink-0 p-1.5 rounded-lg transition

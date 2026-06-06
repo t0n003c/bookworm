@@ -698,8 +698,7 @@
             {% include "partials/category_list.html" %}
           </div>
           <form id="cat-add-form" hx-post="/categories" hx-target="#category-list" hx-swap="innerHTML"
-            class="mt-3 space-y-2"
-            hx-on::after-request="this.querySelector('[name=name]').value=''">
+            class="mt-3 space-y-2">
             <input id="cat-ws-id" name="workspace_id" type="hidden"
               value="{{ active_ws_id if active_ws_id is not none else '' }}" />
             <input name="name" type="text" placeholder="Category name"
@@ -730,8 +729,8 @@
           <div id="attr-def-list">
             {% include "partials/attr_def_list.html" %}
           </div>
-          <form hx-post="/attr-defs" hx-target="#attr-def-list" hx-swap="innerHTML"
-            class="mt-3 space-y-2" hx-on::after-request="this.reset()">
+          <form id="attr-defs-form" hx-post="/attr-defs" hx-target="#attr-def-list" hx-swap="innerHTML"
+            class="mt-3 space-y-2">
             <input name="name" type="text" placeholder="Attribute name (e.g. Project)"
               class="w-full text-sm border border-gray-300 dark:border-zinc-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wblue bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
               required aria-label="New attribute name"/>
@@ -3645,6 +3644,54 @@
   /* Close picker on Escape */
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeEmojiPicker();
+  });
+
+  // ── CSP-safe HTMX helpers (replaces ALL hx-vals="js:..." + hx-on::* patterns) ──
+  // htmx:configRequest fires before every request — inject dynamic values here
+  // instead of hx-vals="js:..." which requires unsafe-eval.
+  document.body.addEventListener('htmx:configRequest', function(evt) {
+    var el = evt.detail.elt;
+    // (A) Inject active_ws_id — trash + workspace-list buttons
+    if (el.dataset.injectActiveWs) {
+      var wsInp = document.getElementById('active-workspace');
+      var wsVal = wsInp ? wsInp.value : '';
+      if (wsVal) evt.detail.parameters['active_ws_id'] = wsVal;
+    }
+    // (B) Inject color + name for an existing-category save button
+    var catId = el.dataset.injectCatSave;
+    if (catId) {
+      var sw  = document.getElementById('swatch-' + catId);
+      var ni  = document.getElementById('name-txt-' + catId);
+      if (sw) evt.detail.parameters['color'] = sw.dataset.color || '';
+      if (ni) evt.detail.parameters['name']  = ni.value || '';
+    }
+    // (C) Inject color + name for the new-category add button
+    if (el.dataset.injectCatAdd) {
+      var swN = document.getElementById('swatch-new');
+      var niN = document.getElementById('add-name-txt');
+      if (swN) evt.detail.parameters['color'] = swN.dataset.color || '';
+      if (niN) evt.detail.parameters['name']  = niN.value || '';
+    }
+  });
+
+  // htmx:afterRequest replaces hx-on::after-request (also needs unsafe-eval)
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (!evt.detail.successful) return;
+    var el = evt.detail.elt;
+    // Clear category name field after /categories add
+    if (el.id === 'cat-add-form') {
+      var ni = el.querySelector('[name=name]');
+      if (ni) ni.value = '';
+    }
+    // Reset attr-defs form after /attr-defs add
+    if (el.id === 'attr-defs-form') { el.reset(); }
+    // Reset cat-panel add fields after adding a category
+    if (el.id === 'add-cat-btn') {
+      var niA = document.getElementById('add-name-txt');
+      if (niA) niA.value = '';
+      var swA = document.getElementById('swatch-new');
+      if (swA) { swA.style.background = '#0053e2'; swA.dataset.color = '#0053e2'; }
+    }
   });
 </script>
 

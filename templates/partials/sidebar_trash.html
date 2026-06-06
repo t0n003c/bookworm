@@ -90,7 +90,7 @@
         hx-post="/workspaces/{{ ws.id }}/restore"
         hx-target="#note-list"
         hx-swap="innerHTML"
-        hx-vals="js:{active_ws_id: document.getElementById('active-workspace').value || undefined}"
+        data-inject-active-ws="1"
         title="Restore '{{ ws.name }}'"
         aria-label="Restore workspace {{ ws.name }}"
         class="flex-shrink-0 p-1.5 rounded-lg transition
@@ -109,7 +109,7 @@
         hx-post="/workspaces/{{ ws.id }}/permanent-delete"
         hx-target="#note-list"
         hx-swap="innerHTML"
-        hx-vals="js:{active_ws_id: document.getElementById('active-workspace').value || undefined}"
+        data-inject-active-ws="1"
         hx-confirm="Permanently delete '{{ ws.name }}' and all its notes? This cannot be undone."
         title="Delete '{{ ws.name }}' permanently"
         aria-label="Permanently delete workspace {{ ws.name }}"
