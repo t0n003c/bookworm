@@ -2,7 +2,10 @@
 a database-type workspace with one DB card per lesson.
 
 Supported platforms (primary parser):
-  - BuddyBoss / ProgressAlly / Showit (used by courses.katelynjames.com)
+  - Showit / BuddyBoss / ProgressAlly (used by courses.katelynjames.com)
+    Module headings: sie-menu-items_{N}-text  (nav buttons, no lesson children)
+    Lesson items:    sie-dropdown-{N}_{M}-text (separate dropdown blocks, desktop only)
+    Mobile duplicates use sie-dropdown-{N}-mobile_{M}-text — automatically skipped.
 
 Fallback parser:
   - Generic: scans <a href> containing /lesson/ or /module/ in the URL
@@ -101,48 +104,102 @@ def _extract_video_urls(html_text: str) -> list:
     return results
 
 
-def _extract_modules_buddyboss(soup: BeautifulSoup) -> list:
-    """Primary parser: BuddyBoss / ProgressAlly / Showit platform.
+# ── Primary parser: Showit / BuddyBoss / ProgressAlly ────────────────────────
 
-    Module headings use class 'st-m-heading' or 'st-d-heading'.
-    Lesson links appear in adjacent sibling <ul>/<ol> elements.
+_MENU_ITEM_PAT = re.compile(r"^sie-menu-items_(\d+)-text$")
+# Desktop-only lesson pattern — excludes -mobile- variants
+_DROPDOWN_PAT  = re.compile(r"^sie-dropdown-(\d+)_(\d+)-text$")
+
+
+def _extract_modules_showit(soup: BeautifulSoup):
+    """Showit / BuddyBoss / ProgressAlly course page parser.
+
+    Module headings live in sie-menu-items_{N}-text elements.
+    Lesson items live in sie-dropdown-{N}_{M}-text elements (desktop variant).
+    Mobile duplicates (sie-dropdown-{N}-mobile_{M}-text) are skipped automatically.
+
+    Returns (modules_list, warnings_list).
     """
+    # ── Step 1: collect module headings in DOM order ───────────────────────────
+    seen_n = set()
+    modules_raw = []  # [(N, heading_text)]
+
+    for el in soup.find_all(True):
+        for c in el.get("class", []):
+            m = _MENU_ITEM_PAT.match(c)
+            if m:
+                N = int(m.group(1))
+                if N in seen_n:
+                    break
+                text = re.sub(r"\s+", " ", el.get_text(separator=" ", strip=True))
+                if text:
+                    seen_n.add(N)
+                    modules_raw.append((N, text))
+                break
+
+    # Keep only headings that look like module labels (contain "Module" etc.)
+    module_keywords = re.compile(r'\b(module|section|part|unit|chapter)\b', re.I)
+    modules_filtered = [(N, t) for N, t in modules_raw if module_keywords.search(t)]
+
+    # Fall back to all sie-menu-items headings if none match the keyword filter
+    if not modules_filtered:
+        modules_filtered = modules_raw
+
+    modules_filtered.sort(key=lambda x: x[0])
+
+    if not modules_filtered:
+        return [], []
+
+    # ── Step 2: collect lesson items (desktop only) ───────────────────────────
+    lessons_by_dropdown = {}  # dropdown_N -> [(M, text)]
+    seen_cells = set()  # (N, M) dedup
+
+    for el in soup.find_all(True):
+        for c in el.get("class", []):
+            m = _DROPDOWN_PAT.match(c)
+            if m:
+                N, M = int(m.group(1)), int(m.group(2))
+                key = (N, M)
+                if key in seen_cells:
+                    break
+                text = re.sub(r"\s+", " ", el.get_text(separator=" ", strip=True))
+                if text:
+                    seen_cells.add(key)
+                    lessons_by_dropdown.setdefault(N, []).append((M, text))
+                break
+
+    for N in lessons_by_dropdown:
+        lessons_by_dropdown[N].sort(key=lambda x: x[0])
+
+    dropdown_keys = sorted(lessons_by_dropdown.keys())
     modules = []
-    seen_lessons = set()
 
-    headings = soup.find_all(
-        lambda tag: tag.has_attr("class")
-        and ("st-m-heading" in tag.get("class", []) or "st-d-heading" in tag.get("class", []))
-        and tag.name in ("p", "h1", "h2", "h3", "h4", "span", "div")
-    )
+    # Zip module headings with dropdown groups in order
+    for idx, (_, mod_name) in enumerate(modules_filtered):
+        if idx < len(dropdown_keys):
+            dk = dropdown_keys[idx]
+            lessons = [
+                {"title": text, "video_url": ""}
+                for _, text in lessons_by_dropdown[dk]
+            ]
+        else:
+            lessons = []
+        modules.append({"name": mod_name, "lessons": lessons})
 
-    for heading in headings:
-        mod_name = heading.get_text(separator=" ", strip=True)
-        mod_name = re.sub(r"\s+", " ", mod_name)[:200]
-        if not mod_name:
-            continue
+    # Extra dropdown groups beyond the module count → append as bonus section
+    for idx in range(len(modules_filtered), len(dropdown_keys)):
+        dk = dropdown_keys[idx]
+        lessons = [{"title": t, "video_url": ""} for _, t in lessons_by_dropdown[dk]]
+        if lessons:
+            modules.append({"name": "Extra Resources", "lessons": lessons})
 
-        lessons = []
-        container = heading.parent
-        if container:
-            sibling = container.find_next_sibling(["ul", "ol"])
-            if sibling:
-                for li in sibling.find_all("li", recursive=False):
-                    a = li.find("a")
-                    lesson_title = (a or li).get_text(separator=" ", strip=True)
-                    lesson_title = re.sub(r"\s+", " ", lesson_title)[:200]
-                    if lesson_title and lesson_title not in seen_lessons:
-                        seen_lessons.add(lesson_title)
-                        lessons.append({"title": lesson_title, "video_url": ""})
+    return modules, []
 
-        if mod_name or lessons:
-            modules.append({"name": mod_name, "lessons": lessons})
 
-    return modules
-
+# ── Fallback parser: generic anchor-based ────────────────────────────────────
 
 def _extract_modules_generic(soup: BeautifulSoup):
-    """Fallback parser: group anchor tags by nearest <ul>/<ol> ancestor.
+    """Fallback: group <a href=/lesson/...> tags by nearest <ul>/<ol> ancestor.
 
     Returns (modules_list, warning_message).
     """
@@ -161,8 +218,7 @@ def _extract_modules_generic(soup: BeautifulSoup):
 
         lessons = []
         for a in lesson_links:
-            t = a.get_text(separator=" ", strip=True)
-            t = re.sub(r"\s+", " ", t)[:200]
+            t = re.sub(r"\s+", " ", a.get_text(separator=" ", strip=True))[:200]
             if t and t not in seen:
                 seen.add(t)
                 lessons.append({"title": t, "video_url": ""})
@@ -175,15 +231,20 @@ def _extract_modules_generic(soup: BeautifulSoup):
     return modules, warn
 
 
+# ── Top-level orchestrator ────────────────────────────────────────────────────
+
 def _parse_course_html(html_text: str) -> dict:
-    """Top-level parser. Returns course structure dict."""
+    """Parse raw course HTML. Returns course structure dict."""
     soup = BeautifulSoup(html_text, "html.parser")
     course_name = _extract_course_name(soup)
     warnings = []
 
-    modules = _extract_modules_buddyboss(soup)
-    parser_mode = "buddyboss"
+    # Primary: Showit / BuddyBoss / ProgressAlly
+    modules, extra_warns = _extract_modules_showit(soup)
+    parser_mode = "showit"
+    warnings.extend(extra_warns)
 
+    # Fallback: generic anchor scanner
     if not modules or all(not m["lessons"] for m in modules):
         modules, warn = _extract_modules_generic(soup)
         parser_mode = "generic"
