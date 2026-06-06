@@ -65,11 +65,13 @@ function _aiRenderPaymentPills() {
 
   el.innerHTML = payments.map(function(p, i) {
     return '<span class="inline-flex items-center gap-1 text-[10px] font-semibold'
-      + ' px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40'
-      + ' text-[#0053e2] dark:text-blue-300 border border-blue-100 dark:border-blue-900">'
+      + ' px-2 py-0.5 rounded-full'
+      + ' bg-blue-50 dark:bg-blue-900'
+      + ' text-[#0053e2] dark:text-blue-200'
+      + ' border border-blue-200 dark:border-blue-700">'
       + _aiEsc(p.date) + ' &nbsp;$' + Number(p.amount).toFixed(2)
       + '<button onclick="aiBudgetRemovePayment(' + i + ')"'
-      + ' class="ml-0.5 text-gray-400 hover:text-red-500 transition leading-none"'
+      + ' class="ml-0.5 text-gray-400 dark:text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition leading-none"'
       + ' aria-label="Remove payment">&times;</button>'
       + '</span>';
   }).join('');
