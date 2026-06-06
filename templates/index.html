@@ -3445,6 +3445,14 @@
         const _hcNow = document.getElementById('home-content');
         const _nowHome = _hcNow && !_hcNow.classList.contains('hidden');
         if (nl && !_nowHome) nl.classList.remove('hidden');
+        // Defensive: htmx:afterSettle is the canonical boot path, but
+        // programmatic htmx.ajax() settle-event delivery can be unreliable
+        // with OOB swaps. Re-init the DB view here if afterSettle missed it.
+        const _dbRootNow = document.getElementById('db-view-root');
+        if (_dbRootNow && !_dbRootNow.dataset.bwDbInit
+            && typeof initDatabaseView === 'function') {
+          initDatabaseView(parseInt(_dbRootNow.dataset.wsId, 10));
+        }
         refreshCatFilter(id);
       });
     }, 280); // long enough for ondblclick to fire on any OS/browser
@@ -3463,10 +3471,15 @@
     htmx.ajax('POST', '/workspaces/' + id + '/open?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
     }).then(() => {
-        // Same guard as wsSingleClick: don't cover homespace with the note-list.
         const _hcNow = document.getElementById('home-content');
         const _nowHome = _hcNow && !_hcNow.classList.contains('hidden');
         if (nl && !_nowHome) nl.classList.remove('hidden');
+        // Same defensive DB-view boot as wsSingleClick.
+        const _dbRootNow = document.getElementById('db-view-root');
+        if (_dbRootNow && !_dbRootNow.dataset.bwDbInit
+            && typeof initDatabaseView === 'function') {
+          initDatabaseView(parseInt(_dbRootNow.dataset.wsId, 10));
+        }
         refreshCatFilter(id);
     });
   }
@@ -3479,7 +3492,15 @@
     _bwSetActiveWs(id);
     htmx.ajax('GET', '/workspaces/switch/' + id + '?' + _sortSearchParams(), {
       target: '#note-list', swap: 'innerHTML',
-    }).then(() => refreshCatFilter(id));
+    }).then(() => {
+      // Defensive DB-view boot in case afterSettle missed the swap.
+      const _dbRootNow = document.getElementById('db-view-root');
+      if (_dbRootNow && !_dbRootNow.dataset.bwDbInit
+          && typeof initDatabaseView === 'function') {
+        initDatabaseView(parseInt(_dbRootNow.dataset.wsId, 10));
+      }
+      refreshCatFilter(id);
+    });
   }
 
   function wsCloseTab(wsId) {

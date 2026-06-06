@@ -157,6 +157,37 @@ def _extract_lesson_info(html_text: str, filename: str = "") -> dict:
     # Video: iframe-based (Vimeo / YouTube / Wistia)
     video_urls = _extract_video_urls(html_text)
 
+    # Video: data-vimeo-id attribute (ProgressAlly / custom Vimeo embeds)
+    if not video_urls:
+        el = soup.find(attrs={"data-vimeo-id": True})
+        if el:
+            video_urls = ["//player.vimeo.com/video/" + str(el["data-vimeo-id"])]
+
+    # Video: Vimeo Player JS API — new Vimeo.Player(el, {id: 12345678})
+    # ProgressAlly initialises the player via script, not an <iframe> in the DOM.
+    if not video_urls:
+        m = re.search(
+            r'Vimeo\.Player\s*\([^)]*?[{,]\s*["\']?id["\']?\s*:\s*(\d{5,})',
+            html_text, re.DOTALL,
+        )
+        if m:
+            video_urls = ["//player.vimeo.com/video/" + m.group(1)]
+
+    # Video: Vimeo player URL anywhere in <script> tags
+    # Catches JSON config blobs like: "url":"https://vimeo.com/12345678" or
+    # src="https://player.vimeo.com/video/12345678"
+    if not video_urls:
+        for script in soup.find_all("script"):
+            text = script.get_text(" ", strip=True)
+            m = re.search(r'player\.vimeo\.com/video/(\d{5,})', text)
+            if not m:
+                m = re.search(
+                    r'vimeo\.com/(?:video/)?([0-9]{5,})(?:[?/"\']|$)', text
+                )
+            if m:
+                video_urls = ["//player.vimeo.com/video/" + m.group(1)]
+                break
+
     # Video: Wistia async div class — wistia_async_<hashedId>
     if not video_urls:
         wistia_pat = re.compile(r'\bwistia_async_([A-Za-z0-9]+)\b')
