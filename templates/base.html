@@ -863,8 +863,243 @@
     .bw-sq-item.bw-sq-active { background: #eff6ff; }
     .dark .bw-sq-item.bw-sq-active { background: #27272a; }
   </style>
+
+  {# ── Add-to-home-screen tip (mobile only) ── #}
+  <div class="flex items-center justify-between px-4 py-2
+              border-t border-gray-100 dark:border-zinc-800 md:hidden">
+    <span class="text-[10px] text-gray-400 dark:text-zinc-500 select-none">
+      Long-press the app icon for quick access
+    </span>
+    <button type="button" onclick="bwAiSearchWidgetGuide()"
+            aria-label="How to add AI Search to home screen"
+            class="inline-flex items-center gap-1 text-[10px] font-semibold
+                   text-[#0053e2] dark:text-blue-400
+                   hover:underline focus:outline-none">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      Add widget
+    </button>
+  </div>
 </div>
 {# ── /Hybrid Search ──────────────────────────────────────────────────── #}
+
+{# ── AI Search home-screen widget guide modal ───────────────────────── #}
+{# Triggered by bwAiSearchWidgetGuide() — explains how to pin AI Search
+   as a phone shortcut. Android: use manifest long-press shortcuts.
+   iOS: Share → Add to Home Screen with the /#bw=ai-search URL. #}
+<div id="bw-ai-widget-guide"
+     class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+     role="dialog" aria-modal="true" aria-labelledby="bw-aiwg-title"
+     onkeydown="if(event.key==='Escape') bwAiSearchWidgetGuideClose()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="bwAiSearchWidgetGuideClose()"></div>
+
+  <div class="relative w-full sm:max-w-sm mx-auto
+              bg-white dark:bg-zinc-900
+              rounded-t-2xl sm:rounded-2xl shadow-2xl
+              border border-gray-200 dark:border-zinc-700
+              pb-safe">
+
+    {# Header #}
+    <div class="flex items-center gap-3 px-5 pt-5 pb-4
+                border-b border-gray-100 dark:border-zinc-800">
+      <span class="flex-shrink-0 w-10 h-10 rounded-full
+                   bg-blue-50 dark:bg-blue-900
+                   flex items-center justify-center text-xl" aria-hidden="true">📱</span>
+      <div class="min-w-0">
+        <h2 id="bw-aiwg-title"
+            class="text-sm font-bold text-gray-900 dark:text-zinc-100 leading-tight">
+          Add AI Search to Home Screen
+        </h2>
+        <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+          Access AI-powered search instantly from your phone
+        </p>
+      </div>
+      <button type="button" onclick="bwAiSearchWidgetGuideClose()"
+              aria-label="Close"
+              class="ml-auto flex-shrink-0 p-1.5 rounded-lg
+                     text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300
+                     hover:bg-gray-100 dark:hover:bg-zinc-800 transition
+                     focus:outline-none focus:ring-2 focus:ring-gray-300">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="px-5 py-4 space-y-4">
+
+      {# Step 1 — Android (app installed) #}
+      <div id="bw-aiwg-android" class="hidden">
+        <p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 mb-2">
+          ✅ BookWorm is installed! You already have an AI Search shortcut.
+        </p>
+        <ol class="space-y-1.5 text-xs text-gray-600 dark:text-zinc-400">
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">1.</span>
+            Long-press the <strong class="text-gray-800 dark:text-zinc-200">BookWorm</strong>
+            icon on your home screen
+          </li>
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">2.</span>
+            Tap
+            <strong class="text-gray-800 dark:text-zinc-200">✨ AI Search</strong>
+            from the shortcuts menu
+          </li>
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">3.</span>
+            The AI search panel opens instantly — no navigation needed!
+          </li>
+        </ol>
+        <div class="mt-3 rounded-xl bg-blue-50 dark:bg-blue-900/40
+                    border border-blue-100 dark:border-blue-800 px-3 py-2">
+          <p class="text-[11px] text-[#0053e2] dark:text-blue-300">
+            💡 You can also long-press and drag the
+            <strong>AI Search</strong> shortcut onto your home screen
+            to create a dedicated icon.
+          </p>
+        </div>
+      </div>
+
+      {# Step 1 — iOS #}
+      <div id="bw-aiwg-ios" class="hidden">
+        <p class="text-xs font-semibold text-gray-700 dark:text-zinc-200 mb-2">
+          Add an AI Search shortcut to your home screen:
+        </p>
+        <ol class="space-y-1.5 text-xs text-gray-600 dark:text-zinc-400">
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">1.</span>
+            Tap the <strong class="text-gray-800 dark:text-zinc-200">Share</strong>
+            button in Safari (box with arrow ↑)
+          </li>
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">2.</span>
+            Choose
+            <strong class="text-gray-800 dark:text-zinc-200">Add to Home Screen</strong>
+          </li>
+          <li class="flex gap-2">
+            <span class="flex-shrink-0 font-bold text-[#0053e2] dark:text-blue-400">3.</span>
+            The shortcut will open straight into AI Search
+          </li>
+        </ol>
+        <div class="mt-2.5 flex items-center gap-2
+                    rounded-xl bg-gray-50 dark:bg-zinc-800
+                    border border-gray-200 dark:border-zinc-700 px-3 py-2">
+          <code id="bw-aiwg-url"
+                class="flex-1 text-[11px] text-gray-500 dark:text-zinc-400
+                       font-mono break-all select-all"></code>
+          <button type="button" onclick="bwAiSearchWidgetCopyUrl()"
+                  aria-label="Copy URL"
+                  class="flex-shrink-0 px-2 py-1 text-[10px] font-semibold
+                         rounded-lg bg-[#0053e2] text-white
+                         hover:bg-blue-700 transition
+                         focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      {# Step 1 — Not installed / generic #}
+      <div id="bw-aiwg-generic" class="hidden">
+        <p class="text-xs text-gray-600 dark:text-zinc-400 mb-3">
+          Install BookWorm first — then you'll get a built-in AI Search shortcut
+          when you long-press the app icon.
+        </p>
+        <div class="flex items-center gap-2
+                    rounded-xl bg-gray-50 dark:bg-zinc-800
+                    border border-gray-200 dark:border-zinc-700 px-3 py-2">
+          <code id="bw-aiwg-url2"
+                class="flex-1 text-[11px] text-gray-500 dark:text-zinc-400
+                       font-mono break-all select-all"></code>
+          <button type="button" onclick="bwAiSearchWidgetCopyUrl()"
+                  aria-label="Copy URL"
+                  class="flex-shrink-0 px-2 py-1 text-[10px] font-semibold
+                         rounded-lg bg-[#0053e2] text-white
+                         hover:bg-blue-700 transition
+                         focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+            Copy
+          </button>
+        </div>
+        <p class="mt-2 text-[10px] text-gray-400 dark:text-zinc-500">
+          Bookmark this URL — opening it launches AI Search automatically.
+        </p>
+      </div>
+
+    </div>{# /body #}
+  </div>
+</div>
+
+<script>
+  /* ── AI Search widget guide modal ── */
+  function bwAiSearchWidgetGuide() {
+    var modal   = document.getElementById('bw-ai-widget-guide');
+    var android = document.getElementById('bw-aiwg-android');
+    var ios     = document.getElementById('bw-aiwg-ios');
+    var generic = document.getElementById('bw-aiwg-generic');
+    if (!modal) return;
+
+    /* Detect context */
+    var ua          = navigator.userAgent || '';
+    var isIos       = /iP(hone|ad|od)/i.test(ua);
+    var isAndroid   = /Android/i.test(ua);
+    var isInstalled = window.matchMedia('(display-mode: standalone)').matches
+                      || window.navigator.standalone === true;
+
+    /* Build the short URL: origin + /#bw=ai-search */
+    var shortUrl = window.location.origin + '/#bw=ai-search';
+    var urlEl  = document.getElementById('bw-aiwg-url');
+    var urlEl2 = document.getElementById('bw-aiwg-url2');
+    if (urlEl)  urlEl.textContent  = shortUrl;
+    if (urlEl2) urlEl2.textContent = shortUrl;
+
+    /* Show the right panel */
+    if (android) android.classList.add('hidden');
+    if (ios)     ios.classList.add('hidden');
+    if (generic) generic.classList.add('hidden');
+
+    if (isAndroid && isInstalled && android) {
+      android.classList.remove('hidden');
+    } else if (isIos && ios) {
+      ios.classList.remove('hidden');
+    } else {
+      if (generic) generic.classList.remove('hidden');
+    }
+
+    modal.classList.remove('hidden');
+    setTimeout(function() {
+      var closeBtn = modal.querySelector('button[aria-label="Close"]');
+      if (closeBtn) closeBtn.focus();
+    }, 50);
+  }
+
+  function bwAiSearchWidgetGuideClose() {
+    var modal = document.getElementById('bw-ai-widget-guide');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function bwAiSearchWidgetCopyUrl() {
+    var url = window.location.origin + '/#bw=ai-search';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function() {
+        if (typeof _bwToast === 'function') _bwToast('URL copied!', 'success', 2000);
+      });
+    } else {
+      /* Fallback: select the code element text */
+      var el = document.getElementById('bw-aiwg-url') ||
+               document.getElementById('bw-aiwg-url2');
+      if (el) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      }
+    }
+  }
+</script>
 
 {# ── Mobile Search FAB (Ctrl+K equivalent) ─────────────────────────── #}
 {#  Only visible on mobile (md:hidden). Two states:
@@ -1538,6 +1773,13 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
         if (el && typeof openHomePage === 'function') {
           clearInterval(timer);
           openHomePage(parseInt(el.dataset.pageId, 10));
+        }
+
+      } else if (action === 'ai-search') {
+        /* Open the AI search panel (Ctrl+K equivalent). */
+        if (typeof window.bwSearchOpen === 'function') {
+          clearInterval(timer);
+          window.bwSearchOpen();
         }
       }
     }, TICK);

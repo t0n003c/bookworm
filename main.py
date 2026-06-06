@@ -1254,6 +1254,14 @@ async def pwa_manifest():
                 "icons": [{"src": "/static/img/icons/icon-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
+            {
+                "name": "AI Search",
+                "short_name": "AI Search",
+                "description": "Instant AI-powered search across your notes",
+                "url": "/#bw=ai-search",
+                "icons": [{"src": "/static/img/icons/icon-192.png",
+                            "sizes": "192x192", "type": "image/png"}],
+            },
         ],
     }
     return JSONResponse(
