@@ -90,17 +90,27 @@ _WALMART_PROXY = "http://sysproxy.wal-mart.com:8080"
 
 
 def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
-    """Build an opener, optionally routing through the Walmart corporate proxy."""
+    """Build an opener, optionally routing through the Walmart corporate proxy.
+
+    When use_proxy=True we also disable SSL cert verification because the
+    Walmart proxy performs SSL inspection and re-signs certs with the Walmart
+    CA, which is not in Python's default trust store.
+    """
     import ssl
-    ctx = ssl.create_default_context()
-    https = urllib.request.HTTPSHandler(context=ctx)
     if use_proxy:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode    = ssl.CERT_NONE
         proxy = urllib.request.ProxyHandler({
             "http":  _WALMART_PROXY,
             "https": _WALMART_PROXY,
         })
-        return urllib.request.build_opener(proxy, https)
-    return urllib.request.build_opener(https)
+        return urllib.request.build_opener(
+            proxy,
+            urllib.request.HTTPSHandler(context=ctx),
+        )
+    # Direct: normal SSL verification
+    return urllib.request.build_opener()
 
 
 def _fetch_sync(url: str, cookie: str) -> tuple:
@@ -138,14 +148,15 @@ def _fetch_sync(url: str, cookie: str) -> tuple:
     html, err = _do_fetch(_build_opener(use_proxy=False))
     if html is not None:
         return html, None
+    direct_err = err
 
-    # Attempt 2: Walmart proxy
+    # Attempt 2: Walmart proxy (SSL inspection bypass)
     html2, err2 = _do_fetch(_build_opener(use_proxy=True))
     if html2 is not None:
         return html2, None
 
-    # Both failed — return most informative error
-    return None, err or err2 or "Unknown fetch error"
+    # Both failed — return both errors for diagnostics
+    return None, f"Direct: {direct_err} | Proxy: {err2 or 'no error'}"
 
 
 async def _fetch(url: str, cookie: str) -> tuple:
