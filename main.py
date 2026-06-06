@@ -138,6 +138,7 @@ from routers import categories as categories_router
 from routers import workspaces as workspaces_router
 from routers import workspace_databases as workspace_databases_router
 from routers import tutorials as tutorials_router
+from routers import tutorials_autofetch as tutorials_autofetch_router
 from routers import attachments as attachments_router
 from routers import auth as auth_router
 from routers import account as account_router
@@ -994,6 +995,7 @@ app.include_router(categories_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(workspace_databases_router.router)
 app.include_router(tutorials_router.router)
+app.include_router(tutorials_autofetch_router.router)
 app.include_router(sharing_router.router)
 app.include_router(push_router.router)
 app.include_router(webauthn_router.router)
