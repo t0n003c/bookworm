@@ -94,13 +94,31 @@ async def _ws_context(
     trashed_wss = await get_trashed_workspaces(user_id)
     trashed_home_pages = await _get_trashed_home_pages(user_id)
     categories  = await get_categories_for_workspace(active_ws_id)
-    # Expand active workspace to include all descendants so search spans the subtree
-    ws_id_set = await get_descendant_ids(active_ws_id) if active_ws_id is not None else None
-    notes     = await search_notes(workspace_ids=list(ws_id_set), sort_by=sort_by) if ws_id_set is not None else []
-    if notes:
-        _shared = await get_shared_object_ids("note", [n["id"] for n in notes])
-        for note in notes:
-            note["has_share_link"] = note["id"] in _shared
+
+    # Determine active workspace type early so we can skip work below
+    active_ws_type = "workspace"
+    db_cards: list = []
+    if active_ws_id is not None:
+        ws_row = next((w for w in all_wss if w["id"] == active_ws_id), None)
+        if ws_row:
+            active_ws_type = ws_row.get("ws_type") or "workspace"
+
+    # Database workspaces have no traditional notes — skip the expensive FTS
+    # search + descendant-id walk entirely (saves 2+ DB connection opens on
+    # every workspace switch, which matters when the file is on OneDrive).
+    notes: list = []
+    ws_id_set = None
+    if active_ws_type != "database" and active_ws_id is not None:
+        ws_id_set = await get_descendant_ids(active_ws_id)
+        notes     = await search_notes(workspace_ids=list(ws_id_set), sort_by=sort_by)
+        if notes:
+            _shared = await get_shared_object_ids("note", [n["id"] for n in notes])
+            for note in notes:
+                note["has_share_link"] = note["id"] in _shared
+
+    if active_ws_type == "database" and active_ws_id is not None:
+        db_cards = await get_db_cards(db_id=active_ws_id, user_id=user_id)
+
     open_ids  = {ws["id"] for ws in open_wss}
     # Build breadcrumb list for every open tab
     breadcrumbs: dict[int, list[dict]] = {}
@@ -109,15 +127,6 @@ async def _ws_context(
     # also include the active workspace even if it isn't pinned to the top bar
     if active_ws_id is not None and active_ws_id not in breadcrumbs:
         breadcrumbs[active_ws_id] = await get_workspace_breadcrumb(active_ws_id, user_id)
-    # Determine if the active workspace is a database node, and load its cards
-    active_ws_type = "workspace"
-    db_cards: list = []
-    if active_ws_id is not None:
-        ws_row = next((w for w in all_wss if w["id"] == active_ws_id), None)
-        if ws_row:
-            active_ws_type = ws_row.get("ws_type") or "workspace"
-            if active_ws_type == "database":
-                db_cards = await get_db_cards(db_id=active_ws_id, user_id=user_id)
     return {
         "notes":              notes,
         "categories":         categories,
