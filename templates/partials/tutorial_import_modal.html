@@ -1,0 +1,192 @@
+{# Tutorial Import Modal
+   Opens when user clicks the import (download-arrow) icon in the workspace sidebar.
+   JS lives in static/js/tutorial-importer.js
+   Included in templates/index.html near other modal includes.
+#}
+<div id="tutorial-import-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="tut-modal-title"
+     onkeydown="if(event.key==='Escape')closeTutorialImportModal()">
+
+  {# Backdrop #}
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeTutorialImportModal()"
+       aria-hidden="true"></div>
+
+  {# Card #}
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-lg mx-4 flex flex-col max-h-[90vh]">
+
+    {# Header #}
+    <div class="flex items-center gap-3 px-5 pt-5 pb-4
+                border-b border-gray-100 dark:border-zinc-800">
+      <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-[#0053e2]/10 dark:bg-[#0053e2]/20
+                  flex items-center justify-center">
+        <span class="text-lg" aria-hidden="true">🎓</span>
+      </div>
+      <div class="min-w-0">
+        <h2 id="tut-modal-title"
+            class="text-sm font-semibold text-gray-800 dark:text-zinc-100 leading-tight">
+          Import Tutorial Course
+        </h2>
+        <p class="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">
+          Paste or upload the saved HTML of a course page
+        </p>
+      </div>
+      <button type="button"
+              onclick="closeTutorialImportModal()"
+              aria-label="Close import dialog"
+              class="ml-auto p-1.5 rounded-lg text-gray-400 dark:text-zinc-500
+                     hover:text-gray-600 dark:hover:text-zinc-300
+                     hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    {# Scrollable body #}
+    <div class="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+      {# Input mode toggle #}
+      <div class="flex gap-2">
+        <button id="tut-btn-paste"
+                type="button"
+                onclick="_tutToggleInput('paste')"
+                class="flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition
+                       bg-[#0053e2] text-white border-[#0053e2]">
+          📋 Paste HTML
+        </button>
+        <button id="tut-btn-file"
+                type="button"
+                onclick="_tutToggleInput('file')"
+                class="flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition
+                       bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300
+                       border-gray-200 dark:border-zinc-700
+                       hover:bg-gray-50 dark:hover:bg-zinc-800">
+          📁 Upload File
+        </button>
+      </div>
+
+      {# Paste area #}
+      <div id="tut-paste-area">
+        <label for="tut-html-paste"
+               class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
+          Paste saved page HTML
+        </label>
+        <textarea id="tut-html-paste"
+                  rows="8"
+                  placeholder="Paste the full HTML source of the course page here&#10;(right-click page → View Page Source → Ctrl+A → Ctrl+C)"
+                  class="w-full rounded-lg border border-gray-200 dark:border-zinc-700
+                         bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                         font-mono text-xs p-2 resize-y
+                         focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30
+                         placeholder:text-gray-300 dark:placeholder:text-zinc-600"></textarea>
+      </div>
+
+      {# File upload area (hidden by default) #}
+      <div id="tut-file-area" class="hidden">
+        <label for="tut-html-file"
+               class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
+          Upload an .html file
+        </label>
+        <div class="flex items-center gap-2">
+          <label for="tut-html-file"
+                 class="cursor-pointer inline-flex items-center gap-1.5 py-1.5 px-3
+                        text-xs font-medium rounded-lg border transition
+                        bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300
+                        border-gray-200 dark:border-zinc-700
+                        hover:bg-gray-50 dark:hover:bg-zinc-800 min-h-[44px]">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Choose file
+          </label>
+          <input id="tut-html-file"
+                 type="file"
+                 accept=".html,.htm"
+                 onchange="_tutOnFileChange(this)"
+                 class="sr-only"
+                 aria-label="Upload HTML file">
+          <span id="tut-file-name"
+                class="text-xs text-gray-400 dark:text-zinc-500 truncate">
+            No file chosen
+          </span>
+        </div>
+      </div>
+
+      {# Course title override #}
+      <div>
+        <label for="tut-course-title"
+               class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
+          Course title
+          <span class="text-gray-400 dark:text-zinc-600 font-normal">(auto-detected from HTML)</span>
+        </label>
+        <input id="tut-course-title"
+               type="text"
+               maxlength="200"
+               placeholder="Leave blank to auto-detect"
+               class="w-full rounded-lg border border-gray-200 dark:border-zinc-700
+                      bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                      text-sm px-3 py-2
+                      focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30
+                      placeholder:text-gray-300 dark:placeholder:text-zinc-600">
+      </div>
+
+      {# Parent workspace picker #}
+      <div>
+        <label for="tut-parent-ws"
+               class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
+          Add to workspace
+        </label>
+        <select id="tut-parent-ws"
+                class="w-full rounded-lg border border-gray-200 dark:border-zinc-700
+                       bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                       text-sm px-3 py-2
+                       focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30">
+          <option value="0">Root level (top of sidebar)</option>
+        </select>
+      </div>
+
+      {# Inline status / error #}
+      <div id="tut-import-status"
+           class="hidden text-xs rounded-lg px-3 py-2
+                  bg-gray-50 dark:bg-zinc-800
+                  border border-gray-200 dark:border-zinc-700">
+      </div>
+
+    </div>{# end scrollable body #}
+
+    {# Footer #}
+    <div class="px-5 py-4 border-t border-gray-100 dark:border-zinc-800
+                flex flex-col sm:flex-row gap-3 justify-end">
+      <button type="button"
+              onclick="closeTutorialImportModal()"
+              class="flex-1 sm:flex-none min-h-[44px] py-2 px-4
+                     text-sm font-medium rounded-xl border transition
+                     text-gray-600 dark:text-zinc-300
+                     border-gray-200 dark:border-zinc-700
+                     hover:bg-gray-50 dark:hover:bg-zinc-800
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30">
+        Cancel
+      </button>
+      <button id="tut-import-btn"
+              type="button"
+              onclick="_tutImport()"
+              class="flex-1 sm:flex-none min-h-[44px] py-2 px-5
+                     text-sm font-semibold rounded-xl transition
+                     bg-[#0053e2] hover:bg-[#0047c8] active:bg-[#003da3]
+                     text-white shadow-sm
+                     disabled:opacity-50 disabled:cursor-not-allowed
+                     focus:outline-none focus:ring-2 focus:ring-[#0053e2]/40">
+        Import Course
+      </button>
+    </div>
+
+  </div>{# end card #}
+</div>{# end modal #}
