@@ -6017,6 +6017,50 @@ function _dbAttrValueHtml(cardId, a) {
     + ' onblur="' + cb + '">' + _esc(v) + '</div>';
 }
 
+/* ── Video embed helper ──────────────────────────────────────────────────────────────────
+   Scans card.attrs for any attr named 'Video URL' (case-insensitive) whose
+   value looks like a Vimeo / YouTube / Wistia embed URL, then returns a
+   responsive 16:9 iframe block to inject above the note area.
+   Returns empty string when no embeddable video is found.
+────────────────────────────────────────────────────────────────────────── */
+function _dbVideoEmbedHtml(card) {
+  var attrs = card.attrs || [];
+  var embedUrl = '';
+
+  for (var i = 0; i < attrs.length; i++) {
+    var a = attrs[i];
+    var key = (a.attr_key || '').toLowerCase();
+    var val = (a.attr_value || '').trim();
+    if (!val) continue;
+    // Match by field name OR by URL pattern — catches custom-named fields too
+    var isVideoField = key === 'video url' || key === 'video' || key === 'lesson video';
+    var isEmbedUrl = /player\.vimeo\.com\/video\/|youtube(?:-nocookie)?\.com\/embed\/|fast\.wistia\.com\/embed\/medias\//.test(val);
+    if (isVideoField || isEmbedUrl) {
+      if (isEmbedUrl) { embedUrl = val; break; }
+    }
+  }
+
+  if (!embedUrl) return '';
+
+  // Ensure protocol-relative URLs have https: so the iframe src is absolute
+  var src = embedUrl.replace(/^\/\//, 'https://');
+
+  return '<div style="margin:0 -1.5rem 1.25rem -1.5rem;"'
+    + ' class="bg-black" aria-label="Lesson video">'
+    // 16:9 aspect-ratio wrapper
+    + '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">'
+    + '<iframe src="' + _esc(src) + '"'
+    + ' frameborder="0"'
+    + ' allow="autoplay; fullscreen; picture-in-picture"'
+    + ' allowfullscreen'
+    + ' style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"'
+    + ' loading="lazy"'
+    + ' title="Lesson video">'
+    + '</iframe>'
+    + '</div>'
+    + '</div>';
+}
+
 function _dbRenderDetailPanel(card) {
   // Inject into the app’s shared #detail-panel (inside #panel aside).
   // openPanel() is called by the caller after this returns.
@@ -6149,6 +6193,8 @@ function _dbRenderDetailPanel(card) {
     + 'Add attribute</button>'
     + toggleHtml
     + '</div>'
+    // Video embed — auto-rendered when a 'Video URL' attr holds a Vimeo/YouTube/Wistia URL
+    + _dbVideoEmbedHtml(card)
     // Notes area
     + '<div id="db-detail-note-' + card.id + '" contenteditable="true" data-db-note="1"'
     + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
