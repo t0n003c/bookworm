@@ -366,6 +366,16 @@ async def import_tutorial_html(
         skipped = 0
         attr_rows = []
 
+        # Default note template — gives every lesson card a ready-to-fill structure.
+        _NOTE_TMPL = (
+            "<h3>\U0001f4dd Lesson Notes</h3>"
+            "<p></p>"
+            "<h3>\U0001f4a1 Key Takeaways</h3>"
+            "<ul><li></li></ul>"
+            "<h3>\U0001f517 Resources &amp; Links</h3>"
+            "<p></p>"
+        )
+
         for mod in modules:
             for lesson in mod["lessons"]:
                 title = lesson["title"].strip()
@@ -374,9 +384,9 @@ async def import_tutorial_html(
                     continue
                 lesson_num += 1
                 c_cur = await db.execute(
-                    "INSERT INTO db_cards (db_id, user_id, title, sort_order) "
-                    "VALUES (?, ?, ?, ?)",
-                    (ws_id, user_id, title, lesson_num * 10),
+                    "INSERT INTO db_cards (db_id, user_id, title, note_content, sort_order) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (ws_id, user_id, title, _NOTE_TMPL, lesson_num * 10),
                 )
                 card_id = c_cur.lastrowid
                 cards_created += 1
