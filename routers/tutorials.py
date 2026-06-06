@@ -104,6 +104,84 @@ def _extract_video_urls(html_text: str) -> list:
     return results
 
 
+def _extract_lesson_info(html_text: str, filename: str = "") -> dict:
+    """Parse a single lesson-page HTML and return lesson identification + video URL.
+
+    Detection priority for lesson number:
+      1. filename slug  (e.g. lesson-1-intro-to-composition.html)
+      2. <title> tag    (e.g. "Lesson 1 : Intro to composition")
+      3. <link rel=canonical> or <meta og:url> href slug
+      4. first <h1>/<h2>/<h3> containing "lesson N"
+
+    Video detection uses _extract_video_urls (iframe-based) plus:
+      - Wistia async div class (wistia_async_HASHEDID)
+      - data-wistia-id attribute
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    lesson_num: Optional[int] = None
+
+    # 1. Filename slug
+    fn_m = re.search(r'lesson[-_](\d+)', filename, re.I)
+    if fn_m:
+        lesson_num = int(fn_m.group(1))
+
+    # 2. <title>
+    if lesson_num is None:
+        title_tag = soup.find("title")
+        if title_tag:
+            m = re.search(r'\blesson\s*#?\s*(\d+)\b', title_tag.get_text(), re.I)
+            if m:
+                lesson_num = int(m.group(1))
+
+    # 3. Canonical URL / og:url
+    if lesson_num is None:
+        for tag, attr in [
+            (soup.find("link", rel="canonical"), "href"),
+            (soup.find("meta", property="og:url"), "content"),
+        ]:
+            if tag and tag.get(attr):
+                m = re.search(r'/lesson[-_](\d+)[-/]', tag[attr], re.I)
+                if m:
+                    lesson_num = int(m.group(1))
+                    break
+
+    # 4. First heading containing "lesson N"
+    if lesson_num is None:
+        for h in soup.find_all(["h1", "h2", "h3"]):
+            m = re.search(r'\blesson\s*#?\s*(\d+)\b', h.get_text(), re.I)
+            if m:
+                lesson_num = int(m.group(1))
+                break
+
+    # Video: iframe-based (Vimeo / YouTube / Wistia)
+    video_urls = _extract_video_urls(html_text)
+
+    # Video: Wistia async div class — wistia_async_<hashedId>
+    if not video_urls:
+        wistia_pat = re.compile(r'\bwistia_async_([A-Za-z0-9]+)\b')
+        m = wistia_pat.search(html_text)
+        if m:
+            video_urls = ["//fast.wistia.com/embed/medias/" + m.group(1)]
+
+    # Video: data-wistia-id attribute
+    if not video_urls:
+        el = soup.find(attrs={"data-wistia-id": True})
+        if el:
+            video_urls = ["//fast.wistia.com/embed/medias/" + el["data-wistia-id"]]
+
+    title_tag = soup.find("title")
+    lesson_title = (
+        re.sub(r"\s+", " ", title_tag.get_text().strip()) if title_tag else ""
+    )
+
+    return {
+        "lesson_num":   lesson_num,
+        "lesson_title": lesson_title,
+        "video_url":    video_urls[0] if video_urls else "",
+    }
+
+
 # ── Primary parser: Showit / BuddyBoss / ProgressAlly ────────────────────────
 
 _MENU_ITEM_PAT = re.compile(r"^sie-menu-items_(\d+)-text$")
@@ -416,3 +494,80 @@ async def import_tutorial_html(
         "skipped":       skipped,
         "warnings":      warnings,
     })
+
+
+@router.post("/import-lesson-video/{ws_id}")
+async def import_lesson_videos(
+    request: Request,
+    ws_id: int,
+    files: list[UploadFile] = File(...),
+):
+    """Accept HTML files saved from individual lesson pages.
+
+    For each file:
+      - Extracts the lesson number (from filename slug, <title>, canonical URL, heading)
+      - Extracts the embedded video URL (Vimeo / YouTube / Wistia)
+      - Finds the matching db_card by 'Lesson #' attr in this workspace
+      - Updates that card's 'Video URL' attr
+
+    Returns JSON list of per-file results for display in the import modal.
+    """
+    user_id = _uid(request)
+    results = []
+
+    async with get_db() as db:
+        for f in files:
+            fname = f.filename or ""
+            raw = await f.read()
+            if len(raw) > _MAX_HTML_BYTES:
+                results.append({"filename": fname, "error": "File too large (max 5 MB)",
+                                 "lesson_num": None, "video_url": "",
+                                 "matched": False, "card_title": None})
+                continue
+
+            html_text = raw.decode("utf-8", errors="replace")
+            info = _extract_lesson_info(html_text, fname)
+            row_result = {
+                "filename":    fname,
+                "lesson_num":  info["lesson_num"],
+                "lesson_title": info["lesson_title"],
+                "video_url":   info["video_url"],
+                "matched":     False,
+                "card_title":  None,
+                "card_id":     None,
+                "error":       None,
+            }
+
+            if info["lesson_num"] is None:
+                row_result["error"] = "Could not detect lesson number"
+            elif not info["video_url"]:
+                row_result["error"] = "No video embed found in this page"
+            else:
+                cur = await db.execute(
+                    """
+                    SELECT dc.id, dc.title
+                    FROM db_cards dc
+                    JOIN db_card_attrs dca ON dca.card_id = dc.id
+                    WHERE dc.db_id = ? AND dc.user_id = ?
+                      AND dca.attr_key = 'Lesson #' AND dca.attr_value = ?
+                    """,
+                    (ws_id, user_id, str(info["lesson_num"])),
+                )
+                card_row = await cur.fetchone()
+                if not card_row:
+                    row_result["error"] = f"No card found for Lesson #{info['lesson_num']}"
+                else:
+                    await db.execute(
+                        "UPDATE db_card_attrs SET attr_value = ? "
+                        "WHERE card_id = ? AND attr_key = 'Video URL'",
+                        (info["video_url"], card_row["id"]),
+                    )
+                    row_result["matched"]    = True
+                    row_result["card_id"]    = card_row["id"]
+                    row_result["card_title"] = card_row["title"]
+
+            results.append(row_result)
+
+        await db.commit()
+
+    return JSONResponse(results)

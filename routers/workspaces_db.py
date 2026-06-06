@@ -596,6 +596,65 @@ async def get_trashed_workspaces(user_id: int) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+async def empty_workspace_trash(user_id: int) -> int:
+    """Permanently delete ALL trashed workspaces (and every descendant) for a user.
+
+    Uses the same BFS cascade as permanent_delete_workspace but processes all
+    trashed roots in one transaction. Returns count of top-level items deleted.
+    """
+    from routers.attachments_db import UPLOAD_DIR  # local import avoids circularity
+
+    filenames_to_purge: list[str] = []
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id FROM workspaces WHERE deleted_at IS NOT NULL AND user_id = ?",
+            (user_id,),
+        )
+        trashed_roots = [r[0] for r in await cur.fetchall()]
+        if not trashed_roots:
+            return 0
+
+        # BFS: collect all descendants (including non-trashed children of trashed parents)
+        all_cur = await db.execute("SELECT id, parent_id FROM workspaces")
+        by_parent: dict[int, list[int]] = {}
+        for row in await all_cur.fetchall():
+            if row["parent_id"]:
+                by_parent.setdefault(row["parent_id"], []).append(row["id"])
+
+        ids_to_delete: set[int] = set()
+        queue = list(trashed_roots)
+        while queue:
+            current = queue.pop()
+            ids_to_delete.add(current)
+            queue.extend(by_parent.get(current, []))
+
+        placeholders = ",".join("?" * len(ids_to_delete))
+        id_tuple = tuple(ids_to_delete)
+
+        att_cur = await db.execute(
+            f"SELECT na.filename FROM note_attachments na "
+            f"JOIN notes n ON n.id = na.note_id "
+            f"WHERE n.workspace_id IN ({placeholders})",
+            id_tuple,
+        )
+        filenames_to_purge = [r[0] for r in await att_cur.fetchall()]
+
+        await db.execute(
+            f"DELETE FROM notes WHERE workspace_id IN ({placeholders})", id_tuple
+        )
+        await db.execute(
+            f"DELETE FROM workspaces WHERE id IN ({placeholders})", id_tuple
+        )
+        await db.commit()
+
+    for fname in filenames_to_purge:
+        p = UPLOAD_DIR / fname
+        if p.exists():
+            p.unlink(missing_ok=True)
+
+    return len(trashed_roots)
+
+
 async def purge_expired_trash() -> int:
     """Hard-delete workspaces that have been in the trash for >30 days.
 

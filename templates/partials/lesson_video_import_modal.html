@@ -1,0 +1,232 @@
+{#
+  Lesson Video Import Modal
+  Opened by openLessonVideoImportModal(wsId) — defined in the <script> block below.
+  Posts to /tutorials/import-lesson-video/{ws_id} with one or more saved lesson HTML files.
+  JS is inline (modal-scope only; no persistent state needed).
+#}
+<div id="lesson-video-import-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="lvi-modal-title">
+
+  {# Backdrop #}
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+       onclick="closeLessonVideoImportModal()"
+       aria-hidden="true"></div>
+
+  {# Card #}
+  <div class="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl
+              w-full max-w-xl mx-4 flex flex-col max-h-[90vh]"
+       onkeydown="if(event.key==='Escape')closeLessonVideoImportModal()">
+
+    {# Header #}
+    <div class="flex items-center gap-3 px-5 pt-5 pb-4
+                border-b border-gray-100 dark:border-zinc-800">
+      <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-900/30
+                  flex items-center justify-center">
+        <span class="text-lg" aria-hidden="true">🎬</span>
+      </div>
+      <div class="min-w-0">
+        <h2 id="lvi-modal-title"
+            class="text-base font-semibold text-gray-900 dark:text-zinc-100">
+          Import Lesson Videos
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+          Save each lesson page as HTML (File → Save Page As…), then upload all files here.
+        </p>
+      </div>
+      <button type="button" onclick="closeLessonVideoImportModal()"
+              class="ml-auto flex-shrink-0 text-gray-400 hover:text-gray-600
+                     dark:hover:text-zinc-300 transition focus:outline-none"
+              aria-label="Close">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    {# Body #}
+    <div class="px-5 py-4 flex-1 overflow-y-auto space-y-4">
+
+      {# How-to tip #}
+      <div class="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200
+                  dark:border-blue-800/50 p-3 text-xs text-blue-800 dark:text-blue-300">
+        <strong>How to save a lesson page:</strong> open the lesson in your browser →
+        press <kbd class="font-mono bg-blue-100 dark:bg-blue-800/60 rounded px-1">Ctrl+S</kbd>
+        (or File → Save Page As) → choose <em>Webpage, HTML Only</em>.
+        Repeat for each lesson, then select all the files below.
+      </div>
+
+      {# File picker #}
+      <div>
+        <label for="lvi-file-input"
+               class="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1.5">
+          Select HTML files <span class="text-gray-400 text-xs font-normal">(multiple OK)</span>
+        </label>
+        <input id="lvi-file-input"
+               type="file"
+               accept=".html,.htm"
+               multiple
+               class="block w-full text-sm text-gray-600 dark:text-zinc-400
+                      file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-purple-100 file:text-purple-700
+                      dark:file:bg-purple-900/30 dark:file:text-purple-300
+                      hover:file:bg-purple-200 dark:hover:file:bg-purple-900/50
+                      cursor-pointer focus:outline-none"
+               aria-label="Select lesson HTML files" />
+        <p id="lvi-file-count" class="mt-1 text-xs text-gray-400 dark:text-zinc-500"></p>
+      </div>
+
+      {# Results list — populated after import #}
+      <div id="lvi-results" class="space-y-1 hidden">
+        <p class="text-xs font-semibold text-gray-600 dark:text-zinc-300 mb-1">Results</p>
+        <ul id="lvi-results-list" class="space-y-1 text-xs"></ul>
+      </div>
+
+      {# Progress / status #}
+      <p id="lvi-status" class="text-xs text-gray-500 dark:text-zinc-400 hidden"></p>
+
+    </div>
+
+    {# Footer #}
+    <div class="flex items-center justify-end gap-2 px-5 py-4
+                border-t border-gray-100 dark:border-zinc-800">
+      <button type="button" onclick="closeLessonVideoImportModal()"
+              class="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400
+                     hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition
+                     focus:outline-none focus:ring-2 focus:ring-gray-300">
+        Close
+      </button>
+      <button type="button" id="lvi-import-btn"
+              onclick="runLessonVideoImport()"
+              disabled
+              class="px-4 py-2 text-sm font-semibold rounded-lg transition
+                     bg-purple-600 hover:bg-purple-700 text-white
+                     disabled:opacity-40 disabled:cursor-not-allowed
+                     focus:outline-none focus:ring-2 focus:ring-purple-500">
+        Import Videos
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var _lviWsId = null;
+
+  window.openLessonVideoImportModal = function (wsId) {
+    _lviWsId = wsId;
+    var modal = document.getElementById('lesson-video-import-modal');
+    modal.classList.remove('hidden');
+    // Reset state
+    document.getElementById('lvi-file-input').value = '';
+    document.getElementById('lvi-file-count').textContent = '';
+    document.getElementById('lvi-results').classList.add('hidden');
+    document.getElementById('lvi-results-list').innerHTML = '';
+    document.getElementById('lvi-status').classList.add('hidden');
+    document.getElementById('lvi-status').textContent = '';
+    document.getElementById('lvi-import-btn').disabled = true;
+    modal.querySelector('[id="lvi-file-input"]').focus();
+  };
+
+  window.closeLessonVideoImportModal = function () {
+    document.getElementById('lesson-video-import-modal').classList.add('hidden');
+  };
+
+  // Enable button only when files are selected
+  document.getElementById('lvi-file-input').addEventListener('change', function () {
+    var n = this.files.length;
+    document.getElementById('lvi-file-count').textContent =
+      n > 0 ? n + ' file' + (n !== 1 ? 's' : '') + ' selected' : '';
+    document.getElementById('lvi-import-btn').disabled = n === 0;
+  });
+
+  window.runLessonVideoImport = async function () {
+    var input  = document.getElementById('lvi-file-input');
+    var btn    = document.getElementById('lvi-import-btn');
+    var status = document.getElementById('lvi-status');
+
+    if (!input.files.length || !_lviWsId) return;
+
+    btn.disabled = true;
+    status.textContent = 'Uploading and processing…';
+    status.classList.remove('hidden');
+    document.getElementById('lvi-results').classList.add('hidden');
+
+    var fd = new FormData();
+    for (var i = 0; i < input.files.length; i++) {
+      fd.append('files', input.files[i]);
+    }
+
+    var resp;
+    try {
+      resp = await fetch('/tutorials/import-lesson-video/' + _lviWsId, {
+        method: 'POST',
+        body: fd,
+      });
+    } catch (err) {
+      status.textContent = 'Network error: ' + err.message;
+      btn.disabled = false;
+      return;
+    }
+
+    if (!resp.ok) {
+      var txt = await resp.text();
+      status.textContent = 'Server error ' + resp.status + ': ' + txt.slice(0, 120);
+      btn.disabled = false;
+      return;
+    }
+
+    var results = await resp.json();
+    status.classList.add('hidden');
+
+    var matched  = results.filter(function (r) { return r.matched; }).length;
+    var errored  = results.filter(function (r) { return r.error; }).length;
+    var skipped  = results.length - matched - errored;
+
+    var listEl = document.getElementById('lvi-results-list');
+    listEl.innerHTML = '';
+    results.forEach(function (r) {
+      var li = document.createElement('li');
+      li.className = 'flex items-start gap-2 rounded-md px-2 py-1.5 ' +
+        (r.matched
+          ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+          : r.error
+            ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+            : 'bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400');
+      var icon = r.matched ? '✅' : r.error ? '❌' : '⏭';
+      var msg  = r.matched
+        ? 'Lesson ' + r.lesson_num + ' → ' + r.card_title
+        : r.error || 'Skipped';
+      li.innerHTML =
+        '<span aria-hidden="true">' + icon + '</span>' +
+        '<span><strong>' + _lviEsc(r.filename) + '</strong> — ' + _lviEsc(msg) + '</span>';
+      listEl.appendChild(li);
+    });
+
+    document.getElementById('lvi-results').classList.remove('hidden');
+
+    // Summary
+    var summary = matched + ' matched';
+    if (errored) summary += ', ' + errored + ' failed';
+    if (skipped) summary += ', ' + skipped + ' skipped';
+    status.textContent = summary + '.';
+    if (matched > 0) status.textContent += ' Reload a card to see its video.';
+    status.classList.remove('hidden');
+
+    btn.disabled = false;
+    input.value = '';
+    document.getElementById('lvi-file-count').textContent = '';
+  };
+
+  function _lviEsc(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+})();
+</script>

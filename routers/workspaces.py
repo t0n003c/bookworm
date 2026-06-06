@@ -20,7 +20,6 @@ def _parse_ws_id(raw: Optional[str]) -> Optional[int]:
     except (ValueError, TypeError):
         return None
 
-from routers.home_db import get_trashed_home_pages as _get_trashed_home_pages
 from routers.workspaces_db import (
     get_all_workspaces,
     get_open_workspaces,
@@ -41,8 +40,12 @@ from routers.workspaces_db import (
     reorder_workspace,
     permanent_delete_workspace,
     get_trashed_workspaces,
+    empty_workspace_trash,
 )
-from routers.workspace_db_cards import get_db_cards
+from routers.home_db import (
+    get_trashed_home_pages as _get_trashed_home_pages,
+    empty_home_page_trash as _empty_home_page_trash,
+)
 from routers.notes_db import search_notes
 from routers.sharing_db import get_shared_object_ids
 from routers.categories_db import (
@@ -291,6 +294,23 @@ async def delete_workspace_handler(
         still_active = await get_first_workspace_id(uid)
     ctx = await _ws_context(still_active, uid)
     return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+
+
+@router.post("/empty-trash", response_class=HTMLResponse)
+async def empty_all_trash(
+    request: Request,
+    active_ws_id: Optional[str] = Form(default=None),
+):
+    """Permanently delete ALL trashed workspaces + home pages for the current user."""
+    uid = _uid(request)
+    await empty_workspace_trash(uid)
+    await _empty_home_page_trash(uid)
+    trashed_wss        = await get_trashed_workspaces(uid)
+    trashed_home_pages = await _get_trashed_home_pages(uid)
+    return templates.TemplateResponse(
+        request, "partials/sidebar_trash.html",
+        {"trashed_workspaces": trashed_wss, "trashed_home_pages": trashed_home_pages},
+    )
 
 
 @router.post("/{workspace_id}/restore", response_class=HTMLResponse)
