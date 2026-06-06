@@ -79,7 +79,9 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
-        "frame-src 'self'" + (f" {_collabora}" if _collabora else "") + ";"
+        "frame-src 'self' https://player.vimeo.com https://www.youtube.com"
+        " https://www.youtube-nocookie.com https://fast.wistia.com"
+        + (f" {_collabora}" if _collabora else "") + ";"
     )
 
     async def dispatch(self, request: Request, call_next) -> Response:
