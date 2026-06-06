@@ -94,7 +94,23 @@ def _extract_lesson_urls(html_text: str) -> dict:
 _WALMART_PROXY = "http://sysproxy.wal-mart.com:8080"
 
 
-def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
+def _is_login_page(html: str) -> bool:
+    """True only when the page IS the login page, not just a page that has
+    a login link/widget in the header (which WordPress always does).
+
+    Checks for WordPress-specific login page signals:
+      - <body class="login ...">  (wp-login.php body class)
+      - id="loginform"            (the actual WP login <form>)
+      - action contains wp-login.php
+      - <title> says Log In / Sign In with nothing else
+    """
+    return bool(
+        re.search(r'<body[^>]+class=["\'][^"\']* login[\s"\']', html, re.I)
+        or re.search(r'id=["\']loginform["\']', html, re.I)
+        or re.search(r'action=["\'][^"\']*wp-login\.php', html, re.I)
+    )
+
+
     import ssl
     if use_proxy:
         ctx = ssl.create_default_context()
@@ -123,10 +139,8 @@ def _urllib_fetch(url: str, cookie: str, use_proxy: bool) -> tuple:
             data    = resp.read(_MAX_RESP_BYTES)
             charset = resp.headers.get_content_charset() or "utf-8"
             html    = data.decode(charset, errors="replace")
-            if re.search(r'<form[^>]+action=["\'][^"\']*login', html, re.I):
-                return None, "Cookie expired — login form detected"
-            return html, None
-    except urllib.error.HTTPError as e:
+            if _is_login_page(html):
+                return None, "Cookie expired — redirected to login page"
         return None, f"HTTP {e.code} {e.reason}"
     except urllib.error.URLError as e:
         return None, f"URLError: {e.reason}"
@@ -193,12 +207,12 @@ def _powershell_fetch(url: str, cookie: str) -> tuple:
             content = f.read()
         _ps_cleanup(ps_path, out_path)
 
-        if content.startswith("PSERR:"):
+        if re.search(r'PSERR:', content):
             return None, "PowerShell: " + content[6:300].strip()
         if len(content) < 100:
             return None, "PowerShell returned empty response"
-        if re.search(r'<form[^>]+action=["\'][^"\']*login', content, re.I):
-            return None, "Cookie expired — login form detected"
+        if _is_login_page(content):
+            return None, "Cookie expired — redirected to login page"
         return content, None
 
     except subprocess.TimeoutExpired:
