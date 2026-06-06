@@ -14,7 +14,6 @@ import asyncio
 import re
 import urllib.error
 import urllib.request
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -84,18 +83,18 @@ def _extract_lesson_urls(html_text: str) -> dict:
     return lesson_map
 
 
-# ── HTTP fetch (sync, run in thread) ─────────────────────────────────────────
+# ── HTTP fetch ─────────────────────────────────────────────────────────────────────
+#
+# Three-tier strategy:
+#   1. Direct urllib   — fastest, works when DNS is open
+#   2. Walmart proxy   — urllib + sysproxy, SSL verify off (Walmart CA)
+#   3. PowerShell IWR  — Invoke-WebRequest -UseDefaultCredentials;
+#                         Windows SSO handles NTLM proxy auth transparently
 
 _WALMART_PROXY = "http://sysproxy.wal-mart.com:8080"
 
 
 def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
-    """Build an opener, optionally routing through the Walmart corporate proxy.
-
-    When use_proxy=True we also disable SSL cert verification because the
-    Walmart proxy performs SSL inspection and re-signs certs with the Walmart
-    CA, which is not in Python's default trust store.
-    """
     import ssl
     if use_proxy:
         ctx = ssl.create_default_context()
@@ -106,57 +105,136 @@ def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
             "https": _WALMART_PROXY,
         })
         return urllib.request.build_opener(
-            proxy,
-            urllib.request.HTTPSHandler(context=ctx),
-        )
-    # Direct: normal SSL verification
+            proxy, urllib.request.HTTPSHandler(context=ctx))
     return urllib.request.build_opener()
+
+
+def _urllib_fetch(url: str, cookie: str, use_proxy: bool) -> tuple:
+    """Single urllib attempt. Returns (html, error)."""
+    opener = _build_opener(use_proxy)
+    req = urllib.request.Request(url)
+    req.add_header("Cookie", cookie)
+    req.add_header("User-Agent", _UA)
+    req.add_header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
+    req.add_header("Accept-Language", "en-US,en;q=0.9")
+    req.add_header("Referer", url)
+    try:
+        with opener.open(req, timeout=_FETCH_TIMEOUT) as resp:
+            data    = resp.read(_MAX_RESP_BYTES)
+            charset = resp.headers.get_content_charset() or "utf-8"
+            html    = data.decode(charset, errors="replace")
+            if re.search(r'<form[^>]+action=["\'][^"\']*login', html, re.I):
+                return None, "Cookie expired — login form detected"
+            return html, None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code} {e.reason}"
+    except urllib.error.URLError as e:
+        return None, f"URLError: {e.reason}"
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _ps_cleanup(*paths: str) -> None:
+    for p in paths:
+        try:
+            if p and __import__("os").path.exists(p):
+                __import__("os").unlink(p)
+        except Exception:
+            pass
+
+
+def _powershell_fetch(url: str, cookie: str) -> tuple:
+    """Use PowerShell Invoke-WebRequest -UseDefaultCredentials.
+
+    Windows SSO provides NTLM credentials to the corporate proxy automatically—
+    same mechanism the browser uses, no passwords required.
+    Cookie + URL passed via environment variables (not in the script text).
+    """
+    import subprocess, tempfile, os
+
+    tmp  = tempfile.gettempdir()
+    pid  = os.getpid()
+    ps_path  = os.path.join(tmp, f"bw_fetch_{pid}.ps1")
+    out_path = os.path.join(tmp, f"bw_fetch_{pid}.txt")
+    out_ps   = out_path.replace("\\", "\\\\")
+
+    script = (
+        "$ProgressPreference = 'SilentlyContinue'\n"
+        "$url    = $env:BW_FETCH_URL\n"
+        "$cookie = $env:BW_FETCH_COOKIE\n"
+        "try {\n"
+        "  $r = Invoke-WebRequest -Uri $url "
+        "-Headers @{Cookie=$cookie; 'User-Agent'='Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0'} "
+        "-UseDefaultCredentials -UseBasicParsing -TimeoutSec 15\n"
+        f"  [System.IO.File]::WriteAllText('{out_ps}', $r.Content, [System.Text.Encoding]::UTF8)\n"
+        "} catch {\n"
+        f"  [System.IO.File]::WriteAllText('{out_ps}', 'PSERR:' + $_.Exception.Message, [System.Text.Encoding]::UTF8)\n"
+        "  exit 1\n"
+        "}"
+    )
+
+    try:
+        with open(ps_path, "w", encoding="utf-8") as f:
+            f.write(script)
+
+        env = os.environ.copy()
+        env["BW_FETCH_URL"]    = url
+        env["BW_FETCH_COOKIE"] = cookie
+
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-File", ps_path],
+            capture_output=True, timeout=25, env=env,
+        )
+
+        if not os.path.exists(out_path):
+            return None, "PowerShell produced no output file"
+        with open(out_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        _ps_cleanup(ps_path, out_path)
+
+        if content.startswith("PSERR:"):
+            return None, "PowerShell: " + content[6:300].strip()
+        if len(content) < 100:
+            return None, "PowerShell returned empty response"
+        if re.search(r'<form[^>]+action=["\'][^"\']*login', content, re.I):
+            return None, "Cookie expired — login form detected"
+        return content, None
+
+    except subprocess.TimeoutExpired:
+        _ps_cleanup(ps_path, out_path)
+        return None, "PowerShell fetch timed out"
+    except FileNotFoundError:
+        _ps_cleanup(ps_path, out_path)
+        return None, "powershell.exe not found"
+    except Exception as e:
+        _ps_cleanup(ps_path, out_path)
+        return None, f"PowerShell: {type(e).__name__}: {e}"
 
 
 def _fetch_sync(url: str, cookie: str) -> tuple:
     """Fetch url with cookie. Returns (html, error_str).
 
-    Tries direct connection first; if that fails, retries via Walmart proxy.
-    Strips accidental 'Cookie: ' header-name prefix from cookie value.
+    Strips accidental 'Cookie: ' prefix, then tries 3 strategies:
+      1. Direct urllib
+      2. urllib + Walmart proxy (SSL bypass for Walmart CA inspection)
+      3. PowerShell Invoke-WebRequest -UseDefaultCredentials (NTLM SSO)
     """
-    # Strip accidental "Cookie: " prefix (user copied the header name too)
     cookie = re.sub(r'^cookie:\s*', '', cookie.strip(), flags=re.IGNORECASE)
 
-    def _do_fetch(opener: urllib.request.OpenerDirector) -> tuple:
-        req = urllib.request.Request(url)
-        req.add_header("Cookie", cookie)
-        req.add_header("User-Agent", _UA)
-        req.add_header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
-        req.add_header("Accept-Language", "en-US,en;q=0.9")
-        req.add_header("Referer", url)
-        try:
-            with opener.open(req, timeout=_FETCH_TIMEOUT) as resp:
-                data = resp.read(_MAX_RESP_BYTES)
-                charset = resp.headers.get_content_charset() or "utf-8"
-                html = data.decode(charset, errors="replace")
-                if re.search(r'<form[^>]+action=["\'][^"\']*login', html, re.I):
-                    return None, "Cookie expired or invalid — login form detected"
-                return html, None
-        except urllib.error.HTTPError as e:
-            return None, f"HTTP {e.code} {e.reason}"
-        except urllib.error.URLError as e:
-            return None, f"URLError: {e.reason}"
-        except Exception as e:
-            return None, f"{type(e).__name__}: {e}"
-
-    # Attempt 1: direct
-    html, err = _do_fetch(_build_opener(use_proxy=False))
-    if html is not None:
+    html, e1 = _urllib_fetch(url, cookie, use_proxy=False)
+    if html:
         return html, None
-    direct_err = err
 
-    # Attempt 2: Walmart proxy (SSL inspection bypass)
-    html2, err2 = _do_fetch(_build_opener(use_proxy=True))
-    if html2 is not None:
-        return html2, None
+    html, e2 = _urllib_fetch(url, cookie, use_proxy=True)
+    if html:
+        return html, None
 
-    # Both failed — return both errors for diagnostics
-    return None, f"Direct: {direct_err} | Proxy: {err2 or 'no error'}"
+    html, e3 = _powershell_fetch(url, cookie)
+    if html:
+        return html, None
+
+    return None, f"Direct: {e1} | Proxy: {e2} | PowerShell: {e3}"
 
 
 async def _fetch(url: str, cookie: str) -> tuple:
