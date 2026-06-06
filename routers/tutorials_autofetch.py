@@ -114,22 +114,29 @@ def _powershell_fetch(url: str, cookie: str) -> tuple:
 
     Windows SSO supplies NTLM credentials to the corporate proxy
     automatically — same mechanism the browser uses, no passwords needed.
-    URL and Cookie are passed via environment variables, never interpolated
-    into the script text, so special characters can't cause injection.
+    URL and Cookie are written to temp files (not env vars) to avoid the
+    8191-char Windows environment variable length limit on long cookies.
     """
     pid      = os.getpid()
     tmp      = tempfile.gettempdir()
-    ps_path  = os.path.join(tmp, f"bw_fetch_{pid}.ps1")
-    out_path = os.path.join(tmp, f"bw_fetch_{pid}.txt")
-    out_ps   = out_path.replace("\\", "\\\\")
+    ps_path      = os.path.join(tmp, f"bw_fetch_{pid}.ps1")
+    cookie_path  = os.path.join(tmp, f"bw_cookie_{pid}.txt")
+    out_path     = os.path.join(tmp, f"bw_fetch_{pid}.txt")
+    out_ps       = out_path.replace("\\", "\\\\")
+    cookie_ps    = cookie_path.replace("\\", "\\\\")
 
     script = (
         "$ProgressPreference = 'SilentlyContinue'\n"
         "$url    = $env:BW_FETCH_URL\n"
-        "$cookie = $env:BW_FETCH_COOKIE\n"
+        f"$cookie = [System.IO.File]::ReadAllText('{cookie_ps}').Trim()\n"
         "try {\n"
-        "  $r = Invoke-WebRequest -Uri $url "
-        "-Headers @{Cookie=$cookie; 'User-Agent'='Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0'} "
+        "  $headers = @{\n"
+        "    Cookie            = $cookie\n"
+        "    'User-Agent'      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'\n"
+        "    Accept            = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'\n"
+        "    'Accept-Language' = 'en-US,en;q=0.9'\n"
+        "  }\n"
+        "  $r = Invoke-WebRequest -Uri $url -Headers $headers "
         "-UseDefaultCredentials -UseBasicParsing -TimeoutSec 20\n"
         f"  [System.IO.File]::WriteAllText('{out_ps}', $r.Content, "
         "[System.Text.Encoding]::UTF8)\n"
@@ -141,12 +148,14 @@ def _powershell_fetch(url: str, cookie: str) -> tuple:
     )
 
     try:
+        # Write cookie to file — avoids 8191-char Windows env-var limit
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(cookie)
         with open(ps_path, "w", encoding="utf-8") as f:
             f.write(script)
 
         env = os.environ.copy()
-        env["BW_FETCH_URL"]    = url
-        env["BW_FETCH_COOKIE"] = cookie
+        env["BW_FETCH_URL"] = url
 
         subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive",
@@ -155,29 +164,31 @@ def _powershell_fetch(url: str, cookie: str) -> tuple:
         )
 
         if not os.path.exists(out_path):
-            _ps_cleanup(ps_path)
+            _ps_cleanup(ps_path, cookie_path)
             return None, "PowerShell produced no output file"
 
         with open(out_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
-        _ps_cleanup(ps_path, out_path)
+        _ps_cleanup(ps_path, cookie_path, out_path)
 
         if content.startswith("PSERR:"):
             return None, "PowerShell: " + content[6:300].strip()
         if len(content) < 100:
-            return None, "PowerShell returned empty response"
+            return None, f"PowerShell returned too-short response ({len(content)} chars)"
         if _is_login_page(content):
-            return None, "Cookie expired — redirected to login page"
+            # Return snippet so test-fetch can surface it for diagnosis
+            snippet = content[:400].replace("\n", " ").replace("\r", "")
+            return None, f"Redirected to login page. HTML snippet: {snippet}"
         return content, None
 
     except subprocess.TimeoutExpired:
-        _ps_cleanup(ps_path, out_path)
+        _ps_cleanup(ps_path, cookie_path, out_path)
         return None, "PowerShell fetch timed out (>30 s)"
     except FileNotFoundError:
-        _ps_cleanup(ps_path, out_path)
+        _ps_cleanup(ps_path, cookie_path, out_path)
         return None, "powershell.exe not found"
     except Exception as e:
-        _ps_cleanup(ps_path, out_path)
+        _ps_cleanup(ps_path, cookie_path, out_path)
         return None, f"PowerShell: {type(e).__name__}: {e}"
 
 
@@ -248,6 +259,104 @@ def _extract_lesson_urls(html_text: str) -> dict:
         lesson_map[num] = lesson_url
 
     return lesson_map
+
+
+# ── Bulk video update endpoint (receives JSON from browser script) ────────────
+
+@router.post("/bulk-update-videos/{ws_id}")
+async def bulk_update_videos(
+    request: Request,
+    ws_id: int,
+):
+    """Accept {lesson_num: video_url} JSON from the browser console script.
+
+    The browser script runs same-origin on the course site, collects video
+    embed URLs, and POSTs here. BookWorm matches lesson numbers to cards.
+    """
+    user_id = _uid(request)
+
+    try:
+        payload: dict = await request.json()
+    except Exception:
+        raise HTTPException(422, "Expected JSON body {lesson_num: video_url, ...}")
+
+    if not isinstance(payload, dict) or not payload:
+        raise HTTPException(422, "Payload must be a non-empty object")
+
+    # Normalise keys to int
+    video_map: dict = {}
+    for k, v in payload.items():
+        try:
+            video_map[int(k)] = str(v).strip()
+        except (ValueError, TypeError):
+            pass
+
+    if not video_map:
+        raise HTTPException(422, "No valid lesson numbers found in payload")
+
+    # Load cards
+    async with get_db() as db:
+        cur   = await db.execute(
+            "SELECT id, title FROM db_cards WHERE db_id = ? AND user_id = ?",
+            (ws_id, user_id),
+        )
+        cards = await cur.fetchall()
+
+    if not cards:
+        raise HTTPException(404, "No cards found in this workspace")
+
+    matched        = 0
+    skipped_no_url = 0
+    results        = []
+
+    async with get_db() as db:
+        for card in cards:
+            card_id, card_title = card[0], card[1]
+            acur  = await db.execute(
+                "SELECT attr_key, attr_value, id FROM db_card_attrs WHERE card_id = ?",
+                (card_id,),
+            )
+            attrs = await acur.fetchall()
+
+            lesson_num    = None
+            current_vid   = ""
+            video_attr_id = None
+
+            for attr_key, attr_val, attr_id in attrs:
+                if attr_key == "Lesson #" and attr_val:
+                    try:
+                        lesson_num = int(attr_val)
+                    except (ValueError, TypeError):
+                        pass
+                elif attr_key == "Video URL":
+                    current_vid   = attr_val or ""
+                    video_attr_id = attr_id
+
+            video_url = video_map.get(lesson_num) if lesson_num else None
+
+            if not video_url or not video_attr_id:
+                skipped_no_url += 1
+                continue
+            if current_vid:
+                results.append({"card_title": card_title, "lesson_num": lesson_num,
+                                 "status": "skipped", "note": "already has video"})
+                continue
+
+            await db.execute(
+                "UPDATE db_card_attrs SET attr_value = ? WHERE id = ?",
+                (video_url, video_attr_id),
+            )
+            matched += 1
+            results.append({"card_title": card_title, "lesson_num": lesson_num,
+                            "status": "ok", "video_url": video_url})
+
+        await db.commit()
+
+    return JSONResponse({
+        "matched":        matched,
+        "skipped_no_url": skipped_no_url,
+        "results":        results,
+    })
 
 
 # ── Diagnostic test endpoint ───────────────────────────────────────────────────
