@@ -1007,18 +1007,30 @@ function _restoreHpPage(pageId) {
 }
 
 function _permDeleteHpPage(pageId, name) {
-  if (!confirm('Permanently delete \u201c' + name + '\u201d? This cannot be undone.')) return;
-  _post('/home/pages/' + pageId + '/permanent-delete')
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-      var zone = document.getElementById('sidebar-trash');
-      if (zone) {
-        zone.innerHTML = html;
-        if (window.htmx) htmx.process(zone);
-      }
-      _bwToast('Page permanently deleted.', 'success', 3000);
-    })
-    .catch(function() { _bwToast('Permanent delete failed.', 'error'); });
+  // Use the styled trash confirm modal if available; fall back to native confirm.
+  var _doDelete = function() {
+    _post('/home/pages/' + pageId + '/permanent-delete')
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        var zone = document.getElementById('sidebar-trash');
+        if (zone) {
+          zone.innerHTML = html;
+          if (window.htmx) htmx.process(zone);
+        }
+        _bwToast('Page permanently deleted.', 'success', 3000);
+      })
+      .catch(function() { _bwToast('Permanent delete failed.', 'error'); });
+  };
+  if (typeof _openTrashConfirm === 'function') {
+    _openTrashConfirm({
+      title:     'Delete \u201c' + name + '\u201d?',
+      body:      'The page \u201c' + name + '\u201d and all its widgets will be permanently deleted.',
+      onConfirm: _doDelete,
+    });
+  } else {
+    if (!confirm('Permanently delete \u201c' + name + '\u201d? This cannot be undone.')) return;
+    _doDelete();
+  }
 }
 
 function duplicateHomePage(pageId, name) {

@@ -53,7 +53,10 @@
               hx-post="/workspaces/empty-trash"
               hx-target="#ws-trash-details"
               hx-swap="outerHTML"
-              hx-confirm="Permanently delete ALL {{ trash_count }} item{{ 's' if trash_count != 1 else '' }} in trash? This cannot be undone."
+              data-bw-trash-confirm="1"
+              data-bw-trash-title="Empty all trash?"
+              data-bw-trash-label="Empty all trash"
+              hx-confirm="Permanently delete ALL {{ trash_count }} item{{ 's' if trash_count != 1 else '' }} in trash?"
               class="w-full flex items-center justify-center gap-1.5
                      text-[10px] font-semibold text-red-500 dark:text-red-400
                      hover:bg-red-50 dark:hover:bg-red-900/20
@@ -134,7 +137,9 @@
         hx-target="#note-list"
         hx-swap="innerHTML"
         data-inject-active-ws="1"
-        hx-confirm="Permanently delete '{{ ws.name }}' and all its notes? This cannot be undone."
+        data-bw-trash-confirm="1"
+        data-bw-trash-title="Delete '{{ ws.name }}'?"
+        hx-confirm="Permanently delete '{{ ws.name }}' and all its notes?"
         title="Delete '{{ ws.name }}' permanently"
         aria-label="Permanently delete workspace {{ ws.name }}"
         class="flex-shrink-0 p-1.5 rounded-lg transition
