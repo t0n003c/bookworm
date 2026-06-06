@@ -61,45 +61,76 @@ def _extract_course_name(soup: BeautifulSoup) -> str:
 
 
 def _extract_video_urls(html_text: str) -> list:
-    """Scan all iframe src/data-src and extract embed-ready URLs.
+    """Scan HTML for embedded video URLs using two strategies.
+
+    Strategy 1 — iframe src/data-src attributes:
+      Works on raw view-source HTML (Ctrl+U / View Page Source).
+
+    Strategy 2 — nuclear full-text scan:
+      Catches Chrome 'Save Page As → HTML Only' (Ctrl+S) which blanks
+      cross-origin iframe src to about:blank but often leaves the Vimeo/
+      YouTube URL in JS config blobs, data-* attrs, or HTML-entity strings.
+      Also runs on an &amp;-decoded copy to handle HTML-entity-escaped URLs.
 
     Returns deduplicated list in document order.
-    Stored as embed-ready format: //platform/embed/{id}
+    Stored as embed-ready protocol-relative URLs.
     """
-    seen = set()
-    results = []
+    seen: set = set()
+    results: list = []
 
+    def _add_vimeo(vid_id: str) -> None:
+        embed = "//player.vimeo.com/video/" + vid_id
+        if embed not in seen:
+            seen.add(embed)
+            results.append(embed)
+
+    def _add_youtube(vid_id: str) -> None:
+        embed = "//www.youtube.com/embed/" + vid_id
+        if embed not in seen:
+            seen.add(embed)
+            results.append(embed)
+
+    def _add_wistia(vid_id: str) -> None:
+        embed = "//fast.wistia.com/embed/medias/" + vid_id
+        if embed not in seen:
+            seen.add(embed)
+            results.append(embed)
+
+    # ── Strategy 1: iframe src / data-src attributes ──────────────────────────
     iframe_pat = re.compile(
         r'<iframe[^>]+(?:src|data-src)=["\']([^"\']+)["\']',
         re.IGNORECASE | re.DOTALL,
     )
-
     for m in iframe_pat.finditer(html_text):
         raw = m.group(1).strip()
-
-        vimeo = re.search(r'player\.vimeo\.com/video/(\d+)', raw)
-        if vimeo:
-            embed = "//player.vimeo.com/video/" + vimeo.group(1)
-            if embed not in seen:
-                seen.add(embed)
-                results.append(embed)
+        v = re.search(r'player\.vimeo\.com/video/(\d+)', raw)
+        if v:
+            _add_vimeo(v.group(1))
             continue
-
-        yt = re.search(r'youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]+)', raw)
-        if yt:
-            embed = "//www.youtube.com/embed/" + yt.group(1)
-            if embed not in seen:
-                seen.add(embed)
-                results.append(embed)
+        y = re.search(r'youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]+)', raw)
+        if y:
+            _add_youtube(y.group(1))
             continue
+        w = re.search(r'fast\.wistia\.com/embed/medias/([A-Za-z0-9]+)', raw)
+        if w:
+            _add_wistia(w.group(1))
 
-        wistia = re.search(r'fast\.wistia\.com/embed/medias/([A-Za-z0-9]+)', raw)
-        if wistia:
-            embed = "//fast.wistia.com/embed/medias/" + wistia.group(1)
-            if embed not in seen:
-                seen.add(embed)
-                results.append(embed)
-            continue
+    # ── Strategy 2: nuclear full-text scan ────────────────────────────────────
+    # Run on both the raw text AND an &amp;-decoded copy, because HTML
+    # serialisers encode & as &amp; inside attribute values.
+    for corpus in (html_text, html_text.replace("&amp;", "&")):
+        for vid_id in re.findall(
+            r'player\.vimeo\.com/video/(\d{5,})', corpus, re.IGNORECASE
+        ):
+            _add_vimeo(vid_id)
+        for vid_id in re.findall(
+            r'youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]{6,})', corpus, re.IGNORECASE
+        ):
+            _add_youtube(vid_id)
+        for vid_id in re.findall(
+            r'fast\.wistia\.com/embed/medias/([A-Za-z0-9]{6,})', corpus, re.IGNORECASE
+        ):
+            _add_wistia(vid_id)
 
     return results
 

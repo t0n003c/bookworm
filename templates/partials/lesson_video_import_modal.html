@@ -52,14 +52,40 @@
       {# How-to tip #}
       <div class="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200
                   dark:border-blue-800/50 p-3 text-xs text-blue-800 dark:text-blue-300">
-        <strong>How to save a lesson page:</strong> open the lesson in your browser →
-        press <kbd class="font-mono bg-blue-100 dark:bg-blue-800/60 rounded px-1">Ctrl+S</kbd>
-        (or File → Save Page As) → choose <em>Webpage, HTML Only</em>.
-        Repeat for each lesson, then select all the files below.
+        <strong>How to save a lesson page (ProgressAlly / most course platforms):</strong>
+        <ol class="mt-1.5 space-y-1 pl-3 list-decimal">
+          <li>Open the lesson in your browser while logged in</li>
+          <li>Press <kbd class="font-mono bg-blue-100 dark:bg-blue-800/60 rounded px-1">Ctrl+U</kbd>
+              (or right-click → <em>View Page Source</em>) — a new tab opens with raw HTML</li>
+          <li>Press <kbd class="font-mono bg-blue-100 dark:bg-blue-800/60 rounded px-1">Ctrl+A</kbd>
+              then <kbd class="font-mono bg-blue-100 dark:bg-blue-800/60 rounded px-1">Ctrl+S</kbd>
+              to save that source tab as an <code>.html</code> file</li>
+          <li>Repeat for each lesson, then select all files below</li>
+        </ol>
+        <p class="mt-2 text-[11px] text-blue-700 dark:text-blue-400 opacity-80">
+          ⚠️ Do <strong>not</strong> use File → Save Page As on the lesson itself —
+          browsers blank out video embeds when saving the rendered page.
+        </p>
+      </div>
+
+      {# Mode toggle: file upload vs paste #}
+      <div class="flex gap-2">
+        <button id="lvi-btn-file" type="button" onclick="_lviMode('file')"
+                class="flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition
+                       bg-[#0053e2] text-white border-[#0053e2]">
+          📁 Upload files
+        </button>
+        <button id="lvi-btn-paste" type="button" onclick="_lviMode('paste')"
+                class="flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition
+                       bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300
+                       border-gray-200 dark:border-zinc-700
+                       hover:bg-gray-50 dark:hover:bg-zinc-800">
+          📋 Paste source
+        </button>
       </div>
 
       {# File picker #}
-      <div>
+      <div id="lvi-file-area">
         <label for="lvi-file-input"
                class="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1.5">
           Select HTML files <span class="text-gray-400 text-xs font-normal">(multiple OK)</span>
@@ -77,6 +103,23 @@
                       cursor-pointer focus:outline-none"
                aria-label="Select lesson HTML files" />
         <p id="lvi-file-count" class="mt-1 text-xs text-gray-400 dark:text-zinc-500"></p>
+      </div>
+
+      {# Paste area (hidden by default) #}
+      <div id="lvi-paste-area" class="hidden">
+        <label for="lvi-paste-input"
+               class="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-1.5">
+          Paste the page source HTML
+        </label>
+        <textarea id="lvi-paste-input" rows="7"
+                  placeholder="Open the lesson → Ctrl+U (View Page Source) → Ctrl+A → Ctrl+C → paste here"
+                  class="w-full rounded-lg border border-gray-200 dark:border-zinc-700
+                         bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                         font-mono text-xs p-2 resize-y
+                         focus:outline-none focus:ring-2 focus:ring-[#0053e2]/30
+                         placeholder:text-gray-300 dark:placeholder:text-zinc-600"
+                  oninput="_lviPasteChanged()"></textarea>
+        <p id="lvi-paste-hint" class="mt-1 text-xs text-gray-400 dark:text-zinc-500"></p>
       </div>
 
       {# Results list — populated after import #}
@@ -114,41 +157,92 @@
 
 <script>
 (function () {
-  var _lviWsId = null;
+  var _lviWsId   = null;
+  var _lviMode_  = 'file'; // 'file' | 'paste'
+
+  /* ── mode toggle ── */
+  window._lviMode = function (m) {
+    _lviMode_ = m;
+    var btnFile  = document.getElementById('lvi-btn-file');
+    var btnPaste = document.getElementById('lvi-btn-paste');
+    var fileArea  = document.getElementById('lvi-file-area');
+    var pasteArea = document.getElementById('lvi-paste-area');
+    var activeClass   = ['bg-[#0053e2]', 'text-white', 'border-[#0053e2]'];
+    var inactiveClass = ['bg-white', 'dark:bg-zinc-900', 'text-gray-600',
+                        'dark:text-zinc-300', 'border-gray-200', 'dark:border-zinc-700',
+                        'hover:bg-gray-50', 'dark:hover:bg-zinc-800'];
+    if (m === 'file') {
+      activeClass.forEach(function(c) { btnFile.classList.add(c); });
+      inactiveClass.forEach(function(c) { btnFile.classList.remove(c); btnPaste.classList.add(c); });
+      activeClass.forEach(function(c) { btnPaste.classList.remove(c); });
+      fileArea.classList.remove('hidden');
+      pasteArea.classList.add('hidden');
+    } else {
+      activeClass.forEach(function(c) { btnPaste.classList.add(c); });
+      inactiveClass.forEach(function(c) { btnPaste.classList.remove(c); btnFile.classList.add(c); });
+      activeClass.forEach(function(c) { btnFile.classList.remove(c); });
+      pasteArea.classList.remove('hidden');
+      fileArea.classList.add('hidden');
+      setTimeout(function() {
+        document.getElementById('lvi-paste-input').focus();
+      }, 50);
+    }
+    _lviSyncBtn();
+  };
+
+  /* ── paste change ── */
+  window._lviPasteChanged = function () {
+    var val = (document.getElementById('lvi-paste-input').value || '').trim();
+    var hint = document.getElementById('lvi-paste-hint');
+    if (hint) hint.textContent = val.length > 0 ? val.length.toLocaleString() + ' chars pasted' : '';
+    _lviSyncBtn();
+  };
+
+  function _lviSyncBtn() {
+    var btn = document.getElementById('lvi-import-btn');
+    if (!btn) return;
+    if (_lviMode_ === 'file') {
+      var inp = document.getElementById('lvi-file-input');
+      btn.disabled = !inp || !inp.files || inp.files.length === 0;
+    } else {
+      var val = (document.getElementById('lvi-paste-input').value || '').trim();
+      btn.disabled = val.length < 50; // need at least some HTML
+    }
+  }
 
   window.openLessonVideoImportModal = function (wsId) {
-    _lviWsId = wsId;
+    _lviWsId  = wsId;
+    _lviMode_ = 'file';
     var modal = document.getElementById('lesson-video-import-modal');
     modal.classList.remove('hidden');
     // Reset state
     document.getElementById('lvi-file-input').value = '';
     document.getElementById('lvi-file-count').textContent = '';
+    document.getElementById('lvi-paste-input').value = '';
+    document.getElementById('lvi-paste-hint').textContent = '';
     document.getElementById('lvi-results').classList.add('hidden');
     document.getElementById('lvi-results-list').innerHTML = '';
     document.getElementById('lvi-status').classList.add('hidden');
     document.getElementById('lvi-status').textContent = '';
-    document.getElementById('lvi-import-btn').disabled = true;
-    modal.querySelector('[id="lvi-file-input"]').focus();
+    // Reset mode buttons to file
+    _lviMode('file');
   };
 
   window.closeLessonVideoImportModal = function () {
     document.getElementById('lesson-video-import-modal').classList.add('hidden');
   };
 
-  // Enable button only when files are selected
+  // Enable button when files are selected
   document.getElementById('lvi-file-input').addEventListener('change', function () {
     var n = this.files.length;
     document.getElementById('lvi-file-count').textContent =
       n > 0 ? n + ' file' + (n !== 1 ? 's' : '') + ' selected' : '';
-    document.getElementById('lvi-import-btn').disabled = n === 0;
+    _lviSyncBtn();
   });
 
   window.runLessonVideoImport = async function () {
-    var input  = document.getElementById('lvi-file-input');
     var btn    = document.getElementById('lvi-import-btn');
     var status = document.getElementById('lvi-status');
-
-    if (!input.files.length || !_lviWsId) return;
 
     btn.disabled = true;
     status.textContent = 'Uploading and processing…';
@@ -156,11 +250,21 @@
     document.getElementById('lvi-results').classList.add('hidden');
 
     var fd = new FormData();
-    for (var i = 0; i < input.files.length; i++) {
-      fd.append('files', input.files[i]);
+    var resp;
+
+    if (_lviMode_ === 'paste') {
+      /* Single paste: send as a synthetic file named "pasted.html" */
+      var html = document.getElementById('lvi-paste-input').value || '';
+      if (!html.trim()) { btn.disabled = false; return; }
+      fd.append('files', new Blob([html], {type: 'text/html'}), 'pasted.html');
+    } else {
+      var input = document.getElementById('lvi-file-input');
+      if (!input.files.length || !_lviWsId) { btn.disabled = false; return; }
+      for (var i = 0; i < input.files.length; i++) {
+        fd.append('files', input.files[i]);
+      }
     }
 
-    var resp;
     try {
       resp = await fetch('/tutorials/import-lesson-video/' + _lviWsId, {
         method: 'POST',
@@ -182,9 +286,8 @@
     var results = await resp.json();
     status.classList.add('hidden');
 
-    var matched  = results.filter(function (r) { return r.matched; }).length;
-    var errored  = results.filter(function (r) { return r.error; }).length;
-    var skipped  = results.length - matched - errored;
+    var matched = results.filter(function (r) { return r.matched; }).length;
+    var errored = results.filter(function (r) { return r.error; }).length;
 
     var listEl = document.getElementById('lvi-results-list');
     listEl.innerHTML = '';
@@ -208,25 +311,23 @@
 
     document.getElementById('lvi-results').classList.remove('hidden');
 
-    // Summary
     var summary = matched + ' matched';
     if (errored) summary += ', ' + errored + ' failed';
-    if (skipped) summary += ', ' + skipped + ' skipped';
     status.textContent = summary + '.';
     if (matched > 0) status.textContent += ' Reload a card to see its video.';
     status.classList.remove('hidden');
 
     btn.disabled = false;
-    input.value = '';
-    document.getElementById('lvi-file-count').textContent = '';
+    if (_lviMode_ === 'file') {
+      document.getElementById('lvi-file-input').value = '';
+      document.getElementById('lvi-file-count').textContent = '';
+    }
   };
 
   function _lviEsc(s) {
     return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 })();
 </script>
