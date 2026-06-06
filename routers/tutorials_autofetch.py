@@ -86,28 +86,90 @@ def _extract_lesson_urls(html_text: str) -> dict:
 
 # ── HTTP fetch (sync, run in thread) ─────────────────────────────────────────
 
-def _fetch_sync(url: str, cookie: str) -> Optional[str]:
-    """Fetch url with the given cookie. Returns decoded HTML or None."""
-    req = urllib.request.Request(url)
-    req.add_header("Cookie", cookie)
-    req.add_header("User-Agent", _UA)
-    req.add_header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
-    req.add_header("Accept-Language", "en-US,en;q=0.9")
-    try:
-        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
-            data = resp.read(_MAX_RESP_BYTES)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            html = data.decode(charset, errors="replace")
-            # Detect login redirect: if the response contains a login form, bail
-            if re.search(r'<form[^>]+action=["\'][^"\']*login', html, re.I):
-                return None  # cookie expired / invalid
-            return html
-    except Exception:
-        return None
+_WALMART_PROXY = "http://sysproxy.wal-mart.com:8080"
 
 
-async def _fetch(url: str, cookie: str) -> Optional[str]:
+def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
+    """Build an opener, optionally routing through the Walmart corporate proxy."""
+    import ssl
+    ctx = ssl.create_default_context()
+    https = urllib.request.HTTPSHandler(context=ctx)
+    if use_proxy:
+        proxy = urllib.request.ProxyHandler({
+            "http":  _WALMART_PROXY,
+            "https": _WALMART_PROXY,
+        })
+        return urllib.request.build_opener(proxy, https)
+    return urllib.request.build_opener(https)
+
+
+def _fetch_sync(url: str, cookie: str) -> tuple:
+    """Fetch url with cookie. Returns (html, error_str).
+
+    Tries direct connection first; if that fails, retries via Walmart proxy.
+    Strips accidental 'Cookie: ' header-name prefix from cookie value.
+    """
+    # Strip accidental "Cookie: " prefix (user copied the header name too)
+    cookie = re.sub(r'^cookie:\s*', '', cookie.strip(), flags=re.IGNORECASE)
+
+    def _do_fetch(opener: urllib.request.OpenerDirector) -> tuple:
+        req = urllib.request.Request(url)
+        req.add_header("Cookie", cookie)
+        req.add_header("User-Agent", _UA)
+        req.add_header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
+        req.add_header("Accept-Language", "en-US,en;q=0.9")
+        req.add_header("Referer", url)
+        try:
+            with opener.open(req, timeout=_FETCH_TIMEOUT) as resp:
+                data = resp.read(_MAX_RESP_BYTES)
+                charset = resp.headers.get_content_charset() or "utf-8"
+                html = data.decode(charset, errors="replace")
+                if re.search(r'<form[^>]+action=["\'][^"\']*login', html, re.I):
+                    return None, "Cookie expired or invalid — login form detected"
+                return html, None
+        except urllib.error.HTTPError as e:
+            return None, f"HTTP {e.code} {e.reason}"
+        except urllib.error.URLError as e:
+            return None, f"URLError: {e.reason}"
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
+
+    # Attempt 1: direct
+    html, err = _do_fetch(_build_opener(use_proxy=False))
+    if html is not None:
+        return html, None
+
+    # Attempt 2: Walmart proxy
+    html2, err2 = _do_fetch(_build_opener(use_proxy=True))
+    if html2 is not None:
+        return html2, None
+
+    # Both failed — return most informative error
+    return None, err or err2 or "Unknown fetch error"
+
+
+async def _fetch(url: str, cookie: str) -> tuple:
     return await asyncio.to_thread(_fetch_sync, url, cookie)
+
+
+# ── Diagnostic test endpoint ───────────────────────────────────────────────────
+
+@router.post("/test-fetch")
+async def test_fetch(request: Request, url: str = Form(""), cookie_header: str = Form("")):
+    """Test connectivity to a single URL — returns success/error detail."""
+    _uid(request)
+    if not url.strip():
+        raise HTTPException(422, "URL required")
+    html, err = await _fetch(url.strip(), cookie_header.strip())
+    if err:
+        return JSONResponse({"ok": False, "error": err, "url": url})
+    vids = _extract_video_urls(html)
+    return JSONResponse({
+        "ok":       True,
+        "url":      url,
+        "html_len": len(html),
+        "videos":   vids,
+    })
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -212,10 +274,10 @@ async def auto_fetch_videos(
 
     async def fetch_one(item: dict) -> dict:
         async with sem:
-            html = await _fetch(item["lesson_url"], cookie_header)
+            html, err = await _fetch(item["lesson_url"], cookie_header)
             await asyncio.sleep(_FETCH_DELAY)
-        if html is None:
-            return {**item, "video_url": "", "error": "Fetch failed or cookie expired"}
+        if err:
+            return {**item, "video_url": "", "error": err}
         urls = _extract_video_urls(html)
         if not urls:
             return {**item, "video_url": "", "error": "No video embed found on page"}

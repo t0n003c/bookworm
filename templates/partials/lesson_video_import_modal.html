@@ -159,6 +159,24 @@
                            placeholder:text-gray-300 dark:placeholder:text-zinc-600"
                     oninput="_lviSyncBtn()"></textarea>
         </div>
+
+        {# Test connection #}
+        <div class="flex items-center gap-2">
+          <input id="lvi-test-url" type="url"
+                 placeholder="Paste one lesson URL here to test…"
+                 class="flex-1 rounded-lg border border-gray-200 dark:border-zinc-700
+                        bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200
+                        text-xs px-2 py-1.5 focus:outline-none focus:ring-2
+                        focus:ring-[#0053e2]/30 placeholder:text-gray-400" />
+          <button type="button" onclick="_lviTestFetch()"
+                  class="px-3 py-1.5 text-xs font-medium rounded-lg border
+                         bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300
+                         borde00 dark:border-zinc-600 hover:bg-gray-50
+                         flex-shrink-0 transition">
+            Test
+          </button>
+        </div>
+        <p id="lvi-test-result" class="text-xs hidden"></p>
       </div>
 
       {# Results list — shared across all modes #}
@@ -388,5 +406,33 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+
+  /* ── test connection ── */
+  window._lviTestFetch = async function () {
+    var url    = (document.getElementById('lvi-test-url').value   || '').trim();
+    var cookie = (document.getElementById('lvi-auto-cookie').value || '').trim();
+    var out    = document.getElementById('lvi-test-result');
+    if (!url) { out.textContent = 'Paste a lesson URL first.'; out.className = 'text-xs text-red-600'; out.classList.remove('hidden'); return; }
+    out.textContent = 'Testing…';
+    out.className = 'text-xs text-gray-500';
+    out.classList.remove('hidden');
+    var fd = new FormData();
+    fd.append('url', url);
+    fd.append('cookie_header', cookie);
+    try {
+      var resp = await fetch('/tutorials/test-fetch', { method: 'POST', body: fd });
+      var data = await resp.json();
+      if (data.ok) {
+        out.textContent = '✅ Connected! HTML: ' + data.html_len.toLocaleString() + ' chars. Videos found: ' + (data.videos.join(', ') || 'none');
+        out.className = 'text-xs text-green-700 dark:text-green-400';
+      } else {
+        out.textContent = '❌ ' + data.error;
+        out.className = 'text-xs text-red-600 dark:text-red-400';
+      }
+    } catch(e) {
+      out.textContent = '❌ Network error: ' + e.message;
+      out.className = 'text-xs text-red-600 dark:text-red-400';
+    }
+  };
 })();
 </script>
