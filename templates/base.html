@@ -1009,6 +1009,16 @@
           Install BookWorm first — then you'll get a built-in AI Search shortcut
           when you long-press the app icon.
         </p>
+        {# Shown when the browser has fired beforeinstallprompt (Android/Chrome/Edge) #}
+        <button id="bw-aiwg-install-btn" type="button"
+                onclick="window._bwTriggerInstall && window._bwTriggerInstall()"
+                class="hidden w-full py-2 mb-3 rounded-xl
+                       text-xs font-semibold
+                       bg-[#0053e2] text-white
+                       hover:bg-blue-700 transition
+                       focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+          📲 Install BookWorm
+        </button>
         <div class="flex items-center gap-2
                     rounded-xl bg-gray-50 dark:bg-zinc-800
                     border border-gray-200 dark:border-zinc-700 px-3 py-2">
@@ -1067,6 +1077,14 @@
       ios.classList.remove('hidden');
     } else {
       if (generic) generic.classList.remove('hidden');
+      /* Show the native install prompt button only when Chrome/Edge has
+         already captured a beforeinstallprompt event (Android browser,
+         Chrome/Edge desktop).  On iOS or when no prompt is available the
+         button stays hidden and users fall back to the URL/bookmark tip. */
+      var installBtn = document.getElementById('bw-aiwg-install-btn');
+      if (installBtn) {
+        installBtn.classList.toggle('hidden', !window._bwTriggerInstall);
+      }
     }
 
     modal.classList.remove('hidden');
@@ -1699,11 +1717,24 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault();
       _deferredPrompt = e;
+      /* Expose to bwAiSearchWidgetGuide() — it lives in a separate <script>
+         block and cannot reach _deferredPrompt directly (different scope). */
+      window._bwTriggerInstall = function () {
+        if (!_deferredPrompt) return;
+        _hideBanner();
+        _deferredPrompt.prompt();
+        _deferredPrompt.userChoice.then(function (r) {
+          if (r.outcome === 'accepted') _setDismissed();
+          _deferredPrompt = null;
+          window._bwTriggerInstall = null;
+        });
+      };
       setTimeout(function () { _showBanner('std'); }, 2000);
     });
 
     window.addEventListener('appinstalled', function () {
       _setDismissed(); _hideBanner();
+      window._bwTriggerInstall = null; /* already installed — clean up */
     });
   }
 
