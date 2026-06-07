@@ -127,9 +127,9 @@
   {# ── card grid area ── #}
   <div id="db-scroll-area" class="flex-1 overflow-y-auto px-6 py-4">
 
-    {# empty state — shown by JS when no cards exist, hidden otherwise #}
+    {# empty state — hidden by default; JS removes 'hidden' when card count is 0 #}
     <div id="db-empty-state"
-         class="flex flex-col items-center justify-center py-24 text-center select-none">
+         class="hidden flex flex-col items-center justify-center py-24 text-center select-none">
       <div class="text-5xl mb-4" aria-hidden="true">🗃️</div>
       <p class="text-gray-500 dark:text-zinc-400 text-sm">No cards yet.</p>
       <p class="text-gray-400 dark:text-zinc-500 text-xs mt-1">
