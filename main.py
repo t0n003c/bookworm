@@ -847,9 +847,11 @@ async def lifespan(app: FastAPI):
     # Generate PWA icons on first boot (no-op if files already exist)
     try:
         from bw_pwa_icons import generate_icons
+        from bw_shortcut_icons import generate_shortcut_icons
         # CPU-bound (Pillow rendering); offload to thread so the event loop
         # isn't blocked during server startup.
         await asyncio.to_thread(generate_icons)
+        await asyncio.to_thread(generate_shortcut_icons)
     except Exception:
         log.warning("PWA icon generation failed — continuing without icons")
 
@@ -1247,7 +1249,7 @@ async def pwa_manifest():
                 "short_name": "New Note",
                 "description": "Jump straight into creating a new note",
                 "url": "/#bw=new-note",
-                "icons": [{"src": "/static/img/icons/icon-192.png",
+                "icons": [{"src": "/static/img/icons/shortcut-new-note-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
             {
@@ -1255,7 +1257,7 @@ async def pwa_manifest():
                 "short_name": "My Files",
                 "description": "Open your uploads & files",
                 "url": "/#bw=uploads",
-                "icons": [{"src": "/static/img/icons/icon-192.png",
+                "icons": [{"src": "/static/img/icons/shortcut-my-files-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
             {
@@ -1263,7 +1265,7 @@ async def pwa_manifest():
                 "short_name": "AI Search",
                 "description": "Instant AI-powered search across your notes",
                 "url": "/#bw=ai-search",
-                "icons": [{"src": "/static/img/icons/icon-192.png",
+                "icons": [{"src": "/static/img/icons/shortcut-ai-search-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
         ],
