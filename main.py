@@ -1279,7 +1279,12 @@ async def pwa_manifest():
     }
     return JSONResponse(
         content=manifest,
-        headers={"Cache-Control": "public, max-age=3600"},
+        # PWA manifests must never be stale — browsers and OSes cache the
+        # manifest at install time.  A long max-age means shortcut URLs,
+        # icons, and share_target updates are invisible until the cache
+        # expires.  no-cache forces a revalidation on every request so
+        # reinstalls always get the current manifest.
+        headers={"Cache-Control": "no-cache"},
     )
 
 
