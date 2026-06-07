@@ -2002,29 +2002,6 @@
   {% endif %}
 </div>
 
-{# ── Mobile FAB — Add Widget (≤ md, dashboard pages only) ──────────────────── #}
-{# On desktop the "Add Widget" button lives in the header top-action-area.    #}
-{# On phones that button is icon-only and hard to discover, so we provide a   #}
-{# sticky FAB at the bottom-right of the canvas instead.                      #}
-<button
-  id="home-mobile-fab"
-  onclick="openAddWidget({{ page.id }})"
-  aria-label="Add widget"
-  class="md:hidden fixed bottom-5 right-4 z-20
-         flex items-center gap-2
-         bg-[#0053e2] text-white
-         pl-3.5 pr-4 py-3
-         rounded-full shadow-lg
-         active:scale-95 transition-transform
-         focus:outline-none focus:ring-2 focus:ring-white/70"
-  style="touch-action:manipulation;">
-  <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24"
-       stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-  </svg>
-  <span class="text-sm font-semibold leading-none">Add Widget</span>
-</button>
-
 {# ── Add-Widget Modal (extracted to keep this file ≤600 lines) ─── #}
 {% include 'partials/home_add_widget_modal.html' %}
 

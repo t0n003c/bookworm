@@ -257,11 +257,6 @@ window.invalidateHomePageCache = function (pageId) {
 function showHomePage(pageId) {
   console.log('[home] showHomePage', pageId);
   _setTopActionAddWidget(pageId);
-  // Auto-close the mobile sidebar overlay so the canvas is immediately
-  // interactive — same pattern used in note-workspace-dnd.js.
-  if (window.innerWidth < 768 && typeof _mobileSidebarClose === 'function') {
-    _mobileSidebarClose();
-  }
   sessionStorage.setItem('bw-hp', String(pageId));
   _showHomeCanvas();
   document.documentElement.classList.remove('bw-hp-restore');
