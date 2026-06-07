@@ -146,11 +146,36 @@ function _aiDrawBudget(daily) {
 
   var emptyState = !labels.length;
   if (emptyState) {
-    // No data yet — show a flat zero chart so the canvas isn't blank
-    labels   = ['(no data)'];
-    datasets = [{ label: 'Cumulative Spend', data: [0],
-                  borderColor: '#f59e0b', borderWidth: 2,
-                  pointRadius: 0, fill: false, yAxisID: 'y' }];
+    if (payments.length) {
+      // User has pre-paid but has no AI usage history yet.
+      // Synthesise a one-point snapshot so the balance is visible immediately
+      // without needing any queries first.
+      var today        = new Date().toISOString().slice(0, 10);
+      var totalPrepaid = payments.reduce(function(s, p) { return s + p.amount; }, 0);
+      labels   = [today];
+      datasets = [
+        {
+          label: 'Cumulative Spend', data: [0],
+          borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.10)',
+          fill: true, tension: 0.4,
+          pointRadius: 4, pointHoverRadius: 6,
+          borderWidth: 2, yAxisID: 'y',
+        },
+        {
+          label: 'Remaining Balance', data: [+totalPrepaid.toFixed(6)],
+          borderColor: '#2a8703', backgroundColor: 'rgba(42,135,3,0.08)',
+          fill: true, tension: 0.4,
+          pointRadius: 4, pointHoverRadius: 6,
+          borderWidth: 2, yAxisID: 'y',
+        },
+      ];
+    } else {
+      // Truly nothing — show a placeholder so the canvas isn’t blank
+      labels   = ['(no data)'];
+      datasets = [{ label: 'Cumulative Spend', data: [0],
+                    borderColor: '#f59e0b', borderWidth: 2,
+                    pointRadius: 0, fill: false, yAxisID: 'y' }];
+    }
   }
 
   _aiCharts[id] = new Chart(c, {
