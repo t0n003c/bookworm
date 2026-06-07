@@ -6021,6 +6021,8 @@ function _dbAttrValueHtml(cardId, a) {
    Scans card.attrs for any attr named 'Video URL' (case-insensitive) whose
    value looks like a Vimeo / YouTube / Wistia embed URL, then returns a
    responsive 16:9 iframe block to inject above the note area.
+   Vimeo iframes get a unique player_id + ?api=1 so _dbVimeoGuardSetup() can
+   detect domain-restricted videos via the player postMessage 'ready' event.
    Returns empty string when no embeddable video is found.
 ────────────────────────────────────────────────────────────────────────── */
 function _dbVideoEmbedHtml(card) {
@@ -6044,8 +6046,19 @@ function _dbVideoEmbedHtml(card) {
 
   // Ensure protocol-relative URLs have https: so the iframe src is absolute
   var src = embedUrl.replace(/^\/\//, 'https://');
+  var isVimeo = /player\.vimeo\.com\/video\//.test(src);
 
-  return '<div style="margin:0 -1.5rem 1.25rem -1.5rem;"'
+  // For Vimeo: attach a unique player_id + ?api=1 so the player fires a
+  // postMessage 'ready' event — used by _dbVimeoGuardSetup to detect
+  // domain-restricted videos (they never fire ready).
+  var playerId = '';
+  if (isVimeo) {
+    playerId = 'bwv' + Date.now();
+    src += (src.indexOf('?') >= 0 ? '&' : '?') + 'api=1&player_id=' + playerId;
+  }
+
+  return '<div data-bw-vid-wrapper="' + _esc(playerId) + '"'
+    + ' style="margin:0 -1.5rem 1.25rem -1.5rem;"'
     + ' class="bg-black" aria-label="Lesson video">'
     // 16:9 aspect-ratio wrapper
     + '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">'
@@ -6059,6 +6072,59 @@ function _dbVideoEmbedHtml(card) {
     + '</iframe>'
     + '</div>'
     + '</div>';
+}
+
+/* ── Vimeo domain-restriction guard ─────────────────────────────────────────
+   Call this after injecting _dbVideoEmbedHtml html into the DOM.
+   Finds any [data-bw-vid-wrapper] with a non-empty player_id (= Vimeo).
+   The Vimeo player fires a postMessage {event:'ready', player_id:'...'} when
+   it successfully loads.  Domain-restricted videos never fire it.
+   After 5 s with no ready signal we replace the iframe with a friendly
+   'Video protected' message.
+─────────────────────────────────────────────────────────────────────────── */
+function _dbVimeoGuardSetup(dp) {
+  var wrap = dp && dp.querySelector('[data-bw-vid-wrapper]');
+  if (!wrap) return;
+  var pid = wrap.getAttribute('data-bw-vid-wrapper');
+  if (!pid) return;  // non-Vimeo (YouTube/Wistia) — no guard needed
+
+  var iframe = wrap.querySelector('iframe');
+  var _ready = false;
+
+  function _onMsg(evt) {
+    var d;
+    try { d = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data; }
+    catch (e) { return; }
+    if (!d || d.event !== 'ready' || d.player_id !== pid) return;
+    _ready = true;
+    window.removeEventListener('message', _onMsg);
+  }
+  window.addEventListener('message', _onMsg);
+
+  // 5 s timeout — domain-restricted videos silently show an error page and
+  // never fire ready.  Replace the iframe with a friendly fallback.
+  setTimeout(function() {
+    window.removeEventListener('message', _onMsg);
+    if (_ready) return;
+    var src = iframe ? iframe.src : '';
+    var vidId = (src.match(/\/video\/(\d+)/) || [])[1] || '';
+    var vimeoLink = vidId ? 'https://vimeo.com/' + vidId : '';
+    wrap.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;'
+      + 'justify-content:center;min-height:180px;padding:2rem 1.5rem;text-align:center;'
+      + 'background:#0f0f1a;">'
+      + '<div style="font-size:2.25rem;margin-bottom:.6rem;">🔒</div>'
+      + '<p style="font-size:.875rem;font-weight:600;color:#e2e8f0;margin:0 0 .35rem;">'
+      + 'Video protected</p>'
+      + '<p style="font-size:.75rem;color:#94a3b8;max-width:22rem;line-height:1.55;margin:0;">'
+      + 'This video can only be played on the original course platform.</p>'
+      + (vimeoLink
+        ? '<a href="' + vimeoLink + '" target="_blank" rel="noopener noreferrer"'
+          + ' style="margin-top:.85rem;font-size:.75rem;color:#a78bfa;text-decoration:underline;">'
+          + 'Try opening on Vimeo \u2197</a>'
+        : '')
+      + '</div>';
+  }, 5000);
 }
 
 function _dbRenderDetailPanel(card) {
@@ -6231,6 +6297,7 @@ function _dbRenderDetailPanel(card) {
   );
 
   /* Attach slash palette + paste-as to the note CE after HTML is in the DOM */
+  _dbVimeoGuardSetup(dp);
   var noteEl = dp.querySelector('#db-detail-note-' + card.id);
   _dbAttachNoteTools(noteEl);
   /* Attach drag-and-drop for attr row reordering */
