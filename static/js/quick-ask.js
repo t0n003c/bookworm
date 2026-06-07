@@ -23,6 +23,21 @@
   // ── Element shortcuts ──────────────────────────────────────────────────────
   function _el(id) { return document.getElementById(id); }
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  function _qaSyncThemeIcon() {
+    var isDark = document.documentElement.classList.contains('dark');
+    var sun  = _el('qa-icon-sun');
+    var moon = _el('qa-icon-moon');
+    if (sun)  sun.classList.toggle('hidden', !isDark);
+    if (moon) moon.classList.toggle('hidden',  isDark);
+  }
+
+  function qaToggleTheme() {
+    var isDark = document.documentElement.classList.toggle('dark');
+    try { localStorage.setItem('bw-theme', isDark ? 'dark' : 'light'); } catch (_) {}
+    _qaSyncThemeIcon();
+  }
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   function qaBack() {
     if (window.history.length > 1) {
@@ -260,6 +275,19 @@
     var input    = _el('qa-input');
     var autoq    = (document.body.dataset.autoq || '').trim();
 
+    // Sync sun/moon icon to match current theme
+    _qaSyncThemeIcon();
+
+    // Follow OS dark/light changes — only when no explicit user choice stored
+    var _mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (_mq) {
+      _mq.addEventListener('change', function (e) {
+        if (localStorage.getItem('bw-theme')) return;
+        document.documentElement.classList.toggle('dark', e.matches);
+        _qaSyncThemeIcon();
+      });
+    }
+
     if (autoq) {
       input.value = autoq;
       // Small delay so the page is fully painted before streaming starts
@@ -284,5 +312,6 @@
   window.qaSubmit        = qaSubmit;
   window.qaStopStream    = qaStopStream;
   window.qaToggleSources = qaToggleSources;
+  window.qaToggleTheme   = qaToggleTheme;
 
 })();
