@@ -60,6 +60,12 @@
 
   // ── Main stream ────────────────────────────────────────────────────────────
   function qaStartStream(q) {
+    // Abort any in-flight stream before starting a new one — prevents two
+    // concurrent streams writing to the same DOM elements simultaneously.
+    if (_qaAbort) {
+      _qaAbort.abort();
+      _qaAbort = null;
+    }
     _qaText = '';
     var ansEl     = _el('qa-answer');
     var wrapEl    = _el('qa-answer-wrap');
@@ -161,7 +167,7 @@
   function qaFetchResults(q) {
     fetch('/qa/search?q=' + encodeURIComponent(q) + '&limit=5')
       .then(function (resp) {
-        if (resp.redirected || resp.status === 401) {
+        if (resp.redirected || resp.status === 401 || resp.status === 302) {
           window.location.href = resp.url || '/login?next=/quick-ask';
           return null;
         }

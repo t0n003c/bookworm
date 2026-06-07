@@ -19,6 +19,17 @@
   </script>
 
   <link href="/static/css/tailwind.css?v={{ static_v }}" rel="stylesheet" />
+
+  {# CSS-driven icon initial state — prevents the ~0-200 ms moon-in-dark-mode flash
+     that would otherwise occur between body-render and DOMContentLoaded.
+     ID-selector specificity (0,1,0,1) beats .hidden class (0,0,1,0) so this
+     safely overrides Tailwind's display:none before any JS runs. #}
+  <style>
+    html.dark     #qa-icon-sun  { display: block; }
+    html.dark     #qa-icon-moon { display: none;  }
+    html:not(.dark) #qa-icon-sun  { display: none;  }
+    html:not(.dark) #qa-icon-moon { display: block; }
+  </style>
 </head>
 
 <body

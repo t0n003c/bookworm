@@ -12,7 +12,12 @@
 const CACHE_NAME  = 'bw-shell-v4';
 const OFFLINE_URL = '/offline';
 
-/* App-shell assets to pre-cache on install */
+/* App-shell assets to pre-cache on install.
+ * Auth-gated pages (e.g. /quick-ask) are intentionally omitted:
+ * cache.addAll() throws if any request returns a non-OK response,
+ * and a gated page returns 302→/login during SW install (no session yet).
+ * Those pages are cached on first successful authenticated visit via
+ * the network-first handler in the fetch listener. */
 const PRECACHE = [
   '/',
   '/offline',
