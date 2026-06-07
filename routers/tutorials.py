@@ -78,8 +78,10 @@ def _extract_video_urls(html_text: str) -> list:
     seen: set = set()
     results: list = []
 
-    def _add_vimeo(vid_id: str) -> None:
+    def _add_vimeo(vid_id: str, h: str = "") -> None:
         embed = "//player.vimeo.com/video/" + vid_id
+        if h:
+            embed += "?h=" + h
         if embed not in seen:
             seen.add(embed)
             results.append(embed)
@@ -105,7 +107,8 @@ def _extract_video_urls(html_text: str) -> list:
         raw = m.group(1).strip()
         v = re.search(r'player\.vimeo\.com/video/(\d+)', raw)
         if v:
-            _add_vimeo(v.group(1))
+            h_m = re.search(r'[?&]h=([A-Za-z0-9]+)', raw)
+            _add_vimeo(v.group(1), h_m.group(1) if h_m else "")
             continue
         y = re.search(r'youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]+)', raw)
         if y:
@@ -119,10 +122,12 @@ def _extract_video_urls(html_text: str) -> list:
     # Run on both the raw text AND an &amp;-decoded copy, because HTML
     # serialisers encode & as &amp; inside attribute values.
     for corpus in (html_text, html_text.replace("&amp;", "&")):
-        for vid_id in re.findall(
+        for vm in re.finditer(
             r'player\.vimeo\.com/video/(\d{5,})', corpus, re.IGNORECASE
         ):
-            _add_vimeo(vid_id)
+            nearby = corpus[vm.start():vm.start() + 200]
+            h_m = re.search(r'[?&]h=([A-Za-z0-9]+)', nearby)
+            _add_vimeo(vm.group(1), h_m.group(1) if h_m else "")
         for vid_id in re.findall(
             r'youtube(?:-nocookie)?\.com/embed/([A-Za-z0-9_-]{6,})', corpus, re.IGNORECASE
         ):
@@ -192,7 +197,9 @@ def _extract_lesson_info(html_text: str, filename: str = "") -> dict:
     if not video_urls:
         el = soup.find(attrs={"data-vimeo-id": True})
         if el:
-            video_urls = ["//player.vimeo.com/video/" + str(el["data-vimeo-id"])]
+            h = el.get("data-vimeo-h") or el.get("data-h") or ""
+            vid = "//player.vimeo.com/video/" + str(el["data-vimeo-id"])
+            video_urls = [vid + ("?h=" + h if h else "")]
 
     # Video: Vimeo Player JS API — new Vimeo.Player(el, {id: 12345678})
     # ProgressAlly initialises the player via script, not an <iframe> in the DOM.
@@ -202,11 +209,14 @@ def _extract_lesson_info(html_text: str, filename: str = "") -> dict:
             html_text, re.DOTALL,
         )
         if m:
-            video_urls = ["//player.vimeo.com/video/" + m.group(1)]
+            config_nearby = html_text[m.start():m.start() + 500]
+            h_m = re.search(r'["\']?h["\']?\s*:\s*["\']([A-Za-z0-9]+)["\']', config_nearby)
+            h = h_m.group(1) if h_m else ""
+            video_urls = ["//player.vimeo.com/video/" + m.group(1) + ("?h=" + h if h else "")]
 
     # Video: Vimeo player URL anywhere in <script> tags
     # Catches JSON config blobs like: "url":"https://vimeo.com/12345678" or
-    # src="https://player.vimeo.com/video/12345678"
+    # src="https://player.vimeo.com/video/12345678?h=abc123"
     if not video_urls:
         for script in soup.find_all("script"):
             text = script.get_text(" ", strip=True)
@@ -216,7 +226,9 @@ def _extract_lesson_info(html_text: str, filename: str = "") -> dict:
                     r'vimeo\.com/(?:video/)?([0-9]{5,})(?:[?/"\']|$)', text
                 )
             if m:
-                video_urls = ["//player.vimeo.com/video/" + m.group(1)]
+                nearby = text[m.start():m.start() + 200]
+                h_m = re.search(r'[?&]h=([A-Za-z0-9]+)', nearby)
+                video_urls = ["//player.vimeo.com/video/" + m.group(1) + ("?h=" + h_m.group(1) if h_m else "")]
                 break
 
     # Video: Wistia async div class — wistia_async_<hashedId>
