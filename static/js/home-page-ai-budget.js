@@ -63,15 +63,27 @@ function _aiRenderPaymentPills() {
   var payments = _aiBudgetPayments();
   if (!payments.length) { el.innerHTML = ''; return; }
 
+  // Use _isDark() for inline styles — Tailwind doesn't scan dark: classes
+  // in runtime-generated strings, so the compiled CSS may omit them.
+  var dark      = typeof _isDark === 'function' && _isDark();
+  var pillBg    = dark ? 'rgba(96,165,250,0.18)'  : 'rgba(0,83,226,0.07)';
+  var pillColor = dark ? '#93c5fd'                : '#0053e2';
+  var pillBrd   = dark ? 'rgba(96,165,250,0.40)'  : 'rgba(0,83,226,0.22)';
+  var xColor    = dark ? '#a1a1aa'                : '#9ca3af';
+
   el.innerHTML = payments.map(function(p, i) {
-    return '<span class="inline-flex items-center gap-1 text-[10px] font-semibold'
-      + ' px-2 py-0.5 rounded-full'
-      + ' bg-blue-50 dark:bg-blue-900'
-      + ' text-[#0053e2] dark:text-blue-200'
-      + ' border border-blue-200 dark:border-blue-700">'
+    return '<span style="'
+      + 'display:inline-flex;align-items:center;gap:4px;'
+      + 'font-size:10px;font-weight:600;white-space:nowrap;'
+      + 'padding:2px 8px;border-radius:9999px;'
+      + 'background:' + pillBg + ';'
+      + 'color:' + pillColor + ';'
+      + 'border:1px solid ' + pillBrd + ';'
+      + '">'
       + _aiEsc(p.date) + ' &nbsp;$' + Number(p.amount).toFixed(2)
       + '<button onclick="aiBudgetRemovePayment(' + i + ')"'
-      + ' class="ml-0.5 text-gray-400 dark:text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition leading-none"'
+      + ' style="margin-left:2px;background:none;border:none;cursor:pointer;'
+      + 'padding:0;font-size:13px;line-height:1;color:' + xColor + ';"'
       + ' aria-label="Remove payment">&times;</button>'
       + '</span>';
   }).join('');
