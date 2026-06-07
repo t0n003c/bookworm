@@ -9,7 +9,7 @@
  * Cache names are versioned so stale caches are purged on activate.
  */
 
-const CACHE_NAME  = 'bw-shell-v3';
+const CACHE_NAME  = 'bw-shell-v4';
 const OFFLINE_URL = '/offline';
 
 /* App-shell assets to pre-cache on install */
@@ -57,7 +57,8 @@ function _isDynamic(url) {
   return p.startsWith('/home/')
       || p.startsWith('/auth/')
       || p.startsWith('/uploads/')
-      || p.startsWith('/wopi/');
+      || p.startsWith('/wopi/')
+      || p.startsWith('/qa/');   // SSE streams must never be cached
 }
 
 /* ── Push notifications ─────────────────────────────────────────────────────── */

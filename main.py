@@ -166,6 +166,7 @@ from routers import sharing as sharing_router
 from routers import push as push_router
 from routers import webauthn as webauthn_router
 from routers import search_qa as search_qa_router
+from routers import quick_ask as quick_ask_router
 from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 from routers.home_db import get_home_page
 import search_index
@@ -1002,7 +1003,7 @@ app.include_router(sharing_router.router)
 app.include_router(push_router.router)
 app.include_router(webauthn_router.router)
 app.include_router(search_qa_router.router)
-
+app.include_router(quick_ask_router.router)
 
 # ── Ownership-gated file serving ──────────────────────────────────────────────
 # Replaces the old open StaticFiles mount so that logged-in users cannot
@@ -1264,11 +1265,17 @@ async def pwa_manifest():
                 "name": "AI Search",
                 "short_name": "AI Search",
                 "description": "Instant AI-powered search across your notes",
-                "url": "/#bw=ai-search",
+                "url": "/quick-ask",
                 "icons": [{"src": "/static/img/icons/shortcut-ai-search-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
         ],
+        "share_target": {
+            "action": "/quick-ask",
+            "method": "GET",
+            "enctype": "application/x-www-form-urlencoded",
+            "params": {"text": "q"},
+        },
     }
     return JSONResponse(
         content=manifest,

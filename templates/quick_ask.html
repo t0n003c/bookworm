@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en-US" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Quick Ask — BookWorm</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
+  <link rel="manifest" href="/manifest.json" />
+
+  {# Mirror the app's JS-toggled dark class before body renders #}
+  <script>
+    try {
+      if (localStorage.getItem('bw-theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    } catch (e) {}
+  </script>
+
+  <link href="/static/css/tailwind.css?v={{ static_v }}" rel="stylesheet" />
+</head>
+
+<body
+  class="h-full flex flex-col bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-100 overflow-hidden"
+  data-autoq="{{ q | e }}"
+>
+
+  {# ── Header ─────────────────────────────────────────────────────────────── #}
+  <header class="flex items-center gap-3 px-4 h-14 border-b border-gray-100 dark:border-zinc-800 flex-shrink-0">
+    {# Back arrow #}
+    <button
+      onclick="qaBack()"
+      aria-label="Back to BookWorm"
+      class="flex items-center justify-center w-9 h-9 rounded-full text-gray-500 dark:text-zinc-400
+             hover:bg-gray-100 dark:hover:bg-zinc-800 focus:outline-none focus-visible:ring-2
+             focus-visible:ring-blue-500 transition-colors"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+           viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>
+
+    {# Logo + title #}
+    <span class="text-xl" role="img" aria-label="BookWorm">🪱</span>
+    <span class="font-bold text-base tracking-tight text-gray-900 dark:text-zinc-100">Quick Ask</span>
+
+    <div class="flex-1"></div>
+
+    {# "Open full app" link #}
+    <a
+      href="/"
+      class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline
+             focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
+    >Full app</a>
+  </header>
+
+  {# ── Answer area ─────────────────────────────────────────────────────────── #}
+  <main id="qa-answer-area"
+        class="flex-1 overflow-y-auto px-4 py-5 space-y-5"
+        aria-live="polite" aria-atomic="false">
+
+    {# Placeholder shown before first question #}
+    <div id="qa-placeholder" class="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+      <span class="text-5xl select-none">🔍</span>
+      <p class="text-sm text-gray-400 dark:text-zinc-500 max-w-xs leading-relaxed">
+        Ask anything across your notes, files, and team data. Your AI is ready.
+      </p>
+    </div>
+
+    {# Thinking indicator #}
+    <div id="qa-thinking" class="hidden flex items-center gap-2 text-sm text-gray-400 dark:text-zinc-500">
+      <span class="animate-bounce inline-block">🪱</span>
+      <span>Thinking…</span>
+    </div>
+
+    {# Streaming answer bubble #}
+    <div id="qa-answer-wrap" class="hidden">
+      <div class="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-2">Answer</div>
+      <div id="qa-answer"
+           class="text-base leading-relaxed text-gray-900 dark:text-zinc-100 whitespace-pre-wrap"></div>
+    </div>
+
+    {# No-answer nudge (shown when LLM returns empty) #}
+    <div id="qa-empty-nudge" class="hidden text-sm text-amber-600 dark:text-amber-400 mt-2">
+      No answer returned — your AI endpoint may not be configured yet.
+      <a href="/account" class="underline ml-1">Set it up →</a>
+    </div>
+
+    {# Sources toggle + panel #}
+    <div id="qa-sources-wrap" class="hidden">
+      <button
+        id="qa-sources-toggle"
+        onclick="qaToggleSources()"
+        class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline
+               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+        aria-expanded="false"
+      >Show sources</button>
+      <div id="qa-sources-panel" class="hidden mt-3 space-y-2"></div>
+    </div>
+
+    {# Offline error #}
+    <div id="qa-offline-msg" class="hidden text-sm text-red-600 dark:text-red-400">
+      ⚠ AI search needs a connection. Please check your network.
+    </div>
+  </main>
+
+  {# ── History rail (recent questions) ─────────────────────────────────────── #}
+  <div id="qa-history-wrap"
+       class="hidden flex-shrink-0 overflow-x-auto border-t border-gray-100 dark:border-zinc-800
+              bg-white dark:bg-zinc-900 px-4 py-2">
+    <div id="qa-history" class="flex gap-2 w-max"></div>
+  </div>
+
+  {# ── Input bar ───────────────────────────────────────────────────────────── #}
+  <div class="flex-shrink-0 border-t border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2"
+       style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom));">
+    <div class="flex items-center gap-2">
+      <input
+        id="qa-input"
+        type="search"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="Ask anything…"
+        aria-label="Your question"
+        class="flex-1 rounded-full border border-gray-200 dark:border-zinc-700
+               bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+               px-4 py-2.5 text-sm placeholder-gray-400 dark:placeholder-zinc-500
+               focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+      />
+      {# Send button #}
+      <button
+        id="qa-send-btn"
+        onclick="qaSubmit()"
+        aria-label="Send question"
+        class="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full
+               bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white
+               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
+               transition-colors disabled:opacity-40"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-7 7l7-7 7 7"/>
+        </svg>
+      </button>
+      {# Stop button — shown while streaming #}
+      <button
+        id="qa-stop-btn"
+        onclick="qaStopStream()"
+        aria-label="Stop generating"
+        class="hidden flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full
+               bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-800/60
+               text-red-600 dark:text-red-400
+               focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500
+               transition-colors"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor"
+             viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="4" y="4" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/js/quick-ask.js?v={{ static_v }}" defer></script>
+</body>
+</html>
