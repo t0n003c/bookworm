@@ -2138,7 +2138,12 @@ function _attachCE(ce) {
    Global click-away handler (shared)
    ───────────────────────────────────────── */
 document.addEventListener('click', (e) => {
-  if (_sc.open && !_sc.palette?.contains(e.target)) _close();
+  // Ignore taps on the mobile toolbar — the "+" button there OPENS the palette,
+  // so its own click must not immediately close it again (flash-and-vanish).
+  if (_sc.open && !_sc.palette?.contains(e.target)
+      && !(e.target.closest && e.target.closest('#bw-mobile-toolbar'))) {
+    _close();
+  }
 });
 
 
