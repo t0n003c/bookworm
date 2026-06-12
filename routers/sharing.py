@@ -245,8 +245,7 @@ def _is_demo(request: Request) -> bool:
     return bool(request.session.get("is_demo"))
 
 
-def _uid(request: Request) -> int:
-    return request.session["user_id"]
+from core.deps import session_user_id as _uid
 
 
 def _base_url(request: Request) -> str:

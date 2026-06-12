@@ -29,11 +29,11 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    return int(uid)
+    return current_user_id(request, detail=None)
 
 
 # ── Feed CRUD ─────────────────────────────────────────────────────────────────

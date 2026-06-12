@@ -74,8 +74,7 @@ async def _build_widget_sources(feeds: list[dict], uid: int) -> dict:
 _POOL = ThreadPoolExecutor(max_workers=4)   # small pool for sync URL fetches
 
 
-def _uid(request: Request) -> int:
-    return request.session["user_id"]
+from core.deps import session_user_id as _uid
 
 
 async def _sidebar_ctx(uid: int, active_page_id: int | None = None) -> dict:

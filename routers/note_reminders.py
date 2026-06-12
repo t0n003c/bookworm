@@ -15,11 +15,11 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
 
-def _uid(req: Request) -> int:
-    uid = req.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    return uid
+from core.deps import current_user_id
+
+
+def _uid(request: Request) -> int:
+    return current_user_id(request, detail=None)
 
 
 def _err(msg: str, status: int = 400) -> JSONResponse:

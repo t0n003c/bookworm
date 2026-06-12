@@ -58,9 +58,7 @@ from routers.workspace_db_cards import get_db_cards
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-def _uid(request: Request) -> int:
-    """Extract the logged-in user's id from the session."""
-    return request.session["user_id"]
+from core.deps import session_user_id as _uid
 
 
 async def _enforce_type_constraint(

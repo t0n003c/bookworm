@@ -26,11 +26,11 @@ _DEMO_NOOP = Response(status_code=204, headers={"HX-Reswap": "none"})
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    return int(uid)
+    return current_user_id(request, detail=None)
 
 
 def _demo_guard(request: Request):

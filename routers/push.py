@@ -31,11 +31,11 @@ from core.config import settings
 _VAPID_PUBLIC_KEY = settings.vapid_public_key
 
 
-def _uid(req: Request) -> int:
-    uid = req.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return uid
+from core.deps import current_user_id
+
+
+def _uid(request: Request) -> int:
+    return current_user_id(request, detail='Not authenticated')
 
 
 # ── VAPID public key — served to every client, no auth required ───────────────

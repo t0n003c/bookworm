@@ -31,8 +31,7 @@ _VALID_ASPECTS    = frozenset({"1:1", "4:5", "16:9"})
 _VALID_CELL_TYPES = frozenset({"empty", "image", "video", "text"})
 
 
-def _uid(request: Request) -> int:
-    return request.session["user_id"]
+from core.deps import session_user_id as _uid
 
 
 async def _get_grid_page(page_id: int, uid: int) -> dict | None:

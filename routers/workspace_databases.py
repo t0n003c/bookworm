@@ -56,11 +56,11 @@ router = APIRouter(prefix="/workspaces", tags=["workspace-databases"])
 
 # ── auth helper ────────────────────────────────────────────────────────────────
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return int(uid)
+    return current_user_id(request, detail='Not authenticated')
 
 
 # ── ownership guard ────────────────────────────────────────────────────────────

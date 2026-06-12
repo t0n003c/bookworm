@@ -30,8 +30,9 @@ partially layered**, but it has accreted coupling that makes it harder to scale:
    inline in **18 files / 40+ call sites**, with defaults and parsing duplicated
    (`BW_DATA_DIR` built 3×, `BW_MAX_UPLOAD_MB` 3×) and occasionally inconsistent.
    → *Fixed in this pass: `core/config.py`.*
-2. **Duplicated request helpers.** `def _uid(request)` is copy-pasted in **15
-   routers**; ownership/`_demo_guard` patterns are repeated. → *Phase 3.*
+2. **Duplicated request helpers.** `def _uid(request)` was copy-pasted in **17
+   routers** (with accidental variations); ownership/`_demo_guard` patterns are
+   repeated. → *Fixed in this pass: `core/deps.py` (16 routers consolidated).*
 3. **Flat top level.** ~15 modules + a 50-file `routers/` dir live at the repo
    root with no layer boundaries, so dependency direction isn't enforceable.
    → *Phases 4–6.*
@@ -167,9 +168,16 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   intact (foreign_keys=1, WAL). **2b next:** move the schema constants +
   `init_db()` migrations into `db/schema.py` + `db/migrations.py`, re-exporting
   `init_db` from `database.py`.
-- **Phase 3 — Shared request deps.** `core/deps.py` with `current_user_id`,
-  `require_note_owner`, `demo_guard`; delete the 15 duplicate `_uid`s router by
-  router behind the shared helper.
+- **Phase 3 — Shared request deps.** ✅ **Done:** `core/deps.py` with
+  `current_user_id(request, *, detail=…)` (guarded form) and `session_user_id`
+  (strict `session["user_id"]` form). The 17 copy-pasted `_uid`s collapsed onto
+  these two helpers: 4 strict routers alias `session_user_id`; 12 guarded routers
+  delegate to `current_user_id`, each passing its exact 401 `detail` so responses
+  stay byte-identical. `home_ai` is intentionally left (it raises `PermissionError`,
+  caught by its own handlers — different contract). Verified: all 17 `_uid`
+  behaviour-identical (valid→same id; unauth→same exception/status/detail), 351
+  routes, health + smoke. Next: fold the repeated ownership/`_demo_guard` checks
+  into `require_owner`/`demo_guard` deps.
 - **Phase 4 — Introduce `app/` package + shims.** Create the package; move
   cross-cutting infra in; leave thin re-export shims at the old paths so the
   whole app keeps importing as before. Flip the Dockerfile entrypoint last.

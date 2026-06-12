@@ -71,11 +71,11 @@ _ALLOWED_IMG_EXT   = {"jpg", "jpeg", "png", "gif", "webp"}
 _MAX_COVER_MB      = 5
 
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    return int(uid)
+    return current_user_id(request, detail=None)
 
 
 async def _get_trip_page(page_id: int, uid: int):

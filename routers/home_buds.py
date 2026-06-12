@@ -26,11 +26,11 @@ router = APIRouter(prefix="/home/buds")
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401, detail="not logged in")
-    return int(uid)
+    return current_user_id(request, detail='not logged in')
 
 
 async def _require_bud_widget(widget_id: int, user_id: int) -> None:

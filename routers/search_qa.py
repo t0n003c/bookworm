@@ -185,11 +185,11 @@ _STOP_WORDS = frozenset({
 })
 
 
+from core.deps import current_user_id
+
+
 def _uid(request: Request) -> int:
-    uid = request.session.get("user_id")
-    if not uid:
-        raise HTTPException(status_code=401)
-    return uid
+    return current_user_id(request, detail=None)
 
 
 def _build_fts_query(q: str, or_mode: bool = False) -> str | None:
