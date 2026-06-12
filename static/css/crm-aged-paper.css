@@ -1,0 +1,194 @@
+/* ============================================================================
+   crm-aged-paper.css — "aged page in a book" treatment for the CRM contact
+   detail view (home-page-crm-detail.js).
+
+   Tea-stained warm parchment · balanced intensity · detail view only.
+   Everything is scoped under .crm-aged-wrap so it can never leak into the rest
+   of the app. The paper itself is pure CSS: an SVG feTurbulence grain tile
+   (soft-light blended) over a sepia base + radial foxing stains + an inset
+   vignette — resolution-independent, theme-able, zero image assets.
+   ============================================================================ */
+
+.crm-aged-wrap {
+  /* Full-bleed warm "desk" backdrop. -1rem cancels #crm-main's p-4 so the
+     desk reaches the panel edges; the parchment sheet floats on top. */
+  margin: -1rem;
+  padding: 2rem 1.25rem 3rem;
+  min-height: 100%;
+  background:
+    radial-gradient(120% 80% at 50% -10%, #3a2c1d 0%, transparent 60%),
+    linear-gradient(180deg, #241a10 0%, #17110a 100%);
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  color: #3a2c1a;
+  -webkit-font-smoothing: antialiased;
+}
+
+.crm-aged-page {
+  position: relative;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 2.4rem 2.6rem 2.8rem 3.2rem;     /* extra left pad clears the gutter */
+  border-radius: 4px;
+  color: #3a2c1a;
+  overflow-wrap: break-word;                /* never let long words push width out */
+  background-color: #e7d5ad;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23p)'/%3E%3C/svg%3E"),
+    radial-gradient(120% 90% at 50% 0%,  rgba(255,250,235,.60), rgba(255,250,235,0) 55%),
+    radial-gradient(90% 70% at 82% 22%,  rgba(150,110,60,.13), transparent 60%),
+    radial-gradient(80% 70% at 12% 86%,  rgba(120,84,38,.13),  transparent 60%),
+    radial-gradient(55% 45% at 68% 74%,  rgba(120,84,38,.10),  transparent 60%);
+  background-size: 200px 200px, auto, auto, auto, auto;
+  background-blend-mode: soft-light, normal, normal, normal, normal;
+  box-shadow:
+    0 18px 40px rgba(0,0,0,.45),
+    0 2px 6px rgba(0,0,0,.30),
+    inset 0 0 140px rgba(90,60,25,.30),
+    inset 0 0 36px rgba(90,60,25,.18);
+}
+
+/* Left binding gutter — reads as the spine of an open book. */
+.crm-aged-page::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 46px;
+  border-radius: 4px 0 0 4px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(60,40,18,.42), rgba(60,40,18,.10) 48%, transparent);
+}
+/* Soft right-edge page-curl darkening. */
+.crm-aged-page::after {
+  content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 30px;
+  border-radius: 0 4px 4px 0; pointer-events: none;
+  background: linear-gradient(270deg, rgba(60,40,18,.22), transparent);
+}
+.crm-aged-page > * { position: relative; z-index: 1; }
+
+/* Tighter on phones so the parchment keeps usable width (no right-edge cutoff). */
+@media (max-width: 560px) {
+  .crm-aged-wrap { padding: 1.25rem .75rem 2rem; }
+  .crm-aged-page { padding: 1.5rem 1.2rem 1.8rem 2rem; }
+  .crm-aged-page::before { width: 30px; }
+  .crm-aged-hero { gap: 1rem; }
+  .crm-aged-name { font-size: 1.6rem; }
+  .crm-aged-photo img, .crm-aged-photo .ph { width: 76px; height: 76px; }
+}
+
+/* ── Top bar ───────────────────────────────────────────────────────────── */
+.crm-aged-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: 1.4rem; }
+.crm-aged-spacer { flex: 1; }
+.crm-aged-back {
+  font-family: inherit; font-size: .98rem; font-style: italic; letter-spacing: .02em;
+  color: #7a5a2a; background: none; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .35rem; padding: .2rem 0;
+}
+.crm-aged-back:hover { color: #3a2c1a; text-decoration: underline; }
+.crm-aged-btn {
+  font-family: inherit; font-size: .82rem; font-weight: 700; letter-spacing: .04em;
+  padding: .42rem .9rem; border-radius: 3px; cursor: pointer; color: #3a2c1a;
+  background: rgba(255,250,235,.40); border: 1px solid #9c7c4a;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+}
+.crm-aged-btn:hover { background: rgba(255,250,235,.70); }
+.crm-aged-btn.danger { color: #7c2d1a; border-color: #a4533a; }
+.crm-aged-btn.danger:hover { background: rgba(164,83,58,.12); }
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+.crm-aged-hero { display: flex; gap: 1.6rem; align-items: flex-start; padding-bottom: 1.3rem; }
+.crm-aged-photo {
+  position: relative; flex-shrink: 0; padding: 7px; background: #fbf3df;
+  border: 1px solid #cdb98c; box-shadow: 0 4px 12px rgba(0,0,0,.35);
+  transform: rotate(-2.2deg);
+}
+.crm-aged-photo img, .crm-aged-photo .ph {
+  display: block; width: 92px; height: 92px; object-fit: cover;
+  filter: sepia(.45) contrast(.95) brightness(1.02);
+}
+.crm-aged-photo .ph {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.6rem; background: #ece0c2; filter: none;
+}
+/* Mounting corners on the tipped-in photo. */
+.crm-aged-photo::before, .crm-aged-photo::after {
+  content: ""; position: absolute; width: 15px; height: 15px;
+  border: 2px solid rgba(90,60,25,.5);
+}
+.crm-aged-photo::before { top: 2px; left: 2px; border-right: 0; border-bottom: 0; }
+.crm-aged-photo::after { bottom: 2px; right: 2px; border-left: 0; border-top: 0; }
+
+.crm-aged-name { font-size: 2rem; font-weight: 700; line-height: 1.1; color: #2c2012; letter-spacing: .01em; }
+.crm-aged-company { font-style: italic; color: #6b573a; margin-top: .15rem; font-size: 1.02rem; }
+/* block flow (not flex) so long emails/addresses wrap instead of overflowing */
+.crm-aged-contact { margin-top: .6rem; font-size: .9rem; line-height: 1.7; }
+.crm-aged-contact a, .crm-aged-contact span {
+  color: #5a4226; display: inline-block; margin: 0 1.1rem .15rem 0;
+  max-width: 100%; overflow-wrap: anywhere; text-decoration: none;
+}
+.crm-aged-contact a:hover { color: #3a2c1a; text-decoration: underline; }
+
+/* ── Rubber-stamp pills (tags + relationships) ─────────────────────────── */
+.crm-aged-stamps { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .85rem; }
+.crm-aged-stamp {
+  font-family: inherit; font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: #7a3a26; padding: .14rem .55rem; border-radius: 3px;
+  border: 1.5px solid #a4533a; background: rgba(164,83,58,.06); transform: rotate(-1.5deg);
+}
+.crm-aged-stamp:nth-child(even) {
+  transform: rotate(1.6deg); color: #3a5a2a; border-color: #5a7a3a; background: rgba(90,122,58,.06);
+}
+
+/* ── Divider rule ──────────────────────────────────────────────────────── */
+.crm-aged-rule {
+  height: 0; border: 0; border-top: 1px solid #b89b6a; opacity: .75; margin: 1.4rem 0;
+  box-shadow: 0 2px 0 -1px rgba(184,155,106,.4);
+}
+
+/* ── Sections / entries ────────────────────────────────────────────────── */
+/* minmax(0,1fr) (not 1fr) so a wide child can't blow the column out — BookWorm rule */
+.crm-aged-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
+@media (min-width: 760px) { .crm-aged-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.crm-aged-col { display: flex; flex-direction: column; gap: 1.6rem; min-width: 0; }
+.crm-aged-section { min-width: 0; }
+.crm-aged-section.full { margin-top: 1.6rem; }
+.crm-aged-h {
+  font-family: inherit; font-size: .8rem; font-weight: 700; letter-spacing: .18em;
+  text-transform: uppercase; color: #7a5a2a; margin-bottom: .7rem;
+  display: flex; align-items: center; gap: .5rem;
+  border-bottom: 2px solid rgba(122,90,42,.40); padding-bottom: .3rem;
+}
+.crm-aged-entry { padding: .55rem 0; border-bottom: 1px dotted rgba(122,90,42,.35); }
+.crm-aged-entry:last-child { border-bottom: 0; }
+.crm-aged-entry-label {
+  font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+  color: #9a7a4a; margin-bottom: .15rem;
+}
+.crm-aged-entry-value { font-size: .95rem; color: #3a2c1a; line-height: 1.45; overflow-wrap: anywhere; }
+.crm-aged-empty { font-style: italic; color: #9a7a4a; font-size: .85rem; }
+
+.crm-aged-link { color: #7a3a1a; text-decoration: underline; }
+.crm-aged-link:hover { color: #3a2c1a; }
+.crm-aged-chip {
+  display: inline-block; font-size: .72rem; padding: .1rem .45rem; margin: 0 .2rem .2rem 0;
+  border-radius: 3px; color: #5a4226; border: 1px solid #b89b6a; background: rgba(255,250,235,.4);
+}
+
+.crm-aged-deal { display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: .5rem 0; border-bottom: 1px dotted rgba(122,90,42,.35); }
+.crm-aged-deal:last-child { border-bottom: 0; }
+.crm-aged-deal-title { font-size: .95rem; font-weight: 600; color: #2c2012; }
+.crm-aged-deal-stage { font-size: .75rem; color: #9a7a4a; font-style: italic; }
+.crm-aged-deal-val { font-size: .95rem; font-weight: 700; color: #4a6a2a; white-space: nowrap; }
+
+.crm-aged-rem { display: flex; gap: .55rem; align-items: flex-start;
+  padding: .5rem 0; border-bottom: 1px dotted rgba(122,90,42,.35); }
+.crm-aged-rem:last-child { border-bottom: 0; }
+.crm-aged-rem .ico { font-size: 1rem; line-height: 1; margin-top: .1rem; }
+.crm-aged-rem-title { font-size: .92rem; font-weight: 600; color: #2c2012; }
+.crm-aged-rem-meta { font-size: .75rem; color: #9a7a4a; }
+
+/* ── Best-effort retint for async-injected children (conversations widget)
+   so modern Tailwind tones blend into the parchment instead of clashing. ── */
+.crm-aged-page :where(.text-gray-400, .text-gray-500, .text-gray-600,
+  .dark\:text-zinc-400, .dark\:text-zinc-500) { color: #9a7a4a !important; }
+.crm-aged-page :where(.text-gray-700, .text-gray-800, .text-gray-900,
+  .dark\:text-zinc-100, .dark\:text-zinc-200) { color: #3a2c1a !important; }
+.crm-aged-page :where(.bg-white, .dark\:bg-zinc-900, .dark\:bg-zinc-800) { background: transparent !important; }
+.crm-aged-page :where(.border-gray-100, .border-gray-200,
+  .dark\:border-zinc-700, .dark\:border-zinc-800) { border-color: rgba(122,90,42,.30) !important; }
