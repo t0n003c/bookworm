@@ -511,6 +511,56 @@ async def upload_card_attr_file(
     return JSONResponse({"ok": True, "url": url, "name": original_name, "upload_id": upload_id})
 
 
+@router.post("/{ws_id}/db/cards/{card_id}/upload-note-file")
+async def upload_card_note_file(
+    ws_id: int,
+    card_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Upload a file attached inline in a card's note body (via the /file slash
+    command). Saves to UPLOAD_DIR/db-note-files/ and returns {ok, url, name, mime}.
+
+    Mirrors upload_card_attr_file but is not tied to an attribute — the JS caller
+    inserts a clickable file chip into the note HTML referencing the returned url.
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)
+
+    data = await file.read()
+    if len(data) > _MAX_ATTR_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+
+    original_name = file.filename or "file"
+    suffix = Path(original_name).suffix.lower()
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+
+    note_dir = UPLOAD_DIR / "db-note-files"
+    note_dir.mkdir(parents=True, exist_ok=True)
+    (note_dir / stored_name).write_bytes(data)
+
+    mime = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    url = f"/uploads/db-note-files/{stored_name}"
+
+    # Register in the uploads gallery (best-effort — links to the card, no attr).
+    upload_id: Optional[int] = None
+    uploads_page_id = await _first_uploads_page_id(user_id)
+    if uploads_page_id:
+        upload_id = await create_page_upload(
+            page_id=uploads_page_id,
+            user_id=user_id,
+            filename=f"db-note-files/{stored_name}",  # relative to UPLOAD_DIR
+            original_name=original_name,
+            mime_type=mime,
+            size=len(data),
+            db_card_id=card_id,
+        )
+
+    return JSONResponse(
+        {"ok": True, "url": url, "name": original_name, "mime": mime, "upload_id": upload_id}
+    )
+
+
 @router.delete("/{ws_id}/db/cards/{card_id}/attrs/{attr_id}/files/{upload_id}")
 async def delete_card_attr_file(
     ws_id: int,

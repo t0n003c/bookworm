@@ -367,3 +367,43 @@ span[data-bw-ti]::before {
 @container (max-width: 154px) {
   .clock-sec { display: none; }
 }
+
+/* ── Database card note placeholder ───────────────────────────────────────── */
+/* The note contenteditable shows a hint when empty. JS toggles .db-note-empty  */
+/* (textContent-based, so stray <br> after deleting still counts as empty); the */
+/* :not(:focus) gate hides it the instant the line is focused and restores it   */
+/* on blur when no text remains.                                                */
+[data-db-note].db-note-empty:not(:focus)::before {
+  content: attr(data-placeholder);
+  color: #d1d5db;
+  font-style: italic;
+  pointer-events: none;
+}
+.dark [data-db-note].db-note-empty:not(:focus)::before {
+  color: #52525b;
+}
+
+/* ── Database card note: tables (the /table slash command inserts plain HTML;
+   the note editor is [data-db-note], not .md-body, so it needs its own rules) ─ */
+[data-db-note] table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .875rem; }
+[data-db-note] th { background: #f3f4f6; font-weight: 700; text-align: left;
+                    padding: .4rem .75rem; border: 1px solid #d1d5db; }
+[data-db-note] td { padding: .4rem .75rem; border: 1px solid #d1d5db; vertical-align: top; height: 2.25rem; }
+.dark [data-db-note] th { background: #27272a; border-color: #3f3f46; }
+.dark [data-db-note] td { border-color: #3f3f46; }
+/* Wide tables scroll horizontally instead of blowing out the editor width. */
+[data-db-note] .bw-tbl-scroll { overflow-x: auto; max-width: 100%; margin: .75rem 0; }
+[data-db-note] .bw-tbl-scroll table { margin: 0; }
+
+/* ── Database card note: file attachment chip (the /file slash command) ─────── */
+.bw-file-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .08rem .5rem; margin: 0 .1rem;
+  border: 1px solid #d1d5db; border-radius: .5rem; background: #f9fafb;
+  color: #0053e2; font-size: .85em; line-height: 1.6; text-decoration: none;
+  cursor: pointer; vertical-align: baseline; white-space: nowrap;
+}
+.bw-file-chip:hover { background: #eef2ff; border-color: #0053e2; }
+.bw-file-chip-ico { font-size: .9em; }
+.dark .bw-file-chip { background: #27272a; border-color: #3f3f46; color: #6cb6ff; }
+.dark .bw-file-chip:hover { background: #1f2a44; border-color: #6cb6ff; }

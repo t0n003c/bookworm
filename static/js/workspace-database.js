@@ -3026,6 +3026,25 @@ function _dbInitStyles() {
     '.dark [data-db-note] pre code .hljs-bullet{color:#eac55f;}',
     '.dark [data-db-note] pre code .hljs-addition{color:#b4f1b4;background:#1b4721;}',
     '.dark [data-db-note] pre code .hljs-deletion{color:#ffd8d3;background:#78191b;}',
+    /* ── YAML readability — keys/strings/numbers were too close in the GitHub
+       palette (keys & numbers both blue). Scope distinct colours to YAML so
+       keys=purple, strings=green, numbers/bools=blue, comments=gray.   ── */
+    '[data-db-note] pre code.language-yaml .hljs-attr,',
+    '[data-db-note] pre code.language-yml .hljs-attr{color:#6f42c1;font-weight:600;}',
+    '[data-db-note] pre code.language-yaml .hljs-string,',
+    '[data-db-note] pre code.language-yml .hljs-string{color:#1a7f37;}',
+    '[data-db-note] pre code.language-yaml .hljs-number,',
+    '[data-db-note] pre code.language-yaml .hljs-literal,',
+    '[data-db-note] pre code.language-yml .hljs-number,',
+    '[data-db-note] pre code.language-yml .hljs-literal{color:#0550ae;}',
+    '.dark [data-db-note] pre code.language-yaml .hljs-attr,',
+    '.dark [data-db-note] pre code.language-yml .hljs-attr{color:#d2a8ff;font-weight:600;}',
+    '.dark [data-db-note] pre code.language-yaml .hljs-string,',
+    '.dark [data-db-note] pre code.language-yml .hljs-string{color:#7ee787;}',
+    '.dark [data-db-note] pre code.language-yaml .hljs-number,',
+    '.dark [data-db-note] pre code.language-yaml .hljs-literal,',
+    '.dark [data-db-note] pre code.language-yml .hljs-number,',
+    '.dark [data-db-note] pre code.language-yml .hljs-literal{color:#79c0ff;}',
     /* line numbers — grid layout when data-line-nums attr present on pre */
     '[data-db-note] pre[data-line-nums]{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto;}',
     '[data-db-note] pre[data-line-nums] .db-code-hdr{grid-column:1/-1;}',
@@ -3775,6 +3794,21 @@ function _dbToggleLineNums(pre) {
  * Serialise noteEl to a clean HTML string suitable for saving.
  * Strips all transient elements (header bars) injected by _dbInjectCodeHeader.
  */
+// True when a note CE has no meaningful content (placeholder should show).
+// Ignores stray <br>/empty <p> the browser leaves behind after deleting text.
+function _dbNoteIsEmpty(el) {
+  if (!el) return true;
+  if (el.querySelector('img,table,pre,hr,iframe,video,ul,ol,blockquote')) return false;
+  return el.textContent.replace(/[​ ]/g, '').trim() === '';
+}
+
+// Toggle the empty-state class so CSS shows/hides the placeholder. The CSS
+// also keys on :focus, so the placeholder vanishes the moment the line is
+// focused and returns on blur when the note is empty.
+function _dbNotePlaceholderSync(el) {
+  if (el) el.classList.toggle('db-note-empty', _dbNoteIsEmpty(el));
+}
+
 function _dbNoteHtml(el) {
   var clone = el.cloneNode(true);
   clone.querySelectorAll('[data-db-transient]').forEach(function(n) { n.remove(); });
@@ -3793,12 +3827,21 @@ function _dbNoteHtml(el) {
       code.removeAttribute('data-highlighted');
     }
   });
+  // Normalise an effectively-empty note to '' so it persists clean and the
+  // :empty-based placeholder logic stays consistent across reloads.
+  if (!clone.querySelector('img,table,pre,hr,iframe,video,ul,ol,blockquote') &&
+      clone.textContent.replace(/[​ ]/g, '').trim() === '') {
+    return '';
+  }
   return clone.innerHTML;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DB NOTE — BLOCK GRIP DnD + CLICK-FOR-MENU
 ═══════════════════════════════════════════════════════════════════════════ */
+
+// Touch devices have no hover, so grips stay visible there (matches the note page).
+var _DB_GRIP_TOUCH = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
 
 function _dbAddGrip(el) {
   el.style.position = 'relative';
@@ -3811,8 +3854,8 @@ function _dbAddGrip(el) {
   grip.style.cssText =
     'position:absolute;left:-1.6rem;top:50%;transform:translateY(-50%);'
     + 'width:1.4rem;text-align:center;cursor:grab;pointer-events:auto;'
-    + 'color:#d1d5db;font-size:.9rem;line-height:1;user-select:none;'
-    + 'opacity:0;transition:opacity .12s,color .12s;border-radius:3px;';
+    + 'color:' + (_DB_GRIP_TOUCH ? '#9ca3af' : '#d1d5db') + ';font-size:.9rem;line-height:1;user-select:none;'
+    + 'opacity:' + (_DB_GRIP_TOUCH ? '0.55' : '0') + ';transition:opacity .12s,color .12s;border-radius:3px;';
   el.insertBefore(grip, el.firstChild);
   if (!el._dbGripListened) {
     el._dbGripListened = true;
@@ -3829,12 +3872,27 @@ function _dbInjectGrips(noteEl) {
   noteEl.querySelectorAll('li').forEach(function(li) { _dbAddGrip(li); });
 }
 
+// Lightweight pass for the input handler: add a grip only to blocks/list items
+// that don't already have one, so lines typed after the panel opened still get
+// a handle — without removing/re-adding existing grips (which could jostle the
+// caret mid-typing).
+function _dbEnsureGrips(noteEl) {
+  if (!noteEl) return;
+  var blocks = Array.prototype.slice.call(noteEl.children);
+  Array.prototype.push.apply(blocks, Array.prototype.slice.call(noteEl.querySelectorAll('li')));
+  blocks.forEach(function(el) {
+    if (el.nodeType !== 1 || el.hasAttribute('data-db-grip')) return;   // skip stray grip spans
+    if (el.querySelector(':scope > [data-db-grip]')) return;             // already gripped
+    _dbAddGrip(el);
+  });
+}
+
 function _dbGripEnter(e) {
   var grip = e.currentTarget.querySelector('[data-db-grip]');
   if (grip) { grip.style.opacity = '1'; grip.style.color = '#9ca3af'; }
 }
 function _dbGripLeave(e) {
-  if (_dbGripDragging) return;   /* don't fade while dragging */
+  if (_dbGripDragging || _DB_GRIP_TOUCH) return;   /* keep visible while dragging / on touch */
   var grip = e.currentTarget.querySelector('[data-db-grip]');
   if (grip) { grip.style.opacity = '0'; grip.style.color = '#d1d5db'; }
 }
@@ -4103,6 +4161,13 @@ function _dbAttachNoteTools(noteEl) {
 
   /* ── Click on empty space below content — append a paragraph ---- */
   noteEl.addEventListener('click', function(e) {
+    /* File chip — show an Open / Download menu (checked BEFORE generic links) */
+    var fchip = e.target.closest('a.bw-file-chip,[data-bw-file]');
+    if (fchip) {
+      e.preventDefault();
+      _dbFileChipMenu(fchip, e);
+      return;
+    }
     /* Link click — open in new tab (must check BEFORE empty-space check) */
     var a = e.target.closest('a[href]');
     if (a) {
@@ -6263,12 +6328,13 @@ function _dbRenderDetailPanel(card) {
     + _dbVideoEmbedHtml(card)
     // Notes area
     + '<div id="db-detail-note-' + card.id + '" contenteditable="true" data-db-note="1"'
+    + ' data-placeholder="Start writing\u2026 (type / for commands)"'
     + ' class="min-h-[200px] outline-none text-sm text-gray-800 dark:text-zinc-100"'
     + ' style="padding-left:1.6rem;margin-left:-1.6rem;overflow:visible;"'
     + ' oninput="_dbDetailNoteInput(' + card.id + ',this)"'
     + ' onblur="_dbDetailNoteBlur(' + card.id + ',this)"'
     + ' aria-label="Card notes">'
-    + (card.note_content || '<p style="color:#d1d5db;font-style:italic;">Start writing\u2026 (type / for commands)</p>')
+    + (card.note_content || '')
     + '</div>'
     // ── Share row ────────────────────────────────────────────────────────────
     + '<div class="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100 dark:border-zinc-800">'
@@ -6300,6 +6366,12 @@ function _dbRenderDetailPanel(card) {
   _dbVimeoGuardSetup(dp);
   var noteEl = dp.querySelector('#db-detail-note-' + card.id);
   _dbAttachNoteTools(noteEl);
+  _dbNotePlaceholderSync(noteEl);   // show placeholder when the note starts empty
+  // Refresh inline page-link chip labels (no click-nav inside the editor).
+  if (typeof window.bwHydratePageLinks === 'function') {
+    window.bwHydratePageLinks(noteEl, { wireClick: false });
+  }
+  if (window.bwTableTools) window.bwTableTools.attach(noteEl);  // table resize handle
   /* Attach drag-and-drop for attr row reordering */
   _dbAttachAttrDrag(card.id);
   _dbAttachAttrDragTouch(card.id);   // touch equivalent (mobile)
@@ -6322,6 +6394,8 @@ function _dbDetailTitleBlur(cardId, el) {
 }
 
 function _dbDetailNoteInput(cardId, el) {
+  _dbNotePlaceholderSync(el);   // keep empty-state in sync as the user types/deletes
+  _dbEnsureGrips(el);           // give freshly typed lines their drag/menu handle
   // Snapshot the current HTML on every keystroke — no DOM dependency later.
   var html = _dbNoteHtml(el);
   _dbDirtyNote = { cardId: cardId, html: html };
@@ -6338,7 +6412,142 @@ function _dbDetailNoteBlur(cardId, el) {
     delete _dbSaveTimers['detail_' + cardId];
   }
   _dbSaveNote(cardId, _dbNoteHtml(el));
+  _dbNotePlaceholderSync(el);   // re-show placeholder if the user left it empty
   _dbDirtyNote = null;   // saved — clear dirty state
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTE FILE ATTACHMENTS  —  /file slash command + Open/Download chip menu
+═══════════════════════════════════════════════════════════════════════════ */
+
+// Called by the shared slash palette (slash_commands.js) for the /file command,
+// which only shows inside database card notes. Uploads the picked file to the
+// card-scoped endpoint, then inserts a clickable chip at the cursor.
+function _dbNoteAttachFile(ce, postDeleteRange) {
+  if (!ce) return;
+  var m = (ce.id || '').match(/db-detail-note-(\d+)/);
+  var cardId = m ? Number(m[1]) : null;
+  if (!cardId) return;
+
+  // Clone the insertion point now — opening the picker changes the selection.
+  var insertRange = null;
+  try { insertRange = postDeleteRange ? postDeleteRange.cloneRange() : null; } catch (e) {}
+
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', function() {
+    var file = inp.files && inp.files[0];
+    if (inp.parentNode) inp.parentNode.removeChild(inp);
+    if (!file) return;
+    _dbToast('Uploading ' + file.name + '…');
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch('/workspaces/' + _dbWsId + '/db/cards/' + cardId + '/upload-note-file', {
+      method: 'POST', body: fd,
+    })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail || 'Upload failed'); });
+      return r.json();
+    })
+    .then(function(data) { _dbInsertFileChip(ce, insertRange, data.url, data.name); })
+    .catch(function(e) { _dbToast('Attach failed: ' + e.message, true); });
+  });
+  inp.click();
+}
+
+// Build + insert the file chip HTML, then fire input so the note autosaves.
+function _dbInsertFileChip(ce, range, url, name) {
+  var esc = function(s) {
+    return String(s == null ? '' : s).replace(/[<>&"]/g, function(ch) {
+      return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch];
+    });
+  };
+  var safeName = esc(name || 'file');
+  var safeUrl  = esc(url || '#');
+  var chip = '<a href="' + safeUrl + '" class="bw-file-chip" data-bw-file="1"'
+           + ' data-name="' + safeName + '" contenteditable="false" title="' + safeName + '">'
+           + '<span class="bw-file-chip-ico" aria-hidden="true">📎</span>'
+           + '<span class="bw-file-chip-name">' + safeName + '</span></a>&nbsp;';
+
+  ce.focus();
+  var sel = window.getSelection();
+  var inserted = false;
+  if (range && ce.contains(range.startContainer)) {
+    try {
+      sel.removeAllRanges();
+      sel.addRange(range);
+      inserted = document.execCommand('insertHTML', false, chip);
+    } catch (e) { inserted = false; }
+  }
+  if (!inserted) {
+    // Fallback: append a fresh paragraph with the chip at the note's end.
+    var p = document.createElement('p');
+    p.innerHTML = chip;
+    ce.appendChild(p);
+  }
+  ce.dispatchEvent(new Event('input'));  // → _dbDetailNoteInput: autosave + placeholder sync
+}
+window._dbNoteAttachFile = _dbNoteAttachFile;
+
+// Small popover anchored at the click: Open (new tab) or Download.
+function _closeDbFileMenu() {
+  var m = document.getElementById('_db-file-menu');
+  if (m) m.remove();
+}
+function _dbFileChipMenu(chip, evt) {
+  _closeDbFileMenu();
+  var url  = chip.getAttribute('href') || '#';
+  var name = chip.getAttribute('data-name') || 'file';
+  var dark = document.documentElement.classList.contains('dark');
+
+  var menu = document.createElement('div');
+  menu.id = '_db-file-menu';
+  menu.style.cssText = 'position:fixed;z-index:10002;min-width:170px;'
+    + 'background:' + (dark ? '#27272a' : '#fff') + ';'
+    + 'border:1px solid ' + (dark ? '#3f3f46' : '#e5e7eb') + ';'
+    + 'border-radius:0.6rem;box-shadow:0 10px 30px rgba(0,0,0,.22);'
+    + 'padding:0.35rem;font-size:0.85rem;';
+  var x = (evt && evt.clientX != null) ? evt.clientX : 120;
+  var y = (evt && evt.clientY != null) ? evt.clientY : 120;
+  menu.style.left = Math.max(8, Math.min(x, window.innerWidth  - 190)) + 'px';
+  menu.style.top  = Math.max(8, Math.min(y, window.innerHeight - 130)) + 'px';
+
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'padding:0.3rem 0.6rem 0.45rem;font-weight:600;font-size:0.72rem;'
+    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;'
+    + 'color:' + (dark ? '#a1a1aa' : '#6b7280') + ';';
+  hdr.textContent = name;
+  menu.appendChild(hdr);
+
+  function row(label, icon, fn) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = 'display:flex;align-items:center;gap:0.55rem;width:100%;text-align:left;'
+      + 'padding:0.45rem 0.6rem;border:none;background:none;cursor:pointer;border-radius:0.4rem;'
+      + 'color:' + (dark ? '#e4e4e7' : '#27272a') + ';font-size:0.85rem;';
+    b.innerHTML = '<span aria-hidden="true">' + icon + '</span><span>' + label + '</span>';
+    b.onmouseenter = function() { b.style.background = dark ? '#3f3f46' : '#f3f4f6'; };
+    b.onmouseleave = function() { b.style.background = 'none'; };
+    b.onclick = function(ev) { ev.stopPropagation(); fn(); _closeDbFileMenu(); };
+    menu.appendChild(b);
+  }
+  row('Open', '🔍', function() { window.open(url, '_blank', 'noopener,noreferrer'); });
+  row('Download', '⬇️', function() {
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  document.body.appendChild(menu);
+  // Close on the next outside click / Escape.
+  setTimeout(function() {
+    document.addEventListener('click', _closeDbFileMenu, { once: true });
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape') { _closeDbFileMenu(); document.removeEventListener('keydown', onEsc); }
+    });
+  }, 0);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

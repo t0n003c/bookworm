@@ -974,6 +974,9 @@ function uplOpenUploadModal() {
   // Focus the drop zone for keyboard users
   const zone = document.getElementById('upl-drop-zone');
   if (zone) setTimeout(() => zone.focus(), 50);
+  // Mobile: now that the drop zone is visible, add the "Take photo" button.
+  // Scan document (the file input lives just outside the backdrop).
+  if (typeof window.bwCameraScan === 'function') window.bwCameraScan();
 }
 
 function _uplCloseModal() {

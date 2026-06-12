@@ -1,4 +1,30 @@
 <div>
+  {% if note.is_inline_page %}
+  <!-- Inline sub-page: back-link to the parent note or database -->
+  <div class="mb-3">
+    {% if inline_parent %}
+    <button type="button" onclick="window._bwOpenPage({{ inline_parent.id }}, false)"
+      class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 hover:text-wblue transition"
+      aria-label="Back to parent page">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+      {%- if inline_parent.icon %}<span aria-hidden="true">{{ inline_parent.icon }}</span>{% endif %}
+      <span class="truncate max-w-[16rem]">{{ inline_parent.title }}</span>
+    </button>
+    {% elif note.parent_card_id %}
+    <button type="button"
+      hx-post="/workspaces/{{ note.workspace_id }}/open" hx-target="#detail-panel" hx-swap="innerHTML"
+      class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 hover:text-wblue transition"
+      aria-label="Back to database">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+      <span>Back to database</span>
+    </button>
+    {% endif %}
+  </div>
+  {% endif %}
   <!-- Header -->
   <div class="flex items-start justify-between mb-4">
     <div class="flex-1 min-w-0">
@@ -6,11 +32,13 @@
         {%- if note.icon %}<span aria-hidden="true" class="mr-1">{{ note.icon }}</span>{%- endif -%}
         {{ note.title }}
       </h2>
+      {% if not note.is_inline_page %}
       <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-zinc-400">
         <time datetime="{{ note.meeting_date }}">&#128197; Date: <strong>{{ note.meeting_date }}</strong></time>
         <span>·</span>
         <time datetime="{{ note.updated_at }}">Updated {{ note.updated_at[:10] }}</time>
       </div>
+      {% endif %}
     </div>
     <button onclick="closePanel()" class="text-gray-400 hover:text-gray-700 transition ml-3 flex-shrink-0" aria-label="Close panel">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -20,7 +48,7 @@
   </div>
 
   <!-- Categories -->
-  {% if note.categories %}
+  {% if note.categories and not note.is_inline_page %}
   <div class="flex flex-wrap gap-1.5 mb-4">
     {% for cat in note.categories %}
     <span
@@ -35,7 +63,7 @@
   {% endif %}
 
   <!-- Attributes -->
-  {% if note.attributes %}
+  {% if note.attributes and not note.is_inline_page %}
   <div class="bg-gray-50 dark:bg-zinc-900/50 rounded-lg border border-gray-200 dark:border-zinc-700 p-3 mb-4">
     <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Attributes</h3>
     <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -72,9 +100,14 @@
         // ADD_ATTR style: lets color/highlight/font-size spans pass through
         el.innerHTML = DOMPurify.sanitize(marked.parse(md), {
           ADD_TAGS: ['mark'],
-          ADD_ATTR: ['style', 'target', 'rel'],
+          ADD_ATTR: ['style', 'target', 'rel', 'data-note-id'],
           FORCE_BODY: true,
         });
+
+        // ── Inline page-link chips: refresh labels + wire click-to-open ──────
+        if (typeof window.bwHydratePageLinks === 'function') {
+          window.bwHydratePageLinks(el);
+        }
 
         // Wrap every <table> in a .bw-tbl-scroll div so wide tables scroll
         // horizontally without overflowing the note panel.

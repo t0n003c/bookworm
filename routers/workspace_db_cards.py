@@ -73,7 +73,13 @@ async def get_db_cards(db_id: int, user_id: int) -> list[dict]:
 
 
 async def create_db_card(db_id: int, user_id: int, title: str = "Untitled") -> dict:
-    """Insert a new card and return the full card dict (attrs=[])."""
+    """Insert a new card, inherit the workspace's existing attribute schema
+    (with empty values), and return the full card dict with those attrs.
+
+    Attributes are stored per-card, but the workspace's distinct attr_keys form
+    a shared schema (kept in sync by sync_attr_to_workspace). A new card copies
+    that schema so it lines up with existing cards instead of starting blank.
+    """
     async with get_db() as db:
         cur_sort = await db.execute(
             "SELECT COALESCE(MAX(sort_order), -10) FROM db_cards WHERE db_id = ?",
@@ -86,6 +92,30 @@ async def create_db_card(db_id: int, user_id: int, title: str = "Untitled") -> d
             (db_id, user_id, title, new_sort),
         )
         new_id = cur.lastrowid
+
+        # Inherit the workspace's attribute schema. SQLite's bare-column rule
+        # pairs attr_type/options/visibility with the MIN(sort_order) row, so the
+        # representative definition is deterministic. Values start empty.
+        schema = await db.execute(
+            "SELECT attr_key, attr_type, attr_options, visibility, "
+            "       MIN(sort_order) AS sort_order "
+            "FROM db_card_attrs "
+            "WHERE card_id IN ("
+            "    SELECT id FROM db_cards WHERE db_id=? AND user_id=? AND id != ?"
+            ") "
+            "GROUP BY attr_key "
+            "ORDER BY sort_order, attr_key",
+            (db_id, user_id, new_id),
+        )
+        for s in await schema.fetchall():
+            await db.execute(
+                "INSERT INTO db_card_attrs "
+                "(card_id, attr_key, attr_value, attr_type, attr_options, sort_order, visibility) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (new_id, s["attr_key"], "", s["attr_type"], s["attr_options"],
+                 s["sort_order"], s["visibility"] or "always"),
+            )
+
         await db.commit()
         fetch = await db.execute(
             "SELECT id, db_id, user_id, title, cover_url, cover_upload_id, note_content, "
@@ -93,9 +123,28 @@ async def create_db_card(db_id: int, user_id: int, title: str = "Untitled") -> d
             "FROM db_cards WHERE id = ?",
             (new_id,),
         )
-        row = await fetch.fetchone()
-        card = dict(row)
-        card["attrs"] = []
+        card = dict(await fetch.fetchone())
+
+        # Return the inherited attrs nested so the UI renders them immediately
+        # (shape mirrors _collapse_card_rows()).
+        attr_cur = await db.execute(
+            "SELECT id, attr_key, attr_value, attr_type, attr_options, "
+            "       visibility, sort_order "
+            "FROM db_card_attrs WHERE card_id=? ORDER BY sort_order, id",
+            (new_id,),
+        )
+        card["attrs"] = [
+            {
+                "id":           a["id"],
+                "attr_key":     a["attr_key"],
+                "attr_value":   a["attr_value"],
+                "attr_type":    a["attr_type"],
+                "attr_options": a["attr_options"],
+                "sort_order":   a["sort_order"],
+                "visibility":   a["visibility"] or "always",
+            }
+            for a in await attr_cur.fetchall()
+        ]
         return card
 
 

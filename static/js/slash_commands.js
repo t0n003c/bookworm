@@ -325,17 +325,51 @@ const SLASH_COMMANDS = [
            </svg>`,
     snippet: '| Col 1 | Col 2 | Col 3 |\n| ----- | ----- | ----- |\n|       |       |       |\n|       |       |       |\n',
     cursorFromStart: 56,
-    // CE mode: delegate to the same modal the toolbar button uses.
-    // showTableModal() snapshots the CE selection before focus leaves.
+    // CE mode: delegate to the same modal the toolbar button uses when it
+    // exists (note form). Editors without that modal (e.g. database card
+    // notes) fall back to inserting a default 3×2 table directly.
     action: (ce, postDeleteRange) => {
-      // Restore cursor to post-delete position so modal captures the right spot.
+      // Restore cursor to post-delete position so the insert lands right.
       if (postDeleteRange) {
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(postDeleteRange);
       }
-      if (typeof window.showTableModal === 'function') window.showTableModal();
+      if (typeof window.showTableModal === 'function') {
+        window.showTableModal();
+      } else if (window.bwTableTools && typeof window.bwTableTools.openSizePicker === 'function') {
+        // Database card notes (and any editor without the note-form modal):
+        // show the size picker so the user can choose rows × columns.
+        window.bwTableTools.openSizePicker(ce, postDeleteRange || null);
+      } else {
+        _ceInsertTable(ce);
+      }
     },
+  },
+  {
+    id: 'file', label: 'File Attachment', desc: 'Attach a file to open or download',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+             <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                   stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>`,
+    // Database card notes only — needs the card-scoped upload endpoint + context.
+    show: (sc) => !!(sc && sc.ce && sc.ce.dataset && sc.ce.dataset.dbNote === '1'),
+    action: (ce, postDeleteRange) => {
+      if (typeof window._dbNoteAttachFile === 'function') {
+        window._dbNoteAttachFile(ce, postDeleteRange);
+      }
+    },
+  },
+  {
+    id: 'page', label: 'Page', desc: 'Create a nested sub-page',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4">
+             <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"
+                   stroke-linecap="round" stroke-linejoin="round"/>
+             <path d="M14 3v5h5" stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>`,
+    // Creates a child note on the backend, drops a clickable page-link chip,
+    // then opens the new page (its first line becomes the title).
+    action: (ce, postDeleteRange) => { _insertInlinePage(ce, postDeleteRange); },
   },
 
   // ── Toggle Headings ────────────────────────────────────────────────────
@@ -645,16 +679,25 @@ function _caretCoords() {
 }
 
 
+/* Commands matching the current query AND visible in the active editor.
+   A command's optional show(_sc) predicate gates it to a context (e.g. the
+   File command only appears in database card notes). Used by every call site
+   so the rendered list, keyboard nav, and apply all stay in sync. */
+function _scMatches() {
+  const q = _sc.query.toLowerCase();
+  return SLASH_COMMANDS.filter(c =>
+    (!c.show || c.show(_sc)) &&
+    (c.label.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
+  );
+}
+
 /* ─────────────────────────────────────────
    Render the palette
    ───────────────────────────────────────── */
 function _render() {
   _applyTheme();
   const pal = _sc.palette;
-  const q   = _sc.query.toLowerCase();
-  const matches = SLASH_COMMANDS.filter(c =>
-    c.label.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)
-  );
+  const matches = _scMatches();
   if (!matches.length) { _close(); return; }
   _sc.selected = Math.min(_sc.selected, matches.length - 1);
 
@@ -908,6 +951,180 @@ function _ceInsertCode(ce) {
   sel.addRange(r);
   ce.dispatchEvent(new Event('input'));
 }
+
+/** Insert a default 3×2 HTML table at the cursor via DOM APIs.
+ *  Used as the CE-mode fallback when no showTableModal() is present
+ *  (e.g. the database card note editor, which has no table modal). */
+function _ceInsertTable(ce) {
+  const block = _ceFindBlock(ce);
+  const table = document.createElement('table');
+  table.innerHTML =
+    '<thead><tr><th>Col 1</th><th>Col 2</th><th>Col 3</th></tr></thead>' +
+    '<tbody>' +
+    '<tr><td><br></td><td><br></td><td><br></td></tr>' +
+    '<tr><td><br></td><td><br></td><td><br></td></tr>' +
+    '</tbody>';
+  const after = document.createElement('p');
+  after.innerHTML = '<br>';
+
+  if (block) {
+    block.after(table, after);
+    if (!block.textContent.trim()) block.remove();
+  } else {
+    ce.appendChild(table);
+    ce.appendChild(after);
+  }
+
+  // Park cursor in the first header cell so the user can type immediately.
+  const firstCell = table.querySelector('th');
+  if (firstCell) {
+    const r = document.createRange();
+    r.selectNodeContents(firstCell);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  ce.dispatchEvent(new Event('input'));
+}
+
+/* ─────────────────────────────────────────
+   Inline pages (Notion-style sub-pages)
+   ───────────────────────────────────────── */
+
+// Inline styling so page-link chips render identically wherever the note
+// content lands (note detail, note form preview, db-card note) without relying
+// on a separate stylesheet — DOMPurify preserves the style attribute.
+var _BW_PAGE_LINK_CSS =
+  'display:inline-flex;align-items:center;gap:.3em;padding:.05em .45em;' +
+  'border-radius:6px;background:rgba(0,83,226,.09);color:#0053e2;' +
+  'text-decoration:none;font-weight:600;cursor:pointer;';
+
+/** Open a note as a full page — edit form when `edit`, read view otherwise.
+ *  Uses the HTMX detail-panel swap that the rest of the app uses, falling back
+ *  to a full navigation when that panel is not in the DOM. */
+function _bwOpenPage(noteId, edit) {
+  var url = '/notes/' + noteId + (edit ? '/form' : '');
+  var panel = document.getElementById('detail-panel');
+  if (window.htmx && panel) {
+    window.htmx.ajax('GET', url, { target: '#detail-panel', swap: 'innerHTML' });
+  } else {
+    window.location.href = url;
+  }
+}
+window._bwOpenPage = _bwOpenPage;
+
+/** Lightweight non-blocking notice (avoids alert()). */
+function _bwInlinePageWarn(msg) {
+  if (typeof window._showReminderToast === 'function') {
+    window._showReminderToast(msg);
+    return;
+  }
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText =
+    'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10002;' +
+    'background:#1f2937;color:#fff;padding:10px 16px;border-radius:10px;' +
+    'font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);';
+  document.body.appendChild(t);
+  setTimeout(function () { t.remove(); }, 2600);
+}
+
+/**
+ * Create a child note via the backend, insert a clickable page-link chip at
+ * the slash position, then open the new page so the user can type its title.
+ * Works in two contexts: the note form (parent = current note) and a database
+ * card note (parent = the card, id parsed from the CE element id).
+ */
+function _insertInlinePage(ce, actRange) {
+  var body = new URLSearchParams();
+  if (ce && ce.dataset && ce.dataset.dbNote === '1') {
+    var m = (ce.id || '').match(/db-detail-note-(\d+)/);
+    if (!m) { _bwInlinePageWarn('Could not find the card for this page.'); return; }
+    body.set('parent_card_id', m[1]);
+  } else {
+    var nid = window._bwNoteId;
+    if (!nid) { _bwInlinePageWarn('Save this note once before adding a sub-page.'); return; }
+    body.set('parent_note_id', String(nid));
+  }
+
+  fetch('/notes/subpage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  })
+    .then(function (r) {
+      var ct = r.headers.get('content-type') || '';
+      // Session-expiry bounces a 302→HTML; guard before .json() (see auth notes).
+      if (!r.ok || ct.indexOf('application/json') === -1) throw new Error('bad response');
+      return r.json();
+    })
+    .then(function (data) {
+      var id = data.id;
+      if (ce && actRange) {
+        try {
+          var a = document.createElement('a');
+          a.href = '/notes/' + id;
+          a.className = 'bw-page-link';
+          a.setAttribute('data-note-id', String(id));
+          a.textContent = '📄 Untitled';
+          a.style.cssText = _BW_PAGE_LINK_CSS;
+          var r2 = actRange.cloneRange();
+          r2.insertNode(a);
+          r2.setStartAfter(a);
+          r2.collapse(true);
+          ce.focus();
+          var s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(r2);
+        } catch (err) { console.warn('[bw-page] insert failed:', err); }
+        ce.dispatchEvent(new Event('input')); // trigger autosave of the chip
+      }
+      _bwOpenPage(id, true);
+    })
+    .catch(function (err) {
+      console.warn('[bw-page] create failed:', err);
+      _bwInlinePageWarn('Could not create the sub-page. Try again.');
+    });
+}
+
+/**
+ * Hydrate page-link chips inside `root` after markdown render: fetch fresh
+ * titles by id, set the label, apply chip styling, and wire click→open.
+ * Idempotent — safe to call again after re-render.
+ */
+function bwHydratePageLinks(root, opts) {
+  if (!root) return;
+  var wireClick = !opts || opts.wireClick !== false; // default: navigate on click
+  var links = root.querySelectorAll('a.bw-page-link[data-note-id]');
+  if (!links.length) return;
+  var ids = [];
+  links.forEach(function (a) {
+    a.style.cssText = _BW_PAGE_LINK_CSS;
+    if (wireClick && !a._bwWired) {
+      a._bwWired = true;
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        _bwOpenPage(a.getAttribute('data-note-id'), false);
+      });
+    }
+    ids.push(a.getAttribute('data-note-id'));
+  });
+  fetch('/notes/page-titles?ids=' + encodeURIComponent(ids.join(',')))
+    .then(function (r) {
+      var ct = r.headers.get('content-type') || '';
+      if (!r.ok || ct.indexOf('application/json') === -1) throw new Error('bad response');
+      return r.json();
+    })
+    .then(function (map) {
+      links.forEach(function (a) {
+        var t = map[a.getAttribute('data-note-id')];
+        if (t) a.textContent = '📄 ' + t;
+      });
+    })
+    .catch(function () { /* leave stored labels as-is on failure */ });
+}
+window.bwHydratePageLinks = bwHydratePageLinks;
 
 /**
  * Show a BookWorm-styled link dialog.
@@ -1634,10 +1851,7 @@ function _applyCE(cmd) {
    Public: apply selected command
    ───────────────────────────────────────── */
 function _scApply() {
-  const q = _sc.query.toLowerCase();
-  const matches = SLASH_COMMANDS.filter(c =>
-    c.label.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)
-  );
+  const matches = _scMatches();
   const cmd = matches[_sc.selected];
   if (!cmd) { _close(); return; }
 
@@ -1653,10 +1867,7 @@ function _scApply() {
    ───────────────────────────────────────── */
 function _onKeydown(e) {
   if (!_sc.open) return;
-  const q = _sc.query.toLowerCase();
-  const matchCount = SLASH_COMMANDS.filter(c =>
-    c.label.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)
-  ).length;
+  const matchCount = _scMatches().length;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();

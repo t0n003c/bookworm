@@ -1,123 +1,31 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.venv/
-venv/
+# ── Secrets & local config — NEVER commit ──────────────────────────────
 .env
-
-# ── Internal dev / AI-agent files (never publish) ────────────────────────────
-# These are Code Puppy / Claude agent memory files and internal planning docs.
-# They contain local paths, internal infrastructure details, and dev notes
-# that should never appear on a public repo.
-AGENTS.md
-CLAUDE.md
-PLAN.md
-PLAN_CRM_PHASE3.md
-
-# ── Local dev utility scripts ─────────────────────────────────────────────────
-# Handy locally but noisy and sometimes contain hardcoded paths / user IDs.
-_start_server.py
-_health_check.py
-_seed_trip_data.py
-_seed_*.py
-restart.bat
-restart.vbs
-restart.ps1
-
-# ── Personal / named assets (PII) ────────────────────────────────────────────
-# Avatars or images named after specific people.
-static/img/buds/Tinh*.png
-static/img/buds/*personal*.png
-
-# Eddie debug / temp scripts + scratch files (never commit these)
-# Prefixed patterns (Eddie's naming convention)
-_check_*.py
-_check*.py
-_qa_*.py
-_qa*.py
-_migrate_*.py
-_test_*.py
-_jscheck.py
-_script_*.py
-check_*.py
-_tmp*.py
-_tmp*.txt
-_debug*.txt
-_debug*.py
-_rss_routes.py
-_qa_*.txt
+*.secret
+*_cookies.txt
 _qa*.txt
-patch_*.py
-# Unprefixed one-off scripts that escaped in the past
-qa*.py
-diag*.py
-diag*.txt
-tail_log.py
-test_*.py
-template_test.py
-smoke_test.py
-# Temp data / API exploration dumps
-openapi_tmp.json
-openapi_*.json
-*.tmp.json
 
-# Database (may contain PII)
+# ── Databases & user-uploaded data ─────────────────────────────────────
 *.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
-
-# TF-IDF index pickles (generated at runtime; rebuild via APScheduler or POST /qa/rebuild-index)
-bw_tfidf_*.pkl
-
-# Uploads (user files)
 uploads/
 
-# Data files
-*.csv
-*.xlsx
-*.xls
-
-# Logs
+# ── Logs ───────────────────────────────────────────────────────────────
 *.log
 
-# OS junk
+# ── Generated ML artifacts (rebuilt at runtime by search_index.py) ─────
+bw_tfidf_*.pkl
+
+# ── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.venv/
+
+# ── Claude Code: keep shared agents, drop local-only settings ──────────
+.claude/settings.local.json
+
+# ── Scratch / build outputs ────────────────────────────────────────────
+openapi_tmp.json
+audit_out.txt
+eqp_out.txt
+
+# ── OS / editor cruft ──────────────────────────────────────────────────
 .DS_Store
-Thumbs.db
-
-# Secrets & scratch
-*.secret
-$null
-restart.ps1
-
-# GitHub Actions local runner artifacts
-.act/
-
-# Tailwind CLI binary (Windows — download once, not committed; see rebuild_css.bat)
-tailwindcss.exe
-tailwindcss-windows-x64.exe
-# static/css/tailwind.css is intentionally committed — it IS the built output.
-
-# Audit script output files (generated, not source)
-audit_*.txt
-
-# Curl / tool artefacts (may contain live session tokens)
-cookies.txt
-cookies*.txt
-*_cookies.txt
-bw_qa*.txt
-qa_*.txt
-
-# Eddie one-off debug / inspection scripts
-_rss_routes.py
-_qa_*.txt
-_eddie_*.py
-_read*.py
-_p3_*.py
-_create_note.py
-bwqa.py
-*.txt
-ERROR

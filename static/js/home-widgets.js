@@ -140,11 +140,9 @@ function homeExit() {
   // against a page that's no longer visible.
   window._crmPid       = null;
   window._crmLoadedPid = null;
-  // Restore view-toggle buttons for normal workspace views.
-  const _tl = document.getElementById('list-view-toggle');
-  if (_tl) _tl.style.display = '';
-  const _gl = document.getElementById('gallery-view-btn');
-  if (_gl) _gl.style.display = '';
+  // Restore the view menu for normal workspace views.
+  const _nvBtn = document.getElementById('note-view-menu-btn');
+  if (_nvBtn) _nvBtn.style.display = '';
   const hc   = document.getElementById('home-content');
   const main = document.getElementById('main-content');
   const nl   = document.getElementById('note-list');
@@ -260,10 +258,8 @@ function showHomePage(pageId) {
   sessionStorage.setItem('bw-hp', String(pageId));
   _showHomeCanvas();
   document.documentElement.classList.remove('bw-hp-restore');
-  const _tl = document.getElementById('list-view-toggle');
-  if (_tl) _tl.style.display = 'none';
-  const _gl = document.getElementById('gallery-view-btn');
-  if (_gl) _gl.style.display = 'none';
+  const _nvBtn = document.getElementById('note-view-menu-btn');
+  if (_nvBtn) _nvBtn.style.display = 'none';
   // Hide the workspace-database view toggle — it only belongs on DB nodes.
   // htmx:afterSettle handles the workspace→workspace path; this covers the
   // workspace-DB → homespace path where HTMX never fires.

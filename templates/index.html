@@ -50,41 +50,82 @@
 
   <div class="ml-auto flex items-center gap-2">
 
-    <!-- Note view toggles: Gallery + Timeline (hidden in database workspaces) -->
-    <div id="note-view-toggle-group" class="flex items-center gap-2">
-      <!-- Gallery view button -->
+    <!-- Note view menu: List / Gallery / Timeline (hidden in database workspaces) -->
+    <div id="note-view-toggle-group" class="relative flex items-center">
       <button
-        id="gallery-view-btn"
-        onclick="setNoteView('gallery')"
-        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-        aria-label="Gallery view"
-        aria-pressed="false"
-        title="Gallery view"
+        id="note-view-menu-btn"
+        type="button"
+        onclick="toggleNoteViewMenu(event)"
+        class="flex items-center gap-1 h-9 px-2 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-label="Change view"
+        title="Change view"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+        <!-- current-view icon — swapped by syncNoteViewButtons() -->
+        <span id="nv-ico-list" class="nv-ico inline-flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+          </svg>
+        </span>
+        <span id="nv-ico-gallery" class="nv-ico hidden items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+        </span>
+        <span id="nv-ico-timeline" class="nv-ico hidden items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        </span>
+        <!-- chevron -->
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
         </svg>
       </button>
 
-      <!-- Timeline / List toggle -->
-      <button
-        id="list-view-toggle"
-        onclick="setNoteView('timeline')"
-        class="flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 transition text-white focus:outline-none focus:ring-2 focus:ring-white/50"
-        aria-label="Toggle timeline view"
-        aria-pressed="false"
-        title="Switch to timeline view"
+      <!-- dropdown menu -->
+      <div
+        id="note-view-menu"
+        class="hidden absolute right-0 top-full mt-1 w-44 py-1 rounded-lg bg-white dark:bg-zinc-800 shadow-xl border border-gray-200 dark:border-zinc-700 z-50"
+        role="menu"
+        aria-label="Note view"
       >
-        <svg id="icon-grid" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-        </svg>
-        <svg id="icon-timeline" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-        </svg>
-      </button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-nv="list" onclick="pickNoteView('list')"
+          class="nv-item w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-left">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+          </svg>
+          <span class="flex-1">List</span>
+          <svg class="nv-check h-4 w-4 flex-shrink-0 text-wblue hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-nv="gallery" onclick="pickNoteView('gallery')"
+          class="nv-item w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-left">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="flex-1">Gallery</span>
+          <svg class="nv-check h-4 w-4 flex-shrink-0 text-wblue hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-nv="timeline" onclick="pickNoteView('timeline')"
+          class="nv-item w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700 transition text-left">
+          <svg class="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <span class="flex-1">Timeline</span>
+          <svg class="nv-check h-4 w-4 flex-shrink-0 text-wblue hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Database view toggles: Grid + Board + Timeline (hidden in note workspaces) -->
@@ -1013,6 +1054,34 @@
       #note-list[data-view="gallery"] article.gallery-recent-hidden {
         display: none;
       }
+      /* Gallery "group recent by" toggle — only visible in gallery mode */
+      #gallery-group-toggle { display: none; }
+      #note-list[data-view="gallery"] #gallery-group-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      #gallery-group-toggle .ggt-label {
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.07em; color: #9ca3af;
+      }
+      #gallery-group-toggle .ggt-seg {
+        display: inline-flex; border: 1px solid #e5e7eb;
+        border-radius: 0.5rem; overflow: hidden;
+      }
+      .dark #gallery-group-toggle .ggt-seg { border-color: #3f3f46; }
+      #gallery-group-toggle .ggt-seg button {
+        padding: 0.25rem 0.75rem; font-size: 0.75rem; font-weight: 600;
+        background: transparent; border: none; cursor: pointer;
+        color: #6b7280; transition: background .12s, color .12s;
+      }
+      .dark #gallery-group-toggle .ggt-seg button { color: #a1a1aa; }
+      #gallery-group-toggle .ggt-seg button + button { border-left: 1px solid #e5e7eb; }
+      .dark #gallery-group-toggle .ggt-seg button + button { border-left-color: #3f3f46; }
+      #gallery-group-toggle .ggt-seg button:hover { background: #f3f4f6; }
+      .dark #gallery-group-toggle .ggt-seg button:hover { background: #27272a; }
+      #gallery-group-toggle .ggt-seg button.active { background: #0053e2; color: #fff; }
     </style>
 
     <div id="note-list">
@@ -2734,6 +2803,10 @@
     // so there is zero gap between the HTMX swap and the opaque overlay.
     if (e.detail.target.id === 'note-list') {
       if (bwTimeline.isMounted()) bwTimeline.remount();
+      else if (typeof getNoteView === 'function' && getNoteView() === 'gallery' &&
+               typeof _buildGalleryRecent === 'function') {
+        _buildGalleryRecent();   // rebuild Recent grouping + toggle for the new workspace
+      }
       return;
     }
     if (e.detail.target.id !== 'detail-panel') return;
@@ -3141,6 +3214,41 @@
   /* ---- Gallery view: Recent section ---- */
   // Clones notes updated within the last 7 days into a dedicated "Recent" section.
   // Originals stay in the main grid but are hidden so there's no duplication.
+  // Gallery "Recent" grouping basis: 'created' or 'updated' (default).
+  function _galleryGroupBy() {
+    return localStorage.getItem('bw-gallery-group-by') === 'created' ? 'created' : 'updated';
+  }
+  function _setGalleryGroupBy(v) {
+    localStorage.setItem('bw-gallery-group-by', v === 'created' ? 'created' : 'updated');
+  }
+  function _galleryDateAttr(groupBy) {
+    return groupBy === 'created' ? 'data-created-at' : 'data-updated-at';
+  }
+  // Inject the Created/Updated segmented toggle at the top of the gallery.
+  function _renderGalleryToggle(nl) {
+    var old = document.getElementById('gallery-group-toggle');
+    if (old) old.remove();
+    var groupBy = _galleryGroupBy();
+    var wrap = document.createElement('div');
+    wrap.id = 'gallery-group-toggle';
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Group recent notes by date');
+    function btn(val, label) {
+      var on = groupBy === val;
+      return '<button type="button" data-group="' + val + '"' + (on ? ' class="active"' : '')
+        + ' aria-pressed="' + (on ? 'true' : 'false') + '">' + label + '</button>';
+    }
+    wrap.innerHTML = '<span class="ggt-label">Recent by</span>'
+      + '<div class="ggt-seg">' + btn('updated', 'Updated') + btn('created', 'Created') + '</div>';
+    nl.insertBefore(wrap, nl.firstChild);
+    wrap.querySelectorAll('button[data-group]').forEach(function(b) {
+      b.addEventListener('click', function() {
+        _setGalleryGroupBy(b.getAttribute('data-group'));
+        _buildGalleryRecent();   // rebuild grouping with the new basis
+      });
+    });
+  }
+
   function _buildGalleryRecent() {
     var section = document.getElementById('gallery-recent-section');
     var mainGrid = document.getElementById('note-main-grid');
@@ -3152,6 +3260,12 @@
     var nl = document.getElementById('note-list');
     if (!nl || nl.dataset.view !== 'gallery') return;
 
+    // Toggle is shown whenever the gallery is active (even with no recent notes)
+    _renderGalleryToggle(nl);
+
+    var groupBy = _galleryGroupBy();
+    var dateAttr = _galleryDateAttr(groupBy);
+
     // Cutoff = start of today 7 days ago
     var cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
@@ -3159,26 +3273,29 @@
 
     var recentArticles = [];
     mainGrid.querySelectorAll('article[data-note-id]').forEach(function(art) {
-      var updatedRaw = art.getAttribute('data-updated-at') || '';
-      var createdRaw = art.getAttribute('data-created-at') || '';
-      // Use the later of created / updated
-      var d = new Date(Math.max(
-        updatedRaw ? new Date(updatedRaw).getTime() : 0,
-        createdRaw ? new Date(createdRaw).getTime() : 0
-      ));
-      if (!isNaN(d.getTime()) && d >= cutoff) {
+      var raw = art.getAttribute(dateAttr) || '';
+      var d = raw ? new Date(raw) : null;
+      if (d && !isNaN(d.getTime()) && d >= cutoff) {
         recentArticles.push(art);
       }
     });
 
     if (recentArticles.length === 0) return;
 
+    // Newest-first by the chosen date so the Recent section reads consistently
+    recentArticles.sort(function(a, b) {
+      var av = new Date(a.getAttribute(dateAttr)).getTime() || 0;
+      var bv = new Date(b.getAttribute(dateAttr)).getTime() || 0;
+      return bv - av;
+    });
+
     // Build section header
+    var basisLabel = groupBy === 'created' ? 'created' : 'updated';
     var hdr = document.createElement('div');
     hdr.className = 'gallery-recent-header';
     hdr.innerHTML = '<span>\uD83D\uDD52</span><span>Recent &mdash; last 7 days</span>'
-      + '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.68rem;">('
-      + recentArticles.length + ' note' + (recentArticles.length !== 1 ? 's' : '') + ')</span>';
+      + '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.68rem;">(by '
+      + basisLabel + ' &middot; ' + recentArticles.length + ' note' + (recentArticles.length !== 1 ? 's' : '') + ')</span>';
     section.appendChild(hdr);
 
     // Clone recent articles into sub-grid; hide originals in main grid
@@ -3203,6 +3320,8 @@
   function _teardownGalleryRecent() {
     var section = document.getElementById('gallery-recent-section');
     var mainGrid = document.getElementById('note-main-grid');
+    var toggle = document.getElementById('gallery-group-toggle');
+    if (toggle) toggle.remove();
     if (section) section.innerHTML = '';
     if (mainGrid) {
       mainGrid.classList.remove('has-recent');
@@ -3212,11 +3331,8 @@
     }
   }
 
-  function setNoteView(requested) {
-    var current = getNoteView();
-    // Clicking the active view returns to list
-    var next = (current === requested) ? 'list' : requested;
-
+  // Switch to an explicit view ('list' | 'gallery' | 'timeline').
+  function applyNoteView(next) {
     // Exit home-page canvas first (timeline sits above it)
     if (next === 'timeline' && typeof homeExit === 'function') homeExit();
 
@@ -3234,28 +3350,64 @@
     localStorage.setItem('bw-list-view', next);
     syncNoteViewButtons();
   }
+  // Legacy toggle behaviour: clicking the active view returns to list.
+  // Kept for back-compat callers (toggleListView, home-widgets aliases).
+  function setNoteView(requested) {
+    var current = getNoteView();
+    applyNoteView((current === requested) ? 'list' : requested);
+  }
+  // Menu item click — switch directly to the chosen view, then close.
+  function pickNoteView(view) {
+    applyNoteView(view);
+    _closeNoteViewMenu();
+  }
+  // Open / close the view dropdown.
+  function toggleNoteViewMenu(e) {
+    if (e) e.stopPropagation();
+    var menu = document.getElementById('note-view-menu');
+    var btn  = document.getElementById('note-view-menu-btn');
+    if (!menu) return;
+    var nowOpen = menu.classList.toggle('hidden') === false;
+    if (btn) btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+  }
+  function _closeNoteViewMenu() {
+    var menu = document.getElementById('note-view-menu');
+    var btn  = document.getElementById('note-view-menu-btn');
+    if (menu) menu.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+  // Close the view menu when clicking outside it.
+  document.addEventListener('click', function (e) {
+    var grp = document.getElementById('note-view-toggle-group');
+    if (grp && !grp.contains(e.target)) _closeNoteViewMenu();
+  });
   function syncNoteViewButtons() {
-    var view = getNoteView();
-    var isTl = (view === 'timeline');
-    var isGl = (view === 'gallery');
-    // Legacy timeline SVG swap (icon-grid = list icon; icon-timeline = calendar icon)
-    document.getElementById('icon-timeline').classList.toggle('hidden',  isTl);
-    document.getElementById('icon-grid').classList.toggle('hidden',     !isTl);
-    var tlBtn = document.getElementById('list-view-toggle');
-    if (tlBtn) {
-      tlBtn.title = isTl ? 'Switch to list view' : 'Switch to timeline view';
-      tlBtn.setAttribute('aria-pressed', isTl ? 'true' : 'false');
-      tlBtn.classList.toggle('bg-white/30', isTl);
-      tlBtn.classList.toggle('ring-2',      isTl);
-      tlBtn.classList.toggle('ring-white/60', isTl);
+    var view   = getNoteView();          // 'list' | 'gallery' | 'timeline'
+    var labels = { list: 'List', gallery: 'Gallery', timeline: 'Timeline' };
+
+    // Button face — show only the current view's icon.
+    ['list', 'gallery', 'timeline'].forEach(function (v) {
+      var ic = document.getElementById('nv-ico-' + v);
+      if (ic) ic.classList.toggle('hidden', v !== view);
+    });
+    var btn = document.getElementById('note-view-menu-btn');
+    if (btn) {
+      btn.title = (labels[view] || 'View') + ' view — click to change';
+      btn.setAttribute('aria-label', (labels[view] || 'View') + ' view — change view');
     }
-    var glBtn = document.getElementById('gallery-view-btn');
-    if (glBtn) {
-      glBtn.title = isGl ? 'Switch to list view' : 'Gallery view';
-      glBtn.setAttribute('aria-pressed', isGl ? 'true' : 'false');
-      glBtn.classList.toggle('bg-white/30', isGl);
-      glBtn.classList.toggle('ring-2',      isGl);
-      glBtn.classList.toggle('ring-white/60', isGl);
+
+    // Menu — mark the active item (highlight + checkmark).
+    var menu = document.getElementById('note-view-menu');
+    if (menu) {
+      menu.querySelectorAll('[data-nv]').forEach(function (it) {
+        var active = it.dataset.nv === view;
+        it.setAttribute('aria-checked', active ? 'true' : 'false');
+        it.classList.toggle('bg-gray-100',     active);
+        it.classList.toggle('dark:bg-zinc-700', active);
+        it.classList.toggle('font-semibold',   active);
+        var chk = it.querySelector('.nv-check');
+        if (chk) chk.classList.toggle('hidden', !active);
+      });
     }
   }
   // Aliases so any external callers (e.g. home-widgets.js) keep working
@@ -3851,6 +4003,8 @@
   'use strict';
 
   const THRESHOLD = 5; // px before drag commits
+  const SCROLL_ZONE_PX = 64; // px from sidebar top/bottom that triggers auto-scroll
+  const SCROLL_SPEED   = 8;  // px per animation frame (~480 px/s at 60 fps)
 
   /* ── state ── */
   let _wsId    = null;   // live workspace id being dragged
@@ -3866,6 +4020,10 @@
   let _armed   = false;  // long-press timer fired — next move commits drag (name-btn path)
   let _lpTimer = null;   // setTimeout id for 400 ms name-button arm
   let _fromNameBtn = false; // gesture started on the workspace name button
+  // Auto-scroll state — scroll the sidebar list when dragging near its edges.
+  let _scrollRaf = null;    // requestAnimationFrame handle
+  let _scrollDir = 0;       // -1 = scroll up, 0 = idle, +1 = scroll down
+  let _scrollEl  = null;    // the scroll container being scrolled
 
   const getActiveWsId = () =>
     document.getElementById('active-workspace')?.value || '';
@@ -3892,6 +4050,46 @@
     clearOver();
     if (!el) return;
     el.classList.add(cls); _overEl = el; _overCls = cls;
+  }
+
+  /* ── auto-scroll the sidebar list while dragging near its edges ── */
+  // The scrollable region is the .overflow-y-auto wrapper inside the
+  // workspaces panel (Homespace + workspace tree live in it).
+  function scrollContainer() {
+    const panel = document.getElementById('sb-panel-workspaces');
+    return panel ? panel.querySelector('.overflow-y-auto') : null;
+  }
+  function stopScroll() {
+    if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null; }
+    _scrollDir = 0; _scrollEl = null;
+  }
+  function startScroll(dir, el) {
+    if (_scrollDir === dir && _scrollEl === el) return; // already scrolling that way
+    _scrollDir = dir; _scrollEl = el;
+    if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
+    function step() {
+      if (!_scrollDir || !_scrollEl) { _scrollRaf = null; return; }
+      _scrollEl.scrollTop += _scrollDir * SCROLL_SPEED;
+      _scrollRaf = requestAnimationFrame(step);
+    }
+    _scrollRaf = requestAnimationFrame(step);
+  }
+  // Called on every move while a drag is active (mouse + touch).
+  function autoScroll(x, y) {
+    const el = scrollContainer();
+    if (!el) { stopScroll(); return; }
+    const rect = el.getBoundingClientRect();
+    // Pointer must be horizontally inside the sidebar panel.
+    if (x < rect.left || x > rect.right) { stopScroll(); return; }
+    const relY = y - rect.top;
+    if (relY >= 0 && relY < SCROLL_ZONE_PX && el.scrollTop > 0) {
+      startScroll(-1, el);                                   // near top — scroll up
+    } else if (relY > rect.height - SCROLL_ZONE_PX && relY <= rect.height &&
+               el.scrollTop + el.clientHeight < el.scrollHeight) {
+      startScroll(1, el);                                    // near bottom — scroll down
+    } else {
+      stopScroll();                                          // middle / out of zone — idle
+    }
   }
 
   /* ── find drop target at pointer, hiding ghost first ── */
@@ -3934,6 +4132,7 @@
   /* ── full cleanup ── */
   function cancel() {
     document.body.classList.remove('dnd-active');
+    stopScroll();
     clearOver();
     ghost().style.display = 'none';
     if (_dimEl) _dimEl.classList.remove('dnd-dragging');
@@ -3971,6 +4170,7 @@
       if (_dimEl) _dimEl.classList.add('dnd-dragging');
     }
     moveGhost(e.clientX, e.clientY);
+    autoScroll(e.clientX, e.clientY);
     const { zone, el } = targetAt(e.clientX, e.clientY);
     if      (zone === 'before') setOver(el, 'dnd-over-before');
     else if (zone === 'after')  setOver(el, 'dnd-over-after');
@@ -4129,6 +4329,7 @@
     }
     e.preventDefault(); // stop page scroll while dragging
     moveGhost(t.clientX, t.clientY);
+    autoScroll(t.clientX, t.clientY);
     const { zone, el } = targetAt(t.clientX, t.clientY);
     if      (zone === 'before') setOver(el, 'dnd-over-before');
     else if (zone === 'after')  setOver(el, 'dnd-over-after');

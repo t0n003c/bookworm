@@ -1,85 +1,31 @@
-# Keep the Docker image lean — none of these belong inside it.
-
-# ── Python cache ──────────────────────────────────────────────────────────────
-__pycache__/
-*.pyc
-*.pyo
-
-# ── Dev environment ───────────────────────────────────────────────────────────
-.venv/
-venv/
+# ── Secrets & local config ─────────────────────────────────────────────
 .env
+*.secret
+*_cookies.txt
+_qa*.txt
 
-# ── Data (persisted via Docker volume at runtime, not baked into image) ───────
+# ── Databases & user data (mounted as a volume, not baked into the image)
 *.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
 uploads/
-# TF-IDF index pickles — rebuilt at startup from the live DB
-bw_tfidf_*.pkl
 
-# ── Logs ──────────────────────────────────────────────────────────────────────
+# ── Logs ───────────────────────────────────────────────────────────────
 *.log
 
-# ── Secrets (never bake credentials into the image) ──────────────────────────
-*.secret
-cookies.txt
-cookies*.txt
+# ── Generated ML artifacts (rebuilt at runtime) ────────────────────────
+bw_tfidf_*.pkl
 
-# ── Git history ───────────────────────────────────────────────────────────────
+# ── Python / virtualenv ────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.venv/
+
+# ── Version control & tooling ──────────────────────────────────────────
 .git/
 .gitignore
+.claude/
 
-# ── OS junk ───────────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-$null
-
-# ── Windows-only scripts (not needed in the Linux container) ─────────────────
-*.bat
-*.vbs
-restart.ps1
-_start_server.py
-
-# ── Tailwind CLI binary (Windows — Linux image uses the pre-built CSS) ────────
+# ── Windows-only Tailwind binary (Linux image builds CSS differently) ──
 tailwindcss.exe
-tailwindcss-windows-x64.exe
-tailwind.config.js
 
-# ── Developer documentation (internal notes, not needed at runtime) ───────────
-AGENTS.md
-CLAUDE.md
-PLAN.md
-PLAN_CRM_PHASE3.md
-CODEPUPPY_NOTES.md
-
-# ── Dev / debug / test / seed scripts ────────────────────────────────────────
-_check_*.py
-_check*.py
-_qa_*.py
-_qa*.py
-_migrate_*.py
-_test_*.py
-_script_*.py
-_jscheck.py
-_health_check.py
-_seed_trip_data.py
-check_*.py
-_tmp*.py
-_debug*.py
-patch_*.py
-diag*.py
-tail_log.py
-test_*.py
-template_test.py
-smoke_test.py
-
-# ── Temp data dumps ───────────────────────────────────────────────────────────
-openapi_tmp.json
-openapi_*.json
-*.tmp.json
-
-# ── This file itself ──────────────────────────────────────────────────────────
-.dockerignore
+# ── OS / editor cruft ──────────────────────────────────────────────────
+.DS_Store

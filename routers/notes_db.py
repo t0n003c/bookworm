@@ -46,7 +46,9 @@ async def get_note_by_id(note_id: int) -> Optional[dict]:
     """Fetch a single note with categories, attributes, and attachments."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, title, icon, content, meeting_date, created_at, updated_at, workspace_id FROM notes WHERE id = ?",
+            "SELECT id, title, icon, content, meeting_date, created_at, updated_at, "
+            "workspace_id, parent_note_id, parent_card_id, is_inline_page "
+            "FROM notes WHERE id = ?",
             (note_id,),
         )
         row = await cursor.fetchone()
@@ -149,12 +151,15 @@ async def search_notes(
     workspace_id: Optional[int] = None,
     workspace_ids: Optional[list[int]] = None,
     sort_by: Optional[list[str]] = None,
+    exclude_inline: bool = False,
 ) -> list[dict]:
     """Search and filter notes with multi-criteria sort.
 
     workspace_ids (list) takes precedence over workspace_id (single int).
     sort_by is a list of 'field:dir' tokens e.g. ['title:asc', 'date:desc'].
     Unknown / duplicate tokens are silently dropped; falls back to date DESC.
+    exclude_inline hides Notion-style sub-pages from list views (they only
+    appear nested inside their parent), while leaving them in global search.
     """
     sql = """
         SELECT DISTINCT n.id, n.title, n.icon, n.content, n.meeting_date,
@@ -202,6 +207,9 @@ async def search_notes(
     if date_to:
         conditions.append("n.meeting_date <= ?")
         params.append(date_to)
+
+    if exclude_inline:
+        conditions.append("COALESCE(n.is_inline_page, 0) = 0")
 
     if joins:
         sql += " " + " ".join(joins)
@@ -278,6 +286,73 @@ async def next_auto_title(workspace_id: Optional[int]) -> str:
     return f"Note {n}"
 
 
+def derive_title_from_content(content: Optional[str]) -> str:
+    """Derive an inline-page title from the first non-empty line of its body.
+
+    Strips leading markdown markers (#, -, *, >, checkbox) and any inline HTML
+    tags, trims, and caps length. Falls back to 'Untitled' when empty.
+    """
+    import re as _re
+    for raw in (content or "").splitlines():
+        line = _re.sub(r"<[^>]+>", "", raw)          # drop inline HTML tags
+        line = _re.sub(r"^\s*#{1,6}\s*", "", line)   # heading markers
+        line = _re.sub(r"^\s*[-*+>]\s*", "", line)   # bullet / quote markers
+        line = _re.sub(r"^\s*\[[ xX]\]\s*", "", line) # checkbox
+        line = line.strip()
+        if line:
+            return line[:120]
+    return "Untitled"
+
+
+async def create_inline_page(
+    workspace_id: Optional[int],
+    meeting_date: str,
+    parent_note_id: Optional[int] = None,
+    parent_card_id: Optional[int] = None,
+) -> int:
+    """Create an empty inline sub-page (a note with is_inline_page=1).
+
+    Exactly one of parent_note_id / parent_card_id should be set. The page
+    inherits the parent's workspace so it lives in the same sidebar tree.
+    Title starts as 'Untitled' and is recomputed from content on every save.
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "INSERT INTO notes "
+            "(title, content, meeting_date, workspace_id, "
+            " parent_note_id, parent_card_id, is_inline_page) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1)",
+            ("Untitled", "", meeting_date, workspace_id,
+             parent_note_id, parent_card_id),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_child_page_titles(ids: list[int]) -> dict[int, str]:
+    """Return {note_id: title} for the given inline-page ids (owner-filtered
+    by the caller). Used to hydrate page-link labels after markdown render."""
+    if not ids:
+        return {}
+    async with get_db() as db:
+        placeholders = ",".join("?" for _ in ids)
+        cur = await db.execute(
+            f"SELECT id, title FROM notes WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+        return {r["id"]: r["title"] for r in await cur.fetchall()}
+
+
+async def is_inline_page(note_id: int) -> bool:
+    """True if the note is an inline sub-page (drives title-from-content)."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT is_inline_page FROM notes WHERE id = ?", (note_id,)
+        )
+        row = await cur.fetchone()
+        return bool(row and row["is_inline_page"])
+
+
 async def create_note(
     title: str,
     content: Optional[str],
@@ -327,8 +402,18 @@ async def update_note(
     attributes: list[dict],
     icon: Optional[str] = None,
 ) -> bool:
-    """Update an existing note. Returns False if not found."""
+    """Update an existing note. Returns False if not found.
+
+    Inline sub-pages ignore the passed-in title and derive it from the first
+    line of content instead.
+    """
     async with get_db() as db:
+        cur = await db.execute(
+            "SELECT is_inline_page FROM notes WHERE id = ?", (note_id,)
+        )
+        _row = await cur.fetchone()
+        if _row and _row["is_inline_page"]:
+            title = derive_title_from_content(content)
         cursor = await db.execute(
             "UPDATE notes SET title=?, icon=?, content=?, meeting_date=? WHERE id=?",
             (title, icon or None, content, meeting_date, note_id),
@@ -363,12 +448,25 @@ async def get_note_workspace_id(note_id: int) -> Optional[int]:
 
 
 async def patch_note_content(note_id: int, content: str) -> bool:
-    """Update only the content field of a note. Returns False if not found."""
+    """Update only the content field of a note. Returns False if not found.
+
+    For inline sub-pages, the title is also recomputed from the first line.
+    """
     async with get_db() as db:
-        cursor = await db.execute(
-            "UPDATE notes SET content=? WHERE id=?",
-            (content, note_id),
+        cur = await db.execute(
+            "SELECT is_inline_page FROM notes WHERE id = ?", (note_id,)
         )
+        _row = await cur.fetchone()
+        if _row and _row["is_inline_page"]:
+            cursor = await db.execute(
+                "UPDATE notes SET content=?, title=? WHERE id=?",
+                (content, derive_title_from_content(content), note_id),
+            )
+        else:
+            cursor = await db.execute(
+                "UPDATE notes SET content=? WHERE id=?",
+                (content, note_id),
+            )
         await db.commit()
         return cursor.rowcount > 0
 
@@ -377,9 +475,21 @@ async def delete_note(note_id: int) -> bool:
     """Delete a note by id; also purge attached files from disk."""
     from routers.attachments_db import UPLOAD_DIR  # local import avoids circularity
     async with get_db() as db:
-        # Collect filenames before cascade-delete wipes them
+        # Gather this note plus every descendant inline sub-page. Deleting the
+        # root cascades the rows (FK ON DELETE CASCADE), but the attachment
+        # files on disk for the whole subtree must be purged explicitly.
         cur = await db.execute(
-            "SELECT filename FROM note_attachments WHERE note_id = ?", (note_id,)
+            """
+            WITH RECURSIVE subtree(id) AS (
+                SELECT ?
+                UNION ALL
+                SELECT n.id FROM notes n
+                JOIN subtree s ON n.parent_note_id = s.id
+            )
+            SELECT filename FROM note_attachments
+            WHERE note_id IN (SELECT id FROM subtree)
+            """,
+            (note_id,),
         )
         filenames = [r[0] for r in await cur.fetchall()]
         cursor = await db.execute("DELETE FROM notes WHERE id = ?", (note_id,))

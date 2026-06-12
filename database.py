@@ -378,9 +378,39 @@ async def init_db() -> None:
                 "workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL"
             )
 
-        # Backfill: assign any orphaned notes to the default workspace
+        # Inline pages (Notion-style sub-pages): a note can be nested under
+        # another note OR under a database card. is_inline_page drives the
+        # title-from-first-line behaviour and hides the attribute/category chrome.
+        if "parent_note_id" not in n_cols:
+            await db.execute(
+                "ALTER TABLE notes ADD COLUMN "
+                "parent_note_id INTEGER REFERENCES notes(id) ON DELETE CASCADE"
+            )
+        if "parent_card_id" not in n_cols:
+            await db.execute(
+                "ALTER TABLE notes ADD COLUMN "
+                "parent_card_id INTEGER REFERENCES db_cards(id) ON DELETE CASCADE"
+            )
+        if "is_inline_page" not in n_cols:
+            await db.execute(
+                "ALTER TABLE notes ADD COLUMN "
+                "is_inline_page INTEGER NOT NULL DEFAULT 0"
+            )
         await db.execute(
-            "UPDATE notes SET workspace_id = ? WHERE workspace_id IS NULL", (default_ws_id,)
+            "CREATE INDEX IF NOT EXISTS idx_notes_parent_note ON notes(parent_note_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_parent_card ON notes(parent_card_id)"
+        )
+
+        # Backfill: assign any orphaned notes to the default workspace.
+        # Inline pages keep their own workspace_id (inherited from the parent) but
+        # must NOT be re-homed to the default workspace, so scope the backfill to
+        # top-level notes only.
+        await db.execute(
+            "UPDATE notes SET workspace_id = ? "
+            "WHERE workspace_id IS NULL AND COALESCE(is_inline_page, 0) = 0",
+            (default_ws_id,),
         )
 
         # ── FTS5 full-text search index (Phase 1) ─────────────────────────

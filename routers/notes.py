@@ -17,6 +17,9 @@ from routers.notes_db import (
     patch_note_content,
     search_notes,
     create_note,
+    create_inline_page,
+    get_child_page_titles,
+    get_note_workspace_id,
     update_note,
     delete_note,
     move_note_to_workspace,
@@ -29,6 +32,7 @@ from routers.sharing_db import (
     get_shared_object_ids,
     note_belongs_to_user,
     workspace_belongs_to_user,
+    db_card_belongs_to_user,
 )
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -88,6 +92,7 @@ async def list_notes(
         category_ids=cat_ids or None,
         workspace_ids=ws_ids,
         sort_by=sort_by or None,
+        exclude_inline=True,
     )
     await _attach_share_flags(notes)
     return templates.TemplateResponse(
@@ -233,6 +238,77 @@ async def url_title_endpoint(url: str = Query(..., description="URL whose page t
     return JSONResponse({"title": title})
 
 
+# ── Inline pages (Notion-style sub-pages) ───────────────────────────────────
+# NOTE: both routes are declared BEFORE GET /{note_id} so the path-param route
+# does not swallow "subpage" / "page-titles" as note ids.
+
+@router.post("/subpage")
+async def create_subpage(
+    request: Request,
+    parent_note_id: Optional[int] = Form(default=None),
+    parent_card_id: Optional[int] = Form(default=None),
+):
+    """Create an empty inline sub-page under a note or a database card.
+
+    Returns JSON {id, title} so the client can insert a page-link and open it.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=403, detail="Not authorised")
+    if (parent_note_id is None) == (parent_card_id is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide exactly one of parent_note_id / parent_card_id",
+        )
+
+    if parent_note_id is not None:
+        await _require_note_owner(parent_note_id, uid)
+        workspace_id = await get_note_workspace_id(parent_note_id)
+    else:
+        if not await db_card_belongs_to_user(parent_card_id, uid):
+            raise HTTPException(status_code=403, detail="Not authorised")
+        # The card lives in a database, which is itself a workspace (db_cards.db_id).
+        from database import get_db
+        async with get_db() as db:
+            cur = await db.execute(
+                "SELECT db_id FROM db_cards WHERE id = ?", (parent_card_id,)
+            )
+            row = await cur.fetchone()
+        workspace_id = row["db_id"] if row else None
+
+    note_id = await create_inline_page(
+        workspace_id=workspace_id,
+        meeting_date=date_type.today().isoformat(),
+        parent_note_id=parent_note_id,
+        parent_card_id=parent_card_id,
+    )
+    return JSONResponse({"id": note_id, "title": "Untitled"})
+
+
+@router.get("/page-titles")
+async def page_titles(
+    request: Request,
+    ids: str = Query(default=""),
+):
+    """Return {id: title} for the given inline-page ids, owner-filtered.
+
+    Used to hydrate page-link labels after the parent's markdown is rendered.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        return JSONResponse({})
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return JSONResponse({})
+    titles = await get_child_page_titles(id_list)
+    # Drop any id the user does not own — never leak another user's titles.
+    out = {}
+    for nid, title in titles.items():
+        if await note_belongs_to_user(nid, uid):
+            out[str(nid)] = title
+    return JSONResponse(out)
+
+
 @router.get("/{note_id}", response_class=HTMLResponse)
 async def view_note(request: Request, note_id: int):
     uid = request.session.get("user_id")
@@ -240,10 +316,14 @@ async def view_note(request: Request, note_id: int):
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     await _require_note_owner(note_id, uid)
+    # Resolve the parent for the inline-page back-link.
+    parent = None
+    if note.get("is_inline_page") and note.get("parent_note_id"):
+        parent = await get_note_by_id(note["parent_note_id"])
     return templates.TemplateResponse(
         request,
         "partials/note_detail.html",
-        {"note": note},
+        {"note": note, "inline_parent": parent},
     )
 
 
@@ -317,7 +397,7 @@ async def create_note_handler(
     categories = await get_categories_for_workspace(workspace_id)
     attr_defs = await get_all_attr_defs()
     ws_ids = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
-    notes = await search_notes(workspace_ids=ws_ids)
+    notes = await search_notes(workspace_ids=ws_ids, exclude_inline=True)
     await _attach_share_flags(notes)
     return templates.TemplateResponse(
         request,
@@ -392,7 +472,7 @@ async def delete_note_handler(
     await _require_note_owner(note_id, uid)
     await delete_note(note_id)
     ws_ids = list(await get_descendant_ids(workspace_id)) if workspace_id is not None else None
-    notes = await search_notes(workspace_ids=ws_ids)
+    notes = await search_notes(workspace_ids=ws_ids, exclude_inline=True)
     await _attach_share_flags(notes)
     return templates.TemplateResponse(
         request,
