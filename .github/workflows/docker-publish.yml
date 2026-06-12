@@ -1,44 +1,68 @@
-name: Publish Docker image
+# Build and push the BookWorm Docker image to GitHub Container Registry (GHCR).
+#
+# Triggers:
+#   - Every push to `main`
+#   - Every published release (tags the image with the release version)
+#   - Manual trigger (workflow_dispatch) for on-demand rebuilds
+#
+# The built image is published to:
+#   ghcr.io/<owner>/bookworm:latest
+#   ghcr.io/<owner>/bookworm:<git-sha>        (every push)
+#   ghcr.io/<owner>/bookworm:<semver-tag>     (releases, e.g. v1.2.3)
+#
+# Users can then run the app without building locally:
+#   image: ghcr.io/<owner>/bookworm:latest   (in docker-compose.yml)
 
-# Builds the BookWorm image and pushes it to the GitHub Container Registry
-# (ghcr.io/<owner>/bookworm) so docker-compose "Option B" can pull a pre-built
-# image instead of building from source. No secrets are baked in — runtime
-# config comes from .env / compose environment.
+name: Build & Publish Docker Image
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
-  workflow_dispatch:   # allow manual runs from the Actions tab
+  release:
+    types: [published]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write   # required to push to GHCR
+
     steps:
-      - name: Check out the repository
+      - name: Checkout source
         uses: actions/checkout@v4
+
+      # Extract metadata (tags, labels) from Git ref and GitHub events.
+      # Produces:
+      #   latest   — for every push to main
+      #   <semver> — when a release tag is pushed (v1.2.3 → 1.2.3)
+      #
+      # Deliberately NO sha- tag: those accumulate untagged entries in GHCR
+      # with every push and are not useful for a small team app.
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive image tags and labels
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/bookworm
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
+      # BuildKit cache — speeds up rebuilds when only source files change
+      # (requirements.txt layer is cached until deps change).
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -51,3 +75,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64   # amd64 (servers) + arm64 (Raspberry Pi 4+)
+          # Disable provenance attestations — they appear as extra untagged
+          # entries in GHCR (one per platform) with no benefit for a team app.
+          provenance: false
+          sbom: false
