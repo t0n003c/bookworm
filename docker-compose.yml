@@ -34,7 +34,7 @@ services:
     # Comment out `build: .` above and uncomment the line below to pull the
     # latest image without building locally.  Useful for servers with limited
     # CPU (Raspberry Pi, cheap VPS, etc.).
-    #   image: ghcr.io/YOUR_GITHUB_USERNAME/bookworm:latest
+    #   image: ghcr.io/t0n003c/bookworm:latest
     ports:
       - "8001:8001"
     environment:

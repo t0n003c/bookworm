@@ -335,12 +335,15 @@ If you'd rather pull a pre-built image from GitHub Container Registry instead of
 (useful on low-CPU servers like Raspberry Pi):
 
 ```bash
-# In docker-compose.yml, replace `build: .` with:
-#   image: ghcr.io/YOUR_USERNAME/bookworm:latest
+# In docker-compose.yml, comment out `build: .` and uncomment:
+#   image: ghcr.io/t0n003c/bookworm:latest
 docker compose up -d
 ```
 
-Images are built automatically via GitHub Actions on every push to `main`.
+Images are built and pushed to GHCR automatically by `.github/workflows/docker-publish.yml`
+on every push to `main` and on every `v*` tag. If you fork this repo, the workflow publishes
+under your own account (`ghcr.io/<your-username>/bookworm`); make the package **public** once
+(repo → Packages → bookworm → Package settings → Change visibility) so it can be pulled without auth.
 
 ---
 
