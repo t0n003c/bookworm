@@ -2397,9 +2397,15 @@
     bd.setAttribute('aria-hidden', 'true');
     bd.style.cssText = [
       'position:fixed', 'top:' + topOff, 'left:0', 'right:0', 'bottom:0',
-      'z-index:22', 'background:rgba(0,0,0,0.4)'
+      'z-index:22', 'background:rgba(0,0,0,0.4)',
+      // cursor:pointer is REQUIRED for iOS Safari to fire `click` on a plain
+      // <div>; without it, tapping the backdrop does nothing (esp. installed PWA).
+      'cursor:pointer'
     ].join(';');
     bd.addEventListener('click', _mobileSidebarClose);
+    // Belt-and-suspenders for iOS standalone PWAs where `click` can still be
+    // swallowed: pointerdown fires reliably on touch.
+    bd.addEventListener('pointerdown', function (e) { e.preventDefault(); _mobileSidebarClose(); });
     document.body.appendChild(bd);
   }
 

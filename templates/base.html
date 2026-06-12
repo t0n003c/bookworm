@@ -226,6 +226,17 @@
         #home-canvas { padding-bottom: 4.5rem !important; }
       }
     }
+    /* ── Installed PWA (standalone) ────────────────────────────────────────────
+     * In a standalone PWA, 100dvh/100vh on the shell can fail to resolve to a
+     * stable definite height — that collapses the flex height chain so the
+     * #main-content scroller never gets a height to scroll (notes won't move).
+     * The 100% chain (html/body = the PWA window) IS reliable in standalone, so
+     * pin the shell to it. Scoped to standalone → browser tabs + desktop are
+     * unaffected. */
+    @media all and (display-mode: standalone) {
+      html, body    { height: 100%; }
+      .bw-app-shell { height: 100% !important; }
+    }
     /* Widget cards: isolate layout so scroll doesn't trigger full-page reflow */
     .hw-card { contain: layout style; }
     /* Stack carousel: child cards must fill the slide and shed their own visual
