@@ -13,7 +13,10 @@ bw_shortcut_icons.py and are intentionally left untouched by this module.
 Files are only written when missing; call generate_icons(force=True) to redraw.
 
 Design: a cute green caterpillar — segmented body with little feet, a friendly
-two-eyed face + smile, and antennae — on a soft mint background.
+two-eyed face + smile, and antennae — on a deep-green background that matches the
+PWA splash/page colour (#1b4332). Matching means the splash reads as one solid
+colour with the caterpillar floating on it (no visible circle edge), and the
+background green is intentionally darker than the caterpillar's body greens.
 The amber-worm-on-blue design that this replaced is preserved below as the
 unused `_make_worm_icon()` for reference.
 """
@@ -23,7 +26,10 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 # ── Palette (caterpillar) ────────────────────────────────────────────────────
-_MINT_TOP = (236, 253, 245)   # mint-50   #ecfdf5
+# Background = the PWA page/splash colour so the icon's circle blends into the
+# loading screen. Deliberately darker than the caterpillar's body greens.
+_BG_DARK  = ( 27,  67,  50)   # deep green = #1b4332 (matches manifest bg/theme)
+_MINT_TOP = (236, 253, 245)   # mint-50   #ecfdf5  (kept for the preserved worm)
 _MINT_BOT = (167, 243, 208)   # emerald-200 #a7f3d0
 _GREEN    = ( 34, 163,  74)   # leaf green        #22a34a
 _GREEN_HD = ( 52, 199,  89)   # brighter head     #34c759
@@ -71,9 +77,11 @@ def _disc(d, cx, cy, r, fill):
 
 
 def _make_icon(size: int, full_bleed: bool = False) -> Image.Image:
-    """The active app icon: a green caterpillar on a soft mint background."""
+    """The active app icon: a green caterpillar on a deep-green background that
+    matches the PWA page/splash colour (#1b4332) — flat so the splash reads as a
+    single colour with the caterpillar floating on it."""
     s = size
-    base = _gradient_square(s, _MINT_TOP, _MINT_BOT)
+    base = Image.new("RGBA", (s, s), (*_BG_DARK, 255))
     if not full_bleed:
         # rounded square (standard icons); maskable/apple-touch stay full-bleed
         mask = Image.new("L", (s, s), 0)
