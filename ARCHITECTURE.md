@@ -143,10 +143,10 @@ bookworm/
 | `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
 | `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` ✅ (now `db/`) |
 | `auth_middleware.py` | `app/api/middleware/auth.py` ✅ (moved; shim left) |
-| `models.py` | `app/models/` |
+| `models.py` | `app/models.py` ✅ (moved; shim left — package split later) |
 | `routers/*_db.py` | `app/repositories/*` (interim: now `app/api/*_db.py`; rename pending) |
 | `routers/*.py` | `app/api/*` ✅ (moved; shims left) + logic → `app/services/*` |
-| `search_index.py`, `search_llm.py`, `routers/search_qa.py` | `app/services/search/` |
+| `search_index.py`, `search_llm.py` | `app/services/search/` ✅ (moved; shims left). `search_qa.py` is in `app/api/` (it has routes) |
 | `templates_env.py`, `templates/`, `static/` | `app/web/` |
 | `_health_check.py`, `_start_server.py`, `gen_vapid_keys.py`, `bw_*_icons.py`, `download_vendors.py`, `_seed_trip_data.py` | `scripts/` |
 
