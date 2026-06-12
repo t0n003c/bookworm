@@ -42,6 +42,8 @@ window.bwTimeline = (function () {
   let _pinching        = false;  // true while two-finger pinch-zoom is active
   let _wormCleanup     = null;   // bookworm RAF loop teardown
   let _bgCleanup       = null;   // aurora WebGL background teardown
+  let _maxLane         = 0;      // deepest stack lane on the busiest date (set by _buildRail)
+  let _vpad            = MOB_VPAD;// vertical pan room (px) each side of the spine — grows to fit _maxLane
   let _tlDateMode      = 'created'; // 'created' | 'updated'
 
   // ── Date utilities ───────────────────────────────────────────
@@ -178,6 +180,7 @@ window.bwTimeline = (function () {
     // Within a column (notes too close to spread horizontally) each side
     // stacks independently via its own laneIdx counter.
     let globalIdx = 0;
+    let maxLane = 0;
     columns.forEach(col => {
       let aboveCount = 0, belowCount = 0;
       col.notes.forEach(n => {
@@ -186,7 +189,10 @@ window.bwTimeline = (function () {
         _bwTLRender.buildPin(rail, n, col.x, above, laneIdx, rCfg, t);
         globalIdx++;
       });
+      // deepest single-side stack on this date — drives how far we must pan vertically
+      maxLane = Math.max(maxLane, aboveCount, belowCount);
     });
+    _maxLane = maxLane;
 
     // _notesCenter: midpoint of the ACTUAL note x-positions (rail coords).
     // For a single note this equals PAD_ENDS (not span-midpoint);
@@ -468,7 +474,8 @@ window.bwTimeline = (function () {
     Object.assign(contentWrap.style, {
       position: 'absolute', left: '0', right: '0', top: '0',
       // On mobile: taller than vScroll so there's room to scroll vertically.
-      // scrollHeight - clientHeight = MOB_VPAD*2. Init scrollTop = MOB_VPAD centres spine.
+      // Starts at MOB_VPAD*2; resized to _vpad*2 once _buildRail knows the
+      // deepest stack (see below). Init scrollTop = _vpad centres the spine.
       height: _isMob ? ('calc(100% + ' + (MOB_VPAD * 2) + 'px)') : '100%',
       pointerEvents: 'none',
     });
@@ -489,8 +496,21 @@ window.bwTimeline = (function () {
     contentWrap.appendChild(spine);
 
     // ── Rail (slides; spine-free) ─────────────────────────────
-    let _rail = _buildRail(notes, t);
+    let _rail = _buildRail(notes, t);   // sets _maxLane (deepest stack on busiest date)
     contentWrap.appendChild(_rail);
+
+    // Grow the vertical pan range so every note on a busy date is reachable.
+    // A note at lane i sits STEM_H + i*(CARD_H+GAP) from the spine; the deepest
+    // card's far edge is that + CARD_H. Pad both sides symmetrically (mobile only).
+    if (_isMob) {
+      const _GAP = 6;  // matches mobile GAP in timeline-render.js buildPin
+      const _extent = STEM_H + Math.max(0, _maxLane - 1) * (CARD_H + _GAP) + CARD_H + 56;
+      _vpad = Math.max(MOB_VPAD, _extent);
+      contentWrap.style.height = 'calc(100% + ' + (_vpad * 2) + 'px)';
+    } else {
+      _vpad = MOB_VPAD;
+    }
+
     const getRail = ()  => _rail;
     const setRail = (r) => { _rail = r; contentWrap.appendChild(r); };
 
@@ -580,7 +600,7 @@ window.bwTimeline = (function () {
     // On mobile: maxScrollY = MOB_VPAD*2 (= contentWrap overflow).
     // On desktop: 0 (no vertical pan — wheel zoom is enough).
     const cleanupDrag = _attachDrag(
-      outer, () => vScroll, getRail, onAllMove, _isMob ? MOB_VPAD * 2 : 0);
+      outer, () => vScroll, getRail, onAllMove, _isMob ? _vpad * 2 : 0);
     outer._cleanup    = cleanupDrag;
 
     // ── Pinch-to-zoom (two-finger gesture on touch screens) ─────────────────
@@ -691,7 +711,7 @@ window.bwTimeline = (function () {
       // overwrite the scrollTop we set below (autofit pushed-up bug).
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
       _doAutofit(outer, notes, t, getRail, setRail);
-      if (vScroll) vScroll.scrollTop = MOB_VPAD;  // reset vertical to spine-centre
+      if (vScroll) vScroll.scrollTop = _vpad;  // reset vertical to spine-centre
       onAllMove();
     }));
 
@@ -786,7 +806,7 @@ window.bwTimeline = (function () {
       _centerToday(outer, notes, t, getRail, setRail);
       // Centre spine vertically — must happen AFTER _centerToday so
       // the rail has its final dimensions before we show the overlay.
-      if (vScroll) vScroll.scrollTop = MOB_VPAD;
+      if (vScroll) vScroll.scrollTop = _vpad;
       onAllMove();
     };
 
