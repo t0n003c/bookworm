@@ -13,7 +13,7 @@ bw_shortcut_icons.py and are intentionally left untouched by this module.
 Files are only written when missing; call generate_icons(force=True) to redraw.
 
 Design: a cute green caterpillar — segmented body with little feet, a friendly
-two-eyed face + smile, and antennae — on a TRANSPARENT background (no tile).
+two-eyed face + smile, and antennae — on a soft mint background.
 The amber-worm-on-blue design that this replaced is preserved below as the
 unused `_make_worm_icon()` for reference.
 """
@@ -23,6 +23,8 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 # ── Palette (caterpillar) ────────────────────────────────────────────────────
+_MINT_TOP = (236, 253, 245)   # mint-50   #ecfdf5
+_MINT_BOT = (167, 243, 208)   # emerald-200 #a7f3d0
 _GREEN    = ( 34, 163,  74)   # leaf green        #22a34a
 _GREEN_HD = ( 52, 199,  89)   # brighter head     #34c759
 _GREEN_HI = (134, 239, 172)   # highlight         #86efac
@@ -69,9 +71,17 @@ def _disc(d, cx, cy, r, fill):
 
 
 def _make_icon(size: int, full_bleed: bool = False) -> Image.Image:
-    """The active app icon: a green caterpillar on a TRANSPARENT background."""
+    """The active app icon: a green caterpillar on a soft mint background."""
     s = size
-    base = Image.new("RGBA", (s, s), (0, 0, 0, 0))   # transparent — no tile/background
+    base = _gradient_square(s, _MINT_TOP, _MINT_BOT)
+    if not full_bleed:
+        # rounded square (standard icons); maskable/apple-touch stay full-bleed
+        mask = Image.new("L", (s, s), 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            [0, 0, s - 1, s - 1], radius=int(s * 0.225), fill=255)
+        rounded = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        rounded.paste(base, (0, 0), mask)
+        base = rounded
 
     segs = [(cx * s, cy * s, r * s) for (cx, cy, r) in _SEGS]
     hx, hy, hr = (_HEAD[0] * s, _HEAD[1] * s, _HEAD[2] * s)
