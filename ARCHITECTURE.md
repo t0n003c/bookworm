@@ -142,7 +142,7 @@ bookworm/
 | `security.py` | `app/core/security.py` ✅ (moved; shim left) |
 | `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
 | `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` ✅ (now `db/`) |
-| `auth_middleware.py` | `app/api/middleware/auth.py` |
+| `auth_middleware.py` | `app/api/middleware/auth.py` ✅ (moved; shim left) |
 | `models.py` | `app/models/` |
 | `routers/*_db.py` | `app/repositories/*` |
 | `routers/*.py` | `app/api/*` (thin) + logic → `app/services/*` |
@@ -192,9 +192,11 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   working unchanged. Verified: 9 identity checks (old path *is* new object), 351
   routes, fresh build + live restart + health + smoke. ✅ **Also moved:**
   `bw_ssrf.py` → `app/core/ssrf.py`, `security.py` → `app/core/security.py`
-  (shims left; identity + SSRF-guard + secret-key checks pass). **Next:** move
-  `auth_middleware` → `app/api/middleware/auth.py`, then routers → `app/api`,
-  then flip the Dockerfile entrypoint last.
+  (shims left; identity + SSRF-guard + secret-key checks pass), and
+  `auth_middleware.py` → `app/api/middleware/auth.py` (stands up the `app/api`
+  layer; verified auth redirect + middleware stack intact). **Next:** routers →
+  `app/api` (the large move — ~50 files with cross-imports), then flip the
+  Dockerfile entrypoint last (with the `main.py` move in Phase 5).
 - **Phase 5 — Slim `main.py`.** Move lifespan → `app/lifespan.py`, inline routes
   → their feature routers, CSP/middleware wiring → `create_app()`.
 - **Phase 6 — Service layer per slice.** For one feature at a time (start with
