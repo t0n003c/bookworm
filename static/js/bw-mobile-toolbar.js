@@ -98,9 +98,23 @@
     // Inserting '/' fires the editor's input handler, which opens the palette.
     document.execCommand('insertText', false, '/');
   }
-  function actIndent()  { restoreSelection(); document.execCommand('indent');  afterMutate(); }
-  function actOutdent() { restoreSelection(); document.execCommand('outdent'); afterMutate(); }
-  function actUndo()    { restoreSelection(); document.execCommand('undo');    afterMutate(); }
+  // Route indent/outdent through each editor's OWN Tab handler (note form's
+  // _bwCeTab via the document-level _bwEditorTabHandler, or the db card's
+  // _dbNoteTabIndent on the note element) by dispatching a synthetic Tab.
+  // execCommand('indent') would delete a freshly-created empty bullet; the
+  // native handlers have the empty-bullet fix and manage their own save +
+  // cursor-aware pruning, so we do NOT call afterMutate() here.
+  function dispatchTab(shift) {
+    restoreSelection();
+    if (!activeCE) return;
+    activeCE.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Tab', code: 'Tab', keyCode: 9, which: 9,
+      shiftKey: !!shift, bubbles: true, cancelable: true,
+    }));
+  }
+  function actIndent()  { dispatchTab(false); }
+  function actOutdent() { dispatchTab(true); }
+  function actUndo()    { restoreSelection(); document.execCommand('undo'); afterMutate(); }
 
   function actDeleteBlock() {
     var b = currentBlock();
@@ -412,12 +426,25 @@
     }
   }
 
-  /* ── positioning above the keyboard via visualViewport ── */
+  /* ── keyboard detection + positioning via visualViewport ──
+     The on-screen keyboard shrinks the visual viewport; that gap below it is
+     the keyboard height. We only show the bar when the keyboard is actually up,
+     and hide it the moment the keyboard dismisses — even if the field keeps
+     focus. */
+  function kbGap() {
+    var vv = window.visualViewport;
+    if (!vv) return null;   // no API — caller decides the fallback
+    return Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  }
+  function keyboardUp() {
+    var g = kbGap();
+    if (g === null) return true;   // no visualViewport: fall back to focus-based show
+    return g > 150;                // > ~150px below the viewport ⇒ a keyboard, not browser chrome
+  }
   function reposition() {
     if (!bar || bar.style.display === 'none') return;
-    var vv = window.visualViewport;
-    var gap = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-    bar.style.bottom = gap + 'px';
+    var g = kbGap();
+    bar.style.bottom = (g === null ? 0 : g) + 'px';
   }
 
   function showBar() {
@@ -430,12 +457,18 @@
     if (bar) bar.style.display = 'none';
     closePopup();
   }
+  // Single source of truth: bar is visible only while an editor is focused AND
+  // the keyboard is up.
+  function update() {
+    if (activeCE && keyboardUp()) showBar();
+    else hideBar();
+  }
 
   /* ───────────────────────── wiring ───────────────────────── */
 
   document.addEventListener('focusin', function (e) {
     var ce = findEditor(e.target);
-    if (ce) { activeCE = ce; saveSelection(); showBar(); }
+    if (ce) { activeCE = ce; saveSelection(); update(); }
   });
   document.addEventListener('focusout', function () {
     // Defer: a tap on a bar button briefly moves focus; re-check after.
@@ -444,19 +477,20 @@
       if (isEditorCE(a)) return;                 // still editing
       if (bar && bar.contains(a)) return;        // focus is on the bar
       if (popup && popup.contains(a)) return;
-      hideBar();
       activeCE = null;
+      update();
     }, 60);
   });
   document.addEventListener('selectionchange', function () {
     if (!activeCE) return;
     saveSelection();
-    updateMode();
+    if (bar && bar.style.display !== 'none') updateMode();
   });
 
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', reposition);
+    // resize fires as the keyboard animates up/down → re-evaluate show/hide.
+    window.visualViewport.addEventListener('resize', update);
     window.visualViewport.addEventListener('scroll', reposition);
   }
-  window.addEventListener('resize', reposition);
+  window.addEventListener('resize', update);
 })();
