@@ -379,8 +379,12 @@ window._bwTLUi = (function () {
       wrap.style.left = Math.round(curX) + 'px';
 
       // Face the direction of travel via scaleX on the wrapper transform
-      // (inner still plays its rotation animation independently)
-      const facing = diff > 0.5 ? ' scaleX(-1)' : ' scaleX(1)';
+      // (inner still plays its rotation animation independently).
+      // The 🐛 emoji faces LEFT by default; our SVG mascot (favicon) faces
+      // RIGHT — so the flip sign depends on which asset is in use, else the
+      // Apple/SVG worm crawls backward.
+      const _base  = _isApple ? 1 : -1;   // _isApple uses the right-facing SVG
+      const facing = ' scaleX(' + (diff > 0.5 ? _base : -_base) + ')';
       wrap.style.transform = 'translateY(-50%)' + facing;
     }
     requestAnimationFrame(_step);

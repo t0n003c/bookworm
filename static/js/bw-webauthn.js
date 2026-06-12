@@ -248,8 +248,14 @@
     var fallbackBtn = document.getElementById('wa-fallback-btn');
 
     function showTotp() {
-      if (totpSection) totpSection.classList.remove('hidden');
-      if (bioSection)  bioSection.classList.add('hidden');
+      // Only swap to the TOTP section if it actually exists. For biometric-only
+      // accounts (no TOTP) we must NOT hide the bio section, or the user is left
+      // with a blank screen and no way back — keep it visible so the status
+      // message + "Back to login" link remain reachable.
+      if (totpSection) {
+        totpSection.classList.remove('hidden');
+        if (bioSection) bioSection.classList.add('hidden');
+      }
     }
 
     function setStatus(msg, isError) {
@@ -269,9 +275,16 @@
     // retryLeft — auto-retries remaining for the current phase
     function runPhase(phaseIdx, retryLeft) {
       if (phaseIdx >= _PHASES.length) {
-        // All biometric phases exhausted
-        setStatus('Biometric sign-in unavailable. Use your code instead.', true);
-        if (retryBtn) retryBtn.classList.add('hidden');
+        // All biometric phases exhausted. Offer a retry, and either the TOTP
+        // fallback (if set up) or a clear "use Back to login" message.
+        setStatus(
+          totpSection ? 'Biometric sign-in unavailable. Use your code instead.'
+                      : 'Biometric sign-in failed. Tap “Try again” or use “Back to login”.',
+          true);
+        if (retryBtn) {
+          retryBtn.classList.remove('hidden');
+          retryBtn.onclick = function () { runPhase(0, 1); };
+        }
         showTotp();
         return;
       }

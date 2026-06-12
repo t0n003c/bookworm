@@ -103,15 +103,22 @@
           </button>
         </div>
 
-        {% if totp_enabled %}
-        <div class="mt-6 pt-5 border-t border-white/10 text-center">
+        <div class="mt-6 pt-5 border-t border-white/10 text-center space-y-2">
+          {% if totp_enabled %}
           <button id="wa-fallback-btn"
-            class="text-sm text-white/40 hover:text-white/70 transition
+            class="block mx-auto text-sm text-white/40 hover:text-white/70 transition
                    focus:outline-none focus:underline">
             Use authenticator code instead →
           </button>
+          {% endif %}
+          {# Always-available escape: biometric-only users must be able to return
+             to the username/password screen when the OS biometric prompt fails. #}
+          <a href="/login"
+            class="block mx-auto text-sm text-white/40 hover:text-white/70 transition
+                   focus:outline-none focus:underline">
+            ← Back to login
+          </a>
         </div>
-        {% endif %}
 
       </div>
 
