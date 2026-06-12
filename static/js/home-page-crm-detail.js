@@ -43,6 +43,12 @@ function crmDetailBack() {
   _crmRender();
 }
 
+// Click on the desk backdrop (outside the parchment sheet) → exit the detail view.
+function crmDetailBgClick(e) {
+  if (e.target.closest('.crm-aged-page')) return;  // click landed on the page itself
+  crmDetailBack();
+}
+
 // ── Renderer ──────────────────────────────────────────────────────────────────
 function _crmRenderDetail() {
   var c = _crmContacts.find(function(x){ return x.id === _crmDetailContactId; });
@@ -163,7 +169,7 @@ function _crmRenderDetail() {
   var contactHtml = contactBits ? `<div class="crm-aged-contact">${contactBits}</div>` : '';
 
   _crmSetMain(`
-    <div class="crm-aged-wrap">
+    <div class="crm-aged-wrap" onclick="crmDetailBgClick(event)">
       <div class="crm-aged-page">
 
         <!-- Top bar -->
