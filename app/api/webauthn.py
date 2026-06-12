@@ -32,6 +32,9 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from app.api.auth_db import get_user_by_id, get_user_by_username
+from app.api.rate_limit import check_rate_limit, record_failure, record_success
+from security import make_expires_at
 from app.api.webauthn_db import (
     delete_credential,
     get_all_credential_ids,
@@ -332,4 +335,87 @@ async def auth_complete(request: Request):
     else:
         request.session.pop("expires_at", None)
 
+    return JSONResponse({"ok": True, "redirect": "/"})
+
+
+# ── Passwordless passkey login (primary auth — no password) ──────────────────
+# A registered passkey is strong, phishing-resistant auth on its own, so on an
+# enrolled device the user signs in with biometric alone: no password, no extra
+# 2FA step. The credential ID identifies the user.
+
+@router.post("/login/webauthn/begin")
+async def login_wa_begin(request: Request):
+    """Authentication options for passwordless login. With a username we scope
+    allowCredentials to that user's keys (works with non-discoverable creds);
+    otherwise we request a discoverable credential. Always returns options so
+    there's no account-existence leak."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    username = (body.get("username") or "").strip()
+    rp_id, _ = _rp_config(request)
+
+    allow = []
+    if username:
+        user = await get_user_by_username(username)
+        if user:
+            for cid in await get_all_credential_ids(user["id"], None):
+                allow.append(PublicKeyCredentialDescriptor(id=base64url_to_bytes(cid)))
+
+    options = webauthn.generate_authentication_options(
+        rp_id=rp_id,
+        allow_credentials=allow or None,   # None → discoverable-credential prompt
+        user_verification=UserVerificationRequirement.PREFERRED,
+    )
+    request.session["login_wa_challenge"] = _b64url_encode(options.challenge)
+    return JSONResponse(json.loads(options_to_json(options)))
+
+
+@router.post("/login/webauthn/complete")
+async def login_wa_complete(request: Request):
+    """Verify a passwordless assertion and log the user in directly."""
+    rl_key = f"{request.client.host}:login-wa"
+    check_rate_limit(rl_key)
+
+    challenge_b64 = request.session.pop("login_wa_challenge", None)
+    if not challenge_b64:
+        return JSONResponse({"error": "No challenge in session."}, status_code=400)
+
+    rp_id, origin = _rp_config(request)
+    body = await request.json()
+    stored = await get_credential_by_id(body.get("id", ""))
+    if not stored:
+        record_failure(rl_key)
+        return JSONResponse({"error": "Unknown passkey."}, status_code=400)
+
+    try:
+        cred = _parse_auth_credential(body)
+        verification = webauthn.verify_authentication_response(
+            credential=cred,
+            expected_challenge=base64url_to_bytes(challenge_b64),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=base64url_to_bytes(stored["public_key"]),
+            credential_current_sign_count=stored["sign_count"],
+            require_user_verification=True,   # biometric IS the login → require UV
+        )
+    except Exception as exc:
+        record_failure(rl_key)
+        log.warning("Passwordless WebAuthn login failed: %s", exc)
+        return JSONResponse({"error": "Verification failed."}, status_code=400)
+
+    record_success(rl_key)
+    await update_sign_count(body.get("id", ""), verification.new_sign_count)
+
+    user = await get_user_by_id(stored["user_id"])
+    if not user:
+        return JSONResponse({"error": "Account not found."}, status_code=400)
+
+    request.session.clear()
+    request.session["user_id"]  = user["id"]
+    request.session["username"] = user["username"]
+    request.session["role"]     = user["role"]
+    if make_expires_at(bool(body.get("stay"))):
+        request.session["expires_at"] = make_expires_at(bool(body.get("stay")))
     return JSONResponse({"ok": True, "redirect": "/"})

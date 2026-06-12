@@ -219,6 +219,43 @@
   }
   window.bwWaAuthenticate = bwWaAuthenticate;
 
+  // ── Passwordless passkey login (login page) ─────────────────────────────────
+  // username is optional (scopes to that account's keys; else discoverable).
+  // onError(msg) is called on cancel/failure; success redirects.
+  function bwLoginWithPasskey(username, stay, onError) {
+    fetch('/login/webauthn/begin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username || '' }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (opts) {
+        return navigator.credentials.get({ publicKey: _prepareRequestOptions(opts) });
+      })
+      .then(function (cred) {
+        var payload = _encodeAuthentication(cred);
+        payload.stay = !!stay;
+        return fetch('/login/webauthn/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) { window.location.href = res.redirect || '/'; }
+        else if (typeof onError === 'function') { onError(res.error || 'Sign-in failed.'); }
+      })
+      .catch(function (err) {
+        if (typeof onError === 'function') {
+          onError(err && err.name === 'NotAllowedError'
+            ? 'Biometric cancelled, or no passkey on this device.'
+            : (err && err.message ? err.message : String(err)));
+        }
+      });
+  }
+  window.bwLoginWithPasskey = bwLoginWithPasskey;
+
   // ── 2FA verify page bootstrap ───────────────────────────────────────────────
 
   // Phase config — emoji + label shown during each phase
