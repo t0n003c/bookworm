@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from database import get_db
-from routers.attachments_db import UPLOAD_DIR
+from routers.attachments_db import UPLOAD_DIR, get_upload_owner
 from routers.uploads_db import create_page_upload, delete_page_upload, remove_upload_from_card_attr
 from routers.workspace_db_cards import (
     create_db_card,
@@ -270,6 +270,10 @@ async def remove_attr(
     """Remove a custom attribute from a card."""
     user_id = _uid(request)
     await _get_database_ws(ws_id, user_id)
+    # IDOR guard: the card must belong to this workspace + user, not just any
+    # card whose id the caller knows.
+    if not await get_db_card(card_id=card_id, db_id=ws_id, user_id=user_id):
+        raise HTTPException(status_code=404, detail="Card not found")
     deleted = await delete_card_attr(attr_id=attr_id, card_id=card_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Attribute not found")
@@ -284,6 +288,8 @@ async def patch_attr(
     """Patch a single attribute's metadata (currently: visibility only)."""
     user_id = _uid(request)
     await _get_database_ws(ws_id, user_id)
+    if not await get_db_card(card_id=card_id, db_id=ws_id, user_id=user_id):
+        raise HTTPException(status_code=404, detail="Card not found")
     ok = await patch_attr_visibility(
         attr_id=attr_id, card_id=card_id, visibility=body.visibility
     )
@@ -375,13 +381,23 @@ async def rename_attr(
 
 @router.get("/covers/{filename}")
 async def serve_cover(filename: str, request: Request) -> FileResponse:
-    """Auth-gated inline serve for card cover images stored in UPLOAD_DIR."""
-    _uid(request)  # 401 if no session
+    """Owner-gated inline serve for card cover images stored in UPLOAD_DIR."""
+    user_id = _uid(request)  # 401 if no session
     # Sanitise: no path traversal
     safe_name = Path(filename).name
     disk_path = UPLOAD_DIR / safe_name
     if not disk_path.exists():
         raise HTTPException(status_code=404, detail="Cover not found")
+    # IDOR guard: a card owned by this user must reference this cover (covers are
+    # bare {uuid}.ext files that would otherwise be served to any logged-in user).
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT 1 FROM db_cards WHERE user_id=? AND cover_url=? LIMIT 1",
+            (user_id, f"/workspaces/covers/{safe_name}"),
+        )
+        owns = await cur.fetchone()
+    if not owns and await get_upload_owner(safe_name) != user_id:
+        raise HTTPException(status_code=403, detail="Not authorised")
     mime = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
     # No 'filename' arg → no Content-Disposition header → browser renders inline
     return FileResponse(path=str(disk_path), media_type=mime)

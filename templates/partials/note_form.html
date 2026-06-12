@@ -434,7 +434,8 @@
     <!-- Actions -->
     <div class="flex gap-3 flex-shrink-0 pb-2">
       <button type="submit"
-        class="flex-1 bg-wblue text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue"
+        hx-disabled-elt="this"
+        class="flex-1 bg-wblue text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 transition text-sm focus:outline-none focus:ring-2 focus:ring-wblue disabled:opacity-60 disabled:cursor-wait"
       >{{ 'Save Changes' if is_edit else 'Create Note' }}</button>
       <button type="button" onclick="{{ 'closePanel()' if is_edit else 'cancelNewNote()' }}"
         class="px-4 py-2.5 border border-gray-300 dark:border-zinc-600 rounded-lg text-sm text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition focus:outline-none focus:ring-2 focus:ring-gray-300"

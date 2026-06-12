@@ -2860,7 +2860,13 @@ function _dbSaveNote(cardId, html) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note_content: html }),
-  }).catch(function(e) { console.warn('Note save failed', e); });
+    keepalive: true,   // survive a tab close (beforeunload flush)
+  })
+  .then(function(r) { if (!r.ok || r.redirected) throw new Error('save failed: ' + r.status); })
+  .catch(function(e) {
+    console.warn('Note save failed', e);
+    if (typeof _bwToast === 'function') _bwToast("⚠️ Couldn't save card note — try again");
+  });
 }
 
 function _dbTitleBlur(cardId, el) {
@@ -2872,7 +2878,13 @@ function _dbTitleBlur(cardId, el) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: title }),
-  }).catch(function(e) { console.warn('Title save failed', e); });
+    keepalive: true,
+  })
+  .then(function(r) { if (!r.ok || r.redirected) throw new Error('save failed: ' + r.status); })
+  .catch(function(e) {
+    console.warn('Title save failed', e);
+    if (typeof _bwToast === 'function') _bwToast("⚠️ Couldn't save card title — try again");
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -3083,6 +3095,9 @@ document.head.appendChild(s);
 /* Floating selection toolbar — B / I / S + highlight flyout + text-color flyout + A+/A- */
 function _dbSelToolbarInit() {
   if (_dbSelBar) return;
+  // Touch devices use the mobile keyboard accessory bar (bw-mobile-toolbar.js)
+  // for selection formatting — skip the floating toolbar so they don't overlap.
+  if (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return;
 
   var HL_COLORS = [
     { label: 'Remove', color: null          },
@@ -6398,6 +6413,7 @@ function _dbDetailTitleBlur(cardId, el) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: title }),
+    keepalive: true,
   })
   .then(function() { _dbRenderGrid(); })
   .catch(function(e) { console.warn('Title save failed', e); });

@@ -173,9 +173,12 @@ async function rssMarkAllRead() {
 async function _loadFeeds() {
   try {
     const r = await fetch(`/home/rss-reader/${_pid}/feeds`);
-    if (!r.ok) return;
+    // Session expired → fetch transparently followed a 302 to /login (HTML).
+    // Don't blank the feed list (looks like "all your feeds vanished").
+    if (r.redirected) { window.location.href = '/login'; return; }
+    if (!r.ok) return;        // transient error — keep what we had
     _feeds = await r.json();
-  } catch { _feeds = []; }
+  } catch { return; }         // parse/network error — keep existing, don't blank
   _renderFeedList();
   rssSelectAll();
 }

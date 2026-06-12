@@ -20,19 +20,23 @@ def _row(r) -> dict:
     return dict(r) if r else {}
 
 
-async def _attach_field_values(contacts: list[dict], page_id: int) -> list[dict]:
-    """Attach custom field values to each contact (single JOIN query, not N+1)."""
+async def _attach_field_values(contacts: list[dict], page_id: int, db=None) -> list[dict]:
+    """Attach custom field values to each contact (single query, not N+1).
+
+    Pass an already-open `db` to reuse the caller's connection — on OneDrive-
+    backed SQLite, opening a connection is the expensive part.
+    """
     if not contacts:
         return contacts
     contact_ids = [c["id"] for c in contacts]
     placeholders = ",".join("?" * len(contact_ids))
-    async with get_db() as db:
-        cur = await db.execute(
-            f"SELECT contact_id, field_id, value FROM crm_contact_field_values "
-            f"WHERE contact_id IN ({placeholders})",
-            contact_ids,
-        )
-        rows = await cur.fetchall()
+    sql = (f"SELECT contact_id, field_id, value FROM crm_contact_field_values "
+           f"WHERE contact_id IN ({placeholders})")
+    if db is not None:
+        rows = await (await db.execute(sql, contact_ids)).fetchall()
+    else:
+        async with get_db() as _db:
+            rows = await (await _db.execute(sql, contact_ids)).fetchall()
     # Build lookup: {contact_id: {field_id: value}}
     lookup: dict[int, dict[int, str]] = {}
     for r in rows:
@@ -52,7 +56,7 @@ async def get_contacts(page_id: int, user_id: int) -> list[dict]:
             (page_id, user_id),
         )
         rows = [dict(r) for r in await cur.fetchall()]
-    return await _attach_field_values(rows, page_id)
+        return await _attach_field_values(rows, page_id, db=db)
 
 
 async def add_contact(

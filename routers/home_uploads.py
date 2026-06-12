@@ -4,6 +4,7 @@ Mounted with prefix=/home/uploads.
 All endpoints are JSON — consumed by home-page-uploads.js.
 The page shell is rendered by home_page_view() in home.py.
 """
+import asyncio
 import io
 import json
 import mimetypes
@@ -401,15 +402,18 @@ async def upload_file(
     # (often 12–50 MP) don't hit storage / network as enormous files.
     _MAX_PIXEL_DIM = 2048
     if webp and mime in _WEBP_SOURCE_TYPES:
-        try:
+        def _to_webp(raw: bytes) -> bytes:
+            # CPU-bound re-encode (a 50MP phone photo takes real time) — runs in a
+            # worker thread so it never blocks the single-worker event loop.
             from PIL import Image  # noqa: PLC0415
-            img = Image.open(io.BytesIO(data))
-            # Resize only if either dimension exceeds the cap — preserve aspect ratio
+            img = Image.open(io.BytesIO(raw))
             if img.width > _MAX_PIXEL_DIM or img.height > _MAX_PIXEL_DIM:
                 img.thumbnail((_MAX_PIXEL_DIM, _MAX_PIXEL_DIM), Image.LANCZOS)
             buf = io.BytesIO()
             img.save(buf, format="WEBP", quality=82)
-            data = buf.getvalue()
+            return buf.getvalue()
+        try:
+            data = await asyncio.to_thread(_to_webp, data)
             mime = "image/webp"
             stored_name = f"{uuid.uuid4().hex}.webp"
         except ImportError:

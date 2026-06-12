@@ -236,11 +236,20 @@ function _msUpdateBar() {
 /* ── Batch delete ────────────────────────────────────────────────────────────── */
 async function _msDeleteSelected() {
     if (_msSelected.size === 0) return;
+    // Confirm before a destructive multi-delete (one mis-tap could wipe several).
+    var n = _msSelected.size;
+    if (!window.confirm('Delete ' + n + ' selected item' + (n === 1 ? '' : 's') + '? This cannot be undone.')) return;
     var btn = document.getElementById('grid-ms-del');
     if (btn) btn.disabled = true;
+    var failed = 0;
     for (var id of Array.from(_msSelected)) {
-        try { await fetch('/home/grid/' + _gridPid + '/cells/' + id, { method: 'DELETE' }); }
-        catch(e) { console.error('[grid-touch] delete', id, e); }
+        try {
+            var r = await fetch('/home/grid/' + _gridPid + '/cells/' + id, { method: 'DELETE' });
+            if (!r.ok) failed++;
+        } catch(e) { console.error('[grid-touch] delete', id, e); failed++; }
+    }
+    if (failed && typeof _bwToast === 'function') {
+        _bwToast('⚠️ ' + failed + ' item' + (failed === 1 ? '' : 's') + " couldn't be deleted");
     }
     _msExit();
     await _gridLoadCells();

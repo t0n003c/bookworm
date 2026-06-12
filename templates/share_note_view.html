@@ -13,6 +13,9 @@
   <link id="hljs-dark" rel="stylesheet"
     href="/static/vendor/hljs-github-dark-dimmed.min.css">
   <script src="/static/vendor/highlight.min.js"></script>
+  <!-- Markdown + sanitizer: public content MUST be sanitized before display -->
+  <script src="/static/vendor/marked.min.js" defer></script>
+  <script src="/static/vendor/purify.min.js" defer></script>
   <script src="/static/js/bw-content-render.js"></script>
   <script>
     // Apply saved theme before first paint, then sync hljs theme
@@ -95,11 +98,28 @@
     <div class="mb-2">
       <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-zinc-400 mb-2">Notes</h3>
     </div>
-    <article class="md-body text-sm text-gray-800 dark:text-zinc-200
+    <article id="bw-share-md" class="md-body text-sm text-gray-800 dark:text-zinc-200
                    bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700
-                   rounded-lg p-4 leading-relaxed">
-      {{ note.content | safe }}
-    </article>
+                   rounded-lg p-4 leading-relaxed"
+             data-raw="{{ note.content | e }}"></article>
+    <script>
+      // Public page: render markdown then SANITIZE. Never inject raw user HTML.
+      window.addEventListener('DOMContentLoaded', function () {
+        var el = document.getElementById('bw-share-md');
+        if (!el) return;
+        var md = (el.getAttribute('data-raw') || '')
+          .replace(/\r\n?/g, '\n').replace(/^(\s*)• /gm, '$1- ');
+        if (!window.DOMPurify) { el.textContent = md; return; }  // fail closed
+        if (window.marked) marked.use({ gfm: true, breaks: true });
+        var html = window.marked ? marked.parse(md) : md;
+        el.innerHTML = DOMPurify.sanitize(html, {
+          ADD_TAGS: ['mark'],
+          ADD_ATTR: ['style', 'target', 'rel', 'data-note-id'],
+          FORCE_BODY: true,
+        });
+        if (typeof window._bwApplyCodeHighlighting === 'function') window._bwApplyCodeHighlighting(el);
+      });
+    </script>
     {% else %}
     <p class="text-gray-400 dark:text-zinc-500 italic text-sm">This note has no content.</p>
     {% endif %}

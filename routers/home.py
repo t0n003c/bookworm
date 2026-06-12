@@ -36,6 +36,7 @@ from routers.home_rss_db import (
     sync_widget_feeds_to_rss_pages,
 )
 from routers.notes_db import search_notes
+from bw_ssrf import is_safe_url, resolve_redirect
 from routers.workspaces_db import get_all_workspaces, get_trashed_workspaces
 from templates_env import templates
 
@@ -427,17 +428,32 @@ def _httpx_fetch(url: str, extra_headers: dict | None = None,
     """
     headers   = {"User-Agent": _RSS_UA, **(extra_headers or {})}
     proxy_url = _PROXY or None
+    # SSRF guard: validate the target and every redirect hop. When a proxy is
+    # configured we trust it to reach only what it's allowed to and skip the
+    # local DNS check (the proxy may resolve names we can't).
+    if not proxy_url and not is_safe_url(url):
+        raise urllib.error.URLError("Refusing to fetch a non-public address.")
     try:
         with httpx.Client(
             proxy=proxy_url,
-            follow_redirects=True,
+            follow_redirects=False,   # follow manually so each hop is re-validated
             timeout=timeout,
             headers=headers,
         ) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            ct = resp.headers.get("content-type", "")
-            return resp.content, ct
+            cur = url
+            for _hop in range(6):
+                resp = client.get(cur)
+                if resp.is_redirect:
+                    loc = resp.headers.get("location", "")
+                    nxt = resolve_redirect(cur, loc) if not proxy_url else urllib.parse.urljoin(cur, loc)
+                    if not nxt:
+                        raise urllib.error.URLError("Unsafe redirect target blocked.")
+                    cur = nxt
+                    continue
+                resp.raise_for_status()
+                ct = resp.headers.get("content-type", "")
+                return resp.content, ct
+            raise urllib.error.URLError("Too many redirects.")
     except httpx.HTTPStatusError as exc:
         raise urllib.error.HTTPError(
             url, exc.response.status_code, str(exc), {}, None
@@ -1332,6 +1348,14 @@ async def update_widget(
     widget_id: int,
     config_json: str = Form("{}"),
 ):
+    uid = _uid(request)
+    # IDOR guard: the widget must live on a page this user owns. Without this,
+    # any logged-in user could overwrite any other user's widget config by id.
+    widget = await get_widget_by_id(widget_id)
+    if not widget:
+        return HTMLResponse(_ERR.format("Widget not found."), 404)
+    if not await get_home_page(widget.get("page_id"), uid):
+        return HTMLResponse(_ERR.format("Forbidden."), 403)
     try:
         config = json.loads(config_json)
     except Exception:
@@ -1339,13 +1363,10 @@ async def update_widget(
     await update_widget_config(widget_id, config)
     # One-way sync: if this is an RSS feed widget, push any new feed URLs
     # into all RSS reader pages for this user (no deletions, no reverse flow).
-    widget = await get_widget_by_id(widget_id)
-    if widget and widget.get("widget_type") == "rss_feed":
-        uid = request.session.get("user_id")
-        if uid:
-            await sync_widget_feeds_to_rss_pages(
-                int(uid), config.get("feeds") or [], widget_id=widget_id
-            )
+    if widget.get("widget_type") == "rss_feed" and uid:
+        await sync_widget_feeds_to_rss_pages(
+            int(uid), config.get("feeds") or [], widget_id=widget_id
+        )
     return HTMLResponse("", 204)
 
 
@@ -1361,6 +1382,9 @@ async def change_widget_style(
     page = await get_home_page(page_id, uid)
     if not page:
         return HTMLResponse(_ERR.format("Page not found."), 404)
+    _w = await get_widget_by_id(widget_id)
+    if not _w or _w.get("page_id") != page_id:
+        return HTMLResponse(_ERR.format("Widget not found on this page."), 404)
     await update_widget_style(widget_id, style)
     widgets   = await get_widgets(page_id)
     all_notes = await _user_notes(uid)
@@ -1375,6 +1399,9 @@ async def del_widget(request: Request, widget_id: int, page_id: int = Form(...))
     uid  = _uid(request)
     page = await get_home_page(page_id, uid)
     if not page:
+        return HTMLResponse(_ERR.format("Forbidden."), 403)
+    _w = await get_widget_by_id(widget_id)
+    if not _w or _w.get("page_id") != page_id:
         return HTMLResponse(_ERR.format("Forbidden."), 403)
     # Note: rss_page_feeds.source_widget_id has ON DELETE SET NULL —
     # any reader-page feeds linked to this widget are automatically unlinked

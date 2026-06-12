@@ -152,7 +152,15 @@ def _sort_reminders(items: list) -> list:
 
 
 def _tojson(v: object, indent: int | None = None) -> str:
-    return json.dumps(v, default=str, indent=indent)
+    # HTML-safe: escape the characters that could break out of a <script> block
+    # or an HTML attribute (matches Jinja's built-in tojson contract). Without
+    # this, a value containing "</script>" injected into an inline <script> tag
+    # would terminate the element and allow markup injection.
+    bs = chr(92)  # backslash, built at runtime to dodge source-escaping
+    out = json.dumps(v, default=str, indent=indent)
+    return (out.replace("<", bs + "u003c")
+               .replace(">", bs + "u003e")
+               .replace("&", bs + "u0026"))
 
 
 def _local_dt(utc_str: str) -> "datetime":

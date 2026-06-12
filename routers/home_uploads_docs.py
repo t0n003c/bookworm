@@ -15,6 +15,7 @@ Phase 6 endpoint (Feature A):
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import csv
 import io
@@ -560,9 +561,10 @@ async def convert_file(request: Request, page_id: int, file_id: int, body: Conve
     if to_fmt == "docx":
         if mime.startswith("text/") or (mime == "application/octet-stream"):
             text = disk_path.read_text(encoding="utf-8", errors="replace")
-            data = _text_to_docx_bytes(text)
+            data = await asyncio.to_thread(_text_to_docx_bytes, text)
         elif mime == "application/pdf":
-            data = _pdf_to_docx_bytes(disk_path)
+            # PDF→DOCX can take seconds — keep it off the event loop.
+            data = await asyncio.to_thread(_pdf_to_docx_bytes, disk_path)
         else:
             raise HTTPException(status_code=400, detail="Only TXT or PDF can be converted to DOCX")
         stored = f"{uuid.uuid4().hex}.docx"
@@ -1214,7 +1216,9 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
     if not placements:
         raise HTTPException(status_code=400, detail="No signature placements provided")
 
-    try:
+    def _stamp() -> bytes:
+        # CPU-bound PIL + pypdf stamping — runs in a worker thread so a large
+        # PDF / hi-res signature doesn't freeze the single-worker event loop.
         import PIL.Image
         import pypdf
 
@@ -1227,16 +1231,17 @@ async def sign_pdf(request: Request, page_id: int, file_id: int, body: SignBody)
         for pl in placements:
             pg_idx      = min(max(pl.page_num, 0), page_count - 1)
             target_page = writer.pages[pg_idx]
-
             # _stamp_one_page handles rotation, coordinate transform, PIL pre-rotate
             overlay_buf = _stamp_one_page(sig_img, target_page, pl.x_pct, pl.y_pct)
-
             overlay_reader = pypdf.PdfReader(overlay_buf)
             target_page.merge_page(overlay_reader.pages[0])
 
         out_buf = io.BytesIO()
         writer.write(out_buf)
-        data = out_buf.getvalue()
+        return out_buf.getvalue()
+
+    try:
+        data = await asyncio.to_thread(_stamp)
     except (HTTPException, ValueError):
         raise
     except Exception as exc:

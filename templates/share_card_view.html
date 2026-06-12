@@ -13,6 +13,9 @@
   <link id="hljs-dark" rel="stylesheet"
     href="/static/vendor/hljs-github-dark-dimmed.min.css">
   <script src="/static/vendor/highlight.min.js"></script>
+  <!-- Markdown + sanitizer: public content MUST be sanitized before display -->
+  <script src="/static/vendor/marked.min.js" defer></script>
+  <script src="/static/vendor/purify.min.js" defer></script>
   <script src="/static/js/bw-content-render.js"></script>
   <script>
     (function() {
@@ -240,9 +243,26 @@
     {% if card.note_content %}
     <section aria-label="Card notes">
       <h2 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Notes</h2>
-      <article class="md-body text-sm text-gray-800 dark:text-zinc-200">
-        {{ card.note_content | safe }}
-      </article>
+      <article id="bw-share-md" class="md-body text-sm text-gray-800 dark:text-zinc-200"
+               data-raw="{{ card.note_content | e }}"></article>
+      <script>
+        // Public page: render markdown then SANITIZE. Never inject raw user HTML.
+        window.addEventListener('DOMContentLoaded', function () {
+          var el = document.getElementById('bw-share-md');
+          if (!el) return;
+          var md = (el.getAttribute('data-raw') || '')
+            .replace(/\r\n?/g, '\n').replace(/^(\s*)• /gm, '$1- ');
+          if (!window.DOMPurify) { el.textContent = md; return; }  // fail closed
+          if (window.marked) marked.use({ gfm: true, breaks: true });
+          var html = window.marked ? marked.parse(md) : md;
+          el.innerHTML = DOMPurify.sanitize(html, {
+            ADD_TAGS: ['mark'],
+            ADD_ATTR: ['style', 'target', 'rel', 'data-note-id'],
+            FORCE_BODY: true,
+          });
+          if (typeof window._bwApplyCodeHighlighting === 'function') window._bwApplyCodeHighlighting(el);
+        });
+      </script>
     </section>
     {% endif %}
 

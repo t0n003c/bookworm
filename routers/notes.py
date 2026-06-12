@@ -12,6 +12,7 @@ from fastapi import APIRouter, Form, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from templates_env import templates
 
+from bw_ssrf import is_safe_url
 from routers.notes_db import (
     get_note_by_id,
     patch_note_content,
@@ -193,41 +194,27 @@ async def url_title_endpoint(url: str = Query(..., description="URL whose page t
     callers treat it as a graceful no-op.
     """
 
-    def _is_ssrf_safe(raw_url: str) -> bool:
-        """Return True only when the URL resolves to a routable public IP."""
-        try:
-            parsed = urlparse(raw_url)
-            if parsed.scheme not in ("http", "https"):
-                return False
-            host = parsed.hostname or ""
-            if not host:
-                return False
-            # Resolve all addresses the host maps to and reject any private one
-            for _family, _type, _proto, _canon, sockaddr in socket.getaddrinfo(host, None):
-                ip = ipaddress.ip_address(sockaddr[0])
-                if (
-                    ip.is_private
-                    or ip.is_loopback
-                    or ip.is_link_local
-                    or ip.is_reserved
-                    or ip.is_multicast
-                ):
-                    return False
-            return True
-        except Exception:
-            return False
+    # Block redirects entirely: a public page that 302-redirects to an internal
+    # address would otherwise defeat the SSRF check (the title preview is a
+    # nice-to-have, so giving up on redirect is an acceptable trade).
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
 
     def _fetch() -> str:
-        if not _is_ssrf_safe(url):
+        if not is_safe_url(url):
             return ""
         try:
             import ssl
             ctx = ssl.create_default_context()  # full certificate verification
+            opener = urllib.request.build_opener(
+                _NoRedirect, urllib.request.HTTPSHandler(context=ctx)
+            )
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": "Mozilla/5.0 (BookWorm/1.0 mention-preview)"},
             )
-            with urllib.request.urlopen(req, timeout=4, context=ctx) as resp:
+            with opener.open(req, timeout=4) as resp:
                 raw = resp.read(32_768).decode("utf-8", errors="replace")
 
             # og:title comes in two attribute orderings; try both.

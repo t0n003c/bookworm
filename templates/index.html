@@ -2623,7 +2623,18 @@
         try { window._bwSyncPreviewToMd(); } catch (e) {}
       }
       var fd = new FormData(form);
-      fetch(action, { method: 'POST', body: fd }).catch(function() {});
+      // keepalive lets the request finish even if the tab is closing (beforeunload).
+      fetch(action, { method: 'POST', body: fd, keepalive: true })
+        .then(function (res) {
+          // 302→/login (session expired) arrives as res.redirected; treat
+          // anything that isn't a clean 2xx as a save failure.
+          if (!res.ok || res.redirected) throw new Error('save failed: ' + res.status);
+        })
+        .catch(function () {
+          if (typeof _bwToast === 'function') {
+            _bwToast("⚠️ Couldn't save your note — check your connection and try again");
+          }
+        });
       return;
     }
 
@@ -2763,6 +2774,27 @@
         console.warn('[BW interceptor] htmx:beforeSwap caught /login redirect');
         _handleSessionLost(typeof window.bwShowAdminEndedModal === 'function');
       }
+    });
+
+    /* Global error feedback — a 4xx/5xx or network failure on ANY HTMX request
+       used to silently do nothing (no swap, no message). Surface a toast so the
+       user isn't left staring at a stuck UI. Session expiry is a 302 handled
+       above, so it never reaches here — no double-toast. */
+    document.addEventListener('htmx:responseError', function (evt) {
+      var xhr = evt.detail && evt.detail.xhr;
+      if (xhr && (_isLoginRedirect(xhr) || _isDemoEnded(xhr))) return;
+      if (typeof _bwToast === 'function') _bwToast('⚠️ Something went wrong — please try again');
+    });
+    document.addEventListener('htmx:sendError', function () {
+      if (typeof _bwToast === 'function') _bwToast('⚠️ Network error — check your connection');
+    });
+
+    /* Last-ditch flush on tab close / refresh: saves are explicit (on panel
+       close), so a refresh mid-edit could lose work. These flushes use
+       keepalive fetches that survive unload. Best-effort — no blocking prompt. */
+    window.addEventListener('beforeunload', function () {
+      try { if (typeof _noteFlush === 'function') _noteFlush(); } catch (e) {}
+      try { if (typeof _dbFlushNote === 'function') _dbFlushNote(); } catch (e) {}
     });
 
     /* Belt-and-suspenders — raw XHR load listener (fires before htmx onload).*/

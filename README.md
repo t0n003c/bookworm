@@ -12,6 +12,7 @@ Markdown · Timeline · Reminders · CRM · Attachments · PWA · Dark mode — 
 | Category | What you get |
 |---|---|
 | **Notes** | Rich Markdown editor with slash commands (`/`), live preview, and inline formatting |
+| **Inline pages** | Notion-style nested sub-pages via `/page` — in notes and database cards; first line becomes the title |
 | **Timeline** | Horizontal swimlane view — pan, zoom, and drag notes across dates |
 | **Workspaces** | Nested folders with emoji icons; shared workspaces across team members |
 | **Categories & Attributes** | Tag notes with custom categories and typed attributes (text, date, select…) |
@@ -23,6 +24,7 @@ Markdown · Timeline · Reminders · CRM · Attachments · PWA · Dark mode — 
 | **2FA / TOTP** | Optional two-factor authentication per account |
 | **Demo mode** | One-click sandboxed demo sessions (auto-cleaned up after expiry) |
 | **PWA** | Installable on mobile and desktop — works offline for cached pages |
+| **Mobile editing bar** | Notion-style toolbar above the keyboard on touch devices — turn-into, indent, undo, and a selection bar (font size, highlight, bold/italic, link, code) |
 | **Dark mode** | System-preference aware; toggle in settings |
 | **Keyboard shortcuts** | Full keyboard navigation (`T` for today, `?` for help, `Ctrl+B/I/K`, …) |
 
