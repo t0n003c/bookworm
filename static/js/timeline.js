@@ -44,6 +44,10 @@ window.bwTimeline = (function () {
   let _bgCleanup       = null;   // aurora WebGL background teardown
   let _maxLane         = 0;      // deepest stack lane on the busiest date (set by _buildRail)
   let _vpad            = MOB_VPAD;// vertical pan room (px) each side of the spine — grows to fit _maxLane
+  let _contentWrap     = null;   // mobile vertical-scroll content layer (resized to fit deepest stack)
+  let _dateTapCb       = null;   // tap-a-date-label → zoom+centre callback (feature: snap-zoom)
+  const _reduceMotion  = !!(window.matchMedia &&
+                            window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   let _tlDateMode      = 'created'; // 'created' | 'updated'
 
   // ── Date utilities ───────────────────────────────────────────
@@ -142,6 +146,17 @@ window.bwTimeline = (function () {
 
   // ── Tick marks + note pins → see timeline-render.js (_bwTLRender) ──
 
+  // Resize the mobile vertical-scroll layer so the deepest stack on the busiest
+  // date is fully reachable. _maxLane is set by the most recent _buildRail, so
+  // this stays correct across zoom (which re-columns notes → changes stacking).
+  function _syncVpad() {
+    if (!_isMob || !_contentWrap) { _vpad = MOB_VPAD; return; }
+    const GAP    = 6;  // mobile GAP in timeline-render.js buildPin
+    const extent = STEM_H + Math.max(0, _maxLane - 1) * (CARD_H + GAP) + CARD_H + 56;
+    _vpad = Math.max(MOB_VPAD, extent);
+    _contentWrap.style.height = 'calc(100% + ' + (_vpad * 2) + 'px)';
+  }
+
   // ── Rail (ticks + pins only, NO spine) ────────────────────────
   function _buildRail(notes, t) {
     const earliest = notes[0].date;
@@ -159,6 +174,7 @@ window.bwTimeline = (function () {
     const rCfg = {
       pxPerDay: _pxPerDay, PAD_ENDS, SPINE_Y, STEM_H, CARD_H, CARD_W,
       daysBetween: _daysBetween, esc: _esc, fmtDate: _fmtDate, isMobile: _isMob,
+      onDateTap: _dateTapCb,
     };
     _bwTLRender.buildTicks(rail, earliest, span, rCfg, t);
 
@@ -193,6 +209,30 @@ window.bwTimeline = (function () {
       maxLane = Math.max(maxLane, aboveCount, belowCount);
     });
     _maxLane = maxLane;
+    _syncVpad();   // size vertical pan range to the deepest stack at this zoom
+
+    // ── Density bloom: a soft glow on the spine under busy dates ──
+    // Intensity scales with how many notes share a column, so clusters read as
+    // bright pools of light behind the spine (feature: density glow).
+    const _maxCol = columns.reduce((m, c) => Math.max(m, c.notes.length), 1);
+    if (_maxCol >= 2) {
+      columns.forEach(col => {
+        if (col.notes.length < 2) return;
+        const k = col.notes.length / _maxCol;
+        const r = 32 + Math.round(k * 64);
+        const a = Math.round(k * 0x4d).toString(16).padStart(2, '0');  // alpha hex
+        const bloom = document.createElement('div');
+        Object.assign(bloom.style, {
+          position: 'absolute', left: col.x + 'px', top: `${SPINE_Y * 100}%`,
+          width: r * 2 + 'px', height: r * 2 + 'px',
+          transform: 'translate(-50%,-50%)', borderRadius: '50%',
+          background: `radial-gradient(circle, ${t.spine}${a} 0%, transparent 68%)`,
+          pointerEvents: 'none', zIndex: '0',
+        });
+        rail.appendChild(bloom);
+      });
+    }
+    rail._cards = rail.querySelectorAll('article');   // for the depth-of-field pass
 
     // _notesCenter: midpoint of the ACTUAL note x-positions (rail coords).
     // For a single note this equals PAD_ENDS (not span-midpoint);
@@ -268,8 +308,9 @@ window.bwTimeline = (function () {
   // rest of the gesture so vertical and horizontal swipes never fight each
   // other. Axis resets on every pointerdown.
   //
-  // maxScrollY : max scrollTop in px (0 on desktop = no vertical pan)
-  function _attachDrag(outer, getVScroll, getRail, onMove, maxScrollY) {
+  // getMaxScrollY() : current max scrollTop in px (0 on desktop = no vertical pan).
+  // A getter, not a fixed value, so the range tracks _vpad as zoom re-stacks notes.
+  function _attachDrag(outer, getVScroll, getRail, onMove, getMaxScrollY) {
     let dragging = false, captured = false, didDrag = false;
     let axis = null;  // null | 'h' | 'v'
     let startX = 0, startLeft = 0, lastX = 0, velX = 0;
@@ -277,8 +318,8 @@ window.bwTimeline = (function () {
     let activeId = null, lastTime = 0;
 
     function clampH(v)  { return _clamp(outer, getRail, v); }
-    // clampST: keep scrollTop between 0 and maxScrollY (= MOB_VPAD*2 on mobile, 0 desktop)
-    function clampST(v) { return Math.max(0, Math.min(maxScrollY, v)); }
+    // clampST: keep scrollTop between 0 and the live max (= _vpad*2 on mobile, 0 desktop)
+    function clampST(v) { return Math.max(0, Math.min(getMaxScrollY(), v)); }
 
     // pointerdown on outer (direct hits on empty rail areas)
     outer.addEventListener('pointerdown', e => {
@@ -349,7 +390,7 @@ window.bwTimeline = (function () {
       if (axis !== 'v') {  // horizontal (or not yet locked)
         getRail().style.left = clampH(startLeft + (cx - startX)) + 'px';
       }
-      if (axis !== 'h' && maxScrollY > 0) {  // vertical (or not yet locked)
+      if (axis !== 'h' && getMaxScrollY() > 0) {  // vertical (or not yet locked)
         // Drag finger DOWN → content follows → scrollTop DECREASES
         const _vs2 = getVScroll();
         if (_vs2) _vs2.scrollTop = clampST(startST - (cy - startY));
@@ -367,7 +408,7 @@ window.bwTimeline = (function () {
       function decay() {
         velX *= 0.93; velY *= 0.93;
         const moveH = lockedAxis !== 'v' && Math.abs(velX) >= 0.4;
-        const moveV = lockedAxis !== 'h' && maxScrollY > 0 && Math.abs(velY) >= 0.4 && _vs3;
+        const moveV = lockedAxis !== 'h' && getMaxScrollY() > 0 && Math.abs(velY) >= 0.4 && _vs3;
         if (!moveH && !moveV) return;
         if (moveH) { posX = clampH(posX + velX); getRail().style.left = posX + 'px'; }
         if (moveV) {
@@ -480,6 +521,7 @@ window.bwTimeline = (function () {
       pointerEvents: 'none',
     });
     (vScroll || outer).appendChild(contentWrap);
+    _contentWrap = contentWrap;   // _syncVpad() (called from _buildRail) resizes this
 
     // ── Spine on contentWrap — spans full width, never scrolls horizontally ──
     const spine = document.createElement('div');
@@ -496,20 +538,10 @@ window.bwTimeline = (function () {
     contentWrap.appendChild(spine);
 
     // ── Rail (slides; spine-free) ─────────────────────────────
-    let _rail = _buildRail(notes, t);   // sets _maxLane (deepest stack on busiest date)
+    // _buildRail sets _maxLane and calls _syncVpad(), which grows the vertical
+    // pan range so every note on a busy date is reachable (mobile only).
+    let _rail = _buildRail(notes, t);
     contentWrap.appendChild(_rail);
-
-    // Grow the vertical pan range so every note on a busy date is reachable.
-    // A note at lane i sits STEM_H + i*(CARD_H+GAP) from the spine; the deepest
-    // card's far edge is that + CARD_H. Pad both sides symmetrically (mobile only).
-    if (_isMob) {
-      const _GAP = 6;  // matches mobile GAP in timeline-render.js buildPin
-      const _extent = STEM_H + Math.max(0, _maxLane - 1) * (CARD_H + _GAP) + CARD_H + 56;
-      _vpad = Math.max(MOB_VPAD, _extent);
-      contentWrap.style.height = 'calc(100% + ' + (_vpad * 2) + 'px)';
-    } else {
-      _vpad = MOB_VPAD;
-    }
 
     const getRail = ()  => _rail;
     const setRail = (r) => { _rail = r; contentWrap.appendChild(r); };
@@ -588,19 +620,105 @@ window.bwTimeline = (function () {
       : null;
     if (worm) { contentWrap.appendChild(worm.el); _wormCleanup = worm.destroy; }
 
-    // ── Unified onMove ─────────────────────────────
-    function onAllMove() {
-      updateYearLabels();
-      minimap.update();
-      if (worm) worm.update(
-        parseFloat(getRail().style.left) || 0, _pxPerDay, PAD_ENDS);
+    // ── Depth-of-field: cards away from the horizontal focus band blur + fade,
+    // giving the rail a sense of depth as it slides (feature: depth-of-field).
+    // Cheap: positions are cached on card._cx, so no layout reads per frame.
+    function _applyDoF(railLeft) {
+      if (_reduceMotion) return;
+      const cards = getRail()._cards;
+      if (!cards || cards.length > 220) return;   // skip very dense sets for perf
+      const ow     = outer.offsetWidth || 1;
+      const center = ow / 2;
+      const band   = ow * 0.30;                    // fully sharp within this of centre
+      const range  = Math.max(1, ow * 0.42);
+      for (let i = 0; i < cards.length; i++) {
+        const c  = cards[i];
+        const sx = railLeft + (c._cx || 0);
+        const k  = Math.min(1, Math.max(0, (Math.abs(sx - center) - band) / range));
+        if (Math.abs((c._dofK || 0) - k) < 0.02) continue;   // skip tiny deltas
+        c._dofK = k;
+        if (k <= 0) { c.style.filter = ''; c.style.opacity = '1'; }
+        else {
+          c.style.filter  = 'blur(' + (k * 2.2).toFixed(2) + 'px)';
+          c.style.opacity = (1 - k * 0.4).toFixed(2);
+        }
+      }
     }
 
+    // ── Vertical "more above / below" affordance (feature: pan hint) ──
+    // Subtle chevron chips that fade in only when notes stack beyond the default
+    // pan range AND there's content in that direction to reach.
+    let topAff = null, botAff = null;
+    if (_isMob) {
+      const _mkAff = (arrow, css) => {
+        const a = document.createElement('div');
+        a.textContent = arrow;
+        a.setAttribute('aria-hidden', 'true');
+        Object.assign(a.style, {
+          position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+          fontSize: '12px', lineHeight: '1', color: t.btnClr,
+          background: t.btnBg, border: '1px solid ' + t.btnBord,
+          borderRadius: '999px', padding: '3px 10px',
+          boxShadow: '0 1px 5px rgba(0,0,0,.2)',
+          opacity: '0', transition: 'opacity .2s', pointerEvents: 'none',
+          zIndex: '9',
+        }, css);
+        outer.appendChild(a);
+        return a;
+      };
+      topAff = _mkAff('▲', { top: '10px' });
+      botAff = _mkAff('▼', { bottom: '70px' });   // clear of minimap (44) + hint
+    }
+    function _updateVAfford() {
+      if (!topAff || !vScroll) return;
+      const deep = _vpad > MOB_VPAD + 1;               // stacks beyond the default range
+      const st = vScroll.scrollTop, max = _vpad * 2;
+      topAff.style.opacity = (deep && st > 12)       ? '0.92' : '0';
+      botAff.style.opacity = (deep && st < max - 12) ? '0.92' : '0';
+    }
+
+    // ── Unified onMove ─────────────────────────────
+    function onAllMove() {
+      const rl = parseFloat(getRail().style.left) || 0;
+      updateYearLabels();
+      minimap.update();
+      _applyDoF(rl);
+      _updateVAfford();
+      if (worm) worm.update(rl, _pxPerDay, PAD_ENDS);
+    }
+
+    // ── Tap a date label → zoom in + smooth-centre on that date ──
+    // Assigned to the module-level callback so _buildRail wires it into every
+    // tick label it renders (feature: snap-zoom). Invoked only on tap, so the
+    // later getRail/setRail/onAllMove bindings are resolved by then.
+    _dateTapCb = (date) => {
+      if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+      const targetPx = Math.min(PX_MAX, Math.max(_pxPerDay, _isMob ? 24 : 40));
+      if (Math.abs(targetPx - _pxPerDay) > 0.01) {
+        _pxPerDay = targetPx;
+        const nr = _buildRail(notes, t);
+        getRail().replaceWith(nr); setRail(nr);
+      }
+      const rail   = getRail();
+      const dateX  = PAD_ENDS + _daysBetween(rail._earliest, date) * _pxPerDay;
+      const targetL = _clamp(outer, getRail, Math.round(outer.offsetWidth / 2 - dateX));
+      let cur = parseFloat(rail.style.left) || 0;
+      function step() {
+        const diff = targetL - cur;
+        if (Math.abs(diff) < 0.5) { getRail().style.left = targetL + 'px'; onAllMove(); return; }
+        cur += diff * 0.22;
+        getRail().style.left = Math.round(cur) + 'px';
+        onAllMove();
+        _rafId = requestAnimationFrame(step);
+      }
+      _rafId = requestAnimationFrame(step);
+    };
+
     // ── Drag ───────────────────────────────────────────
-    // On mobile: maxScrollY = MOB_VPAD*2 (= contentWrap overflow).
-    // On desktop: 0 (no vertical pan — wheel zoom is enough).
+    // Vertical pan range is read live (getter) so it tracks _vpad as zoom
+    // re-stacks notes. Desktop returns 0 → no vertical pan (wheel zoom is enough).
     const cleanupDrag = _attachDrag(
-      outer, () => vScroll, getRail, onAllMove, _isMob ? _vpad * 2 : 0);
+      outer, () => vScroll, getRail, onAllMove, () => (_isMob ? _vpad * 2 : 0));
     outer._cleanup    = cleanupDrag;
 
     // ── Pinch-to-zoom (two-finger gesture on touch screens) ─────────────────

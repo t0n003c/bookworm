@@ -180,6 +180,36 @@ window._bwTLUi = (function () {
       el.appendChild(todayMk);
     }
 
+    // ─ density glow ─────────────────────────────────────
+    // Soft blooms under busy days so clusters pop at a glance, scaled by how
+    // many notes share that day. Drawn beneath the coloured note dots.
+    const _dayCount = new Map();
+    notes.forEach(n => {
+      const dd = Math.round((n.date - earliest) / 86_400_000);
+      _dayCount.set(dd, (_dayCount.get(dd) || 0) + 1);
+    });
+    let _maxDay = 1;
+    _dayCount.forEach(c => { if (c > _maxDay) _maxDay = c; });
+    if (_maxDay >= 2) {
+      _dayCount.forEach((count, dd) => {
+        if (count < 2) return;
+        const f   = Math.max(0, Math.min(1, dd / safeSpan));
+        const pct = `calc(${PAD_H}px + (100% - ${PAD_H * 2}px) * ${f.toFixed(5)})`;
+        const k   = count / _maxDay;
+        const r   = 6 + Math.round(k * 12);
+        const glow = document.createElement('div');
+        Object.assign(glow.style, {
+          position: 'absolute', left: pct, top: TRACK_Y + 'px',
+          width: r * 2 + 'px', height: r * 2 + 'px',
+          transform: 'translate(-50%,-50%)', borderRadius: '50%',
+          background: `radial-gradient(circle, ${t.spine} 0%, transparent 70%)`,
+          opacity: (0.10 + k * 0.26).toFixed(3),
+          pointerEvents: 'none', zIndex: '1',
+        });
+        el.appendChild(glow);
+      });
+    }
+
     // ─ note dots ────────────────────────────────────────
     notes.forEach(n => {
       const f   = Math.max(0, Math.min(1, _frac(n.date)));

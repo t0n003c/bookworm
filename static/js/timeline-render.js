@@ -56,6 +56,18 @@ window._bwTLRender = (function () {
   function buildTicks(rail, earliest, span, cfg, t) {
     const { pxPerDay, PAD_ENDS, SPINE_Y, daysBetween } = cfg;
 
+    // Make a date label tappable → zoom in + centre on that date (feature: snap-zoom).
+    // Labels live on the pointer-events:none rail, so we re-enable events per label
+    // and stop pointerdown from arming the drag handler.
+    function _wireTap(lbl, date) {
+      if (!cfg.onDateTap) return;
+      lbl.style.pointerEvents = 'all';
+      lbl.style.cursor        = 'pointer';
+      lbl.title               = 'Zoom to this date';
+      lbl.addEventListener('pointerdown', e => e.stopPropagation());
+      lbl.addEventListener('click', e => { e.stopPropagation(); cfg.onDateTap(date); });
+    }
+
     // ── Month / year tick marks ───────────────────────────────
     let cur      = new Date(earliest.getFullYear(), earliest.getMonth() - 2, 1);
     const stopMs = earliest.getTime() + (span + 180) * 86_400_000;
@@ -89,6 +101,7 @@ window._bwTLRender = (function () {
         color: isJan ? t.labelYear : t.label,
         whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '.02em',
       });
+      _wireTap(lbl, new Date(cur));
       rail.appendChild(lbl);
 
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
@@ -132,6 +145,7 @@ window._bwTLRender = (function () {
           fontSize: '10px', color: t.label,
           whiteSpace: 'nowrap', pointerEvents: 'none',
         });
+        _wireTap(dlbl, new Date(dayDate));
         rail.appendChild(dlbl);
       }
     }
@@ -214,6 +228,20 @@ window._bwTLRender = (function () {
                         letter-spacing:.06em;padding:2px 4px;border-radius:3px;
                         background:#7c3aed18;color:#7c3aed;">DB</span>`
         : ''}`;
+
+    // Persistent colour accent down the left edge — colour-codes the card by its
+    // category (note.catColor) or type (DB cards = purple). Independent of the
+    // hover border/shadow so it never disappears (feature: colour-coding).
+    const radius = isMobile ? '6px' : '10px';
+    const accent = document.createElement('div');
+    Object.assign(accent.style, {
+      position: 'absolute', left: '0', top: '0', bottom: '0',
+      width: isMobile ? '3px' : '4px', background: pinClr,
+      borderTopLeftRadius: radius, borderBottomLeftRadius: radius,
+      pointerEvents: 'none',
+    });
+    card.appendChild(accent);
+    card._cx = x;   // card centre in rail coords — read by the depth-of-field pass
 
     // Allow pointerdown to bubble so the outer drag handler can activate
     // even when a touch starts on a card. The outer click-guard suppresses
