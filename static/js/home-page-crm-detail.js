@@ -217,6 +217,10 @@ function _crmRenderDetail() {
           <div id="crm-detail-convo" class="crm-aged-empty">Loading…</div>
         </div>
 
+        <!-- Decorative aged edges: torn top-right corner + curled bottom-right corner -->
+        <div class="crm-aged-tear" aria-hidden="true"></div>
+        <div class="crm-aged-curl" aria-hidden="true"></div>
+
       </div>
     </div>
   `);

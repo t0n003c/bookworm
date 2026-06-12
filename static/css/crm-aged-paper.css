@@ -67,6 +67,46 @@
 }
 .crm-aged-page > * { position: relative; z-index: 1; }
 
+/* ── Torn top-right corner + curled (bent) bottom-right corner ──────────────
+   Both decorative; pointer-events:none. The `> .class` selectors beat the
+   `.crm-aged-page > *` rule above so these stay position:absolute. */
+.crm-aged-page > .crm-aged-tear,
+.crm-aged-page > .crm-aged-curl { position: absolute; z-index: 3; pointer-events: none; }
+
+/* Torn corner: a desk-coloured jagged wedge bites the top-right corner; the
+   ::after paints a thin lit "paper fibre" lip just inside the rip. */
+.crm-aged-tear {
+  top: -1px; right: -1px; width: 104px; height: 84px;
+  background: #1b1b1f;
+  clip-path: polygon(100% 0, 100% 100%, 90% 58%, 79% 79%, 67% 46%, 55% 70%,
+                     43% 40%, 32% 62%, 21% 30%, 11% 52%, 0 18%, 0 0);
+  filter: drop-shadow(-1px 2px 1px rgba(0,0,0,.45));
+}
+.crm-aged-tear::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(200deg, #fbf3da, #e7d2a0);
+  clip-path: polygon(100% 4%, 92% 60%, 81% 81%, 69% 48%, 57% 72%, 45% 42%,
+                     34% 64%, 23% 32%, 13% 54%, 2% 20%, 5% 18%, 15% 50%,
+                     25% 29%, 36% 60%, 47% 39%, 59% 67%, 71% 44%, 83% 76%,
+                     94% 57%, 100% 9%);
+  opacity: .55;
+}
+
+/* Curled corner: a lifted flap showing the paper's back, a fold line, and a
+   soft shadow cast up-left onto the page. */
+.crm-aged-curl {
+  right: 0; bottom: 0; width: 60px; height: 60px;
+  border-radius: 0 0 4px 0;
+  background:
+    linear-gradient(135deg,
+      transparent 0 48%,
+      rgba(60,40,18,.45) 48% 49.5%,        /* fold shadow line */
+      #efe3c0 50%,                          /* flap back (catches light) */
+      #d3bd89 78%,
+      #b89f6a 100%);
+  box-shadow: -5px -5px 9px rgba(0,0,0,.30);
+}
+
 /* Tighter on phones so the parchment keeps usable width (no right-edge cutoff). */
 @media (max-width: 560px) {
   .crm-aged-wrap { padding: 1.25rem .75rem 2rem; }
@@ -75,6 +115,8 @@
   .crm-aged-hero { gap: 1rem; }
   .crm-aged-name { font-size: 1.6rem; }
   .crm-aged-photo img, .crm-aged-photo .ph { width: 76px; height: 76px; }
+  .crm-aged-tear { width: 66px; height: 54px; }
+  .crm-aged-curl { width: 42px; height: 42px; }
 }
 
 /* ── Top bar ───────────────────────────────────────────────────────────── */
