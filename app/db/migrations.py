@@ -689,6 +689,22 @@ async def init_db() -> None:
                 "biometric_type TEXT NOT NULL DEFAULT 'auto'"
             )
 
+        # ── recovery_codes: one-time 2FA backup codes ─────────────────────────
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recovery_codes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                code_hash  TEXT    NOT NULL,
+                used_at    DATETIME DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_recovery_user ON recovery_codes(user_id)"
+        )
+
         await db.commit()
 
         # ── site_settings: persistent runtime flags (admin-toggleable) ────────

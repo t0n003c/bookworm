@@ -201,10 +201,40 @@
     </div>{# /wa-totp-section #}
     {% endif %}
 
+    {# ═══════════ RECOVERY (BACKUP) CODE — always available ═══════════ #}
+    <div class="mt-6 text-center">
+      <button type="button" id="wa-recovery-toggle"
+        onclick="var f=document.getElementById('wa-recovery-form');f.classList.toggle('hidden');if(!f.classList.contains('hidden')){f.querySelector('input').focus();}"
+        class="text-sm text-white/40 hover:text-white/70 transition focus:outline-none focus:underline">
+        Use a backup code
+      </button>
+      <form id="wa-recovery-form" method="post" action="/2fa/recovery"
+            class="{{ '' if recovery_error else 'hidden' }} mt-4 max-w-xs mx-auto space-y-3">
+        {% if recovery_error %}
+        <div class="wiggle flex items-start gap-2 px-4 py-3 rounded-xl
+                    bg-red-500/20 border border-red-500/50 text-red-300 text-sm text-left" role="alert">
+          <span class="text-lg leading-none mt-0.5">😕</span><span>{{ recovery_error }}</span>
+        </div>
+        {% endif %}
+        <input name="code" type="text" required autocomplete="one-time-code"
+          placeholder="XXXXX-XXXXX" aria-label="Backup recovery code"
+          class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white
+                 placeholder-white/25 text-center tracking-widest uppercase
+                 focus:outline-none focus:ring-2 focus:ring-[#0053e2] focus:border-[#0053e2] transition" />
+        <button type="submit"
+          class="btn-solid w-full py-3 rounded-xl text-white font-bold text-sm tracking-wide shadow-lg
+                 focus:outline-none focus:ring-2 focus:ring-[#ffc220] active:scale-95 transition-transform">
+          🔑 Use backup code
+        </button>
+        <p class="text-xs text-white/35">One of the one-time codes you saved from Settings → Security.</p>
+      </form>
+    </div>
+
     {# Edge case: neither TOTP nor biometric (shouldn't reach here, but safe fallback) #}
     {% if not totp_enabled and not has_webauthn %}
-    <div class="text-center text-white/60 text-sm">
-      <p>Something went wrong. <a href="/login" class="underline">Go back to login</a>.</p>
+    <div class="mt-4 text-center text-white/60 text-sm">
+      <p>No passkey or authenticator on this device — use a backup code above, or
+      <a href="/login" class="underline">go back to login</a>.</p>
     </div>
     {% endif %}
 

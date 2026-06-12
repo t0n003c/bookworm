@@ -196,4 +196,39 @@
 
   {% endif %}
 
+  {# ── Backup recovery codes — one-time fallback for ANY 2FA method ──── #}
+  <div class="mt-6 pt-5 border-t border-gray-200 dark:border-zinc-700">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <h3 class="text-sm font-bold text-gray-900 dark:text-zinc-100">Backup codes</h3>
+        <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+          One-time codes to sign in if you can't use your passkey or authenticator
+          (e.g. on a laptop without your biometric).
+        </p>
+      </div>
+      <button type="button" id="recovery-gen-btn" onclick="bwGenRecoveryCodes()"
+        class="flex-shrink-0 px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white text-xs font-semibold
+               rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+        Generate codes
+      </button>
+    </div>
+    <div id="recovery-codes-box" class="hidden mt-3">
+      <div class="flex items-start gap-2 px-3 py-2 mb-2 rounded-lg bg-amber-50 dark:bg-amber-900/20
+                  border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs">
+        ⚠️ Save these now — shown only once. Each code works a single time; generating new codes invalidates old ones.
+      </div>
+      <pre id="recovery-codes-list" class="font-mono text-sm text-gray-800 dark:text-zinc-200
+           bg-gray-100 dark:bg-zinc-800 rounded-lg p-3 select-all whitespace-pre-wrap break-all
+           border border-gray-200 dark:border-zinc-700"></pre>
+      <div class="flex gap-2 mt-2">
+        <button type="button" onclick="bwCopyRecoveryCodes(this)"
+          class="px-3 py-1.5 bg-gray-200 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600
+                 text-gray-800 dark:text-zinc-100 text-xs font-semibold rounded-lg transition">Copy</button>
+        <button type="button" onclick="bwDownloadRecoveryCodes()"
+          class="px-3 py-1.5 bg-gray-200 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600
+                 text-gray-800 dark:text-zinc-100 text-xs font-semibold rounded-lg transition">Download</button>
+      </div>
+    </div>
+  </div>
+
 </div>

@@ -5,9 +5,14 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.api.rate_limit import check_rate_limit, record_failure, record_success
+from app.api.recovery_db import (
+    count_unused_recovery_codes,
+    generate_recovery_codes,
+    verify_and_consume_recovery_code,
+)
 from app.api.totp_db import (
     disable_totp,
     enable_totp,
@@ -18,6 +23,22 @@ from app.api.totp_db import (
 )
 from security import make_expires_at
 from templates_env import templates
+
+
+def _promote_pending_session(request: Request, user_id: int) -> None:
+    """Promote a verified pending-2FA session to a full logged-in session."""
+    permanent = request.session.pop("pending_2fa_permanent", False)
+    request.session["user_id"]  = user_id
+    request.session["username"] = request.session.pop("pending_2fa_username")
+    request.session["role"]     = request.session.pop("pending_2fa_role")
+    request.session.pop("pending_2fa_user_id", None)
+    request.session.pop("pending_2fa_has_webauthn", None)
+    request.session.pop("pending_2fa_totp", None)
+    expires_at = make_expires_at(permanent)
+    if expires_at:
+        request.session["expires_at"] = expires_at
+    else:
+        request.session.pop("expires_at", None)
 
 router = APIRouter()
 
@@ -153,18 +174,55 @@ async def verify_submit(request: Request, code: str = Form(...)):
             status_code=401,
         )
     record_success(rl_key)
-
-    # Promote pending → full session
-    permanent = request.session.pop("pending_2fa_permanent", False)
-    request.session["user_id"]  = user_id
-    request.session["username"] = request.session.pop("pending_2fa_username")
-    request.session["role"]     = request.session.pop("pending_2fa_role")
-    request.session.pop("pending_2fa_user_id", None)
-
-    expires_at = make_expires_at(permanent)
-    if expires_at:
-        request.session["expires_at"] = expires_at
-    else:
-        request.session.pop("expires_at", None)
-
+    _promote_pending_session(request, user_id)
     return RedirectResponse("/", status_code=302)
+
+
+@router.post("/2fa/recovery", response_class=HTMLResponse)
+async def recovery_submit(request: Request, code: str = Form(...)):
+    """Consume a one-time recovery code to finish a pending-2FA login.
+
+    Always available on the verify page, so a device without the passkey /
+    authenticator can still get in using a saved backup code.
+    """
+    user_id = request.session.get("pending_2fa_user_id")
+    if not user_id:
+        return RedirectResponse("/login", status_code=302)
+
+    rl_key = f"{request.client.host}:2fa"
+    check_rate_limit(rl_key)
+
+    if not await verify_and_consume_recovery_code(user_id, code):
+        record_failure(rl_key)
+        return templates.TemplateResponse(
+            request,
+            "2fa_verify.html",
+            {
+                "recovery_error": "Invalid or already-used backup code.",
+                "has_webauthn": request.session.get("pending_2fa_has_webauthn", False),
+                "totp_enabled": request.session.get("pending_2fa_totp", False),
+            },
+            status_code=401,
+        )
+    record_success(rl_key)
+    _promote_pending_session(request, user_id)
+    return RedirectResponse("/", status_code=302)
+
+
+@router.post("/account/2fa/recovery-codes", response_class=JSONResponse)
+async def regenerate_recovery_codes(request: Request):
+    """Generate a fresh set of one-time recovery codes (shown once). Requires a
+    fully authenticated session; replaces any previous codes."""
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse({"error": "Not authenticated."}, status_code=401)
+    codes = await generate_recovery_codes(user_id)
+    return JSONResponse({"codes": codes, "count": len(codes)})
+
+
+@router.get("/account/2fa/recovery-codes/count", response_class=JSONResponse)
+async def recovery_codes_count(request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse({"error": "Not authenticated."}, status_code=401)
+    return JSONResponse({"count": await count_unused_recovery_codes(user_id)})

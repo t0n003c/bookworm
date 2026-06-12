@@ -5144,6 +5144,40 @@
     }
   }
 
+  /* ── Backup recovery codes (account security panel) ─────────────────────── */
+  let _bwRecoveryCodes = [];
+  async function bwGenRecoveryCodes() {
+    if (!window.confirm('Generate a new set of backup codes? This invalidates any codes you generated before.')) return;
+    const btn = document.getElementById('recovery-gen-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    try {
+      const res = await fetch('/account/2fa/recovery-codes', { method: 'POST', credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.codes) {
+        _bwRecoveryCodes = data.codes;
+        document.getElementById('recovery-codes-list').textContent = data.codes.join('\n');
+        document.getElementById('recovery-codes-box').classList.remove('hidden');
+      }
+    } catch (err) {
+      console.error('recovery code generation failed:', err);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Regenerate codes'; }
+    }
+  }
+  function bwCopyRecoveryCodes(btn) {
+    navigator.clipboard.writeText(_bwRecoveryCodes.join('\n')).then(() => {
+      const t = btn.textContent; btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = t; }, 1500);
+    }).catch(() => {});
+  }
+  function bwDownloadRecoveryCodes() {
+    const txt = 'BookWorm backup codes — keep these safe. Each works once.\n\n' + _bwRecoveryCodes.join('\n') + '\n';
+    const a = document.createElement('a');
+    a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt);
+    a.download = 'bookworm-backup-codes.txt';
+    a.click();
+  }
+
   /**
    * General-purpose fetch POST for the admin users panel.
    * url      — endpoint to POST to
