@@ -115,7 +115,7 @@ class _StaticCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 
-from database import init_db
+from database import init_db, get_db
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.notes_db import search_notes
 from routers.sharing_db import get_shared_object_ids
