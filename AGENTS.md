@@ -111,6 +111,13 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 - New public routes → add to `_PUBLIC` in `auth_middleware.py`
 - New global-table write routes → add `_demo_guard(request)` check
 - No hardcoded secrets, IPs, or internal Walmart hostnames — env vars only
+- **Sign-in model:** passkey = *passwordless* login (`/login/webauthn/*`), NOT a forced 2nd factor; password login's 2nd factor is **TOTP**, with one-time **recovery codes** as backup. Don't reintroduce "force biometric after password" — it locks out devices without the passkey.
+
+### Mobile / PWA (recurring pain points — see CODEPUPPY_NOTES)
+- **Scroll containers:** size via flexbox (`flex-1` + `min-h-0` + `overflow-y:auto`) under a definite-height flex parent; the app's scroller is **nested** `#main-content` (NOT the outermost element — standalone PWAs won't touch-scroll the outer one). Add `min-w-0` too, or wide content overflows right.
+- **Drag/long-press touch handlers must NOT `preventDefault()` on `touchstart`** — it kills native scroll for the whole gesture. Only block scroll once the drag *arms* (on `touchmove`).
+- **Grid columns:** use `minmax(0,1fr)` / `grid-cols-1` so `nowrap`/`truncate` content can't blow out the width.
+- **CDN/PWA cache:** behind Cloudflare, static assets (icons/CSS/JS) are cached ~4h. Always cache-bust app asset URLs with `?v={{ static_v }}` (incl. manifest/apple-touch icons). Changed assets need a one-time CF **Purge Everything**; the installed-PWA icon is OS-cached at install (remove + re-add). Diagnose with `curl 'https://host/x?bust=RANDOM'` → `cf-cache-status: MISS`.
 
 ### Config
 - All config via `os.getenv("BW_*", default)` — never hardcoded
@@ -150,6 +157,16 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 ---
 
 ## Key File Map (Quick Reference)
+
+> **⚠️ Code now lives under `app/` (strangler-fig migration — see ARCHITECTURE.md).**
+> The real modules moved: `core/*` → `app/core/` (config, db, deps, ssrf, security),
+> `db/*` → `app/db/` (schema, migrations), `models.py` → `app/models.py`,
+> `routers/*.py` → `app/api/*.py` (incl. the `*_db.py` repositories),
+> `auth_middleware.py` → `app/api/middleware/auth.py`, `search_*.py` → `app/services/search/`.
+> The **old top-level paths are thin `sys.modules` alias shims**, so every
+> `from database import …` / `from routers.X import …` / `from core.config import settings`
+> still works unchanged. **Edit the real file under `app/`; add new routers in `app/api/`.**
+> The table below uses the historical names — map them to `app/…` per the above.
 
 | File | Purpose |
 |---|---|

@@ -21,7 +21,7 @@ Markdown · Timeline · Reminders · CRM · Attachments · PWA · Dark mode — 
 | **Home Pages** | Personal dashboards: RSS reader, CRM board, subscription tracker, trip planner, budget/settle-up |
 | **Collabora Online** | Edit `.docx` / `.xlsx` files in-browser via LibreOffice (optional Docker service) |
 | **Sharing** | Generate read-only share links for individual notes or workspaces |
-| **2FA / TOTP** | Optional two-factor authentication per account |
+| **Sign-in options** | Password + optional **TOTP** 2FA, **passkeys** (biometric / Face ID / fingerprint — passwordless on enrolled devices), and one-time **recovery codes** |
 | **Demo mode** | One-click sandboxed demo sessions (auto-cleaned up after expiry) |
 | **PWA** | Installable on mobile and desktop — works offline for cached pages |
 | **Mobile editing bar** | Notion-style toolbar above the keyboard on touch devices — turn-into, indent, undo, and a selection bar (font size, highlight, bold/italic, link, code) |
@@ -387,7 +387,7 @@ rebuild_css.bat
 | Templates | [Jinja2](https://jinja.palletsprojects.com/) + [HTMX](https://htmx.org/) |
 | Styling | [Tailwind CSS](https://tailwindcss.com/) (pre-built; no Node.js required) |
 | Database | [SQLite](https://sqlite.org/) via [aiosqlite](https://github.com/omnilib/aiosqlite) |
-| Auth | bcrypt + itsdangerous sessions + TOTP 2FA |
+| Auth | bcrypt + itsdangerous sessions · TOTP 2FA · WebAuthn passkeys (passwordless) · recovery codes |
 | Container | [Docker](https://docker.com/) + Docker Compose |
 
 ---
