@@ -218,7 +218,7 @@
         closePopup();
       }
       go.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-      go.addEventListener('click', apply);
+      go.addEventListener('pointerup', apply);
       inp.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); apply(); }
       });
@@ -274,7 +274,7 @@
           t.icon + '</span><span>' + t.label + '</span>' +
           (t.key === curKey ? '<span style="margin-left:auto;color:#0053e2;">✓</span>' : '');
         b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-        b.addEventListener('click', function () {
+        b.addEventListener('pointerup', function () {
           var block = currentBlock();
           if (block && bwTurnInto) {
             bwTurnInto(block, t.key, {
@@ -310,7 +310,7 @@
           (c.color ? ('background:' + c.color + ';')
                    : 'background:linear-gradient(135deg,#fff 50%,#d1d5db 50%);');
         sw.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-        sw.addEventListener('click', function () {
+        sw.addEventListener('pointerup', function () {
           restoreSelection();
           if (isHighlight) {
             document.execCommand('hiliteColor', false, c.color || 'transparent');
@@ -342,9 +342,11 @@
       'background:none;border-radius:9px;font-size:16px;line-height:1;cursor:pointer;' +
       'display:inline-flex;align-items:center;justify-content:center;gap:4px;' +
       'color:inherit;font-family:inherit;' + (opts.css || '');
-    // pointerdown/preventDefault keeps the editor focused + keyboard up.
+    // pointerdown preventDefault keeps the editor focused + keyboard up. Fire on
+    // pointerup, NOT click: iOS Safari suppresses the synthesized 'click' after a
+    // pointerdown preventDefault, so a click handler never runs on iPhone.
     b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-    b.addEventListener('click', function (e) { e.preventDefault(); handler(b); });
+    b.addEventListener('pointerup', function (e) { e.preventDefault(); handler(b); });
     return b;
   }
   function divider() {
