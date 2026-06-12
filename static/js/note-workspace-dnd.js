@@ -276,9 +276,10 @@
     var art = _noteCardAt(t.target);
     if (!art) return;
 
-    // Prevent default: blocks native scroll tracking AND suppresses the
-    // synthesised click.  We restore the click manually in touchend.
-    e.preventDefault();
+    // Do NOT preventDefault here: doing so kills native touch-scroll for the
+    // whole gesture (the page becomes un-scrollable wherever cards are). We only
+    // take over the gesture once the long-press arms a drag (in touchmove). A
+    // plain tap then fires its native click; a drag-while-armed blocks scroll.
 
     _noteId    = art.dataset.noteId;
     _tapTarget = art;
@@ -336,10 +337,20 @@
     _reset();
 
     if (!wasArmed) {
-      // Quick tap: click() restores the HTMX navigation we suppressed.
-      if (tapTarget) tapTarget.click();
+      // Quick tap: the native click fires on its own now (we no longer
+      // preventDefault touchstart), so don't trigger it again.
       return;
     }
+
+    // Armed drag finished — swallow the click the browser may synthesise so the
+    // reorder doesn't also open the note.
+    var _swallow = function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      document.removeEventListener('click', _swallow, true);
+    };
+    document.addEventListener('click', _swallow, true);
+    setTimeout(function () { document.removeEventListener('click', _swallow, true); }, 500);
 
     if (document.getElementById('_sb-mobile-backdrop') &&
         typeof _mobileSidebarClose === 'function') {
