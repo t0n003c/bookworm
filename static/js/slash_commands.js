@@ -736,16 +736,32 @@ function _render() {
       </div>`;
   }).join('');
 
-  // Position near caret, kept inside viewport
-  const { x, y } = _caretCoords();
-  const PAD  = 6;
-  const palH = Math.min(320, matches.length * 52 + 8);
-  let top  = y + PAD;
-  let left = x;
-  if (top  + palH > window.innerHeight - PAD) top  = y - palH - PAD;
-  if (left + 270  > window.innerWidth  - PAD) left = window.innerWidth - 270 - PAD;
+  // Reset positioning props so a previous open's styles don't leak across modes.
+  Object.assign(pal.style, { top: '', left: '', right: '', bottom: '', width: '', maxHeight: '320px', display: 'flex' });
 
-  Object.assign(pal.style, { top: top + 'px', left: left + 'px', display: 'flex' });
+  // On a touch device with the keyboard up, the caret-relative position would
+  // land BELOW the caret, behind the on-screen keyboard (invisible). Pin the
+  // palette as a full-width sheet just above the keyboard + accessory bar.
+  const _vv = window.visualViewport;
+  const _coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+  const _kbGap = _vv ? Math.max(0, window.innerHeight - _vv.height - _vv.offsetTop) : 0;
+  if (_coarse && _kbGap > 150) {
+    Object.assign(pal.style, {
+      left: '8px', right: '8px', minWidth: '0',
+      bottom: (_kbGap + 52) + 'px',   // sit just above the mobile accessory toolbar (~48px)
+      maxHeight: '42vh', zIndex: '2147483647',   // above the toolbar (which is …646)
+    });
+  } else {
+    // Desktop / no-keyboard: position near the caret, kept inside the viewport.
+    const { x, y } = _caretCoords();
+    const PAD  = 6;
+    const palH = Math.min(320, matches.length * 52 + 8);
+    let top  = y + PAD;
+    let left = x;
+    if (top  + palH > window.innerHeight - PAD) top  = y - palH - PAD;
+    if (left + 270  > window.innerWidth  - PAD) left = window.innerWidth - 270 - PAD;
+    Object.assign(pal.style, { top: top + 'px', left: left + 'px' });
+  }
   pal.querySelector(`[data-idx="${_sc.selected}"]`)?.scrollIntoView({ block: 'nearest' });
 }
 
@@ -785,7 +801,16 @@ window.bwSlashOpen = function (ce) {
   if (!ce) return;
   ce.focus();
   var sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
+  if (!sel) return;
+  if (!sel.rangeCount) {
+    // Selection can be empty on mobile after tapping a toolbar button — drop a
+    // caret at the end of the editor so the command still has an insert point.
+    var r = document.createRange();
+    r.selectNodeContents(ce);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
   // _render() dereferences _sc.palette — build it if the user hasn't typed '/'
   // anywhere yet this session, otherwise the first '+' tap throws and shows nothing.
   if (!_sc.palette) _sc.palette = _buildPalette();
