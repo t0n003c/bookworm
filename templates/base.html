@@ -167,11 +167,20 @@
     [x-cloak] { display: none !important; }
     .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
     .htmx-request .htmx-indicator { opacity: 1; }
-    .sidebar-scroll { max-height: calc(100vh - 4rem); overflow-y: auto; }
-    .main-scroll   { height: calc(100vh - 4rem); overflow-y: auto;
-                     overscroll-behavior-y: contain; }
+    .sidebar-scroll { max-height: calc(100vh - 4rem); overflow-y: auto;
+                     -webkit-overflow-scrolling: touch; }
+    /* <main> is a flex-1 child of .bw-app-shell (flex row), so it stretches to
+       the shell's real height. Sizing via flex + min-height:0 (instead of an
+       explicit 100vh/dvh calc) is the canonical scroll pattern: identical height
+       on desktop, but uses the actual computed viewport in a standalone PWA where
+       a vh/dvh calc mismatches the visible area and the outer scroller won't
+       touch-scroll. */
+    .main-scroll   { min-height: 0; overflow-y: auto;
+                     overscroll-behavior-y: contain;
+                     -webkit-overflow-scrolling: touch; }
     .panel-scroll  { height: calc(100vh - 4rem); overflow-y: auto;
-                     overscroll-behavior-y: contain; }
+                     overscroll-behavior-y: contain;
+                     -webkit-overflow-scrolling: touch; }
     /*
      * ── Mobile dynamic-viewport fix ────────────────────────────────────────
      * On real Android/iOS devices 100vh = the *large* viewport (URL bar
@@ -194,7 +203,8 @@
       @media (max-width: 767px) {
         .bw-app-shell   { height: 100dvh !important; }
         .sidebar-scroll { max-height: calc(100dvh - 4rem); }
-        .main-scroll    { height: calc(100dvh - 4rem); }
+        /* .main-scroll height comes from flex stretch (see base rule) so it
+           tracks the real PWA viewport — no explicit dvh calc here. */
         .panel-scroll   { height: calc(100dvh - 4rem); }
         /*
          * Home canvas bottom safe zone
