@@ -138,8 +138,8 @@ bookworm/
 | `core/config.py` | `app/core/config.py` ✅ (moved; shim at `core/config.py`) |
 | `core/db.py`, `core/deps.py` | `app/core/db.py`, `app/core/deps.py` ✅ (moved; shims left) |
 | `db/schema.py`, `db/migrations.py` | `app/db/schema.py`, `app/db/migrations.py` ✅ (moved; shims left) |
-| `bw_ssrf.py` | `app/core/ssrf.py` |
-| `security.py` | `app/core/security.py` |
+| `bw_ssrf.py` | `app/core/ssrf.py` ✅ (moved; shim left) |
+| `security.py` | `app/core/security.py` ✅ (moved; shim left) |
 | `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
 | `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` ✅ (now `db/`) |
 | `auth_middleware.py` | `app/api/middleware/auth.py` |
@@ -190,9 +190,11 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   the new modules via `sys.modules` (every name + identity preserved), so all
   `from core.… import …` / `from db.… import …` / `from database import …` keep
   working unchanged. Verified: 9 identity checks (old path *is* new object), 351
-  routes, fresh build + live restart + health + smoke. **Next:** move
-  `auth_middleware`/`security`/`bw_ssrf` → `app/core` + `app/api/middleware`,
-  then routers → `app/api`, then flip the Dockerfile entrypoint last.
+  routes, fresh build + live restart + health + smoke. ✅ **Also moved:**
+  `bw_ssrf.py` → `app/core/ssrf.py`, `security.py` → `app/core/security.py`
+  (shims left; identity + SSRF-guard + secret-key checks pass). **Next:** move
+  `auth_middleware` → `app/api/middleware/auth.py`, then routers → `app/api`,
+  then flip the Dockerfile entrypoint last.
 - **Phase 5 — Slim `main.py`.** Move lifespan → `app/lifespan.py`, inline routes
   → their feature routers, CSP/middleware wiring → `create_app()`.
 - **Phase 6 — Service layer per slice.** For one feature at a time (start with
