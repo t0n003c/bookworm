@@ -41,6 +41,7 @@ window.bwTimeline = (function () {
   let _keyCleanup      = null;   // keyboard shortcut teardown
   let _pinching        = false;  // true while two-finger pinch-zoom is active
   let _wormCleanup     = null;   // bookworm RAF loop teardown
+  let _bgCleanup       = null;   // aurora WebGL background teardown
   let _tlDateMode      = 'created'; // 'created' | 'updated'
 
   // ── Date utilities ───────────────────────────────────────────
@@ -430,6 +431,12 @@ window.bwTimeline = (function () {
       transition: 'opacity 0.15s ease',
     });
 
+    // ── Aurora WebGL background (sits behind everything; subtle + perf-guarded) ──
+    if (_bgCleanup) { _bgCleanup(); _bgCleanup = null; }
+    if (window.bwTimelineBg) {
+      try { _bgCleanup = window.bwTimelineBg(outer, _isDark()); } catch (_) { _bgCleanup = null; }
+    }
+
     // ── contentWrap: holds spine + rail + year labels + worm ─────────────
     // On mobile contentWrap lives inside vScroll and is taller than the viewport;
     // scrollTop panning reveals cards above/below. outer keeps overflow:hidden.
@@ -472,7 +479,11 @@ window.bwTimeline = (function () {
     Object.assign(spine.style, {
       position: 'absolute', top: `${SPINE_Y * 100}%`,
       left: '0', right: '0', height: '3px',
-      background: t.spine, borderRadius: '2px',
+      // soft horizontal fade at the ends + a gentle glow so it reads as a
+      // light beam across the aurora rather than a flat bar.
+      background: `linear-gradient(90deg, transparent, ${t.spine} 12%, ${t.spine} 88%, transparent)`,
+      borderRadius: '2px',
+      boxShadow: `0 0 14px ${t.spineFade}, 0 0 4px ${t.spine}`,
       transform: 'translateY(-50%)', zIndex: '1', pointerEvents: 'none',
     });
     contentWrap.appendChild(spine);
@@ -829,6 +840,7 @@ window.bwTimeline = (function () {
     if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
     if (_keyCleanup)  { _keyCleanup();  _keyCleanup  = null; }
     if (_wormCleanup) { _wormCleanup(); _wormCleanup = null; }
+    if (_bgCleanup)   { _bgCleanup();   _bgCleanup   = null; }
 
     const main = document.getElementById('main-content');
     if (main) {

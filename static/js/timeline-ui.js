@@ -284,19 +284,15 @@ window._bwTLUi = (function () {
 
     const inner = document.createElement('span');
     const _isMobile = window.innerWidth < 768;
-    // Apple's emoji renderer makes 🐛 hyper-realistic on iOS & macOS.
-    // Use our friendly SVG mascot instead on any Apple device.
-    const _isApple  = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
-    if (_isApple) {
-      const _sz = _isMobile ? '26px' : '42px';
-      const _img = document.createElement('img');
-      _img.src           = '/static/favicon.svg';
-      _img.alt           = '';
-      _img.style.cssText = `width:${_sz};height:${_sz};display:block;`;
-      inner.appendChild(_img);
-    } else {
-      inner.textContent = '\uD83D\uDC1B';  // 🐛 caterpillar emoji
-    }
+    // Always use our friendly SVG caterpillar mascot (same character as the app
+    // icon) on every platform.
+    const _sz = _isMobile ? '28px' : '44px';
+    const _img = document.createElement('img');
+    _img.src           = '/static/favicon.svg';
+    _img.alt           = '';
+    _img.style.cssText = `width:${_sz};height:${_sz};display:block;`
+                       + 'filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));';
+    inner.appendChild(_img);
     Object.assign(inner.style, {
       fontSize:        _isMobile ? '26px' : '42px',
       display:         'inline-block',
@@ -383,7 +379,7 @@ window._bwTLUi = (function () {
       // The 🐛 emoji faces LEFT by default; our SVG mascot (favicon) faces
       // RIGHT — so the flip sign depends on which asset is in use, else the
       // Apple/SVG worm crawls backward.
-      const _base  = _isApple ? 1 : -1;   // _isApple uses the right-facing SVG
+      const _base = 1;   // _isApple uses the right-facing SVG
       const facing = ' scaleX(' + (diff > 0.5 ? _base : -_base) + ')';
       wrap.style.transform = 'translateY(-50%)' + facing;
     }

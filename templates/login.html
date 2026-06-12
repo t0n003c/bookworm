@@ -274,9 +274,9 @@
       const worm  = document.getElementById('worm');
       const track = document.getElementById('worm-track');
 
-      /* Apple's emoji font renders 🐛 hyper-realistically on iOS & macOS.
-         Swap in our friendly SVG mascot instead on any Apple device.    */
-      if (/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)) {
+      /* Always use our friendly SVG caterpillar mascot (matches the app icon)
+         on every platform — not the OS emoji. */
+      {
         worm.textContent = '';
         const _wImg = document.createElement('img');
         _wImg.src           = '/static/favicon.svg';
