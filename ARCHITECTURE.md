@@ -135,7 +135,9 @@ bookworm/
 
 | Current | Target |
 |---|---|
-| `core/config.py` *(new)* | `app/core/config.py` ✅ |
+| `core/config.py` | `app/core/config.py` ✅ (moved; shim at `core/config.py`) |
+| `core/db.py`, `core/deps.py` | `app/core/db.py`, `app/core/deps.py` ✅ (moved; shims left) |
+| `db/schema.py`, `db/migrations.py` | `app/db/schema.py`, `app/db/migrations.py` ✅ (moved; shims left) |
 | `bw_ssrf.py` | `app/core/ssrf.py` |
 | `security.py` | `app/core/security.py` |
 | `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
@@ -182,9 +184,15 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   behaviour-identical (valid→same id; unauth→same exception/status/detail), 351
   routes, health + smoke. Next: fold the repeated ownership/`_demo_guard` checks
   into `require_owner`/`demo_guard` deps.
-- **Phase 4 — Introduce `app/` package + shims.** Create the package; move
-  cross-cutting infra in; leave thin re-export shims at the old paths so the
-  whole app keeps importing as before. Flip the Dockerfile entrypoint last.
+- **Phase 4 — Introduce `app/` package + shims.** 🟡 **In progress — infra moved:**
+  `core/` → `app/core/` (config, db, deps) and `db/` → `app/db/` (schema,
+  migrations). The old `core/*.py` and `db/*.py` are now 4-line shims that alias
+  the new modules via `sys.modules` (every name + identity preserved), so all
+  `from core.… import …` / `from db.… import …` / `from database import …` keep
+  working unchanged. Verified: 9 identity checks (old path *is* new object), 351
+  routes, fresh build + live restart + health + smoke. **Next:** move
+  `auth_middleware`/`security`/`bw_ssrf` → `app/core` + `app/api/middleware`,
+  then routers → `app/api`, then flip the Dockerfile entrypoint last.
 - **Phase 5 — Slim `main.py`.** Move lifespan → `app/lifespan.py`, inline routes
   → their feature routers, CSP/middleware wiring → `create_app()`.
 - **Phase 6 — Service layer per slice.** For one feature at a time (start with
