@@ -854,15 +854,18 @@ function _cePrefixBeforeCaret(ce) {
   }
 
   // Range: start of the nearest block → current caret position.
-  // Skip the drag-grip span (data-preview-grip, contenteditable=false) that
-  // sits as the FIRST child of every rendered block — its '⠿' text would
-  // prefix the returned string and prevent prefix.startsWith('/') from
-  // matching, so we start the range AFTER the grip if one is present.
+  // Skip the drag-grip span (contenteditable=false) that sits as the FIRST
+  // child of every rendered block — its '⠿' text would prefix the returned
+  // string and prevent prefix.startsWith('/') from matching, so we start the
+  // range AFTER the grip if one is present. Note-form blocks mark the grip
+  // 'data-preview-grip'; database-card blocks mark it 'data-db-grip' — skip
+  // either, otherwise the slash palette never opens in db-card notes.
   try {
     const r = document.createRange();
     const firstChild = block.firstChild;
     const hasGrip    = firstChild?.nodeType === Node.ELEMENT_NODE
-                       && firstChild.hasAttribute('data-preview-grip');
+                       && (firstChild.hasAttribute('data-preview-grip')
+                           || firstChild.hasAttribute('data-db-grip'));
     r.setStart(block, hasGrip ? 1 : 0);
     r.setEnd(caretRange.startContainer, caretRange.startOffset);
     return r.toString();
@@ -1000,10 +1003,28 @@ var _BW_PAGE_LINK_CSS =
   'border-radius:6px;background:rgba(0,83,226,.09);color:#0053e2;' +
   'text-decoration:none;font-weight:600;cursor:pointer;';
 
+/** Save the currently-open note edit form, if any. The note form normally
+ *  autosaves when the notes panel closes; programmatic navigation (opening a
+ *  sub-page, returning to a card) bypasses that lifecycle, so flush here.
+ *  FormData is captured synchronously, so the fire-and-forget POST keeps the
+ *  right content even when the DOM is swapped immediately after. */
+function _bwFlushNoteForm() {
+  var f = document.getElementById('note-form');
+  if (!f) return;
+  if (typeof window._bwSyncPreviewToMd === 'function') {
+    try { window._bwSyncPreviewToMd(); } catch (e) {}
+  }
+  var action = f.getAttribute('hx-post') || '';
+  if (/^\/notes\/\d+$/.test(action)) {
+    try { fetch(action, { method: 'POST', body: new FormData(f) }); } catch (e) {}
+  }
+}
+
 /** Open a note as a full page — edit form when `edit`, read view otherwise.
  *  Uses the HTMX detail-panel swap that the rest of the app uses, falling back
  *  to a full navigation when that panel is not in the DOM. */
 function _bwOpenPage(noteId, edit) {
+  _bwFlushNoteForm(); // don't lose edits in the form we're navigating away from
   var url = '/notes/' + noteId + (edit ? '/form' : '');
   var panel = document.getElementById('detail-panel');
   if (window.htmx && panel) {
@@ -1013,6 +1034,14 @@ function _bwOpenPage(noteId, edit) {
   }
 }
 window._bwOpenPage = _bwOpenPage;
+
+/** Breadcrumb target for a card-parented sub-page: save the form, then reopen
+ *  the parent database card detail in the panel. */
+function _bwBackToCard(cardId) {
+  _bwFlushNoteForm();
+  if (typeof window._dbOpenDetail === 'function') window._dbOpenDetail(cardId);
+}
+window._bwBackToCard = _bwBackToCard;
 
 /** Lightweight non-blocking notice (avoids alert()). */
 function _bwInlinePageWarn(msg) {

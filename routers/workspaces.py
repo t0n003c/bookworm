@@ -111,7 +111,8 @@ async def _ws_context(
     ws_id_set = None
     if active_ws_type != "database" and active_ws_id is not None:
         ws_id_set = await get_descendant_ids(active_ws_id)
-        notes     = await search_notes(workspace_ids=list(ws_id_set), sort_by=sort_by)
+        notes     = await search_notes(workspace_ids=list(ws_id_set), sort_by=sort_by,
+                                       exclude_inline=True)
         if notes:
             _shared = await get_shared_object_ids("note", [n["id"] for n in notes])
             for note in notes:

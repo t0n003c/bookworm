@@ -97,7 +97,7 @@ async def _user_notes(uid: int, limit: int = 50) -> list[dict]:
     ws_ids = [w["id"] for w in workspaces]
     if not ws_ids:
         return []
-    return (await search_notes(workspace_ids=ws_ids))[:limit]
+    return (await search_notes(workspace_ids=ws_ids, exclude_inline=True))[:limit]
 
 
 def _fetch_json(url: str) -> dict:

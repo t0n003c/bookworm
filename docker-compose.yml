@@ -112,6 +112,13 @@ services:
       # Leave empty for direct internet (the default for most deployments).
       BW_HTTP_PROXY: ${BW_HTTP_PROXY:-}
 
+      # ── Login rate limiting (optional) ─────────────────────────────────────
+      # Sliding-window lockout on repeated failed logins. Defaults: 5 failures
+      # within a 600 s window → 900 s lockout. Tune for a stricter/looser policy.
+      BW_RL_WINDOW_SECS: ${BW_RL_WINDOW_SECS:-600}
+      BW_RL_MAX_FAILURES: ${BW_RL_MAX_FAILURES:-5}
+      BW_RL_LOCKOUT_SECS: ${BW_RL_LOCKOUT_SECS:-900}
+
     volumes:
       - bookworm_data:/data
     restart: unless-stopped

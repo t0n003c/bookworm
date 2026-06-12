@@ -20,6 +20,7 @@ from routers.notes_db import (
     create_inline_page,
     get_child_page_titles,
     get_note_workspace_id,
+    derive_title_from_content,
     update_note,
     delete_note,
     move_note_to_workspace,
@@ -133,6 +134,17 @@ async def edit_note_form(request: Request, note_id: int):
     categories = await get_categories_for_workspace(ws_id)
     attr_defs  = await get_all_attr_defs()
     link = await get_public_link("note", note_id, uid) if uid else None
+    # Inline sub-pages: resolve the parent for the breadcrumb, and decide what
+    # the title box should show — empty when the title is auto-derived from the
+    # first line (so editing the first line keeps updating the title), or the
+    # explicit title the user typed.
+    inline_parent = None
+    inline_title_value = None
+    if note.get("is_inline_page"):
+        if note.get("parent_note_id"):
+            inline_parent = await get_note_by_id(note["parent_note_id"])
+        _auto = (note.get("title") or "") == derive_title_from_content(note.get("content"))
+        inline_title_value = "" if _auto else (note.get("title") or "")
     return templates.TemplateResponse(
         request,
         "partials/note_form.html",
@@ -144,6 +156,8 @@ async def edit_note_form(request: Request, note_id: int):
             "today":              note["meeting_date"],
             "workspace_id":       ws_id,
             "public_link_active": link is not None,
+            "inline_parent":      inline_parent,
+            "inline_title_value": inline_title_value,
         },
     )
 
@@ -446,7 +460,7 @@ async def update_note_handler(
     note = await get_note_by_id(note_id)
     ws_id = int(workspace_id or note.get("workspace_id") or 0) or None
     ws_ids = list(await get_descendant_ids(ws_id)) if ws_id is not None else None
-    notes = await search_notes(workspace_ids=ws_ids)
+    notes = await search_notes(workspace_ids=ws_ids, exclude_inline=True)
     await _attach_share_flags(notes)
     categories = await get_categories_for_workspace(ws_id)
     attr_defs = await get_all_attr_defs()

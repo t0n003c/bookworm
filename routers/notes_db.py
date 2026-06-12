@@ -404,8 +404,9 @@ async def update_note(
 ) -> bool:
     """Update an existing note. Returns False if not found.
 
-    Inline sub-pages ignore the passed-in title and derive it from the first
-    line of content instead.
+    For inline sub-pages the title box is optional: when the user leaves it
+    blank the title is derived from the first line of content; a typed title
+    always wins.
     """
     async with get_db() as db:
         cur = await db.execute(
@@ -413,7 +414,7 @@ async def update_note(
         )
         _row = await cur.fetchone()
         if _row and _row["is_inline_page"]:
-            title = derive_title_from_content(content)
+            title = (title or "").strip() or derive_title_from_content(content)
         cursor = await db.execute(
             "UPDATE notes SET title=?, icon=?, content=?, meeting_date=? WHERE id=?",
             (title, icon or None, content, meeting_date, note_id),
@@ -450,14 +451,20 @@ async def get_note_workspace_id(note_id: int) -> Optional[int]:
 async def patch_note_content(note_id: int, content: str) -> bool:
     """Update only the content field of a note. Returns False if not found.
 
-    For inline sub-pages, the title is also recomputed from the first line.
+    For an inline sub-page whose title is auto (still derived from the old
+    first line, i.e. no explicit title was typed), the title follows the new
+    first line. An explicitly-typed title is left untouched.
     """
     async with get_db() as db:
         cur = await db.execute(
-            "SELECT is_inline_page FROM notes WHERE id = ?", (note_id,)
+            "SELECT is_inline_page, title, content FROM notes WHERE id = ?", (note_id,)
         )
         _row = await cur.fetchone()
-        if _row and _row["is_inline_page"]:
+        _auto = (
+            _row and _row["is_inline_page"]
+            and (_row["title"] or "") == derive_title_from_content(_row["content"])
+        )
+        if _auto:
             cursor = await db.execute(
                 "UPDATE notes SET content=?, title=? WHERE id=?",
                 (content, derive_title_from_content(content), note_id),

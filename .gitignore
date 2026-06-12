@@ -22,6 +22,9 @@ __pycache__/
 # ── Claude Code: keep shared agents, drop local-only settings ──────────
 .claude/settings.local.json
 
+# ── Windows-only Tailwind binary (40MB; CSS is pre-built/bundled) ──────
+tailwindcss.exe
+
 # ── Scratch / build outputs ────────────────────────────────────────────
 openapi_tmp.json
 audit_out.txt

@@ -4168,6 +4168,16 @@ function _dbAttachNoteTools(noteEl) {
       _dbFileChipMenu(fchip, e);
       return;
     }
+    /* Inline page-link chip — open the sub-page in the panel, NOT a new tab
+       (a raw /notes/{id} nav would render the bare partial with no app shell) */
+    var pl = e.target.closest('a.bw-page-link[data-note-id]');
+    if (pl) {
+      e.preventDefault();
+      if (typeof window._bwOpenPage === 'function') {
+        window._bwOpenPage(pl.getAttribute('data-note-id'), false);
+      }
+      return;
+    }
     /* Link click — open in new tab (must check BEFORE empty-space check) */
     var a = e.target.closest('a[href]');
     if (a) {
@@ -6490,6 +6500,9 @@ function _dbInsertFileChip(ce, range, url, name) {
   ce.dispatchEvent(new Event('input'));  // → _dbDetailNoteInput: autosave + placeholder sync
 }
 window._dbNoteAttachFile = _dbNoteAttachFile;
+// Exposed so an inline sub-page's "back to card" breadcrumb can reopen the
+// parent card detail in #detail-panel.
+window._dbOpenDetail = _dbOpenDetail;
 
 // Small popover anchored at the click: Open (new tab) or Download.
 function _closeDbFileMenu() {
