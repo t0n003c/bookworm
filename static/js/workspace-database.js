@@ -4281,17 +4281,20 @@ function _dbAttachNoteTools(noteEl) {
   });
 
   /* ── Ctrl+A inside a code block — select only that block's content ────────── */
+  /* Markdown shortcut: "- " or "* " at the start of an empty block → bullet list
+     (parity with the note editor). Use beforeinput, NOT keydown: mobile soft
+     keyboards don't fire keydown with the real character key, so a keydown
+     `e.key === ' '` check never matches on phones. beforeinput fires reliably
+     for typed text on both mobile and desktop, and is cancelable. */
+  noteEl.addEventListener('beforeinput', function(e) {
+    if (e.inputType === 'insertText' && e.data === ' ' && _dbMaybeAutoBullet(noteEl)) {
+      e.preventDefault();
+    }
+  });
+
   noteEl.addEventListener('keydown', function(e) {
     /* Tab / Shift+Tab on list items — indent / outdent nested bullets */
     if (_dbNoteTabIndent(e, noteEl)) return;
-
-    /* Markdown shortcut: "- " or "* " at the start of an empty block turns it
-       into a bullet list (parity with the note editor). */
-    if (e.key === ' ' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
-        && _dbMaybeAutoBullet(noteEl)) {
-      e.preventDefault();
-      return;
-    }
 
     /* Enter inside an active code block → insert literal \n.
        Without this guard, Chrome inserts a <br> (or <div> in rich-edit

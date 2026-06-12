@@ -786,6 +786,9 @@ window.bwSlashOpen = function (ce) {
   ce.focus();
   var sel = window.getSelection();
   if (!sel || !sel.rangeCount) return;
+  // _render() dereferences _sc.palette — build it if the user hasn't typed '/'
+  // anywhere yet this session, otherwise the first '+' tap throws and shows nothing.
+  if (!_sc.palette) _sc.palette = _buildPalette();
   _open('ce', { ce: ce, noTrigger: true });
 };
 
