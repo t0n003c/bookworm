@@ -978,7 +978,7 @@
     <style>
       /* Multi-column grid in gallery mode */
       #note-list[data-view="gallery"] > div.grid {
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
         gap: 1rem;
       }
       /* Compact card: slightly less padding */
@@ -1052,7 +1052,7 @@
       /* Recent cards sub-grid — same columns as main gallery grid */
       #gallery-recent-section .gallery-recent-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
         gap: 1rem;
       }
       /* Articles hidden in main grid because they appear in Recent section */
