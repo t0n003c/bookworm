@@ -8,7 +8,7 @@
   {# ── PWA ───────────────────────────────────────────────────────── #}
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1b4332">
-  <link rel="apple-touch-icon" href="/static/img/icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/static/img/icons/apple-touch-icon.png?v={{ static_v }}">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="BookWorm">
@@ -1326,7 +1326,7 @@
     {# Standard prompt (Chrome / Edge / Android / Desktop) #}
     <div id="bw-pwa-std">
       <div class="bw-pwa-row">
-        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+        <img src="/static/img/icons/icon-192.png?v={{ static_v }}" width="46" height="46"
              class="bw-pwa-appicon" alt="BookWorm app icon">
         <div class="bw-pwa-text">
           <p class="bw-pwa-title">Install BookWorm</p>
@@ -1343,7 +1343,7 @@
     {# iOS Safari manual instructions #}
     <div id="bw-pwa-ios" hidden>
       <div class="bw-pwa-row">
-        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+        <img src="/static/img/icons/icon-192.png?v={{ static_v }}" width="46" height="46"
              class="bw-pwa-appicon" alt="BookWorm app icon">
         <div class="bw-pwa-text">
           <p class="bw-pwa-title">Install BookWorm on iOS</p>
@@ -1367,7 +1367,7 @@
     {# Mac desktop Safari — File → Add to Dock (macOS Sonoma 14+) #}
     <div id="bw-pwa-safari" hidden>
       <div class="bw-pwa-row">
-        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+        <img src="/static/img/icons/icon-192.png?v={{ static_v }}" width="46" height="46"
              class="bw-pwa-appicon" alt="BookWorm app icon">
         <div class="bw-pwa-text">
           <p class="bw-pwa-title">Install BookWorm on Mac</p>
@@ -1385,7 +1385,7 @@
     {# HTTPS required — shown when page is served over plain HTTP on a non-localhost host #}
     <div id="bw-pwa-https" hidden>
       <div class="bw-pwa-row">
-        <img src="/static/img/icons/icon-192.png" width="46" height="46"
+        <img src="/static/img/icons/icon-192.png?v={{ static_v }}" width="46" height="46"
              class="bw-pwa-appicon" alt="BookWorm app icon">
         <div class="bw-pwa-text">
           <p class="bw-pwa-title">HTTPS required to install</p>

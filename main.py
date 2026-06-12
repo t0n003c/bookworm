@@ -1211,7 +1211,13 @@ async def pwa_manifest():
     port, or tunnel (Cloudflare, ngrok, etc.) is serving the app.  Baking
     in an absolute base URL like the old version did is an anti-pattern —
     it breaks the moment the address changes.
+
+    Icon URLs carry a `?v=<static_v>` cache-buster: a CDN in front (Cloudflare)
+    caches the PNGs, and without a changing URL a new icon stays cached for
+    hours. static_v changes on every restart, so a fresh deploy → fresh icon.
     """
+    from templates_env import static_v
+    _v = f"?v={static_v}"
     manifest = {
         "name": "BookWorm",
         "short_name": "BookWorm",
@@ -1225,19 +1231,19 @@ async def pwa_manifest():
         "categories": ["productivity", "utilities"],
         "icons": [
             {
-                "src": "/static/img/icons/icon-192.png",
+                "src": f"/static/img/icons/icon-192.png{_v}",
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/img/icons/icon-512.png",
+                "src": f"/static/img/icons/icon-512.png{_v}",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": "/static/img/icons/icon-maskable-512.png",
+                "src": f"/static/img/icons/icon-maskable-512.png{_v}",
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
