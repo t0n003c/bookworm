@@ -24,7 +24,7 @@ async def get_all_workspaces(user_id: int) -> list[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at, ws_type "
+            "       sort_order, created_at, ws_type, db_card_preview "
             "FROM workspaces WHERE deleted_at IS NULL AND user_id = ? "
             "ORDER BY sort_order ASC",
             (user_id,),
@@ -103,12 +103,28 @@ async def get_workspace_by_id(workspace_id: int) -> Optional[dict]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
-            "       sort_order, created_at, user_id, ws_type "
+            "       sort_order, created_at, user_id, ws_type, db_card_preview "
             "FROM workspaces WHERE id = ? AND deleted_at IS NULL",
             (workspace_id,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+
+async def set_db_card_preview(ws_id: int, user_id: int, mode: str) -> bool:
+    """Set a database workspace's card preview mode ('cover' | 'content').
+
+    Ownership is enforced in the SQL (user_id match). Returns True if a row was
+    updated. Caller validates `mode` and the ws_type='database' guard.
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE workspaces SET db_card_preview = ? "
+            "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+            (mode, ws_id, user_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
 
 
 async def open_workspace(workspace_id: int) -> None:

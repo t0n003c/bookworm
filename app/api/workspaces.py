@@ -97,10 +97,12 @@ async def _ws_context(
     # Determine active workspace type early so we can skip work below
     active_ws_type = "workspace"
     db_cards: list = []
+    db_card_preview = "cover"
     if active_ws_id is not None:
         ws_row = next((w for w in all_wss if w["id"] == active_ws_id), None)
         if ws_row:
             active_ws_type = ws_row.get("ws_type") or "workspace"
+            db_card_preview = ws_row.get("db_card_preview") or "cover"
 
     # Database workspaces have no traditional notes — skip the expensive FTS
     # search + descendant-id walk entirely (saves 2+ DB connection opens on
@@ -141,6 +143,7 @@ async def _ws_context(
         "open_ws_ids":        open_ids,
         "active_ws_type":     active_ws_type,
         "db_cards":           db_cards,
+        "db_card_preview":    db_card_preview,
     }
 
 

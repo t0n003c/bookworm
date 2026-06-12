@@ -33,7 +33,7 @@ from app.api.workspace_db_cards import (
     update_db_card,
     upsert_card_attr,
 )
-from app.api.workspaces_db import get_workspace_by_id
+from app.api.workspaces_db import get_workspace_by_id, set_db_card_preview
 
 _MAX_COVER_BYTES = 100 * 1024 * 1024  # 100 MB (covers images + videos)
 _MAX_ATTR_FILE_BYTES = 50 * 1024 * 1024  # 50 MB — card attribute file attachments
@@ -89,6 +89,10 @@ class NoteHeightBody(BaseModel):
     height: int
 
 
+class PreviewModeBody(BaseModel):
+    mode: str  # 'cover' | 'content'
+
+
 _VALID_ATTR_TYPES = {
     "text", "number", "select", "multi_select", "status",
     "date", "person", "files", "checkbox", "url", "email", "phone", "place",
@@ -139,6 +143,26 @@ async def list_db_cards(ws_id: int, request: Request) -> JSONResponse:
     await _get_database_ws(ws_id, user_id)
     cards = await get_db_cards(db_id=ws_id, user_id=user_id)
     return JSONResponse({"cards": cards})
+
+
+_VALID_CARD_PREVIEWS = {"cover", "content"}
+
+
+@router.patch("/{ws_id}/db/preview-mode")
+async def set_card_preview_mode(ws_id: int, request: Request,
+                                body: PreviewModeBody) -> JSONResponse:
+    """Set the database's card preview mode ('cover' | 'content').
+
+    Database-level setting → applies to every card in this database. The gallery
+    shows each card's cover image/video ('cover') or its note content ('content').
+    """
+    user_id = _uid(request)
+    await _get_database_ws(ws_id, user_id)  # ownership + ws_type='database' guard
+    mode = (body.mode or "").strip().lower()
+    if mode not in _VALID_CARD_PREVIEWS:
+        raise HTTPException(status_code=422, detail="mode must be 'cover' or 'content'")
+    await set_db_card_preview(ws_id, user_id, mode)
+    return JSONResponse({"ok": True, "mode": mode})
 
 
 @router.post("/{ws_id}/db/cards")

@@ -6,6 +6,7 @@
 
 /* ── module state ─────────────────────────────────────────────────────────── */
 var _dbWsId              = null;   // current database workspace id (int)
+var _dbCardPreview       = 'cover';// per-database card preview mode: 'cover' | 'content'
 var _dbCards             = [];     // array of card objects from server
 var _dbSaveTimers        = {};     // {cardId: timeoutId} — per-card note debounce
 var _dbDetailId          = null;   // card id currently open in detail panel
@@ -510,6 +511,8 @@ function initDatabaseView(wsId) {
       headerEl.style.top = crumbH ? crumbH + 'px' : '';
     }
   });
+  // Card preview mode (per-database, server-persisted) — read from the root.
+  _dbCardPreview = (_root && _root.dataset.cardPreview === 'content') ? 'content' : 'cover';
   var raw = document.getElementById('db-cards-data');
   _dbCards = raw ? JSON.parse(raw.textContent || '[]') : [];
   _dbFilterGroups = [];
@@ -530,6 +533,7 @@ function initDatabaseView(wsId) {
   var saved = parseInt(localStorage.getItem('_dbSize_' + wsId), 10);
   _dbSizeStep = (saved >= 1 && saved <= 5) ? saved : 3;
   _dbApplySize(_dbSizeStep);
+  _dbApplyCardPreviewUI();
   _dbRenderGrid();
   _dbBindModals();
   _dbInitStyles();
@@ -2479,7 +2483,26 @@ function _dbThumbUrl(url, w) {
 }
 
 function _dbCoverHtml(card) {
-  if (card.cover_url) {
+  // Content-preview mode (per-database): show the card's own note content in the
+  // preview region instead of the cover image/video. Cards with no content fall
+  // through to the gradient/letter placeholder below.
+  if (_dbCardPreview === 'content') {
+    var _content = (card.note_content || '').trim();
+    if (_content) {
+      return (
+        '<div class="db-card-content-preview relative w-full flex-shrink-0 overflow-hidden cursor-pointer'
+        + ' bg-white dark:bg-zinc-900"'
+        + ' style="height:var(--db-cover-h,9rem);"'
+        + ' onclick="_dbOpenDetail(' + card.id + ')">'
+        + '<div class="db-card-content-inner px-3 py-2 text-sm text-gray-700 dark:text-zinc-300">'
+        + _content
+        + '</div>'
+        + '<div class="db-card-content-fade" aria-hidden="true"></div>'
+        + '</div>'
+      );
+    }
+    // no content → fall through to gradient placeholder (skip cover image)
+  } else if (card.cover_url) {
     var isVid = _dbCoverIsVideo(card.cover_url);
     var media = isVid
       ? '<video src="' + _esc(card.cover_url) + '" muted playsinline preload="metadata" loop'
@@ -2513,6 +2536,50 @@ function _dbCoverHtml(card) {
     + '</div>'
   );
 }
+
+/* ── card preview mode (cover ↔ content) ─────────────────────────────────────── */
+// Reflect _dbCardPreview on the toolbar toggle (icon + active accent + a11y state).
+function _dbApplyCardPreviewUI() {
+  var btn = document.getElementById('db-card-preview-toggle');
+  if (!btn) return;
+  var isContent = _dbCardPreview === 'content';
+  btn.setAttribute('aria-pressed', isContent ? 'true' : 'false');
+  btn.title = isContent
+    ? 'Card preview: content — click to show cover image'
+    : 'Card preview: cover image — click to show content';
+  btn.classList.toggle('text-purple-600', isContent);
+  btn.classList.toggle('dark:text-purple-400', isContent);
+  btn.classList.toggle('bg-purple-50', isContent);
+  // icon: lines-of-text (content) vs image-with-mountain (cover)
+  btn.innerHTML = isContent
+    ? '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">'
+      + '<path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10"/></svg>'
+    : '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">'
+      + '<path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16v14H4V5zm0 11l5-5 4 4 3-3 4 4"/></svg>';
+}
+
+// Toolbar button → flip the mode.
+window._dbToggleCardPreview = function() {
+  _dbSetCardPreview(_dbCardPreview === 'content' ? 'cover' : 'content');
+};
+
+// Set + persist the per-database preview mode, then re-render every card.
+window._dbSetCardPreview = function(mode) {
+  if (mode !== 'cover' && mode !== 'content') return;
+  if (mode === _dbCardPreview) return;
+  _dbCardPreview = mode;
+  _dbApplyCardPreviewUI();
+  _dbRenderGrid();   // applies to ALL cards in this database
+  // Keep the root dataset in sync so an HTMX re-init preserves the new mode.
+  var root = document.getElementById('db-view-root');
+  if (root) root.dataset.cardPreview = mode;
+  if (!_dbWsId) return;
+  fetch('/workspaces/' + _dbWsId + '/db/preview-mode', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: mode }),
+  }).catch(function() { /* non-fatal — UI already updated; server re-syncs on reload */ });
+};
 
 function _dbAttrPills(attrs, cardId) {
   // Renders a compact preview row for the card grid.

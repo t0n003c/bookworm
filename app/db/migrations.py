@@ -175,6 +175,14 @@ async def init_db() -> None:
                 "ALTER TABLE workspaces ADD COLUMN ws_type TEXT NOT NULL DEFAULT 'workspace'"
             )
 
+        # ── workspaces.db_card_preview — database card preview mode ('cover'|'content')
+        # Per-database setting: show each card's cover image/video, or its content,
+        # in the gallery preview (Notion-style). Applies to all cards in the database.
+        if "db_card_preview" not in ws_cols:
+            await db.execute(
+                "ALTER TABLE workspaces ADD COLUMN db_card_preview TEXT NOT NULL DEFAULT 'cover'"
+            )
+
         # ── users migrations (single PRAGMA read) ─────────────────────────────
         cursor = await db.execute("PRAGMA table_info(users)")
         u_cols = {r[1] for r in await cursor.fetchall()}
