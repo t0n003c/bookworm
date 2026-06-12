@@ -170,7 +170,11 @@ async def verify_submit(request: Request, code: str = Form(...)):
         return templates.TemplateResponse(
             request,
             "2fa_verify.html",
-            {"error": "Incorrect code — check your authenticator app and try again."},
+            {
+                "error": "Incorrect code — check your authenticator app and try again.",
+                "has_webauthn": request.session.get("pending_2fa_has_webauthn", False),
+                "totp_enabled": request.session.get("pending_2fa_totp", True),
+            },
             status_code=401,
         )
     record_success(rl_key)

@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.auth_db import authenticate, create_user, user_count, get_user_by_username, get_registration_open
 from app.api.totp_db import get_totp_status
-from app.api.webauthn_db import has_credentials
 from app.api.seed_uploads import seed_flower_uploads
 from app.api.rate_limit import check_rate_limit, record_failure, record_success
 from database import get_db
@@ -97,16 +96,17 @@ async def login_submit(
     record_success(rl_key)
     permanent = stay_signed_in == "on"
 
-    # Check 2FA — if TOTP enabled OR biometric registered, park a pending session
+    # 2FA after a PASSWORD login = TOTP (with recovery-code backup). A passkey is
+    # NOT a forced second factor here — it's a separate passwordless login
+    # (see /login/webauthn/*), so a device without the passkey is never blocked.
     totp = await get_totp_status(user["id"])
-    webauthn_ok = await has_credentials(user["id"])
-    if totp["totp_enabled"] or webauthn_ok:
+    if totp["totp_enabled"]:
         request.session["pending_2fa_user_id"]      = user["id"]
         request.session["pending_2fa_username"]      = user["username"]
         request.session["pending_2fa_role"]          = user["role"]
         request.session["pending_2fa_permanent"]     = permanent
-        request.session["pending_2fa_has_webauthn"]  = webauthn_ok
-        request.session["pending_2fa_totp"]          = totp["totp_enabled"]
+        request.session["pending_2fa_has_webauthn"]  = False
+        request.session["pending_2fa_totp"]          = True
         return RedirectResponse("/2fa/verify", status_code=302)
 
     request.session["user_id"]  = user["id"]
