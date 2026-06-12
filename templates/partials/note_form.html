@@ -2217,6 +2217,38 @@
          (B) Plain text:    the /todo command just inserted "- [ ] " as
              raw text — the 400ms debounce hasn't rendered it yet.
        Tab/Shift+Tab on list items: manipulates markdown directly, no execCommand. */
+
+    /* "- " or "* " at the start of an empty block → bullet list, in Preview mode.
+       Mobile only ever uses Preview (never the MD textarea), so the markdown
+       "- " shortcut needs an explicit Preview-mode handler. beforeinput fires
+       reliably on mobile soft keyboards (keydown doesn't carry the real key). */
+    preview.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertText' || e.data !== ' ') return;
+      const _sel = window.getSelection();
+      if (!_sel || !_sel.isCollapsed || !_sel.rangeCount) return;
+      let _block = _sel.getRangeAt(0).startContainer;
+      while (_block && _block.parentNode !== preview) _block = _block.parentNode;
+      if (!_block || _block.parentNode !== preview || _block.nodeType !== 1) return;
+      if (['UL', 'OL', 'LI'].indexOf(_block.nodeName) !== -1) return;
+      const _clone = _block.cloneNode(true);
+      _clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
+      if (['-', '*'].indexOf((_clone.textContent || '').trim()) === -1) return;
+      e.preventDefault();
+      const _ul = document.createElement('ul');
+      const _li = document.createElement('li');
+      _li.appendChild(document.createElement('br'));
+      _ul.appendChild(_li);
+      _block.replaceWith(_ul);
+      if (typeof window._injectPreviewGrips === 'function') window._injectPreviewGrips(preview);
+      const _grip = _li.querySelector('[data-preview-grip]');
+      const _r = document.createRange();
+      _r.setStart(_li, _grip ? 1 : 0);
+      _r.collapse(true);
+      _sel.removeAllRanges();
+      _sel.addRange(_r);
+      if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+    });
+
     preview.addEventListener('keydown', (e) => {
       // Ctrl/Cmd+K → link modal (must intercept before the early-return below)
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); showLinkModal(); return; }
