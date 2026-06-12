@@ -33,13 +33,19 @@
   overflow-wrap: break-word;                /* never let long words push width out */
   background-color: #e7d5ad;
   background-image:
+    /* 1 — crumple relief: fractal-noise heightfield lit from the upper-left so
+       ridges catch light and creases fall into shadow (the "wrinkles"). */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='640'%3E%3Cfilter id='wr'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.015 0.022' numOctaves='5' seed='12' result='n'/%3E%3CfeDiffuseLighting in='n' lighting-color='white' surfaceScale='4.2' diffuseConstant='1.15' result='l'%3E%3CfeDistantLight azimuth='225' elevation='42'/%3E%3C/feDiffuseLighting%3E%3CfeComponentTransfer in='l'%3E%3CfeFuncA type='linear' slope='0.92'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='640' height='640' filter='url(%23wr)'/%3E%3C/svg%3E"),
+    /* 2 — fine paper tooth */
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23p)'/%3E%3C/svg%3E"),
+    /* 3 — diagonal fold creases (as if the page was folded once) */
+    linear-gradient(168deg, transparent 0 14%, rgba(120,84,38,.07) 14.4%, transparent 15%, transparent 47%, rgba(255,252,240,.10) 47.5%, transparent 48%, transparent 73%, rgba(120,84,38,.06) 73.4%, transparent 74%),
     radial-gradient(120% 90% at 50% 0%,  rgba(255,250,235,.60), rgba(255,250,235,0) 55%),
     radial-gradient(90% 70% at 82% 22%,  rgba(150,110,60,.13), transparent 60%),
     radial-gradient(80% 70% at 12% 86%,  rgba(120,84,38,.13),  transparent 60%),
     radial-gradient(55% 45% at 68% 74%,  rgba(120,84,38,.10),  transparent 60%);
-  background-size: 200px 200px, auto, auto, auto, auto;
-  background-blend-mode: soft-light, normal, normal, normal, normal;
+  background-size: 640px 640px, 200px 200px, auto, auto, auto, auto, auto;
+  background-blend-mode: overlay, soft-light, normal, normal, normal, normal, normal;
   box-shadow:
     0 18px 40px rgba(0,0,0,.45),
     0 2px 6px rgba(0,0,0,.30),
