@@ -139,7 +139,7 @@ bookworm/
 | `bw_ssrf.py` | `app/core/ssrf.py` |
 | `security.py` | `app/core/security.py` |
 | `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
-| `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` |
+| `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` ✅ (now `db/`) |
 | `auth_middleware.py` | `app/api/middleware/auth.py` |
 | `models.py` | `app/models/` |
 | `routers/*_db.py` | `app/repositories/*` |
@@ -165,9 +165,13 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   data-dir extracted to `core/db.py` (the DB-session layer); `database.py`
   re-exports them (`get_db` is identity-equal) so every `from database import
   get_db` keeps working. Verified: 351 routes, a live `get_db()` query, PRAGMAs
-  intact (foreign_keys=1, WAL). **2b next:** move the schema constants +
-  `init_db()` migrations into `db/schema.py` + `db/migrations.py`, re-exporting
-  `init_db` from `database.py`.
+  intact (foreign_keys=1, WAL). ✅ **2b done:** schema constants →
+  `db/schema.py`; `init_db()` migrations → `db/migrations.py`; `database.py` is
+  now an 18-line facade re-exporting `get_db`/`DB_PATH`/`init_db`/`CREATE_TABLES_SQL`/
+  `SEED_*` (all identity-equal). Verified behaviour-identical to the pre-split
+  monolith (same result on a fresh build *and* on a copy of the live DB — incl. an
+  identical pre-existing fresh-build quirk), 351 routes, server restart + health +
+  smoke green, live DB untouched.
 - **Phase 3 — Shared request deps.** ✅ **Done:** `core/deps.py` with
   `current_user_id(request, *, detail=…)` (guarded form) and `session_user_id`
   (strict `session["user_id"]` form). The 17 copy-pasted `_uid`s collapsed onto
