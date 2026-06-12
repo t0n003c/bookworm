@@ -27,7 +27,8 @@ from routers.push_db import (
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/push")
 
-_VAPID_PUBLIC_KEY = os.getenv("BW_VAPID_PUBLIC_KEY", "")
+from core.config import settings
+_VAPID_PUBLIC_KEY = settings.vapid_public_key
 
 
 def _uid(req: Request) -> int:

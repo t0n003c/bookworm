@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Optional
 
 from database import get_db
+from core.config import settings
 
 # Mirror BW_DATA_DIR so uploads land in the same volume as the DB.
-_DATA_DIR  = Path(os.getenv("BW_DATA_DIR", "."))
+_DATA_DIR  = settings.data_dir
 UPLOAD_DIR = _DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 

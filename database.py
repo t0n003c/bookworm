@@ -8,7 +8,9 @@ from pathlib import Path
 
 # BW_DATA_DIR lets Docker (or any deployment) redirect the database
 # to a persistent volume.  Defaults to "." so local dev is unchanged.
-_DATA_DIR = Path(os.getenv("BW_DATA_DIR", "."))
+# Centralised in core.config (single source of truth for all BW_* config).
+from core.config import settings
+_DATA_DIR = settings.data_dir
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = _DATA_DIR / "bookworm.db"

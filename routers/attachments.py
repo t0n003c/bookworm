@@ -16,11 +16,12 @@ from routers.attachments_db import (
     get_attachments_for_note,
 )
 from routers.sharing_db import note_belongs_to_user
+from core.config import settings
 
 router = APIRouter(prefix="/notes", tags=["attachments"])
 
-# Respects the same env var used by the home-uploads router.
-_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "200"))
+# Centralised config (single source of truth) — was os.getenv("BW_MAX_UPLOAD_MB").
+_MAX_MB = settings.max_upload_mb
 MAX_UPLOAD_BYTES = _MAX_MB * 1024 * 1024
 
 

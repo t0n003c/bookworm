@@ -9,7 +9,8 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_DATA_DIR = Path(os.getenv("BW_DATA_DIR", "."))
+from core.config import settings
+_DATA_DIR = settings.data_dir
 _KEY_FILE  = _DATA_DIR / "bookworm.secret"
 
 # Session lifetime choices

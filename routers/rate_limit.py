@@ -21,15 +21,16 @@ Tune via env vars if needed:
 """
 from __future__ import annotations
 
-import os
 from collections import defaultdict, deque
 from time import monotonic
 
 from fastapi import HTTPException
 
-_WINDOW_SECS: float = float(os.getenv("BW_RL_WINDOW_SECS", "600"))
-_MAX_FAILURES: int  = int(os.getenv("BW_RL_MAX_FAILURES", "5"))
-_LOCKOUT_SECS: float = float(os.getenv("BW_RL_LOCKOUT_SECS", "900"))
+from core.config import settings
+
+_WINDOW_SECS: float = settings.rl_window_secs
+_MAX_FAILURES: int  = settings.rl_max_failures
+_LOCKOUT_SECS: float = settings.rl_lockout_secs
 
 # { key -> deque of monotonic timestamps of recent failures }
 _attempts: dict[str, deque] = defaultdict(deque)

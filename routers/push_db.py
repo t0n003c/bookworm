@@ -12,8 +12,9 @@ import os
 
 log = logging.getLogger(__name__)
 
-_PRIV = os.getenv("BW_VAPID_PRIVATE_KEY", "")
-_SUBJ = os.getenv("BW_VAPID_SUBJECT", "mailto:admin@localhost")
+from core.config import settings
+_PRIV = settings.vapid_private_key
+_SUBJ = settings.vapid_subject
 
 from database import get_db
 

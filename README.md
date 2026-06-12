@@ -394,8 +394,15 @@ rebuild_css.bat
 
 ## 📁 Project structure
 
+> 🏛️ **Architecture:** see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the target
+> Clean-Architecture layering (`core → repositories → services → api`), the
+> current-file→layer map, and the phased migration plan. Config is centralised
+> in `core/config.py` — read settings via `from core.config import settings`.
+
 ```
 bookworm/
+├── core/                    # cross-cutting infra (depends on nothing app-internal)
+│   └── config.py            # Settings — single source of truth for all BW_* config
 ├── main.py                  # FastAPI app, middleware, root routes
 ├── database.py              # DB init, schema, connection management
 ├── auth_middleware.py       # Session auth + redirect logic

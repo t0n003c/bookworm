@@ -35,11 +35,13 @@ from routers.uploads_db import (
     remove_tag_from_file,
 )
 
+from core.config import settings
+
 router = APIRouter(prefix="/home/uploads", tags=["uploads"])
 
-# Configurable via BW_MAX_UPLOAD_MB env var (default 200 MB).
+# Configurable via BW_MAX_UPLOAD_MB (default 200 MB) — now via core.config.
 # Bump to 500+ for large video libraries; keep at 20 for image-only teams.
-_MAX_MB = int(os.getenv("BW_MAX_UPLOAD_MB", "200"))
+_MAX_MB = settings.max_upload_mb
 MAX_UPLOAD_BYTES = _MAX_MB * 1024 * 1024
 _WEBP_SOURCE_TYPES = {"image/jpeg", "image/png", "image/gif"}
 

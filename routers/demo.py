@@ -32,7 +32,8 @@ _DEMO_SESSION_HOURS = 2   # session cookie hard limit for demo users
 
 # Set BW_DEMO_ENABLED=false to remove the "Try Demo" button and disable the
 # route entirely — useful for private team deployments.
-_DEMO_ENABLED = os.getenv("BW_DEMO_ENABLED", "true").lower() == "true"
+from core.config import settings
+_DEMO_ENABLED = settings.demo_enabled
 
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
