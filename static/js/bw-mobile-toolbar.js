@@ -95,8 +95,8 @@
 
   function actSlash() {
     restoreSelection();
-    // Inserting '/' fires the editor's input handler, which opens the palette.
-    document.execCommand('insertText', false, '/');
+    // Open the palette directly — do NOT type a '/' into the note.
+    if (activeCE && typeof window.bwSlashOpen === 'function') window.bwSlashOpen(activeCE);
   }
   // Route indent/outdent through each editor's OWN Tab handler (note form's
   // _bwCeTab via the document-level _bwEditorTabHandler, or the db card's

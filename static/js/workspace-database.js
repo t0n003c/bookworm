@@ -4060,6 +4060,46 @@ function _dbGripUp() {
 /* ── Tab / Shift+Tab indent for DB card note list items ─────────────────────
    Mirrors _bwCeTab in index.html but targets data-db-note contenteditable divs.
    Returns true if it handled the keydown (caller should return immediately).   */
+/* Markdown shortcut for the db-card note: typing "- " or "* " at the start of
+   an otherwise-empty block converts it to a bullet list (the note editor gets
+   this for free via markdown; the card stores HTML, so we do it explicitly).
+   Returns true when it handled the space (caller should preventDefault). */
+function _dbMaybeAutoBullet(noteEl) {
+  var sel = window.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.rangeCount) return false;
+
+  /* Block = the direct child of noteEl holding the caret */
+  var block = sel.getRangeAt(0).startContainer;
+  while (block && block.parentNode !== noteEl) block = block.parentNode;
+  if (!block || block.parentNode !== noteEl || block.nodeType !== 1) return false;
+  if (block.nodeName === 'UL' || block.nodeName === 'OL' || block.nodeName === 'LI') return false;
+
+  /* Block text minus the drag grip — must be exactly "-" or "*" */
+  var clone = block.cloneNode(true);
+  clone.querySelectorAll('[data-db-grip]').forEach(function(g) { g.remove(); });
+  if (['-', '*'].indexOf((clone.textContent || '').trim()) === -1) return false;
+
+  /* Swap the block for an empty <ul><li> */
+  var ul = document.createElement('ul');
+  var li = document.createElement('li');
+  li.appendChild(document.createElement('br'));
+  ul.appendChild(li);
+  block.replaceWith(ul);
+  _dbInjectGrips(noteEl);
+
+  /* Caret into the editable part of the new <li> (after the grip span if any) */
+  var grip = li.querySelector('[data-db-grip]');
+  var r = document.createRange();
+  r.setStart(li, grip ? 1 : 0);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+
+  var cardId = parseInt((noteEl.id || '').replace('db-detail-note-', ''), 10);
+  if (cardId) _dbSaveNote(cardId, _dbNoteHtml(noteEl));
+  return true;
+}
+
 function _dbNoteTabIndent(e, noteEl) {
   if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return false;
 
@@ -4244,6 +4284,14 @@ function _dbAttachNoteTools(noteEl) {
   noteEl.addEventListener('keydown', function(e) {
     /* Tab / Shift+Tab on list items — indent / outdent nested bullets */
     if (_dbNoteTabIndent(e, noteEl)) return;
+
+    /* Markdown shortcut: "- " or "* " at the start of an empty block turns it
+       into a bullet list (parity with the note editor). */
+    if (e.key === ' ' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+        && _dbMaybeAutoBullet(noteEl)) {
+      e.preventDefault();
+      return;
+    }
 
     /* Enter inside an active code block → insert literal \n.
        Without this guard, Chrome inserts a <br> (or <div> in rich-edit

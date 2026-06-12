@@ -773,9 +773,21 @@ function _updateHighlight() {
    Open / close
    ───────────────────────────────────────── */
 function _open(mode, opts) {
-  Object.assign(_sc, { open: true, mode, query: '', selected: 0, ...opts });
+  // noTrigger defaults false; the toolbar "+" opener passes true so apply
+  // inserts at the caret WITHOUT deleting a leading '/' (none was typed).
+  Object.assign(_sc, { open: true, mode, query: '', selected: 0, noTrigger: false, ...opts });
   _render();
 }
+
+/* Open the palette programmatically (e.g. the mobile "+" button) without
+   inserting a '/' character. Commands insert at the caret. */
+window.bwSlashOpen = function (ce) {
+  if (!ce) return;
+  ce.focus();
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  _open('ce', { ce: ce, noTrigger: true });
+};
 
 function _close() {
   _sc.open         = false;
@@ -1776,7 +1788,8 @@ function _insertTabBlock(ce, actRange) {
    ───────────────────────────────────────── */
 function _applyCE(cmd) {
   const ce            = _sc.ce;
-  const charsToDelete = 1 + _sc.query.length;                              // '/' + typed query
+  // noTrigger (button-opened palette): nothing was typed, so delete nothing.
+  const charsToDelete = _sc.noTrigger ? 0 : (1 + _sc.query.length);        // '/' + typed query
   const savedRange = _sc.savedCERange ? _sc.savedCERange.cloneRange() : null; // local copy before _close() wipes state
 
   // Defer via setTimeout so all pending mouse events (mouseup, click) finish
@@ -1846,7 +1859,9 @@ function _applyCE(cmd) {
         sel.modify('extend', 'backward', 'character');
       }
     }
-    document.execCommand('delete');
+    // Skip the delete entirely when nothing was typed (button-opened palette) —
+    // otherwise execCommand('delete') on the collapsed caret eats a real char.
+    if (charsToDelete > 0) document.execCommand('delete');
 
     // Apply — priority: ceHtml > ceExec > ceInsert / snippet
     if (cmd.ceHtml) {
