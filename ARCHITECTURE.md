@@ -137,7 +137,7 @@ bookworm/
 | `core/config.py` *(new)* | `app/core/config.py` ✅ |
 | `bw_ssrf.py` | `app/core/ssrf.py` |
 | `security.py` | `app/core/security.py` |
-| `database.py` (get_db) | `app/core/db.py` |
+| `database.py` (get_db) | `app/core/db.py` ✅ (now `core/db.py`) |
 | `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` |
 | `auth_middleware.py` | `app/api/middleware/auth.py` |
 | `models.py` | `app/models/` |
@@ -160,9 +160,13 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   `security`, `templates_env`). Each value proven byte-identical to its old
   `os.getenv`. Remaining router reads (webauthn, wopi, auth, home, search) flip
   to `settings` next, mechanically.
-- **Phase 2 — Split `database.py`.** Extract `get_db()` → `core/db.py`; move
-  schema + `init_db()` migrations → `db/`. Re-export from `database.py` so no
-  import breaks.
+- **Phase 2 — Split `database.py`.** ✅ **2a done:** `get_db()` + `DB_PATH` +
+  data-dir extracted to `core/db.py` (the DB-session layer); `database.py`
+  re-exports them (`get_db` is identity-equal) so every `from database import
+  get_db` keeps working. Verified: 351 routes, a live `get_db()` query, PRAGMAs
+  intact (foreign_keys=1, WAL). **2b next:** move the schema constants +
+  `init_db()` migrations into `db/schema.py` + `db/migrations.py`, re-exporting
+  `init_db` from `database.py`.
 - **Phase 3 — Shared request deps.** `core/deps.py` with `current_user_id`,
   `require_note_owner`, `demo_guard`; delete the 15 duplicate `_uid`s router by
   router behind the shared helper.
