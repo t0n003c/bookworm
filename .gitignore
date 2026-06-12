@@ -6,6 +6,9 @@ _qa*.txt
 
 # ── Databases & user-uploaded data ─────────────────────────────────────
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 uploads/
 
 # ── Logs ───────────────────────────────────────────────────────────────
