@@ -144,8 +144,8 @@ bookworm/
 | `database.py` (init_db/schema) | `app/db/migrations.py` + `app/db/schema.py` ✅ (now `db/`) |
 | `auth_middleware.py` | `app/api/middleware/auth.py` ✅ (moved; shim left) |
 | `models.py` | `app/models/` |
-| `routers/*_db.py` | `app/repositories/*` |
-| `routers/*.py` | `app/api/*` (thin) + logic → `app/services/*` |
+| `routers/*_db.py` | `app/repositories/*` (interim: now `app/api/*_db.py`; rename pending) |
+| `routers/*.py` | `app/api/*` ✅ (moved; shims left) + logic → `app/services/*` |
 | `search_index.py`, `search_llm.py`, `routers/search_qa.py` | `app/services/search/` |
 | `templates_env.py`, `templates/`, `static/` | `app/web/` |
 | `_health_check.py`, `_start_server.py`, `gen_vapid_keys.py`, `bw_*_icons.py`, `download_vendors.py`, `_seed_trip_data.py` | `scripts/` |
@@ -194,9 +194,15 @@ Each phase is independently shippable and verified (`import main` + 351 routes +
   `bw_ssrf.py` → `app/core/ssrf.py`, `security.py` → `app/core/security.py`
   (shims left; identity + SSRF-guard + secret-key checks pass), and
   `auth_middleware.py` → `app/api/middleware/auth.py` (stands up the `app/api`
-  layer; verified auth redirect + middleware stack intact). **Next:** routers →
-  `app/api` (the large move — ~50 files with cross-imports), then flip the
-  Dockerfile entrypoint last (with the `main.py` move in Phase 5).
+  layer; verified auth redirect + middleware stack intact). ✅ **All 58
+  `routers/*.py` → `app/api/*.py`** (internal `from routers.X` cross-imports
+  rewritten to `app.api.X`; old `routers/*.py` are `sys.modules` alias shims —
+  proven to cover `from routers import X`, `from routers.X import Y`, and
+  `import routers.X`). Verified: 5 identity checks incl. the `router` objects
+  `main.py` registers, 351 routes, restart + broad smoke. **Note:** the data-access
+  `*_db.py` files moved alongside as `app/api/*_db.py` for now; renaming them to
+  `app/repositories/*` is a follow-up. **Next:** flip the Dockerfile entrypoint
+  (with the `main.py` move in Phase 5).
 - **Phase 5 — Slim `main.py`.** Move lifespan → `app/lifespan.py`, inline routes
   → their feature routers, CSP/middleware wiring → `create_app()`.
 - **Phase 6 — Service layer per slice.** For one feature at a time (start with
