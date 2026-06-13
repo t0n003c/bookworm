@@ -108,6 +108,13 @@
   .crm-aged-photo img, .crm-aged-photo .ph { width: 108px; height: 108px; }
   .crm-aged-tear { width: 66px; height: 54px; }
   .crm-aged-curl { width: 42px; height: 42px; }
+  /* Keep each contact line (email / phone / address) to a single line — truncate
+     with an ellipsis rather than wrapping a long email onto multiple lines. */
+  .crm-aged-contact a, .crm-aged-contact span {
+    display: block; max-width: 100%; margin-right: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
 }
 
 /* ── Top bar ───────────────────────────────────────────────────────────── */
