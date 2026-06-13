@@ -1201,7 +1201,7 @@ window.bwHydratePageLinks = bwHydratePageLinks;
  * we restore it into the CE before calling insertHTML so the anchor lands
  * exactly where the user typed `/link`.
  */
-function _ceLinkDialog(ce, postDeleteRange) {
+function _ceLinkDialog(ce, postDeleteRange, existingAnchor) {
   // One dialog at a time
   const prev = document.getElementById('bw-link-dialog');
   if (prev) prev.remove();
@@ -1242,6 +1242,14 @@ function _ceLinkDialog(ce, postDeleteRange) {
     if (!url) { urlInput.focus(); return; }
     const text = (textInput.value || '').trim() || url;
     close();
+    // ── Edit an existing link ──────────────────────────────────────────────
+    if (existingAnchor) {
+      existingAnchor.setAttribute('href', url.replace(/"/g, '%22'));
+      existingAnchor.textContent = text;
+      existingAnchor.setAttribute('contenteditable', 'false'); // stays atomic
+      ce.dispatchEvent(new Event('input'));
+      return;
+    }
     // Use Range.insertNode() — pure DOM, no execCommand, no focus/selection dependency.
     // postDeleteRange is a collapsed Range pointing to the deletion site inside
     // the CE, captured before the dialog opened. The <p> is still there; just insert.
@@ -1250,6 +1258,7 @@ function _ceLinkDialog(ce, postDeleteRange) {
         const a   = document.createElement('a');
         a.href        = url.replace(/"/g, '%22');
         a.textContent = text;
+        a.setAttribute('contenteditable', 'false'); // atomic link
         const r = postDeleteRange.cloneRange();
         r.insertNode(a);          // inserts at the deletion site
         r.setStartAfter(a);       // move cursor to just after the link
@@ -1363,6 +1372,14 @@ function _ceLinkDialog(ce, postDeleteRange) {
 
   btnRow.appendChild(cancelBtn);
   btnRow.appendChild(insertBtn);
+
+  /* ---- edit mode: prefill from the existing link + relabel ---- */
+  if (existingAnchor) {
+    urlInput.value  = existingAnchor.getAttribute('href') || '';
+    textInput.value = existingAnchor.textContent || '';
+    titleEl.innerHTML = '<span>&#128279;</span><span>Edit Link</span>';
+    insertBtn.textContent = 'Save ↵';
+  }
 
   /* ---- assemble ---- */
   card.appendChild(header);
@@ -2007,9 +2024,79 @@ function _attachTextarea(ta) {
 /* ─────────────────────────────────────────
    Attach: contenteditable
    ───────────────────────────────────────── */
+/* ─────────────────────────────────────────
+   Atomic hyperlinks (shared by db-card + text-widget editors)
+   Links become contenteditable="false" so their text can't be edited inline
+   (only via the Edit Link dialog), Backspace/Delete removes the whole link, and
+   text typed right after a link isn't absorbed. The note preview
+   (#md-live-preview) wires its own equivalent in note_form.html — skipped here.
+   ───────────────────────────────────────── */
+var _BW_LINK_CHIP_SEL = '.bw-file-chip,.bw-page-link,[data-bw-mention],[data-bw-bookmark],[data-bw-file]';
+
+function _bwCeMarkLinksAtomic(root) {
+  if (!root) return;
+  root.querySelectorAll('a[href]').forEach(function (a) {
+    if (a.getAttribute('contenteditable') !== 'false') a.setAttribute('contenteditable', 'false');
+  });
+}
+window.bwMarkLinksAtomic = _bwCeMarkLinksAtomic;
+
+function _bwAtomicSideNode(range, dir) {
+  var c = range.startContainer, o = range.startOffset;
+  if (c.nodeType === 3) {                 // text node
+    if (dir < 0) return o === 0 ? c.previousSibling : null;
+    return o === c.length ? c.nextSibling : null;
+  }
+  return dir < 0 ? (o > 0 ? c.childNodes[o - 1] : null) : (c.childNodes[o] || null);
+}
+function _bwIsAtomicLink(n) {
+  return n && n.nodeType === 1 && n.tagName === 'A'
+    && n.getAttribute('contenteditable') === 'false';
+}
+
+function _bwAttachAtomicLinks(ce) {
+  if (!ce || ce._bwAtomicLinks) return;
+  ce._bwAtomicLinks = true;
+  _bwCeMarkLinksAtomic(ce);
+  // Re-mark on every edit (pasted / typed / slash-inserted links).
+  ce.addEventListener('input', function () { _bwCeMarkLinksAtomic(ce); });
+  // Backspace/Delete next to an atomic link removes the whole link.
+  ce.addEventListener('keydown', function (e) {
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    var range = sel.getRangeAt(0);
+    if (!range.collapsed || !ce.contains(range.startContainer)) return;
+    var node = _bwAtomicSideNode(range, e.key === 'Backspace' ? -1 : 1);
+    if (_bwIsAtomicLink(node)) {
+      e.preventDefault();
+      node.remove();
+      ce.dispatchEvent(new Event('input'));
+    }
+  });
+  // Click a PLAIN link → Edit Link dialog. Special chips (page-links, file chips,
+  // mentions, bookmarks) keep their own behavior. Capture phase so we beat the
+  // editor's own link/click handlers.
+  ce.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || !ce.contains(a)) return;
+    if (a.closest(_BW_LINK_CHIP_SEL)) return;   // special chip — let editor handle it
+    e.preventDefault();
+    e.stopPropagation();
+    _ceLinkDialog(ce, null, a);
+  }, true);
+}
+
 function _attachCE(ce) {
   if (ce._scAttached) return;
   ce._scAttached = true;
+
+  // Atomic hyperlinks for the DB-card note editor (#db-detail-note-<id>) and
+  // Text widget (#tw-view-<id>). The note preview (#md-live-preview) wires its
+  // own equivalent in note_form.html; other CEs (e.g. Trip) are left as-is.
+  if (ce.id && (ce.id.indexOf('db-detail-note-') === 0 || ce.id.indexOf('tw-view-') === 0)) {
+    _bwAttachAtomicLinks(ce);
+  }
 
   ce.addEventListener('input', () => {
     const prefix = _cePrefixBeforeCaret(ce); // text on this line up to caret
