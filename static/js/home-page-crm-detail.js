@@ -204,10 +204,11 @@ function _crmRenderDetail() {
               <div class="crm-aged-h">Reminders</div>
               <div id="crm-detail-reminders" class="crm-aged-empty">Loading…</div>
             </div>
+            ${deals.length ? `
             <div class="crm-aged-section">
               <div class="crm-aged-h">Linked Deals</div>
               ${dealsHtml}
-            </div>
+            </div>` : ''}
           </div>
         </div>
 
