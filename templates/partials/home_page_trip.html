@@ -84,7 +84,8 @@
   }
   #trip-capture-fab:active   { transform: scale(.94); }
   #trip-capture-sheet        { display: none; position: fixed; inset: 0; z-index: 45; }
-  .tcs-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  .tcs-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.40);
+                  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
   #trip-capture-panel {
     position: absolute; left: 0; right: 0; bottom: 0; max-height: 82vh; overflow-y: auto;
     background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.3);
@@ -434,9 +435,10 @@
        ancestors); lives inside #trip-page-root so it's removed on page swap. #}
   <button id="trip-capture-fab" type="button" onclick="tripOpenCaptureSheet()"
           aria-label="Quick capture">＋</button>
-  <div id="trip-capture-sheet" role="dialog" aria-modal="true" aria-label="Quick capture">
-    <div class="tcs-backdrop" onclick="tripCloseCaptureSheet()"></div>
-    <div id="trip-capture-panel">
+  <div id="trip-capture-sheet" role="dialog" aria-modal="true" aria-label="Quick capture"
+       onclick="tripCloseCaptureSheet()">
+    <div class="tcs-backdrop"></div>
+    <div id="trip-capture-panel" onclick="event.stopPropagation()">
       <button class="tcs-handle" onclick="tripCloseCaptureSheet()" aria-label="Close"></button>
       <div class="tcs-bar">
         <span class="tcs-title">Quick capture</span>
@@ -449,9 +451,10 @@
   {# Phone-only: Trip Resources button + bottom sheet of collapsible resource cards. #}
   <button id="trip-resources-fab" type="button" onclick="tripOpenResourcesSheet()"
           aria-label="Trip resources">🗂️ Resources <span id="trip-resources-count"></span></button>
-  <div id="trip-resources-sheet" role="dialog" aria-modal="true" aria-label="Trip resources">
-    <div class="tcs-backdrop" onclick="tripCloseResourcesSheet()"></div>
-    <div id="trip-resources-panel">
+  <div id="trip-resources-sheet" role="dialog" aria-modal="true" aria-label="Trip resources"
+       onclick="tripCloseResourcesSheet()">
+    <div class="tcs-backdrop"></div>
+    <div id="trip-resources-panel" onclick="event.stopPropagation()">
       <button class="tcs-handle" onclick="tripCloseResourcesSheet()" aria-label="Close"></button>
       <div class="tcs-bar">
         <span class="tcs-title">🗂️ Trip Resources</span>
