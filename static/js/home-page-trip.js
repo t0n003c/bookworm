@@ -80,12 +80,11 @@ window.initTripPage = function(pid) {
   window._tripPhone = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0))
                       && window.innerWidth < 768;
   window._tripAgendaAutoOpened = false;
+  window._tripResearchLoaded   = false;   // tripSetTab lazy-loads Research on first show
   if (window._tripPhone) {
     tripSetTab('plan');   // → tripLoadPlan → plan cards → single-plan auto-opens agenda
   } else {
     tripSetTab('research');
-    // Load locations — pass true so sessionStorage drill-in is restored exactly once
-    if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
   }
 };
 
@@ -122,6 +121,12 @@ window.tripSetTab = function(tab) {
   // tripOpenPlan / tripClosePlan own its visibility — always hide on tab switch.
   var sizeWrap = document.getElementById('trip-day-size-wrap');
   if (sizeWrap) { sizeWrap.classList.add('hidden'); sizeWrap.classList.remove('flex'); }
+  // Lazy-load Research locations the first time the tab is shown (phones land on
+  // Plan, so Research would otherwise never load — restoreSession only once).
+  if (tab === 'research' && !window._tripResearchLoaded && typeof tripLoadLocations === 'function') {
+    window._tripResearchLoaded = true;
+    tripLoadLocations(true);
+  }
   if (tab === 'plan'  && typeof tripLoadPlan  === 'function') tripLoadPlan();
   if (tab === 'chart' && typeof tripLoadChart === 'function') tripLoadChart();
   // Keep the phone quick-capture FAB visible only on the agenda surface.

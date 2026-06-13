@@ -256,9 +256,18 @@ window._tripRenderAgenda = function() {
         'No days yet. Tap <strong>✏️ Edit</strong> to build your itinerary.</div>';
   // padding-bottom inline (≈6rem) clears the FAB — pb-24 isn't in the bundle.
   var body = '<div class="px-3 pt-1 space-y-2" style="padding-bottom:6rem">' +
-    daysHtml + _agendaPackingSection() + '</div>';
+    daysHtml + '<div id="trip-agenda-resources"></div></div>';
 
   el.innerHTML = header + _agendaStatStrip() + body;
+  // Trip Resources: reuse the full panel-card renderer for ALL panel types
+  // (documents, packing, budget, settle, people, emergency, notes, reminder) in
+  // view mode. CSS makes the cards full-width inside the agenda. Re-rendered here
+  // from cached _tripPanels; _tripLoadPanels also targets this container on first
+  // (async) load.
+  var resEl = document.getElementById('trip-agenda-resources');
+  if (resEl && typeof window._tripRenderPanelCards === 'function') {
+    window._tripRenderPanelCards(resEl);
+  }
   if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
 };
 
@@ -309,55 +318,10 @@ window.tripDrawerSetTime = function() {
   if (typeof tripEditDaySpotTime === 'function') tripEditDaySpotTime(ctx.dayId, spotId, ctx.id);
 };
 
-// Collapsible "Packing" section with check-off (reuses tppTogglePack).
-function _agendaPackKey() { return 'bw-trip-agenda-pack-' + window._tripActivePlanId; }
-function _agendaPackOpen() { return localStorage.getItem(_agendaPackKey()) === 'open'; }
-window.tripAgendaTogglePackSection = function() {
-  try { localStorage.setItem(_agendaPackKey(), _agendaPackOpen() ? 'closed' : 'open'); } catch (e) {}
-  window._tripRenderAgenda();
-};
-window.tripAgendaTogglePack = function(panelId, gIdx, iIdx) {
-  // tppTogglePack updates the in-memory panel content synchronously (then saves),
-  // so re-rendering immediately reflects the new checked state.
-  if (typeof tppTogglePack === 'function') tppTogglePack(panelId, gIdx, iIdx);
-  window._tripRenderAgenda();
-};
-function _agendaPackingSection() {
-  var packs = (window._tripPanels || []).filter(function(p) { return p.panel_type === 'packing'; });
-  if (!packs.length) return '';
-  var open = _agendaPackOpen();
-  var inner = '';
-  if (open) {
-    inner = packs.map(function(p) {
-      var d = (typeof _tppParse === 'function') ? _tppParse(p.content) : {};
-      var groups = d.groups || [];
-      var total = 0, done = 0;
-      groups.forEach(function(g) { (g.items || []).forEach(function(it) { total++; if (it.done) done++; }); });
-      var rows = groups.map(function(g, gIdx) {
-        var items = (g.items || []).map(function(it, iIdx) {
-          return '<button type="button" onclick="tripAgendaTogglePack(' + p.id + ',' + gIdx + ',' + iIdx + ')" ' +
-            'class="w-full flex items-center gap-2 px-3 py-2 text-left">' +
-            '<span class="text-base flex-shrink-0">' + (it.done ? '✅' : '⬜') + '</span>' +
-            '<span class="text-sm ' +
-              (it.done ? 'line-through text-gray-400' : 'text-gray-700 dark:text-zinc-200') + '">' +
-              _tripEsc(it.text) + '</span></button>';
-        }).join('');
-        return '<div><p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 ' +
-          'dark:text-zinc-500 px-3 pt-2 pb-0.5">' + _tripEsc(g.name) + '</p>' + items + '</div>';
-      }).join('') || '<p class="px-3 py-2 text-xs text-gray-400">No items yet.</p>';
-      return '<div class="text-[11px] text-gray-400 dark:text-zinc-500 px-3 pt-2 pb-1">' +
-        done + ' / ' + total + ' packed</div>' + rows;
-    }).join('');
-  }
-  return '<div class="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 ' +
-    'shadow-sm overflow-hidden">' +
-    '<button type="button" onclick="tripAgendaTogglePackSection()" ' +
-      'class="w-full flex items-center gap-2 px-3 py-3 text-left">' +
-      '<span class="text-gray-400 dark:text-zinc-500 text-xs flex-shrink-0">' + (open ? '▾' : '▸') + '</span>' +
-      '<span class="text-sm font-semibold text-gray-800 dark:text-zinc-100 flex-1">🎒 Packing</span>' +
-    '</button>' + inner +
-  '</div>';
-}
+// Trip Resources in the agenda are rendered by the shared _tripRenderPanelCards
+// (all panel types, view mode) into #trip-agenda-resources — see _tripRenderAgenda
+// and the _tripLoadPanels target switch. Packing check-off, etc. work natively
+// through each panel card's own handlers.
 
 // ── Phase 2: quick-capture FAB + bottom sheet ──────────────────────────────────
 // Show the FAB only while the agenda is the active surface on a phone.

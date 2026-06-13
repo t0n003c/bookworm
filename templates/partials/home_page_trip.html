@@ -28,6 +28,13 @@
      window._tripPhone JS guard, which never un-hides it ≥768px). */
   @media (min-width: 768px) { #trip-agenda-view { display: none !important; } }
 
+  /* Trip Resources cards inside the agenda: full-width vertical stack (override
+     the inline desktop pixel width/height set by _tripRenderPanelCards). */
+  #trip-agenda-resources { margin-top: .5rem; }
+  #trip-agenda-resources .trip-panel-card {
+    width: 100% !important; min-height: 0 !important; max-height: none !important;
+  }
+
   /* Phone quick-capture FAB + bottom sheet (home-page-trip-agenda.js).
      Styled here (not Tailwind) so it never depends on the prebuilt bundle.
      Visibility is JS-driven via inline display; desktop is hard-hidden below. */

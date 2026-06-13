@@ -39,7 +39,11 @@ window._tripLoadPanels = function(planId) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       window._tripPanels = Array.isArray(data) ? data : [];
-      var c = document.getElementById('trip-days-container');
+      // On the phone agenda, render resources into the agenda container; otherwise
+      // into the day-lanes container (desktop / desktop-canvas).
+      var c = (window._tripPhone && window._tripAgendaActive)
+        ? document.getElementById('trip-agenda-resources')
+        : document.getElementById('trip-days-container');
       if (c) window._tripRenderPanelCards(c);
     })
     .catch(function() { _tripShowToast('Failed to load panels', true); });
