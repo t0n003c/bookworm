@@ -1333,7 +1333,10 @@ async def quick_note(request: Request):
     if not user_id:
         return RedirectResponse(url="/login")
     ws_id = await get_or_create_quick_notes_workspace(user_id)
-    return RedirectResponse(url=f"/?ws={ws_id}#bw=new-note")
+    # Query param (not a #fragment): a redirect's fragment isn't reliably kept
+    # across browsers/PWAs, so the new-note form would fail to auto-open. The
+    # SPA's shortcut handler reads ?bw=new-note and strips it after firing.
+    return RedirectResponse(url=f"/?ws={ws_id}&bw=new-note")
 
 
 @app.get("/", response_class=HTMLResponse)

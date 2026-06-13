@@ -1799,15 +1799,49 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
   ──────────────────────────────────────────────────────────────── */
   (function () {
     var hash   = window.location.hash || '';
-    var match  = hash.match(/[#&]bw=([^&]*)/);
+    var search = window.location.search || '';
+    /* Accept the action from the hash (#bw=… — used by the My Files / AI Search
+       shortcuts) OR the query string (?bw=… — used by /quick-note, because a
+       redirect's URL *fragment* isn't reliably preserved across all browsers
+       and standalone PWAs, but a query param always is). */
+    var match  = hash.match(/[#&]bw=([^&]*)/) || search.match(/[?&]bw=([^&]*)/);
     if (!match) return;
     var action = match[1];
 
-    /* Strip the bw= token from the hash without a page reload */
+    /* Strip the bw= token from BOTH the hash and the query without reloading. */
     var cleanHash = hash.replace(/[#&]?bw=[^&]*/, '').replace(/^&/, '#');
-    history.replaceState(null, '', window.location.pathname
-      + window.location.search
-      + (cleanHash || ''));
+    var _u = new URL(window.location.href);
+    _u.searchParams.delete('bw');
+    history.replaceState(null, '', _u.pathname + _u.search + (cleanHash || ''));
+
+    /* After the New Note shortcut opens the form, drop the caret into the
+       editor so the user can just start typing. Polls because the form is
+       loaded async via HTMX. Targets the *visible* surface — the mobile
+       contenteditable preview, else the desktop #note-content textarea.
+       (Mobile browsers may still not raise the soft keyboard without a direct
+       tap — a programmatic focus after a redirect isn't a trusted gesture.) */
+    function _bwFocusNewNoteEditor() {
+      var tries = 0;
+      var ft = setInterval(function () {
+        if (++tries > 40) { clearInterval(ft); return; }   /* ~10 s cap */
+        var panel = document.getElementById('detail-panel');
+        if (!panel) return;
+        var ce = panel.querySelector('[contenteditable="true"]');
+        var ta = document.getElementById('note-content');
+        var target = (ce && ce.offsetParent !== null) ? ce
+                   : (ta && ta.offsetParent !== null) ? ta : null;
+        if (!target) return;
+        clearInterval(ft);
+        try {
+          target.focus();
+          if (target.isContentEditable) {
+            var r = document.createRange();
+            r.selectNodeContents(target); r.collapse(false);
+            var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+          }
+        } catch (e) {}
+      }, 250);
+    }
 
     /* Poll until the app is ready, then fire the action.
        Max 10 s — gives HTMX time to load the workspace. */
@@ -1824,6 +1858,7 @@ html.dark .bw-pwa-btn--sec:hover { background: #52525b; }
             && btn.textContent.trim().indexOf('New') !== -1) {
           clearInterval(timer);
           btn.click();
+          _bwFocusNewNoteEditor();
         }
 
       } else if (action === 'uploads') {
