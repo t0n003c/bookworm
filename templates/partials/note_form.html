@@ -1514,6 +1514,7 @@
     if (_editingLinkEl) {
       _editingLinkEl.textContent = displayText;
       _editingLinkEl.setAttribute('href', url);
+      _editingLinkEl.setAttribute('contenteditable', 'false'); // keep it atomic
       if (newTab) {
         _editingLinkEl.setAttribute('target', '_blank');
         _editingLinkEl.setAttribute('rel', 'noopener noreferrer');
@@ -1533,9 +1534,10 @@
       sel.removeAllRanges();
       if (_savedLinkRange) sel.addRange(_savedLinkRange);
       const html = newTab
-        ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${displayText}</a>`
-        : `<a href="${url}">${displayText}</a>`;
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer" contenteditable="false">${displayText}</a>`
+        : `<a href="${url}" contenteditable="false">${displayText}</a>`;
       document.execCommand('insertHTML', false, html);
+      _bwMarkLinksAtomic(preview);   // belt-and-suspenders
       preview.dispatchEvent(new Event('input'));
 
     /* ── Insert-new-link: textarea (markdown) path ─────────────────────── */
@@ -2047,6 +2049,20 @@
       });
     }
 
+    /* Make every hyperlink ATOMIC in the editor: contenteditable="false" so its
+       text can't be edited inline (only via the Edit Link modal), Backspace/Delete
+       removes the whole link as a unit, and text typed right after a link is NOT
+       absorbed into it. Editor-only attribute — Turndown reads href+text and never
+       emits contenteditable, so markdown round-trips cleanly. */
+    function _bwMarkLinksAtomic(pv) {
+      if (!pv) return;
+      pv.querySelectorAll('a[href]').forEach(function (a) {
+        if (a.getAttribute('contenteditable') !== 'false') {
+          a.setAttribute('contenteditable', 'false');
+        }
+      });
+    }
+
     function renderPreview() {
       const _ta = _liveTa();
       const _pv = _livePv();
@@ -2079,6 +2095,7 @@
       // The live preview is contenteditable, so injecting wrapper divs would
       // corrupt the note content on save. Highlighting runs only in the
       // read-only note detail view (note_detail.html).
+      _bwMarkLinksAtomic(_pv);   // links are atomic (un-editable inline; whole-link delete)
       _enablePreviewTodoCbs();
       _decorateEditorCode(_pv);  // language badge + hljs colours (no wrapper divs)
       // Refresh inline page-link chip labels (no click-nav inside the editor).
@@ -2152,11 +2169,51 @@
       _pv.addEventListener('click', _pv._linkClickHandler, true);
     })();
 
+    /* ── Backspace/Delete next to an atomic link → remove the WHOLE link ──────
+       Links are contenteditable="false", so the caret can never sit inside one;
+       this guarantees a single keypress removes the entire link as a unit
+       (consistent across browsers) rather than nibbling characters. A non-
+       collapsed selection deletes normally. */
+    (function() {
+      const _pv = _livePv();
+      if (!_pv || _pv._linkKeyHandler) return;
+      function _isAtomicLink(n) {
+        return n && n.nodeType === 1 && n.tagName === 'A'
+          && n.getAttribute('contenteditable') === 'false';
+      }
+      // Node immediately before (dir<0) / after (dir>0) a collapsed caret.
+      function _sideNode(range, dir) {
+        const c = range.startContainer, o = range.startOffset;
+        if (c.nodeType === 3) {              // text node
+          if (dir < 0) return o === 0 ? c.previousSibling : null;
+          return o === c.length ? c.nextSibling : null;
+        }
+        return dir < 0 ? (o > 0 ? c.childNodes[o - 1] : null)
+                       : (c.childNodes[o] || null);
+      }
+      _pv._linkKeyHandler = function(e) {
+        if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (!range.collapsed) return;        // selection delete: let it run
+        if (!_pv.contains(range.startContainer)) return;
+        const node = _sideNode(range, e.key === 'Backspace' ? -1 : 1);
+        if (_isAtomicLink(node)) {
+          e.preventDefault();
+          node.remove();
+          _pv.dispatchEvent(new Event('input'));
+        }
+      };
+      _pv.addEventListener('keydown', _pv._linkKeyHandler);
+    })();
+
     /* Preview → MD (runs after user edits contenteditable) */
     function syncPreviewToMd() {
       const _ta = _liveTa();
       const _pv = _livePv();
       if (!_ta || !_pv) return;
+      _bwMarkLinksAtomic(_pv);   // newly pasted/inserted links become atomic too
       // Clone so we can strip grip handles without mutating the live DOM
       const clone = _pv.cloneNode(true);
       clone.querySelectorAll('[data-preview-grip]').forEach(g => g.remove());
