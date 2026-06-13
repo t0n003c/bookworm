@@ -108,6 +108,7 @@ window.tripAgendaToCards = function() {
   if (agendaView) agendaView.classList.add('hidden');
   if (plansView)  plansView.classList.remove('hidden');
   if (typeof window.tripCloseCaptureSheet === 'function') window.tripCloseCaptureSheet();
+  if (typeof window.tripCloseResourcesSheet === 'function') window.tripCloseResourcesSheet();
   if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();
 };
@@ -119,6 +120,7 @@ window.tripAgendaFullEditor = function() {
   var agendaView = document.getElementById('trip-agenda-view');
   if (agendaView) agendaView.classList.add('hidden');
   if (typeof window.tripCloseCaptureSheet === 'function') window.tripCloseCaptureSheet();
+  if (typeof window.tripCloseResourcesSheet === 'function') window.tripCloseResourcesSheet();
   if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
   if (typeof tripOpenPlan === 'function') {
     tripOpenPlan(window._tripActivePlanId, window._tripActivePlanName);
@@ -254,20 +256,13 @@ window._tripRenderAgenda = function() {
     ? days.map(function(d) { return _agendaRenderDay(d, d.id === todayId); }).join('')
     : '<div class="py-12 text-center text-sm text-gray-400 dark:text-zinc-500">' +
         'No days yet. Tap <strong>✏️ Edit</strong> to build your itinerary.</div>';
-  // padding-bottom inline (≈6rem) clears the FAB — pb-24 isn't in the bundle.
-  var body = '<div class="px-3 pt-1 space-y-2" style="padding-bottom:6rem">' +
-    daysHtml + '<div id="trip-agenda-resources"></div></div>';
+  // padding-bottom inline (≈6rem) clears the bottom buttons — pb-24 isn't bundled.
+  var body = '<div class="px-3 pt-1 space-y-2" style="padding-bottom:6rem">' + daysHtml + '</div>';
 
   el.innerHTML = header + _agendaStatStrip() + body;
-  // Trip Resources: reuse the full panel-card renderer for ALL panel types
-  // (documents, packing, budget, settle, people, emergency, notes, reminder) in
-  // view mode. CSS makes the cards full-width inside the agenda. Re-rendered here
-  // from cached _tripPanels; _tripLoadPanels also targets this container on first
-  // (async) load.
-  var resEl = document.getElementById('trip-agenda-resources');
-  if (resEl && typeof window._tripRenderPanelCards === 'function') {
-    window._tripRenderPanelCards(resEl);
-  }
+  // Trip Resources live in a bottom sheet (tripOpenResourcesSheet) behind the
+  // "🗂️ Resources" button — refresh its content so it's ready when opened.
+  if (typeof window._tripRenderResources === 'function') window._tripRenderResources();
   if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
 };
 
@@ -318,16 +313,49 @@ window.tripDrawerSetTime = function() {
   if (typeof tripEditDaySpotTime === 'function') tripEditDaySpotTime(ctx.dayId, spotId, ctx.id);
 };
 
-// Trip Resources in the agenda are rendered by the shared _tripRenderPanelCards
-// (all panel types, view mode) into #trip-agenda-resources — see _tripRenderAgenda
-// and the _tripLoadPanels target switch. Packing check-off, etc. work natively
-// through each panel card's own handlers.
+// ── Trip Resources bottom sheet (collapsible cards) ────────────────────────────
+// Reuses the shared _tripRenderPanelCards (all panel types, view mode) into the
+// sheet body, then collapses every card to just its title. Tapping a card's
+// header toggles it. Card interactions (packing check-off, settle edit, …) work
+// natively; _tppRefreshCard sets innerHTML so the collapsed class survives.
+window._tripRenderResources = function() {
+  var body = document.getElementById('trip-resources-body');
+  if (!body || typeof window._tripRenderPanelCards !== 'function') return;
+  window._tripRenderPanelCards(body);   // view mode (_tripPlanMode === 'view')
+  body.querySelectorAll('.trip-panel-card').forEach(function(c) { c.classList.add('collapsed'); });
+  if (!body._resWired) { body.addEventListener('click', _tripResourcesClick); body._resWired = true; }
+  var cnt = document.getElementById('trip-resources-count');
+  if (cnt) { var n = (window._tripPanels || []).length; cnt.textContent = n ? ('(' + n + ')') : ''; }
+};
+function _tripResourcesClick(e) {
+  // Ignore taps on interactive elements inside a card — only the header toggles.
+  if (e.target.closest('button, a, input, select, textarea, [contenteditable]')) return;
+  var card = e.target.closest('.trip-panel-card');
+  if (!card) return;
+  var header = card.firstElementChild;
+  if (header && header.contains(e.target)) card.classList.toggle('collapsed');
+}
+window.tripOpenResourcesSheet = function() {
+  window._tripRenderResources();
+  var body = document.getElementById('trip-resources-body');
+  if (body && !body.querySelector('.trip-panel-card')) {
+    body.innerHTML = '<p class="tcs-empty">No trip resources yet. Add cards via ✏️ Edit.</p>';
+  }
+  var sheet = document.getElementById('trip-resources-sheet');
+  if (sheet) sheet.style.display = 'block';
+};
+window.tripCloseResourcesSheet = function() {
+  var sheet = document.getElementById('trip-resources-sheet');
+  if (sheet) sheet.style.display = 'none';
+};
 
 // ── Phase 2: quick-capture FAB + bottom sheet ──────────────────────────────────
 // Show the FAB only while the agenda is the active surface on a phone.
 function _tripFabShow(show) {
   var fab = document.getElementById('trip-capture-fab');
   if (fab) fab.style.display = show ? 'flex' : 'none';
+  var rfab = document.getElementById('trip-resources-fab');
+  if (rfab) rfab.style.display = show ? 'inline-flex' : 'none';
 }
 window._tripUpdateFab = function() {
   var inAgenda = window._tripPhone &&

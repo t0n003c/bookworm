@@ -28,11 +28,39 @@
      window._tripPhone JS guard, which never un-hides it ≥768px). */
   @media (min-width: 768px) { #trip-agenda-view { display: none !important; } }
 
-  /* Trip Resources cards inside the agenda: full-width vertical stack (override
-     the inline desktop pixel width/height set by _tripRenderPanelCards). */
-  #trip-agenda-resources { margin-top: .5rem; }
-  #trip-agenda-resources .trip-panel-card {
-    width: 100% !important; min-height: 0 !important; max-height: none !important;
+  /* Trip Resources: bottom button + sheet of collapsible cards (phone only). */
+  #trip-resources-fab {
+    display: none; position: fixed; left: 16px; bottom: 22px; z-index: 40;
+    height: 48px; padding: 0 16px; border-radius: 9999px; border: none;
+    background: #fff; color: #0053e2; font-size: 14px; font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0,0,0,.22); cursor: pointer; align-items: center; gap: 6px;
+  }
+  .dark #trip-resources-fab { background: #27272a; color: #60a5fa; }
+  #trip-resources-sheet { display: none; position: fixed; inset: 0; z-index: 45; }
+  #trip-resources-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; max-height: 86vh; overflow-y: auto;
+    background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.3);
+    padding: 14px 14px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  }
+  .dark #trip-resources-panel { background: #18181b; }
+  /* Hide _tripRenderPanelCards' own group chrome — the sheet provides the title
+     and is itself the section toggle. Force the card row visible. */
+  #trip-resources-body .trip-panel-group-divider,
+  #trip-resources-body #trip-qc-toggle-btn,
+  #trip-resources-body #trip-qc-subtitle { display: none !important; }
+  #trip-resources-body #trip-panels-row { display: flex !important; }
+  /* full-width cards; collapse hides everything after the header */
+  #trip-resources-body .trip-panel-card {
+    width: 100% !important; min-height: 0 !important; max-height: none !important; margin-bottom: 8px;
+  }
+  #trip-resources-body .trip-panel-card > :first-child { cursor: pointer; }
+  #trip-resources-body .trip-panel-card > :first-child::after {
+    content: '▾'; margin-left: 6px; color: #9ca3af; font-size: 11px; flex-shrink: 0;
+  }
+  #trip-resources-body .trip-panel-card.collapsed > :first-child::after { content: '▸'; }
+  #trip-resources-body .trip-panel-card.collapsed > :not(:first-child) { display: none !important; }
+  @media (min-width: 768px) {
+    #trip-resources-fab, #trip-resources-sheet { display: none !important; }
   }
 
   /* Phone quick-capture FAB + bottom sheet (home-page-trip-agenda.js).
@@ -393,6 +421,18 @@
       <div class="tcs-handle"></div>
       <p class="tcs-title">Quick capture</p>
       <div id="trip-capture-body"></div>
+    </div>
+  </div>
+
+  {# Phone-only: Trip Resources button + bottom sheet of collapsible resource cards. #}
+  <button id="trip-resources-fab" type="button" onclick="tripOpenResourcesSheet()"
+          aria-label="Trip resources">🗂️ Resources <span id="trip-resources-count"></span></button>
+  <div id="trip-resources-sheet" role="dialog" aria-modal="true" aria-label="Trip resources">
+    <div class="tcs-backdrop" onclick="tripCloseResourcesSheet()"></div>
+    <div id="trip-resources-panel">
+      <div class="tcs-handle"></div>
+      <p class="tcs-title">🗂️ Trip Resources</p>
+      <div id="trip-resources-body"></div>
     </div>
   </div>
 
