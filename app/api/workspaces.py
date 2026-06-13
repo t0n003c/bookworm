@@ -43,6 +43,7 @@ from app.api.workspaces_db import (
     empty_workspace_trash,
 )
 from app.api.home_db import (
+    get_home_pages as _get_home_pages,
     get_trashed_home_pages as _get_trashed_home_pages,
     empty_home_page_trash as _empty_home_page_trash,
 )
@@ -144,6 +145,10 @@ async def _ws_context(
         "active_ws_type":     active_ws_type,
         "db_cards":           db_cards,
         "db_card_preview":    db_card_preview,
+        # Home pages (for the combined Favorites section, OOB-swapped from
+        # workspace_switch.html). active_page_id is None on a workspace switch.
+        "pages":              await _get_home_pages(user_id),
+        "active_page_id":     None,
     }
 
 

@@ -17,6 +17,11 @@
   {% include "partials/sidebar_workspace_list.html" %}
 </div>
 
+{# ---- OOB: combined Favorites section (home pages + workspaces) ---- #}
+<div hx-swap-oob="innerHTML:#sidebar-favorites">
+  {% include "partials/sidebar_favorites.html" %}
+</div>
+
 {# ---- OOB: sidebar trash (pinned bottom of sidebar) ---- #}
 <div hx-swap-oob="innerHTML:#sidebar-trash">
   {% include "partials/sidebar_trash.html" %}

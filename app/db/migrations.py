@@ -548,6 +548,10 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE home_pages ADD COLUMN deleted_at DATETIME DEFAULT NULL"
             )
+        if "is_favorite" not in hp_cols:
+            await db.execute(
+                "ALTER TABLE home_pages ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0"
+            )
 
         # ── RSS Reader tables ──────────────────────────────────────────────────
         # Feeds subscribed to a specific RSS Reader page

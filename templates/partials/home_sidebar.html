@@ -6,6 +6,8 @@
 #}
 {% set pages = pages | default(home_pages) | default([]) %}
 {% set active_pg = active_page_id | default(none) %}
+{# Favorited pages show only in the combined Favorites section at the top. #}
+{% set list_pages = pages | rejectattr('is_favorite') | list %}
 
 {# ── Sidebar label for non-dashboard types ────────────────────────────────── #}
 {% set TYPE_LABELS = {
@@ -18,12 +20,14 @@
   "subscriptions":"Subs",
   "ai_dashboard": "AI"
 } %}
-<!-- ── Page list ── -->
-{% if not pages %}
-<p class="px-2 text-xs text-gray-400 dark:text-zinc-600 italic">No pages yet — hit + to create one.</p>
+<!-- ── Page list (favorites are lifted to the top Favorites section) ── -->
+{% if not list_pages %}
+<p class="px-2 text-xs text-gray-400 dark:text-zinc-600 italic">
+  {% if pages %}All pages are favorited ⭐{% else %}No pages yet — hit + to create one.{% endif %}
+</p>
 {% else %}
 <ul class="space-y-0.5" role="list" id="home-page-list">
-  {% for pg in pages %}
+  {% for pg in list_pages %}
   {% set is_active = (pg.id == active_pg) %}
   {% set _pg_type_li = pg.get('page_type', 'dashboard') or 'dashboard' %}
   <li class="flex items-center gap-2 group/hpg"
@@ -77,7 +81,28 @@
       {% endif %}
     </button>
 
+    {# Add-to-favorites star (hover-visible; lifts the page into the top section) #}
+    <button type="button"
+      hx-post="/home/pages/{{ pg.id }}/favorite" hx-target="#sb-home-pages" hx-swap="innerHTML"
+      title="Add to favorites" aria-label="Add {{ pg.name }} to favorites"
+      class="flex-shrink-0 p-1.5 rounded-lg transition
+             text-gray-300 dark:text-zinc-600 hover:text-wspark hover:bg-gray-100 dark:hover:bg-zinc-800">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path stroke-linejoin="round"
+              d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+    </button>
+
   </li>
   {% endfor %}
 </ul>
+{% endif %}
+
+{# Action responses (not the initial page load) OOB-refresh the combined
+   Favorites section. _fav_oob is set only in _sidebar_ctx. #}
+{% if _fav_oob %}
+<div hx-swap-oob="innerHTML:#sidebar-favorites">
+  {% include "partials/sidebar_favorites.html" %}
+</div>
 {% endif %}

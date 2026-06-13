@@ -27,8 +27,8 @@ from app.api.home_db import (
     get_home_pages, get_trashed_home_pages, get_widget_by_id, get_widgets,
     permanent_delete_home_page, restore_home_page, reorder_home_pages, reorder_widgets,
     reorder_widgets_mobile,
-    rename_home_page, stack_add_child, unstack_widget, update_page_config,
-    update_widget_config, update_widget_style,
+    rename_home_page, stack_add_child, toggle_home_page_favorite, unstack_widget,
+    update_page_config, update_widget_config, update_widget_style,
 )
 from app.api.home_rss_db import (
     get_all_rss_widget_feeds,
@@ -78,13 +78,34 @@ from core.deps import session_user_id as _uid
 
 
 async def _sidebar_ctx(uid: int, active_page_id: int | None = None) -> dict:
-    """Return {pages, hp_trash_count} for home_sidebar.html renders."""
+    """Return context for home_sidebar.html renders.
+
+    Includes all_workspaces + _fav_oob so home_sidebar.html can OOB-refresh the
+    combined Favorites section (sidebar_favorites.html) on every home action.
+    _fav_oob is only set here (action responses), never on the initial page load,
+    so the OOB stub isn't emitted into the static page.
+    """
     pages   = await get_home_pages(uid)
     trashed = await get_trashed_home_pages(uid)
-    ctx: dict = {"pages": pages, "hp_trash_count": len(trashed)}
+    ctx: dict = {
+        "pages":          pages,
+        "hp_trash_count": len(trashed),
+        "all_workspaces": await get_all_workspaces(uid),
+        "_fav_oob":       True,
+    }
     if active_page_id is not None:
         ctx["active_page_id"] = active_page_id
     return ctx
+
+
+@router.post("/pages/{page_id}/favorite", response_class=HTMLResponse)
+async def toggle_page_favorite(request: Request, page_id: int):
+    """Toggle a home page's favorite flag; return refreshed home sidebar +
+    OOB-swap the combined Favorites section."""
+    uid = _uid(request)
+    await toggle_home_page_favorite(page_id, uid)
+    ctx = await _sidebar_ctx(uid)
+    return templates.TemplateResponse(request, "partials/home_sidebar.html", ctx)
 
 
 async def _user_notes(uid: int, limit: int = 50) -> list[dict]:

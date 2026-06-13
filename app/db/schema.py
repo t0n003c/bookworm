@@ -109,7 +109,7 @@ CREATE_TABLES_SQL = [
             emoji      TEXT    NOT NULL DEFAULT '🏠',
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        , config_json TEXT NOT NULL DEFAULT '{}', page_type TEXT NOT NULL DEFAULT 'dashboard', deleted_at DATETIME DEFAULT NULL)
+        , config_json TEXT NOT NULL DEFAULT '{}', page_type TEXT NOT NULL DEFAULT 'dashboard', deleted_at DATETIME DEFAULT NULL, is_favorite INTEGER NOT NULL DEFAULT 0)
     """,
     """
     CREATE TABLE IF NOT EXISTS home_widgets (

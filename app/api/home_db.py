@@ -71,6 +71,24 @@ async def rename_home_page(page_id: int, user_id: int, name: str, emoji: str) ->
         await db.commit()
 
 
+async def toggle_home_page_favorite(page_id: int, user_id: int) -> bool:
+    """Flip is_favorite for a home page (scoped to the owner). Returns new value."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT is_favorite FROM home_pages WHERE id=? AND user_id=?", (page_id, user_id)
+        )
+        row = await cur.fetchone()
+        if not row:
+            return False
+        new_val = 0 if row[0] else 1
+        await db.execute(
+            "UPDATE home_pages SET is_favorite=? WHERE id=? AND user_id=?",
+            (new_val, page_id, user_id),
+        )
+        await db.commit()
+        return bool(new_val)
+
+
 async def update_page_config(page_id: int, user_id: int, config: dict) -> None:
     async with get_db() as db:
         await db.execute(
