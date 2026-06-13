@@ -109,7 +109,7 @@ CREATE_TABLES_SQL = [
             emoji      TEXT    NOT NULL DEFAULT '🏠',
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        , config_json TEXT NOT NULL DEFAULT '{}', page_type TEXT NOT NULL DEFAULT 'dashboard', deleted_at DATETIME DEFAULT NULL, is_favorite INTEGER NOT NULL DEFAULT 0)
+        , config_json TEXT NOT NULL DEFAULT '{}', page_type TEXT NOT NULL DEFAULT 'dashboard', deleted_at DATETIME DEFAULT NULL, is_favorite INTEGER NOT NULL DEFAULT 0, fav_sort_order INTEGER NOT NULL DEFAULT 0)
     """,
     """
     CREATE TABLE IF NOT EXISTS home_widgets (
@@ -132,6 +132,7 @@ CREATE_TABLES_SQL = [
                         is_open     INTEGER NOT NULL DEFAULT 1,
                         parent_id   INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
                         is_favorite INTEGER NOT NULL DEFAULT 0,
+                        fav_sort_order INTEGER NOT NULL DEFAULT 0,
                         deleted_at  DATETIME DEFAULT NULL,
                         sort_order  INTEGER NOT NULL DEFAULT 0
                     , ws_type TEXT NOT NULL DEFAULT 'workspace')

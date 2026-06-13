@@ -7,91 +7,9 @@
    FULL WORKSPACE TREE
    ════════════════════════════════ #}
 <section aria-label="All workspaces">
-  <div class="px-1 mb-1.5 flex items-center gap-1">
-    {# Label doubles as collapse toggle — matches Workspace + Homespace section pattern.
-       Toggle-all: collapses when any are expanded, expands when all collapsed.
-       Icon mirrors individual chevrons — rotate-90 = expanded, bare = collapsed. #}
-    <button
-      id="ws-toggle-all-btn"
-      type="button"
-      onclick="typeof wsToggleAll==='function'&&wsToggleAll()"
-      title="Collapse / expand all workspaces"
-      aria-label="Collapse / expand all workspaces"
-      class="flex-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest
-             text-gray-400 dark:text-zinc-500 select-none
-             hover:text-gray-500 dark:hover:text-zinc-400 transition text-left rounded"
-    >
-      <svg id="ws-toggle-all-icon"
-           class="w-3 h-3 flex-shrink-0 transition-transform duration-150"
-           fill="none" viewBox="0 0 24 24" stroke="currentColor"
-           stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-      </svg>
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24"
-           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
-      </svg>
-      General
-    </button>
-    {# Add root-level workspace #}
-    <button
-      type="button"
-      onclick="typeof openNewWsModal==='function'&&openNewWsModal(null,null)"
-      title="Add workspace"
-      aria-label="Add new workspace"
-      class="p-1 rounded text-gray-300 dark:text-zinc-600
-             hover:text-wgreen hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
-    >
-      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
-           stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-      </svg>
-    </button>
-
-    {# Eye: manage-hidden toggle (state restored by _wsHideModeUpdateBtn on afterSettle) #}
-    <button
-      id="ws-hide-mode-btn"
-      type="button"
-      onclick="typeof _wsHideModeToggle==='function'&&_wsHideModeToggle()"
-      title="Show / manage hidden workspaces"
-      aria-label="Toggle hidden workspaces"
-      aria-pressed="false"
-      class="p-1 rounded transition
-             text-gray-300 dark:text-zinc-600
-             hover:text-gray-600 dark:hover:text-zinc-300
-             hover:bg-gray-100 dark:hover:bg-zinc-800"
-    >
-      <svg id="ws-hide-mode-icon"
-           class="w-3 h-3" fill="none" viewBox="0 0 24 24"
-           stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943
-                 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477
-                 0-8.268-2.943-9.542-7z"/>
-      </svg>
-    </button>
-
-    {# Tutorial import: creates a DB workspace from saved course HTML #}
-    <button
-      id="ws-import-tutorial-btn"
-      type="button"
-      onclick="typeof openTutorialImportModal==='function'&&openTutorialImportModal()"
-      title="Import tutorial course from saved HTML"
-      aria-label="Import tutorial from saved HTML"
-      class="p-1 rounded transition
-             text-gray-300 dark:text-zinc-600
-             hover:text-[#0053e2] hover:bg-gray-100 dark:hover:bg-zinc-800"
-    >
-      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24"
-           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-      </svg>
-    </button>
-  </div>
+  {# The old "General" toolbar row was removed — its collapse-all + add + eye
+     duplicated the Workspaces section header (in index.html), and the import
+     button moved up there. The section header now owns those controls. #}
 
   {# ── Root drop zone — shown only during a drag ──────────────────── #}
   <div id="dnd-root-zone"

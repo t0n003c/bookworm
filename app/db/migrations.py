@@ -137,6 +137,13 @@ async def init_db() -> None:
                 "ALTER TABLE workspaces ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0"
             )
 
+        # Ordering WITHIN the combined Favorites sidebar section (independent of
+        # sort_order, which orders the full workspace tree).
+        if "fav_sort_order" not in ws_cols:
+            await db.execute(
+                "ALTER TABLE workspaces ADD COLUMN fav_sort_order INTEGER NOT NULL DEFAULT 0"
+            )
+
         if "deleted_at" not in ws_cols:
             await db.execute(
                 "ALTER TABLE workspaces ADD COLUMN deleted_at DATETIME DEFAULT NULL"
@@ -551,6 +558,12 @@ async def init_db() -> None:
         if "is_favorite" not in hp_cols:
             await db.execute(
                 "ALTER TABLE home_pages ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0"
+            )
+
+        # Ordering WITHIN the combined Favorites sidebar section.
+        if "fav_sort_order" not in hp_cols:
+            await db.execute(
+                "ALTER TABLE home_pages ADD COLUMN fav_sort_order INTEGER NOT NULL DEFAULT 0"
             )
 
         # ── RSS Reader tables ──────────────────────────────────────────────────

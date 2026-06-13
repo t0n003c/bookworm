@@ -23,7 +23,7 @@ async def get_all_workspaces(user_id: int) -> list[dict]:
     """Return all active (non-trashed) workspaces for a given user."""
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, name, emoji, is_open, is_favorite, parent_id, "
+            "SELECT id, name, emoji, is_open, is_favorite, fav_sort_order, parent_id, "
             "       sort_order, created_at, ws_type, db_card_preview "
             "FROM workspaces WHERE deleted_at IS NULL AND user_id = ? "
             "ORDER BY sort_order ASC",

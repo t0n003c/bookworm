@@ -406,6 +406,30 @@ async def reorder_home_pages(user_id: int, ordered_ids: list[int]) -> None:
         await db.commit()
 
 
+async def reorder_favorites(user_id: int, items: list[tuple[str, int]]) -> None:
+    """Persist a new order for the combined Favorites sidebar section.
+
+    ``items`` is the ordered list of ``(kind, id)`` where kind is 'pg' (home
+    page) or 'ws' (workspace). Writes fav_sort_order = position*10 into the
+    matching table, scoped to the user so one account can't reorder another's.
+    Spans both tables on purpose — Favorites mixes pages and workspaces.
+    """
+    pg = [(i * 10, item_id, user_id) for i, (kind, item_id) in enumerate(items) if kind == "pg"]
+    ws = [(i * 10, item_id, user_id) for i, (kind, item_id) in enumerate(items) if kind == "ws"]
+    async with get_db() as db:
+        if pg:
+            await db.executemany(
+                "UPDATE home_pages SET fav_sort_order=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                pg,
+            )
+        if ws:
+            await db.executemany(
+                "UPDATE workspaces SET fav_sort_order=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                ws,
+            )
+        await db.commit()
+
+
 async def delete_widget(widget_id: int) -> None:
     """Delete a widget.  If it was the last child of a stack, auto-delete the stack too."""
     async with get_db() as db:

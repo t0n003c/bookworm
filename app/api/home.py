@@ -26,7 +26,7 @@ from app.api.home_db import (
     delete_widget, duplicate_home_page, empty_home_page_trash, get_home_page,
     get_home_pages, get_trashed_home_pages, get_widget_by_id, get_widgets,
     permanent_delete_home_page, restore_home_page, reorder_home_pages, reorder_widgets,
-    reorder_widgets_mobile,
+    reorder_widgets_mobile, reorder_favorites,
     rename_home_page, stack_add_child, toggle_home_page_favorite, unstack_widget,
     update_page_config, update_widget_config, update_widget_style,
 )
@@ -1015,6 +1015,26 @@ async def reorder_pages_route(request: Request):
     ids  = [int(i) for i in body.get("ids", [])]
     if ids:
         await reorder_home_pages(uid, ids)
+    return Response(status_code=204)
+
+
+@router.post("/favorites/reorder")
+async def reorder_favorites_route(request: Request):
+    """Persist a new order for the combined Favorites section (pages + workspaces).
+
+    Body: {"order": ["pg:5", "ws:12", "pg:8", ...]}. Tokens are validated to
+    'pg:<int>' / 'ws:<int>'; anything else is ignored. The drag handler reorders
+    the DOM optimistically and POSTs the resulting key order here.
+    """
+    uid   = _uid(request)
+    body  = await request.json()
+    items: list[tuple[str, int]] = []
+    for tok in body.get("order", []):
+        kind, _, raw = str(tok).partition(":")
+        if kind in ("pg", "ws") and raw.isdigit():
+            items.append((kind, int(raw)))
+    if items:
+        await reorder_favorites(uid, items)
     return Response(status_code=204)
 
 
