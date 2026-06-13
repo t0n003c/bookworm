@@ -53,7 +53,7 @@
       onclick="wsSingleClick({{ ws.id }})" ondblclick="wsDoubleClick({{ ws.id }})"
       title="{{ ws.name }} — click to view, double-click to pin"
       aria-label="Switch to {{ ws.name }}"
-      class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition
+      class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition
         {% if fav_active %}bg-wblue/10 dark:bg-wblue/20 text-wblue font-semibold
         {% else %}text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800{% endif %}">
       <span class="flex-shrink-0 w-5 text-center leading-none" aria-hidden="true">{{ ws.emoji }}</span>
