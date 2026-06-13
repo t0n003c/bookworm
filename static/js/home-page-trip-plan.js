@@ -1524,6 +1524,22 @@ function _tripShowDrawer(contentHtml) {
 
   dr.appendChild(closeBtn);
   dr.appendChild(scroll);
+
+  // Phone-only edit footer (Edit block / Set spot time). _tripDrawerActions is
+  // defined in home-page-trip-agenda.js and reads window._tripDrawerCtx.
+  if (window._tripPhone && typeof window._tripDrawerActions === 'function') {
+    var _actions = window._tripDrawerActions();
+    if (_actions) {
+      var _ft = document.createElement('div');
+      _ft.style.cssText =
+        'flex-shrink:0;display:flex;gap:8px;padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 12px);' +
+        'border-top:1px solid ' + (dk ? '#3f3f46' : '#e5e7eb') + ';' +
+        'background:' + (dk ? '#18181b' : '#ffffff') + ';';
+      _ft.innerHTML = _actions;
+      dr.appendChild(_ft);
+    }
+  }
+
   bd.appendChild(dr);
 
   // ESC key
@@ -1543,6 +1559,9 @@ function _tripShowDrawer(contentHtml) {
 }
 
 window.tripViewDetail = function(kind, dayId, id) {
+  // Context for the phone-only edit footer added in _tripShowDrawer
+  // (home-page-trip-agenda.js supplies _tripDrawerActions). Harmless on desktop.
+  window._tripDrawerCtx = { kind: kind, dayId: dayId, id: id };
   var dk = document.documentElement.classList.contains('dark');
   var C  = {
     text:    dk ? '#e4e4e7' : '#111827',
