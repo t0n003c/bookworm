@@ -126,6 +126,7 @@ from routers.workspaces_db import (
     get_workspace_breadcrumb,
     get_descendant_ids,
     get_first_workspace_id,
+    get_or_create_quick_notes_workspace,
     get_trashed_workspaces,
     purge_expired_trash,
 )
@@ -1255,7 +1256,10 @@ async def pwa_manifest():
                 "name": "New Note",
                 "short_name": "New Note",
                 "description": "Jump straight into creating a new note",
-                "url": "/#bw=new-note",
+                # Routes through /quick-note so the note always lands in the
+                # user's dedicated 'Quick Notes' workspace (find-or-create),
+                # with a workspace active — avoids the welcome-screen 422.
+                "url": "/quick-note",
                 "icons": [{"src": "/static/img/icons/shortcut-new-note-192.png",
                             "sizes": "192x192", "type": "image/png"}],
             },
@@ -1308,6 +1312,28 @@ async def health():
     session redirect chain. Returns 200 + JSON when the process is alive.
     """
     return {"status": "ok"}
+
+
+@app.get("/quick-note")
+async def quick_note(request: Request):
+    """PWA 'New Note' app-shortcut target.
+
+    The shortcut used to open ``/#bw=new-note`` directly, which landed on the
+    welcome screen with NO workspace selected — so the New Note button fired
+    ``/notes/form/new?workspace_id=`` (empty) and FastAPI 422'd it ("Something
+    went wrong"). It also left the note with no clear home.
+
+    This endpoint finds-or-creates a dedicated 'Quick Notes' workspace for the
+    user, then bounces into the SPA with that workspace active and the
+    new-note form auto-opening (the existing ``#bw=new-note`` hash handler).
+    Result: the shortcut always works, and every quick note lands in one
+    predictable, findable place.
+    """
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/login")
+    ws_id = await get_or_create_quick_notes_workspace(user_id)
+    return RedirectResponse(url=f"/?ws={ws_id}#bw=new-note")
 
 
 @app.get("/", response_class=HTMLResponse)

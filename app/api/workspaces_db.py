@@ -244,6 +244,33 @@ async def get_first_workspace_id(user_id: int) -> Optional[int]:
         return row[0] if row else None
 
 
+QUICK_NOTES_WS_NAME = "Quick Notes"
+
+
+async def get_or_create_quick_notes_workspace(user_id: int) -> int:
+    """Return the id of the user's dedicated 'Quick Notes' workspace, creating
+    it (root-level, 📥) on first use.
+
+    Backs the PWA 'New Note' app-shortcut so every quick capture always lands
+    in one predictable, findable place instead of an ambiguous/empty workspace.
+    Matches an existing root workspace by exact name so we never spawn
+    'Quick Notes (2)' — the check runs before create_workspace (which would
+    otherwise auto-suffix a duplicate sibling name).
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id FROM workspaces "
+            "WHERE user_id = ? AND deleted_at IS NULL AND parent_id IS NULL "
+            "AND name = ? ORDER BY id ASC LIMIT 1",
+            (user_id, QUICK_NOTES_WS_NAME),
+        )
+        row = await cursor.fetchone()
+        if row:
+            return row[0]
+    # None yet — create it. Separate call (create_workspace opens its own db).
+    return await create_workspace(QUICK_NOTES_WS_NAME, user_id, emoji="\U0001F4E5")
+
+
 async def get_favorite_workspaces(user_id: int) -> list[dict]:
     """Return active workspaces marked as favorite for a user, ordered by name."""
     async with get_db() as db:
