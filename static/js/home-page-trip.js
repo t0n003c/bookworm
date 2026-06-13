@@ -124,6 +124,8 @@ window.tripSetTab = function(tab) {
   if (sizeWrap) { sizeWrap.classList.add('hidden'); sizeWrap.classList.remove('flex'); }
   if (tab === 'plan'  && typeof tripLoadPlan  === 'function') tripLoadPlan();
   if (tab === 'chart' && typeof tripLoadChart === 'function') tripLoadChart();
+  // Keep the phone quick-capture FAB visible only on the agenda surface.
+  if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
 };
 
 // Exposed so locs.js can call it after view changes

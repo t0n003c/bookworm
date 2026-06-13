@@ -107,6 +107,8 @@ window.tripAgendaToCards = function() {
   var agendaView = document.getElementById('trip-agenda-view');
   if (agendaView) agendaView.classList.add('hidden');
   if (plansView)  plansView.classList.remove('hidden');
+  if (typeof window.tripCloseCaptureSheet === 'function') window.tripCloseCaptureSheet();
+  if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();
 };
 
@@ -116,6 +118,8 @@ window.tripAgendaFullEditor = function() {
   if (typeof _tripPlanMode !== 'undefined') _tripPlanMode = 'edit';
   var agendaView = document.getElementById('trip-agenda-view');
   if (agendaView) agendaView.classList.add('hidden');
+  if (typeof window.tripCloseCaptureSheet === 'function') window.tripCloseCaptureSheet();
+  if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
   if (typeof tripOpenPlan === 'function') {
     tripOpenPlan(window._tripActivePlanId, window._tripActivePlanName);
   }
@@ -247,11 +251,114 @@ window._tripRenderAgenda = function() {
     '</div>';
 
   var body = days.length
-    ? '<div class="px-3 pb-24 pt-1 space-y-2">' +
+    // padding-bottom inline (≈6rem) clears the FAB — pb-24 isn't in the bundle.
+    ? '<div class="px-3 pt-1 space-y-2" style="padding-bottom:6rem">' +
         days.map(function(d) { return _agendaRenderDay(d, d.id === todayId); }).join('') +
       '</div>'
-    : '<div class="px-3 py-10 text-center text-sm text-gray-400 dark:text-zinc-500">' +
+    : '<div class="px-3 py-12 text-center text-sm text-gray-400 dark:text-zinc-500">' +
         'No days yet. Tap <strong>✏️ Edit</strong> to build your itinerary.</div>';
 
   el.innerHTML = header + _agendaStatStrip() + body;
+  if (typeof window._tripUpdateFab === 'function') window._tripUpdateFab();
+};
+
+// ── Phase 2: quick-capture FAB + bottom sheet ──────────────────────────────────
+// Show the FAB only while the agenda is the active surface on a phone.
+function _tripFabShow(show) {
+  var fab = document.getElementById('trip-capture-fab');
+  if (fab) fab.style.display = show ? 'flex' : 'none';
+}
+window._tripUpdateFab = function() {
+  var inAgenda = window._tripPhone &&
+                 (typeof _tripTab === 'undefined' || _tripTab === 'plan') &&
+                 window._tripAgendaActive;
+  _tripFabShow(inAgenda);
+};
+
+window.tripOpenCaptureSheet = function() {
+  var body = document.getElementById('trip-capture-body');
+  if (body) {
+    body.innerHTML =
+      '<div class="tcs-grid">' +
+        '<button type="button" class="tcs-opt" onclick="tripCaptureNote()">' +
+          '<span>📝</span><span>Note</span></button>' +
+        '<button type="button" class="tcs-opt" onclick="tripCaptureExpense()">' +
+          '<span>💸</span><span>Expense</span></button>' +
+        '<button type="button" class="tcs-opt" onclick="tripCaptureReminder()">' +
+          '<span>🔔</span><span>Reminder</span></button>' +
+      '</div>';
+  }
+  var sheet = document.getElementById('trip-capture-sheet');
+  if (sheet) sheet.style.display = 'block';
+};
+window.tripCloseCaptureSheet = function() {
+  var sheet = document.getElementById('trip-capture-sheet');
+  if (sheet) sheet.style.display = 'none';
+};
+
+// Note / Reminder → reuse the existing block modals, targeting today's day.
+window.tripCaptureNote = function() {
+  tripCloseCaptureSheet();
+  var dayId = window._tripResolveTodayDayId();
+  if (!dayId) { _tripShowToast('Add a day first — tap ✏️ Edit', true); return; }
+  if (typeof tripOpenBlockModal === 'function') tripOpenBlockModal(dayId, 'note', null);
+};
+window.tripCaptureReminder = function() {
+  tripCloseCaptureSheet();
+  var dayId = window._tripResolveTodayDayId();
+  if (!dayId) { _tripShowToast('Add a day first — tap ✏️ Edit', true); return; }
+  if (typeof tripOpenBlockModal === 'function') {
+    tripOpenBlockModal(dayId, 'reminder', null);
+    // Default the reminder date to today for fast "as it happens" capture.
+    setTimeout(function() {
+      var dEl = document.getElementById('trip-block-reminder-date');
+      if (dEl && !dEl.value) dEl.value = _tripLocalToday();
+    }, 60);
+  }
+};
+
+// Expense → an in-sheet form that appends to the plan's Budget card.
+window.tripCaptureExpense = function() {
+  var budget = (window._tripPanels || []).filter(function(p) { return p.panel_type === 'budget'; })[0];
+  if (!budget) {
+    tripCloseCaptureSheet();
+    _tripShowToast('Add a Budget card first (in ✏️ Edit)', true);
+    return;
+  }
+  var types = (typeof _TRIP_TYPES !== 'undefined' && _TRIP_TYPES.length) ? _TRIP_TYPES.slice() : ['Other'];
+  var opts  = types.map(function(t) { return '<option value="' + _tripEsc(t) + '">' + _tripEsc(t) + '</option>'; }).join('');
+  var body  = document.getElementById('trip-capture-body');
+  if (!body) return;
+  body.innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+      '<input id="tcs-exp-desc" class="tcs-field" type="text" placeholder="What was it for?">' +
+      '<div class="tcs-row">' +
+        '<input id="tcs-exp-amt" class="tcs-field" type="number" inputmode="decimal" step="0.01" ' +
+          'placeholder="Amount" style="flex:1;">' +
+        '<select id="tcs-exp-cat" class="tcs-field" style="flex:1;">' + opts + '</select>' +
+      '</div>' +
+      '<div class="tcs-row" style="margin-top:2px;">' +
+        '<button type="button" class="tcs-btn" onclick="tripCloseCaptureSheet()">Cancel</button>' +
+        '<button type="button" class="tcs-btn primary" onclick="_tripSaveExpense(' + budget.id + ')">Save expense</button>' +
+      '</div>' +
+    '</div>';
+  setTimeout(function() { var e = document.getElementById('tcs-exp-desc'); if (e) e.focus(); }, 50);
+};
+window._tripSaveExpense = function(panelId) {
+  var desc = ((document.getElementById('tcs-exp-desc') || {}).value || '').trim();
+  var amt  = parseFloat(((document.getElementById('tcs-exp-amt') || {}).value || '0')) || 0;
+  var cat  = (document.getElementById('tcs-exp-cat') || {}).value || '';
+  if (!desc && !amt) { _tripShowToast('Description or amount required', true); return; }
+  if (typeof _tppGetPanel !== 'function' || typeof _tppSave !== 'function') {
+    _tripShowToast('Budget unavailable', true); return;
+  }
+  var p = _tppGetPanel(panelId);
+  if (!p) { _tripShowToast('Budget card missing', true); return; }
+  var d = _tppParse(p.content);
+  if (!d.items) d.items = [];
+  d.items.push({ label: desc, note: desc, category: cat, amount: amt, reconciled: false });
+  _tppSave(panelId, d, function() {
+    tripCloseCaptureSheet();
+    _tripShowToast('Expense added!');
+  });
 };

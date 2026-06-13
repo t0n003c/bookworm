@@ -28,6 +28,47 @@
      window._tripPhone JS guard, which never un-hides it ≥768px). */
   @media (min-width: 768px) { #trip-agenda-view { display: none !important; } }
 
+  /* Phone quick-capture FAB + bottom sheet (home-page-trip-agenda.js).
+     Styled here (not Tailwind) so it never depends on the prebuilt bundle.
+     Visibility is JS-driven via inline display; desktop is hard-hidden below. */
+  #trip-capture-fab {
+    display: none; position: fixed; right: 18px; bottom: 22px; z-index: 40;
+    width: 56px; height: 56px; border-radius: 9999px; border: none;
+    background: #0053e2; color: #fff; font-size: 30px; line-height: 1;
+    box-shadow: 0 6px 20px rgba(0,0,0,.32); cursor: pointer;
+    align-items: center; justify-content: center;
+  }
+  #trip-capture-fab:active   { transform: scale(.94); }
+  #trip-capture-sheet        { display: none; position: fixed; inset: 0; z-index: 45; }
+  #trip-capture-sheet .tcs-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  #trip-capture-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; max-height: 82vh; overflow-y: auto;
+    background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.3);
+    padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 22px);
+  }
+  .dark #trip-capture-panel  { background: #18181b; }
+  .tcs-handle { width: 40px; height: 4px; border-radius: 9999px; background: #d1d5db; margin: 0 auto 12px; }
+  .dark .tcs-handle { background: #3f3f46; }
+  .tcs-title  { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+                color: #9ca3af; margin: 0 0 10px 2px; }
+  .tcs-grid   { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .tcs-opt    { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 8px;
+                border-radius: 14px; border: 1px solid #e5e7eb; background: #f9fafb; cursor: pointer;
+                font-size: 12px; color: #374151; }
+  .dark .tcs-opt { border-color: #3f3f46; background: #27272a; color: #e4e4e7; }
+  .tcs-opt > span:first-child { font-size: 26px; line-height: 1; }
+  .tcs-field  { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #e5e7eb;
+                background: #fff; color: #111827; font-size: 16px; box-sizing: border-box; }
+  .dark .tcs-field { border-color: #3f3f46; background: #27272a; color: #f4f4f5; }
+  .tcs-row    { display: flex; gap: 8px; }
+  .tcs-btn    { flex: 1; padding: 11px; border-radius: 10px; border: 1px solid #e5e7eb;
+                background: #fff; color: #374151; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .dark .tcs-btn { border-color: #3f3f46; background: #27272a; color: #e4e4e7; }
+  .tcs-btn.primary { background: #0053e2; border-color: #0053e2; color: #fff; }
+  @media (min-width: 768px) {
+    #trip-capture-fab, #trip-capture-sheet { display: none !important; }
+  }
+
   @media (max-width: 767px) {
     /* 1. Release the fixed-height viewport cage */
     #trip-page-root         { height: auto !important; overflow: visible !important; }
@@ -302,6 +343,21 @@
       {# Settle panel cards — rendered by drill.js (actuals mode only) #}
       <div id="trip-chart-settle-panels"></div>
 
+    </div>
+  </div>
+
+  {# ── Phone-only quick-capture FAB + bottom sheet (home-page-trip-agenda.js).
+       Styled entirely in the <style> block above (no Tailwind dependency) and
+       force-hidden ≥768px. position:fixed anchors to the viewport (no transform
+       ancestors); lives inside #trip-page-root so it's removed on page swap. #}
+  <button id="trip-capture-fab" type="button" onclick="tripOpenCaptureSheet()"
+          aria-label="Quick capture">＋</button>
+  <div id="trip-capture-sheet" role="dialog" aria-modal="true" aria-label="Quick capture">
+    <div class="tcs-backdrop" onclick="tripCloseCaptureSheet()"></div>
+    <div id="trip-capture-panel">
+      <div class="tcs-handle"></div>
+      <p class="tcs-title">Quick capture</p>
+      <div id="trip-capture-body"></div>
     </div>
   </div>
 
