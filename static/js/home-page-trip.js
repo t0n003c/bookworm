@@ -75,9 +75,18 @@ window.initTripPage = function(pid) {
     });
     _TRIP_TYPES.push('Other');
   } catch(e) {}
-  tripSetTab('research');
-  // Load locations — pass true so sessionStorage drill-in is restored exactly once
-  if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
+  // Responsive-divergent landing: phones open the view-first Trip agenda
+  // (home-page-trip-agenda.js); desktop keeps the Research-tab planning flow.
+  window._tripPhone = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0))
+                      && window.innerWidth < 768;
+  window._tripAgendaAutoOpened = false;
+  if (window._tripPhone) {
+    tripSetTab('plan');   // → tripLoadPlan → plan cards → single-plan auto-opens agenda
+  } else {
+    tripSetTab('research');
+    // Load locations — pass true so sessionStorage drill-in is restored exactly once
+    if (typeof tripLoadLocations === 'function') tripLoadLocations(true);
+  }
 };
 
 // ── Tab switching ─────────────────────────────────────────────────────────────

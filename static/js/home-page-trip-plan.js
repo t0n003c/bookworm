@@ -359,6 +359,13 @@ function _loadPlans() {
       _tripPlans = Array.isArray(data) ? data : [];
       if (typeof window._tripRenderPlanFilterBar === 'function') window._tripRenderPlanFilterBar();
       _tripRenderPlanCards();
+      // Phone: if there's exactly one trip, jump straight into its agenda once
+      // per page load (saves a tap; user can still ← Trips back to the grid).
+      if (window._tripPhone && !window._tripAgendaAutoOpened && _tripPlans.length === 1 &&
+          !window._tripActivePlanId && typeof window.tripOpenAgenda === 'function') {
+        window._tripAgendaAutoOpened = true;
+        window.tripOpenAgenda(_tripPlans[0].id, _tripPlans[0].plan_name);
+      }
     })
     .catch(function() { _tripShowToast('Failed to load trips', true); });
 }
@@ -598,7 +605,7 @@ function _tripRenderPlanCard(p) {
   return '<div class="trip-plan-card bg-white dark:bg-zinc-900 rounded-xl border shadow-sm overflow-hidden ' +
     'cursor-pointer group hover:shadow-md hover:border-[#0053e2]/40 transition-all relative ' + cardBorder + '" ' +
     'data-plan-id="' + p.id + '" ' +
-    'onclick="tripOpenPlan(' + p.id + ',\'' + jsName + '\')">' +
+    'onclick="tripPlanCardTap(' + p.id + ',\'' + jsName + '\')">' +
     (typeof _TRIP_MS_CB_HTML !== 'undefined' ? _TRIP_MS_CB_HTML : '') +
     cover +
     '<div class="p-4">' +
@@ -655,6 +662,17 @@ window.tripClosePlan = function() {
   if (typeof _tripRenderTopbarControls === 'function') _tripRenderTopbarControls();
 };
 
+// Plan-card tap dispatcher: phone opens the agenda overview; desktop opens the
+// full day-lane editor. Defined here so it always exists even if the phone-only
+// agenda module failed to load (falls back to tripOpenPlan).
+window.tripPlanCardTap = function(planId, planName) {
+  if (window._tripPhone && typeof window.tripOpenAgenda === 'function') {
+    window.tripOpenAgenda(planId, planName);
+  } else {
+    tripOpenPlan(planId, planName);
+  }
+};
+
 function _tripRenderDaysToolbar() {
   var tb = document.getElementById('trip-plan-toolbar');
   if (!tb) return;
@@ -676,12 +694,17 @@ function _tripRenderDaysToolbar() {
       'dark:hover:text-blue-400 transition'
     : 'text-xs px-2.5 py-1 rounded-full bg-[#0053e2] text-white ' +
       'hover:bg-[#0046c0] transition font-medium';
+  // Phone reaches the editor via the agenda → back goes to the agenda.
+  // Desktop keeps the original "← Trips" (back to the plan cards grid).
+  var backBtn = window._tripPhone
+    ? '<button onclick="tripAgendaBack()" ' +
+        'class="flex items-center gap-1 text-sm text-gray-500 dark:text-zinc-400 ' +
+               'hover:text-gray-800 dark:hover:text-zinc-100 transition">← Agenda</button>'
+    : '<button onclick="tripClosePlan()" ' +
+        'class="flex items-center gap-1 text-sm text-gray-500 dark:text-zinc-400 ' +
+               'hover:text-gray-800 dark:hover:text-zinc-100 transition">← Trips</button>';
   tb.innerHTML =
-    '<button onclick="tripClosePlan()" ' +
-      'class="flex items-center gap-1 text-sm text-gray-500 dark:text-zinc-400 ' +
-             'hover:text-gray-800 dark:hover:text-zinc-100 transition">' +
-      '← Trips' +
-    '</button>' +
+    backBtn +
     '<span class="text-gray-300 dark:text-zinc-600 select-none">|</span>' +
     '<p class="text-sm font-semibold text-gray-700 dark:text-zinc-200 truncate flex-1">' +
       '🗓️ ' + _tripEsc(window._tripActivePlanName) +
@@ -708,8 +731,14 @@ function _loadDaysForPlan(planId) {
       return Promise.all(promises);
     })
     .then(function() {
-      _tripRenderPlan();
-      if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+      // Phone agenda branch — render the read-only overview instead of the lanes.
+      if (window._tripPhone && window._tripAgendaActive &&
+          typeof window._tripRenderAgenda === 'function') {
+        window._tripRenderAgenda();
+      } else {
+        _tripRenderPlan();
+        if (typeof _tripRenderResearch === 'function') _tripRenderResearch();
+      }
       // Panels module (home-page-trip-panels.js) — defensive guard
       if (typeof window._tripLoadPanels === 'function') {
         window._tripLoadPanels(planId);

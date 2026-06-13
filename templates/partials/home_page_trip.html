@@ -24,6 +24,10 @@
   /* Global: Plan: label is desktop-hidden (mobile CSS re-enables it below) */
   .trip-chart-controls-lbl  { display: none; }
 
+  /* Phone-only agenda view: hard-hide on desktop (belt-and-suspenders with the
+     window._tripPhone JS guard, which never un-hides it ≥768px). */
+  @media (min-width: 768px) { #trip-agenda-view { display: none !important; } }
+
   @media (max-width: 767px) {
     /* 1. Release the fixed-height viewport cage */
     #trip-page-root         { height: auto !important; overflow: visible !important; }
@@ -42,6 +46,7 @@
     #trip-spots-view,
     #trip-plans-view,
     #trip-days-view,
+    #trip-agenda-view,
     #trip-days-container    { overflow: visible; flex: none; }
 
     /* 4. All scrollable grids: grow to full content height (no internal scroll) */
@@ -238,6 +243,10 @@
            class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
       </div>
     </div>
+
+    {# Phone-only: view-first agenda overview (home-page-trip-agenda.js).
+       Force-hidden ≥768px in the <style> block below so desktop never shows it. #}
+    <div id="trip-agenda-view" class="hidden flex-col flex-1 overflow-y-auto"></div>
 
   </div>
 
