@@ -82,10 +82,20 @@
     padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 22px);
   }
   .dark #trip-capture-panel  { background: #18181b; }
-  .tcs-handle { width: 40px; height: 4px; border-radius: 9999px; background: #d1d5db; margin: 0 auto 12px; }
+  .tcs-handle { display: block; width: 44px; height: 5px; border: none; padding: 0; border-radius: 9999px;
+                background: #d1d5db; margin: 4px auto 8px; cursor: pointer; }
   .dark .tcs-handle { background: #3f3f46; }
+  /* Sticky header with the title + a clear close (✕) button so the sheet is
+     always dismissable even when its content fills the screen. */
+  .tcs-bar    { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+                padding: 2px 0 10px; margin-bottom: 4px; background: #fff; }
+  .dark .tcs-bar { background: #18181b; }
   .tcs-title  { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-                color: #9ca3af; margin: 0 0 10px 2px; }
+                color: #9ca3af; margin: 0; }
+  .tcs-close  { margin-left: auto; width: 32px; height: 32px; border-radius: 9999px; border: none;
+                background: #f3f4f6; color: #374151; font-size: 15px; line-height: 1; cursor: pointer;
+                flex-shrink: 0; }
+  .dark .tcs-close { background: #3f3f46; color: #e4e4e7; }
   .tcs-grid   { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
   .tcs-opt    { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 8px;
                 border-radius: 14px; border: 1px solid #e5e7eb; background: #f9fafb; cursor: pointer;
@@ -418,8 +428,11 @@
   <div id="trip-capture-sheet" role="dialog" aria-modal="true" aria-label="Quick capture">
     <div class="tcs-backdrop" onclick="tripCloseCaptureSheet()"></div>
     <div id="trip-capture-panel">
-      <div class="tcs-handle"></div>
-      <p class="tcs-title">Quick capture</p>
+      <button class="tcs-handle" onclick="tripCloseCaptureSheet()" aria-label="Close"></button>
+      <div class="tcs-bar">
+        <span class="tcs-title">Quick capture</span>
+        <button class="tcs-close" onclick="tripCloseCaptureSheet()" aria-label="Close">✕</button>
+      </div>
       <div id="trip-capture-body"></div>
     </div>
   </div>
@@ -430,8 +443,11 @@
   <div id="trip-resources-sheet" role="dialog" aria-modal="true" aria-label="Trip resources">
     <div class="tcs-backdrop" onclick="tripCloseResourcesSheet()"></div>
     <div id="trip-resources-panel">
-      <div class="tcs-handle"></div>
-      <p class="tcs-title">🗂️ Trip Resources</p>
+      <button class="tcs-handle" onclick="tripCloseResourcesSheet()" aria-label="Close"></button>
+      <div class="tcs-bar">
+        <span class="tcs-title">🗂️ Trip Resources</span>
+        <button class="tcs-close" onclick="tripCloseResourcesSheet()" aria-label="Close">✕</button>
+      </div>
       <div id="trip-resources-body"></div>
     </div>
   </div>
