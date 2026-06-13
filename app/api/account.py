@@ -296,6 +296,29 @@ async def get_user_ai_settings(request: Request):
       hx-swap="innerHTML" class="space-y-3">
 
   <div class="flex flex-col gap-1">
+    <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">Provider</label>
+    <select id="acct-ai-provider" onchange="_acctProviderChange()"
+            class="w-full border-b border-gray-300 dark:border-zinc-600 bg-transparent
+                   py-1 text-sm focus:outline-none focus:border-blue-500">
+      <option value="custom">Custom…</option>
+      <option value="https://api.openai.com/v1">OpenAI</option>
+      <option value="https://api.anthropic.com/v1">Anthropic</option>
+      <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+      <option value="https://api.groq.com/openai/v1">Groq</option>
+      <option value="https://api.together.xyz/v1">Together AI</option>
+      <option value="https://api.mistral.ai/v1">Mistral</option>
+      <option value="https://api.deepseek.com/v1">DeepSeek</option>
+      <option value="https://api.perplexity.ai">Perplexity</option>
+      <option value="https://generativelanguage.googleapis.com/v1beta/openai">Google Gemini</option>
+      <option value="http://localhost:11434/v1">Ollama (local)</option>
+      <option value="http://localhost:1234/v1">LM Studio (local)</option>
+    </select>
+    <p class="text-[11px] text-gray-400 dark:text-zinc-500">
+      Pick a provider to fill the endpoint, or Custom to enter your own.
+    </p>
+  </div>
+
+  <div class="flex flex-col gap-1">
     <label class="text-xs font-medium text-gray-500 dark:text-zinc-400">LLM Endpoint URL</label>
     <input name="ai_endpoint" type="url" value="{endpoint}"
            placeholder="https://api.openai.com/v1"
@@ -391,6 +414,34 @@ async def get_user_ai_settings(request: Request):
       .finally(function() {{ if (btn) btn.disabled = false; }});
   }}
   window._acctLoadModels = _acctLoadModels;
+
+  /* Provider → endpoint auto-fill (Custom keeps the field editable) */
+  function _acctStrip(s){{ s = (s || '').trim(); while (s.charAt(s.length - 1) === '/') s = s.slice(0, -1); return s; }}
+  function _acctProviderChange() {{
+    var sel = document.getElementById('acct-ai-provider');
+    var ep  = document.getElementById('acct-ai-endpoint');
+    if (!sel || !ep) return;
+    if (sel.value === 'custom') {{
+      ep.readOnly = false; ep.classList.remove('opacity-60'); ep.focus();
+    }} else {{
+      ep.value = sel.value; ep.readOnly = true; ep.classList.add('opacity-60');
+    }}
+  }}
+  window._acctProviderChange = _acctProviderChange;
+  /* On load, infer the provider from the saved endpoint (else Custom). */
+  (function _acctInitProvider(){{
+    var sel = document.getElementById('acct-ai-provider');
+    var ep  = document.getElementById('acct-ai-endpoint');
+    if (!sel || !ep) return;
+    var cur = _acctStrip(ep.value), matched = false;
+    for (var i = 0; i < sel.options.length; i++) {{
+      if (cur && sel.options[i].value !== 'custom' && _acctStrip(sel.options[i].value) === cur) {{
+        sel.selectedIndex = i; matched = true; break;
+      }}
+    }}
+    if (matched) {{ ep.readOnly = true; ep.classList.add('opacity-60'); }}
+    else {{ sel.value = 'custom'; ep.readOnly = false; }}
+  }})();
 
   /* Test connection — hits /qa/ping-llm and shows real error details */
   function _acctTestLlm() {{
