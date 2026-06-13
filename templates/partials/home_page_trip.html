@@ -59,6 +59,15 @@
   }
   #trip-resources-body .trip-panel-card.collapsed > :first-child::after { content: '▸'; }
   #trip-resources-body .trip-panel-card.collapsed > :not(:first-child) { display: none !important; }
+  /* Collapsed = flat name row (no "bubble"); only expanded cards get the
+     card background / border / shadow and the header's gradient. */
+  #trip-resources-body .trip-panel-card.collapsed {
+    background: transparent !important; border-color: transparent !important; box-shadow: none !important;
+  }
+  #trip-resources-body .trip-panel-card.collapsed > :first-child {
+    background: transparent !important; background-image: none !important;
+    border-bottom-color: transparent !important;
+  }
   @media (min-width: 768px) {
     #trip-resources-fab, #trip-resources-sheet { display: none !important; }
   }
