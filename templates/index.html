@@ -2359,6 +2359,45 @@
     });
     wsUpdateToggleAllBtn(); // keep the toggle-all icon in sync
   }
+  // Expand the tree all the way down to a given node (and persist it) so a
+  // freshly created (sub)workspace is revealed instead of staying tucked inside
+  // a collapsed/unexpanded parent. Walks up from the node, un-hiding every
+  // ws-children ancestor, dropping those parents from the collapsed set, and
+  // rotating their chevrons; then scrolls the node into view.
+  function _wsExpandToNode(wsId) {
+    if (!wsId) return;
+    var node = document.querySelector('.ws-tree-node[data-ws-id="' + wsId + '"]');
+    if (!node) return;
+    var collapsed = _getCollapsed();
+    var el = node.parentElement;
+    while (el && el.id !== 'ws-tree-root') {
+      if (el.classList && el.classList.contains('ws-children')) {
+        el.classList.remove('hidden');
+        var pid = parseInt(el.id.replace('ws-children-', ''), 10);
+        if (!isNaN(pid)) {
+          collapsed.delete(pid);
+          var chev = document.getElementById('chevron-' + pid);
+          if (chev) chev.classList.add('rotate-90');
+        }
+      }
+      el = el.parentElement;
+    }
+    _saveCollapsed(collapsed);
+    if (typeof wsUpdateToggleAllBtn === 'function') wsUpdateToggleAllBtn();
+    try { node.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  }
+
+  // After creating a (sub)workspace, the response carries X-New-Ws-Id — reveal it.
+  // _wsExpandToNode persists the expansion to the collapsed set, so the
+  // wsInitCollapse pass (registered after this) keeps the parent open instead of
+  // re-hiding it.
+  document.addEventListener('htmx:afterSettle', function (evt) {
+    var xhr = evt && evt.detail && evt.detail.xhr;
+    if (!xhr || !xhr.getResponseHeader) return;
+    var nid = xhr.getResponseHeader('X-New-Ws-Id');
+    if (nid) _wsExpandToNode(parseInt(nid, 10));
+  });
+
   // Run on first load; HTMX re-runs it after OOB swaps
   wsInitCollapse();
   document.addEventListener('htmx:afterSettle', function() {

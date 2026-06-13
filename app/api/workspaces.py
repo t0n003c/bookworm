@@ -205,7 +205,14 @@ async def create_workspace_handler(
         else:
             await seed_default_categories_for_workspace(ws_id)
     ctx = await _ws_context(ws_id, uid)
-    return templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    resp = templates.TemplateResponse(request, "partials/workspace_switch.html", ctx)
+    # Let the client auto-expand the tree down to the freshly created node so a
+    # new (sub)workspace is visible immediately instead of staying hidden inside
+    # a collapsed/unexpanded parent until the next full page load.
+    resp.headers["X-New-Ws-Id"] = str(ws_id)
+    if pid:
+        resp.headers["X-New-Ws-Parent-Id"] = str(pid)
+    return resp
 
 
 @router.patch("/{workspace_id}", response_class=HTMLResponse)
