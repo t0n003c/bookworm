@@ -4522,6 +4522,11 @@
       .dark .acct-l-navbtn.acct-nav-active {
         background:rgba(30,64,175,0.2); color:#60a5fa;
       }
+      /* Flat credential inputs — drop the grey fill "bubble" around the
+         Change Username / Change Password boxes; keep just the outline. */
+      #acct-username-body input,
+      #acct-password-body input { background-color: transparent; }
+
       /* ── 2FA QR layout — lives in 2fa_panel.html partial (always fresh) — */
     </style>
 
@@ -5250,9 +5255,11 @@
       body.classList.add('acct-sz-' + size.toLowerCase());
     }
 
-    // 3. L mode: show first section by default; S/M: show all
+    // 3. L mode: show first section, keep each section's content expanded on view.
+    //    S/M: show all sections but auto-collapse every section body on open.
     if (size === 'L') {
       _acctNav('s1');
+      _acctSetMainExpanded(true);
     } else {
       ['s1', 's2', 's3'].forEach(function (id) {
         var el = document.getElementById('acct-' + id);
@@ -5262,6 +5269,7 @@
       document.querySelectorAll('.acct-l-navbtn').forEach(function (b) {
         b.classList.remove('acct-nav-active');
       });
+      _acctSetMainExpanded(false);
     }
 
     // 4. Highlight active pill
@@ -5283,6 +5291,25 @@
     var isHidden = body.classList.toggle('hidden');
     if (btn) btn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
     if (chevron) chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  }
+
+  /* _acctSetMainExpanded: collapse (S/M) or expand (L) every main section
+     body at once. Keeps S/M tidy on open and L tabs open-on-view. The toggle
+     button is each body's previous sibling. AI Search is intentionally left
+     out — it keeps its own collapsed default and lazy-loads when revealed. */
+  var _ACCT_MAIN_BODIES = ['acct-username-body', 'acct-password-body', 'acct-s2-body', 'acct-s3-body'];
+  function _acctSetMainExpanded(expanded) {
+    _ACCT_MAIN_BODIES.forEach(function (id) {
+      var body = document.getElementById(id);
+      if (!body) return;
+      var btn = body.previousElementSibling;
+      body.classList.toggle('hidden', !expanded);
+      if (btn && btn.tagName === 'BUTTON') {
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        var chev = btn.querySelector('svg');
+        if (chev) chev.style.transform = expanded ? '' : 'rotate(180deg)';
+      }
+    });
   }
 
   /* _acctNav: show one section at a time in L-mode sidebar */
