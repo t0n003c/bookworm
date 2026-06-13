@@ -2486,10 +2486,32 @@
       // <div>; without it, tapping the backdrop does nothing (esp. installed PWA).
       'cursor:pointer'
     ].join(';');
-    bd.addEventListener('click', _mobileSidebarClose);
-    // Belt-and-suspenders for iOS standalone PWAs where `click` can still be
-    // swallowed: pointerdown fires reliably on touch.
-    bd.addEventListener('pointerdown', function (e) { e.preventDefault(); _mobileSidebarClose(); });
+    // Tapping outside to close must NOT also activate whatever sits under the
+    // tap (a workspace note / page). Because the backdrop is removed mid-tap,
+    // the browser-synthesized `click` would otherwise fall through to the
+    // content below. Arm a one-shot CAPTURING click-swallower before removing
+    // the backdrop so that trailing click is absorbed (auto-disarms after 700ms
+    // if no click ever comes, so it can't eat a later legit tap).
+    function _absorbNextClick() {
+      var t;
+      var handler = function (ev) { ev.stopPropagation(); ev.preventDefault(); cleanup(); };
+      var cleanup = function () { document.removeEventListener('click', handler, true); clearTimeout(t); };
+      t = setTimeout(cleanup, 700);
+      document.addEventListener('click', handler, true);
+    }
+    // `click` path: the event targets the backdrop itself, so stopPropagation
+    // already keeps it off the content; consume it and close.
+    bd.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      _mobileSidebarClose();
+    });
+    // pointerdown fires reliably on iOS standalone PWAs where `click` can be
+    // swallowed. Arm the swallower FIRST so the trailing click can't reach content.
+    bd.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      _absorbNextClick();
+      _mobileSidebarClose();
+    });
     document.body.appendChild(bd);
   }
 
