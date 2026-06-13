@@ -651,6 +651,8 @@ window.tripClosePlan = function() {
 
   var plansView = document.getElementById('trip-plans-view');
   var daysView  = document.getElementById('trip-days-view');
+  // Desktop-only: unwrap the canvas before hiding the day lanes.
+  if (typeof window._tripCanvasTeardown === 'function') window._tripCanvasTeardown();
   if (daysView)  daysView.classList.add('hidden');
   if (plansView) plansView.classList.remove('hidden');
 
@@ -799,6 +801,8 @@ function _tripRenderPlan() {
   }
   _tripSyncSizeSlider();
   _tripApplyItemSize();
+  // Desktop-only: dock the spot palette beside the day lanes (home-page-trip-canvas.js).
+  if (typeof window._tripBuildCanvas === 'function') window._tripBuildCanvas();
 }
 
 function _tripRenderDayLane(d) {

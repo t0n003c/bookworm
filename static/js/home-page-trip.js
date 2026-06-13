@@ -196,6 +196,12 @@ function _tripRenderTopbarControls() { window._tripRenderTopbarControls(); }
       if (document.getElementById('trip-topbar-controls')) {
         _tripRenderTopbarControls();
       }
+      // Build/teardown the desktop planning canvas on a desktop↔mobile crossover.
+      if (window._tripCanvasMode && window._tripCanvasMode()) {
+        if (typeof window._tripBuildCanvas === 'function') window._tripBuildCanvas();
+      } else if (typeof window._tripCanvasTeardown === 'function') {
+        window._tripCanvasTeardown();
+      }
     }, 200);
   });
 }());
