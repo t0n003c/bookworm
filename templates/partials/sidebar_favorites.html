@@ -5,7 +5,9 @@
   (workspace actions).
   Context: pages, all_workspaces, active_page_id, active_ws_id.
 #}
-{% set fav_pages = (pages | default([])) | selectattr('is_favorite') | list %}
+{# At initial page load home pages arrive as `home_pages`; on OOB action
+   responses they arrive as `pages`. Fall back like home_sidebar.html does. #}
+{% set fav_pages = (pages | default(home_pages) | default([])) | selectattr('is_favorite') | list %}
 {% set fav_wss   = (all_workspaces | default([])) | selectattr('is_favorite') | list %}
 {% set active_pg = active_page_id | default(none) %}
 
@@ -54,8 +56,8 @@
       class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition
         {% if fav_active %}bg-wblue/10 dark:bg-wblue/20 text-wblue font-semibold
         {% else %}text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800{% endif %}">
-      <span aria-hidden="true">{{ ws.emoji }}</span>
-      <span class="flex-1 truncate">{{ ws.name }}</span>
+      <span class="flex-shrink-0 w-5 text-center leading-none" aria-hidden="true">{{ ws.emoji }}</span>
+      <span class="truncate flex-1">{{ ws.name }}</span>
     </button>
     <button type="button"
       hx-post="/workspaces/{{ ws.id }}/favorite" hx-target="#note-list" hx-swap="innerHTML"
