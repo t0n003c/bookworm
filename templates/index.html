@@ -3061,27 +3061,13 @@
        block (removing the bullet) before our indent logic can run.       */
     e.preventDefault();
 
-    if (!e.shiftKey) {
-      /* ── INDENT: nest under the previous sibling <li> ── */
-      const prevLi = li.previousElementSibling;
-      if (!prevLi || prevLi.nodeName !== 'LI') return true; // swallow Tab; nothing to indent under
-      const parentList = li.parentElement;
-      let nested = Array.from(prevLi.children).find(
-        c => c.nodeName === 'UL' || c.nodeName === 'OL'
-      );
-      if (!nested) {
-        nested = document.createElement(parentList.tagName);
-        prevLi.appendChild(nested);
-      }
-      nested.appendChild(li);
-    } else {
-      /* ── OUTDENT: lift out to the grandparent list ── */
-      const parentList = li.parentElement;
-      const parentLi   = parentList?.parentElement;
-      if (!parentLi || parentLi.nodeName !== 'LI') return true; // already at root; swallow
-      const grandparent = parentLi.parentElement;
-      grandparent.insertBefore(li, parentLi.nextSibling);
-      if (parentList.children.length === 0) parentList.remove();
+    /* Indent (Tab) / dedent (Shift+Tab) — applies to ALL highlighted rows, not
+       just the caret's row. Falls back to the single caret <li>. */
+    const _liSet = (typeof window._bwTopSelectedLis === 'function')
+                     ? window._bwTopSelectedLis(pv, _range, li) : [li];
+    const _multiLi = _liSet.length > 1 || !_range.collapsed;
+    if (typeof window._bwApplyListIndent === 'function') {
+      window._bwApplyListIndent(_liSet, e.shiftKey);
     }
 
     /* Re-inject drag grips now so the moved <li> has a grip before cursor
@@ -3103,6 +3089,18 @@
        Solution: run the sync AFTER _sel.addRange(r) so the selection
        is back inside the <li> before the pruning check runs.            */
     setTimeout(() => {
+      if (_multiLi && _liSet.length) {
+        /* Multi-row: re-span the moved rows so repeated Tab keeps working */
+        const rr = document.createRange();
+        rr.setStart(_liSet[0], 0);
+        const lastLi = _liSet[_liSet.length - 1];
+        rr.setEnd(lastLi, lastLi.childNodes.length);
+        _sel.removeAllRanges();
+        _sel.addRange(rr);
+        pv.focus();
+        if (typeof window._bwSyncPreviewToMd === 'function') window._bwSyncPreviewToMd();
+        return;
+      }
       const grip     = li.querySelector('[data-preview-grip]');
       const textNode = grip ? grip.nextSibling : li.firstChild;
       const r = document.createRange();
@@ -3129,39 +3127,49 @@
   }
 
   function _bwTaTab(e, ta) {
-    const pos = ta.selectionStart;
-    if (ta.selectionEnd !== pos) return false; // leave multi-select alone
+    const start = ta.selectionStart;
+    const end   = ta.selectionEnd;
+    const val   = ta.value;
+    const listRe = /^(\s*)([-*•] |\d+\. )/;
 
-    const val       = ta.value;
-    const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-    const lineEnd   = val.indexOf('\n', pos);
-    const lineText  = val.substring(lineStart, lineEnd === -1 ? undefined : lineEnd);
+    // Expand to the full set of lines the selection touches (one line when the
+    // caret is collapsed). This is what makes a multi-row highlight indent ALL
+    // of its rows, not just the caret's row.
+    const firstLineStart = val.lastIndexOf('\n', start - 1) + 1;
+    let lastIdx = (end > start && val[end - 1] === '\n') ? end - 1 : end;
+    let lastLineEnd = val.indexOf('\n', lastIdx);
+    if (lastLineEnd === -1) lastLineEnd = val.length;
 
-    const isBullet  = /^(\s*)([-*\u2022]) /.test(lineText);
-    const isOrdered = /^(\s*)\d+\. /.test(lineText);
-    if (!isBullet && !isOrdered) return false; // not a list line — let Tab through
+    const blockText = val.slice(firstLineStart, lastLineEnd);
+    const lines     = blockText.split('\n');
+    if (!lines.some(l => listRe.test(l))) return false; // no list rows - let Tab through
 
     e.preventDefault();
-    const STEP   = isBullet ? 2 : 3;   // spaces per indent level
-    const MAX_SP = STEP * 3;            // cap at 3 extra levels
-    const leading = lineText.match(/^ */)[0].length;
 
-    let newLine;
-    if (!e.shiftKey) {
-      if (leading >= MAX_SP) return true; // already deepest — swallow Tab, do nothing
-      newLine = ' '.repeat(STEP) + lineText;
+    const newLines = lines.map(function (line) {
+      if (!listRe.test(line)) return line;            // leave non-list rows untouched
+      const isOrdered = /^\s*\d+\. /.test(line);
+      const STEP   = isOrdered ? 3 : 2;               // spaces per indent level
+      const MAX_SP = STEP * 3;                         // cap at 3 extra levels
+      const leading = (line.match(/^ */) || [''])[0].length;
+      if (!e.shiftKey) {
+        return leading >= MAX_SP ? line : ' '.repeat(STEP) + line;
+      }
+      return line.slice(Math.min(leading, STEP));
+    });
+
+    const newBlock = newLines.join('\n');
+    ta.value = val.slice(0, firstLineStart) + newBlock + val.slice(lastLineEnd);
+
+    if (start === end) {
+      // Collapsed caret - keep it on its line after the indent shift.
+      const firstDelta = newLines[0].length - lines[0].length;
+      const newPos = Math.max(firstLineStart, start + firstDelta);
+      ta.setSelectionRange(newPos, newPos);
     } else {
-      const remove = Math.min(leading, STEP);
-      newLine = lineText.slice(remove);
+      // Re-select the whole modified block so repeated Tab keeps working.
+      ta.setSelectionRange(firstLineStart, firstLineStart + newBlock.length);
     }
-
-    const before = val.slice(0, lineStart);
-    const after  = lineEnd === -1 ? '' : val.slice(lineEnd);
-    ta.value = before + newLine + after;
-
-    const shift  = newLine.length - lineText.length;
-    const newPos = Math.max(lineStart, pos + shift);
-    ta.setSelectionRange(newPos, newPos);
     ta.dispatchEvent(new Event('input'));
     return true;
   }

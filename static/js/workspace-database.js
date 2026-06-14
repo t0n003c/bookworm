@@ -4198,33 +4198,16 @@ function _dbNoteTabIndent(e, noteEl) {
   if (!li || li === noteEl) return false;   /* cursor not in a list item */
 
   e.preventDefault();
-  var parentList = li.parentElement;   /* the <ul> or <ol> the <li> lives in */
 
-  if (!e.shiftKey) {
-    /* ── INDENT: nest under the previous sibling <li> ─────────────────────
-       If there is no previous sibling we still swallow Tab (return true)
-       so the browser doesn't focus the next form field.                   */
-    var prevLi = li.previousElementSibling;
-    if (!prevLi || prevLi.nodeName !== 'LI') return true;
-    /* Re-use existing nested list or create one matching parent type */
-    var nested = null;
-    Array.prototype.forEach.call(prevLi.children, function(c) {
-      if (!nested && (c.nodeName === 'UL' || c.nodeName === 'OL')) nested = c;
-    });
-    if (!nested) {
-      nested = document.createElement(parentList.tagName);  /* same ul/ol type */
-      prevLi.appendChild(nested);
-    }
-    nested.appendChild(li);
-  } else {
-    /* ── OUTDENT: lift out to the grandparent list ─────────────────────────
-       If already at root level swallow Shift+Tab (return true) so the
-       browser doesn't focus the previous form field.                       */
-    var parentLi    = parentList ? parentList.parentElement : null;
-    if (!parentLi || parentLi.nodeName !== 'LI') return true;
-    var grandparent = parentLi.parentElement;
-    grandparent.insertBefore(li, parentLi.nextSibling);
-    if (parentList.children.length === 0) parentList.remove();
+  /* Indent (Tab) / dedent (Shift+Tab) — applies to ALL highlighted rows, not
+     just the caret's row. Falls back to the single caret <li> when nothing is
+     selected. We preventDefault'd above, so Tab is swallowed either way (the
+     browser never focus-jumps to the next form field). */
+  var lis  = (typeof window._bwTopSelectedLis === 'function')
+               ? window._bwTopSelectedLis(noteEl, range, li) : [li];
+  var multi = lis.length > 1 || !range.collapsed;
+  if (typeof window._bwApplyListIndent === 'function') {
+    window._bwApplyListIndent(lis, e.shiftKey);
   }
 
   /* Re-inject grips (moved <li> loses its span) + persist */
@@ -4232,8 +4215,18 @@ function _dbNoteTabIndent(e, noteEl) {
   var cardId = parseInt((noteEl.id || '').replace('db-detail-note-', ''), 10);
   if (cardId) _dbSaveNote(cardId, _dbNoteHtml(noteEl));
 
-  /* Restore cursor to the relocated <li> */
+  /* Restore cursor: re-span the moved rows for a highlight, else caret in the row */
   setTimeout(function() {
+    if (multi && lis.length) {
+      var rr = document.createRange();
+      rr.setStart(lis[0], 0);
+      var lastLi = lis[lis.length - 1];
+      rr.setEnd(lastLi, lastLi.childNodes.length);
+      sel.removeAllRanges();
+      sel.addRange(rr);
+      noteEl.focus();
+      return;
+    }
     var grip     = li.querySelector('[data-db-grip]');
     var textNode = grip ? grip.nextSibling : li.firstChild;
     var r = document.createRange();

@@ -145,101 +145,98 @@ function _handleCodeBlockKeys(e) {
 
   if (e.key !== 'Tab') return;
 
-  // Walk up from the caret to find the nearest <li> ancestor
-  const li = n ? n.closest('li') : null;
-  if (!li) return;                     // not in a list — let browser handle Tab
-
-  e.preventDefault();
-
-  const parentList = li.parentElement; // the <ul> or <ol> containing this <li>
-
-  if (!e.shiftKey) {
-    // ── Indent: nest this <li> inside the previous sibling's sub-list ──────
-    const prevLi = li.previousElementSibling;
-    if (!prevLi) return;               // first item — can't indent further
-
-    const tag = parentList.tagName;    // preserve UL vs OL
-    let nested = prevLi.querySelector(`:scope > ${tag}`);
-    if (!nested) {
-      nested = document.createElement(tag);
-      prevLi.appendChild(nested);
-    }
-    nested.appendChild(li);
-
-  } else {
-    // ── Dedent: lift this <li> up one level ──────────────────────────────────
-    const grandLi = parentList.parentElement; // should be a <li>
-    if (!grandLi || grandLi.tagName !== 'LI') return; // already top-level
-
-    const outerList = grandLi.parentElement;
-
-    // Siblings that follow li inside the nested list travel with it as a new
-    // nested sub-list so the document structure stays valid.
-    const trailing = [];
-    let sib = li.nextElementSibling;
-    while (sib) { trailing.push(sib); sib = sib.nextElementSibling; }
-    if (trailing.length) {
-      const carry = document.createElement(parentList.tagName);
-      trailing.forEach(s => carry.appendChild(s));
-      li.appendChild(carry);
-    }
-
-    // Place li right after its former grandparent
-    outerList.insertBefore(li, grandLi.nextSibling);
-
-    // Remove now-empty nested list
-    if (!parentList.children.length) grandLi.removeChild(parentList);
-  }
-
-  // Put the caret at the start of the moved <li> so the user can keep typing
-  const r = document.createRange();
-  r.setStart(li, 0);
-  r.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(r);
+  // Indent (Tab) / dedent (Shift+Tab) — one OR many highlighted rows — via the
+  // shared multi-row helper. No-ops (without preventDefault) when not in a list.
+  if (typeof window._bwCeTabIndent === 'function') window._bwCeTabIndent(e);
 }
 
-// ── Shared Tab-indent helper (exposed globally for CE editors across the app) ────────────
-// Handles Tab (indent) and Shift+Tab (dedent) when the caret is inside a <li>.
+// ── Shared list <li> indent/outdent primitives (exposed globally) ─────────────
+// Pure DOM moves, no cursor/sync — every CE editor's Tab handler composes these
+// so that highlighting MULTIPLE rows and pressing Tab / Shift+Tab indents or
+// dedents ALL of them, not just the caret's row.
+window._bwIndentLi = function (li) {
+  var parentList = li.parentElement;
+  if (!parentList) return false;
+  var prevLi = li.previousElementSibling;
+  if (!prevLi || prevLi.nodeName !== 'LI') return false;   // nothing to nest under
+  var tag    = parentList.tagName;                         // preserve UL vs OL
+  var nested = prevLi.querySelector(':scope > ' + tag);
+  if (!nested) { nested = document.createElement(tag); prevLi.appendChild(nested); }
+  nested.appendChild(li);
+  return true;
+};
+window._bwOutdentLi = function (li) {
+  var parentList = li.parentElement;
+  if (!parentList) return false;
+  var grandLi = parentList.parentElement;
+  if (!grandLi || grandLi.nodeName !== 'LI') return false; // already top-level
+  var outerList = grandLi.parentElement;
+  // Trailing siblings travel with li as a new nested sub-list so structure stays valid.
+  var trailing = [], sib = li.nextElementSibling;
+  while (sib) { trailing.push(sib); sib = sib.nextElementSibling; }
+  if (trailing.length) {
+    var carry = document.createElement(parentList.tagName);
+    trailing.forEach(function (s) { carry.appendChild(s); });
+    li.appendChild(carry);
+  }
+  outerList.insertBefore(li, grandLi.nextSibling);
+  if (!parentList.children.length) grandLi.removeChild(parentList);
+  return true;
+};
+// Top-level <li>s intersecting the current selection within `root` (document
+// order). Excludes <li>s nested inside another selected <li> (those move with
+// their parent). Falls back to [fallbackLi] when the selection hits nothing.
+window._bwTopSelectedLis = function (root, range, fallbackLi) {
+  var all = Array.prototype.slice.call(root.querySelectorAll('li'));
+  var hit = all.filter(function (li) { try { return range.intersectsNode(li); } catch (e) { return false; } });
+  if (!hit.length) return fallbackLi ? [fallbackLi] : [];
+  var set = new Set(hit);
+  var tops = hit.filter(function (li) {
+    var p = li.parentElement;
+    while (p && p !== root) { if (p.nodeName === 'LI' && set.has(p)) return false; p = p.parentElement; }
+    return true;
+  });
+  return tops.length ? tops : (fallbackLi ? [fallbackLi] : []);
+};
+// Indent (shift=false) / outdent (shift=true) a set of <li>s in the order that
+// keeps the result correct: indent top→bottom, outdent bottom→top.
+window._bwApplyListIndent = function (lis, shift) {
+  (shift ? lis.slice().reverse() : lis).forEach(function (li) {
+    if (shift) window._bwOutdentLi(li); else window._bwIndentLi(li);
+  });
+};
+
+// ── Shared Tab-indent handler (exposed globally for CE editors across the app) ──
+// Handles Tab (indent) and Shift+Tab (dedent) for one OR many highlighted rows.
 // Returns without preventDefault() when the caret is NOT in a list, so the
 // browser's normal Tab focus-move fires as expected in every other context.
 window._bwCeTabIndent = function(e) {
   if (e.key !== 'Tab') return;
   var sel = window.getSelection();
   if (!sel || !sel.rangeCount) return;
-  var n = sel.getRangeAt(0).startContainer;
+  var range = sel.getRangeAt(0);
+  var n = range.startContainer;
   if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
-  var li = n ? n.closest('li') : null;
-  if (!li) return;                          // not in a list — let Tab move focus normally
+  var li0 = n ? n.closest('li') : null;
+  if (!li0) return;                         // not in a list — let Tab move focus normally
   e.preventDefault();
-  var parentList = li.parentElement;
-  if (!e.shiftKey) {
-    // Indent: move li into a nested sub-list under the previous sibling
-    var prevLi = li.previousElementSibling;
-    if (!prevLi) return;                    // already the first item — can't indent further
-    var tag    = parentList.tagName;
-    var nested = prevLi.querySelector(':scope > ' + tag);
-    if (!nested) { nested = document.createElement(tag); prevLi.appendChild(nested); }
-    nested.appendChild(li);
+  var root = li0.closest('[contenteditable="true"]') || li0.parentElement;
+  var lis  = window._bwTopSelectedLis(root, range, li0);
+  var multi = lis.length > 1 || !range.collapsed;
+  window._bwApplyListIndent(lis, e.shiftKey);
+  // Restore the selection: re-span the moved rows (so repeated Tab keeps working)
+  // for a highlight, or a collapsed caret for a single-row edit.
+  if (multi && lis.length) {
+    var rr = document.createRange();
+    rr.setStart(lis[0], 0);
+    var last = lis[lis.length - 1];
+    rr.setEnd(last, last.childNodes.length);
+    sel.removeAllRanges(); sel.addRange(rr);
   } else {
-    // Dedent: lift li up one level; trailing siblings travel with it as a new sub-list
-    var grandLi = parentList.parentElement;
-    if (!grandLi || grandLi.tagName !== 'LI') return; // already top-level
-    var outerList = grandLi.parentElement;
-    var trailing = [];
-    var sib = li.nextElementSibling;
-    while (sib) { trailing.push(sib); sib = sib.nextElementSibling; }
-    if (trailing.length) {
-      var carry = document.createElement(parentList.tagName);
-      trailing.forEach(function(s) { carry.appendChild(s); });
-      li.appendChild(carry);
-    }
-    outerList.insertBefore(li, grandLi.nextSibling);
-    if (!parentList.children.length) grandLi.removeChild(parentList);
+    var r = document.createRange();
+    r.setStart(li0, 0); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
   }
-  var r = document.createRange();
-  r.setStart(li, 0); r.collapse(true);
-  sel.removeAllRanges(); sel.addRange(r);
 };
 
 // ── Enter edit mode ───────────────────────────────────────────────────────────────────────
