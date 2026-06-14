@@ -183,20 +183,37 @@ window._bwOutdentLi = function (li) {
   if (!parentList.children.length) grandLi.removeChild(parentList);
   return true;
 };
-// Top-level <li>s intersecting the current selection within `root` (document
-// order). Excludes <li>s nested inside another selected <li> (those move with
-// their parent). Falls back to [fallbackLi] when the selection hits nothing.
+// Top-level <li>s covered by the selection within `root` (document order).
+// Computed from the <li> directly holding the selection START to the one holding
+// the END — NOT range.intersectsNode, which also returns true for an ANCESTOR
+// <li> that merely contains the selected rows (that bug left a nested multi-row
+// selection resolving to just the un-dedentable parent). Excludes rows nested
+// inside another selected row (those move with their parent).
 window._bwTopSelectedLis = function (root, range, fallbackLi) {
+  function liAt(node, offset, preferPrev) {
+    var n = node;
+    if (n && n.nodeType === Node.ELEMENT_NODE) {
+      var child = n.childNodes[preferPrev ? Math.max(0, offset - 1) : offset] || n.childNodes[offset - 1];
+      if (child) n = child;
+    }
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+    return (n && n.closest) ? n.closest('li') : null;
+  }
+  var startLi = liAt(range.startContainer, range.startOffset, false) || fallbackLi;
+  var endLi   = liAt(range.endContainer,   range.endOffset,   true)  || startLi;
+  if (!startLi) return fallbackLi ? [fallbackLi] : [];
   var all = Array.prototype.slice.call(root.querySelectorAll('li'));
-  var hit = all.filter(function (li) { try { return range.intersectsNode(li); } catch (e) { return false; } });
-  if (!hit.length) return fallbackLi ? [fallbackLi] : [];
-  var set = new Set(hit);
-  var tops = hit.filter(function (li) {
+  var si = all.indexOf(startLi), ei = all.indexOf(endLi);
+  if (si === -1) return fallbackLi ? [fallbackLi] : [];
+  if (ei === -1 || ei < si) ei = si;
+  var span = all.slice(si, ei + 1);   // every <li> from start row to end row
+  var set  = new Set(span);
+  var tops = span.filter(function (li) {
     var p = li.parentElement;
     while (p && p !== root) { if (p.nodeName === 'LI' && set.has(p)) return false; p = p.parentElement; }
     return true;
   });
-  return tops.length ? tops : (fallbackLi ? [fallbackLi] : []);
+  return tops.length ? tops : [startLi];
 };
 // Indent (shift=false) / outdent (shift=true) a set of <li>s in the order that
 // keeps the result correct: indent top→bottom, outdent bottom→top.
