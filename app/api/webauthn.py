@@ -23,12 +23,14 @@ import webauthn
 from webauthn import base64url_to_bytes, options_to_json
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
+    AuthenticatorAttachment,
     AuthenticatorTransport,
     PublicKeyCredentialDescriptor,
     RegistrationCredential,
     AuthenticationCredential,
     AuthenticatorAttestationResponse,
     AuthenticatorAssertionResponse,
+    ResidentKeyRequirement,
     UserVerificationRequirement,
 )
 
@@ -173,7 +175,15 @@ async def register_begin(request: Request):
         user_name=username,
         user_display_name=username,
         authenticator_selection=AuthenticatorSelectionCriteria(
-            user_verification=UserVerificationRequirement.PREFERRED,
+            # PLATFORM = this device's built-in biometric (Face ID / fingerprint)
+            # ONLY — excludes roaming/password-manager passkeys (e.g. Bitwarden,
+            # which kept hijacking the prompt) and cross-device hybrid.
+            authenticator_attachment=AuthenticatorAttachment.PLATFORM,
+            # REQUIRED = discoverable (resident) credential, so passwordless login
+            # (no username typed) can actually find it — otherwise the browser
+            # can't locate a local passkey and falls back to "sign in another way".
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
         ),
         exclude_credentials=exclude,
     )
