@@ -26,6 +26,12 @@ _PUBLIC = {
     "/2fa/verify",
     "/2fa/webauthn/begin",    # called during pending-2FA session (no full session yet)
     "/2fa/webauthn/complete", # same — promotes pending → full session
+    # Passwordless biometric login — called from the login page with NO session
+    # yet; the passkey itself identifies the user and the endpoint sets the
+    # session on success. Without these, the fetch is bounced to the HTML /login
+    # page and the client's r.json() fails ("Unexpected token '<', <!DOCTYPE…").
+    "/login/webauthn/begin",
+    "/login/webauthn/complete",
     "/demo/start", "/demo/end",
     "/demo/pre-end",    # pagehide beacon — user may be mid-session
     "/demo/cancel-end", # refresh cancel — session still valid
