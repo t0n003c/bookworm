@@ -233,20 +233,9 @@
         </button>
       </form>
 
-      {# ── Passwordless biometric sign-in (shown only if the browser supports it) ── #}
-      <div id="bw-passkey-wrap" class="hidden mt-5 pt-5 border-t border-white/10">
-        <button type="button" id="bw-passkey-btn" onclick="bwDoPasskeyLogin()"
-          class="w-full py-3 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10
-                 text-white font-semibold text-sm tracking-wide transition active:scale-95
-                 flex items-center justify-center gap-2 focus:outline-none
-                 focus:ring-2 focus:ring-[#ffc220]">
-          <span aria-hidden="true">🔐</span> Sign in with biometric
-        </button>
-        <p id="bw-passkey-err" class="hidden mt-2 text-xs text-red-300 text-center"></p>
-        <p class="mt-2 text-xs text-white/30 text-center">
-          Uses this device's passkey (Face ID / fingerprint). Tip: type your username first.
-        </p>
-      </div>
+      {# Passwordless biometric sign-in was removed: biometric is now a REQUIRED
+         SECOND FACTOR after username + password (handled on /2fa/verify), so a
+         password-free shortcut would bypass that. #}
 
       <!-- register link -->
       {% if registration_open %}
@@ -328,30 +317,8 @@
     })();
   </script>
 
-  {# ── Passwordless biometric sign-in ── #}
-  <script src="/static/js/bw-webauthn.js?v={{ static_v }}"></script>
-  <script>
-    (function () {
-      // Reveal the biometric button only where WebAuthn is supported.
-      if (window.PublicKeyCredential) {
-        var w = document.getElementById('bw-passkey-wrap');
-        if (w) w.classList.remove('hidden');
-      }
-    })();
-    function bwDoPasskeyLogin() {
-      var btn   = document.getElementById('bw-passkey-btn');
-      var errEl = document.getElementById('bw-passkey-err');
-      var uEl   = document.getElementById('username');
-      var sEl   = document.getElementById('stay_signed_in');
-      if (errEl) errEl.classList.add('hidden');
-      var label = btn.innerHTML;
-      btn.disabled = true; btn.textContent = 'Waiting for biometric…';
-      window.bwLoginWithPasskey(uEl ? uEl.value : '', sEl ? sEl.checked : false, function (msg) {
-        btn.disabled = false; btn.innerHTML = label;
-        if (errEl) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
-      });
-    }
-  </script>
+  {# Passwordless-passkey login JS removed — biometric is now a 2nd factor after
+     password (see /2fa/verify), not a standalone login. #}
 
 </body>
 </html>
