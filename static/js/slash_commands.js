@@ -1925,6 +1925,33 @@ function _applyCE(cmd) {
         sel.removeAllRanges();
         sel.addRange(r);
       }
+    } else if (cmd.ceExec && cmd.ceExec.cmd === 'formatBlock') {
+      // Headings via slash command. execCommand('formatBlock') drops the caret
+      // on an empty row (the row holds a contenteditable=false drag-grip) — the
+      // reported "cursor disappears" bug. Mirror the toolbar fix: swap the block
+      // tag directly, preserve inline content + grip, and restore the caret.
+      const tag = cmd.ceExec.arg;                       // 'H1' | 'H2' | 'H3'
+      let block = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      while (block && block.parentNode !== ce) block = block.parentNode;
+      const okSwap = !!block && block.parentNode === ce && block.nodeType === 1
+                   && /^(p|div|h[1-6]|blockquote)$/i.test(block.tagName);
+      if (okSwap) {
+        const hadPvGrip = !!ce.querySelector('[data-preview-grip]');
+        const hadDbGrip = !!ce.querySelector('[data-db-grip]');
+        const newEl = document.createElement(tag);
+        const clone = block.cloneNode(true);
+        clone.querySelectorAll('[data-preview-grip],[data-db-grip]').forEach(g => g.remove());
+        newEl.innerHTML = clone.innerHTML;              // keep inline bold/italic/links
+        if (block.style.color)      newEl.style.color      = block.style.color;
+        if (block.style.background) newEl.style.background = block.style.background;
+        block.parentElement.replaceChild(newEl, block);
+        // Re-stamp drag grips for whichever editor this CE belongs to.
+        if (hadPvGrip && typeof window._injectPreviewGrips === 'function') window._injectPreviewGrips(ce);
+        else if (hadDbGrip && typeof window._dbInjectGrips === 'function') window._dbInjectGrips(ce);
+        if (typeof _bwBlockPlaceCaret === 'function') _bwBlockPlaceCaret(newEl);
+      } else {
+        document.execCommand(cmd.ceExec.cmd, false, cmd.ceExec.arg ?? null);
+      }
     } else if (cmd.ceExec) {
       document.execCommand(cmd.ceExec.cmd, false, cmd.ceExec.arg ?? null);
     } else {
