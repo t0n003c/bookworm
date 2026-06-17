@@ -3943,10 +3943,17 @@
             if (previewSnap) window._injectPreviewGrips(previewSnap);
           },
           syncToBackend: function() {
+            // Sync the structural change into the markdown textarea, but do NOT
+            // dispatch a textarea 'input' event here. That event schedules a
+            // 150ms MD→preview re-render which rebuilds innerHTML — wiping the
+            // caret the block menu just restored and fighting the first keystroke
+            // on a freshly-created empty heading/list. The preview DOM is already
+            // authoritative after a block-menu mutation, so a re-render is both
+            // unnecessary and destructive (it also drops inline block colours,
+            // which Turndown can't serialise). _bwSyncPreviewToMd writes the
+            // textarea value directly, so save/autosave still see the change.
             if (typeof window._bwSyncPreviewToMd === 'function') {
               window._bwSyncPreviewToMd();
-              const ta = document.getElementById('note-content');
-              if (ta) ta.dispatchEvent(new Event('input'));
             }
           },
           gripAttr: 'data-preview-grip',

@@ -82,6 +82,38 @@ function _bwBlockGetText(el, gripAttr) {
   return clone.textContent || '';
 }
 
+/* ── Place the caret inside a freshly-created block ──────────────────────────
+   Turn-into replaces the block element, which destroys the selection that lived
+   in the old node — so the caret vanishes and the user can't keep typing (the
+   reported bug). Re-focus the editor and drop a collapsed caret inside the new
+   block: positioned after the leading drag-grip for an empty block, or at the
+   end of existing text. Deferred one tick so it runs after the row-menu click
+   has fully resolved (the menu closes synchronously before the action fires). */
+function _bwBlockPlaceCaret(blockEl) {
+  setTimeout(function() {
+    try {
+      if (!blockEl || !blockEl.isConnected) return;
+      var root = blockEl.closest('[contenteditable="true"]');
+      // Pick the inner editable target for container block types so the caret
+      // lands in the typeable area, not at container level.
+      var tag = (blockEl.tagName || '').toLowerCase();
+      var target = blockEl;
+      if (tag === 'ul' || tag === 'ol')      target = blockEl.querySelector('li')   || blockEl;
+      else if (tag === 'pre')                target = blockEl.querySelector('code') || blockEl;
+      else if (blockEl.classList && blockEl.classList.contains('bw-callout'))
+                                             target = blockEl.querySelector('p')    || blockEl;
+      if (root && typeof root.focus === 'function') root.focus({ preventScroll: true });
+      var sel = window.getSelection();
+      if (!sel) return;
+      var range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false);   // end of content — after the grip on empty blocks
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) { /* non-fatal — caret restore is best-effort */ }
+  }, 0);
+}
+
 /* ── DOM mutator: Turn into ──────────────────────────────────────────────── */
 
 function _bwBlockTurnInto(blockEl, typeKey, opts) {
@@ -140,6 +172,7 @@ function _bwBlockTurnInto(blockEl, typeKey, opts) {
   blockEl.parentElement.replaceChild(newEl, blockEl);
   opts.reInjectGrips();
   opts.syncToBackend();
+  _bwBlockPlaceCaret(newEl);   // keep the cursor in the row so typing continues
   return newEl;
 }
 
