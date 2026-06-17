@@ -833,13 +833,52 @@
         _bwCeToggleList(preview, type.toUpperCase());
         return;
       }
+      /* Headings: toggle the block tag directly instead of
+         execCommand('formatBlock'). execCommand drops the caret on an empty row
+         (the row holds a contenteditable=false drag-grip) and offers no way to
+         switch a heading back to a paragraph. Clicking the row's current heading
+         level again toggles it back to <p>. Inline content + grip are preserved
+         and the caret is restored so the user can keep typing. */
+      if (type === 'h1' || type === 'h2' || type === 'h3') {
+        var _sel = window.getSelection();
+        var _block = null;
+        if (_sel && _sel.rangeCount) {
+          var _n = _sel.getRangeAt(0).startContainer;
+          while (_n && _n.parentNode !== preview) _n = _n.parentNode;
+          if (_n && _n.parentNode === preview && _n.nodeType === 1) _block = _n;
+        }
+        if (_block) {
+          var _curTag  = (_block.tagName || '').toLowerCase();
+          var _wantTag = (_curTag === type) ? 'P' : type.toUpperCase();
+          var _newEl   = document.createElement(_wantTag);
+          var _clone   = _block.cloneNode(true);
+          _clone.querySelectorAll('[data-preview-grip]').forEach(function(g) { g.remove(); });
+          _newEl.innerHTML = _clone.innerHTML;                 // keep inline bold/italic/links
+          if (_block.style.color)      _newEl.style.color      = _block.style.color;
+          if (_block.style.background) _newEl.style.background = _block.style.background;
+          _block.parentElement.replaceChild(_newEl, _block);
+          if (typeof window._injectPreviewGrips === 'function') {
+            window._injectPreviewGrips(preview);              // re-stamp the drag grip
+          }
+          if (typeof _bwBlockPlaceCaret === 'function') {
+            _bwBlockPlaceCaret(_newEl);                        // keep the cursor in the row
+          } else {
+            preview.focus();
+          }
+          if (typeof window._bwSyncPreviewToMd === 'function') {
+            window._bwSyncPreviewToMd();                       // sync → markdown (no re-render)
+          }
+          return;
+        }
+        /* Fallback when the caret's block can't be resolved. */
+        document.execCommand('formatBlock', false, type.toUpperCase());
+        preview.dispatchEvent(new Event('input'));
+        return;
+      }
       const execMap = {
         bold:   ['bold'],
         italic: ['italic'],
         strike: ['strikeThrough'],
-        h1:     ['formatBlock', false, 'H1'],
-        h2:     ['formatBlock', false, 'H2'],
-        h3:     ['formatBlock', false, 'H3'],
       };
       const args = execMap[type];
       if (args) {
