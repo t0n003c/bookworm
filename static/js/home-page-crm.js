@@ -24,6 +24,42 @@ var _crmView         = 'table';   // 'table' | 'gallery' | 'pipeline' | 'calenda
 var _crmGalleryStyle = 'cards';   // 'cards' | 'compact' | 'profile' | 'minimal'
 var _crmQuery    = '';
 
+// Relationship dropdown: shared option pool across all contacts on this page.
+// The built-in 'relationship' field has no server-side option list (unlike a
+// multi_select custom field), so a custom value added on one contact used to
+// vanish when another contact was opened. _crmRelPool accumulates custom values
+// added this session so they survive switching contacts even before the contact
+// is saved; saved values are picked up via the union over _crmContacts.
+var _CRM_REL_DEFAULTS = ['Friend','Family','Colleague','Mentor','Mentee',
+                         'Acquaintance','Client','Partner','Classmate','Neighbor'];
+var _crmRelPool = [];
+
+/* Build the de-duplicated relationship option list shown in the dropdown:
+   built-in defaults + every relationship value used across all contacts on the
+   page + custom values added this session + the values already on this contact.
+   Defaults stay first; everything else preserves first-seen order. */
+function _crmRelOptions(currentVals) {
+  var out = [];
+  var seen = Object.create(null);
+  var push = function(v) {
+    v = (v == null ? '' : String(v)).trim();
+    if (!v || seen[v]) return;
+    seen[v] = true; out.push(v);
+  };
+  _CRM_REL_DEFAULTS.forEach(push);
+  (_crmContacts || []).forEach(function(c) {
+    var arr = [];
+    try { arr = JSON.parse(c && c.relationship || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) {
+      arr = (c && c.relationship || '').split(',').map(function(s){ return s.trim(); });
+    }
+    arr.forEach(push);
+  });
+  (_crmRelPool || []).forEach(push);
+  (currentVals || []).forEach(push);
+  return out;
+}
+
 // Calendar state (owned by home-page-crm-calendar.js, declared here for reset)
 var _crmAllReminders       = [];
 var _crmCalRemindersLoaded = false;
@@ -538,8 +574,9 @@ function _crmContactModal(c) {
   if (!Array.isArray(_relVals)) {
     _relVals = (c?.relationship || '').split(',').map(s => s.trim()).filter(Boolean);
   }
-  const _REL_OPTS = ['Friend','Family','Colleague','Mentor','Mentee',
-                     'Acquaintance','Client','Partner','Classmate','Neighbor'];
+  // Shared pool across all contacts (see _crmRelOptions), so a custom value
+  // added on one contact is selectable on every other contact too.
+  const _REL_OPTS = _crmRelOptions(_relVals);
   const _relDark   = document.documentElement.classList.contains('dark');
   const _relSelBg  = _relDark ? 'rgba(30,64,175,0.35)' : '#dbeafe';
   const _relSelTxt = _relDark ? '#93c5fd' : '#1e40af';
@@ -2578,6 +2615,12 @@ window.crmRelDelete = function(btn) {
   if (!row) return;
   var val = row.getAttribute('data-ms-val');
 
+  // Drop from the session pool so the removal sticks across reopens. (A value
+  // still saved on another contact reappears via the _crmContacts union — that
+  // is intended: an option in active use elsewhere isn't globally removable.)
+  var _pi = _crmRelPool.indexOf(val);
+  if (_pi !== -1) _crmRelPool.splice(_pi, 1);
+
   // Remove from selection if currently selected
   var hidden = document.getElementById('crm-rel-hidden');
   if (hidden) {
@@ -2616,6 +2659,11 @@ window.crmRelAddCustom = function() {
   var val = inp.value.trim();
   if (!val) return;
   inp.value = '';
+
+  // Remember this custom option for the rest of the session so it stays
+  // available when other contacts are opened (the built-in relationship field
+  // has no server-side option list to persist it).
+  if (_crmRelPool.indexOf(val) === -1) _crmRelPool.push(val);
 
   var opts = document.getElementById('crm-rel-options');
   if (opts) {
