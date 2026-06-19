@@ -307,6 +307,15 @@ window.crmRenderToolbar = function() {
       try { const arr = JSON.parse(v); if (Array.isArray(arr)) { arr.forEach(x => x && seen.add(String(x))); continue; } } catch {}
       if (v) seen.add(v);
     }
+    // Relationship filter values mirror the picker: include session-added
+    // options (_crmRelPool) and drop session-removed ones (_crmRelRemoved),
+    // so Filter stays in sync with the relationship dropdown's add/delete.
+    if (_crmFilterField === 'relationship') {
+      if (typeof _crmRelPool !== 'undefined')
+        _crmRelPool.forEach(v => { if (v) seen.add(String(v)); });
+      if (typeof _crmRelRemoved !== 'undefined')
+        _crmRelRemoved.forEach(v => seen.delete(String(v)));
+    }
     [...seen].sort().forEach(v => filterVals.push(v));
   }
 
@@ -619,7 +628,12 @@ window._crmGroupValue = function(c, field) {
   if (field === 'company') return c.company || '';
   if (field === 'relationship') {
     var rv = []; try { rv = JSON.parse(c.relationship || '[]'); } catch {}
-    return Array.isArray(rv) ? (rv[0] || '') : (c.relationship || '');
+    if (!Array.isArray(rv)) return c.relationship || '';
+    // Skip options removed from the picker this session so a deleted
+    // relationship option no longer forms a group / sort bucket.
+    if (typeof _crmRelRemoved !== 'undefined' && _crmRelRemoved.length)
+      rv = rv.filter(function(v) { return _crmRelRemoved.indexOf(String(v)) === -1; });
+    return rv[0] || '';
   }
   if (field.startsWith('cf_')) {
     const fid = parseInt(field.replace('cf_', ''), 10);
