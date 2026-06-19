@@ -1076,6 +1076,32 @@ app.include_router(quick_ask_router.router)
 # Subdirectory routes MUST come before the generic /uploads/{filename} route
 # so FastAPI matches them first (its router is first-match, not best-match).
 
+# Extensions whose content would EXECUTE if rendered inline on BookWorm's own
+# origin. An uploaded .svg/.html with an embedded <script> is otherwise stored
+# XSS: opening /uploads/evil.svg directly runs the script in the app origin.
+# The global X-Content-Type-Options:nosniff doesn't help — the type really IS
+# svg/html, so the browser renders it. We force a download instead and pin a
+# locked-down CSP. NOTE: inline <img src="/uploads/x.svg"> still works —
+# Content-Disposition is ignored for image subresources, and browsers never run
+# scripts in <img>-loaded SVGs. Only top-level navigation / <iframe> is changed.
+_UNSAFE_INLINE_EXTS = {".svg", ".svgz", ".html", ".htm", ".xhtml", ".xml", ".js", ".mjs", ".mhtml"}
+
+
+def _serve_upload_file(path, **kwargs) -> FileResponse:
+    """FileResponse for a user-uploaded file, neutralising active content types.
+
+    Dangerous types (see _UNSAFE_INLINE_EXTS) are served as an attachment with
+    a no-op CSP + nosniff so they can never execute as same-origin script.
+    Everything else (images, PDFs, docx, …) is served normally/inline.
+    """
+    if path.suffix.lower() in _UNSAFE_INLINE_EXTS:
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers.setdefault("Content-Security-Policy", "default-src 'none'; sandbox")
+        headers.setdefault("X-Content-Type-Options", "nosniff")
+        return FileResponse(path=path, filename=path.name, headers=headers, **kwargs)
+    return FileResponse(path=path, **kwargs)
+
+
 @app.get("/uploads/crm-pics/{filename}", include_in_schema=False)
 async def serve_crm_pic(request: Request, filename: str):
     """Serve a CRM profile-picture to the page owner.
@@ -1097,7 +1123,7 @@ async def serve_crm_pic(request: Request, filename: str):
     path = UPLOAD_DIR / "crm-pics" / filename
     if not path.exists():
         raise HTTPException(status_code=404)
-    return FileResponse(path=path)
+    return _serve_upload_file(path)
 
 
 @app.get("/uploads/trip-covers/{filename}", include_in_schema=False)
@@ -1128,7 +1154,7 @@ async def serve_trip_cover(request: Request, filename: str):
     path = UPLOAD_DIR / "trip-covers" / filename
     if not path.exists():
         raise HTTPException(status_code=404)
-    return FileResponse(path=path)
+    return _serve_upload_file(path)
 
 
 @app.get("/uploads/thumb/{filename:path}", include_in_schema=False)
@@ -1164,7 +1190,7 @@ async def serve_upload_thumb(request: Request, filename: str, w: int = 400):
     import mimetypes as _mt
     mime_guess = _mt.guess_type(src_path.name)[0] or ""
     if not mime_guess.startswith("image/"):
-        return FileResponse(path=src_path)
+        return _serve_upload_file(src_path)
 
     # Build the cache path, mirroring any subdirectory structure (e.g. db-attr-files/)
     thumb_dir  = UPLOAD_DIR / "_thumbs" / str(w)
@@ -1187,7 +1213,7 @@ async def serve_upload_thumb(request: Request, filename: str, w: int = 400):
             thumb_path.write_bytes(buf.getvalue())
         except Exception:
             # Pillow failed (e.g. SVG, corrupt file) — serve the original
-            return FileResponse(path=src_path)
+            return _serve_upload_file(src_path)
 
     return FileResponse(
         path=thumb_path,
@@ -1230,7 +1256,7 @@ async def serve_upload(request: Request, filename: str):
     if not disk_path.exists():
         raise HTTPException(status_code=404)
 
-    return FileResponse(path=disk_path)
+    return _serve_upload_file(disk_path)
 
 
 # ── PWA support routes ───────────────────────────────────────────────────────
