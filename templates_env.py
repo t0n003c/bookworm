@@ -249,6 +249,7 @@ static_v: str = _jinja_env.globals["static_v"]   # re-exported so main.py can in
 from core.config import settings
 _jinja_env.globals["bw_max_upload_mb"] = settings.max_upload_mb
 _jinja_env.globals["bw_vapid_public_key"] = settings.vapid_public_key
+_jinja_env.globals["bw_turnstile_site_key"] = settings.turnstile_site_key
 
 # ── Expose as Jinja2Templates so all routers can call TemplateResponse ────────
 templates = Jinja2Templates(env=_jinja_env)

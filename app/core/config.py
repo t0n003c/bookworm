@@ -79,6 +79,12 @@ class Settings:
     rl_max_failures: int = field(default_factory=lambda: int(os.getenv("BW_RL_MAX_FAILURES", "5")))
     rl_lockout_secs: float = field(default_factory=lambda: float(os.getenv("BW_RL_LOCKOUT_SECS", "900")))
 
+    # ── Cloudflare Turnstile (bot challenge on login / register) ───────────
+    # Active only when BOTH keys are set. Site key is public (embedded in the
+    # login/register HTML); secret key verifies the token server-side.
+    turnstile_site_key: str = field(default_factory=lambda: os.getenv("BW_TURNSTILE_SITE_KEY", "").strip())
+    turnstile_secret_key: str = field(default_factory=lambda: os.getenv("BW_TURNSTILE_SECRET_KEY", "").strip())
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

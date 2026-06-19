@@ -6,6 +6,9 @@
   <title>Sign In — BookWorm 📚</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
   <link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">
+  {% if bw_turnstile_site_key %}
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
   <style>
     /* ── floating emojis ── */
     @keyframes floatUp {
@@ -220,6 +223,13 @@
             Keep me signed in
           </span>
         </label>
+
+        <!-- Cloudflare Turnstile bot challenge (only when configured) -->
+        {% if bw_turnstile_site_key %}
+        <div class="flex justify-center">
+          <div class="cf-turnstile" data-sitekey="{{ bw_turnstile_site_key }}" data-theme="dark"></div>
+        </div>
+        {% endif %}
 
         <!-- submit -->
         <button

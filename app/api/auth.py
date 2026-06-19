@@ -9,6 +9,7 @@ from app.api.totp_db import get_totp_status
 from app.api.webauthn_db import has_credentials
 from app.api.seed_uploads import seed_flower_uploads
 from app.api.rate_limit import check_rate_limit, record_failure, record_success, client_ip
+from app.api.turnstile import verify_turnstile
 from database import get_db
 from security import make_expires_at
 from templates_env import templates
@@ -81,9 +82,21 @@ async def login_submit(
     username: str = Form(...),
     password: str = Form(...),
     stay_signed_in: str = Form(default=""),
+    turnstile_token: str = Form(default="", alias="cf-turnstile-response"),
 ):
     rl_key = f"{client_ip(request)}:login"
     check_rate_limit(rl_key)
+
+    # Cloudflare Turnstile bot challenge (no-op unless configured). Checked
+    # before credentials so bots are stopped without touching the auth path.
+    if not await verify_turnstile(turnstile_token, client_ip(request)):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Please complete the verification challenge and try again.",
+             "username": username},
+            status_code=400,
+        )
 
     user = await authenticate(username.strip(), password)
     if not user:
@@ -153,9 +166,18 @@ async def register_submit(
     username: str = Form(...),
     password: str = Form(...),
     confirm:  str = Form(...),
+    turnstile_token: str = Form(default="", alias="cf-turnstile-response"),
 ):
     if not await get_registration_open():
         return RedirectResponse("/login", status_code=302)
+    # Cloudflare Turnstile bot challenge (no-op unless configured).
+    if not await verify_turnstile(turnstile_token, client_ip(request)):
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"error": "Please complete the verification challenge and try again.",
+             "username": username},
+            status_code=400,
+        )
     error = None
     username = username.strip()
     if not username:

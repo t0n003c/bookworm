@@ -79,8 +79,8 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'; "
-        "frame-src 'self' https://player.vimeo.com https://www.youtube.com"
-        " https://www.youtube-nocookie.com https://fast.wistia.com"
+        "frame-src 'self' https://challenges.cloudflare.com https://player.vimeo.com"
+        " https://www.youtube.com https://www.youtube-nocookie.com https://fast.wistia.com"
         + (f" {_collabora}" if _collabora else "") + ";"
     )
 
