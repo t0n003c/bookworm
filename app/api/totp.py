@@ -7,7 +7,7 @@ import qrcode.image.svg
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.api.rate_limit import check_rate_limit, record_failure, record_success
+from app.api.rate_limit import check_rate_limit, record_failure, record_success, client_ip
 from app.api.recovery_db import (
     count_unused_recovery_codes,
     generate_recovery_codes,
@@ -161,7 +161,7 @@ async def verify_submit(request: Request, code: str = Form(...)):
     if not user_id:
         return RedirectResponse("/login", status_code=302)
 
-    rl_key = f"{request.client.host}:2fa"
+    rl_key = f"{client_ip(request)}:2fa"
     check_rate_limit(rl_key)
 
     status = await get_totp_status(user_id)
@@ -193,7 +193,7 @@ async def recovery_submit(request: Request, code: str = Form(...)):
     if not user_id:
         return RedirectResponse("/login", status_code=302)
 
-    rl_key = f"{request.client.host}:2fa"
+    rl_key = f"{client_ip(request)}:2fa"
     check_rate_limit(rl_key)
 
     if not await verify_and_consume_recovery_code(user_id, code):

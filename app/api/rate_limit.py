@@ -38,6 +38,33 @@ _attempts: dict[str, deque] = defaultdict(deque)
 _blocked_until: dict[str, float] = {}
 
 
+def client_ip(request) -> str:
+    """Best-effort real client IP for rate-limit keys.
+
+    Order of trust:
+      1. CF-Connecting-IP  — set by Cloudflare to the true visitor IP. Reliable
+         in a Cloudflare Tunnel setup because the origin is never publicly
+         reachable (cloudflared dials out), so a client cannot forge it.
+      2. left-most X-Forwarded-For entry — the original client when a normal
+         reverse proxy (e.g. nginx proxy manager) is in front.
+      3. socket peer (request.client.host) — direct-connection fallback.
+
+    SECURITY NOTE: (1) and (2) are only trustworthy because traffic reaches the
+    app exclusively through the tunnel/proxy. If the app is ever exposed
+    directly, an attacker could spoof these headers to evade the limiter — keep
+    the origin private (tunnel only).
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf and cf.strip():
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
 def _evict(key: str) -> None:
     """Drop timestamps older than the sliding window for *key*."""
     cutoff = monotonic() - _WINDOW_SECS

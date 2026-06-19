@@ -115,6 +115,66 @@ class _StaticCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class _CSRFMiddleware(BaseHTTPMiddleware):
+    """Defense-in-depth CSRF guard: reject cross-origin state-changing requests.
+
+    This is a SECOND layer on top of the SameSite=lax session cookie (which
+    already stops a cross-site page from sending an authenticated POST). It
+    blocks the residual cases (e.g. browsers that ignore SameSite, same-site
+    sub-domain shenanigans) by checking the Origin/Referer of unsafe requests.
+
+    Designed to be non-breaking:
+      • Inert unless BW_WEBAUTHN_ORIGIN is set — that value equals the exact
+        Origin the browser sends, so matching is reliable even behind a reverse
+        proxy that rewrites Host (Cloudflare Tunnel → nginx proxy manager).
+      • Only inspects unsafe methods (POST/PUT/PATCH/DELETE).
+      • Skips /static/, /wopi/ (Collabora server-to-server, token-authed, no
+        same-origin header), and /share/view/ (public token links).
+      • Allows localhost origins so local dev is never blocked.
+      • Fails OPEN when neither Origin nor Referer is present (non-browser
+        clients) — browsers always send Origin on a cross-origin POST, so the
+        attack case is still covered.
+    """
+    _SAFE = {"GET", "HEAD", "OPTIONS", "TRACE"}
+    _SKIP_PREFIXES = ("/static/", "/wopi/", "/share/view/")
+    _ORIGIN: str = os.getenv("BW_WEBAUTHN_ORIGIN", "").strip().rstrip("/")
+
+    @staticmethod
+    def _host_of(origin: str) -> str:
+        try:
+            return origin.split("://", 1)[1].split("/")[0].split(":")[0].lower()
+        except (IndexError, AttributeError):
+            return ""
+
+    def _origin_ok(self, origin: str) -> bool:
+        if origin == self._ORIGIN:
+            return True
+        return self._host_of(origin) in ("localhost", "127.0.0.1", "::1")
+
+    def _referer_ok(self, referer: str) -> bool:
+        if referer.rstrip("/") == self._ORIGIN or referer.startswith(self._ORIGIN + "/"):
+            return True
+        return self._host_of(referer) in ("localhost", "127.0.0.1", "::1")
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        if not self._ORIGIN or request.method in self._SAFE:
+            return await call_next(request)
+        path = request.url.path
+        if any(path.startswith(p) for p in self._SKIP_PREFIXES):
+            return await call_next(request)
+        origin = (request.headers.get("origin") or "").strip().rstrip("/")
+        referer = (request.headers.get("referer") or "").strip()
+        if origin:
+            if not self._origin_ok(origin):
+                return Response("CSRF check failed", status_code=403, media_type="text/plain")
+        elif referer:
+            if not self._referer_ok(referer):
+                return Response("CSRF check failed", status_code=403, media_type="text/plain")
+        # No Origin and no Referer → non-browser client; SameSite=lax still
+        # protects cookie-based sessions, so fail open rather than break clients.
+        return await call_next(request)
+
+
 from database import init_db, get_db
 from routers.categories_db import get_categories_for_workspace, get_all_attr_defs
 from routers.notes_db import search_notes
@@ -915,6 +975,9 @@ app = FastAPI(title="BookWorm", lifespan=lifespan)
 # BW_SECRET_KEY should be set in production; a random default means
 # sessions are invalidated on every server restart (fine for dev).
 app.add_middleware(AuthMiddleware)
+# CSRF defense-in-depth (Origin/Referer check on unsafe methods). Inert unless
+# BW_WEBAUTHN_ORIGIN is set; layered on top of the SameSite=lax cookie below.
+app.add_middleware(_CSRFMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("BW_SECRET_KEY", load_secret_key()),

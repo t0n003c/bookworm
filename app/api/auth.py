@@ -8,7 +8,7 @@ from app.api.auth_db import authenticate, create_user, user_count, get_user_by_u
 from app.api.totp_db import get_totp_status
 from app.api.webauthn_db import has_credentials
 from app.api.seed_uploads import seed_flower_uploads
-from app.api.rate_limit import check_rate_limit, record_failure, record_success
+from app.api.rate_limit import check_rate_limit, record_failure, record_success, client_ip
 from database import get_db
 from security import make_expires_at
 from templates_env import templates
@@ -82,7 +82,7 @@ async def login_submit(
     password: str = Form(...),
     stay_signed_in: str = Form(default=""),
 ):
-    rl_key = f"{request.client.host}:login"
+    rl_key = f"{client_ip(request)}:login"
     check_rate_limit(rl_key)
 
     user = await authenticate(username.strip(), password)
