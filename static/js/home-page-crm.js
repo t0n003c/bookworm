@@ -2651,7 +2651,11 @@ window.crmRelDelete = function(btn) {
   ov.id = 'crm-rel-del-confirm';
   ov.setAttribute('role', 'dialog');
   ov.setAttribute('aria-modal', 'true');
-  ov.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+  // z-index via inline style — the pre-built Tailwind bundle has no z-[10000]
+  // class, so relying on it left the overlay at z-index:auto (behind the z-50
+  // contact modal). 10000 sits above every app overlay (toast z-[9999]).
+  ov.className = 'fixed inset-0 flex items-center justify-center p-4';
+  ov.style.zIndex = '10000';
   ov.innerHTML =
     '<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-rel-del-cancel></div>' +
     '<div class="relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden bg-white dark:bg-zinc-900">' +
