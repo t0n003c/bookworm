@@ -32,31 +32,38 @@ var _crmQuery    = '';
 // is saved; saved values are picked up via the union over _crmContacts.
 var _CRM_REL_DEFAULTS = ['Friend','Family','Colleague','Mentor','Mentee',
                          'Acquaintance','Client','Partner','Classmate','Neighbor'];
-var _crmRelPool = [];
+var _crmRelPool    = [];   // custom values added this session
+var _crmRelRemoved = [];   // options deleted this session — never re-suggested
 
 /* Build the de-duplicated relationship option list shown in the dropdown:
    built-in defaults + every relationship value used across all contacts on the
    page + custom values added this session + the values already on this contact.
-   Defaults stay first; everything else preserves first-seen order. */
+   Defaults stay first; everything else preserves first-seen order.
+   Values in _crmRelRemoved are dropped from the suggestions, BUT the open
+   contact's own values are always kept (forced) so a contact already tagged
+   with a now-removed option can still see and un-tick it. */
 function _crmRelOptions(currentVals) {
   var out = [];
-  var seen = Object.create(null);
-  var push = function(v) {
+  var seen    = Object.create(null);
+  var removed = Object.create(null);
+  (_crmRelRemoved || []).forEach(function(v){ removed[v] = true; });
+  var push = function(v, force) {
     v = (v == null ? '' : String(v)).trim();
     if (!v || seen[v]) return;
+    if (!force && removed[v]) return;   // a removed option isn't suggested
     seen[v] = true; out.push(v);
   };
-  _CRM_REL_DEFAULTS.forEach(push);
+  _CRM_REL_DEFAULTS.forEach(function(v){ push(v); });
   (_crmContacts || []).forEach(function(c) {
     var arr = [];
     try { arr = JSON.parse(c && c.relationship || '[]'); } catch (e) {}
     if (!Array.isArray(arr)) {
       arr = (c && c.relationship || '').split(',').map(function(s){ return s.trim(); });
     }
-    arr.forEach(push);
+    arr.forEach(function(v){ push(v); });
   });
-  (_crmRelPool || []).forEach(push);
-  (currentVals || []).forEach(push);
+  (_crmRelPool || []).forEach(function(v){ push(v); });
+  (currentVals || []).forEach(function(v){ push(v, true); });   // open contact's own values: always
   return out;
 }
 
@@ -98,6 +105,8 @@ function initCrmPage(pid) {
   _crmSelected        = new Set();
   _crmDupOverride     = false;
   _crmProjects        = [];
+  _crmRelPool         = []; // session relationship options — reset per page
+  _crmRelRemoved      = []; // session removed relationship options — reset per page
   _crmBudWidgets      = null; // reset so it re-fetches if user changes page
   if (typeof _crmColPrefsLoaded !== 'undefined') _crmColPrefsLoaded = false; // reset on nav
   if (typeof _crmLoadColPrefs  === 'function')   _crmLoadColPrefs(pid);
@@ -2606,32 +2615,106 @@ window.crmMsPick = function(fid, val) {
 };
 
 /**
- * Permanently delete an option row from the relationship dropdown.
- * If the value was selected, it is also removed from the hidden JSON field
- * and the pill display is refreshed.
+ * Delete an option from the relationship dropdown — opens a styled confirmation
+ * first (a removal used to silently come back via the defaults / cross-contact
+ * union, so it never looked deleted).
+ *
+ * The confirm is a self-contained overlay appended to <body> (NOT _crmShowModal,
+ * which would replace the open contact modal and discard unsaved edits). On
+ * confirm, _crmRelDoDelete records the value in _crmRelRemoved so it's never
+ * suggested again this session, strips it from the open contact, and removes
+ * the row — matching the app's gradient-bar / trash-icon confirm style.
  */
 window.crmRelDelete = function(btn) {
   var row = btn.closest('[data-ms-val]');
   if (!row) return;
   var val = row.getAttribute('data-ms-val');
 
-  // Drop from the session pool so the removal sticks across reopens. (A value
-  // still saved on another contact reappears via the _crmContacts union — that
-  // is intended: an option in active use elsewhere isn't globally removable.)
+  // How many contacts currently carry this value?
+  var inUse = 0;
+  (_crmContacts || []).forEach(function(c) {
+    var arr = [];
+    try { arr = JSON.parse(c && c.relationship || '[]'); } catch (e) {}
+    if (!Array.isArray(arr)) arr = (c && c.relationship || '').split(',').map(function(s){ return s.trim(); });
+    if (arr.indexOf(val) !== -1) inUse++;
+  });
+  var usageNote = inUse > 0
+    ? 'It’s currently on <strong class="text-gray-900 dark:text-zinc-100">' + inUse
+      + ' contact' + (inUse === 1 ? '' : 's') + '</strong> — it’ll be cleared from this contact, '
+      + 'and other contacts keep their value but it won’t be suggested again.'
+    : 'It won’t appear in the relationship picker anymore.';
+
+  var prev = document.getElementById('crm-rel-del-confirm');
+  if (prev) prev.remove();
+
+  var ov = document.createElement('div');
+  ov.id = 'crm-rel-del-confirm';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.className = 'fixed inset-0 z-[10000] flex items-center justify-center p-4';
+  ov.innerHTML =
+    '<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-rel-del-cancel></div>' +
+    '<div class="relative w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden bg-white dark:bg-zinc-900">' +
+      '<div class="h-1.5 w-full bg-gradient-to-r from-[#ea1100] to-[#ffc220]"></div>' +
+      '<div class="p-6">' +
+        '<div class="flex items-start gap-3 mb-5">' +
+          '<span class="text-3xl leading-none flex-shrink-0">🗑️</span>' +
+          '<div>' +
+            '<h2 class="text-base font-bold text-gray-900 dark:text-zinc-100 mb-1">Remove relationship option?</h2>' +
+            '<p class="text-sm text-gray-600 dark:text-zinc-300">' +
+              'Remove <strong class="text-gray-900 dark:text-zinc-100">' + _crmEsc(val) + '</strong> '
+              + 'from the relationship picker? ' + usageNote +
+            '</p>' +
+          '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 justify-end">' +
+          '<button type="button" data-rel-del-cancel ' +
+            'class="px-4 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-zinc-600 ' +
+                   'text-gray-600 dark:text-zinc-300 hover:border-gray-400 transition">Cancel</button>' +
+          '<button type="button" data-rel-del-confirm ' +
+            'class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-[#ea1100] text-white ' +
+                   'hover:bg-red-700 transition">Remove option</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+
+  function _close() {
+    document.removeEventListener('keydown', _onKey, true);
+    ov.remove();
+  }
+  function _onKey(e) {
+    if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); _close(); }
+  }
+  ov.querySelectorAll('[data-rel-del-cancel]').forEach(function(el) {
+    el.addEventListener('click', function(e) { e.stopPropagation(); _close(); });
+  });
+  ov.querySelector('[data-rel-del-confirm]').addEventListener('click', function(e) {
+    e.stopPropagation();
+    _crmRelDoDelete(val);
+    _close();
+  });
+  document.addEventListener('keydown', _onKey, true);
+};
+
+/* Perform the relationship-option removal (after the confirm above). */
+function _crmRelDoDelete(val) {
+  // 1. Never suggest it again this session (covers defaults + cross-contact union).
+  if (_crmRelRemoved.indexOf(val) === -1) _crmRelRemoved.push(val);
+  // 2. Drop from the session add pool.
   var _pi = _crmRelPool.indexOf(val);
   if (_pi !== -1) _crmRelPool.splice(_pi, 1);
 
-  // Remove from selection if currently selected
+  // 3. Strip from the open contact's current selection + refresh the pill display.
   var hidden = document.getElementById('crm-rel-hidden');
   if (hidden) {
     var selected = [];
-    try { selected = JSON.parse(hidden.value); } catch {}
+    try { selected = JSON.parse(hidden.value); } catch (e) {}
+    if (!Array.isArray(selected)) selected = [];
     var idx = selected.indexOf(val);
     if (idx >= 0) {
       selected.splice(idx, 1);
       hidden.value = JSON.stringify(selected);
-
-      // Refresh pill display
       var display = document.getElementById('crm-ms-display-rel');
       if (display) {
         display.innerHTML = selected.length
@@ -2640,14 +2723,19 @@ window.crmRelDelete = function(btn) {
                 + 'bg-blue-50 dark:bg-blue-900/30 text-[#0053e2] dark:text-blue-300">'
                 + _crmEsc(v) + '</span>';
             }).join('')
-          : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">\u2014 None \u2014</span>';
+          : '<span class="text-xs text-gray-400 dark:text-zinc-500 italic">— None —</span>';
       }
     }
   }
 
-  // Remove the row itself from the DOM
-  row.remove();
-};
+  // 4. Remove the option row from the open dropdown.
+  var opts = document.getElementById('crm-rel-options');
+  if (opts) {
+    Array.prototype.slice.call(opts.querySelectorAll('[data-ms-val]')).forEach(function(r) {
+      if (r.getAttribute('data-ms-val') === val) r.remove();
+    });
+  }
+}
 
 /**
  * Add a custom relationship label. If a row for this value already exists in
@@ -2664,6 +2752,9 @@ window.crmRelAddCustom = function() {
   // available when other contacts are opened (the built-in relationship field
   // has no server-side option list to persist it).
   if (_crmRelPool.indexOf(val) === -1) _crmRelPool.push(val);
+  // Explicitly re-adding a value overrides a prior deletion this session.
+  var _ri = _crmRelRemoved.indexOf(val);
+  if (_ri !== -1) _crmRelRemoved.splice(_ri, 1);
 
   var opts = document.getElementById('crm-rel-options');
   if (opts) {
