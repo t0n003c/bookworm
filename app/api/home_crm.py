@@ -18,7 +18,7 @@ from app.api.attachments_db import UPLOAD_DIR
 from app.api.home_db import get_home_page
 from app.api.home_crm_db import (
     get_contacts, add_contact, update_contact, update_contact_pic,
-    delete_contact, reorder_contacts, upsert_field_value,
+    delete_contact, reorder_contacts, remove_relationship_value, upsert_field_value,
     get_fields, add_field, update_field, delete_field, reorder_fields,
     get_stages, add_stage, update_stage, delete_stage, reorder_stages,
     get_deals, add_deal, update_deal, move_deal, delete_deal,
@@ -239,6 +239,31 @@ async def remove_contact(request: Request, page_id: int, contact_id: int):
         return _err("not logged in", 401)
     except Exception as e:
         log.exception("remove_contact contact_id=%s", contact_id)
+        return _err(str(e), 500)
+
+
+@router.post("/crm/{page_id}/relationship-options/delete")
+async def remove_relationship_option(
+    request: Request, page_id: int,
+    value: str = Form(...),
+):
+    """Strip a relationship option from every contact on the page.
+
+    Backs the destructive 'Remove option' action in the contact modal's
+    relationship picker. Returns the refreshed contact list.
+    """
+    try:
+        uid = _uid(request)
+        if not await _crm_page(page_id, uid):
+            return _err("page not found", 404)
+        value = value.strip()
+        if not value:
+            return _err("value required")
+        return JSONResponse(await remove_relationship_value(page_id, uid, value))
+    except PermissionError:
+        return _err("not logged in", 401)
+    except Exception as e:
+        log.exception("remove_relationship_option page_id=%s", page_id)
         return _err(str(e), 500)
 
 

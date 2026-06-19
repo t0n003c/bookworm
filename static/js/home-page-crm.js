@@ -2633,15 +2633,17 @@ window.crmRelDelete = function(btn) {
   // How many contacts currently carry this value?
   var inUse = 0;
   (_crmContacts || []).forEach(function(c) {
-    var arr = [];
-    try { arr = JSON.parse(c && c.relationship || '[]'); } catch (e) {}
-    if (!Array.isArray(arr)) arr = (c && c.relationship || '').split(',').map(function(s){ return s.trim(); });
+    var raw = (c && c.relationship) || '';
+    var arr = null;
+    try { var p = JSON.parse(raw); if (Array.isArray(p)) arr = p; } catch (e) {}
+    if (arr === null) arr = raw ? raw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
     if (arr.indexOf(val) !== -1) inUse++;
   });
   var usageNote = inUse > 0
     ? 'It’s currently on <strong class="text-gray-900 dark:text-zinc-100">' + inUse
-      + ' contact' + (inUse === 1 ? '' : 's') + '</strong> — it’ll be cleared from this contact, '
-      + 'and other contacts keep their value but it won’t be suggested again.'
+      + ' contact' + (inUse === 1 ? '' : 's') + '</strong> — it will be permanently removed '
+      + 'from ' + (inUse === 1 ? 'that contact' : 'all of them') + ' and from the picker. '
+      + 'This can’t be undone.'
     : 'It won’t appear in the relationship picker anymore.';
 
   var prev = document.getElementById('crm-rel-del-confirm');
@@ -2701,15 +2703,19 @@ window.crmRelDelete = function(btn) {
   document.addEventListener('keydown', _onKey, true);
 };
 
-/* Perform the relationship-option removal (after the confirm above). */
-function _crmRelDoDelete(val) {
-  // 1. Never suggest it again this session (covers defaults + cross-contact union).
+/* Perform the relationship-option removal (after the confirm above).
+   Destructive: strips the value from EVERY contact server-side, then updates
+   the open modal + background view. */
+async function _crmRelDoDelete(val) {
+  // 1. Never suggest it again this session (covers built-in defaults and any
+  //    session-added option that no contact carries yet).
   if (_crmRelRemoved.indexOf(val) === -1) _crmRelRemoved.push(val);
   // 2. Drop from the session add pool.
   var _pi = _crmRelPool.indexOf(val);
   if (_pi !== -1) _crmRelPool.splice(_pi, 1);
 
-  // 3. Strip from the open contact's current selection + refresh the pill display.
+  // 3. Strip from the open contact's current (possibly unsaved) selection +
+  //    refresh the pill display.
   var hidden = document.getElementById('crm-rel-hidden');
   if (hidden) {
     var selected = [];
@@ -2738,6 +2744,21 @@ function _crmRelDoDelete(val) {
     Array.prototype.slice.call(opts.querySelectorAll('[data-ms-val]')).forEach(function(r) {
       if (r.getAttribute('data-ms-val') === val) r.remove();
     });
+  }
+
+  // 5. Strip the value from EVERY contact in the DB, then sync local state +
+  //    repaint the background view (table/gallery + toolbar filter list).
+  if (typeof _crmPid === 'undefined' || !_crmPid) return;
+  try {
+    var contacts = await _crmFetch('/home/crm/' + _crmPid + '/relationship-options/delete',
+      { method: 'POST', body: new URLSearchParams({ value: val }) });
+    if (Array.isArray(contacts)) {
+      _crmContacts = contacts;
+      if (typeof _crmRefreshContent === 'function') _crmRefreshContent();
+    }
+  } catch (e) {
+    if (typeof _bwToast === 'function')
+      _bwToast('Could not remove the option from all contacts: ' + (e && e.message || e), 'error');
   }
 }
 

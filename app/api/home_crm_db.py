@@ -10,6 +10,7 @@ ALL access via get_db() -- never raw aiosqlite.connect().
 from __future__ import annotations
 import asyncio
 import datetime
+import json
 from database import get_db
 import search_index
 
@@ -131,6 +132,48 @@ async def delete_contact(contact_id: int, page_id: int, user_id: int) -> list[di
             (contact_id, page_id, user_id),
         )
         await db.commit()
+    return await get_contacts(page_id, user_id)
+
+
+async def remove_relationship_value(page_id: int, user_id: int, value: str) -> list[dict]:
+    """Strip a relationship option from EVERY contact on the page.
+
+    The `relationship` column holds a JSON array of strings. For each contact
+    that contains `value`, drop it and persist the trimmed array. Only the
+    contacts that actually changed are re-indexed. Returns the refreshed list.
+    """
+    changed: list[int] = []
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, relationship FROM crm_contacts WHERE page_id=? AND user_id=?",
+            (page_id, user_id),
+        )
+        rows = await cur.fetchall()
+        for r in rows:
+            raw = r["relationship"] or ""
+            arr = None
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        arr = parsed
+                except (ValueError, TypeError):
+                    arr = None
+            if arr is None:
+                # Malformed JSON, non-list, or legacy comma string → CSV split.
+                arr = [s.strip() for s in str(raw).split(",") if s.strip()] if raw else []
+            if value in arr:
+                arr = [v for v in arr if v != value]
+                await db.execute(
+                    "UPDATE crm_contacts SET relationship=? "
+                    "WHERE id=? AND page_id=? AND user_id=?",
+                    (json.dumps(arr), r["id"], page_id, user_id),
+                )
+                changed.append(r["id"])
+        if changed:
+            await db.commit()
+    for cid in changed:
+        asyncio.create_task(search_index.upsert_contact_search_item(cid))
     return await get_contacts(page_id, user_id)
 
 
