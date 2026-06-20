@@ -66,6 +66,15 @@ async def add_feed(
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "invalid url"}, status_code=400)
 
+    # Normalise human URLs (YouTube channel/@handle, blog homepage) to a real
+    # RSS/Atom feed URL so the entry works in both the reader and the push loop.
+    # Falls back to the entered URL on any failure (see resolve_feed_url).
+    try:
+        from app.api.home import resolve_feed_url
+        url = await resolve_feed_url(url)
+    except Exception:
+        log.warning("[rss] feed-url resolution failed for %s — using as entered", url)
+
     feeds = await add_page_feed(page_id, uid, url, label, color, category)
     return JSONResponse(feeds)
 

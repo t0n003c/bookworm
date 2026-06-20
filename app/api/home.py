@@ -724,6 +724,44 @@ def _parse_yt_html(html_text: str) -> dict | None:
     return {'feed_title': feed_title, 'items': items} if items else None
 
 
+async def resolve_feed_url(url: str) -> str:
+    """Turn a human-facing URL into a direct RSS/Atom feed URL, best-effort.
+
+    Used at feed-add time so a YouTube channel / @handle / blog-homepage link
+    "just works" in both the reader and the push-notification loop. Reuses
+    _autodiscover_feed_url (YouTube channelId → feeds/videos.xml, plus generic
+    <link rel=alternate> discovery).
+
+    Returns the ORIGINAL url unchanged when:
+      • it's already a feed (response isn't HTML),
+      • nothing is discovered, or
+      • the discovered feed doesn't fetch+parse here (e.g. a proxy-blocked
+        YouTube feeds.xml) — so we never replace a working URL with a broken
+        one; the reader's existing channel-page scraping still handles it.
+    Never raises — resolution failure must not block adding a feed.
+    """
+    try:
+        loop = get_running_loop()
+        text, ct = await loop.run_in_executor(_POOL, partial(_fetch_raw, url))
+        sniff   = text.lstrip()[:300].lower()
+        is_html = ('html' in ct) or sniff.startswith('<!doctype') or '<html' in sniff
+        if not is_html:
+            return url                      # already a feed (XML)
+        discovered = _autodiscover_feed_url(text, url)
+        if not discovered or discovered == url:
+            return url
+        # Validate the discovered feed actually works in THIS environment
+        # before adopting it (no RSS Accept header — some servers 5xx on it).
+        try:
+            ftext, _ = await loop.run_in_executor(_POOL, partial(_fetch_raw, discovered, False))
+            _parse_rss(ftext)               # raises on non-feed / blocked HTML
+            return discovered
+        except Exception:
+            return url
+    except Exception:
+        return url
+
+
 @router.get('/rss')
 async def rss_proxy(url: str = Query(...)):
     """Fetch + parse an RSS/Atom feed server-side, with HTML autodiscovery fallback."""
