@@ -394,8 +394,12 @@ async def _rss_notif_loop():
 
                         await mark_rss_items_seen(feed_url, [_guid(it) for it in new_items if _guid(it)])
 
-                    except Exception:
-                        log.exception("[rss-push] error fetching %s", feed_url)
+                    except Exception as e:
+                        # A single feed failing to fetch/parse (e.g. a YouTube
+                        # channel page that isn't valid RSS XML) is an external
+                        # issue, not a bug — log a concise warning and skip it
+                        # rather than dumping a full traceback every cycle.
+                        log.warning("[rss-push] skipping feed %s: %s", feed_url, e)
 
                 for ep in stale_eps:
                     await delete_subscription(ep)

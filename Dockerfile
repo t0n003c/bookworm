@@ -30,9 +30,18 @@ COPY . .
 # Create the directory and a non-root user in one RUN layer to keep
 # the image lean.  The bookworm user owns /data so it can write the
 # DB and uploads without running as root.
+#
+# UID/GID are PINNED to 100:101. adduser --system would otherwise auto-assign
+# them, and the value can drift between base-image rebuilds — which silently
+# breaks bind-mount deployments (the host /data folder stays owned by the old
+# uid, so the new container can't access it). Pinning keeps a chowned bind mount
+# valid across rebuilds forever. 100/101 are the values --system picks on the
+# current python:3.13-slim base (gid 100 is taken by Debian's "users" group, so
+# the group lands on 101). If a future base ever occupies these, the build fails
+# loudly here — far preferable to a silent runtime lockout.
 RUN mkdir -p /data/uploads \
-    && addgroup --system bookworm \
-    && adduser --system --ingroup bookworm --no-create-home bookworm \
+    && addgroup --system --gid 101 bookworm \
+    && adduser --system --uid 100 --ingroup bookworm --no-create-home bookworm \
     && chown -R bookworm:bookworm /data /app
 
 USER bookworm
