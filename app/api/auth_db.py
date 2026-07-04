@@ -167,6 +167,27 @@ async def set_registration_open(value: bool) -> None:
         await db.commit()
 
 
+async def get_site_setting(key: str, default: str = "") -> str:
+    """Read a string value from site_settings."""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT value FROM site_settings WHERE key = ?",
+            (key,),
+        )
+        row = await cur.fetchone()
+        return row["value"] if row else default
+
+
+async def set_site_setting(key: str, value: str) -> None:
+    """Persist a string value to site_settings."""
+    async with get_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        await db.commit()
+
+
 async def get_unlimited_uploads(user_id: int) -> bool:
     """Return True when this specific user has the upload size cap lifted."""
     async with get_db() as db:

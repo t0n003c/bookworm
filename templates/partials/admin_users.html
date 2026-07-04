@@ -106,6 +106,97 @@
       </form>
     </div>
 
+    {# ── Bot challenge / Cloudflare Turnstile ─────────────────── #}
+    <form id="turnstile-settings-form"
+          class="px-3 py-3 space-y-3"
+          onsubmit="event.preventDefault(); adminPost('/account/settings/turnstile', this, this.querySelector('button[type=submit]'))">
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-xs font-semibold text-gray-700 dark:text-zinc-200">Bot Challenge</p>
+          <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+            Cloudflare Turnstile for public entry points.
+            {% if turnstile.configured %}
+              <span class="text-green-600 dark:text-green-400">Keys set.</span>
+            {% else %}
+              <span class="text-amber-600 dark:text-amber-400">Needs site key and secret key.</span>
+            {% endif %}
+          </p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer flex-shrink-0"
+               aria-label="Enable bot challenge">
+          <input
+            type="checkbox"
+            name="enabled"
+            value="on"
+            {% if turnstile.enabled %}checked{% endif %}
+            class="sr-only peer"
+          />
+          <span class="w-9 h-5 rounded-full transition-colors
+                        bg-gray-300 dark:bg-zinc-600
+                        peer-checked:bg-[#0053e2]
+                        peer-focus-visible:ring-2 peer-focus-visible:ring-[#0053e2] peer-focus-visible:ring-offset-1"
+          ></span>
+          <span class="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow
+                        transition-transform peer-checked:translate-x-4"
+          ></span>
+        </label>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label class="block">
+          <span class="block text-xs text-gray-500 dark:text-zinc-400 mb-1">Site key</span>
+          <input name="site_key" type="text" value="{{ turnstile.site_key }}"
+                 placeholder="0x4AAAA..."
+                 autocomplete="off" spellcheck="false"
+                 class="w-full px-2.5 py-1.5 text-xs rounded-lg
+                        border border-gray-300 dark:border-zinc-600
+                        bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                        focus:outline-none focus:ring-2 focus:ring-[#0053e2]" />
+        </label>
+        <label class="block">
+          <span class="block text-xs text-gray-500 dark:text-zinc-400 mb-1">Secret key</span>
+          <input name="secret_key" type="password"
+                 placeholder="{% if turnstile.secret_key %}Saved - leave blank to keep{% else %}Paste secret key{% endif %}"
+                 autocomplete="new-password" spellcheck="false"
+                 class="w-full px-2.5 py-1.5 text-xs rounded-lg
+                        border border-gray-300 dark:border-zinc-600
+                        bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100
+                        focus:outline-none focus:ring-2 focus:ring-[#0053e2]" />
+        </label>
+      </div>
+
+      <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-600 dark:text-zinc-300">
+        <label class="inline-flex items-center gap-1.5">
+          <input type="checkbox" name="protect_login" value="on" class="accent-[#0053e2]"
+                 {% if turnstile.locations.login %}checked{% endif %} />
+          Sign in
+        </label>
+        <label class="inline-flex items-center gap-1.5">
+          <input type="checkbox" name="protect_register" value="on" class="accent-[#0053e2]"
+                 {% if turnstile.locations.register %}checked{% endif %} />
+          Registration
+        </label>
+        <label class="inline-flex items-center gap-1.5">
+          <input type="checkbox" name="protect_demo" value="on" class="accent-[#0053e2]"
+                 {% if turnstile.locations.demo %}checked{% endif %} />
+          Try Demo
+        </label>
+        <label class="inline-flex items-center gap-1.5 text-red-600 dark:text-red-400">
+          <input type="checkbox" name="clear_secret" value="on" class="accent-red-600" />
+          Clear saved secret
+        </label>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="submit"
+                class="px-3 py-1.5 bg-[#0053e2] hover:bg-blue-700 text-white
+                       text-xs font-semibold rounded-lg transition
+                       focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
+          Save Bot Challenge
+        </button>
+      </div>
+    </form>
+
   </div>{# ── /Site Settings card ── #}
 
   <p class="text-xs font-semibold uppercase tracking-wider

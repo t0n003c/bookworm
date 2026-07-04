@@ -11,6 +11,7 @@ from app.api.auth_db import (
     get_user_by_username,
     get_registration_open,
     set_registration_open,
+    set_site_setting,
     get_unlimited_uploads,
     set_unlimited_uploads,
     update_username,
@@ -18,8 +19,10 @@ from app.api.auth_db import (
     get_user_llm_settings,
     set_user_llm_settings,
 )
+from app.api.turnstile import get_turnstile_config
 from templates_env import templates
 from app.api.seed_uploads import seed_flower_uploads
+from security import encrypt_secret
 
 router = APIRouter(prefix="/account")
 
@@ -39,6 +42,7 @@ async def _admin_ctx(request: Request, **extra) -> dict:
         "me":                me,
         "registration_open": await get_registration_open(),
         "unlimited_uploads": await get_unlimited_uploads(me),
+        "turnstile":         await get_turnstile_config(),
     }
     ctx.update(extra)
     return ctx
@@ -145,6 +149,45 @@ async def toggle_unlimited_uploads(
         await _admin_ctx(request,
             unlimited_uploads=new_value,
             success=f"Unlimited file uploads {label} for your account."),
+    )
+
+
+# ── admin: bot challenge / Turnstile settings ──────────────────────────
+
+@router.post("/settings/turnstile", response_class=HTMLResponse)
+async def save_turnstile_settings(
+    request: Request,
+    enabled: str = Form(default=""),
+    site_key: str = Form(default=""),
+    secret_key: str = Form(default=""),
+    clear_secret: str = Form(default=""),
+    protect_login: str = Form(default=""),
+    protect_register: str = Form(default=""),
+    protect_demo: str = Form(default=""),
+):
+    """Superadmin-only: persist Cloudflare Turnstile bot challenge settings."""
+    if not _is_superadmin(request):
+        return HTMLResponse("", status_code=403)
+
+    await set_site_setting("turnstile_enabled", "true" if enabled == "on" else "false")
+    await set_site_setting("turnstile_site_key", site_key.strip())
+    if clear_secret == "on":
+        await set_site_setting("turnstile_secret_key", "")
+    elif secret_key.strip():
+        await set_site_setting("turnstile_secret_key", encrypt_secret(secret_key.strip()))
+    await set_site_setting("turnstile_login_enabled", "true" if protect_login == "on" else "false")
+    await set_site_setting("turnstile_register_enabled", "true" if protect_register == "on" else "false")
+    await set_site_setting("turnstile_demo_enabled", "true" if protect_demo == "on" else "false")
+
+    cfg = await get_turnstile_config()
+    if cfg["enabled"] and not cfg["configured"]:
+        success = "Bot challenge saved, but it will not run until both keys are set."
+    else:
+        success = "Bot challenge settings saved."
+
+    return templates.TemplateResponse(
+        request, "partials/admin_users.html",
+        await _admin_ctx(request, success=success),
     )
 
 

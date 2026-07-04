@@ -33,6 +33,8 @@
   | `BW_RL_WINDOW_SECS` | `600` | Rate-limiter sliding window in seconds (10 min). Counts login / 2FA failures per `(IP, endpoint)` key. |
   | `BW_RL_MAX_FAILURES` | `5` | Max failures within `BW_RL_WINDOW_SECS` before an IP is hard-blocked. |
   | `BW_RL_LOCKOUT_SECS` | `900` | Hard-block duration in seconds (15 min) after `BW_RL_MAX_FAILURES` is reached. State is in-process only — resets on server restart; not shared across uvicorn workers. |
+  | `BW_TURNSTILE_SITE_KEY` | `` | Optional fallback/default Cloudflare Turnstile site key. Preferred live setup is now superadmin Account -> Admin -> Site Settings -> Bot Challenge, stored in `site_settings`; existing env-key installs stay enabled unless the DB setting turns Bot Challenge off. |
+  | `BW_TURNSTILE_SECRET_KEY` | `` | Optional fallback/default Cloudflare Turnstile secret key. Keep private. Preferred live setup is the account-window Bot Challenge setting; DB-saved secrets are Fernet-encrypted and env keys are used when DB keys are blank. |
   | `WORKERS` | `1` | Uvicorn workers (max ~4 with SQLite+WAL) |
 
 - **New env var added?** → also add it to `.env.example` AND `docker-compose.yml` (with comment). No exceptions.

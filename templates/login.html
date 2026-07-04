@@ -6,7 +6,7 @@
   <title>Sign In — BookWorm 📚</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1FAB1;</text></svg>">
   <link rel="stylesheet" href="/static/css/tailwind.css?v={{ static_v }}">
-  {% if bw_turnstile_site_key %}
+  {% if turnstile_login_site_key or turnstile_demo_site_key %}
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   {% endif %}
   <style>
@@ -67,7 +67,10 @@
   <!-- ── Demo button — top right (hidden when BW_DEMO_ENABLED=false) ── -->
   {% if demo_enabled %}
   <div class="fixed top-3 right-3 z-50 sm:top-4 sm:right-4">
-    <form method="post" action="/demo/start">
+    <form method="post" action="/demo/start" class="flex flex-col items-end gap-2">
+      {% if turnstile_demo_site_key %}
+      <div class="cf-turnstile" data-sitekey="{{ turnstile_demo_site_key }}" data-theme="dark" data-size="compact"></div>
+      {% endif %}
       <button type="submit"
               class="group flex items-center gap-1.5 sm:gap-2
                      px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl
@@ -225,9 +228,9 @@
         </label>
 
         <!-- Cloudflare Turnstile bot challenge (only when configured) -->
-        {% if bw_turnstile_site_key %}
+        {% if turnstile_login_site_key %}
         <div class="flex justify-center">
-          <div class="cf-turnstile" data-sitekey="{{ bw_turnstile_site_key }}" data-theme="dark"></div>
+          <div class="cf-turnstile" data-sitekey="{{ turnstile_login_site_key }}" data-theme="dark"></div>
         </div>
         {% endif %}
 

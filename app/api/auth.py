@@ -9,7 +9,7 @@ from app.api.totp_db import get_totp_status
 from app.api.webauthn_db import has_credentials
 from app.api.seed_uploads import seed_flower_uploads
 from app.api.rate_limit import check_rate_limit, record_failure, record_success, client_ip
-from app.api.turnstile import verify_turnstile
+from app.api.turnstile import turnstile_site_key_for, verify_turnstile
 from database import get_db
 from security import make_expires_at
 from templates_env import templates
@@ -63,7 +63,12 @@ async def setup_submit(
 # ── Login ─────────────────────────────────────────────────────
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, created: int = 0, registered: int = 0):
+async def login_page(
+    request: Request,
+    created: int = 0,
+    registered: int = 0,
+    turnstile: int = 0,
+):
     """Show login form; redirect to /setup if no account exists yet."""
     if await user_count() == 0:
         return RedirectResponse("/setup", status_code=302)
@@ -72,6 +77,9 @@ async def login_page(request: Request, created: int = 0, registered: int = 0):
         "registered":        bool(registered),
         "demo_enabled":      os.getenv("BW_DEMO_ENABLED", "true").lower() == "true",
         "registration_open": await get_registration_open(),
+        "turnstile_login_site_key": await turnstile_site_key_for("login"),
+        "turnstile_demo_site_key": await turnstile_site_key_for("demo"),
+        "error": "Please complete the verification challenge and try again." if turnstile else "",
     }
     return templates.TemplateResponse(request, "login.html", ctx)
 
@@ -89,12 +97,16 @@ async def login_submit(
 
     # Cloudflare Turnstile bot challenge (no-op unless configured). Checked
     # before credentials so bots are stopped without touching the auth path.
-    if not await verify_turnstile(turnstile_token, client_ip(request)):
+    if not await verify_turnstile(turnstile_token, client_ip(request), "login"):
         return templates.TemplateResponse(
             request,
             "login.html",
             {"error": "Please complete the verification challenge and try again.",
-             "username": username},
+             "username": username,
+             "registration_open": await get_registration_open(),
+             "demo_enabled": os.getenv("BW_DEMO_ENABLED", "true").lower() == "true",
+             "turnstile_login_site_key": await turnstile_site_key_for("login"),
+             "turnstile_demo_site_key": await turnstile_site_key_for("demo")},
             status_code=400,
         )
 
@@ -104,7 +116,12 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"error": "Invalid username or password.", "username": username},
+            {"error": "Invalid username or password.",
+             "username": username,
+             "registration_open": await get_registration_open(),
+             "demo_enabled": os.getenv("BW_DEMO_ENABLED", "true").lower() == "true",
+             "turnstile_login_site_key": await turnstile_site_key_for("login"),
+             "turnstile_demo_site_key": await turnstile_site_key_for("demo")},
             status_code=401,
         )
     record_success(rl_key)
@@ -157,7 +174,11 @@ async def register_page(request: Request):
     """Show the self-service sign-up form."""
     if not await get_registration_open():
         return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse(request, "register.html", {})
+    return templates.TemplateResponse(
+        request,
+        "register.html",
+        {"turnstile_register_site_key": await turnstile_site_key_for("register")},
+    )
 
 
 @router.post("/register", response_class=HTMLResponse)
@@ -171,11 +192,12 @@ async def register_submit(
     if not await get_registration_open():
         return RedirectResponse("/login", status_code=302)
     # Cloudflare Turnstile bot challenge (no-op unless configured).
-    if not await verify_turnstile(turnstile_token, client_ip(request)):
+    if not await verify_turnstile(turnstile_token, client_ip(request), "register"):
         return templates.TemplateResponse(
             request, "register.html",
             {"error": "Please complete the verification challenge and try again.",
-             "username": username},
+             "username": username,
+             "turnstile_register_site_key": await turnstile_site_key_for("register")},
             status_code=400,
         )
     error = None
@@ -193,7 +215,8 @@ async def register_submit(
     if error:
         return templates.TemplateResponse(
             request, "register.html",
-            {"error": error, "username": username},
+            {"error": error, "username": username,
+             "turnstile_register_site_key": await turnstile_site_key_for("register")},
             status_code=400,
         )
     user_id = await create_user(username, password, role="user")

@@ -16,13 +16,15 @@ import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from database import get_db
 from app.api.attachments_db import UPLOAD_DIR
 from app.api.auth_db import delete_user, hash_password
+from app.api.rate_limit import client_ip
 from app.api.seed_uploads import seed_flower_uploads
+from app.api.turnstile import verify_turnstile
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -431,10 +433,15 @@ async def demo_cancel_end(request: Request) -> Response:
 
 
 @router.post("/demo/start")
-async def demo_start(request: Request):
+async def demo_start(
+    request: Request,
+    turnstile_token: str = Form(default="", alias="cf-turnstile-response"),
+):
     """Spin up a temporary demo user, seed example data, and log them in."""
     if not _DEMO_ENABLED:
         return RedirectResponse("/login", status_code=302)
+    if not await verify_turnstile(turnstile_token, client_ip(request), "demo"):
+        return RedirectResponse("/login?turnstile=1", status_code=302)
     purged = await purge_old_demo_users()
     if purged:
         log.info("Demo: purged %d stale demo user(s)", purged)
