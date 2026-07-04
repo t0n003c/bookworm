@@ -149,28 +149,55 @@
     if (bulkForm) {
       bulkForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        if (bulkMsg) bulkMsg.textContent = 'Importing ZIP...';
+        if (bulkMsg) bulkMsg.textContent = 'Preparing ZIP...';
         var fd = new FormData(bulkForm);
-        fetch('/thiings/bulk-upload', {
-          method: 'POST',
-          body: fd,
-          credentials: 'same-origin',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        }).then(function (r) {
-          return r.json().then(function (j) { return { ok: r.ok, body: j }; });
-        }).then(function (res) {
-          if (!res.ok || !res.body || !res.body.ok) {
-            if (bulkMsg) bulkMsg.textContent = (res.body && res.body.error) || 'Import failed.';
+        var fileInput = bulkForm.querySelector('input[type="file"]');
+        var file = fileInput && fileInput.files && fileInput.files[0];
+        if (file && file.size > 500 * 1024 * 1024) {
+          if (bulkMsg) bulkMsg.textContent = 'ZIP must be 500 MB or smaller.';
+          return;
+        }
+        if (file && file.size > 95 * 1024 * 1024 && bulkMsg) {
+          bulkMsg.textContent = 'Large ZIP selected. Uploading may fail behind a 100 MB proxy limit...';
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/thiings/bulk-upload', true);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.upload.onprogress = function (ev) {
+          if (!bulkMsg || !ev.lengthComputable) return;
+          var pct = Math.max(0, Math.min(99, Math.round((ev.loaded / ev.total) * 100)));
+          bulkMsg.textContent = 'Uploading ZIP... ' + pct + '%';
+        };
+        xhr.onload = function () {
+          var body = null;
+          try {
+            body = JSON.parse(xhr.responseText || '{}');
+          } catch (err) {
+            body = null;
+          }
+          if (xhr.status === 413) {
+            if (bulkMsg) bulkMsg.textContent = 'ZIP is too large for the server/proxy upload limit.';
+            return;
+          }
+          if (xhr.status < 200 || xhr.status >= 300 || !body || !body.ok) {
+            if (bulkMsg) bulkMsg.textContent = (body && body.error) || ('Import failed. HTTP ' + xhr.status + '.');
             return;
           }
           _items = null;
           _loadPromise = null;
-          if (bulkMsg) bulkMsg.textContent = 'Imported ' + res.body.imported + ' icons' +
-            (res.body.skipped ? ' · skipped ' + res.body.skipped : '') + '.';
+          if (bulkMsg) bulkMsg.textContent = 'Imported ' + body.imported + ' icons' +
+            (body.skipped ? ' · skipped ' + body.skipped : '') + '.';
           renderGrid(el, query, onPick, opts);
-        }).catch(function () {
+        };
+        xhr.onerror = function () {
           if (bulkMsg) bulkMsg.textContent = 'Import failed.';
-        });
+        };
+        xhr.ontimeout = function () {
+          if (bulkMsg) bulkMsg.textContent = 'Import timed out. Try a smaller ZIP or import on the local network.';
+        };
+        xhr.timeout = 20 * 60 * 1000;
+        xhr.send(fd);
       });
     }
     if (!form) return;
