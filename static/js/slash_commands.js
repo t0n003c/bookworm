@@ -244,11 +244,35 @@ function _thiIconHtml(item) {
   var src = String(item && item.src || ('/thiings/icons/' + slug + '.png'));
   return '<img src="' + _thiEsc(src) + '" alt="' + _thiEsc(name) + '" ' +
     'class="bw-icon-img" data-bw-thiing="' + _thiEsc(slug) + '" ' +
+    'style="display:inline-block;vertical-align:-0.18em" ' +
     'loading="lazy" decoding="async">';
 }
 
 function _thiInlineHtml(item) {
   return _thiIconHtml(item) + '&nbsp;';
+}
+
+function _thiInsertInlineAtRange(range, item) {
+  if (!range) return false;
+  var tmp = document.createElement('span');
+  tmp.innerHTML = _thiInlineHtml(item);
+  var frag = document.createDocumentFragment();
+  var last = null;
+  while (tmp.firstChild) {
+    last = tmp.firstChild;
+    frag.appendChild(last);
+  }
+  range.deleteContents();
+  range.insertNode(frag);
+  if (last) {
+    var after = document.createRange();
+    after.setStartAfter(last);
+    after.collapse(true);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(after);
+  }
+  return true;
 }
 
 function _thiCommandFromItem(item) {
@@ -261,6 +285,7 @@ function _thiCommandFromItem(item) {
     snippet: html + ' ',
     ceHtml: _thiInlineHtml(item),
     _thiing: true,
+    _thiingItem: item,
   };
 }
 
@@ -275,23 +300,7 @@ function _thiInsert(item) {
   if (ce) {
     ce.focus();
     if (actRange) {
-      var tmp = document.createElement('span');
-      tmp.innerHTML = _thiInlineHtml(item);
-      var frag = document.createDocumentFragment();
-      var last = null;
-      while (tmp.firstChild) {
-        last = tmp.firstChild;
-        frag.appendChild(last);
-      }
-      actRange.insertNode(frag);
-      if (last) {
-        var after = document.createRange();
-        after.setStartAfter(last);
-        after.collapse(true);
-        var sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(after);
-      }
+      _thiInsertInlineAtRange(actRange, item);
     } else {
       document.execCommand('insertHTML', false, _thiInlineHtml(item));
     }
@@ -1173,6 +1182,16 @@ function _cePrefixBeforeCaret(ce) {
   } catch (_) {
     return '';
   }
+}
+
+function _ceSlashContext(prefix) {
+  const text = String(prefix || '').replace(/\u00a0/g, ' ');
+  const slash = text.lastIndexOf('/');
+  if (slash < 0) return null;
+  if (slash > 0 && !/\s/.test(text.charAt(slash - 1))) return null;
+  const query = text.slice(slash + 1);
+  if (/\s/.test(query)) return null;
+  return { query: query };
 }
 
 
@@ -2165,6 +2184,20 @@ function _applyCE(cmd) {
         sel.modify('extend', 'backward', 'character');
       }
     }
+    if (cmd._thiing && cmd._thiingItem) {
+      let insertRange = null;
+      if (deleteRange) {
+        deleteRange.deleteContents();
+        insertRange = deleteRange;
+      } else {
+        if (charsToDelete > 0) document.execCommand('delete');
+        if (sel.rangeCount) insertRange = sel.getRangeAt(0).cloneRange();
+      }
+      if (insertRange) _thiInsertInlineAtRange(insertRange, cmd._thiingItem);
+      ce.dispatchEvent(new Event('input'));
+      return;
+    }
+
     // Skip the delete entirely when nothing was typed (button-opened palette) —
     // otherwise execCommand('delete') on the collapsed caret eats a real char.
     if (charsToDelete > 0) document.execCommand('delete');
@@ -2295,7 +2328,7 @@ function _attachTextarea(ta) {
     // e.g.  "/"  "- /"  "* /"  "+ /"  "• /"  "1. /"  "  - /"  etc.
     const lineStart  = text.lastIndexOf('\n', pos - 2) + 1;
     const linePrefix = text.slice(lineStart, pos - 1);  // content before '/'
-    if (!/^(\s*[-*+•]\s+|\s*\d+\.\s+)?$/.test(linePrefix)) return;
+    if (!/^(\s*[-*+•]\s+|\s*\d+\.\s+)?$/.test(linePrefix) && !/\s$/.test(linePrefix)) return;
     _open('ta', { ta, slashPos: pos - 1 });
   });
 
@@ -2389,12 +2422,13 @@ function _attachCE(ce) {
 
   ce.addEventListener('input', () => {
     const prefix = _cePrefixBeforeCaret(ce); // text on this line up to caret
-    const inSlashCtx = prefix.startsWith('/') && !prefix.includes('\n');
+    const slashCtx = _ceSlashContext(prefix);
+    const inSlashCtx = !!slashCtx;
 
     if (_sc.open && _sc.mode === 'ce') {
       // ── Palette is open ──────────────────────────────────────────────
       if (!inSlashCtx) { _close(); return; }
-      _sc.query = prefix.slice(1); // strip leading '/'
+      _sc.query = slashCtx.query; // strip the active slash token
       _render();
       return;
     }
@@ -2403,11 +2437,11 @@ function _attachCE(ce) {
     if (inSlashCtx) {
       // If prefix shrank back to just '/', user backspaced past where they
       // hit Escape — let them trigger the palette again.
-      if (_sc.ceSuppressed && prefix === '/') _sc.ceSuppressed = false;
+      if (_sc.ceSuppressed && slashCtx.query === '') _sc.ceSuppressed = false;
 
       if (!_sc.ceSuppressed) {
         // Open (or re-open) palette, inferring query from current prefix
-        _open('ce', { ce, query: prefix.slice(1) });
+        _open('ce', { ce, query: slashCtx.query });
       }
     } else {
       // Not in slash context at all — clear suppression so a fresh '/' works
