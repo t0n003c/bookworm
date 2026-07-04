@@ -188,7 +188,8 @@
             return;
           }
           serverSelect.innerHTML = zips.map(function (z) {
-            return '<option value="' + _esc(z.name) + '">' + _esc(z.name) + ' (' + fmtBytes(z.size) + ')</option>';
+            return '<option value="' + _esc(z.name) + '">' + _esc(z.name) + ' (' + fmtBytes(z.size) + ')' +
+              (z.readable === false ? ' - not readable' : '') + '</option>';
           }).join('');
           if (serverMsg) serverMsg.textContent = 'Found ' + zips.length + ' ZIP file(s).';
         })

@@ -7,6 +7,7 @@ supported through static/data/thiings-icons.json and static/img/thiings.
 from __future__ import annotations
 
 import json
+import os
 import re
 import zipfile
 from pathlib import Path
@@ -323,7 +324,7 @@ async def list_server_thiings_zips(request: Request):
             stat = path.stat()
         except OSError:
             continue
-        zips.append({"name": path.name, "size": stat.st_size})
+        zips.append({"name": path.name, "size": stat.st_size, "readable": os.access(path, os.R_OK)})
     return JSONResponse({
         "ok": True,
         "dir": str(_IMPORT_DIR),
@@ -355,8 +356,11 @@ async def import_server_thiings_zip(
             result = _import_zip_obj(fh)
     except zipfile.BadZipFile:
         return JSONResponse({"error": "That file is not a valid ZIP."}, status_code=400)
-    except OSError:
-        return JSONResponse({"error": "BookWorm could not read that ZIP file."}, status_code=400)
+    except OSError as exc:
+        reason = getattr(exc, "strerror", None) or exc.__class__.__name__
+        return JSONResponse({
+            "error": f"BookWorm could not read that ZIP file: {reason}. Check file permissions in the imports folder.",
+        }, status_code=400)
 
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=int(result.get("status") or 400))
