@@ -5,6 +5,7 @@
   var _loadPromise = null;
   var _manifestUrl = '/thiings/manifest';
   var _gridSeq = 0;
+  var _lastImportStatus = '';
 
   function _esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -98,20 +99,26 @@
       '<div class="flex items-center justify-between gap-2">' +
         '<span class="text-[11px] text-gray-500 dark:text-zinc-400">Add licensed Thiings icons</span>' +
         '<div class="flex items-center gap-2">' +
-          '<button type="button" data-thi-bulk-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Import ZIP</button>' +
+          '<button type="button" data-thi-bulk-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">ZIP import options</button>' +
           '<button type="button" data-thi-upload-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Add one</button>' +
         '</div>' +
       '</div>' +
       '<form data-thi-bulk-form="' + id + '" class="hidden mt-2 flex flex-col gap-2">' +
+        '<p class="rounded bg-blue-50 dark:bg-blue-900/20 px-2 py-1 text-[11px] text-blue-700 dark:text-blue-300">' +
+          'Two separate options: upload a ZIP from this browser, or import a ZIP that is already copied onto the NAS/server.' +
+        '</p>' +
+        '<div class="rounded border border-gray-100 dark:border-zinc-800 p-2 space-y-2">' +
+          '<p class="text-[11px] font-semibold text-gray-600 dark:text-zinc-300">Option A - upload ZIP from this browser</p>' +
         '<input name="file" type="file" accept=".zip,application/zip,application/x-zip-compressed" required ' +
           'class="w-full text-xs text-gray-500 dark:text-zinc-400 file:mr-2 file:rounded file:border-0 file:bg-[#0053e2] file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white">' +
         '<div class="flex items-center justify-between gap-2">' +
           '<span data-thi-bulk-msg="' + id + '" class="text-[11px] text-gray-400 dark:text-zinc-500">Imports images and JSON metadata when present.</span>' +
-          '<button type="submit" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Import</button>' +
+          '<button type="submit" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Upload and Import</button>' +
+        '</div>' +
         '</div>' +
         '<div class="rounded border border-gray-100 dark:border-zinc-800 p-2">' +
           '<div class="flex items-center justify-between gap-2">' +
-            '<span class="text-[11px] text-gray-500 dark:text-zinc-400">NAS/server ZIP import</span>' +
+            '<span class="text-[11px] font-semibold text-gray-600 dark:text-zinc-300">Option B - import ZIP already on NAS/server</span>' +
             '<button type="button" data-thi-server-refresh="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Refresh</button>' +
           '</div>' +
           '<div class="mt-2 flex flex-wrap items-center gap-2">' +
@@ -120,8 +127,9 @@
             '</select>' +
             '<button type="button" data-thi-server-import="' + id + '" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Import Selected</button>' +
           '</div>' +
-          '<p data-thi-server-msg="' + id + '" class="mt-1 text-[11px] text-gray-400 dark:text-zinc-500">Copy ZIPs to the BookWorm data folder: thiings/imports.</p>' +
+          '<p data-thi-server-msg="' + id + '" class="mt-1 text-[11px] text-gray-400 dark:text-zinc-500">First copy the ZIP into the NAS container folder, then click Refresh.</p>' +
         '</div>' +
+        '<p data-thi-last-status="' + id + '" class="hidden rounded bg-green-50 dark:bg-green-900/20 px-2 py-1 text-[11px] text-green-700 dark:text-green-300"></p>' +
       '</form>' +
       '<form data-thi-upload-form="' + id + '" class="hidden mt-2 flex flex-col gap-2">' +
         '<input name="name" type="text" placeholder="Icon name" maxlength="120" required ' +
@@ -149,6 +157,11 @@
     var serverSelect = el.querySelector('[data-thi-server-select="' + id + '"]');
     var serverImport = el.querySelector('[data-thi-server-import="' + id + '"]');
     var serverMsg = el.querySelector('[data-thi-server-msg="' + id + '"]');
+    var lastStatus = el.querySelector('[data-thi-last-status="' + id + '"]');
+    if (lastStatus && _lastImportStatus) {
+      lastStatus.textContent = _lastImportStatus;
+      lastStatus.classList.remove('hidden');
+    }
     function fmtBytes(n) {
       n = Number(n || 0);
       if (n < 1024) return n + ' B';
@@ -171,7 +184,7 @@
           }
           if (!zips.length) {
             serverSelect.innerHTML = '<option value="">No ZIPs found</option>';
-            if (serverMsg) serverMsg.textContent = 'Copy ZIPs to: ' + (res.body.dir || 'thiings/imports');
+            if (serverMsg) serverMsg.textContent = 'No ZIPs found. Copy the ZIP to: ' + (res.body.dir || '/data/thiings/imports');
             return;
           }
           serverSelect.innerHTML = zips.map(function (z) {
@@ -233,9 +246,10 @@
           }
           _items = null;
           _loadPromise = null;
-          if (serverMsg) serverMsg.textContent = 'Imported ' + res.body.imported + ' icons' +
+          _lastImportStatus = 'Imported ' + res.body.imported + ' icons from ' + name +
             (res.body.skipped ? ' - skipped ' + res.body.skipped : '') + '.';
-          renderGrid(el, query, onPick, opts);
+          if (serverMsg) serverMsg.textContent = _lastImportStatus;
+          setTimeout(function () { renderGrid(el, query, onPick, opts); }, 900);
         }).catch(function () {
           serverImport.disabled = false;
           if (serverMsg) serverMsg.textContent = 'Import failed.';
@@ -282,9 +296,10 @@
           }
           _items = null;
           _loadPromise = null;
-          if (bulkMsg) bulkMsg.textContent = 'Imported ' + body.imported + ' icons' +
+          _lastImportStatus = 'Imported ' + body.imported + ' icons from browser upload' +
             (body.skipped ? ' · skipped ' + body.skipped : '') + '.';
-          renderGrid(el, query, onPick, opts);
+          if (bulkMsg) bulkMsg.textContent = _lastImportStatus;
+          setTimeout(function () { renderGrid(el, query, onPick, opts); }, 900);
         };
         xhr.onerror = function () {
           if (bulkMsg) bulkMsg.textContent = 'Import failed.';
