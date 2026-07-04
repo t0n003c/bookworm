@@ -250,11 +250,35 @@ def _file_mode(path: Path) -> str:
         return "unknown"
 
 
-def _permissions_hint(path: Path) -> str:
+def _read_permissions_hint(path: Path) -> str:
     return (
         f"BookWorm can see {path}, but the Docker app user cannot read it. "
         "Make the ZIP readable by UID 100 / GID 101, or run chmod 644 on the ZIP file."
     )
+
+
+def _write_permissions_hint(path: Path) -> str:
+    return (
+        f"BookWorm cannot write to {path}. "
+        "Make BW_DATA_DIR/thiings owned by UID 100 / GID 101, or make the folder writable by the Docker app user."
+    )
+
+
+def _ensure_runtime_writable(include_imports: bool = False) -> str | None:
+    directories = [_DATA_DIR, _ICON_DIR]
+    if include_imports:
+        directories.append(_IMPORT_DIR)
+    for directory in directories:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            reason = getattr(exc, "strerror", None) or exc.__class__.__name__
+            return f"{_write_permissions_hint(directory)} Reason: {reason}. Current mode: {_file_mode(directory)}."
+        if not os.access(directory, os.W_OK | os.X_OK):
+            return f"{_write_permissions_hint(directory)} Current mode: {_file_mode(directory)}."
+    if _MANIFEST.exists() and not os.access(_MANIFEST, os.W_OK):
+        return f"{_write_permissions_hint(_MANIFEST)} Current mode: {_file_mode(_MANIFEST)}."
+    return None
 
 
 @router.get("/manifest")
@@ -306,6 +330,8 @@ async def upload_thiing_icon(
     current_user_id(request, detail=None)
     if guard := _demo_guard(request):
         return guard
+    if writable_error := _ensure_runtime_writable():
+        return JSONResponse({"error": writable_error}, status_code=400)
 
     raw = await file.read(_MAX_ICON_BYTES + 1)
     if len(raw) > _MAX_ICON_BYTES:
@@ -346,6 +372,8 @@ async def bulk_upload_thiings(
     current_user_id(request, detail=None)
     if guard := _demo_guard(request):
         return guard
+    if writable_error := _ensure_runtime_writable():
+        return JSONResponse({"error": writable_error}, status_code=400)
 
     if getattr(file, "size", None) and file.size > _MAX_ZIP_BYTES:
         return JSONResponse({"error": "ZIP must be 500 MB or smaller."}, status_code=400)
@@ -379,7 +407,7 @@ async def list_server_thiings_zips(request: Request):
             "size": stat.st_size,
             "readable": readable,
             "mode": oct(stat.st_mode & 0o777),
-            "hint": "" if readable else _permissions_hint(path),
+            "hint": "" if readable else _read_permissions_hint(path),
         })
     return JSONResponse({
         "ok": True,
@@ -404,6 +432,12 @@ async def import_server_thiings_zip(
     path = _IMPORT_DIR / clean_name
     if not path.exists() or not path.is_file():
         return JSONResponse({"error": "ZIP was not found in the imports folder."}, status_code=404)
+    if not os.access(path, os.R_OK):
+        return JSONResponse({
+            "error": f"{_read_permissions_hint(path)} Current file mode: {_file_mode(path)}.",
+        }, status_code=400)
+    if writable_error := _ensure_runtime_writable(include_imports=True):
+        return JSONResponse({"error": writable_error}, status_code=400)
     if path.stat().st_size > _MAX_ZIP_BYTES:
         return JSONResponse({"error": "ZIP must be 500 MB or smaller."}, status_code=400)
 
@@ -417,7 +451,7 @@ async def import_server_thiings_zip(
         return JSONResponse({
             "error": (
                 f"BookWorm could not read that ZIP file: {reason}. "
-                f"{_permissions_hint(path)} Current file mode: {_file_mode(path)}."
+                f"{_read_permissions_hint(path)} Current file mode: {_file_mode(path)}."
             ),
         }, status_code=400)
     except Exception as exc:
