@@ -243,6 +243,20 @@ def _import_zip_obj(zip_obj) -> dict:
     return {"ok": True, "imported": imported, "skipped": skipped, "deduped": deduped}
 
 
+def _file_mode(path: Path) -> str:
+    try:
+        return oct(path.stat().st_mode & 0o777)
+    except OSError:
+        return "unknown"
+
+
+def _permissions_hint(path: Path) -> str:
+    return (
+        f"BookWorm can see {path}, but the Docker app user cannot read it. "
+        "Make the ZIP readable by UID 100 / GID 101, or run chmod 644 on the ZIP file."
+    )
+
+
 @router.get("/manifest")
 async def thiings_manifest():
     """Return bundled + runtime Thiings icons."""
@@ -359,7 +373,14 @@ async def list_server_thiings_zips(request: Request):
             stat = path.stat()
         except OSError:
             continue
-        zips.append({"name": path.name, "size": stat.st_size, "readable": os.access(path, os.R_OK)})
+        readable = os.access(path, os.R_OK)
+        zips.append({
+            "name": path.name,
+            "size": stat.st_size,
+            "readable": readable,
+            "mode": oct(stat.st_mode & 0o777),
+            "hint": "" if readable else _permissions_hint(path),
+        })
     return JSONResponse({
         "ok": True,
         "dir": str(_IMPORT_DIR),
@@ -394,7 +415,10 @@ async def import_server_thiings_zip(
     except OSError as exc:
         reason = getattr(exc, "strerror", None) or exc.__class__.__name__
         return JSONResponse({
-            "error": f"BookWorm could not read that ZIP file: {reason}. Check file permissions in the imports folder.",
+            "error": (
+                f"BookWorm could not read that ZIP file: {reason}. "
+                f"{_permissions_hint(path)} Current file mode: {_file_mode(path)}."
+            ),
         }, status_code=400)
     except Exception as exc:
         log.exception("Thiings server ZIP import failed for %s", clean_name)

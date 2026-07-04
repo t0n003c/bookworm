@@ -158,6 +158,7 @@
     var serverImport = el.querySelector('[data-thi-server-import="' + id + '"]');
     var serverMsg = el.querySelector('[data-thi-server-msg="' + id + '"]');
     var lastStatus = el.querySelector('[data-thi-last-status="' + id + '"]');
+    var serverZipMeta = {};
     if (lastStatus && _lastImportStatus) {
       lastStatus.textContent = _lastImportStatus;
       lastStatus.classList.remove('hidden');
@@ -170,6 +171,7 @@
     }
     function loadServerZips() {
       if (!serverSelect) return;
+      serverZipMeta = {};
       if (serverMsg) serverMsg.textContent = 'Checking server import folder...';
       fetch('/thiings/server-zips', { credentials: 'same-origin', cache: 'no-cache' })
         .then(function (r) {
@@ -188,10 +190,17 @@
             return;
           }
           serverSelect.innerHTML = zips.map(function (z) {
+            serverZipMeta[z.name] = z;
             return '<option value="' + _esc(z.name) + '">' + _esc(z.name) + ' (' + fmtBytes(z.size) + ')' +
-              (z.readable === false ? ' - not readable' : '') + '</option>';
+              (z.readable === false ? ' - not readable' : '') +
+              (z.mode ? ' - ' + _esc(z.mode) : '') + '</option>';
           }).join('');
-          if (serverMsg) serverMsg.textContent = 'Found ' + zips.length + ' ZIP file(s).';
+          if (serverMsg) {
+            var selected = serverZipMeta[serverSelect.value || ''];
+            serverMsg.textContent = selected && selected.readable === false
+              ? (selected.hint || 'BookWorm can see this ZIP, but cannot read it. Make the file readable by UID 100/GID 101 or run chmod 644 on the ZIP.')
+              : 'Found ' + zips.length + ' ZIP file(s).';
+          }
         })
         .catch(function () {
           serverSelect.innerHTML = '<option value="">Could not load ZIPs</option>';
@@ -219,12 +228,27 @@
         loadServerZips();
       });
     }
+    if (serverSelect) {
+      serverSelect.addEventListener('change', function () {
+        var info = serverZipMeta[serverSelect.value || ''];
+        if (info && info.readable === false && serverMsg) {
+          serverMsg.textContent = info.hint || 'BookWorm can see this ZIP, but cannot read it. Make the file readable by UID 100/GID 101 or run chmod 644 on the ZIP.';
+        }
+      });
+    }
     if (serverImport && serverSelect) {
       serverImport.addEventListener('click', function (e) {
         e.preventDefault();
         var name = serverSelect.value || '';
         if (!name) {
           if (serverMsg) serverMsg.textContent = 'Choose a ZIP from the server folder first.';
+          return;
+        }
+        var info = serverZipMeta[name];
+        if (info && info.readable === false) {
+          if (serverMsg) {
+            serverMsg.textContent = info.hint || 'BookWorm can see this ZIP, but cannot read it. Make the file readable by UID 100/GID 101 or run chmod 644 on the ZIP.';
+          }
           return;
         }
         if (serverMsg) serverMsg.textContent = 'Importing ' + name + '...';
