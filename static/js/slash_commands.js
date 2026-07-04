@@ -247,6 +247,10 @@ function _thiIconHtml(item) {
     'loading="lazy" decoding="async">';
 }
 
+function _thiIconHtmlWithBreak(item) {
+  return _thiIconHtml(item) + '&nbsp;<p><br></p>';
+}
+
 function _thiCommandFromItem(item) {
   var html = _thiIconHtml(item);
   return {
@@ -255,7 +259,7 @@ function _thiCommandFromItem(item) {
     desc: 'Thiings icon',
     icon: html,
     snippet: html,
-    ceHtml: html + '&nbsp;',
+    ceHtml: _thiIconHtmlWithBreak(item),
     _thiing: true,
   };
 }
@@ -271,16 +275,27 @@ function _thiInsert(item) {
   if (ce) {
     ce.focus();
     if (actRange) {
-      var tmp = document.createElement('span');
-      tmp.innerHTML = html + '&nbsp;';
+      var tmp = document.createElement('div');
+      tmp.innerHTML = _thiIconHtmlWithBreak(item);
       var frag = document.createDocumentFragment();
       var last = null;
+      var caretBlock = null;
       while (tmp.firstChild) {
+        if (tmp.firstChild.nodeType === Node.ELEMENT_NODE && tmp.firstChild.tagName === 'P') {
+          caretBlock = tmp.firstChild;
+        }
         last = tmp.firstChild;
         frag.appendChild(last);
       }
       actRange.insertNode(frag);
-      if (last) {
+      if (caretBlock) {
+        var inside = document.createRange();
+        inside.selectNodeContents(caretBlock);
+        inside.collapse(true);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(inside);
+      } else if (last) {
         var after = document.createRange();
         after.setStartAfter(last);
         after.collapse(true);
@@ -289,7 +304,7 @@ function _thiInsert(item) {
         sel.addRange(after);
       }
     } else {
-      document.execCommand('insertHTML', false, html + '&nbsp;');
+      document.execCommand('insertHTML', false, _thiIconHtmlWithBreak(item));
     }
     ce.dispatchEvent(new Event('input'));
   } else if (ta) {
