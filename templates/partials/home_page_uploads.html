@@ -165,7 +165,7 @@
   <div class="flex items-center gap-2 px-4 py-2.5 flex-shrink-0
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-900">
-    <span class="text-lg leading-none">{{ page.emoji }}</span>
+    <span class="text-lg leading-none">{{ page.emoji | icon_html | safe }}</span>
     <h1 class="text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
       {{ page.name }}
     </h1>

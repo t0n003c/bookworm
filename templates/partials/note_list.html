@@ -34,7 +34,7 @@
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-1.5 min-w-0">
           <h2 class="font-semibold text-gray-900 dark:text-zinc-100 text-base truncate min-w-0 group-hover:text-wblue transition">
-            {%- if note.icon %}<span aria-hidden="true">{{ note.icon }} </span>{%- endif -%}
+            {%- if note.icon %}<span aria-hidden="true">{{ note.icon | icon_html | safe }} </span>{%- endif -%}
             {{ note.title }}
           </h2>
           <span id="note-list-share-{{ note.id }}"

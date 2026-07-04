@@ -69,7 +69,7 @@
         {% endif %}"
       aria-current="{% if is_active %}page{% else %}false{% endif %}"
     >
-      <span class="flex-shrink-0 w-5 text-center leading-none" aria-hidden="true">{{ pg.emoji }}</span>
+      <span class="flex-shrink-0 w-5 text-center leading-none" aria-hidden="true">{{ pg.emoji | icon_html | safe }}</span>
       <span class="truncate flex-1">{{ pg.name }}</span>
       {% set pg_type = pg.get('page_type', 'dashboard') or 'dashboard' %}
       {% if pg_type != 'dashboard' %}

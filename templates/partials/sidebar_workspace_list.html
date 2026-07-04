@@ -99,7 +99,7 @@
             </svg>
           </span>
           {% else %}
-          <span class="text-base leading-none flex-shrink-0" aria-hidden="true">{{ node.emoji }}</span>
+          <span class="text-base leading-none flex-shrink-0" aria-hidden="true">{{ node.emoji | icon_html | safe }}</span>
           {% endif %}
           {# ── name ── #}
           <span class="flex-1 truncate">{{ node.name }}</span>

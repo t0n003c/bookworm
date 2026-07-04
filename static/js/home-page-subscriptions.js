@@ -28,6 +28,10 @@ var _SUBS_CYCLES = [
   {v:3,l:'Monthly'}, {v:4,l:'Yearly'},
   {v:2,l:'Weekly'},  {v:1,l:'Daily'}
 ];
+var _SUBS_REMINDER_PRESETS = [
+  {v:30,l:'1 month'}, {v:14,l:'14 days'}, {v:7,l:'7 days'},
+  {v:3,l:'3 days'}, {v:1,l:'1 day'}, {v:0,l:'Due day'}
+];
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 
@@ -79,16 +83,15 @@ function _subsCheckReminders() {
   var banner = document.getElementById('subs-reminder-banner');
   if (!banner) return;
 
-  // Check which active subs have a reminder set and are due within the window
+  // Check which active subs have a reminder point active for the current due date.
   var due = _subsData.filter(function(s) {
-    if (!s.active || !s.reminder_days || s.reminder_days <= 0) return false;
-    var d = s.days_until_due;
-    return d !== null && d !== undefined && d <= s.reminder_days;
+    return s.active && _subsReminderTriggerOffset(s) !== null;
   });
 
-  // Filter out dismissed (keyed by id + date so it re-surfaces next renewal)
+  // Filter out dismissed, keyed by id + date + offset so later reminders can surface.
   var active = due.filter(function(s) {
-    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '');
+    var off = _subsReminderTriggerOffset(s);
+    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '') + '-' + off;
     return !localStorage.getItem(key);
   });
 
@@ -106,9 +109,11 @@ function _subsCheckReminders() {
       : (d < 0 ? Math.abs(d) + ' day' + (Math.abs(d) !== 1 ? 's' : '') + ' overdue'
       : d === 0 ? 'due today'
       : 'due in ' + d + ' day' + (d !== 1 ? 's' : ''));
-    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '');
+    var off = _subsReminderTriggerOffset(s);
+    var offTxt = off === null ? '' : ' · ' + _subsReminderLabel(off);
+    var key = 'bw-subs-remind-' + _subsPid + '-' + s.id + '-' + (s.next_payment_date || '') + '-' + off;
     return '<div class="flex items-center justify-between gap-3 border rounded-lg px-3 py-2 ' + urgency + '">' +
-      '<span class="text-xs font-medium ' + textCol + '">\uD83D\uDD14 <strong>' + _subsEsc(s.name) + '</strong> is ' + _subsEsc(dueTxt) + '</span>' +
+      '<span class="text-xs font-medium ' + textCol + '">\uD83D\uDD14 <strong>' + _subsEsc(s.name) + '</strong> is ' + _subsEsc(dueTxt) + _subsEsc(offTxt) + '</span>' +
       '<button onclick="_subsReminderDismiss(\'' + _subsEscAttr(key) + '\')" ' +
         'class="text-xs ' + textCol + ' opacity-60 hover:opacity-100 transition flex-shrink-0" ' +
         'title="Dismiss">\u00D7 Dismiss</button>' +
@@ -121,6 +126,49 @@ function _subsCheckReminders() {
 function _subsReminderDismiss(key) {
   localStorage.setItem(key, '1');
   _subsCheckReminders();
+}
+
+function _subsReminderOffsets(s) {
+  var raw = s && s.reminder_offsets;
+  var vals = [];
+  if (Array.isArray(raw)) {
+    raw.forEach(function(v) {
+      var n = parseInt(v, 10);
+      if (!isNaN(n) && n >= 0 && n <= 366) vals.push(n);
+    });
+  }
+  if (!vals.length && s && s.reminder_days) {
+    var legacy = parseInt(s.reminder_days, 10);
+    if (!isNaN(legacy) && legacy >= 0 && legacy <= 366) vals.push(legacy);
+  }
+  vals = vals.filter(function(v, i, arr) { return arr.indexOf(v) === i; });
+  vals.sort(function(a, b) { return b - a; });
+  return vals;
+}
+
+function _subsReminderTriggerOffset(s) {
+  var d = s ? s.days_until_due : null;
+  if (d === null || d === undefined) return null;
+  var offsets = _subsReminderOffsets(s);
+  var eligible = offsets.filter(function(v) { return d <= v; });
+  if (!eligible.length) return null;
+  eligible.sort(function(a, b) { return a - b; });
+  return eligible[0];
+}
+
+function _subsReminderLabel(days) {
+  var n = parseInt(days, 10);
+  if (isNaN(n)) return '';
+  if (n === 0) return 'Due day';
+  if (n === 1) return '1 day before';
+  if (n === 30) return '1 month before';
+  return n + ' days before';
+}
+
+function _subsReminderSummary(s) {
+  var offsets = _subsReminderOffsets(s);
+  if (!offsets.length) return '';
+  return offsets.map(_subsReminderLabel).join(', ');
 }
 
 // ── Filter bar ─────────────────────────────────────────────────────────────────
@@ -243,7 +291,7 @@ function _subsSetSort(key) {
 // ── CSV export ────────────────────────────────────────────────────────────────────
 function _subsExportCSV() {
   var headers = ['Name','Amount','Currency','Cycle','Category','Color',
-                 'Next Payment Date','Active','Monthly Equiv','Website URL','Notes'];
+                 'Next Payment Date','Active','Monthly Equiv','Reminders','Website URL','Notes'];
   var cycleLabel = {1:'Daily',2:'Weekly',3:'Monthly',4:'Yearly'};
   var rows = _subsData.map(function(s) {
     return [
@@ -256,6 +304,7 @@ function _subsExportCSV() {
       s.next_payment_date || '',
       s.active ? 'Yes' : 'No',
       (s.monthly_equiv || 0).toFixed(2),
+      _subsReminderSummary(s),
       s.website_url || '',
       s.notes || '',
     ].map(function(v) {
@@ -433,6 +482,7 @@ function _subsCardHtml(s) {
   var amtStr   = _subsEsc(s.currency) + ' ' + (s.amount || 0).toFixed(2);
   var moStr    = (s.currency === 'USD' ? '$' : s.currency + ' ') +
                  (s.monthly_equiv || 0).toFixed(2) + '/mo';
+  var reminderSummary = _subsReminderSummary(s);
 
   var faviconUrl = _subsGetFaviconUrl(s.website_url || '');
   var iconHtml = faviconUrl
@@ -501,6 +551,9 @@ function _subsCardHtml(s) {
             'aria-label="Delete ' + _subsEscAttr(s.name) + '">🗑️</button>' +
         '</div>' +
       '</div>' +
+      (reminderSummary
+        ? '<p class="text-[10px] text-gray-400 dark:text-zinc-500 truncate" title="' + _subsEscAttr(reminderSummary) + '">\uD83D\uDD14 ' + _subsEsc(reminderSummary) + '</p>'
+        : '') +
 
     '</div>' +
   '</div>';
@@ -872,6 +925,7 @@ function _subsRenderModalForm(sub) {
     return '<option value="' + c + '"' + ((v.currency||'USD') === c ? ' selected':'') + '>' + c + '</option>';
   }).join('');
   var activeChk = (v.active === undefined || v.active) ? ' checked' : '';
+  var reminderOffsets = _subsReminderOffsets(v);
 
   container.innerHTML =
     _subsField('Name', '<input id="sf-name" type="text" value="' + _subsEscAttr(v.name||'') + '" ' +
@@ -910,15 +964,92 @@ function _subsRenderModalForm(sub) {
     _subsField('Notes', '<textarea id="sf-notes" rows="2" class="' + _subsCls() + '" ' +
       'placeholder="Optional notes">' + _subsEsc(v.notes||'') + '</textarea>') +
     _subsField('Remind me before due date',
-      '<select id="sf-reminder-days" class="' + _subsCls() + '">' +
-      [{v:0,l:'No reminder'},{v:1,l:'1 day before'},{v:3,l:'3 days before'},
-       {v:7,l:'7 days before'},{v:14,l:'14 days before'},{v:30,l:'30 days before'}]
-      .map(function(o) {
-        return '<option value="' + o.v + '"' + ((v.reminder_days||0) === o.v ? ' selected':'') + '>' + o.l + '</option>';
-      }).join('') +
-      '</select>') +
+      '<input id="sf-reminder-offsets-json" type="hidden" value="' + _subsEscAttr(JSON.stringify(reminderOffsets)) + '">' +
+      '<div id="sf-reminder-choices" class="flex flex-wrap gap-1.5"></div>' +
+      '<div class="flex items-center gap-2 mt-2">' +
+        '<input id="sf-reminder-custom" type="number" min="0" max="366" step="1" ' +
+          'class="' + _subsCls() + '" placeholder="Custom days">' +
+        '<button type="button" onclick="_subsAddCustomReminder()" ' +
+          'class="px-2.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-zinc-700 ' +
+          'text-gray-600 dark:text-zinc-300 hover:border-[#0053e2] hover:text-[#0053e2] transition">Add</button>' +
+      '</div>') +
     (sub ? '<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-zinc-200">' +
       '<input id="sf-active" type="checkbox"' + activeChk + ' class="rounded"> Active</label>' : '');
+  _subsRenderReminderChoices();
+}
+
+function _subsGetFormReminderOffsets() {
+  var hidden = document.getElementById('sf-reminder-offsets-json');
+  var vals = [];
+  try {
+    vals = JSON.parse((hidden && hidden.value) || '[]');
+  } catch (e) {
+    vals = [];
+  }
+  vals = Array.isArray(vals) ? vals : [];
+  vals = vals.map(function(v) { return parseInt(v, 10); })
+    .filter(function(v) { return !isNaN(v) && v >= 0 && v <= 366; });
+  vals = vals.filter(function(v, i, arr) { return arr.indexOf(v) === i; });
+  vals.sort(function(a, b) { return b - a; });
+  return vals;
+}
+
+function _subsSetFormReminderOffsets(vals) {
+  var hidden = document.getElementById('sf-reminder-offsets-json');
+  if (!hidden) return;
+  hidden.value = JSON.stringify(vals || []);
+  _subsRenderReminderChoices();
+}
+
+function _subsRenderReminderChoices() {
+  var wrap = document.getElementById('sf-reminder-choices');
+  if (!wrap) return;
+  var vals = _subsGetFormReminderOffsets();
+  var map = {};
+  vals.forEach(function(v) { map[v] = 1; });
+  var all = _SUBS_REMINDER_PRESETS.slice();
+  vals.forEach(function(v) {
+    var exists = all.some(function(p) { return p.v === v; });
+    if (!exists) all.push({v:v,l:_subsReminderLabel(v)});
+  });
+  all.sort(function(a, b) { return b.v - a.v; });
+  wrap.innerHTML = all.map(function(p) {
+    var active = !!map[p.v];
+    return '<button type="button" onclick="_subsToggleReminderOffset(' + p.v + ')" ' +
+      'class="px-2 py-1 rounded-full border text-xs font-medium transition ' +
+      (active
+        ? 'bg-[#0053e2] border-[#0053e2] text-white'
+        : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-[#0053e2] hover:text-[#0053e2]') +
+      '">' + _subsEsc(p.l) + '</button>';
+  }).join('') || '<span class="text-xs text-gray-400">No reminders</span>';
+}
+
+function _subsToggleReminderOffset(days) {
+  var vals = _subsGetFormReminderOffsets();
+  var n = parseInt(days, 10);
+  if (isNaN(n) || n < 0 || n > 366) return;
+  var idx = vals.indexOf(n);
+  if (idx >= 0) vals.splice(idx, 1);
+  else vals.push(n);
+  vals.sort(function(a, b) { return b - a; });
+  _subsSetFormReminderOffsets(vals);
+}
+
+function _subsAddCustomReminder() {
+  var input = document.getElementById('sf-reminder-custom');
+  if (!input) return;
+  var n = parseInt(input.value, 10);
+  if (isNaN(n) || n < 0 || n > 366) {
+    _subsShowModalError('Reminder must be between 0 and 366 days.');
+    return;
+  }
+  var vals = _subsGetFormReminderOffsets();
+  if (vals.indexOf(n) < 0) vals.push(n);
+  vals.sort(function(a, b) { return b - a; });
+  input.value = '';
+  _subsSetFormReminderOffsets(vals);
+  var err = document.getElementById('subs-modal-error');
+  if (err) err.classList.add('hidden');
 }
 
 function _subsCatDatalist() {
@@ -954,8 +1085,8 @@ function _subsSubmitForm() {
   var notes    = (document.getElementById('sf-notes')    || {}).value || '';
   var activeEl = document.getElementById('sf-active');
   var active   = activeEl ? (activeEl.checked ? 1 : 0) : 1;
-  var remindEl = document.getElementById('sf-reminder-days');
-  var reminderDays = remindEl ? (parseInt(remindEl.value, 10) || 0) : 0;
+  var reminderOffsets = _subsGetFormReminderOffsets();
+  var reminderDays = reminderOffsets.length ? reminderOffsets[0] : 0;
 
   if (!name.trim()) {
     _subsShowModalError('Name is required.');
@@ -975,6 +1106,7 @@ function _subsSubmitForm() {
   fd.append('start_date',        startDate);
   fd.append('notes',             notes.trim());
   fd.append('reminder_days',     reminderDays);
+  fd.append('reminder_offsets_json', JSON.stringify(reminderOffsets));
   if (_subsEditingId) fd.append('active', active);
 
   var saveBtn = document.getElementById('subs-modal-save');

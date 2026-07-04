@@ -257,7 +257,7 @@
   <div id="trip-topbar" class="flex-shrink-0 flex items-center gap-3 px-4 py-2
               border-b border-gray-200 dark:border-zinc-800
               bg-white dark:bg-zinc-950">
-    <span class="text-xl" aria-hidden="true">{{ page.emoji or '✈️' }}</span>
+    <span class="text-xl" aria-hidden="true">{{ (page.emoji or '✈️') | icon_html | safe }}</span>
     <h1 class="font-semibold text-gray-800 dark:text-zinc-100 truncate mr-auto text-sm">
       {{ page.name }}
     </h1>

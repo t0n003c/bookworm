@@ -21,7 +21,7 @@ function _galAvatar(c, dimCls, rndCls, txtCls) {
   var inner = c.profile_pic
     ? `<img src="${_crmEsc(c.profile_pic)}" class="${dimCls} ${rndCls} object-cover flex-shrink-0" alt=""/>`
     : `<div class="${dimCls} ${rndCls} flex-shrink-0 flex items-center justify-center ${txtCls} leading-none
-            bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">${_crmEsc(c.avatar_emoji||'👤')}</div>`;
+            bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600">${_crmIconHtml(c.avatar_emoji||'👤')}</div>`;
   var bud = (window._crmBudHealthMap||{})[String(c.id)];
   if (!bud) return inner;
   var hp = bud.health||0, col = hp>=75?'#2a8703':hp>=40?'#ffc220':'#ea1100', ico = hp>=75?'🌸':hp>=40?'🌼':'🦇';
@@ -163,7 +163,7 @@ function _crmRenderGallery_cards(rows, cv) {
       : `<div class="absolute inset-0 flex items-center justify-center leading-none
                bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff] dark:from-zinc-700 dark:to-zinc-600"
              style="font-size:${emojiPx}px">
-           ${_crmEsc(c.avatar_emoji||'\uD83D\uDC64')}
+           ${_crmIconHtml(c.avatar_emoji||'\uD83D\uDC64')}
          </div>`;
 
     var bud = (window._crmBudHealthMap||{})[String(c.id)];
@@ -413,7 +413,7 @@ function _crmRenderGallery_photo(rows, cv) {
                bg-gradient-to-br from-[#e8f0ff] to-[#c7d8ff]
                dark:from-zinc-700 dark:to-zinc-600 leading-none select-none"
              style="font-size:${Math.round(cellPx * 0.38)}px">
-           ${_crmEsc(c.avatar_emoji || '\uD83D\uDC64')}
+           ${_crmIconHtml(c.avatar_emoji || '\uD83D\uDC64')}
          </div>`;
 
     return grpHdr + `

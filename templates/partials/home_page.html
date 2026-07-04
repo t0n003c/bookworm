@@ -529,7 +529,7 @@
     <span class="flex-shrink-0 text-gray-400 dark:text-zinc-500
                  group-hover/nli:text-wblue dark:group-hover/nli:text-blue-400 transition">
       {% if item.get('emoji') %}
-      <span class="text-sm leading-none" aria-hidden="true">{{ item.get('emoji') }}</span>
+      <span class="text-sm leading-none" aria-hidden="true">{{ item.get('emoji') | icon_html | safe }}</span>
       {% else %}{{ _db_icon }}{% endif %}
     </span>
     <span class="flex-1 min-w-0 text-sm font-medium truncate
@@ -1373,7 +1373,7 @@
 {%- set cfg=w.get('config',{}) -%}{%- set txt=cfg.get('text','My Section') -%}
 {%- set sub=cfg.get('subtitle','') -%}{%- set emoji=cfg.get('emoji','') -%}
 {%- set aln='text-'~cfg.get('align','center') -%}{%- set s=w.style -%}
-{%- macro _pfx() %}{% if emoji %}<span class="mr-1">{{ emoji }}</span>{% endif %}{{ txt }}{% endmacro -%}
+{%- macro _pfx() %}{% if emoji %}<span class="mr-1">{{ emoji | icon_html | safe }}</span>{% endif %}{{ txt }}{% endmacro -%}
 {%- macro _sub() %}{% if sub %}<p class="text-xs text-gray-400 mt-1">{{ sub }}</p>{% endif %}{% endmacro -%}
 {% if s == 'plain' %}
 {% call bare_card(w, 'p-2') %}
@@ -1402,7 +1402,7 @@
 {% call bare_card(w, 'p-2') %}
   {{ widget_header(w,'Title','🏷️',true,false) }}
   <div class="flex-1 flex flex-col justify-center {{ aln }}">
-    <p class="bw-grad-txt text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500">{% if emoji %}<span style="color:initial;-webkit-background-clip:initial;background-clip:initial">{{ emoji }}&nbsp;</span>{% endif %}{{ txt }}</p>{{ _sub() }}
+    <p class="bw-grad-txt text-2xl font-extrabold bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500">{% if emoji %}<span style="color:initial;-webkit-background-clip:initial;background-clip:initial">{{ emoji | icon_html | safe }}&nbsp;</span>{% endif %}{{ txt }}</p>{{ _sub() }}
   </div>
 {% endcall %}
 {% elif s == 'neon' %}
@@ -1418,14 +1418,14 @@
   {{ widget_header(w,'Title','🏷️',true,false) }}
   <div class="flex-1 flex flex-col justify-center {{ aln }}">
     <p class="text-xl font-bold text-gray-800 dark:text-zinc-100 font-mono">
-      {% if emoji %}<span class="mr-1">{{ emoji }}</span>{% endif %}<span class="bw-typewriter" data-text="{{ txt|e }}"></span><span class="inline-block w-0.5 h-5 bg-wblue align-middle animate-pulse ml-0.5"></span></p>{{ _sub() }}
+      {% if emoji %}<span class="mr-1">{{ emoji | icon_html | safe }}</span>{% endif %}<span class="bw-typewriter" data-text="{{ txt|e }}"></span><span class="inline-block w-0.5 h-5 bg-wblue align-middle animate-pulse ml-0.5"></span></p>{{ _sub() }}
   </div>
 {% endcall %}
 {% elif s == 'marquee' %}
 {% call bare_card(w, 'overflow-hidden') %}
   {{ widget_header(w,'Title','🏷️',true,false) }}
   <div class="flex-1 flex items-center bw-marquee-wrap py-3 px-1">
-    <span class="bw-marquee-txt text-lg font-extrabold text-wblue dark:text-blue-400 tracking-wide">{% if emoji %}{{ emoji }}&nbsp;{% endif %}{{ txt }}&nbsp;&nbsp;★&nbsp;&nbsp;{% if emoji %}{{ emoji }}&nbsp;{% endif %}{{ txt }}</span>
+    <span class="bw-marquee-txt text-lg font-extrabold text-wblue dark:text-blue-400 tracking-wide">{% if emoji %}{{ emoji | icon_html | safe }}&nbsp;{% endif %}{{ txt }}&nbsp;&nbsp;★&nbsp;&nbsp;{% if emoji %}{{ emoji | icon_html | safe }}&nbsp;{% endif %}{{ txt }}</span>
   </div>
 {% endcall %}
 {% elif s == 'sticky' %}
@@ -1452,7 +1452,7 @@
 {%- set _adfl={'cinema':'#555555','oversize':'#555555','slate':'#0053e2','infrared':'#dc2626','studio':'#555555','editorial':'#0053e2','dusk':'#a78bfa','amber':'#fbbf24'} -%}
 {%- set accent=cfg.get('accent_color', _adfl.get(s,'#0053e2')) -%}
 {%- set noBg=cfg.get('transparent_bg')=='1' -%}
-{%- macro _pfx() %}{% if emoji %}<span class="mr-2" aria-hidden="true">{{ emoji }}</span>{% endif %}{{ txt }}{% endmacro -%}
+{%- macro _pfx() %}{% if emoji %}<span class="mr-2" aria-hidden="true">{{ emoji | icon_html | safe }}</span>{% endif %}{{ txt }}{% endmacro -%}
 
 {# ─ editorial: clean white/dark card + bold blue left stripe ───────────────── #}
 {% if s == 'editorial' %}

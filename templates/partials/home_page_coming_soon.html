@@ -58,7 +58,7 @@
           <p class="text-[11px] font-semibold uppercase tracking-widest
                      text-[#0053e2] dark:text-blue-400">Coming Soon</p>
           <h1 class="text-xl font-bold text-gray-900 dark:text-zinc-100 leading-tight">
-            {{ page.emoji }} {{ page.name }}
+            {{ page.emoji | icon_html | safe }} {{ page.name }}
           </h1>
         </div>
       </div>

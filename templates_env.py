@@ -10,11 +10,13 @@ because they validate filter names at compile-time (TemplateAssertionError).
 """
 import json
 import os
+import re
 from datetime import date as _date
 from pathlib import Path
 
 import jinja2
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 # ── Filter helpers (must be defined before the env is created) ────────────────
 
@@ -163,6 +165,34 @@ def _tojson(v: object, indent: int | None = None) -> str:
                .replace("&", bs + "u0026"))
 
 
+_THING_ICON_RE = re.compile(r"^thiing:([a-z0-9][a-z0-9-]{0,90})$")
+
+
+def _icon_html(value: object, class_name: str = "") -> Markup:
+    """Render a saved emoji/icon value, including local Thiings references.
+
+    Thiings values are stored as ``thiing:<slug>`` and resolve to local PNG
+    files under ``static/img/thiings``. The app does not hotlink third-party
+    assets or bundle the paid/full collection by default.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return Markup("")
+    match = _THING_ICON_RE.match(raw)
+    if not match:
+        return Markup(escape(raw))
+    slug = match.group(1)
+    cls = "bw-icon-img"
+    if class_name:
+        cls += " " + str(class_name)
+    src = f"/static/img/thiings/{slug}.png?v={_jinja_env.globals.get('static_v', '')}"
+    alt = slug.replace("-", " ").title()
+    return Markup(
+        f'<img src="{escape(src)}" alt="{escape(alt)}" '
+        f'class="{escape(cls)}" loading="lazy" decoding="async">'
+    )
+
+
 def _local_dt(utc_str: str) -> "datetime":
     """Parse a SQLite UTC datetime string and return a local-tz aware datetime.
 
@@ -243,6 +273,7 @@ _jinja_env.filters["sort_reminders"]     = _sort_reminders
 _jinja_env.filters["evt_prepare_items"]  = _evt_prepare_items
 _jinja_env.filters["local_time"]         = _local_time
 _jinja_env.filters["local_date"]         = _local_date
+_jinja_env.filters["icon_html"]          = _icon_html
 
 _jinja_env.globals["static_v"] = _static_version()
 static_v: str = _jinja_env.globals["static_v"]   # re-exported so main.py can inject it into sw.js
@@ -253,7 +284,6 @@ _jinja_env.globals["bw_turnstile_site_key"] = settings.turnstile_site_key
 
 # ── Expose as Jinja2Templates so all routers can call TemplateResponse ────────
 templates = Jinja2Templates(env=_jinja_env)
-
 
 
 

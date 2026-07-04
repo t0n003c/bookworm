@@ -665,6 +665,16 @@ async def init_db() -> None:
         except Exception:
             pass  # column already exists
 
+        # reminder_offsets_json: multiple reminder offsets in days before due
+        # date, e.g. [30, 3, 1]. Legacy reminder_days remains for compatibility.
+        try:
+            await db.execute(
+                "ALTER TABLE subscriptions ADD COLUMN "
+                "reminder_offsets_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        except Exception:
+            pass  # column already exists
+
         # start_date: when the subscription began (ISO date YYYY-MM-DD, nullable)
         try:
             await db.execute(

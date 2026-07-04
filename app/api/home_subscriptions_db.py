@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import json
 
 from database import get_db
 
@@ -75,6 +76,33 @@ def _days_until(next_payment_date: str | None) -> int | None:
         return None
 
 
+def _normalise_reminder_offsets(value: object, legacy_days: int = 0) -> list[int]:
+    """Return unique reminder offsets, largest first, preserving old rows."""
+    vals: list[int] = []
+    data: object = []
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            data = []
+    elif isinstance(value, list):
+        data = value
+    if isinstance(data, list):
+        for item in data:
+            try:
+                n = int(item)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= n <= 366:
+                vals.append(n)
+    if not vals and legacy_days:
+        try:
+            vals.append(max(0, min(366, int(legacy_days))))
+        except (TypeError, ValueError):
+            pass
+    return sorted(set(vals), reverse=True)
+
+
 def _advance_date(from_date: datetime.date, cycle: int, frequency: int) -> datetime.date:
     """Return the next billing date after from_date given cycle+frequency.
 
@@ -117,6 +145,9 @@ def _enrich(row: dict) -> dict:
     row["monthly_equiv"] = round(get_price_per_month(cycle, frequency, amount), 2)
     row["progress_pct"] = get_subscription_progress(cycle, frequency, npd)
     row["days_until_due"] = _days_until(npd)
+    row["reminder_offsets"] = _normalise_reminder_offsets(
+        row.get("reminder_offsets_json"), row.get("reminder_days") or 0
+    )
     freq = frequency or 1
     label = _CYCLE_LABELS.get(cycle, "")
     row["cycle_label"] = (f"Every {freq} {label.lower()}s" if freq > 1 else label)
@@ -155,21 +186,24 @@ async def add_subscription(
     notes: str = "",
     website_url: str = "",
     reminder_days: int = 0,
+    reminder_offsets: list[int] | None = None,
 ) -> int:
     """INSERT a new subscription, return its id."""
+    offsets = _normalise_reminder_offsets(reminder_offsets or [], reminder_days)
     async with get_db() as db:
         cur = await db.execute(
             """
             INSERT INTO subscriptions
               (page_id, name, amount, currency, cycle, frequency,
                category, color, next_payment_date, start_date, notes,
-               website_url, reminder_days)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+               website_url, reminder_days, reminder_offsets_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 page_id, name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, start_date or None,
-                notes, website_url.strip(), max(0, reminder_days),
+                notes, website_url.strip(), offsets[0] if offsets else 0,
+                json.dumps(offsets),
             ),
         )
         await db.commit()
@@ -193,22 +227,26 @@ async def update_subscription(
     active: int = 1,
     website_url: str = "",
     reminder_days: int = 0,
+    reminder_offsets: list[int] | None = None,
 ) -> bool:
     """UPDATE subscription; triple ownership guard. Returns True on success."""
+    offsets = _normalise_reminder_offsets(reminder_offsets or [], reminder_days)
     async with get_db() as db:
         cur = await db.execute(
             """
             UPDATE subscriptions
                SET name=?, amount=?, currency=?, cycle=?, frequency=?,
                    category=?, color=?, next_payment_date=?, start_date=?,
-                   notes=?, active=?, website_url=?, reminder_days=?
+                   notes=?, active=?, website_url=?, reminder_days=?,
+                   reminder_offsets_json=?
              WHERE id=? AND page_id=?
                AND page_id IN (SELECT id FROM home_pages WHERE user_id=?)
             """,
             (
                 name, amount, currency, cycle, frequency,
                 category, color, next_payment_date or None, start_date or None,
-                notes, active, website_url.strip(), max(0, reminder_days),
+                notes, active, website_url.strip(), offsets[0] if offsets else 0,
+                json.dumps(offsets),
                 sub_id, page_id, user_id,
             ),
         )
@@ -356,26 +394,26 @@ async def get_summary_data(page_id: int, user_id: int) -> dict:
 # ── Push notification helper ───────────────────────────────────────────────────────
 
 async def get_due_subscription_reminders() -> list[dict]:
-    """Return active subscriptions whose reminder window opens today.
+    """Return active subscriptions whose reminder offset lands today.
 
     Conditions:
       - active = 1
-      - reminder_days > 0
+      - one or more reminder offsets
       - next_payment_date is set
-      - 0 ≤ days_until_due ≤ reminder_days  (due today or within reminder window)
+      - days_until_due exactly matches an offset
       - not already cleared for this billing cycle
         (cleared_date IS NULL OR cleared_date < next_payment_date)
 
     Joined with push_subscriptions so the caller has everything needed to
     send the push and record the dedup key.
 
-    Dedup key format: "sub:{id}:{next_payment_date}" — one push per billing
-    cycle.  The key changes automatically when next_payment_date advances.
+    Dedup key format: "sub:{id}:{next_payment_date}:{offset}" — one push per
+    selected offset per billing cycle.
     """
     async with get_db() as db:
         cur = await db.execute(
             """
-            SELECT s.id, s.name, s.reminder_days,
+            SELECT s.id, s.name, s.reminder_days, s.reminder_offsets_json,
                    s.next_payment_date, s.amount, s.currency,
                    hp.user_id,
                    ps.endpoint, ps.p256dh, ps.auth
@@ -383,26 +421,34 @@ async def get_due_subscription_reminders() -> list[dict]:
             JOIN   home_pages hp ON hp.id = s.page_id
             JOIN   push_subscriptions ps ON ps.user_id = hp.user_id
             WHERE  s.active = 1
-              AND  s.reminder_days > 0
               AND  s.next_payment_date IS NOT NULL
-              AND  julianday(s.next_payment_date) - julianday('now') BETWEEN 0 AND s.reminder_days
               AND  (s.cleared_date IS NULL OR s.cleared_date < s.next_payment_date)
             """
         )
         rows = await cur.fetchall()
-    return [
-        {
+    out: list[dict] = []
+    today = datetime.date.today()
+    for r in rows:
+        try:
+            days_until = (datetime.date.fromisoformat(r[4]) - today).days
+        except (TypeError, ValueError):
+            continue
+        offsets = _normalise_reminder_offsets(r[3], r[2] or 0)
+        if days_until not in offsets:
+            continue
+        out.append({
             "sub_id":            r[0],
             "name":              r[1],
             "reminder_days":     r[2],
-            "next_payment_date": r[3],
-            "amount":            r[4],
-            "currency":          r[5],
-            "user_id":           r[6],
-            "endpoint":          r[7],
-            "p256dh":            r[8],
-            "auth":              r[9],
-            "dedup_key":         f"sub:{r[0]}:{r[3]}",
-        }
-        for r in rows
-    ]
+            "reminder_offset":   days_until,
+            "reminder_offsets":  offsets,
+            "next_payment_date": r[4],
+            "amount":            r[5],
+            "currency":          r[6],
+            "user_id":           r[7],
+            "endpoint":          r[8],
+            "p256dh":            r[9],
+            "auth":              r[10],
+            "dedup_key":         f"sub:{r[0]}:{r[4]}:{days_until}",
+        })
+    return out

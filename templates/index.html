@@ -1763,7 +1763,7 @@
     const name     = btn.dataset.wsName;
     const parentId = btn.dataset.wsParent || '';
     document.getElementById('edit-ws-emoji').value            = emoji;
-    document.getElementById('edit-ws-emoji-btn').textContent  = emoji;
+    _setIconButtonValue(document.getElementById('edit-ws-emoji-btn'), emoji);
     document.getElementById('edit-ws-name').value             = name;
     document.getElementById('edit-ws-parent-id').value        = parentId;
     const form = document.getElementById('edit-ws-form');
@@ -2311,7 +2311,7 @@
     }
     // Reset emoji + name fields
     document.getElementById('ws-emoji').value           = '📁';
-    document.getElementById('ws-emoji-btn').textContent = '📁';
+    _setIconButtonValue(document.getElementById('ws-emoji-btn'), '📁');
     document.getElementById('ws-name').value            = '';
     document.getElementById('new-ws-modal').classList.remove('hidden');
     setTimeout(() => document.getElementById('ws-name').focus(), 50);
@@ -3936,11 +3936,17 @@
   <input
     id="emoji-search"
     type="search"
-    placeholder="Search emojis…"
+    placeholder="Search icons…"
     oninput="filterEmojis(this.value)"
     class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 mb-3 focus:outline-none focus:ring-2 focus:ring-wblue bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
-    aria-label="Search emojis"
+    aria-label="Search icons"
   />
+  <div class="flex gap-1 mb-2" role="tablist" aria-label="Icon source">
+    <button type="button" id="emoji-tab-emoji" onclick="setEmojiPickerSource('emoji')"
+      class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-wblue text-white">Emoji</button>
+    <button type="button" id="emoji-tab-thiings" onclick="setEmojiPickerSource('thiings')"
+      class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">Thiings</button>
+  </div>
   <!-- Grid -->
   <div id="emoji-grid" class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto">
   </div>
@@ -3992,19 +3998,67 @@
     { e:'🧩', t:'puzzle piece'        }, { e:'🌈', t:'rainbow color'       },
   ];
 
-  let _pickerInput  = null;  // id of the hidden <input>
-  let _pickerButton = null;  // id of the display <button>
+  let _pickerInput  = null;     // id of the hidden <input>
+  let _pickerButton = null;     // id of the display <button>
+  let _pickerSource = 'emoji';  // emoji | thiings
+
+  function _iconPickEsc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  function _setIconButtonValue(btn, value) {
+    if (!btn) return;
+    if (typeof window.bwIconSetButton === 'function') window.bwIconSetButton(btn, value);
+    else btn.textContent = value || '';
+  }
+
+  function setEmojiPickerSource(source) {
+    _pickerSource = source === 'thiings' ? 'thiings' : 'emoji';
+    const eTab = document.getElementById('emoji-tab-emoji');
+    const tTab = document.getElementById('emoji-tab-thiings');
+    [eTab, tTab].forEach(btn => {
+      if (!btn) return;
+      btn.classList.remove('bg-wblue','text-white','bg-gray-100','dark:bg-zinc-800','text-gray-500','dark:text-zinc-400');
+    });
+    if (eTab) eTab.className += _pickerSource === 'emoji'
+      ? ' bg-wblue text-white'
+      : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
+    if (tTab) tTab.className += _pickerSource === 'thiings'
+      ? ' bg-wblue text-white'
+      : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
+    const search = document.getElementById('emoji-search');
+    _buildEmojiGrid(search ? search.value : '');
+  }
 
   function _buildEmojiGrid(filter) {
     const grid  = document.getElementById('emoji-grid');
     const empty = document.getElementById('emoji-empty');
     const q     = (filter || '').trim().toLowerCase();
+    if (_pickerSource === 'thiings') {
+      empty.classList.add('hidden');
+      grid.classList.remove('hidden');
+      if (typeof window.bwThiingsRenderGrid === 'function') {
+        window.bwThiingsRenderGrid(grid, q, pickEmoji, { limit: 96 });
+      } else {
+        grid.innerHTML = '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">Thiings picker is still loading.</p>';
+      }
+      return;
+    }
     const list  = q ? EMOJIS.filter(item => item.t.includes(q)) : EMOJIS;
     grid.innerHTML = list.map(item =>
-      `<button type="button" onclick="pickEmoji('${item.e}')"
+      `<button type="button" data-icon-value="${_iconPickEsc(item.e)}"
         class="text-xl p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 transition leading-none"
         aria-label="${item.e}">${item.e}</button>`
     ).join('');
+    grid.querySelectorAll('[data-icon-value]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pickEmoji(btn.dataset.iconValue);
+      });
+    });
     empty.classList.toggle('hidden', list.length > 0);
     grid.classList.toggle('hidden',  list.length === 0);
   }
@@ -4012,9 +4066,12 @@
   function openEmojiPicker(inputId, btnId) {
     _pickerInput  = inputId;
     _pickerButton = btnId;
+    _pickerSource = (typeof window.bwIconIsThiing === 'function' &&
+                     window.bwIconIsThiing(document.getElementById(inputId)?.value)) ? 'thiings' : 'emoji';
     const picker = document.getElementById('emoji-picker');
     const search = document.getElementById('emoji-search');
     search.value = '';
+    setEmojiPickerSource(_pickerSource);
     _buildEmojiGrid('');
 
     /* Position below the trigger button */
@@ -4050,7 +4107,7 @@
 
   function pickEmoji(emoji) {
     if (_pickerInput)  document.getElementById(_pickerInput).value       = emoji;
-    if (_pickerButton) document.getElementById(_pickerButton).textContent = emoji;
+    if (_pickerButton) _setIconButtonValue(document.getElementById(_pickerButton), emoji);
     closeEmojiPicker();
     // When picking an emoji in the HP new-page modal, auto-select the
     // matching page type so the user doesn't have to click two things.

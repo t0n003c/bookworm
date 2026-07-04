@@ -63,7 +63,7 @@ function _crmRenderDetail() {
   // Avatar — framed like a tipped-in vintage photograph (sepia, photo corners)
   var avatar = '<div class="crm-aged-photo">' + (c.profile_pic
     ? `<img src="${_crmEsc(c.profile_pic)}" alt=""/>`
-    : `<div class="ph">${_crmEsc(c.avatar_emoji || '👤')}</div>`) + '</div>';
+    : `<div class="ph">${_crmIconHtml(c.avatar_emoji || '👤')}</div>`) + '</div>';
 
   // Tags → rubber-stamp pills
   var tagHtml = (c.tags||'').split(',').filter(Boolean).map(function(t){

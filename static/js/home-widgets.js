@@ -382,10 +382,11 @@ function selectPageType(type) {
   const emojiI  = document.getElementById('hp-emoji');
   const emojiB  = document.getElementById('hp-emoji-btn');
   const nameEl  = document.getElementById('hp-name');
-  const prevDef = Object.values(HP_TYPE_DEFAULTS).map(d => d.emoji);
+  var prevDef = Object.values(HP_TYPE_DEFAULTS).map(function(d) { return d.emoji; });
   if (prevDef.includes(emojiI.value)) {
     emojiI.value       = defs.emoji;
-    emojiB.textContent = defs.emoji;
+    if (typeof window.bwIconSetButton === 'function') window.bwIconSetButton(emojiB, defs.emoji);
+    else emojiB.textContent = defs.emoji;
   }
   nameEl.placeholder = defs.placeholder;
 }
@@ -432,7 +433,8 @@ function openRenameHomePage(pageId, name, emoji) {
   nameEl.value       = name;
   nameEl.placeholder = 'Page name';
   emojiI.value       = emoji || '🏠';
-  emojiB.textContent = emoji || '🏠';
+  if (typeof window.bwIconSetButton === 'function') window.bwIconSetButton(emojiB, emoji || '🏠');
+  else emojiB.textContent = emoji || '🏠';
 
   // Show emoji picker for rename (was hidden on new-page open)
   document.getElementById('hp-emoji-section').style.display = '';

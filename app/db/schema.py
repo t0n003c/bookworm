@@ -360,7 +360,7 @@ CREATE_TABLES_SQL = [
                     active            INTEGER NOT NULL DEFAULT 1,
                     notes             TEXT    NOT NULL DEFAULT '',
                     created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
-                , website_url TEXT NOT NULL DEFAULT '', reminder_days INTEGER NOT NULL DEFAULT 0, start_date TEXT, cleared_date TEXT)
+                , website_url TEXT NOT NULL DEFAULT '', reminder_days INTEGER NOT NULL DEFAULT 0, reminder_offsets_json TEXT NOT NULL DEFAULT '[]', start_date TEXT, cleared_date TEXT)
     """,
     """
     CREATE TABLE IF NOT EXISTS trip_spots (

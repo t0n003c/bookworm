@@ -33,6 +33,11 @@ var _crmQuery    = '';
 var _CRM_REL_DEFAULTS = ['Friend','Family','Colleague','Mentor','Mentee',
                          'Acquaintance','Client','Partner','Classmate','Neighbor'];
 var _crmRelPool    = [];   // custom values added this session
+
+function _crmIconHtml(value, className) {
+  if (typeof window.bwIconHtml === 'function') return window.bwIconHtml(value || '👤', className || '');
+  return _crmEsc(value || '👤');
+}
 var _crmRelRemoved = [];   // options deleted this session — never re-suggested
 
 /* Build the de-duplicated relationship option list shown in the dropdown:
@@ -386,7 +391,7 @@ function _crmRenderTable() {
       <div class="relative inline-block">
         ${c.profile_pic
           ? `<img src="${_crmEsc(c.profile_pic)}" class="w-8 h-8 rounded-full object-cover" alt=""/>`
-          : `<span class="text-xl leading-none">${_crmEsc(c.avatar_emoji||'👤')}</span>`}
+          : `<span class="text-xl leading-none">${_crmIconHtml(c.avatar_emoji||'👤')}</span>`}
         ${_budDot}
       </div></td>`;
 
@@ -1048,7 +1053,7 @@ function _crmContactModal(c) {
               onclick="${isEdit ? `crmOpenPicModal(${c?c.id:0})` : ''}">
               ${c?.profile_pic
                 ? `<img id="crm-pic-img" src="${_crmEsc(c.profile_pic)}" class="w-full h-full object-cover" alt=""/>`
-                : `<span id="crm-pic-img">${_crmEsc(c?.avatar_emoji||'👤')}</span>`}
+                : `<span id="crm-pic-img">${_crmIconHtml(c?.avatar_emoji||'👤')}</span>`}
             </div>
             <p class="text-[10px] text-center text-gray-400 mt-1 italic">${isEdit?'click to change':'—'}</p>
             <input type="hidden" name="profile_pic" id="crm-pic-url" value="${_crmEsc(c?.profile_pic||'')}"/>
@@ -1061,7 +1066,7 @@ function _crmContactModal(c) {
                      border-2 border-dashed border-gray-300 dark:border-zinc-600
                      hover:border-[#0053e2] hover:bg-blue-50 dark:hover:bg-zinc-800
                      transition focus:outline-none focus:ring-2 focus:ring-[#0053e2]">
-              ${_crmEsc(c?.avatar_emoji||'👤')}
+              ${_crmIconHtml(c?.avatar_emoji||'👤', 'bw-icon-img-btn')}
             </button>
             <input type="hidden" id="crm-emoji-val" name="avatar_emoji"
               value="${_crmEsc(c?.avatar_emoji||'👤')}"/>
@@ -1397,15 +1402,39 @@ function _crmInitEmojiPicker() {
     pop.appendChild(grid);
   });
 
+  var thiHdr = document.createElement('p');
+  thiHdr.textContent = 'Thiings';
+  Object.assign(thiHdr.style, {
+    fontSize: '10px', fontWeight: '600', letterSpacing: '.05em',
+    textTransform: 'uppercase', color: dark ? '#71717a' : '#9ca3af',
+    margin: '8px 0 4px',
+  });
+  pop.appendChild(thiHdr);
+  var thiGrid = document.createElement('div');
+  thiGrid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:4px';
+  pop.appendChild(thiGrid);
+  if (typeof window.bwThiingsRenderGrid === 'function') {
+    window.bwThiingsRenderGrid(thiGrid, '', function(value) {
+      _crmEmojiSelect(value);
+      _crmEmojiClose();
+    }, { limit: 48 });
+  } else {
+    thiGrid.innerHTML = '<p style="grid-column:1/-1;font-size:11px;text-align:center;color:#9ca3af;padding:8px 0">Thiings picker is still loading.</p>';
+  }
+
   document.body.appendChild(pop);
 
   /* ── Helpers ── */
   function _crmEmojiSelect(emoji) {
     hidden.value = emoji;
-    btn.textContent = emoji;
+    if (typeof window.bwIconSetButton === 'function') window.bwIconSetButton(btn, emoji);
+    else btn.textContent = emoji;
     /* Also update the big photo-preview circle if it's still showing the emoji span */
     var pic = document.getElementById('crm-pic-img');
-    if (pic && pic.tagName === 'SPAN') pic.textContent = emoji;
+    if (pic && pic.tagName === 'SPAN') {
+      if (typeof window.bwIconHtml === 'function') pic.innerHTML = window.bwIconHtml(emoji);
+      else pic.textContent = emoji;
+    }
   }
 
   function _crmEmojiOpen() {

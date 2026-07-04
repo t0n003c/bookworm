@@ -667,10 +667,11 @@ async def _widget_notif_loop():
                         elif result:
                             sent_keys.append(key)
 
-            # ── Subscriptions: fire N days before next_payment_date ──────────────────
+            # ── Subscriptions: fire selected offsets before next_payment_date ─────────
             # Subscriptions have no user-set time field — gate to 09:00–21:00
             # local so billing alerts never land at 3 AM during a maintenance
-            # restart.  Dedup key prevents a second fire once the window opens.
+            # restart. Dedup includes the offset, so 30/3/1 day reminders can
+            # each fire once for the same billing cycle.
             if "09:00" <= now_hhmm <= "21:00":
                 for row in await get_due_subscription_reminders():
                     key = row["dedup_key"]
@@ -688,7 +689,7 @@ async def _widget_notif_loop():
                                   f"({row['currency']} {row['amount']:.2f})"),
                         "icon":  "/static/img/icons/icon-192.png",
                         "badge": "/static/img/icons/badge-96.png",
-                        "tag":   f"bw-sub-{row['sub_id']}",
+                        "tag":   f"bw-sub-{row['sub_id']}-{row.get('reminder_offset', days)}",
                     }
                     result = await send_push(sub, payload)
                     if result is None:

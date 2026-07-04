@@ -49,7 +49,7 @@
 
     {# Row 1: always a single non-wrapping line on every screen size #}
     <div class="flex items-center gap-2 px-4 py-2.5">
-      <span class="text-lg leading-none flex-shrink-0" aria-hidden="true">{{ page.emoji or '🤖' }}</span>
+      <span class="text-lg leading-none flex-shrink-0" aria-hidden="true">{{ (page.emoji or '🤖') | icon_html | safe }}</span>
       <h1 class="hidden sm:block text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">
         {{ page.name or 'AI Dashboard' }}
       </h1>

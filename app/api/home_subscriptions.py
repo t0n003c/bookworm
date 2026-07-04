@@ -6,6 +6,7 @@ The page shell is rendered by home_page_view() in home.py when page_type == 'sub
 from __future__ import annotations
 
 import logging
+import json
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -30,6 +31,26 @@ from core.deps import current_user_id
 
 def _uid(request: Request) -> int:
     return current_user_id(request, detail=None)
+
+
+def _parse_reminder_offsets(raw: str, legacy_days: int = 0) -> list[int]:
+    """Normalize subscription reminder offsets from the form."""
+    vals: list[int] = []
+    try:
+        data = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        data = []
+    if isinstance(data, list):
+        for item in data:
+            try:
+                n = int(item)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= n <= 366:
+                vals.append(n)
+    if not vals and legacy_days:
+        vals.append(max(0, min(366, int(legacy_days))))
+    return sorted(set(vals), reverse=True)
 
 
 async def _get_subs_page(page_id: int, uid: int):
@@ -88,6 +109,7 @@ async def add_subscription_endpoint(
     notes:             str   = Form(""),
     website_url:       str   = Form(""),
     reminder_days:     int   = Form(0),
+    reminder_offsets_json: str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -101,6 +123,7 @@ async def add_subscription_endpoint(
     if not name:
         return JSONResponse({"error": "name is required"}, status_code=400)
 
+    reminder_offsets = _parse_reminder_offsets(reminder_offsets_json, reminder_days)
     new_id = await add_subscription(
         page_id=page_id,
         name=name,
@@ -114,7 +137,8 @@ async def add_subscription_endpoint(
         start_date=start_date.strip() or None,
         notes=notes.strip(),
         website_url=website_url.strip(),
-        reminder_days=max(0, reminder_days),
+        reminder_days=reminder_offsets[0] if reminder_offsets else 0,
+        reminder_offsets=reminder_offsets,
     )
     return JSONResponse({"id": new_id}, status_code=201)
 
@@ -139,6 +163,7 @@ async def update_subscription_endpoint(
     active:            int   = Form(1),
     website_url:       str   = Form(""),
     reminder_days:     int   = Form(0),
+    reminder_offsets_json: str = Form(""),
 ):
     try:
         uid = _uid(request)
@@ -152,6 +177,7 @@ async def update_subscription_endpoint(
     if not name:
         return JSONResponse({"error": "name is required"}, status_code=400)
 
+    reminder_offsets = _parse_reminder_offsets(reminder_offsets_json, reminder_days)
     ok = await update_subscription(
         sub_id=sub_id,
         page_id=page_id,
@@ -168,7 +194,8 @@ async def update_subscription_endpoint(
         notes=notes.strip(),
         active=1 if active else 0,
         website_url=website_url.strip(),
-        reminder_days=max(0, reminder_days),
+        reminder_days=reminder_offsets[0] if reminder_offsets else 0,
+        reminder_offsets=reminder_offsets,
     )
     if not ok:
         return JSONResponse({"error": "not found or no permission"}, status_code=404)

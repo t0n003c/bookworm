@@ -16,7 +16,7 @@
     onclick="wsTabClick({{ ws.id }})"
   >
     {# Just emoji + name — breadcrumb lives above the note list #}
-    <span aria-hidden="true">{{ ws.emoji }}</span>
+    <span aria-hidden="true">{{ ws.emoji | icon_html | safe }}</span>
     <span>{{ ws.name }}</span>
 
     {# Edit pencil — active tab only #}

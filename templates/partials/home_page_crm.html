@@ -14,7 +14,7 @@
               bg-white dark:bg-zinc-900">
 
     {# Icon always visible #}
-    <span class="text-lg leading-none flex-shrink-0">{{ page.emoji }}</span>
+    <span class="text-lg leading-none flex-shrink-0">{{ page.emoji | icon_html | safe }}</span>
 
     {# Page name + CRM badge — desktop only #}
     <h1 class="hidden sm:block text-sm font-semibold text-gray-800 dark:text-zinc-100 truncate">

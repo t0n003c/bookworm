@@ -95,7 +95,7 @@
 
       {# name + expiry badge #}
       <span class="flex-1 flex items-center gap-1.5 min-w-0">
-        <span aria-hidden="true" class="flex-shrink-0">{{ ws.emoji }}</span>
+        <span aria-hidden="true" class="flex-shrink-0">{{ ws.emoji | icon_html | safe }}</span>
         <span class="text-xs text-gray-500 dark:text-zinc-400 truncate"
               title="{{ ws.name }}">{{ ws.name }}</span>
         <span
@@ -167,7 +167,7 @@
 
       {# name + expiry badge #}
       <span class="flex-1 flex items-center gap-1.5 min-w-0">
-        <span aria-hidden="true" class="flex-shrink-0 text-sm">{{ pg.emoji or '🏠' }}</span>
+        <span aria-hidden="true" class="flex-shrink-0 text-sm">{{ (pg.emoji or '🏠') | icon_html | safe }}</span>
         <span class="text-xs text-gray-500 dark:text-zinc-400 truncate"
               title="{{ pg.name }}">{{ pg.name }}</span>
         <span

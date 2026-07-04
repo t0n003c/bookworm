@@ -13,7 +13,7 @@
       {% if is_last %}
         {# Active leaf — not clickable, full colour #}
         <span class="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-zinc-100">
-          <span aria-hidden="true">{{ crumb.emoji }}</span>
+          <span aria-hidden="true">{{ crumb.emoji | icon_html | safe }}</span>
           <span>{{ crumb.name }}</span>
         </span>
       {% else %}
@@ -24,7 +24,7 @@
           class="flex items-center gap-1.5 hover:text-wblue transition"
           aria-label="Go to workspace {{ crumb.name }}"
         >
-          <span aria-hidden="true">{{ crumb.emoji }}</span>
+          <span aria-hidden="true">{{ crumb.emoji | icon_html | safe }}</span>
           <span>{{ crumb.name }}</span>
         </button>
         {# separator #}

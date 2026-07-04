@@ -217,7 +217,7 @@ window._bwTLRender = (function () {
                   margin:0 0 ${isMobile ? '2px' : '6px'};line-height:1.25;
                   display:-webkit-box;-webkit-line-clamp:${isMobile ? 1 : 2};
                   -webkit-box-orient:vertical;overflow:hidden;">
-        ${note.icon ? `<span aria-hidden="true">${esc(note.icon)} </span>` : ''}${esc(note.title)}
+        ${note.icon ? `<span aria-hidden="true">${typeof window.bwIconHtml === 'function' ? window.bwIconHtml(note.icon) : esc(note.icon)} </span>` : ''}${esc(note.title)}
       </h3>
       <time style="font-size:${isMobile ? '.68rem' : '.875rem'};color:${t.subClr};display:block;">
         ${note.isDb ? '&#128197; Updated ' : '&#128197; '}${fmtDate(note.dateStr)}
