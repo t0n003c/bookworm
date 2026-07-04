@@ -606,14 +606,37 @@ function _buildFieldsForType(widgetId, wtype, wstyle, body) {
                        focus:outline-none focus:ring-2 focus:ring-wblue"
                 onchange="${saveFn}">${hint}`;
     } else {
-      input = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
-                placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
-                class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
-                       bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
-                       focus:outline-none focus:ring-2 focus:ring-wblue"
-                onchange="${saveFn}">`;
+      const textInput = `<input id="${f.id}" type="text" data-cfg-key="${f.name}"
+                  placeholder="${f.placeholder||""}" value="${_escAttr(curVal)}"
+                  class="w-full text-xs border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1.5
+                         bg-white dark:bg-zinc-800 text-gray-800 dark:text-zinc-100
+                         focus:outline-none focus:ring-2 focus:ring-wblue"
+                  onchange="${saveFn}">`;
+      input = f.suggestions && f.suggestions.length
+        ? `<div class="flex items-center gap-1.5">
+             ${textInput}
+             <button id="${f.id}-pick-btn" type="button"
+               class="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 dark:border-zinc-700
+                      bg-white dark:bg-zinc-800 text-lg leading-none flex items-center justify-center
+                      hover:bg-gray-50 dark:hover:bg-zinc-700 transition"
+               title="Search emoji and Thiings icons">🔎</button>
+           </div>`
+        : textInput;
     }
     wrap.innerHTML = lbl + input;
+    if (f.suggestions && f.suggestions.length) {
+      const pickBtn = wrap.querySelector('#' + f.id + '-pick-btn');
+      if (pickBtn) {
+        if (typeof window.bwIconSetButton === 'function' && curVal) window.bwIconSetButton(pickBtn, curVal);
+        pickBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof window.openEmojiPicker === 'function') {
+            window.openEmojiPicker(f.id, f.id + '-pick-btn');
+          }
+        });
+      }
+    }
     // Clickable suggestion chips — rendered for any field that supplies a
     // suggestions array (e.g. the emoji picker for the title widget).
     if (f.suggestions && f.suggestions.length) {

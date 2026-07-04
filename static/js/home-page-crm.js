@@ -1369,58 +1369,132 @@ function _crmInitEmojiPicker() {
     boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
   });
 
-  SECTIONS.forEach(function(sec) {
-    var hdr = document.createElement('p');
-    hdr.textContent = sec.label;
-    Object.assign(hdr.style, {
-      fontSize: '10px', fontWeight: '600', letterSpacing: '.05em',
-      textTransform: 'uppercase', color: dark ? '#71717a' : '#9ca3af',
-      margin: '4px 0 4px',
+  var pickerMode = 'all';
+  var renderSeq = 0;
+
+  var search = document.createElement('input');
+  search.type = 'search';
+  search.placeholder = 'Search icons...';
+  search.setAttribute('aria-label', 'Search icons');
+  Object.assign(search.style, {
+    width: '100%', boxSizing: 'border-box', marginBottom: '8px',
+    borderRadius: '8px', border: dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    background: dark ? '#27272a' : '#f9fafb',
+    color: dark ? '#f4f4f5' : '#111827',
+    fontSize: '13px', padding: '6px 8px', outline: 'none',
+  });
+  pop.appendChild(search);
+
+  var tabs = document.createElement('div');
+  tabs.style.cssText = 'display:flex;gap:4px;margin-bottom:8px';
+  pop.appendChild(tabs);
+
+  var resultWrap = document.createElement('div');
+  pop.appendChild(resultWrap);
+
+  var tabButtons = {};
+  ['all', 'emoji', 'thiings'].forEach(function(mode) {
+    var tab = document.createElement('button');
+    tab.type = 'button';
+    tab.textContent = mode === 'all' ? 'All' : (mode === 'emoji' ? 'Emoji' : 'Thiings');
+    Object.assign(tab.style, {
+      flex: '1', border: 'none', borderRadius: '8px', padding: '5px 6px',
+      fontSize: '12px', fontWeight: '600', cursor: 'pointer',
     });
-    pop.appendChild(hdr);
+    tab.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      pickerMode = mode;
+      render();
+    });
+    tabButtons[mode] = tab;
+    tabs.appendChild(tab);
+  });
 
-    var grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:4px';
+  function setTabStyles() {
+    ['all', 'emoji', 'thiings'].forEach(function(mode) {
+      var active = pickerMode === mode;
+      var tab = tabButtons[mode];
+      tab.style.background = active ? '#0053e2' : (dark ? '#27272a' : '#f3f4f6');
+      tab.style.color = active ? '#fff' : (dark ? '#a1a1aa' : '#6b7280');
+    });
+  }
 
-    sec.emojis.forEach(function(em) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = em;
-      Object.assign(b.style, {
-        fontSize: '20px', lineHeight: '1', padding: '4px', borderRadius: '6px',
-        border: 'none', background: 'transparent', cursor: 'pointer',
-      });
+  function header(label) {
+    return '<p style="font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:' +
+      (dark ? '#71717a' : '#9ca3af') + ';margin:8px 0 4px">' + _crmEsc(label) + '</p>';
+  }
+
+  function emojiButton(em) {
+    return '<button type="button" data-crm-icon="' + _crmEsc(em) + '"' +
+      ' style="font-size:20px;line-height:1;padding:4px;border-radius:6px;border:none;background:transparent;cursor:pointer">' +
+      _crmEsc(em) + '</button>';
+  }
+
+  function thiingButton(item) {
+    return '<button type="button" data-crm-icon="thiing:' + _crmEsc(item.slug) + '"' +
+      ' title="' + _crmEsc(item.name) + '" aria-label="' + _crmEsc(item.name) + '"' +
+      ' style="display:flex;align-items:center;justify-content:center;padding:3px;border-radius:6px;border:none;background:transparent;cursor:pointer">' +
+      '<img src="' + _crmEsc(item.src) + '" alt="" loading="lazy" decoding="async" style="width:24px;height:24px;object-fit:contain">' +
+      '</button>';
+  }
+
+  function grid(html) {
+    return '<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:4px">' + html + '</div>';
+  }
+
+  function emojiSections(q) {
+    return SECTIONS.map(function(sec) {
+      var terms = sec.label.toLowerCase();
+      var emojis = q
+        ? sec.emojis.filter(function(em) { return em.indexOf(q) !== -1 || terms.indexOf(q) !== -1; })
+        : sec.emojis;
+      return { label: sec.label, emojis: emojis };
+    }).filter(function(sec) { return sec.emojis.length; });
+  }
+
+  function wireIconButtons() {
+    resultWrap.querySelectorAll('[data-crm-icon]').forEach(function(b) {
       b.addEventListener('mouseenter', function() { b.style.background = dark ? '#3f3f46' : '#eff6ff'; });
       b.addEventListener('mouseleave', function() { b.style.background = 'transparent'; });
       b.addEventListener('mousedown', function(e) {
-        e.preventDefault(); // don't steal focus from the form
-        _crmEmojiSelect(em);
+        e.preventDefault();
+        _crmEmojiSelect(b.dataset.crmIcon);
         _crmEmojiClose();
       });
-      grid.appendChild(b);
     });
-    pop.appendChild(grid);
-  });
-
-  var thiHdr = document.createElement('p');
-  thiHdr.textContent = 'Thiings';
-  Object.assign(thiHdr.style, {
-    fontSize: '10px', fontWeight: '600', letterSpacing: '.05em',
-    textTransform: 'uppercase', color: dark ? '#71717a' : '#9ca3af',
-    margin: '8px 0 4px',
-  });
-  pop.appendChild(thiHdr);
-  var thiGrid = document.createElement('div');
-  thiGrid.style.cssText = 'display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin-bottom:4px';
-  pop.appendChild(thiGrid);
-  if (typeof window.bwThiingsRenderGrid === 'function') {
-    window.bwThiingsRenderGrid(thiGrid, '', function(value) {
-      _crmEmojiSelect(value);
-      _crmEmojiClose();
-    }, { limit: 48 });
-  } else {
-    thiGrid.innerHTML = '<p style="grid-column:1/-1;font-size:11px;text-align:center;color:#9ca3af;padding:8px 0">Thiings picker is still loading.</p>';
   }
+
+  function render() {
+    var q = (search.value || '').trim().toLowerCase();
+    var seq = ++renderSeq;
+    setTabStyles();
+    resultWrap.innerHTML = '<p style="font-size:11px;text-align:center;color:#9ca3af;padding:8px 0">Searching icons...</p>';
+
+    var sections = pickerMode === 'thiings' ? [] : emojiSections(q);
+    var thiingsPromise = pickerMode === 'emoji'
+      ? Promise.resolve([])
+      : (typeof window.bwThiingsSearch === 'function' ? window.bwThiingsSearch(q, q ? 72 : 48) : Promise.resolve([]));
+
+    thiingsPromise.then(function(items) {
+      if (seq !== renderSeq) return;
+      var html = '';
+      if (pickerMode !== 'thiings') {
+        sections.forEach(function(sec) {
+          html += header(sec.label) + grid(sec.emojis.map(emojiButton).join(''));
+        });
+      }
+      if (pickerMode !== 'emoji' && items.length) {
+        html += header('Thiings') + grid(items.map(thiingButton).join(''));
+      } else if (pickerMode === 'thiings' && typeof window.bwThiingsSearch !== 'function') {
+        html += '<p style="font-size:11px;text-align:center;color:#9ca3af;padding:8px 0">Thiings picker is still loading.</p>';
+      }
+      resultWrap.innerHTML = html || '<p style="font-size:11px;text-align:center;color:#9ca3af;padding:8px 0">No icons found</p>';
+      wireIconButtons();
+    });
+  }
+
+  search.addEventListener('input', render);
+  render();
 
   document.body.appendChild(pop);
 
@@ -1439,6 +1513,9 @@ function _crmInitEmojiPicker() {
 
   function _crmEmojiOpen() {
     var rect = btn.getBoundingClientRect();
+    pickerMode = 'all';
+    search.value = '';
+    render();
     pop.style.display = 'block';
     /* Flip above if too close to viewport bottom */
     var spaceBelow = window.innerHeight - rect.bottom;
@@ -1449,6 +1526,7 @@ function _crmInitEmojiPicker() {
     }
     pop.style.left = rect.left + 'px';
     btn.setAttribute('aria-expanded', 'true');
+    setTimeout(function() { search.focus(); }, 30);
     setTimeout(function() {
       document.addEventListener('mousedown', _outsideClick);
       document.addEventListener('keydown',   _escKey);

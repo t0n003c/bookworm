@@ -4150,7 +4150,14 @@
   }
 
   function pickEmoji(emoji) {
-    if (_pickerInput)  document.getElementById(_pickerInput).value       = emoji;
+    if (_pickerInput) {
+      const input = document.getElementById(_pickerInput);
+      if (input) {
+        input.value = emoji;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
     if (_pickerButton) _setIconButtonValue(document.getElementById(_pickerButton), emoji);
     closeEmojiPicker();
     // When picking an emoji in the HP new-page modal, auto-select the

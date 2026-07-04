@@ -2828,7 +2828,7 @@
 <!-- ── Icon Picker ───────────────────────────────────────────────── -->
 <script>
 (function iconPicker() {
-  const EMOJIS = [
+  var EMOJIS = [
     // Documents & notes
     '📝','📋','📌','📍','🗒️','📓','📔','📖','📗','📘','📙','📚',
     '🗂️','🗃️','📂','📁','🗄️','📎','🖇️','✏️','🖊️','🖋️','📐','📏',
@@ -2860,16 +2860,16 @@
     '📤','📥','📨','📩','📬','📮','🏷️','🎁','🌐','🗺️','🧭','💰',
   ];
 
-  const wrap     = document.getElementById('icon-picker-wrap');
-  const btn      = document.getElementById('icon-btn');
-  const pop      = document.getElementById('icon-picker-pop');
-  const clearBtn = document.getElementById('icon-clear-btn');
-  const grid     = document.getElementById('icon-emoji-grid');
-  const hidden   = document.getElementById('note-icon-value');
-  const search   = document.getElementById('icon-search');
-  const allTab   = document.getElementById('icon-src-all');
-  const emojiTab = document.getElementById('icon-src-emoji');
-  const thiTab   = document.getElementById('icon-src-thiings');
+  var wrap     = document.getElementById('icon-picker-wrap');
+  var btn      = document.getElementById('icon-btn');
+  var pop      = document.getElementById('icon-picker-pop');
+  var clearBtn = document.getElementById('icon-clear-btn');
+  var grid     = document.getElementById('icon-emoji-grid');
+  var hidden   = document.getElementById('note-icon-value');
+  var search   = document.getElementById('icon-search');
+  var allTab   = document.getElementById('icon-src-all');
+  var emojiTab = document.getElementById('icon-src-emoji');
+  var thiTab   = document.getElementById('icon-src-thiings');
   if (!btn || !pop || !hidden) return;
   var pickerMode = 'all';
   var pickerSeq = 0;
@@ -2953,7 +2953,7 @@
 
   /* ── Sync button appearance to current value ──────────────────── */
   function syncBtn() {
-    const val = hidden.value.trim();
+    var val = hidden.value.trim();
     if (val) {
       if (typeof window.bwIconSetButton === 'function') window.bwIconSetButton(btn, val);
       else btn.textContent = val;
@@ -2977,8 +2977,8 @@
     pop.classList.remove('hidden');
     btn.setAttribute('aria-expanded', 'true');
     // If picker would overflow the viewport bottom, flip it upward
-    const rect = btn.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
+    var rect = btn.getBoundingClientRect();
+    var spaceBelow = window.innerHeight - rect.bottom;
     if (spaceBelow < 260) {
       pop.style.top  = 'auto';
       pop.style.bottom = '100%';
@@ -3013,7 +3013,7 @@
 
   grid.addEventListener('click', (e) => {
     e.stopPropagation();
-    const eb = e.target.closest('[data-emoji]');
+    var eb = e.target.closest('[data-emoji]');
     if (eb) pick(eb.dataset.emoji);
   });
 
