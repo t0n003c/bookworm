@@ -2609,6 +2609,28 @@ function _scInit() {
       replacement: (_c, node) => node.outerHTML,
     });
 
+    // Local Thiings icon — keep as raw inline HTML so Turndown does not turn it
+    // into a regular Markdown image, which reopens at full image size.
+    td.addRule('bwThiingsIcon', {
+      filter: node => node.nodeName === 'IMG' && (
+        node.hasAttribute('data-bw-thiing') ||
+        String(node.getAttribute('src') || '').startsWith('/thiings/icons/') ||
+        String(node.getAttribute('src') || '').startsWith('/static/img/thiings/')
+      ),
+      replacement: (_c, node) => {
+        const img = node.cloneNode(false);
+        const src = img.getAttribute('src') || '';
+        const slug = img.getAttribute('data-bw-thiing') ||
+          ((src.match(/\/thiings\/icons\/([a-z0-9-]+)\./) || src.match(/\/static\/img\/thiings\/([a-z0-9-]+)\./) || [])[1] || '');
+        img.classList.add('bw-icon-img');
+        if (slug) img.setAttribute('data-bw-thiing', slug);
+        img.setAttribute('style', 'display:inline-block;vertical-align:-0.18em;width:1.15em;height:1.15em;object-fit:contain');
+        img.removeAttribute('width');
+        img.removeAttribute('height');
+        return img.outerHTML;
+      },
+    });
+
     // Block-level custom elements — keep() is appropriate here.
     td.keep(node =>
       node.nodeName === 'DETAILS' ||

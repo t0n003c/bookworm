@@ -1937,6 +1937,24 @@
     function _liveTa()  { return document.getElementById('note-content'); }
     function _livePv()  { return document.getElementById('md-live-preview'); }
 
+    function _bwNormalizeThiingsIcons(root) {
+      if (!root) return;
+      root.querySelectorAll('img[src^="/thiings/icons/"], img[src^="/static/img/thiings/"], img[data-bw-thiing]').forEach(img => {
+        const src = img.getAttribute('src') || '';
+        const slug = img.getAttribute('data-bw-thiing')
+          || ((src.match(/\/thiings\/icons\/([a-z0-9-]+)\./) || src.match(/\/static\/img\/thiings\/([a-z0-9-]+)\./) || [])[1] || '');
+        img.classList.add('bw-icon-img');
+        if (slug) img.setAttribute('data-bw-thiing', slug);
+        img.style.display = 'inline-block';
+        img.style.verticalAlign = '-0.18em';
+        img.style.width = '1.15em';
+        img.style.height = '1.15em';
+        img.style.objectFit = 'contain';
+        img.removeAttribute('width');
+        img.removeAttribute('height');
+      });
+    }
+
     /* Session state: which code-block indices have line numbers on.
        Survives re-renders (renderPreview wipes the DOM each keystroke).
        Index = position of this <pre> among all <pre code> blocks in the preview. */
@@ -2165,6 +2183,7 @@
       _pv.innerHTML = raw.trim()
         ? DOMPurify.sanitize(marked.parse(md), PURIFY_CFG)
         : '';
+      _bwNormalizeThiingsIcons(_pv);
       // Wrap every rendered <table> in a scroll div so wide tables scroll
       // horizontally without blowing out the panel width.
       // We do this AFTER DOMPurify so the wrapper survives sanitisation.
