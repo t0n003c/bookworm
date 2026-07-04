@@ -96,9 +96,20 @@
   function _uploadHtml(id) {
     return '<div class="col-span-full rounded-lg border border-dashed border-gray-200 dark:border-zinc-700 p-2 mb-1">' +
       '<div class="flex items-center justify-between gap-2">' +
-        '<span class="text-[11px] text-gray-500 dark:text-zinc-400">Add a licensed Thiings icon</span>' +
-        '<button type="button" data-thi-upload-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Add</button>' +
+        '<span class="text-[11px] text-gray-500 dark:text-zinc-400">Add licensed Thiings icons</span>' +
+        '<div class="flex items-center gap-2">' +
+          '<button type="button" data-thi-bulk-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Import ZIP</button>' +
+          '<button type="button" data-thi-upload-toggle="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Add one</button>' +
+        '</div>' +
       '</div>' +
+      '<form data-thi-bulk-form="' + id + '" class="hidden mt-2 flex flex-col gap-2">' +
+        '<input name="file" type="file" accept=".zip,application/zip,application/x-zip-compressed" required ' +
+          'class="w-full text-xs text-gray-500 dark:text-zinc-400 file:mr-2 file:rounded file:border-0 file:bg-[#0053e2] file:px-2 file:py-1 file:text-xs file:font-semibold file:text-white">' +
+        '<div class="flex items-center justify-between gap-2">' +
+          '<span data-thi-bulk-msg="' + id + '" class="text-[11px] text-gray-400 dark:text-zinc-500">Imports images and JSON metadata when present.</span>' +
+          '<button type="submit" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Import</button>' +
+        '</div>' +
+      '</form>' +
       '<form data-thi-upload-form="' + id + '" class="hidden mt-2 flex flex-col gap-2">' +
         '<input name="name" type="text" placeholder="Icon name" maxlength="120" required ' +
           'class="w-full rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-xs text-gray-800 dark:text-zinc-100">' +
@@ -116,12 +127,50 @@
 
   function _wireUpload(el, id, query, onPick, opts) {
     var toggle = el.querySelector('[data-thi-upload-toggle="' + id + '"]');
+    var bulkToggle = el.querySelector('[data-thi-bulk-toggle="' + id + '"]');
     var form = el.querySelector('[data-thi-upload-form="' + id + '"]');
+    var bulkForm = el.querySelector('[data-thi-bulk-form="' + id + '"]');
     var msg = el.querySelector('[data-thi-upload-msg="' + id + '"]');
+    var bulkMsg = el.querySelector('[data-thi-bulk-msg="' + id + '"]');
     if (toggle && form) {
       toggle.addEventListener('click', function (e) {
         e.preventDefault();
         form.classList.toggle('hidden');
+        if (bulkForm) bulkForm.classList.add('hidden');
+      });
+    }
+    if (bulkToggle && bulkForm) {
+      bulkToggle.addEventListener('click', function (e) {
+        e.preventDefault();
+        bulkForm.classList.toggle('hidden');
+        if (form) form.classList.add('hidden');
+      });
+    }
+    if (bulkForm) {
+      bulkForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (bulkMsg) bulkMsg.textContent = 'Importing ZIP...';
+        var fd = new FormData(bulkForm);
+        fetch('/thiings/bulk-upload', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+        }).then(function (res) {
+          if (!res.ok || !res.body || !res.body.ok) {
+            if (bulkMsg) bulkMsg.textContent = (res.body && res.body.error) || 'Import failed.';
+            return;
+          }
+          _items = null;
+          _loadPromise = null;
+          if (bulkMsg) bulkMsg.textContent = 'Imported ' + res.body.imported + ' icons' +
+            (res.body.skipped ? ' · skipped ' + res.body.skipped : '') + '.';
+          renderGrid(el, query, onPick, opts);
+        }).catch(function () {
+          if (bulkMsg) bulkMsg.textContent = 'Import failed.';
+        });
       });
     }
     if (!form) return;

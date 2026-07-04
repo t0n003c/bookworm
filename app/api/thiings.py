@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -20,6 +21,10 @@ router = APIRouter(prefix="/thiings", tags=["thiings"])
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,90}$")
 _MAX_ICON_BYTES = 2 * 1024 * 1024
+_MAX_ZIP_BYTES = 500 * 1024 * 1024
+_MAX_ZIP_UNCOMPRESSED = 2 * 1024 * 1024 * 1024
+_MAX_BULK_ICONS = 5000
+_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
 _DATA_DIR = DATA_DIR / "thiings"
 _ICON_DIR = _DATA_DIR / "icons"
 _MANIFEST = _DATA_DIR / "manifest.json"
@@ -50,6 +55,11 @@ def _icon_kind(data: bytes) -> tuple[str, str] | None:
     return None
 
 
+def _ext_from_name(name: str) -> str:
+    ext = Path(name).suffix.lower().lstrip(".")
+    return "jpg" if ext == "jpeg" else ext
+
+
 def _load_json(path: Path) -> list[dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -58,18 +68,20 @@ def _load_json(path: Path) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _tags_from_value(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [t.strip() for t in re.split(r"[,;/| ]+", value) if t.strip()]
+    if isinstance(value, list):
+        return [str(t).strip() for t in value if str(t).strip()]
+    return []
+
+
 def _clean_entry(entry: dict, runtime: bool) -> dict | None:
     slug = _slugify(str(entry.get("slug") or entry.get("id") or ""))
     if not slug or not _SLUG_RE.match(slug):
         return None
     name = str(entry.get("name") or slug.replace("-", " ")).strip()[:120]
-    tags_raw = entry.get("tags") or []
-    if isinstance(tags_raw, str):
-        tags = [t.strip() for t in re.split(r"[, ]+", tags_raw) if t.strip()]
-    elif isinstance(tags_raw, list):
-        tags = [str(t).strip() for t in tags_raw if str(t).strip()]
-    else:
-        tags = []
+    tags = _tags_from_value(entry.get("tags") or [])
     ext = str(entry.get("ext") or "png").strip().lower()
     if ext not in {"png", "jpg", "gif", "webp"}:
         ext = "png"
@@ -87,6 +99,63 @@ def _write_runtime_entries(entries: list[dict]) -> None:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     cleaned = [e for e in (_clean_entry(x, True) for x in entries) if e]
     _MANIFEST.write_text(json.dumps(cleaned, indent=2) + "\n", encoding="utf-8")
+
+
+def _walk_metadata(obj: object) -> list[dict]:
+    """Extract likely icon metadata dicts from unknown Thiings JSON shapes."""
+    out: list[dict] = []
+    if isinstance(obj, list):
+        for item in obj:
+            out.extend(_walk_metadata(item))
+    elif isinstance(obj, dict):
+        nameish = obj.get("name") or obj.get("title") or obj.get("slug") or obj.get("id")
+        has_tags = any(k in obj for k in ("tags", "keywords", "categories", "category"))
+        fileish = obj.get("file") or obj.get("filename") or obj.get("path") or obj.get("src")
+        if nameish or has_tags or fileish:
+            out.append(obj)
+        for key in ("items", "icons", "things", "data", "results"):
+            if key in obj:
+                out.extend(_walk_metadata(obj[key]))
+    return out
+
+
+def _metadata_indexes(zipf: zipfile.ZipFile) -> tuple[dict[str, dict], dict[str, dict]]:
+    by_slug: dict[str, dict] = {}
+    by_stem: dict[str, dict] = {}
+    for info in zipf.infolist():
+        if info.is_dir() or _ext_from_name(info.filename) != "json" or info.file_size > 20 * 1024 * 1024:
+            continue
+        try:
+            data = json.loads(zipf.read(info).decode("utf-8", errors="replace"))
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, zipfile.BadZipFile):
+            continue
+        for raw in _walk_metadata(data):
+            name = str(raw.get("name") or raw.get("title") or raw.get("slug") or raw.get("id") or "").strip()
+            slug = _slugify(str(raw.get("slug") or raw.get("id") or name))
+            file_ref = str(raw.get("file") or raw.get("filename") or raw.get("path") or raw.get("src") or "").strip()
+            stem = _slugify(Path(file_ref).stem) if file_ref else ""
+            tags = []
+            for key in ("tags", "keywords", "categories", "category"):
+                tags.extend(_tags_from_value(raw.get(key)))
+            entry = {"slug": slug, "name": name, "tags": tags[:40]}
+            if slug:
+                by_slug[slug] = entry
+            if stem:
+                by_stem[stem] = entry
+    return by_slug, by_stem
+
+
+def _entry_for_zip_image(filename: str, ext: str, meta: dict | None) -> dict:
+    fallback_stem = _slugify(Path(filename).stem)
+    slug = _slugify(str((meta or {}).get("slug") or fallback_stem))
+    name = str((meta or {}).get("name") or Path(filename).stem.replace("-", " ").replace("_", " ")).strip()
+    return {
+        "slug": slug,
+        "name": name[:120] or slug.replace("-", " ").title(),
+        "tags": _tags_from_value((meta or {}).get("tags") or [])[:20],
+        "ext": ext,
+        "src": f"/thiings/icons/{slug}.{ext}",
+    }
 
 
 @router.get("/manifest")
@@ -167,3 +236,69 @@ async def upload_thiing_icon(
     entries.append(entry)
     _write_runtime_entries(entries)
     return JSONResponse({"ok": True, "item": entry})
+
+
+@router.post("/bulk-upload")
+async def bulk_upload_thiings(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Import a licensed Thiings ZIP pack and build the runtime manifest."""
+    current_user_id(request, detail=None)
+    if guard := _demo_guard(request):
+        return guard
+
+    if getattr(file, "size", None) and file.size > _MAX_ZIP_BYTES:
+        return JSONResponse({"error": "ZIP must be 500 MB or smaller."}, status_code=400)
+    await file.seek(0)
+    try:
+        with zipfile.ZipFile(file.file) as zipf:
+            infos = [i for i in zipf.infolist() if not i.is_dir()]
+            total_compressed = sum(max(0, i.compress_size) for i in infos)
+            total_uncompressed = sum(max(0, i.file_size) for i in infos)
+            if total_compressed > _MAX_ZIP_BYTES or total_uncompressed > _MAX_ZIP_UNCOMPRESSED:
+                return JSONResponse({"error": "ZIP is too large to import."}, status_code=400)
+
+            image_infos = [
+                i for i in infos
+                if _ext_from_name(i.filename) in _IMAGE_EXTS and not Path(i.filename).name.startswith(".")
+            ]
+            if not image_infos:
+                return JSONResponse({"error": "No supported image files found in the ZIP."}, status_code=400)
+            if len(image_infos) > _MAX_BULK_ICONS:
+                return JSONResponse({"error": f"ZIP has too many icons. Limit is {_MAX_BULK_ICONS}."}, status_code=400)
+
+            by_slug, by_stem = _metadata_indexes(zipf)
+            existing = {e["slug"]: e for e in _runtime_entries()}
+            imported = 0
+            skipped = 0
+            _ICON_DIR.mkdir(parents=True, exist_ok=True)
+
+            for info in image_infos:
+                if info.file_size > _MAX_ICON_BYTES:
+                    skipped += 1
+                    continue
+                stem_slug = _slugify(Path(info.filename).stem)
+                meta = by_stem.get(stem_slug) or by_slug.get(stem_slug)
+                ext = _ext_from_name(info.filename)
+                raw = zipf.read(info)
+                kind = _icon_kind(raw)
+                if not kind:
+                    skipped += 1
+                    continue
+                real_ext = kind[0]
+                entry = _entry_for_zip_image(info.filename, real_ext, meta)
+                if not entry["slug"]:
+                    skipped += 1
+                    continue
+                (_ICON_DIR / f"{entry['slug']}.{real_ext}").write_bytes(raw)
+                existing[entry["slug"]] = entry
+                imported += 1
+
+            _write_runtime_entries(list(existing.values()))
+    except zipfile.BadZipFile:
+        return JSONResponse({"error": "That file is not a valid ZIP."}, status_code=400)
+    finally:
+        await file.close()
+
+    return JSONResponse({"ok": True, "imported": imported, "skipped": skipped})
