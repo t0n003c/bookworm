@@ -109,6 +109,19 @@
           '<span data-thi-bulk-msg="' + id + '" class="text-[11px] text-gray-400 dark:text-zinc-500">Imports images and JSON metadata when present.</span>' +
           '<button type="submit" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Import</button>' +
         '</div>' +
+        '<div class="rounded border border-gray-100 dark:border-zinc-800 p-2">' +
+          '<div class="flex items-center justify-between gap-2">' +
+            '<span class="text-[11px] text-gray-500 dark:text-zinc-400">NAS/server ZIP import</span>' +
+            '<button type="button" data-thi-server-refresh="' + id + '" class="text-xs font-semibold text-[#0053e2] hover:underline">Refresh</button>' +
+          '</div>' +
+          '<div class="mt-2 flex flex-wrap items-center gap-2">' +
+            '<select data-thi-server-select="' + id + '" class="min-w-0 flex-1 rounded border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-xs text-gray-800 dark:text-zinc-100">' +
+              '<option value="">Loading ZIPs...</option>' +
+            '</select>' +
+            '<button type="button" data-thi-server-import="' + id + '" class="rounded bg-[#0053e2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0048c8]">Import Selected</button>' +
+          '</div>' +
+          '<p data-thi-server-msg="' + id + '" class="mt-1 text-[11px] text-gray-400 dark:text-zinc-500">Copy ZIPs to the BookWorm data folder: thiings/imports.</p>' +
+        '</div>' +
       '</form>' +
       '<form data-thi-upload-form="' + id + '" class="hidden mt-2 flex flex-col gap-2">' +
         '<input name="name" type="text" placeholder="Icon name" maxlength="120" required ' +
@@ -132,6 +145,45 @@
     var bulkForm = el.querySelector('[data-thi-bulk-form="' + id + '"]');
     var msg = el.querySelector('[data-thi-upload-msg="' + id + '"]');
     var bulkMsg = el.querySelector('[data-thi-bulk-msg="' + id + '"]');
+    var serverRefresh = el.querySelector('[data-thi-server-refresh="' + id + '"]');
+    var serverSelect = el.querySelector('[data-thi-server-select="' + id + '"]');
+    var serverImport = el.querySelector('[data-thi-server-import="' + id + '"]');
+    var serverMsg = el.querySelector('[data-thi-server-msg="' + id + '"]');
+    function fmtBytes(n) {
+      n = Number(n || 0);
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+      return Math.round((n / (1024 * 1024)) * 10) / 10 + ' MB';
+    }
+    function loadServerZips() {
+      if (!serverSelect) return;
+      if (serverMsg) serverMsg.textContent = 'Checking server import folder...';
+      fetch('/thiings/server-zips', { credentials: 'same-origin', cache: 'no-cache' })
+        .then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+        })
+        .then(function (res) {
+          var zips = (res.body && res.body.zips) || [];
+          if (!res.ok || !res.body || !res.body.ok) {
+            serverSelect.innerHTML = '<option value="">Could not load ZIPs</option>';
+            if (serverMsg) serverMsg.textContent = (res.body && res.body.error) || 'Could not load server ZIPs.';
+            return;
+          }
+          if (!zips.length) {
+            serverSelect.innerHTML = '<option value="">No ZIPs found</option>';
+            if (serverMsg) serverMsg.textContent = 'Copy ZIPs to: ' + (res.body.dir || 'thiings/imports');
+            return;
+          }
+          serverSelect.innerHTML = zips.map(function (z) {
+            return '<option value="' + _esc(z.name) + '">' + _esc(z.name) + ' (' + fmtBytes(z.size) + ')</option>';
+          }).join('');
+          if (serverMsg) serverMsg.textContent = 'Found ' + zips.length + ' ZIP file(s).';
+        })
+        .catch(function () {
+          serverSelect.innerHTML = '<option value="">Could not load ZIPs</option>';
+          if (serverMsg) serverMsg.textContent = 'Could not load server ZIPs.';
+        });
+    }
     if (toggle && form) {
       toggle.addEventListener('click', function (e) {
         e.preventDefault();
@@ -144,6 +196,50 @@
         e.preventDefault();
         bulkForm.classList.toggle('hidden');
         if (form) form.classList.add('hidden');
+        if (!bulkForm.classList.contains('hidden')) loadServerZips();
+      });
+    }
+    if (serverRefresh) {
+      serverRefresh.addEventListener('click', function (e) {
+        e.preventDefault();
+        loadServerZips();
+      });
+    }
+    if (serverImport && serverSelect) {
+      serverImport.addEventListener('click', function (e) {
+        e.preventDefault();
+        var name = serverSelect.value || '';
+        if (!name) {
+          if (serverMsg) serverMsg.textContent = 'Choose a ZIP from the server folder first.';
+          return;
+        }
+        if (serverMsg) serverMsg.textContent = 'Importing ' + name + '...';
+        serverImport.disabled = true;
+        fetch('/thiings/server-import', {
+          method: 'POST',
+          body: new URLSearchParams({ filename: name }),
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        }).then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+        }).then(function (res) {
+          serverImport.disabled = false;
+          if (!res.ok || !res.body || !res.body.ok) {
+            if (serverMsg) serverMsg.textContent = (res.body && res.body.error) || ('Import failed. HTTP ' + res.status + '.');
+            return;
+          }
+          _items = null;
+          _loadPromise = null;
+          if (serverMsg) serverMsg.textContent = 'Imported ' + res.body.imported + ' icons' +
+            (res.body.skipped ? ' - skipped ' + res.body.skipped : '') + '.';
+          renderGrid(el, query, onPick, opts);
+        }).catch(function () {
+          serverImport.disabled = false;
+          if (serverMsg) serverMsg.textContent = 'Import failed.';
+        });
       });
     }
     if (bulkForm) {

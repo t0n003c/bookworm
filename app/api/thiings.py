@@ -27,6 +27,7 @@ _MAX_BULK_ICONS = 5000
 _IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
 _DATA_DIR = DATA_DIR / "thiings"
 _ICON_DIR = _DATA_DIR / "icons"
+_IMPORT_DIR = _DATA_DIR / "imports"
 _MANIFEST = _DATA_DIR / "manifest.json"
 _STATIC_MANIFEST = Path("static/data/thiings-icons.json")
 _STATIC_ICON_DIR = Path("static/img/thiings")
@@ -158,6 +159,54 @@ def _entry_for_zip_image(filename: str, ext: str, meta: dict | None) -> dict:
     }
 
 
+def _import_zip_obj(zip_obj) -> dict:
+    """Import icons from a ZIP file-like object."""
+    with zipfile.ZipFile(zip_obj) as zipf:
+        infos = [i for i in zipf.infolist() if not i.is_dir()]
+        total_compressed = sum(max(0, i.compress_size) for i in infos)
+        total_uncompressed = sum(max(0, i.file_size) for i in infos)
+        if total_compressed > _MAX_ZIP_BYTES or total_uncompressed > _MAX_ZIP_UNCOMPRESSED:
+            return {"error": "ZIP is too large to import.", "status": 400}
+
+        image_infos = [
+            i for i in infos
+            if _ext_from_name(i.filename) in _IMAGE_EXTS and not Path(i.filename).name.startswith(".")
+        ]
+        if not image_infos:
+            return {"error": "No supported image files found in the ZIP.", "status": 400}
+        if len(image_infos) > _MAX_BULK_ICONS:
+            return {"error": f"ZIP has too many icons. Limit is {_MAX_BULK_ICONS}.", "status": 400}
+
+        by_slug, by_stem = _metadata_indexes(zipf)
+        existing = {e["slug"]: e for e in _runtime_entries()}
+        imported = 0
+        skipped = 0
+        _ICON_DIR.mkdir(parents=True, exist_ok=True)
+
+        for info in image_infos:
+            if info.file_size > _MAX_ICON_BYTES:
+                skipped += 1
+                continue
+            stem_slug = _slugify(Path(info.filename).stem)
+            meta = by_stem.get(stem_slug) or by_slug.get(stem_slug)
+            raw = zipf.read(info)
+            kind = _icon_kind(raw)
+            if not kind:
+                skipped += 1
+                continue
+            real_ext = kind[0]
+            entry = _entry_for_zip_image(info.filename, real_ext, meta)
+            if not entry["slug"]:
+                skipped += 1
+                continue
+            (_ICON_DIR / f"{entry['slug']}.{real_ext}").write_bytes(raw)
+            existing[entry["slug"]] = entry
+            imported += 1
+
+        _write_runtime_entries(list(existing.values()))
+    return {"ok": True, "imported": imported, "skipped": skipped}
+
+
 @router.get("/manifest")
 async def thiings_manifest():
     """Return bundled + runtime Thiings icons."""
@@ -252,53 +301,64 @@ async def bulk_upload_thiings(
         return JSONResponse({"error": "ZIP must be 500 MB or smaller."}, status_code=400)
     await file.seek(0)
     try:
-        with zipfile.ZipFile(file.file) as zipf:
-            infos = [i for i in zipf.infolist() if not i.is_dir()]
-            total_compressed = sum(max(0, i.compress_size) for i in infos)
-            total_uncompressed = sum(max(0, i.file_size) for i in infos)
-            if total_compressed > _MAX_ZIP_BYTES or total_uncompressed > _MAX_ZIP_UNCOMPRESSED:
-                return JSONResponse({"error": "ZIP is too large to import."}, status_code=400)
-
-            image_infos = [
-                i for i in infos
-                if _ext_from_name(i.filename) in _IMAGE_EXTS and not Path(i.filename).name.startswith(".")
-            ]
-            if not image_infos:
-                return JSONResponse({"error": "No supported image files found in the ZIP."}, status_code=400)
-            if len(image_infos) > _MAX_BULK_ICONS:
-                return JSONResponse({"error": f"ZIP has too many icons. Limit is {_MAX_BULK_ICONS}."}, status_code=400)
-
-            by_slug, by_stem = _metadata_indexes(zipf)
-            existing = {e["slug"]: e for e in _runtime_entries()}
-            imported = 0
-            skipped = 0
-            _ICON_DIR.mkdir(parents=True, exist_ok=True)
-
-            for info in image_infos:
-                if info.file_size > _MAX_ICON_BYTES:
-                    skipped += 1
-                    continue
-                stem_slug = _slugify(Path(info.filename).stem)
-                meta = by_stem.get(stem_slug) or by_slug.get(stem_slug)
-                ext = _ext_from_name(info.filename)
-                raw = zipf.read(info)
-                kind = _icon_kind(raw)
-                if not kind:
-                    skipped += 1
-                    continue
-                real_ext = kind[0]
-                entry = _entry_for_zip_image(info.filename, real_ext, meta)
-                if not entry["slug"]:
-                    skipped += 1
-                    continue
-                (_ICON_DIR / f"{entry['slug']}.{real_ext}").write_bytes(raw)
-                existing[entry["slug"]] = entry
-                imported += 1
-
-            _write_runtime_entries(list(existing.values()))
+        result = _import_zip_obj(file.file)
     except zipfile.BadZipFile:
         return JSONResponse({"error": "That file is not a valid ZIP."}, status_code=400)
     finally:
         await file.close()
 
-    return JSONResponse({"ok": True, "imported": imported, "skipped": skipped})
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=int(result.get("status") or 400))
+    return JSONResponse(result)
+
+
+@router.get("/server-zips")
+async def list_server_thiings_zips(request: Request):
+    """List ZIP files copied into BW_DATA_DIR/thiings/imports."""
+    current_user_id(request, detail=None)
+    _IMPORT_DIR.mkdir(parents=True, exist_ok=True)
+    zips = []
+    for path in sorted(_IMPORT_DIR.glob("*.zip"), key=lambda p: p.name.lower()):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        zips.append({"name": path.name, "size": stat.st_size})
+    return JSONResponse({
+        "ok": True,
+        "dir": str(_IMPORT_DIR),
+        "zips": zips,
+    })
+
+
+@router.post("/server-import")
+async def import_server_thiings_zip(
+    request: Request,
+    filename: str = Form(...),
+):
+    """Import a ZIP already present on the server/NAS data volume."""
+    current_user_id(request, detail=None)
+    if guard := _demo_guard(request):
+        return guard
+
+    clean_name = Path(filename).name
+    if clean_name != filename or not clean_name.lower().endswith(".zip"):
+        return JSONResponse({"error": "Choose a ZIP from the imports folder."}, status_code=400)
+    path = _IMPORT_DIR / clean_name
+    if not path.exists() or not path.is_file():
+        return JSONResponse({"error": "ZIP was not found in the imports folder."}, status_code=404)
+    if path.stat().st_size > _MAX_ZIP_BYTES:
+        return JSONResponse({"error": "ZIP must be 500 MB or smaller."}, status_code=400)
+
+    try:
+        with path.open("rb") as fh:
+            result = _import_zip_obj(fh)
+    except zipfile.BadZipFile:
+        return JSONResponse({"error": "That file is not a valid ZIP."}, status_code=400)
+    except OSError:
+        return JSONResponse({"error": "BookWorm could not read that ZIP file."}, status_code=400)
+
+    if result.get("error"):
+        return JSONResponse({"error": result["error"]}, status_code=int(result.get("status") or 400))
+    result["filename"] = clean_name
+    return JSONResponse(result)
