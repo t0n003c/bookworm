@@ -265,17 +265,32 @@ function _thiInsert(item) {
   var ce = _thiSlash.ce;
   var ta = _thiSlash.ta;
   var pos = _thiSlash.taPos;
-  var actRange = _thiSlash.actRange;
+  var actRange = _thiSlash.actRange ? _thiSlash.actRange.cloneRange() : null;
   _thiClose();
 
   if (ce) {
     ce.focus();
-    var sel = window.getSelection();
     if (actRange) {
-      sel.removeAllRanges();
-      sel.addRange(actRange);
+      var tmp = document.createElement('span');
+      tmp.innerHTML = html + '&nbsp;';
+      var frag = document.createDocumentFragment();
+      var last = null;
+      while (tmp.firstChild) {
+        last = tmp.firstChild;
+        frag.appendChild(last);
+      }
+      actRange.insertNode(frag);
+      if (last) {
+        var after = document.createRange();
+        after.setStartAfter(last);
+        after.collapse(true);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(after);
+      }
+    } else {
+      document.execCommand('insertHTML', false, html + '&nbsp;');
     }
-    document.execCommand('insertHTML', false, html + '&nbsp;');
     ce.dispatchEvent(new Event('input'));
   } else if (ta) {
     ta.value = ta.value.slice(0, pos) + html + ta.value.slice(pos);
@@ -283,6 +298,25 @@ function _thiInsert(item) {
     ta.focus();
     ta.dispatchEvent(new Event('input'));
   }
+}
+
+function _thiAnchorFromRange(range) {
+  if (!range) return null;
+  var rect = null;
+  try {
+    rect = range.getBoundingClientRect();
+    if ((!rect || (!rect.width && !rect.height)) && range.getClientRects) {
+      rect = range.getClientRects()[0] || rect;
+    }
+  } catch (_) {}
+  if (rect && (rect.left || rect.top || rect.width || rect.height)) {
+    return { x: rect.left, y: rect.bottom || rect.top };
+  }
+  if (_sc.palette && _sc.palette.style.display !== 'none') {
+    rect = _sc.palette.getBoundingClientRect();
+    return { x: rect.left, y: rect.bottom };
+  }
+  return null;
 }
 
 function _thiRenderPicker(q) {
@@ -458,7 +492,7 @@ const SLASH_COMMANDS = [
         ce.focus();
         var sel = window.getSelection();
         if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
-        _thiOpen(ce, actRange, null, -1, _ceCaretCoords(), q);
+        _thiOpen(ce, actRange, null, -1, _thiAnchorFromRange(actRange) || _ceCaretCoords(), q);
       } else {
         var ta = _sc.ta;
         var pos = ta ? ta.selectionStart : 0;
