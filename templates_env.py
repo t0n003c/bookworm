@@ -185,7 +185,7 @@ def _icon_html(value: object, class_name: str = "") -> Markup:
     cls = "bw-icon-img"
     if class_name:
         cls += " " + str(class_name)
-    src = f"/static/img/thiings/{slug}.png?v={_jinja_env.globals.get('static_v', '')}"
+    src = f"/thiings/icons/{slug}.png?v={_jinja_env.globals.get('static_v', '')}"
     alt = slug.replace("-", " ").title()
     return Markup(
         f'<img src="{escape(src)}" alt="{escape(alt)}" '
@@ -284,7 +284,6 @@ _jinja_env.globals["bw_turnstile_site_key"] = settings.turnstile_site_key
 
 # ── Expose as Jinja2Templates so all routers can call TemplateResponse ────────
 templates = Jinja2Templates(env=_jinja_env)
-
 
 
 

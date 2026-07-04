@@ -109,6 +109,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # NOTE: /wopi/ is prefix-checked here (like /static/), NOT added to _PUBLIC.
         # _PUBLIC is for exact named paths only.
         if (path.startswith("/static/")
+                or path.startswith("/thiings/icons/")
+                or path == "/thiings/manifest"
                 or path.startswith("/wopi/")
                 or path.startswith("/share/view/")   # public share links — token auth, no session
                 or path in _PUBLIC):
