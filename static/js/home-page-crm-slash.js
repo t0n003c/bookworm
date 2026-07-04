@@ -70,6 +70,66 @@ var _slashPalette  = null; // current floating palette el
 var _slashTarget   = null; // input/textarea the palette is anchored to
 var _slashCursor   = -1;   // keyboard cursor index
 var _slashSlashIdx = -1;   // caret position of the '/' that triggered the palette
+var _slashQuery    = '';
+var _slashThiQuery = '';
+var _slashThiItems = [];
+var _slashThiPending = false;
+
+function _slashEsc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+
+function _slashThiCmd(item) {
+  return {
+    cmd: 'thiing:' + item.slug,
+    icon: '<img src="' + _slashEsc(item.src) + '" alt="" loading="lazy" decoding="async" style="width:20px;height:20px;object-fit:contain">',
+    label: 'Thiings: ' + (item.name || item.slug),
+    value: function() { return 'thiing:' + item.slug; },
+  };
+}
+
+function _slashMatches(query) {
+  var builtIns = _CRM_SLASH_CMDS.filter(function(c) {
+    return c.cmd.startsWith(query) || c.label.toLowerCase().includes(query);
+  });
+  var thiings = (_slashThiItems || []).map(_slashThiCmd);
+  if (_slashThiPending && query.length >= 2 && !thiings.length) {
+    thiings.push({
+      cmd: 'thiing',
+      icon: '🔎',
+      label: 'Searching Thiings...',
+      value: '',
+      disabled: true,
+    });
+  }
+  return builtIns.concat(thiings);
+}
+
+function _slashQueueThiings(query) {
+  var canSearch = query.length >= 2 && typeof window.bwThiingsSearch === 'function';
+  if (!canSearch) {
+    _slashThiQuery = query;
+    _slashThiItems = [];
+    _slashThiPending = false;
+    return;
+  }
+  if (_slashThiQuery === query) return;
+  _slashThiQuery = query;
+  _slashThiItems = [];
+  _slashThiPending = true;
+  window.bwThiingsSearch(query, 8).then(function(items) {
+    if (_slashThiQuery !== query) return;
+    _slashThiItems = items || [];
+    _slashThiPending = false;
+    if (_slashTarget) _slashShow(_slashTarget, _slashMatches(_slashQuery), _slashSlashIdx);
+  }).catch(function() {
+    if (_slashThiQuery !== query) return;
+    _slashThiItems = [];
+    _slashThiPending = false;
+  });
+}
 
 // ── Attach to a form ──────────────────────────────────────────────────────────
 function _crmAttachSlash(formEl) {
@@ -113,10 +173,10 @@ function _slashOnInput(e) {
 
   if (slashIdx === -1) { _slashHide(); return; }
 
-  var query   = before.slice(slashIdx + 1).toLowerCase();
-  var matches = _CRM_SLASH_CMDS.filter(function(c) {
-    return c.cmd.startsWith(query) || c.label.toLowerCase().includes(query);
-  });
+  var query = before.slice(slashIdx + 1).toLowerCase();
+  _slashQuery = query;
+  _slashQueueThiings(query);
+  var matches = _slashMatches(query);
   if (matches.length) {
     _slashShow(el, matches, slashIdx);
   } else {
@@ -174,8 +234,8 @@ function _slashShow(inputEl, cmds, slashIdx) {
            'data-idx="' + i + '" onmousedown="event.preventDefault();_slashApply(_slashTarget,_slashPalette._cmds[' + i + '])">' +
            '<span class="text-base leading-none">' + c.icon + '</span>' +
            '<div class="flex-1 min-w-0">' +
-           '<span class="font-mono text-[#0053e2] dark:text-blue-400 text-xs font-semibold">/' + c.cmd + '</span>' +
-           '<span class="text-gray-500 dark:text-zinc-400 text-xs ml-2">' + c.label + '</span>' +
+           '<span class="font-mono text-[#0053e2] dark:text-blue-400 text-xs font-semibold">/' + _slashEsc(c.cmd) + '</span>' +
+           '<span class="text-gray-500 dark:text-zinc-400 text-xs ml-2">' + _slashEsc(c.label) + '</span>' +
            '</div></div>';
   }).join('');
 
@@ -196,6 +256,7 @@ function _slashHighlight() {
 // ── Apply a command ───────────────────────────────────────────────────────────
 function _slashApply(el, cmd) {
   if (!el || !cmd) return;
+  if (cmd.disabled) return;
   var result   = typeof cmd.value === 'function' ? cmd.value() : cmd.value;
   var val      = el.value;
   var queryEnd = el.selectionStart; // cursor sits at end of typed query

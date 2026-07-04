@@ -225,6 +225,170 @@ function _pgpOpen(ce, actRange, ta, taPos, anchor) {
   });
 }
 
+// ── Thiings icon picker / slash search ──────────────────────────────────────
+const _thiSlash = {
+  el: null, grid: null, input: null,
+  ce: null, actRange: null, ta: null, taPos: -1,
+  seq: 0,
+};
+
+function _thiEsc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+
+function _thiIconHtml(item) {
+  var slug = String(item && item.slug || '').replace(/[^a-z0-9-]/g, '');
+  var name = String(item && item.name || slug.replace(/-/g, ' '));
+  var src = String(item && item.src || ('/thiings/icons/' + slug + '.png'));
+  return '<img src="' + _thiEsc(src) + '" alt="' + _thiEsc(name) + '" ' +
+    'class="bw-icon-img" data-bw-thiing="' + _thiEsc(slug) + '" ' +
+    'loading="lazy" decoding="async">';
+}
+
+function _thiCommandFromItem(item) {
+  var html = _thiIconHtml(item);
+  return {
+    id: 'thiing:' + item.slug,
+    label: item.name || item.slug.replace(/-/g, ' '),
+    desc: 'Thiings icon',
+    icon: html,
+    snippet: html,
+    ceHtml: html + '&nbsp;',
+    _thiing: true,
+  };
+}
+
+function _thiInsert(item) {
+  var html = _thiIconHtml(item);
+  var ce = _thiSlash.ce;
+  var ta = _thiSlash.ta;
+  var pos = _thiSlash.taPos;
+  var actRange = _thiSlash.actRange;
+  _thiClose();
+
+  if (ce) {
+    ce.focus();
+    var sel = window.getSelection();
+    if (actRange) {
+      sel.removeAllRanges();
+      sel.addRange(actRange);
+    }
+    document.execCommand('insertHTML', false, html + '&nbsp;');
+    ce.dispatchEvent(new Event('input'));
+  } else if (ta) {
+    ta.value = ta.value.slice(0, pos) + html + ta.value.slice(pos);
+    ta.setSelectionRange(pos + html.length, pos + html.length);
+    ta.focus();
+    ta.dispatchEvent(new Event('input'));
+  }
+}
+
+function _thiRenderPicker(q) {
+  if (!_thiSlash.grid) return;
+  var seq = ++_thiSlash.seq;
+  var searchFn = window.bwThiingsSearch;
+  if (typeof searchFn !== 'function') {
+    _thiSlash.grid.innerHTML = '<p style="grid-column:1/-1;font-size:12px;text-align:center;color:#9ca3af;padding:10px 0">Thiings is still loading.</p>';
+    return;
+  }
+  _thiSlash.grid.innerHTML = '<p style="grid-column:1/-1;font-size:12px;text-align:center;color:#9ca3af;padding:10px 0">Searching Thiings...</p>';
+  searchFn(q || '', q ? 80 : 48).then(function(items) {
+    if (seq !== _thiSlash.seq) return;
+    if (!items.length) {
+      _thiSlash.grid.innerHTML = '<p style="grid-column:1/-1;font-size:12px;text-align:center;color:#9ca3af;padding:10px 0">No Thiings icons found.</p>';
+      return;
+    }
+    _thiSlash.grid.innerHTML = items.map(function(item, i) {
+      return '<button type="button" data-thi-idx="' + i + '" title="' + _thiEsc(item.name) + '" ' +
+        'style="height:34px;border:0;border-radius:8px;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer">' +
+        '<img src="' + _thiEsc(item.src) + '" alt="" loading="lazy" decoding="async" style="width:26px;height:26px;object-fit:contain">' +
+        '</button>';
+    }).join('');
+    _thiSlash.grid.querySelectorAll('[data-thi-idx]').forEach(function(btn) {
+      btn.addEventListener('mouseenter', function() { btn.style.background = document.documentElement.classList.contains('dark') ? '#3f3f46' : '#eff6ff'; });
+      btn.addEventListener('mouseleave', function() { btn.style.background = 'transparent'; });
+      btn.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        _thiInsert(items[parseInt(btn.dataset.thiIdx, 10)]);
+      });
+    });
+  });
+}
+
+function _thiOpen(ce, actRange, ta, taPos, anchor, initialQuery) {
+  if (!_thiSlash.el) {
+    var el = document.createElement('div');
+    el.id = 'thiings-slash-picker';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Pick a Thiings icon');
+    el.style.cssText = 'position:fixed;z-index:10000;border-radius:12px;padding:10px;' +
+      'box-shadow:0 8px 30px rgba(0,0,0,.22);display:none;flex-direction:column;gap:8px;width:300px;';
+    el.innerHTML =
+      '<p style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:0;opacity:.55">Thiings Icons</p>' +
+      '<input id="thi-slash-search" type="search" placeholder="Search Thiings..." ' +
+        'style="font-size:13px;padding:6px 8px;border-radius:8px;border:1px solid #d1d5db;outline:none;min-width:0">' +
+      '<div id="thi-slash-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:3px;max-height:260px;overflow-y:auto"></div>';
+    document.body.appendChild(el);
+    _thiSlash.el = el;
+    _thiSlash.input = el.querySelector('#thi-slash-search');
+    _thiSlash.grid = el.querySelector('#thi-slash-grid');
+    _thiSlash.input.addEventListener('input', function() { _thiRenderPicker(_thiSlash.input.value); });
+    _thiSlash.input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { e.preventDefault(); _thiClose(); }
+      e.stopPropagation();
+    });
+    document.addEventListener('mousedown', function(e) {
+      if (_thiSlash.el.style.display !== 'none' && !_thiSlash.el.contains(e.target)) _thiClose();
+    }, true);
+  }
+
+  _thiSlash.ce = ce;
+  _thiSlash.actRange = actRange;
+  _thiSlash.ta = ta;
+  _thiSlash.taPos = taPos;
+
+  var dark = document.documentElement.classList.contains('dark');
+  Object.assign(_thiSlash.el.style, {
+    background: dark ? '#18181b' : '#fff',
+    border: dark ? '1px solid #3f3f46' : '1px solid #e5e7eb',
+    color: dark ? '#f4f4f5' : '#111827',
+    display: 'flex',
+  });
+  Object.assign(_thiSlash.input.style, {
+    background: dark ? '#27272a' : '#fff',
+    color: dark ? '#f4f4f5' : '#111827',
+    borderColor: dark ? '#52525b' : '#d1d5db',
+  });
+  _thiSlash.input.value = initialQuery || '';
+  _thiRenderPicker(_thiSlash.input.value);
+
+  _thiSlash.el.style.top = _thiSlash.el.style.left = '-9999px';
+  requestAnimationFrame(function() {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var elW = _thiSlash.el.offsetWidth || 300;
+    var elH = _thiSlash.el.offsetHeight || 240;
+    var ax = (anchor && anchor.x != null) ? anchor.x : vw / 2 - elW / 2;
+    var ay = (anchor && anchor.y != null) ? anchor.y : vh / 2 - elH / 2;
+    var top = ay + 10;
+    var left = ax;
+    if (top + elH > vh - 16) top = ay - elH - 10;
+    if (left + elW > vw - 16) left = vw - elW - 16;
+    _thiSlash.el.style.top = Math.max(8, top) + 'px';
+    _thiSlash.el.style.left = Math.max(8, left) + 'px';
+    _thiSlash.input.focus();
+    _thiSlash.input.select();
+  });
+}
+
+function _thiClose() {
+  if (_thiSlash.el) _thiSlash.el.style.display = 'none';
+  _thiSlash.ce = _thiSlash.actRange = _thiSlash.ta = null;
+  _thiSlash.taPos = -1;
+}
+
 const SLASH_COMMANDS = [
   {
     id: 'h1', label: 'Heading 1', desc: 'Large section heading',
@@ -284,6 +448,23 @@ const SLASH_COMMANDS = [
            </svg>`,
     // Opens a styled dialog; restores cursor position on confirm before insertHTML.
     action: (ce, postDeleteRange) => { _ceLinkDialog(ce, postDeleteRange); },
+  },
+  {
+    id: 'thiing', label: 'Thiings Icon', desc: 'Search and insert a licensed icon',
+    icon: '<span style="font-size:17px;line-height:1">🔎</span>',
+    action: (ce, actRange) => {
+      var q = (_sc.query || '').replace(/^thiings?/, '').replace(/^icon/, '').replace(/^-+/, '').trim();
+      if (ce) {
+        ce.focus();
+        var sel = window.getSelection();
+        if (actRange) { sel.removeAllRanges(); sel.addRange(actRange); }
+        _thiOpen(ce, actRange, null, -1, _ceCaretCoords(), q);
+      } else {
+        var ta = _sc.ta;
+        var pos = ta ? ta.selectionStart : 0;
+        _thiOpen(null, null, ta, pos, ta ? _taCaretCoords(ta, pos) : null, q);
+      }
+    },
   },
   {
     id: 'quote', label: 'Blockquote', desc: 'Indented quote block',
@@ -554,6 +735,9 @@ const _sc = {
   ceSuppressed:  false,  // true after Escape — stops palette reopening until prefix resets
   // textarea mode
   caretEnd:      null,   // ta.selectionStart snapshot, refreshed on every _render()
+  thiingQuery:   '',
+  thiingItems:   [],
+  thiingPending: false,
 };
 
 
@@ -685,10 +869,47 @@ function _caretCoords() {
    so the rendered list, keyboard nav, and apply all stay in sync. */
 function _scMatches() {
   const q = _sc.query.toLowerCase();
-  return SLASH_COMMANDS.filter(c =>
+  const builtIns = SLASH_COMMANDS.filter(c =>
     (!c.show || c.show(_sc)) &&
     (c.label.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q))
   );
+  const thiingCmds = (_sc.thiingItems || []).map(_thiCommandFromItem);
+  if (_sc.thiingPending && q.length >= 2 && !thiingCmds.length) {
+    thiingCmds.push({
+      id: 'thiing-loading',
+      label: 'Searching Thiings...',
+      desc: 'Matching imported icons',
+      icon: '<span style="font-size:16px;line-height:1">🔎</span>',
+      disabled: true,
+    });
+  }
+  return builtIns.concat(thiingCmds);
+}
+
+function _queueThiingsSlashSearch() {
+  const q = (_sc.query || '').trim().toLowerCase();
+  const canSearch = q.length >= 2 && typeof window.bwThiingsSearch === 'function';
+  if (!canSearch) {
+    _sc.thiingQuery = q;
+    _sc.thiingItems = [];
+    _sc.thiingPending = false;
+    return;
+  }
+  if (_sc.thiingQuery === q) return;
+  _sc.thiingQuery = q;
+  _sc.thiingItems = [];
+  _sc.thiingPending = true;
+  window.bwThiingsSearch(q, 8).then(function(items) {
+    if (!_sc.open || _sc.thiingQuery !== q) return;
+    _sc.thiingItems = items || [];
+    _sc.thiingPending = false;
+    _sc.selected = 0;
+    _render();
+  }).catch(function() {
+    if (_sc.thiingQuery !== q) return;
+    _sc.thiingItems = [];
+    _sc.thiingPending = false;
+  });
 }
 
 /* ─────────────────────────────────────────
@@ -696,6 +917,7 @@ function _scMatches() {
    ───────────────────────────────────────── */
 function _render() {
   _applyTheme();
+  _queueThiingsSlashSearch();
   const pal = _sc.palette;
   const matches = _scMatches();
   if (!matches.length) { _close(); return; }
@@ -730,8 +952,8 @@ function _render() {
                     pointer-events:none;
                     background:${iconBg};color:${iconColor};">${cmd.icon}</div>
         <div style="pointer-events:none;">
-          <div style="font-size:13px;font-weight:600;line-height:1.2">${cmd.label}</div>
-          <div style="font-size:11px;color:${descColor};line-height:1.3">${cmd.desc}</div>
+          <div style="font-size:13px;font-weight:600;line-height:1.2">${_thiEsc(cmd.label)}</div>
+          <div style="font-size:11px;color:${descColor};line-height:1.3">${_thiEsc(cmd.desc)}</div>
         </div>
       </div>`;
   }).join('');
@@ -1969,6 +2191,7 @@ function _applyCE(cmd) {
 function _scApply() {
   const matches = _scMatches();
   const cmd = matches[_sc.selected];
+  if (cmd && cmd.disabled) return;
   if (!cmd) { _close(); return; }
 
   if (_sc.mode === 'ce') _applyCE(cmd); else _applyTextarea(cmd);
