@@ -114,11 +114,20 @@
               Remove icon
             </button>
             <div class="flex gap-1 mb-2" role="tablist" aria-label="Icon source">
+              <button type="button" id="icon-src-all"
+                class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-wblue text-white">All</button>
               <button type="button" id="icon-src-emoji"
-                class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-wblue text-white">Emoji</button>
+                class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">Emoji</button>
               <button type="button" id="icon-src-thiings"
                 class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">Thiings</button>
             </div>
+            <input
+              id="icon-search"
+              type="search"
+              placeholder="Search icons..."
+              class="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 mb-2 focus:outline-none focus:ring-2 focus:ring-wblue bg-gray-50 dark:bg-zinc-800 text-gray-800 dark:text-zinc-100 placeholder-gray-400"
+              aria-label="Search icons"
+            />
             <!-- Icon grid (populated by JS) -->
             <div id="icon-emoji-grid"
                  class="grid grid-cols-8 gap-0.5 max-h-52 overflow-y-auto"
@@ -2857,17 +2866,29 @@
   const clearBtn = document.getElementById('icon-clear-btn');
   const grid     = document.getElementById('icon-emoji-grid');
   const hidden   = document.getElementById('note-icon-value');
+  const search   = document.getElementById('icon-search');
+  const allTab   = document.getElementById('icon-src-all');
   const emojiTab = document.getElementById('icon-src-emoji');
   const thiTab   = document.getElementById('icon-src-thiings');
   if (!btn || !pop || !hidden) return;
-  var pickerMode = (typeof window.bwIconIsThiing === 'function' && window.bwIconIsThiing(hidden.value)) ? 'thiings' : 'emoji';
+  var pickerMode = 'all';
+  var pickerSeq = 0;
+
+  function escIcon(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
 
   function setMode(mode) {
-    pickerMode = mode === 'thiings' ? 'thiings' : 'emoji';
-    [emojiTab, thiTab].forEach(function(t) {
+    pickerMode = mode === 'emoji' || mode === 'thiings' ? mode : 'all';
+    [allTab, emojiTab, thiTab].forEach(function(t) {
       if (!t) return;
       t.classList.remove('bg-wblue','text-white','bg-gray-100','dark:bg-zinc-800','text-gray-500','dark:text-zinc-400');
     });
+    if (allTab) allTab.className += pickerMode === 'all'
+      ? ' bg-wblue text-white'
+      : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
     if (emojiTab) emojiTab.className += pickerMode === 'emoji'
       ? ' bg-wblue text-white'
       : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
@@ -2878,21 +2899,55 @@
   }
 
   function buildGrid() {
+    var q = search ? search.value.trim().toLowerCase() : '';
+    var seq = ++pickerSeq;
+    function emojiMatches() {
+      if (!q) return EMOJIS;
+      return EMOJIS.filter(function(e) { return e.indexOf(q) !== -1; });
+    }
+    function emojiHtml(list) {
+      return list.map(e =>
+        `<button type="button" role="option" data-emoji="${e}"
+           aria-label="${e}"
+           class="icon-emoji-btn flex items-center justify-center text-xl rounded hover:bg-gray-100
+                  dark:hover:bg-zinc-800 w-8 h-8 transition"
+         >${e}</button>`
+      ).join('');
+    }
     if (pickerMode === 'thiings') {
       if (typeof window.bwThiingsRenderGrid === 'function') {
-        window.bwThiingsRenderGrid(grid, '', pick, { limit: 96 });
+        window.bwThiingsRenderGrid(grid, q, pick, { limit: 96 });
       } else {
         grid.innerHTML = '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">Thiings picker is still loading.</p>';
       }
       return;
     }
-    grid.innerHTML = EMOJIS.map(e =>
-      `<button type="button" role="option" data-emoji="${e}"
-         aria-label="${e}"
-         class="icon-emoji-btn flex items-center justify-center text-xl rounded hover:bg-gray-100
-                dark:hover:bg-zinc-800 w-8 h-8 transition"
-       >${e}</button>`
-    ).join('');
+    if (pickerMode === 'emoji') {
+      grid.innerHTML = emojiHtml(emojiMatches()) || '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">No emojis found</p>';
+      return;
+    }
+    var emojis = emojiMatches();
+    grid.innerHTML = '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">Searching icons...</p>';
+    var thiings = typeof window.bwThiingsSearch === 'function'
+      ? window.bwThiingsSearch(q, q ? 72 : 48)
+      : Promise.resolve([]);
+    thiings.then(function(items) {
+      if (seq !== pickerSeq) return;
+      var emojiBlock = emojis.length
+        ? '<p class="col-span-full mt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Emoji</p>' + emojiHtml(emojis)
+        : '';
+      var thiingsBlock = items.length
+        ? '<p class="col-span-full mt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Thiings</p>' +
+          items.map(function(it) {
+            return '<button type="button" role="option" data-emoji="thiing:' + escIcon(it.slug) + '"' +
+              ' aria-label="' + escIcon(it.name) + '"' +
+              ' class="bw-thiing-choice rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition">' +
+              '<img src="' + escIcon(it.src) + '" alt="" loading="lazy" decoding="async">' +
+              '</button>';
+          }).join('')
+        : '';
+      grid.innerHTML = emojiBlock + thiingsBlock || '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">No icons found</p>';
+    });
   }
   buildGrid();
 
@@ -2943,8 +2998,9 @@
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    pickerMode = (typeof window.bwIconIsThiing === 'function' && window.bwIconIsThiing(hidden.value)) ? 'thiings' : 'emoji';
-    setMode(pickerMode);
+    pickerMode = 'all';
+    if (search) search.value = '';
+    setMode('all');
     pop.classList.contains('hidden') ? openPop() : closePop();
   });
 
@@ -2961,6 +3017,10 @@
     if (eb) pick(eb.dataset.emoji);
   });
 
+  if (allTab) allTab.addEventListener('click', function(e) {
+    e.stopPropagation();
+    setMode('all');
+  });
   if (emojiTab) emojiTab.addEventListener('click', function(e) {
     e.stopPropagation();
     setMode('emoji');
@@ -2969,6 +3029,7 @@
     e.stopPropagation();
     setMode('thiings');
   });
+  if (search) search.addEventListener('input', buildGrid);
 
   clearBtn.addEventListener('click', (e) => {
     e.stopPropagation();

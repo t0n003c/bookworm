@@ -3942,8 +3942,10 @@
     aria-label="Search icons"
   />
   <div class="flex gap-1 mb-2" role="tablist" aria-label="Icon source">
+    <button type="button" id="emoji-tab-all" onclick="setEmojiPickerSource('all')"
+      class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-wblue text-white">All</button>
     <button type="button" id="emoji-tab-emoji" onclick="setEmojiPickerSource('emoji')"
-      class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-wblue text-white">Emoji</button>
+      class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">Emoji</button>
     <button type="button" id="emoji-tab-thiings" onclick="setEmojiPickerSource('thiings')"
       class="flex-1 text-xs font-semibold rounded-lg px-2 py-1 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400">Thiings</button>
   </div>
@@ -4000,7 +4002,8 @@
 
   let _pickerInput  = null;     // id of the hidden <input>
   let _pickerButton = null;     // id of the display <button>
-  let _pickerSource = 'emoji';  // emoji | thiings
+  let _pickerSource = 'all';    // all | emoji | thiings
+  let _pickerBuildSeq = 0;
 
   function _iconPickEsc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
@@ -4015,13 +4018,17 @@
   }
 
   function setEmojiPickerSource(source) {
-    _pickerSource = source === 'thiings' ? 'thiings' : 'emoji';
+    _pickerSource = source === 'emoji' || source === 'thiings' ? source : 'all';
+    const aTab = document.getElementById('emoji-tab-all');
     const eTab = document.getElementById('emoji-tab-emoji');
     const tTab = document.getElementById('emoji-tab-thiings');
-    [eTab, tTab].forEach(btn => {
+    [aTab, eTab, tTab].forEach(btn => {
       if (!btn) return;
       btn.classList.remove('bg-wblue','text-white','bg-gray-100','dark:bg-zinc-800','text-gray-500','dark:text-zinc-400');
     });
+    if (aTab) aTab.className += _pickerSource === 'all'
+      ? ' bg-wblue text-white'
+      : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
     if (eTab) eTab.className += _pickerSource === 'emoji'
       ? ' bg-wblue text-white'
       : ' bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400';
@@ -4036,6 +4043,23 @@
     const grid  = document.getElementById('emoji-grid');
     const empty = document.getElementById('emoji-empty');
     const q     = (filter || '').trim().toLowerCase();
+    const seq   = ++_pickerBuildSeq;
+    function emojiButtons(list) {
+      return list.map(item =>
+        `<button type="button" data-icon-value="${_iconPickEsc(item.e)}"
+          class="text-xl p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 transition leading-none"
+          aria-label="${item.e}">${item.e}</button>`
+      ).join('');
+    }
+    function wirePicks() {
+      grid.querySelectorAll('[data-icon-value]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pickEmoji(btn.dataset.iconValue);
+        });
+      });
+    }
     if (_pickerSource === 'thiings') {
       empty.classList.add('hidden');
       grid.classList.remove('hidden');
@@ -4047,27 +4071,47 @@
       return;
     }
     const list  = q ? EMOJIS.filter(item => item.t.includes(q)) : EMOJIS;
-    grid.innerHTML = list.map(item =>
-      `<button type="button" data-icon-value="${_iconPickEsc(item.e)}"
-        class="text-xl p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 transition leading-none"
-        aria-label="${item.e}">${item.e}</button>`
-    ).join('');
-    grid.querySelectorAll('[data-icon-value]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        pickEmoji(btn.dataset.iconValue);
-      });
+    if (_pickerSource === 'emoji') {
+      grid.innerHTML = emojiButtons(list);
+      wirePicks();
+      empty.classList.toggle('hidden', list.length > 0);
+      grid.classList.toggle('hidden',  list.length === 0);
+      return;
+    }
+    empty.classList.add('hidden');
+    grid.classList.remove('hidden');
+    grid.innerHTML = '<p class="col-span-full text-xs text-center text-gray-400 dark:text-zinc-500 py-3">Searching icons...</p>';
+    const thiings = typeof window.bwThiingsSearch === 'function'
+      ? window.bwThiingsSearch(q, q ? 72 : 48)
+      : Promise.resolve([]);
+    thiings.then(items => {
+      if (seq !== _pickerBuildSeq) return;
+      const emojiHtml = list.length
+        ? '<p class="col-span-full mt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Emoji</p>' + emojiButtons(list)
+        : '';
+      const thiingsHtml = items.length
+        ? '<p class="col-span-full mt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-zinc-500">Thiings</p>' +
+          items.map(it =>
+            `<button type="button" data-icon-value="thiing:${_iconPickEsc(it.slug)}"
+              title="${_iconPickEsc(it.name)}" aria-label="${_iconPickEsc(it.name)}"
+              class="bw-thiing-choice rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition">
+              <img src="${_iconPickEsc(it.src)}" alt="" loading="lazy" decoding="async">
+            </button>`
+          ).join('')
+        : '';
+      grid.innerHTML = emojiHtml + thiingsHtml;
+      wirePicks();
+      const hasResults = list.length || items.length;
+      empty.textContent = q ? 'No icons found' : 'No icons found';
+      empty.classList.toggle('hidden', hasResults);
+      grid.classList.toggle('hidden', !hasResults);
     });
-    empty.classList.toggle('hidden', list.length > 0);
-    grid.classList.toggle('hidden',  list.length === 0);
   }
 
   function openEmojiPicker(inputId, btnId) {
     _pickerInput  = inputId;
     _pickerButton = btnId;
-    _pickerSource = (typeof window.bwIconIsThiing === 'function' &&
-                     window.bwIconIsThiing(document.getElementById(inputId)?.value)) ? 'thiings' : 'emoji';
+    _pickerSource = 'all';
     const picker = document.getElementById('emoji-picker');
     const search = document.getElementById('emoji-search');
     search.value = '';
