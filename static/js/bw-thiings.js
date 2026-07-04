@@ -238,7 +238,11 @@
             'X-Requested-With': 'XMLHttpRequest'
           }
         }).then(function (r) {
-          return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+          return r.text().then(function (txt) {
+            var body = null;
+            try { body = JSON.parse(txt || '{}'); } catch (_) { body = { error: txt.slice(0, 180) }; }
+            return { ok: r.ok, status: r.status, body: body };
+          });
         }).then(function (res) {
           serverImport.disabled = false;
           if (!res.ok || !res.body || !res.body.ok) {
@@ -253,7 +257,7 @@
           setTimeout(function () { renderGrid(el, query, onPick, opts); }, 900);
         }).catch(function () {
           serverImport.disabled = false;
-          if (serverMsg) serverMsg.textContent = 'Import failed.';
+          if (serverMsg) serverMsg.textContent = 'Import failed before BookWorm returned a response. Check container logs.';
         });
       });
     }

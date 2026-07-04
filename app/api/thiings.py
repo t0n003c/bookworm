@@ -7,6 +7,7 @@ supported through static/data/thiings-icons.json and static/img/thiings.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import zipfile
@@ -19,6 +20,7 @@ from app.core.db import DATA_DIR
 from core.deps import current_user_id
 
 router = APIRouter(prefix="/thiings", tags=["thiings"])
+log = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,90}$")
 _MAX_ICON_BYTES = 2 * 1024 * 1024
@@ -361,6 +363,11 @@ async def import_server_thiings_zip(
         return JSONResponse({
             "error": f"BookWorm could not read that ZIP file: {reason}. Check file permissions in the imports folder.",
         }, status_code=400)
+    except Exception as exc:
+        log.exception("Thiings server ZIP import failed for %s", clean_name)
+        return JSONResponse({
+            "error": f"Thiings import crashed: {exc.__class__.__name__}. Check the BookWorm container logs for details.",
+        }, status_code=500)
 
     if result.get("error"):
         return JSONResponse({"error": result["error"]}, status_code=int(result.get("status") or 400))
