@@ -252,7 +252,8 @@
           _items = null;
           _loadPromise = null;
           _lastImportStatus = 'Imported ' + res.body.imported + ' icons from ' + name +
-            (res.body.skipped ? ' - skipped ' + res.body.skipped : '') + '.';
+            (res.body.skipped ? ' - skipped ' + res.body.skipped : '') +
+            (res.body.deduped ? ' - ignored ' + res.body.deduped + ' duplicates' : '') + '.';
           if (serverMsg) serverMsg.textContent = _lastImportStatus;
           setTimeout(function () { renderGrid(el, query, onPick, opts); }, 900);
         }).catch(function () {
@@ -302,7 +303,8 @@
           _items = null;
           _loadPromise = null;
           _lastImportStatus = 'Imported ' + body.imported + ' icons from browser upload' +
-            (body.skipped ? ' · skipped ' + body.skipped : '') + '.';
+            (body.skipped ? ' · skipped ' + body.skipped : '') +
+            (body.deduped ? ' · ignored ' + body.deduped + ' duplicates' : '') + '.';
           if (bulkMsg) bulkMsg.textContent = _lastImportStatus;
           setTimeout(function () { renderGrid(el, query, onPick, opts); }, 900);
         };

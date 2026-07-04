@@ -162,6 +162,38 @@ def _entry_for_zip_image(filename: str, ext: str, meta: dict | None) -> dict:
     }
 
 
+def _is_zip_image(info: zipfile.ZipInfo) -> bool:
+    if info.is_dir():
+        return False
+    parts = Path(info.filename).parts
+    if not parts:
+        return False
+    if any(p.startswith(".") or p == "__MACOSX" for p in parts):
+        return False
+    return _ext_from_name(info.filename) in _IMAGE_EXTS
+
+
+def _zip_image_infos(infos: list[zipfile.ZipInfo]) -> tuple[list[zipfile.ZipInfo], int]:
+    """Return importable image entries, deduped by slug stem.
+
+    Some icon packs include duplicate folders, OS resource files, or multiple
+    image formats for the same icon. Count unique slugs for the safety cap.
+    """
+    by_slug: dict[str, zipfile.ZipInfo] = {}
+    raw_count = 0
+    for info in infos:
+        if not _is_zip_image(info):
+            continue
+        raw_count += 1
+        slug = _slugify(Path(info.filename).stem)
+        if not slug:
+            continue
+        existing = by_slug.get(slug)
+        if existing is None or info.file_size > existing.file_size:
+            by_slug[slug] = info
+    return list(by_slug.values()), raw_count
+
+
 def _import_zip_obj(zip_obj) -> dict:
     """Import icons from a ZIP file-like object."""
     with zipfile.ZipFile(zip_obj) as zipf:
@@ -171,14 +203,14 @@ def _import_zip_obj(zip_obj) -> dict:
         if total_compressed > _MAX_ZIP_BYTES or total_uncompressed > _MAX_ZIP_UNCOMPRESSED:
             return {"error": "ZIP is too large to import.", "status": 400}
 
-        image_infos = [
-            i for i in infos
-            if _ext_from_name(i.filename) in _IMAGE_EXTS and not Path(i.filename).name.startswith(".")
-        ]
+        image_infos, raw_image_count = _zip_image_infos(infos)
         if not image_infos:
             return {"error": "No supported image files found in the ZIP.", "status": 400}
         if len(image_infos) > _MAX_BULK_ICONS:
-            return {"error": f"ZIP has too many icons. Limit is {_MAX_BULK_ICONS}.", "status": 400}
+            return {
+                "error": f"ZIP has too many unique icons ({len(image_infos)}). Limit is {_MAX_BULK_ICONS}.",
+                "status": 400,
+            }
 
         by_slug, by_stem = _metadata_indexes(zipf)
         existing = {e["slug"]: e for e in _runtime_entries()}
@@ -207,7 +239,8 @@ def _import_zip_obj(zip_obj) -> dict:
             imported += 1
 
         _write_runtime_entries(list(existing.values()))
-    return {"ok": True, "imported": imported, "skipped": skipped}
+    deduped = max(0, raw_image_count - len(image_infos))
+    return {"ok": True, "imported": imported, "skipped": skipped, "deduped": deduped}
 
 
 @router.get("/manifest")
