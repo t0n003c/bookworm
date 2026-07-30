@@ -1165,8 +1165,41 @@ async def serve_trip_cover(request: Request, filename: str):
     return _serve_upload_file(path)
 
 
-@app.get("/uploads/trip-panel-docs/{filename}", include_in_schema=False)
-async def serve_trip_panel_doc(request: Request, filename: str):
+async def _trip_panel_doc_page_id(filename: str, uid: int) -> int | None:
+    """Resolve a trip resource document filename to an owned trip page id."""
+    panel_id = None
+    m = re.match(r"^pdoc(\d+)_", filename)
+    if m:
+        panel_id = int(m.group(1))
+
+    async with get_db() as db:
+        if panel_id is not None:
+            cur = await db.execute(
+                """
+                SELECT page_id
+                  FROM trip_plan_panels
+                 WHERE id=? AND user_id=?
+                """,
+                (panel_id, uid),
+            )
+            row = await cur.fetchone()
+            if row:
+                return int(row["page_id"])
+        cur = await db.execute(
+            """
+            SELECT page_id
+              FROM trip_plan_panels
+             WHERE user_id=? AND content LIKE ?
+             ORDER BY id DESC
+             LIMIT 1
+            """,
+            (uid, f"%{filename}%"),
+        )
+        row = await cur.fetchone()
+    return int(row["page_id"]) if row else None
+
+
+async def _serve_trip_panel_doc(request: Request, filename: str):
     """Serve a trip resource document to the owner of its trip page.
 
     Filename pattern: pdoc{panel_id}_{random}.{ext}
@@ -1177,31 +1210,25 @@ async def serve_trip_panel_doc(request: Request, filename: str):
         raise HTTPException(status_code=401)
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400)
-    try:
-        m = re.match(r"^pdoc(\d+)_", filename)
-        if not m:
-            raise ValueError
-        panel_id = int(m.group(1))
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=400)
-    async with get_db() as db:
-        cur = await db.execute(
-            """
-            SELECT page_id, user_id
-              FROM trip_plan_panels
-             WHERE id=? AND panel_type='documents'
-            """,
-            (panel_id,),
-        )
-        row = await cur.fetchone()
-    if not row:
+    page_id = await _trip_panel_doc_page_id(filename, int(uid))
+    if page_id is None:
         raise HTTPException(status_code=404)
-    if int(row["user_id"]) != int(uid) or not await get_home_page(row["page_id"], uid):
+    if not await get_home_page(page_id, uid):
         raise HTTPException(status_code=403)
     path = UPLOAD_DIR / "trip-panel-docs" / filename
     if not path.exists():
         raise HTTPException(status_code=404)
     return _serve_upload_file(path)
+
+
+@app.get("/home/trip-docs/{filename}", include_in_schema=False)
+async def serve_trip_panel_doc_home(request: Request, filename: str):
+    return await _serve_trip_panel_doc(request, filename)
+
+
+@app.get("/uploads/trip-panel-docs/{filename}", include_in_schema=False)
+async def serve_trip_panel_doc_uploads(request: Request, filename: str):
+    return await _serve_trip_panel_doc(request, filename)
 
 
 @app.get("/uploads/thumb/{filename:path}", include_in_schema=False)

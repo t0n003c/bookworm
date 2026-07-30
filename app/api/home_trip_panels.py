@@ -285,7 +285,7 @@ async def upload_panel_doc(
     doc_dir = UPLOAD_DIR / "trip-panel-docs"
     doc_dir.mkdir(parents=True, exist_ok=True)
     (doc_dir / stored_name).write_bytes(data)
-    url = f"/uploads/trip-panel-docs/{stored_name}"
+    url = f"/home/trip-docs/{stored_name}"
     return JSONResponse({"url": url, "name": original_name})
 
 
