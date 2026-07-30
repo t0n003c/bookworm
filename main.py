@@ -1165,6 +1165,45 @@ async def serve_trip_cover(request: Request, filename: str):
     return _serve_upload_file(path)
 
 
+@app.get("/uploads/trip-panel-docs/{filename}", include_in_schema=False)
+async def serve_trip_panel_doc(request: Request, filename: str):
+    """Serve a trip resource document to the owner of its trip page.
+
+    Filename pattern: pdoc{panel_id}_{random}.{ext}
+    Ownership: panel_id maps back to trip_plan_panels.page_id/user_id.
+    """
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401)
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400)
+    try:
+        m = re.match(r"^pdoc(\d+)_", filename)
+        if not m:
+            raise ValueError
+        panel_id = int(m.group(1))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400)
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT page_id, user_id
+              FROM trip_plan_panels
+             WHERE id=? AND panel_type='documents'
+            """,
+            (panel_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404)
+    if int(row["user_id"]) != int(uid) or not await get_home_page(row["page_id"], uid):
+        raise HTTPException(status_code=403)
+    path = UPLOAD_DIR / "trip-panel-docs" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return _serve_upload_file(path)
+
+
 @app.get("/uploads/thumb/{filename:path}", include_in_schema=False)
 async def serve_upload_thumb(request: Request, filename: str, w: int = 400):
     """Serve a fast, owner-verified, disk-cached thumbnail of any uploaded image.
