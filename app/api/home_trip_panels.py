@@ -1,9 +1,9 @@
 """Trip Plan Panel Cards — API endpoints.
 
-Panels are trip-scoped utility cards (documents, packing list, budget,
-emergency info, notes) that render alongside day lanes in the Plan view.
+Panels are trip-scoped utility cards (documents, packing list, to do list,
+budget, emergency info, notes) that render alongside day lanes in the Plan view.
 
-Panel types: documents | packing | budget | emergency | notes
+Panel types: documents | packing | todo | budget | emergency | notes
 Content is stored as a JSON blob; the client manages item-level IDs.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from app.api.home_db import get_home_page
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/home")
 
-_PANEL_TYPES  = frozenset({"documents", "packing", "budget", "emergency", "notes", "settle", "people", "reminder"})
+_PANEL_TYPES  = frozenset({"documents", "packing", "todo", "budget", "emergency", "notes", "settle", "people", "reminder"})
 _DEMO_NOOP    = Response(status_code=204, headers={"HX-Reswap": "none"})
 _MAX_DOC_MB   = 20
 
@@ -295,6 +295,7 @@ def _default_content(panel_type: str) -> dict:
     defaults = {
         "documents": {"items": []},
         "packing":   {"groups": [{"name": "General", "items": []}]},
+        "todo":      {"items": []},
         "budget":    {"total": 0, "currency": "USD", "items": []},
         "emergency": {"items": []},
         "notes":     {"text": ""},

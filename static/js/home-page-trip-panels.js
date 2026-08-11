@@ -1,6 +1,6 @@
 /**
  * home-page-trip-panels.js — Trip Plan panel cards.
- * Panel types: documents | packing | budget | emergency | notes
+ * Panel types: documents | packing | todo | budget | emergency | notes
  *
  * Depends on: _tripPid, _tripFetch, _tripShowToast, _tripEsc, _tripMdToHtml,
  *             _tripPlanMode, _tripDayCardWidth (home-page-trip*.js)
@@ -18,6 +18,7 @@
 var _TPP_TYPES = {
   documents: { icon: '📎', label: 'Documents',    desc: 'Links, confirmations, tickets' },
   packing:   { icon: '🎒', label: 'Packing List', desc: 'Gear, clothes, toiletries' },
+  todo:      { icon: '✅', label: 'To Do List',    desc: 'Trip tasks and errands' },
   budget:    { icon: '💰', label: 'Budget',        desc: 'Track spend vs budget' },
   emergency: { icon: '🆘', label: 'Emergency',    desc: 'Contacts, insurance, medical' },
   notes:     { icon: '📝', label: 'Trip Notes',   desc: 'Free-form scratchpad' },
@@ -301,6 +302,7 @@ function _tppSave(panelId, newContent, onDone) {
 function _tppBody(p, data, isEdit) {
   if (p.panel_type === 'documents') return _tppDocs(p, data, isEdit);
   if (p.panel_type === 'packing')   return _tppPacking(p, data, isEdit);
+  if (p.panel_type === 'todo')      return _tppTodo(p, data, isEdit);
   if (p.panel_type === 'budget')    return _tppBudget(p, data, isEdit);
   if (p.panel_type === 'emergency') return _tppEmerg(p, data, isEdit);
   if (p.panel_type === 'notes')     return _tppNotes(p, data, isEdit);
@@ -449,6 +451,62 @@ function _tppPacking(p, data, isEdit) {
 
   return progressBar +
     '<div class="flex-1 overflow-y-auto">' + (groupsHtml || _tppEmpty('No items yet')) + '</div>' +
+    form + footer;
+}
+
+// ── To Do List ────────────────────────────────────────────────────────────────
+
+function _tppTodo(p, data, isEdit) {
+  var items = data.items || [];
+  var done = items.filter(function(it) { return it.done; }).length;
+  var total = items.length;
+
+  var progressBar =
+    '<div class="px-3 py-1.5 flex-shrink-0 border-b border-gray-50 dark:border-zinc-800">' +
+      '<div class="flex items-center justify-between mb-1">' +
+        '<span class="text-[10px] text-gray-500 dark:text-zinc-400">' +
+          done + ' / ' + total + ' done</span>' +
+        (isEdit
+          ? '<button onclick="tppClearTodoDone(' + p.id + ')" ' +
+              'class="text-[10px] text-gray-400 hover:text-gray-600 transition">Reset</button>'
+          : '') +
+      '</div>' +
+      '<div class="h-1.5 bg-gray-100 dark:bg-zinc-800 rounded-full overflow-hidden">' +
+        '<div class="h-full rounded-full transition-all" ' +
+             'style="background-color:#2a8703;width:' + (total > 0 ? Math.round(done / total * 100) : 0) + '%"></div>' +
+      '</div>' +
+    '</div>';
+
+  var rows = items.map(function(it, idx) {
+    var del = isEdit
+      ? '<button onclick="tppDeleteTodoItem(' + p.id + ',' + idx + ')" ' +
+          'class="opacity-0 group-hover:opacity-100 text-gray-300 ' +
+                 'hover:text-red-400 text-xs flex-shrink-0 transition">✕</button>'
+      : '';
+    return '<div class="group flex items-center gap-2 px-3 py-1.5 ' +
+             'hover:bg-gray-50 dark:hover:bg-zinc-800/60 cursor-pointer transition" ' +
+             'onclick="tppToggleTodo(' + p.id + ',' + idx + ')">' +
+      '<span class="text-sm flex-shrink-0">' + (it.done ? '✅' : '⬜') + '</span>' +
+      '<span class="text-xs flex-1 min-w-0 ' +
+        (it.done ? 'line-through text-gray-400' : 'text-gray-700 dark:text-zinc-200') + '">' +
+        _tripEsc(it.text) + '</span>' + del +
+    '</div>';
+  }).join('');
+
+  var form = isEdit
+    ? '<div id="tpp-todo-form-' + p.id + '" class="hidden px-3 py-2 space-y-1.5 ' +
+        'border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">' +
+        '<input id="tpp-todo-item-' + p.id + '" type="text" ' +
+          'placeholder="Task (e.g. Confirm hotel check-in)" maxlength="120" ' +
+          'class="' + _tppInputCls() + '" />' +
+        _tppFormBtns('tppSaveTodoItem(' + p.id + ')', 'tppHideForm(' + p.id + ',\'todo\')') +
+      '</div>'
+    : '';
+
+  var footer = isEdit ? _tppAddBtn('tppShowForm(' + p.id + ',\'todo\')', '＋ Add Task') : '';
+
+  return progressBar +
+    '<div class="flex-1 overflow-y-auto">' + (rows || _tppEmpty('No tasks yet')) + '</div>' +
     form + footer;
 }
 
@@ -1298,6 +1356,36 @@ window.tppClearDone = function(panelId) {
   (d.groups || []).forEach(function(g) {
     (g.items || []).forEach(function(it) { it.done = false; });
   });
+  _tppSave(panelId, d);
+};
+
+// To Do
+window.tppToggleTodo = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.items || !d.items[idx]) return;
+  d.items[idx].done = !d.items[idx].done;
+  _tppSave(panelId, d);
+};
+window.tppDeleteTodoItem = function(panelId, idx) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  (d.items || []).splice(idx, 1);
+  _tppSave(panelId, d);
+};
+window.tppSaveTodoItem = function(panelId) {
+  var text = ((document.getElementById('tpp-todo-item-' + panelId) || {}).value || '').trim();
+  if (!text) { _tripShowToast('Task is required', true); return; }
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  if (!d.items) d.items = [];
+  d.items.push({ text: text, done: false });
+  _tppSave(panelId, d);
+};
+window.tppClearTodoDone = function(panelId) {
+  var p = _tppGetPanel(panelId); if (!p) return;
+  var d = _tppParse(p.content);
+  (d.items || []).forEach(function(it) { it.done = false; });
   _tppSave(panelId, d);
 };
 

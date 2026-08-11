@@ -467,10 +467,11 @@
 - `cover_url TEXT NOT NULL DEFAULT ''` — added via migration
 - Index: `idx_trip_plans_page ON trip_plans(page_id, user_id)`
 
-**`trip_plan_panels`** — utility side-cards per plan (documents, packing, budget, emergency info, settle-up)
+**`trip_plan_panels`** — utility side-cards per plan (documents, packing, to do, budget, emergency info, settle-up)
 - `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `plan_id` (→`trip_plans` CASCADE)
 - `panel_type TEXT NOT NULL`, `title TEXT, content TEXT DEFAULT '{}', sort_order, created_at`
 - Index: `idx_trip_plan_panels_plan ON trip_plan_panels(plan_id)`
+- `panel_type` includes `documents`, `packing`, `todo`, `budget`, `emergency`, `notes`, `settle`, `people`, `reminder`
 - `panel_type='settle'` rows are read/written by the Settle Up widget in sync mode
 
 **`db_cards`** — kanban/grid cards inside a Database-type workspace node
