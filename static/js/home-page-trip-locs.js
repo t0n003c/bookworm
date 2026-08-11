@@ -390,7 +390,63 @@ function _tripRenderLocForm(v) {
     '</textarea>';
 
   document.getElementById('trip-loc-modal-body').innerHTML = html;
+  _tripLocWireNotes();
   tripLocSyncAttrWidths();   // align Field col + Detail labels on open
+}
+
+function _tripLocWireNotes() {
+  var ta = document.getElementById('tlf-notes');
+  if (!ta || ta._bwTripLocNotesWired) return;
+  ta._bwTripLocNotesWired = true;
+  ta.addEventListener('keydown', function(e) {
+    if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!_tripLocNotesTabIndent(ta, e.shiftKey)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+}
+
+function _tripLocNotesTabIndent(ta, dedent) {
+  var value = ta.value || '';
+  var start = ta.selectionStart || 0;
+  var end   = ta.selectionEnd || start;
+  var lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  var lineEnd = value.indexOf('\n', end);
+  if (lineEnd < 0) lineEnd = value.length;
+
+  var selected = value.slice(lineStart, lineEnd);
+  var lines = selected.split('\n');
+  var listLike = lines.some(function(line) {
+    return /^\s*(?:[-*+]|\d+\.)\s+/.test(line);
+  });
+  if (!listLike) return false;
+
+  var deltaStart = 0;
+  var deltaEnd = 0;
+  var updated = lines.map(function(line, idx) {
+    var changed = line;
+    var delta = 0;
+    if (dedent) {
+      if (/^ {2}/.test(line)) {
+        changed = line.slice(2);
+        delta = -2;
+      } else if (/^\t/.test(line)) {
+        changed = line.slice(1);
+        delta = -1;
+      }
+    } else if (line.trim()) {
+      changed = '  ' + line;
+      delta = 2;
+    }
+    if (idx === 0 && start > lineStart) deltaStart = delta;
+    deltaEnd += delta;
+    return changed;
+  }).join('\n');
+
+  ta.value = value.slice(0, lineStart) + updated + value.slice(lineEnd);
+  ta.selectionStart = Math.max(lineStart, start + deltaStart);
+  ta.selectionEnd   = Math.max(ta.selectionStart, end + deltaEnd);
+  return true;
 }
 
 function _tripLocAttrRow(idx, key, val) {
