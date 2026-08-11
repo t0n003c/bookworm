@@ -279,15 +279,21 @@ function _tppGetPanel(panelId) {
 function _tppSave(panelId, newContent, onDone) {
   var p = _tppGetPanel(panelId);
   if (!p) return;
+  var oldContent = p.content;
   p.content = JSON.stringify(newContent);
   _tripFetch('/home/trip/' + _tripPid + '/plans/' + _tppPlanId + '/panels/' + panelId, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: p.title, content: newContent }),
-  }).then(function() {
+  }).then(function(r) {
+    if (!r.ok) throw new Error('Save failed');
     if (onDone) onDone();
     _tppRefreshCard(panelId);
-  }).catch(function() { _tripShowToast('Save failed', true); });
+  }).catch(function(err) {
+    p.content = oldContent;
+    if (err && err._tripAuthExpired) return;
+    _tripShowToast('Save failed', true);
+  });
 }
 
 // ── Body dispatch ─────────────────────────────────────────────────────────────
@@ -1034,9 +1040,19 @@ function _tppEmerg(p, data, isEdit) {
 // ── Trip Notes ────────────────────────────────────────────────────────────────
 
 function _tppNotes(p, data, isEdit) {
-  // Notes are ALWAYS rendered as a CE editor — regardless of plan edit/view mode.
-  // tppNotesInitCe() seeds the content + wires slash commands after DOM insertion.
-  // isEdit only affects whether the card header shows move/delete controls.
+  var md = data.text || '';
+  if (!isEdit) {
+    return '<div class="flex-1 overflow-y-auto p-3 text-xs leading-relaxed ' +
+             'text-gray-700 dark:text-zinc-200 prose prose-xs dark:prose-invert max-w-none">' +
+      (md.trim()
+        ? (typeof _tripMdToHtml === 'function'
+            ? _tripMdToHtml(md)
+            : _tripEsc(md).replace(/\n/g, '<br>'))
+        : '<span class="text-gray-400 dark:text-zinc-500 italic">No notes yet.</span>') +
+    '</div>';
+  }
+
+  // Edit mode renders the rich CE editor; tppNotesInitCe() seeds content after insertion.
   return '<div class="flex-1 flex flex-col p-2 gap-1.5 min-h-0">' +
     '<div id="tpp-notes-ce-' + p.id + '" contenteditable="true" ' +
          'class="flex-1 w-full text-xs text-gray-800 dark:text-zinc-100 ' +
@@ -1686,6 +1702,9 @@ window.tppNotesInitCe = function(panelId) {
     }
     ce.addEventListener('mouseup', _saveRange);
     ce.addEventListener('keyup',   _saveRange);
+    ce.addEventListener('keydown', function(e) {
+      if (typeof window._bwCeTabIndent === 'function') window._bwCeTabIndent(e);
+    });
 
     // Capture-phase keydown: `- ` → <ul><li>  |  `1. ` → <ol><li>
     ce.addEventListener('keydown', function(e) {

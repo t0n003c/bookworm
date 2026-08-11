@@ -1388,9 +1388,39 @@ window._tripEsc = function(s) {
 };
 function _tripEsc(s) { return window._tripEsc(s); }
 
+var _tripAuthRedirecting = false;
+
+function _tripIsLoginResponse(r) {
+  if (!r) return false;
+  if (r.status === 401 || r.status === 403) return true;
+  if (!r.url) return false;
+  try {
+    return (r.redirected && (new URL(r.url, window.location.origin)).pathname === '/login');
+  } catch (_) {
+    return r.redirected && r.url.indexOf('/login') !== -1;
+  }
+}
+
+function _tripHandleExpiredSession() {
+  if (_tripAuthRedirecting) return;
+  _tripAuthRedirecting = true;
+  _tripShowToast('Session expired. Please log in again — your last change was not saved.', true);
+  setTimeout(function() {
+    var next = window.location.pathname + window.location.search;
+    window.location.href = '/login?next=' + encodeURIComponent(next);
+  }, 900);
+}
+
 window._tripFetch = function(url, opts) {
-  return fetch(url, opts || {}).then(function(r) {
-    if (r.status === 401) { location.href = '/login'; throw new Error('401'); }
+  opts = opts || {};
+  if (!opts.credentials) opts.credentials = 'same-origin';
+  return fetch(url, opts).then(function(r) {
+    if (_tripIsLoginResponse(r)) {
+      var err = new Error('Session expired');
+      err._tripAuthExpired = true;
+      _tripHandleExpiredSession();
+      throw err;
+    }
     return r;
   });
 };
