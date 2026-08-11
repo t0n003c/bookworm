@@ -1353,9 +1353,11 @@ async def service_worker():
         return Response(status_code=404)
     # Replace the hard-coded cache name with the startup-time version so
     # any deployment that restarts the server also busts the PWA cache.
-    body = body.replace(
-        "const CACHE_NAME  = 'bw-shell-v3';",
+    body = re.sub(
+        r"const CACHE_NAME\s*=\s*['\"]bw-shell-v\d+['\"];",
         f"const CACHE_NAME  = 'bw-shell-{static_v}';",
+        body,
+        count=1,
     )
     return Response(
         content=body,

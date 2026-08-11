@@ -1100,7 +1100,7 @@ function _tppEmerg(p, data, isEdit) {
 function _tppNotes(p, data, isEdit) {
   var md = data.text || '';
   if (!isEdit) {
-    return '<div class="flex-1 overflow-y-auto p-3 text-xs leading-relaxed ' +
+    return '<div class="md-body flex-1 overflow-y-auto p-3 text-xs leading-relaxed ' +
              'text-gray-700 dark:text-zinc-200 prose prose-xs dark:prose-invert max-w-none">' +
       (md.trim()
         ? (typeof _tripMdToHtml === 'function'
@@ -1954,7 +1954,7 @@ window.tppShowPanelRefPopup = function(panelId) {
         (p.panel_type === 'notes'
           ? (function() {
               var md = _tppParse(p.content).text || '';
-              return '<div class="p-3 text-xs text-gray-800 dark:text-zinc-100 leading-relaxed ' +
+              return '<div class="md-body p-3 text-xs text-gray-800 dark:text-zinc-100 leading-relaxed ' +
                 'prose prose-xs dark:prose-invert max-w-none">' +
                 (md.trim()
                   ? (typeof _tripMdToHtml === 'function'
