@@ -416,10 +416,6 @@ function _tripLocNotesTabIndent(ta, dedent) {
 
   var selected = value.slice(lineStart, lineEnd);
   var lines = selected.split('\n');
-  var listLike = lines.some(function(line) {
-    return /^\s*(?:[-*+]|\d+\.)\s+/.test(line);
-  });
-  if (!listLike) return false;
 
   var deltaStart = 0;
   var deltaEnd = 0;
@@ -434,7 +430,7 @@ function _tripLocNotesTabIndent(ta, dedent) {
         changed = line.slice(1);
         delta = -1;
       }
-    } else if (line.trim()) {
+    } else {
       changed = '  ' + line;
       delta = 2;
     }
