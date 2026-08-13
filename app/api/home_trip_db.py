@@ -522,7 +522,15 @@ async def get_trip_days(
               LEFT JOIN trip_day_spots tds ON tds.day_id = td.id
               LEFT JOIN trip_spots     ts  ON ts.id      = tds.spot_id
              WHERE td.page_id=? AND td.user_id=? {plan_clause}
-             ORDER BY td.sort_order, td.id, tds.sort_order
+             ORDER BY
+                   CASE
+                     WHEN td.day_date IS NULL OR TRIM(td.day_date) = '' THEN 1
+                     ELSE 0
+                   END,
+                   td.day_date,
+                   td.sort_order,
+                   td.id,
+                   tds.sort_order
             """,
             params,
         )
