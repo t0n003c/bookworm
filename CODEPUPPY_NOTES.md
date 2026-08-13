@@ -437,6 +437,7 @@
 - `id, page_id` (→`home_pages` CASCADE), `user_id` (→`users` CASCADE), `day_label TEXT, day_date TEXT, sort_order, created_at`
 - `plan_id INTEGER REFERENCES trip_plans(id) ON DELETE CASCADE` — added via migration (nullable for pre-existing rows)
 - Index: `idx_trip_days_page ON trip_days(page_id, user_id)`
+- Itinerary view sorts dated days by `day_date`; undated days keep their loaded/created order after dated days.
 
 **`trip_day_spots`** — M2M: spots assigned to specific day lanes
 - `id, day_id` (→`trip_days` CASCADE), `spot_id` (→`trip_spots` CASCADE), `time_label TEXT, sort_order`

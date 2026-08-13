@@ -721,7 +721,7 @@ function _loadDaysForPlan(planId) {
   _tripFetch('/home/trip/' + _tripPid + '/days?plan_id=' + planId)
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      _tripDays   = Array.isArray(data) ? data : [];
+      _tripDays   = _tripSortDaysForItinerary(Array.isArray(data) ? data : []);
       _tripBlocks = {};
       var promises = _tripDays.map(function(d) {
         return _tripFetch('/home/trip/' + _tripPid + '/days/' + d.id + '/blocks')
@@ -747,6 +747,19 @@ function _loadDaysForPlan(planId) {
       }
     })
     .catch(function() { _tripShowToast('Failed to load plan', true); });
+}
+
+function _tripSortDaysForItinerary(days) {
+  return days.map(function(day, idx) {
+    return { day: day, idx: idx };
+  }).sort(function(a, b) {
+    var ad = (a.day.day_date || '').trim();
+    var bd = (b.day.day_date || '').trim();
+    if (ad && bd && ad !== bd) return ad < bd ? -1 : 1;
+    if (ad && !bd) return -1;
+    if (!ad && bd) return 1;
+    return a.idx - b.idx;
+  }).map(function(x) { return x.day; });
 }
 
 // ── Itinerary collapse state ─────────────────────────────────────────────────────
