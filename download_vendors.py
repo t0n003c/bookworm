@@ -27,12 +27,6 @@ def main():
     handlers = []
     if proxies:
         handlers.append(urllib.request.ProxyHandler(proxies))
-    else:
-        # Fallback: try the known Walmart proxy explicitly
-        handlers.append(urllib.request.ProxyHandler({
-            "http":  "http://proxy.wal-mart.com:8080",
-            "https": "http://proxy.wal-mart.com:8080",
-        }))
 
     opener = urllib.request.build_opener(*handlers)
 

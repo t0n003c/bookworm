@@ -13,7 +13,7 @@
 */
 'use strict';
 
-// ── Contact color palette (10 Walmart-ish colours, cycled by contact_id) ─────
+// ── Contact color palette (10 high-contrast colours, cycled by contact_id) ───
 var _CRM_CAL_PALETTE = [
   '#0053e2','#ffc220','#2a8703','#ea1100','#7c3aed',
   '#0891b2','#c2410c','#4f46e5','#047857','#b45309',

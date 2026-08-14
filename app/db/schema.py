@@ -603,8 +603,8 @@ CREATE_TABLES_SQL = [
     """,
 ]
 
-SEED_WORKSPACE_NAME = "Grocery Team"
-SEED_WORKSPACE_EMOJI = "🛒"
+SEED_WORKSPACE_NAME = "My Workspace"
+SEED_WORKSPACE_EMOJI = "📚"
 
 SEED_CATEGORIES = [
     ("Team Meeting", "#0053e2", "General team meeting notes"),

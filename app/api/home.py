@@ -250,8 +250,8 @@ async def weather_proxy(
 
 
 # ── RSS proxy ────────────────────────────────────────────────────────────────────────────────
-# Fetches and parses RSS 2.0 / Atom feeds server-side so Walmart's corporate
-# proxy handles the outbound request (browser fetch() is blocked on most feeds).
+# Fetches and parses RSS 2.0 / Atom feeds server-side so BookWorm can handle
+# outbound requests, proxy settings, and browser CORS limits in one place.
 
 def _rss_ns(tag: str) -> str:
     """Strip XML namespace braces: {http://...}tag -> tag."""
@@ -387,7 +387,7 @@ _RSS_UA = (
 # Detection order:
 #   1. BW_HTTP_PROXY env var  (explicit operator override)
 #   2. HTTPS_PROXY / HTTP_PROXY env vars  (Docker / CI)
-#   3. Windows registry AutoConfigURL PAC file  (corporate WPAD / Walmart network)
+#   3. Windows registry AutoConfigURL PAC file  (corporate WPAD network)
 #   4. '' → direct connections (Linux without proxy env vars)
 def _detect_proxy() -> str:
     """Return the best proxy URL string for outbound HTTP/S, or ''."""
@@ -553,8 +553,8 @@ def _autodiscover_feed_url(html: str, base_url: str) -> str | None:
 def _parse_yt_html(html_text: str) -> dict | None:
     """Extract a video feed from a YouTube channel page via the ytInitialData JSON blob.
 
-    YouTube's RSS endpoint is blocked by Walmart's corporate proxy (McAfee SSL
-    inspection IP is rate-limited by YouTube).  The channel *page* loads fine though,
+    YouTube's RSS endpoint can be blocked or rate-limited on some networks.
+    The channel *page* often loads fine though,
     and YouTube embeds the full video list inside a `var ytInitialData = {...};` script
     tag.  We BFS-walk that JSON to collect up to 20 video items and return
     them in the same dict shape that _parse_rss() produces.
@@ -776,8 +776,8 @@ async def rss_proxy(url: str = Query(...)):
         is_html = ('html' in ct_hdr) or sniff.startswith('<!doctype') or '<html' in sniff
         if is_html:
             # YouTube-specific: scrape ytInitialData JSON directly.
-            # The RSS endpoint (feeds/videos.xml) is blocked by the corporate proxy;
-            # the channel HTML page loads fine and contains all video data.
+            # The RSS endpoint (feeds/videos.xml) is often blocked/rate-limited;
+            # the channel HTML page can still contain all video data.
             if 'youtube.com' in url:
                 yt_data = _parse_yt_html(text)
                 if not yt_data or not yt_data.get('items'):

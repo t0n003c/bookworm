@@ -2,8 +2,7 @@
 
 Three-tier network strategy:
   1. Direct urllib   — fastest; works when external DNS is open
-  2. Walmart proxy   — urllib via sysproxy.wal-mart.com:8080, SSL verify off
-                       (Walmart CA re-signs certs, not in Python trust store)
+  2. BW_HTTP_PROXY   — optional operator-configured outbound proxy
   3. PowerShell IWR  — Invoke-WebRequest -UseDefaultCredentials;
                        Windows SSO handles NTLM proxy auth transparently,
                        same as the browser.
@@ -34,7 +33,7 @@ _MAX_RESP_BYTES = 5 * 1024 * 1024  # per-page cap
 _FETCH_TIMEOUT  = 15               # urllib timeout (seconds)
 _FETCH_DELAY    = 0.4              # polite pause between fetches
 _MAX_CONCURRENT = 3                # parallel lesson fetches
-_WALMART_PROXY  = "http://sysproxy.wal-mart.com:8080"
+_OUTBOUND_PROXY = os.getenv("BW_HTTP_PROXY", "").strip()
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -60,18 +59,13 @@ def _is_login_page(html: str) -> bool:
 
 
 def _build_opener(use_proxy: bool) -> urllib.request.OpenerDirector:
-    """Build a urllib opener with optional Walmart proxy + SSL bypass."""
-    import ssl
-    if use_proxy:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode    = ssl.CERT_NONE
+    """Build a urllib opener with the optional configured outbound proxy."""
+    if use_proxy and _OUTBOUND_PROXY:
         proxy = urllib.request.ProxyHandler({
-            "http":  _WALMART_PROXY,
-            "https": _WALMART_PROXY,
+            "http":  _OUTBOUND_PROXY,
+            "https": _OUTBOUND_PROXY,
         })
-        return urllib.request.build_opener(
-            proxy, urllib.request.HTTPSHandler(context=ctx))
+        return urllib.request.build_opener(proxy)
     return urllib.request.build_opener()
 
 
@@ -201,9 +195,11 @@ def _fetch_sync(url: str, cookie: str) -> tuple:
     if html:
         return html, None
 
-    html, e2 = _urllib_fetch(url, cookie, use_proxy=True)
-    if html:
-        return html, None
+    e2 = "BW_HTTP_PROXY is not set"
+    if _OUTBOUND_PROXY:
+        html, e2 = _urllib_fetch(url, cookie, use_proxy=True)
+        if html:
+            return html, None
 
     html, e3 = _powershell_fetch(url, cookie)
     if html:

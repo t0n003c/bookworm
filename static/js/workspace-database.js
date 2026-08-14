@@ -133,7 +133,7 @@ var _DB_ATTR_TYPES = [
 var _DB_RT_ICON_MAP = {
   star:  { on: '\u2605', off: '\u2606', clr: '#f59e0b' }, // ★/☆ amber
   heart: { on: '\u2665', off: '\u2661', clr: '#ef4444' }, // ♥/♡ red
-  thumb: { on: '\uD83D\uDC4D', off: '\u25CB', clr: '#0053e2' }, // 👍/○ walmart blue
+  thumb: { on: '\uD83D\uDC4D', off: '\u25CB', clr: '#0053e2' }, // 👍/○ primary blue
   dot:   { on: '\u25CF', off: '\u25CB', clr: '#8b5cf6' }, // ●/○ purple
 };
 
@@ -171,7 +171,7 @@ function _dbFilesInnerHtml(cardId, attrId, key, files, fmt) {
   var pillBg  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';
   var pillClr = isDark ? '#d4d4d8' : '#374151';
   var pillBdr = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
-  var linkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 in dark, Walmart blue in light
+  var linkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 in dark, primary blue in light
   var dispFmt = fmt || 'name';
 
   // Outer column — chips row on top, link-input row below (hidden by default)
@@ -2596,7 +2596,7 @@ function _dbAttrPills(attrs, cardId) {
   // Merged plain row = priorityParts ++ normalParts, capped at MAX_PLAIN.
   if (!attrs || attrs.length === 0) return '';
   var isDark      = document.documentElement.classList.contains('dark');
-  var pillLinkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 dark / Walmart blue light
+  var pillLinkClr = isDark ? '#93c5fd' : '#0053e2'; // blue-300 dark / primary blue light
 
   var priorityParts = [];
   var normalParts   = [];

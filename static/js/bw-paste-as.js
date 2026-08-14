@@ -486,7 +486,6 @@
     twitter:       ['Twitter',        '#1da1f2', '#fff'],
     vercel:        ['Vercel',         '#000000', '#fff'],
     vimeo:         ['Vimeo',          '#1ab7ea', '#fff'],
-    walmart:       ['Walmart',        '#0053e2', '#fff'],
     wikipedia:     ['Wikipedia',      '#000000', '#fff'],
     x:             ['X',              '#000000', '#fff'],
     youtube:       ['YouTube',        '#ff0000', '#fff'],
@@ -504,7 +503,7 @@
     const tld   = '.' + parts.slice(1).join('.');
     const info  = _BRAND_MAP[key];
     if (info) return { name: info[0], tld, color: info[1], textColor: info[2] };
-    // Fallback: title-case the key, Walmart blue avatar
+    // Fallback: title-case the key with the primary blue avatar
     return { name: key.charAt(0).toUpperCase() + key.slice(1), tld, color: '#0053e2', textColor: '#fff' };
   }
 
@@ -514,7 +513,7 @@
    *
    * Strategy:
    *  1. YouTube / Vimeo → browser-native fetch() to their oEmbed APIs (CORS-open,
-   *     browser proxy handled automatically — avoids Walmart NTLM proxy issues).
+   *     browser proxy handled automatically).
    *  2. Anything else → server-side /notes/url-title endpoint (stdlib urllib).
    * Silent no-op on any failure.
    */

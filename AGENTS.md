@@ -7,7 +7,7 @@ AI agent guidance for the BookWorm codebase.
 
 ## Project Overview
 
-**BookWorm** — self-hosted team note-taking app for Tinh's Walmart Grocery team.
+**BookWorm** — self-hosted team note-taking app for personal and team workspaces.
 
 - **Stack:** FastAPI + HTMX + Tailwind CSS (bundled, pre-built) + SQLite (aiosqlite)
 - **Local dev:** `http://localhost:8000` via `.venv\Scripts\uvicorn.exe main:app --host 127.0.0.1 --port 8000`
@@ -110,7 +110,7 @@ Bad triggers: "this button shows an alert instead of an inline error" ← Eddie 
 ### Auth & Security
 - New public routes → add to `_PUBLIC` in `auth_middleware.py`
 - New global-table write routes → add `_demo_guard(request)` check
-- No hardcoded secrets, IPs, or internal Walmart hostnames — env vars only
+- No hardcoded secrets, IPs, or internal corporate hostnames — env vars only
 - **Sign-in model (updated 2026-06-16):** username + password is ALWAYS step 1. Step 2 (in `login_submit`, `app/api/auth.py`): **biometric** (passkey) is the 2nd factor when enrolled (shown first on `/2fa/verify`); **TOTP** is the 2nd factor when biometric is off, and the fallback link when both are on; neither enrolled → straight in. The passwordless `/login/webauthn/*` button was REMOVED from `login.html` (it bypassed the password). **Lockout safety (do NOT remove):** `/2fa/verify` ALWAYS offers a one-time **recovery code**, plus the TOTP code when TOTP is also enrolled, so a device without the passkey can still get in. A biometric-only user with no recovery codes saved CAN be locked out on a passkey-less device — an accepted trade-off the owner asked for; keep recovery codes prominent. (Earlier design made passkey passwordless-only and warned against "force biometric after password"; the owner explicitly reversed that on 2026-06-16.)
 
 ### Mobile / PWA (recurring pain points — see CODEPUPPY_NOTES)

@@ -107,33 +107,33 @@ Great energy today! The team is excited about slash-commands and the live Markdo
 """
 
 _NOTE_ROADMAP = """\
-# Q2 2026 — Grocery Team Roadmap
+# Q2 2026 — Project Team Roadmap
 
 ## Strategic Goals
 
-1. **Reduce out-of-stocks** by 15% across produce
-2. **Improve shrink tracking** with weekly audits
-3. **Launch** self-checkout pilot in 3 stores
+1. **Improve onboarding speed** by 15% across new projects
+2. **Tighten handoff tracking** with weekly reviews
+3. **Launch** the new knowledge hub pilot with 3 teams
 
 ## Milestone Timeline
 
 | Milestone | Owner | Due Date | Status |
 |-----------|-------|----------|--------|
-| Pilot store selection | Alex | Apr 15 | 🔄 In Progress |
-| Vendor negotiation | Jordan | Apr 28 | ⏳ Pending |
+| Pilot team selection | Alex | Apr 15 | 🔄 In Progress |
+| Content migration | Jordan | Apr 28 | ⏳ Pending |
 | Staff training | Riley | May 5 | ⏳ Pending |
 | Go-live | Sam | May 20 | ⏳ Pending |
 
 ## Risks
 
-> ⚠️ Supply chain delays may push vendor negotiation to late April.  
-> Mitigation: engage backup vendor by Apr 21.
+> ⚠️ Source-material delays may push content migration to late April.
+> Mitigation: identify backup owners by Apr 21.
 
 ## Success Metrics
 
-- Out-of-stock rate: **< 3%** (currently 17.8 %)
-- Shrink delta: **< 0.8 %** (currently 1.1 %)
-- Customer satisfaction: **≥ 4.2 / 5** post-pilot survey\
+- Onboarding completion time: **< 3 days** (currently 5 days)
+- Open handoff count: **< 8** (currently 14)
+- Team satisfaction: **≥ 4.2 / 5** post-pilot survey\
 """
 
 _NOTE_GUIDE = """\
@@ -187,13 +187,13 @@ _NOTE_RETRO = """\
 
 ## 🟢 What Went Well
 
-- Delivered the **self-checkout UX** ahead of schedule
+- Delivered the **dashboard refresh** ahead of schedule
 - Team communication improved noticeably this sprint
 - Zero production incidents 🎉
 
 ## 🔴 What Didn't Go Well
 
-- Story estimation was off by ~40 % on the scanning module
+- Story estimation was off by ~40 % on the import module
 - Two items blocked by an external API dependency for 3 days
 
 ## 🔵 Action Items

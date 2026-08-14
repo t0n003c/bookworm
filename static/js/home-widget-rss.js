@@ -1,5 +1,5 @@
 /* home-widget-rss.js — multi-feed RSS/Atom widget with thumbnails, categories, grouping.
-   Fetches via /home/rss proxy (server-side, Walmart-proxy-aware).
+   Fetches via /home/rss proxy (server-side, BW_HTTP_PROXY-aware).
    Called from initHomeWidgets() in home-widgets.js.
 */
 'use strict';
@@ -192,7 +192,7 @@ function _rssFeedContainer(feed, items, showThumb, readSet) {
 
 // ── Thumbnail helpers ─────────────────────────────────────────────────────
 // External images go through our server proxy (/home/img) which routes them
-// via the Walmart corporate proxy.  If the corporate filter still blocks the
+// through strict corporate proxies. If a network filter still blocks the
 // image (e.g. YouTube CDN), the server returns 415 and the browser fires
 // onerror — we replace the broken img with a coloured placeholder instead of
 // hiding the slot entirely, so the card layout stays consistent.

@@ -5,7 +5,7 @@
  *
  * Rules: ALL var — zero let/const (HTMX re-injection safety).
  * Chart.js: lazy-loaded from /static/js/vendor/chart.umd.min.js (bundled locally —
- * no CDN dependency, works on Walmart network and in Docker with no internet).
+ * no CDN dependency, works on filtered networks and in Docker with no internet).
  */
 
 // ── Module-level state (var — safe for repeated initSubsPage calls) ───────────
